@@ -39,7 +39,7 @@ DECLARE
   v_new_ledger_id UUID;
 BEGIN
   -- 1. mission_progress 행 잠금 (동시 답변 요청 직렬화)
-  SELECT status, question_states, mission_progress.valid_answer_count INTO v_progress_status, v_prev_question_states, v_prev_valid_count
+  SELECT mission_progress.status, mission_progress.question_states, mission_progress.valid_answer_count INTO v_progress_status, v_prev_question_states, v_prev_valid_count
   FROM mission_progress
   WHERE session_id = p_session_id
   FOR UPDATE;
@@ -91,9 +91,9 @@ BEGIN
   SET question_states = v_updated_states,
       valid_answer_count = v_valid_count,
       updated_at = now(),
-      status = CASE WHEN v_newly_completed THEN 'COMPLETED' ELSE status END
+      status = CASE WHEN v_newly_completed THEN 'COMPLETED' ELSE mission_progress.status END
   WHERE session_id = p_session_id
-  RETURNING status INTO v_progress_status;
+  RETURNING mission_progress.status INTO v_progress_status;
 
   -- 10. 새로 완료된 경우 보상 및 정리 작업
   IF v_newly_completed THEN
