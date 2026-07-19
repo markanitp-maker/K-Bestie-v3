@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { sendAccountLifecycleNotification } from "@/lib/notifications/accountLifecycle";
 
 export async function POST() {
   try {
@@ -23,6 +24,9 @@ export async function POST() {
     if (!data || !data[0].success) {
       return NextResponse.json({ error: data?.[0]?.reason }, { status: 400 });
     }
+
+    // 복구 알림 발송
+    await sendAccountLifecycleNotification(user.id, "restore_requested");
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

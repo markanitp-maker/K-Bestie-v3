@@ -28,6 +28,24 @@ import {
 import { getActiveReportModel } from "../../../app/api/_lib/reportModel.ts";
 import { sanitizeReportJson } from "../../../app/api/_lib/reportSafetyGuard.ts";
 
+function extractJSON(text: string) {
+  try {
+    const cleanText = text.replace(/```json\n?|```\n?/g, "").trim();
+    return JSON.parse(cleanText);
+  } catch {
+    const objMatch = text.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try { return JSON.parse(objMatch[0]); } catch {}
+    }
+    const arrMatch = text.match(/\[[\s\S]*\]/);
+    if (arrMatch) {
+      try { return JSON.parse(arrMatch[0]); } catch {}
+    }
+    console.error("[extractJSON] JSON 추출 실패. 원문(300자):", text.substring(0, 300));
+    throw new Error("JSON 파싱 오류");
+  }
+}
+
 type ProviderId = "ai_studio" | "vertex";
 
 interface GroupAModelResolved {
@@ -74,15 +92,7 @@ async function resolveGroupAModel(db: SupabaseClient): Promise<GroupAModelResolv
   }
 }
 
-const DASHBOARD_KEYS = [
-  "school_life",
-  "peer_relations",
-  "interests",
-  "study_concerns",
-  "digital_interests",
-  "future_dreams",
-  "recurring_stories",
-] as const;
+
 
 export interface CloseResult {
   closed: string[];
@@ -118,7 +128,6 @@ async function callAiStudio(modelId: string, apiBase: string, prompt: string, ma
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
-          responseMimeType: "application/json",
           maxOutputTokens,
         },
       }),
@@ -149,7 +158,6 @@ async function callVertex(modelId: string, prompt: string, maxOutputTokens: numb
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
-          responseMimeType: "application/json",
           maxOutputTokens,
         },
       }),
@@ -235,6 +243,43 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
 
   for (const session of sessions) {
     try {
+      // 1. 미션 완료 여부 확인 (게이지 100% = COMPLETED)
+      const { data: progress, error: progErr } = await db
+        .from("mission_progress")
+        .select("status")
+        .eq("session_id", session.id)
+        .maybeSingle();
+
+      if (progErr) throw new Error(progErr.message);
+
+      if (progress?.status !== "COMPLETED") {
+        // 미완료 처리 (0~99% 또는 자유대화)
+        const { data: inserted, error: insertErr } = await db
+          .from("daily_reports")
+          .insert({
+            session_id: session.id,
+            summary_line: "아이가 미션을 완료하지 않아 업데이트가 없습니다",
+            mood_score: 5,
+            emotion_tags: [],
+            parent_guide: "",
+            emotion_level: "safe",
+            school_academy_life: null,
+            peer_friendship: null,
+            emotion_hint: null,
+            interests_preferences: null,
+            study_concerns: null,
+            digital_content_interests: null,
+            future_dreams: null,
+            recurring_stories: null,
+          })
+          .select("id")
+          .single();
+
+        if (insertErr) throw new Error(insertErr.message);
+        result.created.push(inserted.id);
+        continue;
+      }
+
       const { data: messages, error: msgErr } = await db
         .from("chat_messages")
         .select("role, content")
@@ -260,10 +305,17 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
         emotion_tags?: string[];
         parent_guide?: string;
         emotion_level?: string;
-        dashboard_cards?: Record<string, string>;
+        school_academy_life?: string;
+        peer_friendship?: string;
+        emotion_hint?: string;
+        interests_preferences?: string;
+        study_concerns?: string;
+        digital_content_interests?: string;
+        future_dreams?: string;
+        recurring_stories?: string;
       };
       try {
-        report = sanitizeReportJson(JSON.parse(text));
+        report = sanitizeReportJson(extractJSON(text));
       } catch {
         throw new Error(`JSON 파싱 실패: ${text.slice(0, 100)}`);
       }
@@ -273,10 +325,6 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
         report.emotion_level === "warning" || report.emotion_level === "danger"
           ? report.emotion_level
           : "safe";
-      const rawCards = report.dashboard_cards ?? {};
-      const dashboardCards = Object.fromEntries(
-        DASHBOARD_KEYS.map((k) => [k, typeof rawCards[k] === "string" ? rawCards[k] : ""]),
-      );
 
       const { data: inserted, error: insertErr } = await db
         .from("daily_reports")
@@ -287,7 +335,14 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
           emotion_tags: report.emotion_tags ?? [],
           parent_guide: report.parent_guide ?? "",
           emotion_level: emotionLevel,
-          dashboard_cards: dashboardCards,
+          school_academy_life: report.school_academy_life ?? "",
+          peer_friendship: report.peer_friendship ?? "",
+          emotion_hint: report.emotion_hint ?? "",
+          interests_preferences: report.interests_preferences ?? "",
+          study_concerns: report.study_concerns ?? "",
+          digital_content_interests: report.digital_content_interests ?? "",
+          future_dreams: report.future_dreams ?? "",
+          recurring_stories: report.recurring_stories ?? "",
         })
         .select("id")
         .single();
@@ -355,7 +410,7 @@ async function reduceToWeeklyReport(model: GroupAModelResolved, weekRange: strin
     .replace("{{TRANSCRIPT}}", transcriptText);
   const text = await callReportModel(model, prompt, 2048);
   try {
-    return sanitizeReportJson(JSON.parse(text));
+    return sanitizeReportJson(extractJSON(text));
   } catch {
     throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
   }

@@ -17,11 +17,11 @@ import {
   type StoreChild,
 } from "@/lib/store";
 import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
+import { calculateFinalDeletionDate, purchaseExtension } from "@/lib/plan/insightExtension";
 import { CONSENT_DOCUMENT_TEXT } from "@/lib/plan/consentDocument";
 
 function formatRetentionLabel(tier: Tier): string {
   const retention = getEffectiveRetention(tier, 0);
-  if (retention.isPermanent || retention.months == null) return "무기한";
   const months = retention.months;
   return months % 12 === 0 ? `${months / 12}년` : `${months}개월`;
 }
@@ -104,6 +104,12 @@ export default function ParentSettingsPage() {
   // 요금제 다운그레이드 확인 모달 — "확인" 전에는 어떤 스탬프도 부여하지 않는다(비가역 파기 실수 방지).
   const [showDowngradeConfirm, setShowDowngradeConfirm] = useState(false);
 
+  // Care Insight 연장 관련 상태
+  const [extensionYears, setExtensionYears] = useState<number>(0);
+  const [finalDeletionDate, setFinalDeletionDate] = useState<Date | null>(null);
+  const [showExtensionModal, setShowExtensionModal] = useState(false);
+  const [isPurchasingExtension, setIsPurchasingExtension] = useState(false);
+
   // 법정대리인 동의 철회 상태 — 철회 확인 전에는 API를 호출하지 않는다(되돌릴 방법이 없는
   // 조작이라 확인 모달을 반드시 거치게 함). withdrawTarget에 아이 정보를 담아 모달에 표시.
   const [withdrawTarget, setWithdrawTarget] = useState<{ childId: string; displayName: string } | null>(null);
@@ -169,6 +175,34 @@ export default function ParentSettingsPage() {
   const [withdrawalError, setWithdrawalError] = useState<string | null>(null);
   const [userProvider, setUserProvider] = useState<string>("email");
   const [withdrawalLastGuardianAgreed, setWithdrawalLastGuardianAgreed] = useState(false);
+
+  // Care Insight 연장팩 데이터 로드
+  useEffect(() => {
+    if (store.activeFamilyId) {
+      calculateFinalDeletionDate(store.activeFamilyId).then(date => {
+        setFinalDeletionDate(date);
+      }).catch(console.error);
+
+      const fetchExtensions = async () => {
+        const supabase = createClient();
+        const { data, error } = await supabase.from("insight_retention_extensions")
+          .select("extension_years_purchased")
+          .eq("family_id", store.activeFamilyId)
+          .single();
+        
+        if (error) {
+          console.error(error);
+          setExtensionYears(0);
+        } else if (data) {
+          setExtensionYears(data.extension_years_purchased);
+        } else {
+          setExtensionYears(0);
+        }
+      };
+      
+      fetchExtensions();
+    }
+  }, [store.activeFamilyId, showExtensionModal]);
 
   // 로그인 이메일 및 구성원 정보 로드
   useEffect(() => {
@@ -1201,6 +1235,33 @@ export default function ParentSettingsPage() {
                 </div>
               </div>
 
+              {editTier === 2 && (
+                <div className="mt-2 p-3 bg-gray-50 border border-gray-200/60 rounded-xl">
+                  <div className="flex justify-between items-center mb-1">
+                    <p className="text-[11px] font-bold text-gray-700">Care Insight 확장팩</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowExtensionModal(true)}
+                      disabled={extensionYears >= 9}
+                      className="px-2 py-1 bg-[#1a6b5a] text-white text-[9px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      1년 연장
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-500">
+                    현재 확장: <span className="font-bold text-[#1a6b5a]">+{extensionYears}년</span> (기본 3년)
+                  </p>
+                  {finalDeletionDate && (
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      최종 삭제 예정일: {finalDeletionDate.toLocaleDateString()}
+                    </p>
+                  )}
+                  {extensionYears >= 9 && (
+                    <p className="text-[9px] text-red-500 mt-1">최대 확장 연수(9년)에 도달했습니다.</p>
+                  )}
+                </div>
+              )}
+
               {/* 계정 관리 섹션 */}
               <div className="border-t border-gray-150 pt-2.5 mt-1 flex flex-col gap-2">
                 <p className="text-[10px] font-bold text-gray-500 px-0.5 text-left">계정 관리</p>
@@ -1414,6 +1475,38 @@ export default function ParentSettingsPage() {
                 </button>
                 <button
                   onClick={() => setEditChild(null)}
+                  className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showExtensionModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+            <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
+              <p className="text-sm font-bold mb-2 text-[#1e1e2d]">
+                Care Insight 1년 연장
+              </p>
+              <p className="text-xs leading-relaxed text-gray-500 mb-4">
+                <span className="font-bold text-[#1a6b5a]">결제 연동 준비 중입니다. 정식 오픈 후 이용하실 수 있어요.</span><br/><br/>
+                현재 선택된 가족의 Care Insight 데이터 보존 기간을 1년 연장하시겠습니까?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    alert("결제 연동 준비 중입니다. 정식 오픈 후 이용 가능합니다");
+                    setShowExtensionModal(false);
+                  }}
+                  className="flex-1 py-2 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                >
+                  연장하기
+                </button>
+                <button
+                  disabled={isPurchasingExtension}
+                  onClick={() => setShowExtensionModal(false)}
                   className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
                 >
                   취소

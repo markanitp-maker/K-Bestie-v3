@@ -1,0 +1,123 @@
+{
+  "migrationResults": [
+    {
+      "file": "20260725000000_daily_reports_eight_fields.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725100000_plan_retention_extension.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725100000_safety_events_alpha_allowlist.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725110000_admin_audit_log_action_check_restore.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725200000_parent_questions_lifecycle.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725300000_goldkey_reserve_confirm_restore.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725310000_goldkey_reserve_restart_fix.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725500000_batch_schedule_kst_adjust.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725600000_account_lifecycle_notifications.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260725700000_parent_questions_answer_summary.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260726100000_account_lifecycle_outbox.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260726200000_insight_extension_purchases.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260726210000_purchase_insight_extension_auth_fix.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260726220000_insight_retention_extensions_rls.sql",
+      "status": "PASS",
+      "error": null
+    },
+    {
+      "file": "20260726230000_purchase_insight_extension_auth_fix_null.sql",
+      "status": "PASS",
+      "error": null
+    }
+  ],
+  "rlsProof1": false,
+  "rlsProof2": true,
+  "testResults": [
+    {
+      "name": "1. Anon access blocked",
+      "status": "PASS",
+      "message": "Expected outcome matched"
+    },
+    {
+      "name": "2. B cannot read A insight",
+      "status": "PASS",
+      "message": "Expected outcome matched"
+    },
+    {
+      "name": "3. B can read B insight",
+      "status": "PASS",
+      "message": "Expected outcome matched"
+    },
+    {
+      "name": "4. IDOR purchase_insight_extension",
+      "status": "PASS",
+      "message": "Expected outcome matched"
+    },
+    {
+      "name": "5. get_safety_event_child_text unallowed child",
+      "status": "PASS",
+      "message": "Expected outcome matched"
+    },
+    {
+      "name": "6. get_safety_event_child_text allowed",
+      "status": "PASS",
+      "message": "Expected outcome matched"
+    },
+    {
+      "name": "7. get_safety_event_child_text unallowed admin",
+      "status": "PASS",
+      "message": "Expected outcome matched"
+    },
+    {
+      "name": "8. safety_events_admin_view struct",
+      "status": "PASS",
+      "message": "Expected outcome matched"
+    }
+  ]
+}

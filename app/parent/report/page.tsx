@@ -14,6 +14,7 @@ interface Report {
   mood_score: number;
   emotion_tags: string[];
   created_at: string;
+  viewed_at: string | null;
   session: { started_at: string; turn_count: number } | null;
 }
 
@@ -116,9 +117,16 @@ export default function ParentReportPage() {
               >
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <p className="text-xs font-bold text-gray-500">
-                      {formatDate(r.created_at)}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold text-gray-500">
+                        {formatDate(r.created_at)}
+                      </p>
+                      {!r.viewed_at && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-500">
+                          NEW
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] text-gray-400 mt-0.5">
                       {formatRelative(r.created_at)}
                       {r.session?.turn_count ? ` · 대화 ${r.session.turn_count}회` : ""}
@@ -142,17 +150,6 @@ export default function ParentReportPage() {
                   "{r.summary_line}"
                 </p>
 
-                <div className="flex gap-1.5 flex-wrap">
-                  {r.emotion_tags.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{ background: "#fdf1ec", color: "#e8845a" }}
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
               </Link>
             ))
           )}

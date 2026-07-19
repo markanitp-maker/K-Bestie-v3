@@ -50,6 +50,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
   const statusRef = useRef<SessionStatus>("idle");
   const transcriptRef = useRef<Turn[]>([]);
+  const lastAsrConfidenceRef = useRef<number | undefined>(undefined);
   const onTurnCompleteRef = useRef<((turn: Turn) => void) | undefined>(undefined);
   onTurnCompleteRef.current = options?.onTurnComplete;
 
@@ -89,7 +90,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setTranscript([...transcriptRef.current]);
   }
 
-  async function callStt(audioBase64: string): Promise<string> {
+  async function callStt(audioBase64: string): Promise<{ text: string; confidence?: number }> {
     try {
       const sessionId = options?.getSessionId?.() ?? null;
       const res = await fetch("/api/mission/stt", {
@@ -97,11 +98,14 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ audioBase64, sessionId }),
       });
-      if (!res.ok) return "";
+      if (!res.ok) return { text: "" };
       const data = await res.json();
-      return typeof data.transcript === "string" ? data.transcript.trim() : "";
+      return { 
+        text: typeof data.transcript === "string" ? data.transcript.trim() : "",
+        confidence: typeof data.confidence === "number" ? data.confidence : undefined
+      };
     } catch {
-      return "";
+      return { text: "" };
     }
   }
 
@@ -115,10 +119,11 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     if (chunks.length === 0) return;
 
     const audioBase64 = encodePCM16Base64(chunks);
-    const text = await callStt(audioBase64);
+    const { text, confidence } = await callStt(audioBase64);
     if (!text) return;
     if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 중복 방지를 위해 폐기
 
+    lastAsrConfidenceRef.current = confidence;
     appendTurn({ role: "child", text });
     onTurnCompleteRef.current?.({ role: "child", text });
   }, []);
@@ -194,7 +199,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         sttBusyRef.current = true;
         const epoch = utteranceEpochRef.current;
         const audioBase64 = encodePCM16Base64(chunksRef.current);
-        void callStt(audioBase64).then((text) => {
+        void callStt(audioBase64).then(({ text }) => {
           sttBusyRef.current = false;
           // 이미 finalize되어 다음 세대로 넘어간 뒤 도착한 낡은 응답이면 폐기(중복 표시 방지)
           if (epoch !== utteranceEpochRef.current) return;
@@ -235,6 +240,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     speakingRef.current = false;
     setIsSpeaking(false);
     setInterimChildText("");
+    lastAsrConfidenceRef.current = undefined;
   }
 
   const stopSession = useCallback(() => {
@@ -251,6 +257,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   }, []);
 
   const getTranscript = useCallback(() => transcriptRef.current, []);
+  const getLastAsrConfidence = useCallback(() => lastAsrConfidenceRef.current, []);
 
   /** DB에서 불러온 과거 대화(chat_messages)를 초기 자막으로 채워넣는다 — 스크롤을 올리면
    *  이전 대화를 볼 수 있게 하기 위함. 세션 연결 이후(status가 "live"가 된 뒤) 1회 호출할 것
@@ -403,7 +410,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
   return {
     status, error, transcript, interimChildText, isSpeaking,
-    startSession, stopSession, reset, getTranscript, seedTranscript,
+    startSession, stopSession, reset, getTranscript, getLastAsrConfidence, seedTranscript,
     speak, respondText, sendTypedText, sayText, setMicEnabled,
   };
 }

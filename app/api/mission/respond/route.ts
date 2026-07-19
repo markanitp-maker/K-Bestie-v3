@@ -18,6 +18,24 @@ function isWeekendQuestionDay(): boolean {
   return kstDay === 4 || kstDay === 5;
 }
 
+function extractJSON(text: string) {
+  try {
+    const cleanText = text.replace(/```json\n?|```\n?/g, "").trim();
+    return JSON.parse(cleanText);
+  } catch {
+    const objMatch = text.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try { return JSON.parse(objMatch[0]); } catch {}
+    }
+    const arrMatch = text.match(/\[[\s\S]*\]/);
+    if (arrMatch) {
+      try { return JSON.parse(arrMatch[0]); } catch {}
+    }
+    console.error("JSON 추출 실패. 원문(300자):", text.substring(0, 300));
+    throw new Error("JSON 파싱 오류");
+  }
+}
+
 // 모델 응답에 프롬프트/지시문이 그대로 새어나온 흔적이 있는지 검사 — 감지되면 부분 절삭
 // 없이 응답 전체를 폐기하는 판단 기준으로만 쓴다(아래 POST 핸들러 참고).
 const PROMPT_LEAK_PATTERNS = [
@@ -118,23 +136,91 @@ export async function POST(req: NextRequest) {
       parts: [{ text: t.text }],
     }));
 
-  // Gemini는 대화가 반드시 user 역할로 시작해야 함(그렇지 않으면 400 Bad Request).
-  // 미션 히스토리는 항상 케이(K)의 오프닝 인사말로 시작하므로 맨 앞의 연속된 model
-  // 턴을 제거해 user 턴부터 시작하도록 보정한다.
+  // Gemini는 대화가 반드시 user 역할로 시작해야 함
   while (contents.length > 0 && contents[0].role === "model") {
     contents.shift();
   }
 
-  // 보정 후에도 비어있으면(이론상 child 발화가 아직 없는 경우) Gemini에 빈 배열을
-  // 보낼 수 없으므로 다음 질문 텍스트 자체를 user 턴으로 넣어 최소 요건을 맞춘다.
+  let finalNextQuestionText = nextQuestionText;
+
+  // Parent question injection & evaluation
+  let activeQuestion = null;
+  const { data: qs } = await authService
+    .from("parent_questions")
+    .select("*")
+    .eq("child_id", session.child_id)
+    .in("status", ["ai_generated", "parent_edited", "mission_confirming"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (qs && qs.length > 0) {
+    activeQuestion = qs[0];
+  }
+
+  if (activeQuestion) {
+    if (activeQuestion.status === "mission_confirming") {
+      const childLastTurn = history[history.length - 1];
+      if (childLastTurn && childLastTurn.role === "child") {
+        try {
+          const evalAi = createGenAIClient(missionModel);
+          const evalPrompt = `방금 케이가 아이에게 다음 질문을 했습니다: "${activeQuestion.question_text}"\n아이의 대답: "${childLastTurn.text}"\n\n아이가 질문에 명확히 응답했는지, 거부했는지, 아니면 모호하거나 다른 주제로 넘어갔는지 판정하세요. 반드시 JSON 형식으로만 반환하세요. JSON 외 텍스트 금지.\n형식: {"verdict": "answered" | "refused" | "unclear", "summary": "아이가 대답한 내용의 요약 (answered인 경우에만 작성)"}`;
+          const evalRes = await evalAi.models.generateContent({
+             model: missionModel.modelId, // for accurate analysis
+             contents: [{ role: "user", parts: [{ text: evalPrompt }] }],
+          });
+          const parsed = extractJSON(evalRes.text || "{}");
+          
+          if (parsed.verdict === "answered") {
+            await authService.from("parent_questions").update({
+              status: "confirmed",
+              child_answer_summary: parsed.summary
+            }).eq("id", activeQuestion.id);
+            activeQuestion = null;
+          } else if (parsed.verdict === "refused") {
+            await authService.from("parent_questions").update({
+              status: "declined"
+            }).eq("id", activeQuestion.id);
+            activeQuestion = null;
+          } else {
+            const attempts = (activeQuestion.mission_confirm_attempts || 0) + 1;
+            if (attempts >= 2) {
+              await authService.from("parent_questions").update({
+                status: "mission_incomplete",
+                mission_confirm_attempts: attempts
+              }).eq("id", activeQuestion.id);
+              activeQuestion = null;
+            } else {
+              await authService.from("parent_questions").update({
+                mission_confirm_attempts: attempts
+              }).eq("id", activeQuestion.id);
+              finalNextQuestionText = `방금 물어본 질문("${activeQuestion.question_text}")에 대해 아직 아이가 대답하지 않았으니 부드럽게 다시 한 번 물어보세요.`;
+              activeQuestion.status = "mission_confirming";
+            }
+          }
+        } catch (err) {
+          console.error("Parent question eval error", err);
+        }
+      }
+    }
+    
+    // Inject if ready
+    if (activeQuestion && (activeQuestion.status === "ai_generated" || activeQuestion.status === "parent_edited")) {
+      await authService.from("parent_questions").update({
+        status: "mission_confirming",
+        mission_confirm_attempts: 1
+      }).eq("id", activeQuestion.id);
+      finalNextQuestionText = activeQuestion.question_text;
+    }
+  }
+
   if (contents.length === 0) {
-    contents.push({ role: "user", parts: [{ text: nextQuestionText }] });
+    contents.push({ role: "user", parts: [{ text: finalNextQuestionText }] });
   }
 
   const systemInstruction = `
 ${MISSION_CHAT_SYSTEM_PROMPT}
 
-지금 아이에게 자연스럽게 이어서 물어봐야 할 다음 질문은 "${nextQuestionText}"예요. 이 질문의 요지를 반드시 살려서 자연스럽게 물어보세요.
+지금 아이에게 자연스럽게 이어서 물어봐야 할 다음 질문은 "${finalNextQuestionText}"예요. 이 질문의 요지를 반드시 살려서 자연스럽게 물어보세요.
 ${isWeekendQuestionDay() ? `\n${WEEKEND_QUESTION_PROMPT}` : ""}
 `.trim();
 
@@ -150,10 +236,8 @@ ${isWeekendQuestionDay() ? `\n${WEEKEND_QUESTION_PROMPT}` : ""}
 
     let text = (result.text ?? "").trim();
     if (!text || containsPromptLeak(text)) {
-      // 빈 응답이거나 프롬프트 누출 흔적이 있으면 일부만 잘라 쓰지 않고 응답 전체를
-      // 폐기한다 — 안전한 고정 리액션 + 순정 다음 질문 텍스트로 완전히 대체.
       console.warn("[mission/respond] discarding leaked/empty model response, falling back to safe text");
-      text = `그렇구나! ${nextQuestionText}`;
+      text = `그렇구나! ${finalNextQuestionText}`;
     }
     if (childTurnId) setCachedRespond(childTurnId, text);
 

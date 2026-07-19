@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { sendAccountLifecycleNotification } from "@/lib/notifications/accountLifecycle";
 
 export async function POST(req: Request) {
   try {
@@ -71,10 +72,14 @@ export async function POST(req: Request) {
 
     if (revokeError) {
       console.error(`[Withdrawal Warning] revoke_all_sessions failed for user ${user.id}:`, revokeError);
-      return NextResponse.json({ success: true, sessionRevokeFailed: true });
+      // 실패해도 진행
     }
 
-    return NextResponse.json({ success: true });
+    // 탈퇴 알림 발송
+    await sendAccountLifecycleNotification(user.id, "unsubscribe_requested");
+    await sendAccountLifecycleNotification(user.id, "grace_period_started");
+
+    return NextResponse.json({ success: true, sessionRevokeFailed: !!revokeError });
   } catch (err: any) {
     console.error("[Withdrawal Exception]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

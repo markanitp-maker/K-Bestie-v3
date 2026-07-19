@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   const { data: reports, error } = await supabase
     .from("daily_reports")
-    .select("id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, created_at, session_id")
+    .select("id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, recurring_stories, viewed_at, created_at, session_id")
     .in("session_id", sessionIds)
     .order("created_at", { ascending: false });
 

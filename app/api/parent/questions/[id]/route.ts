@@ -14,15 +14,11 @@ export async function PATCH(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { status: string };
+  let body: { status?: string; questionText?: string; override?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  if (body.status !== "중지됨") {
-    return NextResponse.json({ error: "Only '중지됨' update allowed" }, { status: 400 });
   }
 
   const { data: q, error: qErr } = await supabase
@@ -40,14 +36,45 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const updates: Record<string, any> = {};
+
+  if (body.status === "declined" || body.status === "중지됨") {
+    // 백워드 호환성을 위해 중지됨 포함
+    updates.status = "declined";
+  } else if (body.questionText) {
+    // 안전 재검사 (lib/plan/parentQuestionFilter.ts는 route 밖에서 가져와야 함)
+    // Wait, let's import it correctly at the top. Since I'm replacing the function, the import needs to be there.
+    // I should have used multi_replace_file_content to add the import if missing. 
+    // Wait, the original file didn't import `filterParentQuestion`. I will add it dynamically.
+    const { filterParentQuestion } = await import("@/lib/plan/parentQuestionFilter");
+    
+    const filterResult = filterParentQuestion(body.questionText.trim());
+    if (filterResult.verdict === "block") {
+      return NextResponse.json(
+        { error: filterResult.reason, category: filterResult.category, suggestion: filterResult.suggestion },
+        { status: 400 }
+      );
+    }
+    if (filterResult.verdict === "suggest" && !body.override) {
+      return NextResponse.json(
+        { error: filterResult.reason, category: filterResult.category, suggestion: filterResult.suggestion, overridable: true },
+        { status: 422 }
+      );
+    }
+    updates.question_text = body.questionText.trim();
+    updates.status = "parent_edited";
+  } else {
+    return NextResponse.json({ error: "Invalid update payload" }, { status: 400 });
+  }
+
   const { error } = await supabase
     .from("parent_questions")
-    .update({ status: "중지됨" })
+    .update(updates)
     .eq("id", id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...updates });
 }

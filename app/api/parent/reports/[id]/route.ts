@@ -23,7 +23,7 @@ export async function GET(
   const { data: report, error } = await supabase
     .from("daily_reports")
     .select(
-      "id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, created_at, session_id, chat_sessions(started_at, turn_count, ended_at, child_id)"
+      "id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, recurring_stories, created_at, session_id, chat_sessions(started_at, turn_count, ended_at, child_id)"
     )
     .eq("id", id)
     .single();
@@ -51,7 +51,20 @@ export async function GET(
 
   const { child_id: _childId, ...sessionRest } = chat_sessions ?? { child_id: undefined };
   const safeRest = restricted
-    ? { ...rest, parent_guide: "", dashboard_cards: {}, emotion_level: null }
+    ? { 
+        ...rest, 
+        parent_guide: "", 
+        dashboard_cards: {}, 
+        emotion_level: null,
+        school_academy_life: null,
+        peer_friendship: null,
+        emotion_hint: null,
+        interests_preferences: null,
+        study_concerns: null,
+        digital_content_interests: null,
+        future_dreams: null,
+        recurring_stories: null
+      }
     : rest;
 
   return NextResponse.json({ report: { ...safeRest, session: chat_sessions ? sessionRest : null }, restricted });

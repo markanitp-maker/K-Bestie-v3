@@ -79,8 +79,8 @@ function getKstHour(): number {
 }
 
 function currentRound(hour: number): RoundType | null {
-  if (hour >= 12 && hour < 17) return "round1_day";
-  if (hour >= 19 || hour < 1) return "round2_night";
+  if (hour >= 13 && hour < 17) return "round1_day";
+  if (hour >= 19 && hour <= 23) return "round2_night";
   return null;
 }
 
@@ -766,9 +766,9 @@ function MissionInner() {
         <p className="text-5xl">⏰</p>
         <p className="text-base font-bold text-gray-800">지금은 미션 시간이 아니에요</p>
         <p className="text-xs text-gray-500 leading-relaxed">
-          1차 미션은 낮 12시~5시,
+          1차 미션은 오후 1시~5시,
           <br />
-          2차 미션은 저녁 7시~새벽 1시에 만나요!
+          2차 미션은 저녁 7시~밤 12시에 만나요!
         </p>
         <button
           onClick={() => router.replace("/child/home")}

@@ -13,7 +13,7 @@ const PCM16_BYTES_PER_SEC = 16000 * 2;
 export const runtime = "nodejs";
 
 interface SpeechResponse {
-  results?: Array<{ alternatives?: Array<{ transcript?: string }> }>;
+  results?: Array<{ alternatives?: Array<{ transcript?: string; confidence?: number }> }>;
 }
 
 export async function POST(req: NextRequest) {
@@ -96,6 +96,17 @@ export async function POST(req: NextRequest) {
       .join("")
       .trim();
 
+    let minConfidence = 1;
+    let hasConfidence = false;
+    for (const r of (data.results ?? [])) {
+      const conf = r.alternatives?.[0]?.confidence;
+      if (typeof conf === "number") {
+        minConfidence = Math.min(minConfidence, conf);
+        hasConfidence = true;
+      }
+    }
+    const confidence = hasConfidence ? minConfidence : undefined;
+
     if (usageContext) {
       const ctx = usageContext;
       const durationSec = Buffer.from(audioBase64, "base64").length / PCM16_BYTES_PER_SEC;
@@ -117,7 +128,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ transcript });
+    return NextResponse.json({ transcript, confidence });
   } catch (err) {
     console.error("[mission/stt] error:", (err as Error).message);
     return NextResponse.json({ error: "STT request failed" }, { status: 500 });

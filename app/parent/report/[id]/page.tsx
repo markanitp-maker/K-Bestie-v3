@@ -10,16 +10,6 @@ import { ReportDetailSkeleton } from "./ReportDetailSkeleton";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
-interface DashboardCards {
-  school_life?: string;
-  peer_relations?: string;
-  interests?: string;
-  study_concerns?: string;
-  digital_interests?: string;
-  future_dreams?: string;
-  recurring_stories?: string;
-}
-
 interface Report {
   id: string;
   summary_line: string;
@@ -27,8 +17,15 @@ interface Report {
   emotion_tags: string[];
   parent_guide: string;
   emotion_level: EmotionLevel | null;
-  dashboard_cards: DashboardCards | null;
   created_at: string;
+  school_academy_life?: string | null;
+  peer_friendship?: string | null;
+  emotion_hint?: string | null;
+  interests_preferences?: string | null;
+  study_concerns?: string | null;
+  digital_content_interests?: string | null;
+  future_dreams?: string | null;
+  recurring_stories?: string | null;
 }
 
 const TABS = [
@@ -107,8 +104,6 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  const dbCards = report.dashboard_cards ?? {};
-
   // 빠른 요약 탭
   const Tab1 = () => (
     <div className="flex flex-col gap-4">
@@ -138,12 +133,14 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   // 상세 보기 탭
   const Tab2 = () => {
     const sections = [
-      { title: "오늘 하루와 주요 사건", body: report.summary_line || "특별한 사건 기록이 없습니다." },
-      { title: "그날의 기분", body: `오늘 아이의 기분 점수는 10점 만점에 ${report.mood_score}점입니다. (${moodLabel(report.mood_score)})` },
-      { title: "학교와 학원 이야기", body: dbCards.school_life || "오늘은 이 주제의 이야기가 없었어요." },
-      { title: "친구 이야기", body: dbCards.peer_relations || "오늘은 친구 관계에 대한 언급이 없었어요." },
-      { title: "요즘 관심사", body: dbCards.interests || "오늘은 관심사에 대한 뚜렷한 언급이 없었습니다." },
-      { title: "부모님과의 대화에 대한 신호", body: report.parent_guide || "부모님과의 교감 힌트 정보가 아직 생성되지 않았습니다." },
+      { title: "학교·학원 생활", body: report.school_academy_life },
+      { title: "친구 관계와 또래 생활", body: report.peer_friendship },
+      { title: "감정 힌트", body: report.emotion_hint },
+      { title: "관심사와 개인 취향", body: report.interests_preferences },
+      { title: "공부 고민", body: report.study_concerns },
+      { title: "디지털 관심사와 콘텐츠 취향", body: report.digital_content_interests },
+      { title: "미래·진로·꿈", body: report.future_dreams },
+      { title: "반복되는 이야기", body: report.recurring_stories },
     ];
 
     return (
@@ -157,7 +154,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
               {section.title}
             </h4>
             <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
-              {section.body}
+              {section.body || "오늘은 관련 기록이 없어요."}
             </p>
           </div>
         ))}
@@ -175,8 +172,8 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           .filter((s) => s.length > 5 && (s.includes("?") || s.endsWith("요") || s.endsWith("까")))
       : [];
 
-    const watchOut = dbCards.recurring_stories || "아이가 대화 중 반복하여 꺼낸 특별한 주말/기타 일정 이야기가 확인되지 않았습니다.";
-    const comment = `오늘 아이는 ${dbCards.interests || "케이와의 소소한 일상"} 이야기에 가장 밝게 마음을 열고 대답했습니다.`;
+    const watchOut = report.recurring_stories || "아이가 대화 중 반복하여 꺼낸 특별한 주말/기타 일정 이야기가 확인되지 않았습니다.";
+    const comment = `오늘 아이는 ${report.interests_preferences || "케이와의 소소한 일상"} 이야기에 가장 밝게 마음을 열고 대답했습니다.`;
 
     return (
       <div className="flex flex-col gap-4">

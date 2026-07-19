@@ -5,19 +5,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
 
-interface Question {
-  id: string;
-  question_text: string;
-  status: "대기중" | "전달됨" | "중지됨";
-  delivered_count: number;
-}
-
-const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
-  "전달됨": { bg: "#DCFCE7", color: "#15803D" },
-  "대기중": { bg: "#F3F4F6", color: "#6B7280" },
-  "중지됨": { bg: "#FEF2F2", color: "#DC2626" },
-  "대기 중": { bg: "#F3F4F6", color: "#6B7280" },
-};
+import { RegisteredQuestionsList, type Question } from "@/components/RegisteredQuestionsList";
 
 export default function ParentGuidePage() {
   const [childName, setChildName] = useState("");
@@ -172,41 +160,7 @@ export default function ParentGuidePage() {
             </form>
 
             {/* 질문 목록 */}
-            <div className="flex flex-col gap-3">
-              {questions.map((q) => {
-                const style = STATUS_STYLES[q.status] ?? STATUS_STYLES["대기중"];
-                return (
-                  <div key={q.id} className="flex items-start gap-3 border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                    <span className="text-lg mt-0.5 select-none">💬</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 leading-snug">{q.question_text}</p>
-                      {q.delivered_count > 0 && (
-                        <p className="text-xs mt-1 text-gray-400">
-                          {q.delivered_count}회 전달됨
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex flex-col items-end gap-2 shrink-0">
-                      <span
-                        className="px-2.5 py-0.5 rounded-full text-[10px] font-bold"
-                        style={{ background: style.bg, color: style.color }}
-                      >
-                        {q.status === "대기중" ? "대기 중" : q.status}
-                      </span>
-                      {q.status === "대기중" && (
-                        <button
-                          onClick={() => stopQuestion(q.id)}
-                          className="text-[10px] px-2 py-0.5 rounded-full active:scale-95 transition-transform"
-                          style={{ background: "#F3F4F6", color: "#6B7280" }}
-                        >
-                          중지
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <RegisteredQuestionsList questions={questions} />
           </div>
 
           {/* AI 고지 */}

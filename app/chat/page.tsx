@@ -28,15 +28,17 @@ export default function ChatPage() {
   const statusRef = useRef<string>("idle");
   // respondText는 훅 생성 이후에만 얻을 수 있어 ref로 우회(핸들러는 훅 생성 전에 정의 필요)
   const respondTextRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const getLastAsrConfidenceRef = useRef<(() => number | undefined) | undefined>(undefined);
 
   // 실시간 메시지 저장 + 아이 발화 시 케이 텍스트 응답 생성(음성 없음, 텍스트만)
   const handleTurnComplete = useCallback((turn: Turn) => {
     const sid = sessionIdRef.current;
     if (sid) {
+      const asrConfidence = turn.role === "child" ? getLastAsrConfidenceRef.current?.() : undefined;
       fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sid, role: turn.role, content: turn.text }),
+        body: JSON.stringify({ sessionId: sid, role: turn.role, content: turn.text, asrConfidence }),
       }).catch(() => {});
     }
     if (turn.role === "child") {
@@ -56,8 +58,10 @@ export default function ChatPage() {
     sayText,
     sendTypedText,
     setMicEnabled,
+    getLastAsrConfidence,
   } = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
   respondTextRef.current = respondText;
+  getLastAsrConfidenceRef.current = getLastAsrConfidence;
 
   const status = mounted ? rawStatus : "idle";
 

@@ -6,35 +6,37 @@
 export type Tier = 1 | 2 | 3;
 
 export interface RetentionResult {
-  /** true면 무기한 보존(Care Premium 기본) — 파기 대상 판정 자체가 성립하지 않는다. */
-  isPermanent: boolean;
-  /** 유효 보존기간(개월). isPermanent가 true면 null. */
-  months: number | null;
+  /** 유효 보존기간(개월). */
+  months: number;
 }
 
 const START_TIER_MONTHS = 6; // Care Start 고정
 const INSIGHT_BASE_YEARS = 3;
-const INSIGHT_MAX_YEARS = 10; // 확장팩으로 최대 10년까지
-const PREMIUM_FLOOR_MONTHS = 6; // 사용자가 축소 조정 시 하한
+const INSIGHT_MAX_EXTENSIONS = 9; // 확장팩으로 최대 추가 9년 (총 12년)
 
-/** activePackCount는 결제 시스템이 아직 없어 항상 0으로 전달된다(무료 베타).
- *  시그니처는 향후 실제 확장팩 개수를 전달받을 수 있도록 열어둔다. */
-export function getEffectiveRetention(tier: Tier, activePackCount: number): RetentionResult {
-  const packCount = Math.max(0, Math.floor(activePackCount));
-
+/** 
+ * 보존기간 계산
+ * - tier 1: 6개월 고정
+ * - tier 2: 기본 3년 + 확장팩 구매년수 (최대 +9년)
+ * - tier 3: 선택한 보존기간 (1/3/5년)
+ */
+export function getEffectiveRetention(
+  tier: Tier, 
+  extensionYearsPurchased: number = 0,
+  premiumRetentionYears: number = 5
+): RetentionResult {
   if (tier === 1) {
-    return { isPermanent: false, months: START_TIER_MONTHS };
+    return { months: START_TIER_MONTHS };
   }
 
   if (tier === 2) {
-    const years = Math.min(INSIGHT_BASE_YEARS + packCount, INSIGHT_MAX_YEARS);
-    return { isPermanent: false, months: years * 12 };
+    const ext = Math.max(0, Math.min(Math.floor(extensionYearsPurchased), INSIGHT_MAX_EXTENSIONS));
+    return { months: (INSIGHT_BASE_YEARS + ext) * 12 };
   }
 
-  // tier === 3 (Care Premium): 기본 영구 보존. 사용자가 직접 축소 조정한 경우에만
-  // 유한 보존기간이 되며, 이 경우에도 하한은 6개월이다(이 함수는 조정값 자체를
-  // 받지 않으므로 "조정 없음 = 영구"로 취급한다 — 조정 UI는 이번 PR 스코프 밖).
-  return { isPermanent: true, months: null };
+  // tier === 3 (Care Premium): 1, 3, 5년 중 선택
+  const py = [1, 3, 5].includes(premiumRetentionYears) ? premiumRetentionYears : 5;
+  return { months: py * 12 };
 }
 
 /** date에 개월 수를 더한 새 Date(UTC 기준 캘린더 연산 — 30일 근사가 아닌 정확한 월 단위). */
@@ -49,15 +51,9 @@ export interface PurgeAnchor {
   anchorTs: Date;
 }
 
-/** anchor가 유효 보존기간을 초과했는지(=파기/파기유예 대상인지) 판정.
- *  Care Premium(영구)은 항상 false. */
+/** anchor가 유효 보존기간을 초과했는지(=파기/파기유예 대상인지) 판정. */
 export function isPurgeCandidate(anchor: PurgeAnchor, now: Date, retention: RetentionResult): boolean {
-  if (retention.isPermanent || retention.months == null) return false;
+  if (retention.months == null) return false;
   const cutoff = addMonthsUtc(anchor.anchorTs, retention.months);
   return cutoff.getTime() < now.getTime();
-}
-
-/** Premium 사용자가 보존기간을 직접 축소 조정할 때 하한(6개월)을 적용. */
-export function clampPremiumRetentionMonths(requestedMonths: number): number {
-  return Math.max(PREMIUM_FLOOR_MONTHS, requestedMonths);
 }

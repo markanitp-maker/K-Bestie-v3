@@ -1,0 +1,2102 @@
+[
+  {
+    "id": "g01-01",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 기분 좋았겠다"
+  },
+  {
+    "id": "g01-02",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "신나는 하루였네~"
+  },
+  {
+    "id": "g01-03",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "엄청 즐거웠구나"
+  },
+  {
+    "id": "g01-04",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기분 최고였겠다"
+  },
+  {
+    "id": "g01-05",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "완전 신났었구나"
+  },
+  {
+    "id": "g01-06",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "너무 좋았겠다"
+  },
+  {
+    "id": "g01-07",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 행복했겠다"
+  },
+  {
+    "id": "g01-08",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "나까지 기분이 좋아지네"
+  },
+  {
+    "id": "g01-09",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 짱이다~"
+  },
+  {
+    "id": "g01-10",
+    "situation_group": 1,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "최고의 하루였네"
+  },
+  {
+    "id": "g02-01",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 자랑스럽다"
+  },
+  {
+    "id": "g02-02",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "스스로도 엄청 뿌듯했겠다"
+  },
+  {
+    "id": "g02-03",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "멋지게 해냈구나"
+  },
+  {
+    "id": "g02-04",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "열심히 한 보람이 있네"
+  },
+  {
+    "id": "g02-05",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 대단하다~"
+  },
+  {
+    "id": "g02-06",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "자랑할 만하네"
+  },
+  {
+    "id": "g02-07",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "완전 멋지다"
+  },
+  {
+    "id": "g02-08",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "노력한 결과구나"
+  },
+  {
+    "id": "g02-09",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 대견해"
+  },
+  {
+    "id": "g02-10",
+    "situation_group": 2,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "뿌듯한 하루였겠다"
+  },
+  {
+    "id": "g03-01",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "칭찬받아서 기분 좋았겠다"
+  },
+  {
+    "id": "g03-02",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "인정받아서 뿌듯했겠어"
+  },
+  {
+    "id": "g03-03",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 기쁜 일이야"
+  },
+  {
+    "id": "g03-04",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기분 최고였겠는걸"
+  },
+  {
+    "id": "g03-05",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "잘해서 칭찬받았구나"
+  },
+  {
+    "id": "g03-06",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "어깨가 으쓱했겠다"
+  },
+  {
+    "id": "g03-07",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 멋진걸"
+  },
+  {
+    "id": "g03-08",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "다들 알아봐 주었구나"
+  },
+  {
+    "id": "g03-09",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "자랑스러웠겠다"
+  },
+  {
+    "id": "g03-10",
+    "situation_group": 3,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "너무 기뻤겠다"
+  },
+  {
+    "id": "g04-01",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "엄청 집중했었구나"
+  },
+  {
+    "id": "g04-02",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 흥미로웠겠다"
+  },
+  {
+    "id": "g04-03",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "완전 푹 빠졌네~"
+  },
+  {
+    "id": "g04-04",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "재미있게 잘 했구나"
+  },
+  {
+    "id": "g04-05",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "시간 가는 줄 몰랐겠다"
+  },
+  {
+    "id": "g04-06",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "정말 관심이 많구나"
+  },
+  {
+    "id": "g04-07",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "완전 재밌었겠다"
+  },
+  {
+    "id": "g04-08",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "흥미진진했네"
+  },
+  {
+    "id": "g04-09",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 좋아하나 보다"
+  },
+  {
+    "id": "g04-10",
+    "situation_group": 4,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "엄청 신났었겠다"
+  },
+  {
+    "id": "g05-01",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "평온한 하루였구나"
+  },
+  {
+    "id": "g05-02",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "여유로운 시간이었네"
+  },
+  {
+    "id": "g05-03",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그런 일이 있었군"
+  },
+  {
+    "id": "g05-04",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "편안한 하루를 보냈네"
+  },
+  {
+    "id": "g05-05",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "오늘도 무사히 보냈구나"
+  },
+  {
+    "id": "g05-06",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "잔잔한 하루였네"
+  },
+  {
+    "id": "g05-07",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "무난한 시간이었구나"
+  },
+  {
+    "id": "g05-08",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "일상적인 하루였네"
+  },
+  {
+    "id": "g05-09",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "여유가 느껴진다"
+  },
+  {
+    "id": "g05-10",
+    "situation_group": 5,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "편안하게 보냈구나"
+  },
+  {
+    "id": "g06-01",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "많이 심심했구나"
+  },
+  {
+    "id": "g06-02",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "시간이 안 갔겠다"
+  },
+  {
+    "id": "g06-03",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "조금 따분했구나"
+  },
+  {
+    "id": "g06-04",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "지루한 시간이었네"
+  },
+  {
+    "id": "g06-05",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "뭔가 재밌는 게 필요했겠다"
+  },
+  {
+    "id": "g06-06",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "심심해서 어떡해"
+  },
+  {
+    "id": "g06-07",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "재미없었구나"
+  },
+  {
+    "id": "g06-08",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "조금 지루했겠다"
+  },
+  {
+    "id": "g06-09",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "시간이 참 안 가지"
+  },
+  {
+    "id": "g06-10",
+    "situation_group": 6,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "무료했었구나"
+  },
+  {
+    "id": "g07-01",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 피곤했구나"
+  },
+  {
+    "id": "g07-02",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "오늘은 좀 지쳤네"
+  },
+  {
+    "id": "g07-03",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "아휴 귀찮았겠다"
+  },
+  {
+    "id": "g07-04",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "쉬고 싶었겠어"
+  },
+  {
+    "id": "g07-05",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "에너지가 다 떨어졌구나"
+  },
+  {
+    "id": "g07-06",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 힘들었겠다"
+  },
+  {
+    "id": "g07-07",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 귀찮았겠네"
+  },
+  {
+    "id": "g07-08",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "좀 쉬어야겠다"
+  },
+  {
+    "id": "g07-09",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "체력이 바닥났구나"
+  },
+  {
+    "id": "g07-10",
+    "situation_group": 7,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "고단한 하루였네"
+  },
+  {
+    "id": "g08-01",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 속상했겠다"
+  },
+  {
+    "id": "g08-02",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 슬펐구나"
+  },
+  {
+    "id": "g08-03",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 아팠겠어"
+  },
+  {
+    "id": "g08-04",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "눈물이 났었구나"
+  },
+  {
+    "id": "g08-05",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 우울했네"
+  },
+  {
+    "id": "g08-06",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "정말 마음 아팠겠다"
+  },
+  {
+    "id": "g08-07",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "너무 슬펐겠다"
+  },
+  {
+    "id": "g08-08",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "속이 많이 상했구나"
+  },
+  {
+    "id": "g08-09",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 무거웠겠다"
+  },
+  {
+    "id": "g08-10",
+    "situation_group": 8,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "위로가 필요했겠어"
+  },
+  {
+    "id": "g09-01",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기대했는데 아쉬웠겠다"
+  },
+  {
+    "id": "g09-02",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 실망했구나"
+  },
+  {
+    "id": "g09-03",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "안타까웠겠어"
+  },
+  {
+    "id": "g09-04",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 아까웠겠다"
+  },
+  {
+    "id": "g09-05",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "조금 섭섭했구나"
+  },
+  {
+    "id": "g09-06",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 아쉬웠겠다"
+  },
+  {
+    "id": "g09-07",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기대가 컸나 보다"
+  },
+  {
+    "id": "g09-08",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 안 좋았겠다"
+  },
+  {
+    "id": "g09-09",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "아쉬움이 남았구나"
+  },
+  {
+    "id": "g09-10",
+    "situation_group": 9,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "속상한 마음이 들었겠어"
+  },
+  {
+    "id": "g10-01",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 화났겠다"
+  },
+  {
+    "id": "g10-02",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 짜증 났구나"
+  },
+  {
+    "id": "g10-03",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "속이 꽉 막힌 듯 답답했겠어"
+  },
+  {
+    "id": "g10-04",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "열받았겠다"
+  },
+  {
+    "id": "g10-05",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "너무 싫었겠어"
+  },
+  {
+    "id": "g10-06",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "정말 화가 많이 났구나"
+  },
+  {
+    "id": "g10-07",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "짜증 날 만하다"
+  },
+  {
+    "id": "g10-08",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "답답해서 혼났겠네"
+  },
+  {
+    "id": "g10-09",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 억울할 만해"
+  },
+  {
+    "id": "g10-10",
+    "situation_group": 10,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "스트레스 많이 받았겠다"
+  },
+  {
+    "id": "g11-01",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 억울했겠다"
+  },
+  {
+    "id": "g11-02",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "오해받아서 많이 속상했구나"
+  },
+  {
+    "id": "g11-03",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "네 맘을 몰라줘서 답답했겠어"
+  },
+  {
+    "id": "g11-04",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "억울해서 눈물 났겠다"
+  },
+  {
+    "id": "g11-05",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 아니었는데 속상했겠네"
+  },
+  {
+    "id": "g11-06",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 참 무거웠겠다"
+  },
+  {
+    "id": "g11-07",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "오해가 생겨서 힘들었구나"
+  },
+  {
+    "id": "g11-08",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 억울할 상황이네"
+  },
+  {
+    "id": "g11-09",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "속상한 마음 충분히 이해가"
+  },
+  {
+    "id": "g11-10",
+    "situation_group": 11,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음고생이 심했겠다"
+  },
+  {
+    "id": "g12-01",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 무서웠구나"
+  },
+  {
+    "id": "g12-02",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "걱정이 많았겠어"
+  },
+  {
+    "id": "g12-03",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "불안했겠다"
+  },
+  {
+    "id": "g12-04",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "조금 두려웠구나"
+  },
+  {
+    "id": "g12-05",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "마음이 조마조마했겠네"
+  },
+  {
+    "id": "g12-06",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 떨렸었구나"
+  },
+  {
+    "id": "g12-07",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 걱정되겠다"
+  },
+  {
+    "id": "g12-08",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "무서운 마음이 들었겠다"
+  },
+  {
+    "id": "g12-09",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "불안해서 힘들었겠다"
+  },
+  {
+    "id": "g12-10",
+    "situation_group": 12,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "걱정하느라 힘들었겠다"
+  },
+  {
+    "id": "g13-01",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "혼자라서 쓸쓸했구나"
+  },
+  {
+    "id": "g13-02",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "조금 외로웠겠다"
+  },
+  {
+    "id": "g13-03",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "소외된 기분이 들었겠어"
+  },
+  {
+    "id": "g13-04",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 헛헛했겠다"
+  },
+  {
+    "id": "g13-05",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "혼자 남겨져서 속상했구나"
+  },
+  {
+    "id": "g13-06",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 외로웠겠다"
+  },
+  {
+    "id": "g13-07",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "쓸쓸한 기분이 들었네"
+  },
+  {
+    "id": "g13-08",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "조금 서글펐겠다"
+  },
+  {
+    "id": "g13-09",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "같이 하고 싶었을 텐데"
+  },
+  {
+    "id": "g13-10",
+    "situation_group": 13,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 허전했겠다"
+  },
+  {
+    "id": "g14-01",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 창피했구나"
+  },
+  {
+    "id": "g14-02",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "실수해서 당황했겠다"
+  },
+  {
+    "id": "g14-03",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "얼굴이 화끈거렸겠어"
+  },
+  {
+    "id": "g14-04",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "후회가 많이 남았구나"
+  },
+  {
+    "id": "g14-05",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "조금 부끄러웠겠다"
+  },
+  {
+    "id": "g14-06",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 당황스러웠겠다"
+  },
+  {
+    "id": "g14-07",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "민망했었구나"
+  },
+  {
+    "id": "g14-08",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 후회됐겠다"
+  },
+  {
+    "id": "g14-09",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "어찌할 바를 몰랐겠어"
+  },
+  {
+    "id": "g14-10",
+    "situation_group": 14,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "쥐구멍에 숨고 싶었겠다"
+  },
+  {
+    "id": "g15-01",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "친구랑 싸워서 속상하겠다"
+  },
+  {
+    "id": "g15-02",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 다퉜구나"
+  },
+  {
+    "id": "g15-03",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 참 안 좋겠어"
+  },
+  {
+    "id": "g15-04",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "친구가 미웠겠다"
+  },
+  {
+    "id": "g15-05",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 서운했겠다"
+  },
+  {
+    "id": "g15-06",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 속상했겠네"
+  },
+  {
+    "id": "g15-07",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "마음이 많이 다쳤겠다"
+  },
+  {
+    "id": "g15-08",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 화가 났겠어"
+  },
+  {
+    "id": "g15-09",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기분이 엉망이 되었구나"
+  },
+  {
+    "id": "g15-10",
+    "situation_group": 15,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "참 힘든 시간이었겠다"
+  },
+  {
+    "id": "g16-01",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "화해해서 다행이다"
+  },
+  {
+    "id": "g16-02",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "다시 친해져서 기쁘겠다"
+  },
+  {
+    "id": "g16-03",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "친구랑 같이 놀아서 재밌었겠네"
+  },
+  {
+    "id": "g16-04",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 한결 편해졌겠다"
+  },
+  {
+    "id": "g16-05",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 좋았겠다"
+  },
+  {
+    "id": "g16-06",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "우정이 더 깊어졌네"
+  },
+  {
+    "id": "g16-07",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 다행이다"
+  },
+  {
+    "id": "g16-08",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "친구랑 좋은 시간 보냈구나"
+  },
+  {
+    "id": "g16-09",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음의 짐을 덜었네"
+  },
+  {
+    "id": "g16-10",
+    "situation_group": 16,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기분이 활짝 개었겠다"
+  },
+  {
+    "id": "g17-01",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "놀림받아서 정말 속상했겠다"
+  },
+  {
+    "id": "g17-02",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "너무 힘들었겠다"
+  },
+  {
+    "id": "g17-03",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음의 상처가 컸겠어"
+  },
+  {
+    "id": "g17-04",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 억울하고 슬펐겠다"
+  },
+  {
+    "id": "g17-05",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "많이 무섭고 힘들었을 텐데 혼자 감당하느라 정말 고생했겠다"
+  },
+  {
+    "id": "g17-06",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 마음 아픈 일이야"
+  },
+  {
+    "id": "g17-07",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "너무 속상했겠다"
+  },
+  {
+    "id": "g17-08",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "그 깊은 상처를 혼자 감당하기엔 정말 벅찼겠다"
+  },
+  {
+    "id": "g17-09",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 마음고생 많았네"
+  },
+  {
+    "id": "g17-10",
+    "situation_group": 17,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 속이 상하네"
+  },
+  {
+    "id": "g18-01",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "혼나서 많이 주눅 들었겠다"
+  },
+  {
+    "id": "g18-02",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "엄청 속상했구나"
+  },
+  {
+    "id": "g18-03",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "눈물이 쏙 빠졌겠어"
+  },
+  {
+    "id": "g18-04",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 무서웠겠다"
+  },
+  {
+    "id": "g18-05",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 참 무거웠네"
+  },
+  {
+    "id": "g18-06",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 속상했겠다"
+  },
+  {
+    "id": "g18-07",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 서러웠겠어"
+  },
+  {
+    "id": "g18-08",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 아팠겠구나"
+  },
+  {
+    "id": "g18-09",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 울었겠네"
+  },
+  {
+    "id": "g18-10",
+    "situation_group": 18,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "조금 억울하기도 했겠다"
+  },
+  {
+    "id": "g19-01",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "가족이랑 안 맞아서 답답했겠다"
+  },
+  {
+    "id": "g19-02",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 편치 않았겠어"
+  },
+  {
+    "id": "g19-03",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "속상한 마음이 컸겠구나"
+  },
+  {
+    "id": "g19-04",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "의견이 달라서 힘들었겠다"
+  },
+  {
+    "id": "g19-05",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 서운했겠네"
+  },
+  {
+    "id": "g19-06",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "마음고생이 많구나"
+  },
+  {
+    "id": "g19-07",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 답답했겠다"
+  },
+  {
+    "id": "g19-08",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "이해가 안 돼서 속상했겠어"
+  },
+  {
+    "id": "g19-09",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 복잡했겠다"
+  },
+  {
+    "id": "g19-10",
+    "situation_group": 19,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "많이 힘들었겠구나"
+  },
+  {
+    "id": "g20-01",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "형제끼리 다퉈서 짜증 났겠다"
+  },
+  {
+    "id": "g20-02",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 얄미웠겠어"
+  },
+  {
+    "id": "g20-03",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 억울했구나"
+  },
+  {
+    "id": "g20-04",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "매번 양보하기 힘들었겠다"
+  },
+  {
+    "id": "g20-05",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 속상했겠네"
+  },
+  {
+    "id": "g20-06",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "엄청 화났었구나"
+  },
+  {
+    "id": "g20-07",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "답답했겠다"
+  },
+  {
+    "id": "g20-08",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 피곤했겠어"
+  },
+  {
+    "id": "g20-09",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "맘고생이 많았네"
+  },
+  {
+    "id": "g20-10",
+    "situation_group": 20,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "참기 힘들었겠다"
+  },
+  {
+    "id": "g21-01",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "학교에서 그런 일이 있었구나"
+  },
+  {
+    "id": "g21-02",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "선생님 때문에 긴장했겠다"
+  },
+  {
+    "id": "g21-03",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "반 생활이 쉽지 않네"
+  },
+  {
+    "id": "g21-04",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "수업 시간에 힘들었겠다"
+  },
+  {
+    "id": "g21-05",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "학교생활이 만만치 않구나"
+  },
+  {
+    "id": "g21-06",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "그런 일도 있었네"
+  },
+  {
+    "id": "g21-07",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 피곤했겠다"
+  },
+  {
+    "id": "g21-08",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "조금 당황스러웠겠다"
+  },
+  {
+    "id": "g21-09",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 긴장했겠네"
+  },
+  {
+    "id": "g21-10",
+    "situation_group": 21,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "수고가 많았어"
+  },
+  {
+    "id": "g22-01",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "공부하느라 스트레스받았겠다"
+  },
+  {
+    "id": "g22-02",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "숙제가 많아서 힘들었구나"
+  },
+  {
+    "id": "g22-03",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "시험 때문에 걱정이 많겠어"
+  },
+  {
+    "id": "g22-04",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "학원 가기 정말 싫었겠다"
+  },
+  {
+    "id": "g22-05",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "공부가 참 쉽지 않지"
+  },
+  {
+    "id": "g22-06",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 지쳤었겠다"
+  },
+  {
+    "id": "g22-07",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 부담됐겠어"
+  },
+  {
+    "id": "g22-08",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "머리가 아팠겠다"
+  },
+  {
+    "id": "g22-09",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "쉬고 싶은 마음이 굴뚝같았겠다"
+  },
+  {
+    "id": "g22-10",
+    "situation_group": 22,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 고생 많았어"
+  },
+  {
+    "id": "g23-01",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "성적 때문에 부담이 컸겠다"
+  },
+  {
+    "id": "g23-02",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "원하는 대로 안 나와서 속상했구나"
+  },
+  {
+    "id": "g23-03",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "실패해서 많이 아쉬웠겠어"
+  },
+  {
+    "id": "g23-04",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 부담스러웠겠다"
+  },
+  {
+    "id": "g23-05",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 꽤 무거웠겠어"
+  },
+  {
+    "id": "g23-06",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기대가 컸던 만큼 실망도 컸겠다"
+  },
+  {
+    "id": "g23-07",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 아쉽네"
+  },
+  {
+    "id": "g23-08",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "속상한 마음 백번 이해해"
+  },
+  {
+    "id": "g23-09",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음고생이 심했어"
+  },
+  {
+    "id": "g23-10",
+    "situation_group": 23,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "많이 허탈했겠다"
+  },
+  {
+    "id": "g24-01",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그 게임 정말 재밌었나 보다"
+  },
+  {
+    "id": "g24-02",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "영상 보면서 시간 가는 줄 몰랐겠다"
+  },
+  {
+    "id": "g24-03",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "푹 빠져서 봤구나"
+  },
+  {
+    "id": "g24-04",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "정말 신났겠어"
+  },
+  {
+    "id": "g24-05",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "엄청 재밌었겠다"
+  },
+  {
+    "id": "g24-06",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "완전 집중했었네"
+  },
+  {
+    "id": "g24-07",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그거 진짜 재밌지"
+  },
+  {
+    "id": "g24-08",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "완전 신나는 시간이었겠다"
+  },
+  {
+    "id": "g24-09",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "엄청 스릴 있었겠다"
+  },
+  {
+    "id": "g24-10",
+    "situation_group": 24,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "정말 즐거웠겠다"
+  },
+  {
+    "id": "g25-01",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "취미 활동하면서 정말 즐거웠겠다"
+  },
+  {
+    "id": "g25-02",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "열심히 하는 모습이 멋지다"
+  },
+  {
+    "id": "g25-03",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "그걸 정말 좋아하는구나"
+  },
+  {
+    "id": "g25-04",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "집중해서 하는 모습이 그려지네"
+  },
+  {
+    "id": "g25-05",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "재미나게 즐겼구나"
+  },
+  {
+    "id": "g25-06",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 푹 빠져있구나"
+  },
+  {
+    "id": "g25-07",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "신나게 했었겠다"
+  },
+  {
+    "id": "g25-08",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "좋아하는 걸 해서 행복했겠다"
+  },
+  {
+    "id": "g25-09",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "뿌듯한 시간이었겠다"
+  },
+  {
+    "id": "g25-10",
+    "situation_group": 25,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "엄청 신났겠네"
+  },
+  {
+    "id": "g26-01",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "멋진 꿈을 가지고 있구나"
+  },
+  {
+    "id": "g26-02",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "미래가 정말 기대되겠다"
+  },
+  {
+    "id": "g26-03",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "계획을 세우다니 대단한걸"
+  },
+  {
+    "id": "g26-04",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "설레는 마음이 느껴지네"
+  },
+  {
+    "id": "g26-05",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 멋진 생각이야"
+  },
+  {
+    "id": "g26-06",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기대감이 크겠어"
+  },
+  {
+    "id": "g26-07",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "가슴 뛰는 일이다"
+  },
+  {
+    "id": "g26-08",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 흥미진진한 계획이네"
+  },
+  {
+    "id": "g26-09",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "설레는 마음으로 기다려지겠다"
+  },
+  {
+    "id": "g26-10",
+    "situation_group": 26,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "멋진 미래가 상상되네"
+  },
+  {
+    "id": "g27-01",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "많이 아파서 고생했구나"
+  },
+  {
+    "id": "g27-02",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "배고파서 힘들었겠어"
+  },
+  {
+    "id": "g27-03",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "졸려서 비몽사몽이었겠다"
+  },
+  {
+    "id": "g27-04",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "몸이 안 좋아서 힘들었네"
+  },
+  {
+    "id": "g27-05",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "빨리 낫길 바랄게"
+  },
+  {
+    "id": "g27-06",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 힘들었겠다"
+  },
+  {
+    "id": "g27-07",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "조금 쉬어야겠구나"
+  },
+  {
+    "id": "g27-08",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기운이 하나도 없었겠어"
+  },
+  {
+    "id": "g27-09",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "high",
+    "text": "많이 아팠겠다"
+  },
+  {
+    "id": "g27-10",
+    "situation_group": 27,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "몸이 무거웠겠다"
+  },
+  {
+    "id": "g28-01",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "도움받아서 정말 고마웠겠다"
+  },
+  {
+    "id": "g28-02",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "따뜻한 마음이 느껴지네"
+  },
+  {
+    "id": "g28-03",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "사랑받는 기분이 들었겠어"
+  },
+  {
+    "id": "g28-04",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 감동받았구나"
+  },
+  {
+    "id": "g28-05",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 훈훈해졌겠다"
+  },
+  {
+    "id": "g28-06",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "기분이 정말 좋았겠다"
+  },
+  {
+    "id": "g28-07",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 따뜻한 순간이네"
+  },
+  {
+    "id": "g28-08",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "마음이 몽글몽글해졌겠다"
+  },
+  {
+    "id": "g28-09",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 고마운 일이구나"
+  },
+  {
+    "id": "g28-10",
+    "situation_group": 28,
+    "old_intensity": "medium",
+    "new_intensity": "medium",
+    "text": "정말 기쁜 마음이 들었겠어"
+  },
+  {
+    "id": "g29-01",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그게 궁금했구나"
+  },
+  {
+    "id": "g29-02",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "너는 그런 생각도 하는구나"
+  },
+  {
+    "id": "g29-03",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그걸 물어보고 싶었구나"
+  },
+  {
+    "id": "g29-04",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "너 그런 거에 관심 많구나"
+  },
+  {
+    "id": "g29-05",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그게 참 신기했구나"
+  },
+  {
+    "id": "g29-06",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "정말 호기심이 많네"
+  },
+  {
+    "id": "g29-07",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그런 점이 궁금할 수 있지"
+  },
+  {
+    "id": "g29-08",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "관심 가져줘서 고마워"
+  },
+  {
+    "id": "g29-09",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그렇게 생각해 볼 수도 있네"
+  },
+  {
+    "id": "g29-10",
+    "situation_group": 29,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그런 궁금증이 생겼구나"
+  },
+  {
+    "id": "g30-01",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "음 그렇구나"
+  },
+  {
+    "id": "g30-02",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "어 그래"
+  },
+  {
+    "id": "g30-03",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "아 그렇구나"
+  },
+  {
+    "id": "g30-04",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그런 일이 있었네"
+  },
+  {
+    "id": "g30-05",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "아하"
+  },
+  {
+    "id": "g30-06",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그랬었구나"
+  },
+  {
+    "id": "g30-07",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "음"
+  },
+  {
+    "id": "g30-08",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "그래그래"
+  },
+  {
+    "id": "g30-09",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "아 그랬네"
+  },
+  {
+    "id": "g30-10",
+    "situation_group": 30,
+    "old_intensity": "medium",
+    "new_intensity": "low",
+    "text": "어 그랬구나"
+  }
+]
