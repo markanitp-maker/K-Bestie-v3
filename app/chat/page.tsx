@@ -9,6 +9,7 @@ import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
+import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -77,10 +78,30 @@ export default function ChatPage() {
     statusRef.current = status;
   }, [status]);
 
+  const [sessionActive, setSessionActive] = useState(false);
+
+  // 세션 종료(대화 종료 처리) 시에만 명시적으로 false 처리
+  useEffect(() => {
+    if (status === "ended") {
+      setSessionActive(false);
+    }
+  }, [status]);
+
+  // 페이지 이탈(언마운트) 시 false 처리
+  useEffect(() => {
+    return () => setSessionActive(false);
+  }, []);
+
+  // 화면 wake lock — 프리챗 세션이 실제로 연결돼 있는 동안(live)만 유지. status가 ended/
+  // error/idle로 바뀌는 즉시(대화 종료, 하드리밋 종료, 홈 이동으로 인한 언마운트 등) 훅
+  // 내부에서 자동 반납된다.
+  const wakeLockWarning = useScreenWakeLock(sessionActive);
+
   // 하드 리밋 세션 중단 핸들러 — 자유대화는 케이가 음성으로 말하지 않음(텍스트만) → 세션 종료
   const triggerHardLimitStop = useCallback((noticeText: string) => {
     sayText(noticeText);
     stopSession();
+    setSessionActive(false);
   }, [sayText, stopSession]);
 
   // 시간 제한 하드 리밋 감지
@@ -242,6 +263,7 @@ export default function ChatPage() {
     if (!childId) return;
     setReportDone(false);
     setReportError(null);
+    setSessionActive(true);
 
     const { data } = await getSupabase()
       .from("chat_sessions")
@@ -277,6 +299,7 @@ export default function ChatPage() {
   const handleMicToggle = useCallback(async () => {
     if (isLive) {
       stopSession();
+      setSessionActive(false);
     } else if (isIdle || status === "error") {
       await handleStart();
     }
@@ -295,9 +318,30 @@ export default function ChatPage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+        {wakeLockWarning && (
+          <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
+              기기 설정으로 화면이 꺼질 수 있어요
+            </div>
+          </div>
+        )}
         {/* 상단 고정 영역: 헤더 + 마스코트 (스크롤되지 않음) */}
         <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
-          <div className="flex items-center justify-center px-4 pt-3 pb-1">
+          <div className="relative flex items-center justify-center px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1">
+            {/* 좌상단 뒤로가기 버튼 */}
+            <button
+              aria-label="홈으로 돌아가기"
+              onClick={() => {
+                if (status === "live") stopSession();
+                setSessionActive(false);
+                router.push("/child/home");
+              }}
+              className="absolute left-2 top-[calc(50%+env(safe-area-inset-top)/2)] -translate-y-1/2 w-12 h-12 flex items-center justify-center cursor-pointer text-gray-600 z-20"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
             <Link href="/child/home" className="cursor-pointer">
               <Image
                 src="/Images/logo/Logo.png"
@@ -323,22 +367,19 @@ export default function ChatPage() {
             </div>
           )}
 
-          <div className="flex justify-center mb-2">
+          <div className="flex justify-center items-center gap-4 mb-4 mt-2 max-w-sm mx-auto">
             <Image
               src="/Images/mascot/mascot-standing.png"
               alt="케이 마스코트"
               width={96}
               height={96}
-              className="object-contain"
+              className="object-contain shrink-0"
               priority
             />
-          </div>
-
-          {mode === "voice" && (
-            <div className="flex justify-center mb-4">
+            {mode === "voice" && (
               <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* 대화 말풍선: 이 영역만 스크롤 */}
@@ -381,7 +422,7 @@ export default function ChatPage() {
 
         {/* 하단 버튼 바 */}
         {mode === "voice" ? (
-          <div className="flex items-center justify-center gap-8 py-5 shrink-0 bg-white border-t border-gray-50">
+          <div className="flex items-center justify-center gap-8 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
             <button
               onClick={switchToText}
               className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
@@ -449,6 +490,7 @@ export default function ChatPage() {
             <button
               onClick={() => {
                 if (isLive) stopSession();
+                setSessionActive(false);
                 router.replace("/child/home");
               }}
               className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
@@ -458,7 +500,7 @@ export default function ChatPage() {
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2 py-3 px-3 shrink-0 bg-white border-t border-gray-50">
+          <div className="flex items-center gap-2 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
             <button
               onClick={switchToVoice}
               className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
@@ -489,6 +531,7 @@ export default function ChatPage() {
             <button
               onClick={() => {
                 if (isLive) stopSession();
+                setSessionActive(false);
                 router.replace("/child/home");
               }}
               className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
@@ -498,8 +541,6 @@ export default function ChatPage() {
             </button>
           </div>
         )}
-
-        <RealChildNav active="대화" />
       </div>
     </DemoFrame>
   );

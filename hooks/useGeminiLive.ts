@@ -19,7 +19,7 @@ export type SessionStatus = "idle" | "connecting" | "live" | "ending" | "ended" 
 // id: 메시지 고유 식별자(React key 및 message_id로 사용) — appendTurn/seedTranscript/
 // finalizeKTurnText가 없으면 자동 생성하고, 같은 버블에 텍스트를 이어붙이는 경우(스트리밍
 // 청크 합치기)는 기존 id를 그대로 유지한다.
-export interface Turn { role: "child" | "k"; text: string; id?: string }
+export interface Turn { role: "child" | "k"; text: string; id?: string; generationId?: string; sealed?: boolean; }
 
 // ── Vertex Live 릴레이(Cloud Run) 연결 지원 ──────────────────────
 // provider=ai_studio는 GoogleGenAI SDK가 반환하는 세션 객체를 그대로 쓰고, provider=vertex는
@@ -42,6 +42,9 @@ interface NormalizedServerMessage {
   data?: string;
   serverContent?: {
     turnComplete?: boolean;
+    // 아이가 K 발화 도중 끼어들면(barge-in) 서버가 현재 K 생성을 중단하고 이 플래그를 보낸다.
+    // 이 신호를 받으면 진행 중인 K 턴을 즉시 확정하고 이후 잔여 오디오/텍스트를 폐기한다.
+    interrupted?: boolean;
     inputTranscription?: { text?: string };
     outputTranscription?: { text?: string };
   };
@@ -108,6 +111,12 @@ export interface UseGeminiLiveOptions {
   onTranscriptRejected?: () => void;
   /** 오디오 레벨(RMS) 변경 시 호출되는 콜백 (실시간 visualizer 등에서 사용) */
   onAudioLevelChange?: (level: number) => void;
+  /** K 턴의 첫 출력(텍스트 또는 오디오)이 화면/스피커에 도달하는 순간 정확히 1회 호출.
+   *  미션 화면이 수동 모드에서 "생각 중"(speaking_k) 상태를 즉시 풀어 아이가
+   *  곧바로 다시 말할 수 있게(barge-in 허용) 한다. */
+  onKTurnFirstOutput?: () => void;
+  /** K 턴의 첫 출력이 8초 동안 도착하지 않아 generation이 취소되었을 때 호출. */
+  onKTurnTimeout?: () => void;
 }
 
 // ── 클라이언트 VAD (자동 발화 감지) 설정 상수 ──────────────────
@@ -164,11 +173,23 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 브라우저 SpeechRecognition 폴백의 중간(interim) 전사 — 아이가 말하는 도중 실시간 자막용.
   // outputAudioTranscription(outTx) 이벤트와 무관하게, 브라우저 자체 인식 결과로만 갱신/확정된다.
   const [interimChildText, setInterimChildText] = useState("");
+  // 겉으로는 "케이가 말은 안 하는데 자막만 뜬다"로 보인다 — iOS Safari는 sticky activation
+  // 판정이 더 관대해 보통 통과하지만 Android/기기별로 훨씬 엄격하다). audioLocked가 true인
+  // 동안 호출부(missions 페이지)가 "케이 목소리 켜기" 버튼을 노출해 명시적 재시도를 유도한다.
+  const [audioLocked, setAudioLocked] = useState(false);
 
   const statusRef     = useRef<SessionStatus>("idle");
   const transcriptRef = useRef<Turn[]>([]);
   const sessionRef    = useRef<LiveTransport | null>(null);
   const micStreamRef  = useRef<MediaStream | null>(null);
+
+  // K generation tracking
+  const kGenerationSeqRef = useRef(0);
+  const currentKGenerationIdRef = useRef<string | null>(null);
+  const generationEpochRef = useRef<number>(0);
+  const cancelledGenerationIdsRef = useRef<Set<string>>(new Set());
+  const processedTurnGenerationsRef = useRef<Set<string>>(new Set());
+  const activeKTurnIdRef = useRef<string | null>(null);
   const processorRef  = useRef<ScriptProcessorNode | null>(null);
   const inputCtxRef   = useRef<AudioContext | null>(null);
   const outputCtxRef  = useRef<AudioContext | null>(null);
@@ -201,6 +222,12 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // /api/mission/answer·respond가 중복 호출되는 경쟁조건이 있었다.
   const kTurnCutAwaitingUnlockRef = useRef(false);
   const kTurnCutServerDoneRef = useRef(false);
+  // K 첫 출력 도착 여부
+  const hasFiredFirstOutputRef = useRef(false);
+  const generationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // 세션 식별용 - 이전 연결 메시지 무시용
+  const activeSessionIdRef = useRef<string | null>(null);
+
   // speakAsK/speakClosingLine으로 "이 문장을 그대로 말해줘"라고 지시했을 때 이미 검증된
   // 안전한 원문 — 모델이 실제로 낸 outputTranscription이 프롬프트 누출 패턴을 포함하면
   // 화면 말풍선·transcript에는 이 원문으로 대체한다(음성은 이미 재생되어 되돌릴 수 없음).
@@ -212,6 +239,16 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // AudioContext.currentTime 기반 startAt 스케줄링으로 버퍼 경계 클릭 제거.
   const scheduledSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const nextScheduleTimeRef = useRef(0);
+  // 이번 K 턴 동안 scheduleAudio가 실제로 예약한 오디오 버퍼 길이 합(ms) — 길이 준수 진단
+  // 로그(logKTurnLengthCompliance)가 턴 완료 시 읽고 다음 턴을 위해 리셋한다.
+  const kTurnAudioMsRef = useRef(0);
+
+  // K/아이 턴 스트리밍 누적 버퍼 — 이전엔 startSession 클로저의 지역 let이라 export된
+  // sendActivityStart(수동 barge-in) 등 클로저 밖에서는 진행 중인 K 턴을 확정할 수 없었다.
+  // 아이가 K 발화 도중 끼어드는 순간 "지금까지 표시된 텍스트"로 K 턴을 즉시 확정하려면
+  // 훅 스코프에서 접근 가능해야 하므로 ref로 승격한다. startSession에서 세션마다 리셋한다.
+  const pendingKTextRef = useRef("");
+  const pendingChildTextRef = useRef("");
 
   // 콜백 ref — 렌더마다 최신 함수 유지
   const onTurnCompleteRef = useRef<((turn: Turn) => void) | undefined>(undefined);
@@ -226,6 +263,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   onTranscriptRejectedRef.current = options?.onTranscriptRejected;
   const onAudioLevelChangeRef = useRef<((level: number) => void) | undefined>(undefined);
   onAudioLevelChangeRef.current = options?.onAudioLevelChange;
+  const onKTurnFirstOutputRef = useRef<(() => void) | undefined>(undefined);
+  onKTurnFirstOutputRef.current = options?.onKTurnFirstOutput;
+  const onKTurnTimeoutRef = useRef<(() => void) | undefined>(undefined);
+  onKTurnTimeoutRef.current = options?.onKTurnTimeout;
 
   // 클라이언트 VAD 및 자동·수동 모드 상태 관리 Ref
   const interactionModeRef = useRef<"auto" | "manual">("auto");
@@ -336,10 +377,44 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
   // 진단 카운터 — 첫 8개 서버 메시지의 serverContent 키를 콘솔에 출력
   const diagCountRef = useRef(0);
+  const waitingForLiveReceiveRef = useRef(false);
 
   function updateStatus(s: SessionStatus) {
     statusRef.current = s;
     setStatus(s);
+  }
+
+  function logTelemetryEvent(eventName: string) {
+    const sid = getSessionIdRef.current?.() || "unknown";
+    const tid = activeKTurnIdRef.current || "unknown";
+    const gid = currentKGenerationIdRef.current || "unknown";
+    console.error(JSON.stringify({
+      event: eventName,
+      time: Date.now(),
+      sessionId: sid,
+      turnId: tid,
+      generationId: gid
+    }));
+  }
+
+  function clearGenerationTimeout() {
+    if (generationTimeoutRef.current) {
+      clearTimeout(generationTimeoutRef.current);
+      generationTimeoutRef.current = null;
+    }
+  }
+
+  function startGenerationTimeout() {
+    clearGenerationTimeout();
+    const epoch = generationEpochRef.current;
+    generationTimeoutRef.current = setTimeout(() => {
+      if (generationEpochRef.current !== epoch) return;
+      if (!hasFiredFirstOutputRef.current) {
+        logTelemetryEvent("generationTimeout");
+        cancelCurrentGeneration();
+        onKTurnTimeoutRef.current?.();
+      }
+    }, 8000);
   }
 
   // 강제컷된 K 턴에 대해서만 동작 — 서버 turnComplete(kTurnCutServerDoneRef)와 오디오 큐
@@ -362,29 +437,132 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     const safeText = kTurnExpectedTextRef.current;
     const prev = transcriptRef.current;
     const last = prev[prev.length - 1];
-    if (last?.role === "k") {
-      transcriptRef.current = [...prev.slice(0, -1), { role: "k", text: safeText, id: last.id }];
+    if (last?.role === "k" && !last.sealed) {
+      transcriptRef.current = [...prev.slice(0, -1), { ...last, text: safeText }];
     } else {
-      transcriptRef.current = [...prev, { role: "k", text: safeText, id: nextTurnId() }];
+      transcriptRef.current = [...prev, { role: "k", text: safeText, id: activeKTurnIdRef.current ?? nextTurnId(), generationId: currentKGenerationIdRef.current ?? undefined }];
     }
     setTranscript([...transcriptRef.current]);
     return safeText;
   }
 
-  function scheduleAudio(base64: string) {
-    if (audioMutedRef.current) return;
+  // K 턴 길이 준수 진단 로그 — 원문 없이 구조적 신호만(글자 수·물음표 개수·실제 재생
+  // 시간ms). K_SYSTEM_PROMPT의 "40자 이내·5초 이내·질문 1개" 규칙을 이 턴에서 실제로
+  // 지켰는지 배포 후에도 원문 없이 확인할 수 있게 한다. kTurnAudioMsRef는 scheduleAudio가
+  // 이 K 턴 동안 누적한 재생 시간이며, 여기서 로그 후 다음 턴을 위해 리셋한다.
+  function logKTurnLengthCompliance(finalText: string) {
+    const questionMarkCount = (finalText.match(/\?/g) ?? []).length;
+    const audioMs = Math.round(kTurnAudioMsRef.current);
+    console.log("[K] length-compliance", {
+      charCount: finalText.length,
+      questionMarkCount,
+      audioMs,
+      withinCharLimit: finalText.length <= 40,
+      withinQuestionLimit: questionMarkCount <= 1,
+      within5s: audioMs <= 5000,
+    });
+    kTurnAudioMsRef.current = 0;
+  }
+
+  // 진행 중인 K 턴을 "지금까지 표시된 텍스트"로 즉시 확정한다(onTurnComplete 1회 발화 +
+  // 길이 준수 로그 + pendingKText 리셋). 아이 barge-in(활동 시작)과 서버 interrupted 신호에서
+  // 공통으로 쓴다 — pendingKTextRef가 비어 있으면 아무 것도 하지 않는 안전한 no-op이라
+  // 중복 호출(클라이언트 VAD 컷 + 서버 interrupted 동시 도착)에도 K 턴이 두 번 저장되지 않는다.
+  function finalizeActiveKTurn() {
+    if (pendingKTextRef.current) {
+      const finalText = finalizeKTurnText(pendingKTextRef.current);
+      onTurnCompleteRef.current?.({ role: "k", text: finalText });
+      logKTurnLengthCompliance(finalText);
+      pendingKTextRef.current = "";
+    }
+    kTurnExpectedTextRef.current = null;
+    kTurnLeakDetectedRef.current = false;
+  }
+
+  // 아이가 K 발화 도중 말을 시작한 순간 호출 — 현재 K 턴을 확정하고, 서버가 계속 보내는
+  // 이 K 턴의 잔여 오디오/텍스트/turnComplete를 전부 폐기하도록 컷 상태로 전환한다.
+  // K가 실제로 말하는 중이 아니었으면(정상적인 아이 차례 시작) 컷 플래그는 세우지 않는다 —
+  // 그러지 않으면 존재하지도 않는 K 턴을 컷 대기로 잠가 다음 흐름이 막힌다.
+  function cutActiveKTurnForBargeIn() {
+    clearGenerationTimeout();
+    hasFiredFirstOutputRef.current = false;
+    const kWasActive =
+      pendingKTextRef.current !== "" ||
+      kSpeakingRef.current ||
+      scheduledSourcesRef.current.length > 0;
+    generationEpochRef.current += 1;
+    finalizeActiveKTurn();
+    if (currentKGenerationIdRef.current) {
+      const set = cancelledGenerationIdsRef.current;
+      set.add(currentKGenerationIdRef.current);
+      if (set.size > 50) {
+        const first = set.values().next().value;
+        if (first) set.delete(first);
+      }
+    }
+    currentKGenerationIdRef.current = null; // 이전 generation의 이벤트 전부 폐기
+    if (kWasActive) {
+      kTurnCutRef.current = true;
+      kTurnCutAwaitingUnlockRef.current = true;
+      kTurnCutServerDoneRef.current = false;
+    }
+  }
+
+  const cancelCurrentGeneration = useCallback(() => {
+    cutActiveKTurnForBargeIn();
+    logTelemetryEvent("generationCancelled");
+  }, []);
+
+  // 실제 사용자 제스처(탭) 호출 스택 안에서 불러야 효과가 있다(Android Chrome 자동재생
+  // 정책) — outputCtxRef가 "suspended"면 resume()을 시도하고 결과에 따라 audioLocked를
+  // 갱신한다. 이미 running이면 즉시 true를 반환하는 사실상 no-op이라 어디서나 안전하게
+  // 호출할 수 있다(중복 호출 다수 발생해도 문제 없음).
+  async function ensureOutputAudioRunning(): Promise<boolean> {
     const ctx = outputCtxRef.current;
-    if (!ctx) return;
+    if (!ctx) return false;
+    if (ctx.state === "running") {
+      setAudioLocked(false);
+      return true;
+    }
+    try {
+      await ctx.resume();
+    } catch {
+      // NotAllowedError 등 — 제스처 밖에서 호출된 경우 흔히 발생, 아래에서 상태로만 반영
+    }
+    const running = outputCtxRef.current?.state === "running";
+    setAudioLocked(!running);
+    return running;
+  }
+
+  function scheduleAudio(base64: string) {
+    if (audioMutedRef.current) {
+      return;
+    }
+    const ctx = outputCtxRef.current;
+    if (!ctx) {
+      return;
+    }
+    // suspended여도 아래 스케줄 자체는 그대로 진행한다(Web Audio는 컨텍스트 시간이 멈춘
+    // 채로 미래 시각에 재생 예약만 큐잉해두고, resume되면 그 시각부터 순서대로 이어서
+    // 재생한다 — 즉 여기서 청크를 버리지 않아도 이미 안전하다). resume 자체는 best-effort로
+    // 병행 시도만 해둔다(제스처 밖 호출이라 실패해도 무해 — 실패 시 audioLocked만 갱신).
+    if (ctx.state !== "running") {
+      void ensureOutputAudioRunning();
+    }
     try {
       const audioBuffer = decodePCM16(base64, ctx.sampleRate);
       // 20ms lookahead — 버퍼가 도착하기 전 컨텍스트 시간을 지나치지 않도록
       const startAt = Math.max(ctx.currentTime + 0.02, nextScheduleTimeRef.current);
+      if (kTurnAudioMsRef.current === 0) {
+        console.error(`[Timing] (e) 케이 첫 오디오 재생 시작 - ${Date.now()}`);
+      }
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(ctx.destination);
       source.start(startAt);
       nextScheduleTimeRef.current = startAt + audioBuffer.duration;
       scheduledSourcesRef.current.push(source);
+      kTurnAudioMsRef.current += audioBuffer.duration * 1000;
 
       if (!kSpeakingRef.current) {
         kSpeakingRef.current = true; // 재생 시작 — 마이크 무음 유지
@@ -398,7 +576,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         setInterimChildText("");
       }
 
+      const epoch = generationEpochRef.current;
       source.onended = () => {
+        if (generationEpochRef.current !== epoch) return;
         const arr = scheduledSourcesRef.current;
         const i = arr.indexOf(source);
         if (i !== -1) arr.splice(i, 1);
@@ -409,10 +589,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           // 스피커 잔향이 빠질 시간을 약간 두고 브라우저 STT 재시작
           if (ENABLE_STT_FALLBACK && sttModeRef.current !== "gcp") {
             setTimeout(() => {
+              if (generationEpochRef.current !== epoch) return;
               if (!kSpeakingRef.current && statusRef.current === "live" && micEnabledRef.current) {
+                childTurnFlushedRef.current = false;
                 try { recognitionRef.current?.start(); } catch { /* 이미 실행 중인 경우 무시 */ }
               }
             }, 300);
+          } else {
+            childTurnFlushedRef.current = false;
           }
         }
       };
@@ -428,15 +612,36 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
   function appendTurn(turn: Turn) {
     const prev = transcriptRef.current;
+    
+    if (turn.role === "child") {
+      // 아이의 새 turnId가 생성되는 순간, 직전 케이 말풍선은 sealed/immutable 상태로 확정
+      const sealedPrev = prev.map(t => t.role === "k" ? { ...t, sealed: true } : t);
+      transcriptRef.current = [...sealedPrev, { ...turn, id: turn.id ?? nextTurnId() }];
+      setTranscript([...transcriptRef.current]);
+      return;
+    }
+
+    // K 턴
+    if (turn.role === "k") {
+      if (currentKGenerationIdRef.current === null) {
+        return;
+      }
+      if (turn.generationId && turn.generationId !== currentKGenerationIdRef.current) {
+        // 이전 generation의 이벤트(늦게 도착하는 텍스트/오디오 등)는 전부 폐기
+        return;
+      }
+      const turnKey = `${turn.id ?? activeKTurnIdRef.current}:${turn.generationId}`;
+      if (turn.generationId && processedTurnGenerationsRef.current.has(turnKey)) {
+        return;
+      }
+    }
+
     const last = prev[prev.length - 1];
-    if (turn.role === "k" && last?.role === "k") {
-      // 같은 K 턴의 스트리밍 청크를 이어붙이는 경우(outputTranscription 델타) — 기존 버블의
-      // message_id(last.id)를 그대로 유지한다. 서로 다른 논리적 턴이 이 분기를 타면 안 되므로
-      // (그러면 진짜 "다른 메시지가 이전 말풍선에 병합"되는 버그가 됨) 호출부는 반드시 같은
-      // 논리적 K 턴의 델타에서만 appendTurn을 연속 호출해야 한다.
-      transcriptRef.current = [...prev.slice(0, -1), { role: "k", text: last.text + turn.text, id: last.id }];
+    if (last?.role === "k" && last.generationId === turn.generationId && !last.sealed) {
+      transcriptRef.current = [...prev.slice(0, -1), { ...last, text: last.text + turn.text }];
     } else {
-      transcriptRef.current = [...prev, { ...turn, id: turn.id ?? nextTurnId() }];
+      // 아이 답변 다음에 오는 케이의 응답은 반드시 새로운 turnId + 새로운 하단 말풍선
+      transcriptRef.current = [...prev, { ...turn, id: turn.id ?? activeKTurnIdRef.current ?? nextTurnId() }];
     }
     setTranscript([...transcriptRef.current]);
   }
@@ -475,8 +680,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   function flushChildTurn(fallbackText: string) {
     // 이번 아이 발화 턴은 이미 flush됨 — 브라우저 STT 폴백/Gemini 전사 중 먼저 도착한
     // 한쪽만 반영하고 나머지는 무시(말풍선 중복 생성 방지)
-    if (childTurnFlushedRef.current) return;
+    if (childTurnFlushedRef.current) {
+      return;
+    }
     childTurnFlushedRef.current = true;
+    logTelemetryEvent("transcriptFinal");
 
     if (sttModeRef.current !== "gcp") {
       appendTurn({ role: "child", text: fallbackText });
@@ -523,6 +731,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
   function teardown() {
     clearVadTimersAndBuffers();
+    clearGenerationTimeout();
 
     notifyUsageLive("end");
     stopAllScheduledSources();
@@ -628,8 +837,16 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     kTurnCutServerDoneRef.current = false;
     kTurnExpectedTextRef.current = null;
     kTurnLeakDetectedRef.current = false;
+    hasFiredFirstOutputRef.current = false;
     postCompletionLockRef.current = "none";
     manualFinalizingRef.current = false;
+    cancelledGenerationIdsRef.current.clear();
+    processedTurnGenerationsRef.current.clear();
+    generationEpochRef.current = 0;
+    clearGenerationTimeout();
+
+    const connectionId = Date.now().toString();
+    activeSessionIdRef.current = connectionId;
 
     try {
       const childId = getChildIdRef.current?.() ?? null;
@@ -657,11 +874,16 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       // 출력 AudioContext: Gemini는 24kHz PCM16을 보냄
       outputCtxRef.current = new AudioContext({ sampleRate: 24000 });
       nextScheduleTimeRef.current = 0;
+      // 여기 도달하기 전 이미 await(토큰 fetch, getUserMedia 권한 프롬프트)를 거쳐 원래
+      // 제스처의 user-activation이 소진됐을 수 있다 — 되든 안 되든 즉시 한 번 resume을
+      // 시도해둔다(대부분의 Android Chrome은 탭 내 어떤 이전 상호작용만 있어도 통과하지만,
+      // 실패하면 audioLocked=true로 남아 아래 gesture 핸들러들의 재시도·수동 버튼으로 이어진다).
+      await ensureOutputAudioRunning();
 
-      // K 턴 스트리밍 누적 — turnComplete 시 onTurnComplete 1회 호출
-      let pendingKText = "";
-      // 아이 발화 버퍼 — 첫 outputTranscription 도착 시 flush (#1429 workaround)
-      let pendingChildText = "";
+      // K 턴/아이 발화 스트리밍 누적 버퍼는 훅 스코프 ref(pendingKTextRef/pendingChildTextRef)로
+      // 관리한다 — 이 세션 시작 시점에 리셋한다.
+      pendingKTextRef.current = "";
+      pendingChildTextRef.current = "";
 
       // camelCase config — SDK가 직렬화, v1alpha에서 transcription 활성화
       // responseModalities는 AUDIO만 (TEXT 추가 시 native-audio 모델에서 에러 1011/1007로 끊김)
@@ -704,7 +926,23 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         }
       }
 
+      
+
       function handleMessage(msg: NormalizedServerMessage) {
+        if (activeSessionIdRef.current !== connectionId) return;
+
+const incomingGenerationId = currentKGenerationIdRef.current;
+        const isCancelledGeneration = incomingGenerationId === null || cancelledGenerationIdsRef.current.has(incomingGenerationId);
+        const currentTurnKey = activeKTurnIdRef.current && incomingGenerationId ? `${activeKTurnIdRef.current}:${incomingGenerationId}` : null;
+        const isAlreadyProcessed = currentTurnKey ? processedTurnGenerationsRef.current.has(currentTurnKey) : false;
+
+        if (waitingForLiveReceiveRef.current && (msg.serverContent?.outputTranscription || msg.data)) {
+          if (isCancelledGeneration) return;
+          if (isAlreadyProcessed) return;
+          waitingForLiveReceiveRef.current = false;
+          logTelemetryEvent("responseStart");
+        }
+
         // 미션 완료 후 하드 락 — 종료 발화 턴의 turnComplete까지 처리한 뒤로는 어떤 서버
         // 메시지(추가 질문·추가 오디오 프레임)도 화면/스피커에 반영하지 않는다.
         if (postCompletionLockRef.current === "locked") return;
@@ -712,6 +950,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         // usageMetadata는 serverContent의 형제 필드이며, 세션 누적치(총합)로 매번 갱신되어 온다.
         // 세션 종료 시 usage_events 비용 계산에 쓸 수 있도록 최신값만 ref에 보관해둔다.
         if (msg.usageMetadata) {
+          if (isCancelledGeneration) return;
+          if (isAlreadyProcessed) return;
           if (typeof msg.usageMetadata.promptTokenCount === "number") {
             lastTokenInRef.current = msg.usageMetadata.promptTokenCount;
           }
@@ -720,10 +960,20 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           }
         }
 
+
+
         // ── 오디오 재생 ──────────────────────────────────────
         // 이번 턴이 강제로 끊긴 상태(kTurnCutRef)면 서버가 계속 보내는 나머지
         // 오디오는 재생하지 않고 버린다(길게 말하는 것을 실제로 막는 부분).
         if (msg.data && !kTurnCutRef.current) {
+          if (isCancelledGeneration) return;
+          if (isAlreadyProcessed) return;
+          if (!hasFiredFirstOutputRef.current) {
+            hasFiredFirstOutputRef.current = true;
+            clearGenerationTimeout();
+            logTelemetryEvent("firstAudioChunk");
+            onKTurnFirstOutputRef.current?.();
+          }
           scheduleAudio(msg.data);
           // 전용 종료 발화 턴에서 실제 오디오가 처음 스케줄된 순간 1회만 통지 —
           // 미션 종료 플로우가 2.5초 TTS 폴백을 취소하는 신호.
@@ -736,9 +986,22 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         const sc = msg.serverContent;
         if (!sc) return;
 
-        // ── 강제 종료된 턴 — 진짜 turnComplete만 기다렸다가 다음 턴 준비 ──
+        // ── 서버 barge-in 신호 ────────────────────────────────
+        // 아이가 K 발화 도중 끼어들면 서버가 현재 K 생성을 중단했다고 interrupted=true로 알린다.
+        // 진행 중인 K 턴을 "지금까지 표시된 텍스트"로 즉시 확정하고, 이미 스케줄된 오디오도 끊은
+        // 뒤 컷 상태로 전환해 이후 잔여 오디오/텍스트/turnComplete를 전부 폐기한다. 클라이언트
+        // VAD가 이미 컷했다면(kTurnCutRef true) finalizeActiveKTurn은 no-op이라 중복 저장되지 않는다.
+        if (sc.interrupted && !kTurnCutRef.current) {
+          console.log("[K] 🖐️ server interrupted — finalize & discard remaining K turn");
+          stopAllScheduledSources();
+          cutActiveKTurnForBargeIn();
+        }
+
+        // ── 강제 종료된 턴 — 진짜 turnComplete(또는 interrupted 확인)만 기다렸다가 다음 턴 준비 ──
+        // interrupted 이후 서버가 별도 turnComplete를 안 보내는 경우가 있어, interrupted 자체도
+        // 컷 해제 신호로 취급한다(그러지 않으면 kTurnCutRef가 영구히 true로 남아 다음 K 턴을 막는다).
         if (kTurnCutRef.current) {
-          if (sc.turnComplete) {
+          if (sc.turnComplete || sc.interrupted) {
             kTurnCutRef.current = false;
             hasLiveInputTxRef.current = false;
             speechHistoryRef.current = "";
@@ -754,12 +1017,44 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           console.log(`[K] 📨 sc#${diagCountRef.current}:`, sc);
         }
 
+        // ── 턴 완료 ───────────────────────────────────────────
+        if (sc.turnComplete) {
+          if (isCancelledGeneration) return;
+          if (isAlreadyProcessed) return;
+          logTelemetryEvent("turnComplete");
+          if (activeKTurnIdRef.current && incomingGenerationId) {
+            const set = processedTurnGenerationsRef.current;
+            set.add(`${activeKTurnIdRef.current}:${incomingGenerationId}`);
+            if (set.size > 50) {
+              const first = set.values().next().value;
+              if (first) set.delete(first);
+            }
+          }
+          finalizeActiveKTurn();
+          hasLiveInputTxRef.current = false;
+          speechHistoryRef.current = "";
+          if (!manualFinalizingRef.current) {
+            setInterimChildText("");
+            if (scheduledSourcesRef.current.length === 0) {
+              childTurnFlushedRef.current = false; // 다음 아이 발화 턴을 위해 리셋
+            }
+          }
+
+          onServerTurnCompleteRef.current?.();
+          // speakClosingLine()이 보낸 전용 종료 발화 턴이 지금 막 끝났다 — 이 턴까지는
+          // 통과시켰으니, 이후 들어오는 모든 서버 메시지는 다시 완전히 잠근다.
+          if (postCompletionLockRef.current === "closingActive") {
+            postCompletionLockRef.current = "locked";
+          }
+          return;
+        }
+
         // ── 아이 발화 → 버퍼 누적, 첫 outputTranscription 시 flush (#1429) ──
         const inTx = sc.inputTranscription?.text;
         if (inTx) {
           console.log("[K] 📝 child (buf):", inTx);
-          pendingChildText += inTx;
-          setInterimChildText(pendingChildText);
+          pendingChildTextRef.current += inTx;
+          setInterimChildText(pendingChildTextRef.current);
 
           // 라이브 전사 성공 시 로컬 STT는 무력화
           hasLiveInputTxRef.current = true;
@@ -769,32 +1064,47 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         // ── 케이 응답 트랜스크립션 ────────────────────────────
         const outTx = sc.outputTranscription?.text;
         if (outTx) {
+          if (isCancelledGeneration) return;
+          if (isAlreadyProcessed) return;
+
           // K가 대답을 시작하기 전에 폴백 적용 확인
           if (ENABLE_STT_FALLBACK && !hasLiveInputTxRef.current && speechHistoryRef.current) {
             console.log("[STT Fallback] Gemini 전사 누락 감지. 로컬 STT 주입:", speechHistoryRef.current);
-            pendingChildText = speechHistoryRef.current;
+            pendingChildTextRef.current = speechHistoryRef.current;
             speechHistoryRef.current = "";
           }
 
           // K가 말을 시작하는 순간 아이 버퍼 flush
-          if ((pendingChildText || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) && !isChildSpeakingRef.current) {
-            console.log("[K] 📝 child (flush):", pendingChildText);
-            flushChildTurn(pendingChildText);
-            pendingChildText = "";
+          if ((pendingChildTextRef.current || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) && !isChildSpeakingRef.current) {
+            console.log("[K] 📝 child (flush):", pendingChildTextRef.current);
+            flushChildTurn(pendingChildTextRef.current);
+            pendingChildTextRef.current = "";
           }
-          pendingKText += outTx;
+          // 이 K 턴의 "첫 텍스트 청크"인지(=지금까지 pendingKText가 비어 있었는지) 판정한 뒤 누적한다.
+          const isFirstKTextChunk = pendingKTextRef.current === "";
+          if (isFirstKTextChunk) {
+            if (!hasFiredFirstOutputRef.current) {
+              hasFiredFirstOutputRef.current = true;
+              clearGenerationTimeout();
+              logTelemetryEvent("firstTextDelta");
+              onKTurnFirstOutputRef.current?.();
+            } else {
+              logTelemetryEvent("firstTextDelta");
+            }
+          }
+          pendingKTextRef.current += outTx;
 
           // 프롬프트 누출 감지 — speakAsK/speakClosingLine이 안전한 원문을 지정해둔 턴에서
           // 모델이 대괄호·"라고 말하면 돼요"·"시스템 지시" 같은 메타 텍스트를 실제로 말하면,
           // 이후 청크는 화면 말풍선에 더 이상 반영하지 않는다(이미 재생된 음성은 되돌릴 수
           // 없지만 자막·저장은 막는다). turnComplete 시 finalizeKTurnText가 원문으로 교정한다.
-          if (kTurnExpectedTextRef.current && !kTurnLeakDetectedRef.current && containsLeakPattern(pendingKText)) {
+          if (kTurnExpectedTextRef.current && !kTurnLeakDetectedRef.current && containsLeakPattern(pendingKTextRef.current)) {
             kTurnLeakDetectedRef.current = true;
             console.warn("[K] ⚠️ prompt leak pattern detected in K speech — suppressing display for this turn");
           }
           if (!kTurnLeakDetectedRef.current) {
             console.log("[K] 💬 k:", outTx);
-            appendTurn({ role: "k", text: outTx });
+            appendTurn({ role: "k", text: outTx, generationId: currentKGenerationIdRef.current ?? undefined });
           }
 
           // 다음 턴을 위해 전사 감지 플래그 초기화
@@ -805,10 +1115,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           // 문장부호가 안 나와도 HARD를 넘기면 무조건 끊는다(무한정 길어지는 것 방지).
           const endsAtSentenceBoundary = /[.!?~]\s*$/.test(outTx);
           if (
-            pendingKText.length >= K_TURN_HARD_CUT_CHARS ||
-            (pendingKText.length >= K_TURN_SOFT_CUT_CHARS && endsAtSentenceBoundary)
+            pendingKTextRef.current.length >= K_TURN_HARD_CUT_CHARS ||
+            (pendingKTextRef.current.length >= K_TURN_SOFT_CUT_CHARS && endsAtSentenceBoundary)
           ) {
-            console.log("[K] ✂️ 응답이 길어져 강제로 턴 종료 (", pendingKText.length, "자)");
+            console.log("[K] ✂️ 응답이 길어져 강제로 턴 종료 (", pendingKTextRef.current.length, "자)");
             kTurnCutRef.current = true;
             kTurnCutAwaitingUnlockRef.current = true;
             kTurnCutServerDoneRef.current = false;
@@ -817,43 +1127,17 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
             // interleave되지 않음), 여기서 stopAllScheduledSources()를 부르면 정상 오디오의
             // 꼬리가 잘려 마지막 음절이 씹히는 소리가 났다. kTurnCutRef가 이후 오디오/텍스트를
             // 계속 막으므로(길이 제한은 유지) 이미 스케줄된 소스는 자연스러운 onended까지 재생시킨다.
-            const finalText = finalizeKTurnText(pendingKText);
-            onTurnCompleteRef.current?.({ role: "k", text: finalText });
-            pendingKText = "";
+            finalizeActiveKTurn();
             if (!manualFinalizingRef.current) {
               setInterimChildText("");
             }
-            kTurnExpectedTextRef.current = null;
-            kTurnLeakDetectedRef.current = false;
             // childTurnFlushedRef는 여기서 초기화하지 않는다 — 이 K 턴은 오디오 재생이 아직
             // 끝나지 않았고 서버 turnComplete도 아직 안 왔다. maybeUnlockCutChildTurn()이 두
             // 조건을 모두 확인한 뒤에만 다음 아이 턴 flush를 허용한다.
           }
         }
 
-        // ── 턴 완료 ───────────────────────────────────────────
-        if (sc.turnComplete) {
-          if (pendingKText) {
-            const finalText = finalizeKTurnText(pendingKText);
-            onTurnCompleteRef.current?.({ role: "k", text: finalText });
-            pendingKText = "";
-          }
-          kTurnExpectedTextRef.current = null;
-          kTurnLeakDetectedRef.current = false;
-          hasLiveInputTxRef.current = false;
-          speechHistoryRef.current = "";
-          if (!manualFinalizingRef.current) {
-            setInterimChildText("");
-            childTurnFlushedRef.current = false; // 다음 아이 발화 턴을 위해 리셋
-          }
 
-          onServerTurnCompleteRef.current?.();
-          // speakClosingLine()이 보낸 전용 종료 발화 턴이 지금 막 끝났다 — 이 턴까지는
-          // 통과시켰으니, 이후 들어오는 모든 서버 메시지는 다시 완전히 잠근다.
-          if (postCompletionLockRef.current === "closingActive") {
-            postCompletionLockRef.current = "locked";
-          }
-        }
       }
 
       function handleError(message: string) {
@@ -866,17 +1150,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       function handleClose(code: number, reason: string) {
         console.log("[K] 🔌 closed — code:", code, reason || "");
         // 세션 종료 전 미완료 아이/K 턴 flush
-        if (pendingChildText || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) {
-          flushChildTurn(pendingChildText);
-          pendingChildText = "";
+        if (pendingChildTextRef.current || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) {
+          flushChildTurn(pendingChildTextRef.current);
+          pendingChildTextRef.current = "";
         }
-        if (pendingKText) {
-          const finalText = finalizeKTurnText(pendingKText);
-          onTurnCompleteRef.current?.({ role: "k", text: finalText });
-          pendingKText = "";
-        }
-        kTurnExpectedTextRef.current = null;
-        kTurnLeakDetectedRef.current = false;
+        finalizeActiveKTurn();
         if (
           statusRef.current !== "ending" &&
           statusRef.current !== "ended" &&
@@ -1015,6 +1293,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
                   if (statusRef.current === "live" && sessionRef.current && vadStateRef.current === "candidate") {
                     // 케이가 말하는 중이면 오디오 재생 즉시 중단
                     stopAllScheduledSources();
+                    // 아이가 끼어든 순간 진행 중인 K 턴을 "지금까지 표시된 텍스트"로 즉시 확정하고,
+                    // 서버가 계속 보내는 이 K 턴의 잔여 오디오/텍스트/turnComplete를 전부 폐기한다
+                    // (K1 말풍선 사후 수정·늦은 K 텍스트 이어붙기·중복 말풍선의 직접 원인 차단).
+                    cutActiveKTurnForBargeIn();
 
                     // 1. activityStart 전송 (정확히 1회)
                     console.log("[VAD] Auto Speech Start -> send activityStart");
@@ -1079,6 +1361,13 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
                   silenceTimerRef.current = setTimeout(() => {
                     if (statusRef.current === "live" && sessionRef.current && vadStateRef.current === "active") {
                       console.log("[VAD] Auto Speech End -> send activityEnd");
+                      logTelemetryEvent("sendActivityEnd");
+                      kGenerationSeqRef.current += 1;
+                      currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
+                      activeKTurnIdRef.current = nextTurnId();
+                      hasFiredFirstOutputRef.current = false;
+                      generationEpochRef.current += 1;
+                      startGenerationTimeout();
                       sessionRef.current?.sendRealtimeInput({ activityEnd: {} });
                       clearVadTimersAndBuffers(); // idle 복귀 및 리셋
                     }
@@ -1167,8 +1456,20 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     if (!sessionRef.current || statusRef.current !== "live") return false;
     closingAudioStartedFiredRef.current = false;
     postCompletionLockRef.current = "closingActive";
+    // 새 K 턴을 시작하므로 직전 컷 상태가 남아 있으면 해제한다 — barge-in 직후 서버가
+    // interrupted/turnComplete를 못 보낸 드문 경우에도 이 K 턴이 컷에 막혀 사라지지 않도록.
+    kTurnCutRef.current = false;
+    kTurnCutAwaitingUnlockRef.current = false;
+    kTurnCutServerDoneRef.current = false;
+    pendingKTextRef.current = "";
     kTurnExpectedTextRef.current = text;
     kTurnLeakDetectedRef.current = false;
+    hasFiredFirstOutputRef.current = false;
+    generationEpochRef.current += 1;
+    kGenerationSeqRef.current += 1;
+    currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
+    activeKTurnIdRef.current = nextTurnId();
+    startGenerationTimeout();
     sessionRef.current.sendClientContent({
       turns: [{ role: "user", parts: [{ text: `다음 문장을 자연스럽게 소리내어 그대로 말해줘: "${text}"` }] }],
       turnComplete: true,
@@ -1192,14 +1493,29 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
    *  아이 발화로 취급하지 않는다 — 화면에는 케이(K) 말풍선으로 표시되고, onTurnComplete도
    *  role:"k"로 호출되어(child 판정/미션 답변 로직을 타지 않음) 대화 로그에는 남되 오답 처리되지 않는다. */
   const speakAsK = useCallback((text: string): boolean => {
-    if (!sessionRef.current || statusRef.current !== "live") return false;
+    if (!sessionRef.current || statusRef.current !== "live") {
+      return false;
+    }
     // 여기서 말풍선을 낙관적으로 먼저 찍지 않는다 — 모델이 실제로 발화하며 오는
     // outputTranscription(outTx)이 onmessage에서 자동으로 말풍선을 채운다.
     // 예전엔 여기서도 appendTurn+onTurnComplete를 즉시 호출해서, 뒤이어 도착하는 outTx가
     // 같은 "k" 턴으로 병합되며 같은 문장이 말풍선 안에 두 번 붙는 문제가 있었음
     // (예: "...뭐니?안녕~ 난 케이야...").
+    // 새 K 턴을 시작하므로 직전 barge-in 컷 상태가 남아 있으면 해제한다(이 K 턴이 컷에
+    // 막혀 말풍선/음성이 안 나오는 것을 방지 — 컷 해제는 원래 서버 turnComplete에 의존).
+    kTurnCutRef.current = false;
+    kTurnCutAwaitingUnlockRef.current = false;
+    kTurnCutServerDoneRef.current = false;
+    pendingKTextRef.current = "";
     kTurnExpectedTextRef.current = text;
     kTurnLeakDetectedRef.current = false;
+    hasFiredFirstOutputRef.current = false;
+    generationEpochRef.current += 1;
+    kGenerationSeqRef.current += 1;
+    currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
+    activeKTurnIdRef.current = nextTurnId();
+    startGenerationTimeout();
+    waitingForLiveReceiveRef.current = true;
     sessionRef.current.sendClientContent({
       turns: [{ role: "user", parts: [{ text: `다음 문장을 자연스럽게 소리내어 그대로 말해줘: "${text}"` }] }],
       turnComplete: true,
@@ -1233,6 +1549,12 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   }, [status]);
 
   const sendActivityStart = useCallback((): boolean => {
+    // 실제 탭 이벤트 핸들러 안에서 동기적으로 호출되는 지점 — resume() 자체를 여기서
+    // (await 없이) 바로 걸어야 브라우저가 "제스처 안에서 호출됨"으로 인정한다. 결과 반영은
+    // ensureOutputAudioRunning 내부에서 비동기로 이어진다.
+    if (outputCtxRef.current && outputCtxRef.current.state !== "running") {
+      void ensureOutputAudioRunning();
+    }
     if (manualFinalizingRef.current) {
       console.log("[K] Blocked sendActivityStart because finalizing GCP STT");
       return false;
@@ -1240,6 +1562,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     if (!sessionRef.current || statusRef.current !== "live") return false;
     console.log("[K] 📡 sendActivityStart");
     stopAllScheduledSources();
+    // 수동 모드 barge-in — K가 말하는 도중 아이가 버튼을 눌러 끼어든 경우, 진행 중인 K 턴을
+    // "지금까지 표시된 텍스트"로 즉시 확정하고 이후 잔여 오디오/텍스트/turnComplete를 폐기한다.
+    // K가 말하는 중이 아니었으면(정상적인 아이 차례) no-op이라 안전하다.
+    cutActiveKTurnForBargeIn();
     childAudioChunksRef.current = [];
     childTurnFlushedRef.current = false;
     isChildSpeakingRef.current = true;
@@ -1251,13 +1577,52 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     if (!sessionRef.current || statusRef.current !== "live") return false;
     console.log("[K] 📡 sendActivityEnd");
     isChildSpeakingRef.current = false;
+    
+    // 수동 모드 지연 원인 수정: activityEnd만 보내면 Live 서버가 turnComplete로 인식하지 않고 
+    // 마냥 기다리는(2~3분 지연) 문제가 발생하므로 명시적으로 turnComplete를 전송한다.
+    // 단, GCP STT를 병행하는 미션 모드에서는 이로 인해 K-A(모델 자체응답)와 K-B(API 응답)가 
+    // 둘 다 발동될 수 있으므로, K-B가 오기 전까지의 K-A를 어떻게 처리할지 제어가 필요하다.
+    logTelemetryEvent("sendActivityEnd");
+    generationEpochRef.current += 1;
+    kGenerationSeqRef.current += 1;
+    currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
+    activeKTurnIdRef.current = nextTurnId();
+    hasFiredFirstOutputRef.current = false;
+    startGenerationTimeout();
     sessionRef.current.sendRealtimeInput({ activityEnd: {} });
+    sessionRef.current.sendClientContent({
+      turns: [],
+      turnComplete: true
+    });
+    waitingForLiveReceiveRef.current = true;
+
     if (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0) {
       manualFinalizingRef.current = true;
       setInterimChildText("음성을 인식하고 있어요…");
       flushChildTurn("");
     }
     return true;
+  }, []);
+
+  // 화면이 잠겼다가 돌아오거나(screen lock) 탭이 백그라운드→포그라운드로 전환될 때
+  // Android/모바일 브라우저가 AudioContext를 suspended로 되돌리는 경우가 있다 — 세션이
+  // 아직 살아있는 동안엔 포그라운드 복귀 시점에 자동으로 resume을 재시도한다. 이 시점은
+  // 진짜 사용자 제스처가 아니라 정책상 거부될 수도 있으므로(그러면 audioLocked=true 유지),
+  // 실패해도 무해하게 "케이 목소리 켜기" 버튼으로 자연스럽게 이어진다.
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && statusRef.current === "live") {
+        void ensureOutputAudioRunning();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // 호출부(missions 페이지)의 실제 탭 핸들러(미션 시작/모드 전환/마이크 버튼)에서 명시적으로
+  // 불러주는 수동 언락 경로 — "케이 목소리 켜기" 버튼 전용으로도 쓰인다.
+  const unlockAudio = useCallback(async (): Promise<boolean> => {
+    return ensureOutputAudioRunning();
   }, []);
 
   useEffect(() => {
@@ -1267,10 +1632,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   }, []);
 
   return {
-    status, error, transcript, interimChildText,
+    status, error, transcript, interimChildText, audioLocked,
     startSession, stopSession, pauseSession, getTranscript, reset,
     sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn, seedTranscript,
-    lockNow, speakClosingLine,
+    lockNow, speakClosingLine, unlockAudio,
     setInteractionMode, sendActivityStart, sendActivityEnd,
+    cancelCurrentGeneration, logTelemetryEvent
   };
 }

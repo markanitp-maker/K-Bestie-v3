@@ -9,8 +9,10 @@ import { RealChildNav } from "@/components/RealChildNav";
 import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { useGeminiLive } from "@/hooks/useGeminiLive";
 import { SkeletonBox } from "@/components/Skeleton";
+import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
+import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -126,6 +128,20 @@ function MissionInner() {
   // 재진입 가드와 onAudioQueueDrained의 복귀 신호가 이 상태를 관리한다(STT/TTS 모드는 기존
   // 동작을 그대로 유지하며 이 상태를 사용하지 않음).
   const turnPhaseRef = useRef<"awaiting_child" | "processing_answer" | "speaking_k">("awaiting_child");
+  // turnPhaseRef를 화면에 반영하기 위한 미러 state — ref만으로는 canStartRecording이 답변
+  // 판정 중(processing_answer)이라 탭을 막고 있어도 버튼이 계속 "말하기 시작"(🎤)로 보여
+  // 아이 입장에선 "버튼 눌러도 반응 없음"으로 느껴졌다(버튼은 정상적으로 탭을 무시하는
+  // 중이었을 뿐, 시각 피드백이 전혀 없었던 게 진짜 원인). 판정 로직은 여전히 turnPhaseRef만
+  // 읽고(동기·ref 기반 그대로 유지), 이 state는 오직 렌더링(생각 중 표시)에만 쓴다.
+  const [turnPhaseUi, setTurnPhaseUi] = useState<"awaiting_child" | "processing_answer" | "speaking_k">("awaiting_child");
+  const setTurnPhase = useCallback((next: "awaiting_child" | "processing_answer" | "speaking_k") => {
+    if (turnPhaseRef.current !== "awaiting_child" && next === "awaiting_child") {
+      liveRef.current?.logTelemetryEvent("thinkingFalse");
+      liveRef.current?.logTelemetryEvent("micEnabled");
+    }
+    turnPhaseRef.current = next;
+    setTurnPhaseUi(next);
+  }, []);
   // handleTurnComplete의 비동기 처리(답변 제출→다음 질문 계산→askQuestion)가 끝나기 전 재진입
   // 방지 가드. Live 모드는 turnPhaseRef 상태머신으로 이미 막히지만, STT/TTS(Tier1/2) 모드는
   // 케이 발화 재생 완료를 알리는 별도 콜백이 없어 이 플래그가 유일한 재진입 방지 장치다 —
@@ -135,6 +151,8 @@ function MissionInner() {
   // 유효한 아이 답변 턴마다 1씩 증가 — /api/mission/answer, /api/mission/respond에 함께
   // 실어 보내 서버가 같은 턴에 대한 중복 요청을 식별할 수 있게 하는 idempotency key 재료.
   const childTurnSeqRef = useRef(0);
+  
+  // 8초 타임아웃 타이머는 useGeminiLive 내부 generationTimeout으로 이관됨
   // 종료 문구 TTS 폴백이 중복 실행되지 않도록 하는 가드(컨트롤러의 closingFinished 위에 얹는
   // 이중 방어) — onClosingAudioTimeout이 어떤 이유로든 두 번 불려도 재생/저장은 1회만.
   const closingFallbackFiredRef = useRef(false);
@@ -159,11 +177,15 @@ function MissionInner() {
   // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
   // transcript에 채워넣는다(그 전에 넣으면 startSession()이 비워버림).
   const pastMessagesRef = useRef<Turn[]>([]);
-  const pastMessagesSeededRef = useRef(false);
 
   const saveMessage = useCallback((role: "child" | "k", content: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !content.trim()) return;
+
+    // 모드 전환(자동↔수동) 등 세션 재시작 시 대화 이력이 날아가는 것을 방지하기 위해,
+    // 완료된 모든 턴을 공통 소스(pastMessagesRef)에 누적 저장한다.
+    pastMessagesRef.current = [...pastMessagesRef.current, { role, text: content }];
+
     fetch("/api/chat/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -214,12 +236,14 @@ function MissionInner() {
         // Live 모드 전용 재진입 가드 — 케이가 아직 말하는 중(speaking_k)이거나 직전 답변을
         // 아직 처리 중(processing_answer)이면, 강제컷 직후 지연 도착한 STT 결과 등으로 인한
         // 동일/추가 child 턴을 무시한다(중복 /api/mission/answer·respond 호출 방지).
-        if (turnPhaseRef.current !== "awaiting_child") return;
-        turnPhaseRef.current = "processing_answer";
+        if (turnPhaseRef.current !== "awaiting_child") {
+          return;
+        }
+        setTurnPhase("processing_answer");
         // 위에서 processing_answer로 전이했더라도, 직전 턴의 비동기 체인이 아직 answerInFlightRef를
         // 정리하지 못한 극히 좁은 경합 구간이면 역시 폐기한다(원래 로직 그대로 유지).
         if (answerInFlightRef.current) {
-          turnPhaseRef.current = "awaiting_child";
+          setTurnPhase("awaiting_child");
           return;
         }
       } else if (!shouldAcceptChildTurn({
@@ -241,7 +265,7 @@ function MissionInner() {
     const question = qs[idx];
     const sid = sessionIdRef.current;
     if (!question || !sid) {
-      if (isLive) turnPhaseRef.current = "awaiting_child";
+      if (isLive) setTurnPhase("awaiting_child");
       return;
     }
 
@@ -250,6 +274,7 @@ function MissionInner() {
     const childTurnId = `${sid}:${question.id}:${++childTurnSeqRef.current}`;
 
     answerInFlightRef.current = true;
+    console.error(`[Timing] (b) 서버 전송 (answer API 호출) - ${Date.now()}`);
     // 답변 처리 시작 — STT/TTS 자동 모드는 마이크가 계속 켜져 있으므로(케이 TTS 재생 중에만
     // speakingRef가 막아줌), classifyAnswer 대기 중(최대 10~32초) 아이가 다시 말하면 RMS
     // 자동확정이 또 다른 child 턴을 만들어낼 수 있었다 — 처리가 끝날 때까지 마이크를 잠근다.
@@ -271,7 +296,7 @@ function MissionInner() {
             }
             return;
           }
-          if (isLive) turnPhaseRef.current = "awaiting_child";
+          if (isLive) setTurnPhase("awaiting_child");
           return;
         }
         const data = await res.json();
@@ -299,7 +324,7 @@ function MissionInner() {
           // "종료 발화의 turnComplete + 오디오 재생 완료 + 700ms" 이후에만 세션을 닫는다.
           // 일반 후속 질문 큐(pickNextIndex/askQuestion)는 절대 실행하지 않는다.
           if (voiceModeRef.current === "live") {
-            turnPhaseRef.current = "speaking_k";
+            setTurnPhase("speaking_k");
             liveRef.current?.lockNow();
             missionControllerRef.current?.start({ immediateTtsFallback: true });
           } else {
@@ -313,7 +338,7 @@ function MissionInner() {
 
         const next = pickNextIndex(questionStatesRef.current);
         if (next === -1) {
-          if (isLive) turnPhaseRef.current = "awaiting_child";
+          if (isLive) setTurnPhase("awaiting_child");
           return;
         }
 
@@ -322,7 +347,7 @@ function MissionInner() {
         // 다음 질문 유도 멘트 동적 생성 및 폴백 — askQuestionRef는 정확히 1회만 호출한다.
         const nextQ = questionsRef.current[next];
         if (!nextQ) {
-          if (isLive) turnPhaseRef.current = "awaiting_child";
+          if (isLive) setTurnPhase("awaiting_child");
           return;
         }
 
@@ -345,16 +370,26 @@ function MissionInner() {
         } catch {
           // 실패 시 아래 askQuestionRef가 순정 질문 텍스트(customText 없음)로 폴백
         }
-        if (isLive) turnPhaseRef.current = "speaking_k";
+        if (isLive) {
+          setTurnPhase("speaking_k");
+        }
         askQuestionRef.current?.(next, respondText);
       } catch {
-        if (isLive) turnPhaseRef.current = "awaiting_child";
+        if (isLive) {
+          setTurnPhase("awaiting_child");
+        }
       } finally {
         answerInFlightRef.current = false;
         // 자동 모드에서만 마이크를 되살린다 — 수동 모드는 다음 명시적 버튼 탭 전까지 계속
         // 꺼져 있어야 한다(handleCentralButtonClick이 그때 다시 켠다).
         if (!isLive && isAutoRef.current && missionStateRef.current === "active") {
           sttSetMicEnabledRef.current?.(true);
+        }
+        // Live 방어선 — 어떤 경로로든 processing_answer에 머문 채 이 비동기 체인이 끝나면
+        // (예상 밖 예외 등) 마이크가 영구히 잠긴다. 미션이 진행 중이면 awaiting_child로
+        // 되돌린다. speaking_k(K가 정상적으로 답변 중)와 completing/completed는 건드리지 않는다.
+        if (isLive && missionStateRef.current === "active" && turnPhaseRef.current === "processing_answer") {
+          setTurnPhase("awaiting_child");
         }
       }
     })();
@@ -381,6 +416,27 @@ function MissionInner() {
       if (missionControllerRef.current?.getState() === "completing") {
         missionControllerRef.current.notifyTurnComplete();
       }
+      // K 턴이 서버에서 완전히 끝난 시점 — 오디오 큐 drain(onAudioQueueDrained)이 유실돼도
+      // 여기서 speaking_k를 확실히 awaiting_child로 되돌린다(마이크 영구 잠김 방지, 이중 방어).
+      if (missionStateRef.current === "active" && turnPhaseRef.current === "speaking_k") {
+        setTurnPhase("awaiting_child");
+      }
+    },
+    // K 발화의 "첫 출력(텍스트/오디오)"이 화면/스피커에 도달하는 순간마다 mic를 unlock한다.
+    onKTurnFirstOutput: () => {
+      if (
+        missionStateRef.current === "active" &&
+        (turnPhaseRef.current === "speaking_k" || turnPhaseRef.current === "processing_answer")
+      ) {
+        setTurnPhase("awaiting_child");
+      }
+    },
+    // K 턴의 첫 출력이 8초 동안 없어서 generation이 취소되었을 때 호출
+    onKTurnTimeout: () => {
+      if (missionStateRef.current === "active" && turnPhaseRef.current !== "awaiting_child") {
+        setTurnPhase("awaiting_child");
+        liveRef.current?.appendTurn({ role: "k", text: "통신이 고르지 않아요. 조금 전 대답을 다시 한번 말해줄래요?" });
+      }
     },
     onAudioQueueDrained: () => {
       if (missionControllerRef.current?.getState() === "completing") {
@@ -389,7 +445,7 @@ function MissionInner() {
       // 케이가 실제로 말을 완전히 마친 시점(오디오 큐 비움) — speaking_k였다면 다음 아이
       // 발화를 받을 수 있는 awaiting_child로 되돌린다.
       if (missionStateRef.current === "active" && turnPhaseRef.current === "speaking_k") {
-        turnPhaseRef.current = "awaiting_child";
+        setTurnPhase("awaiting_child");
       }
     },
     onClosingAudioChunk: () => {
@@ -403,7 +459,7 @@ function MissionInner() {
     // awaiting_child 상태로 복귀한다(onAudioQueueDrained가 재생 종료 시 되돌림).
     onTranscriptRejected: () => {
       if (turnPhaseRef.current === "speaking_k") return; // 이미 재질문 재생 중 — 중복 방지
-      turnPhaseRef.current = "speaking_k";
+      setTurnPhase("speaking_k");
       live.speakAsK("잘 못 들었어. 다시 한번 말해줄래?");
     },
     onAudioLevelChange: (level) => {
@@ -500,17 +556,41 @@ function MissionInner() {
         getTranscript: sttTts.getTranscript,
       };
 
+  const [sessionActive, setSessionActive] = useState(false);
+
+  // 미션 진행 상태에 따른 세션 활성화
+  useEffect(() => {
+    if (phase === "ready" && missionState !== "completed") {
+      setSessionActive(true);
+    } else if (missionState === "completed" || phase === "closed" || phase === "error") {
+      setSessionActive(false);
+    }
+  }, [phase, missionState]);
+
+  // 페이지 이탈(언마운트) 시 false 처리
+  useEffect(() => {
+    return () => setSessionActive(false);
+  }, []);
+
+  // 화면 wake lock — Rules of Hooks 위반 방지를 위해 아래쪽의 phase==="loading"/"closed"/
+  // "error" 조기 return들보다 반드시 먼저 호출해야 한다(모든 렌더에서 동일한 순서로 호출
+  //돼야 함 — early return 뒤로 옮기면 phase에 따라 훅 호출 개수가 달라져 React #310으로
+  // 페이지 전체가 크래시한다. 실제로 한 번 이 문제로 크래시를 냈던 적이 있어 이 주석을
+  // 남긴다). 세션이 실제로 연결돼 있고(voice.status live) "completed"(종료 발화까지 다
+  // 끝난 시점)가 되기 전까지는 유지한다 — completing 단계(5번째 답변 확정~종료 발화 재생
+  // 중)에도 화면이 꺼지면 안 되므로 isDone이 아니라 missionState==="completed" 여부로 판정.
+  const wakeLockWarning = useScreenWakeLock(sessionActive);
+
   getTranscriptRef.current = voice.getTranscript;
 
   const [autoStartFailed, setAutoStartFailed] = useState(false);
   const hasAutoStartedRef = useRef(false);
 
-  // 자동 모드일 때 첫 진입 시 자동으로 Live 음성 세션 시작
+  // 자동/수동 무관하게 첫 진입 시 무조건 세션 시작 (연결은 해 둬야 대화/history가 보임)
   useEffect(() => {
     if (
       phase === "ready" &&
       mode === "voice" &&
-      isAuto &&
       voice.status !== "live" &&
       voice.status !== "connecting" &&
       !hasAutoStartedRef.current
@@ -518,7 +598,7 @@ function MissionInner() {
       hasAutoStartedRef.current = true;
       void voice.startSession();
     }
-  }, [phase, mode, isAuto, voice.status, voice]);
+  }, [phase, mode, voice.status, voice]);
 
   // 세션 상태 감시 및 자동 시작 실패 감지
   useEffect(() => {
@@ -569,6 +649,7 @@ function MissionInner() {
 
   const handleClose = useCallback(() => {
     voice.stopSession();
+    setSessionActive(false);
     router.replace("/child/home");
   }, [voice, router]);
 
@@ -697,6 +778,9 @@ function MissionInner() {
   }, [voice.status, isAuto, isLiveMode, live.setInteractionMode, sttTts.setInputMode, sttTts.setMicEnabled]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
+    // 실제 탭 이벤트 안 — Android에서 케이 오디오 AudioContext가 아직 suspended라면 여기서
+    // 재시도(자동 모드는 세션이 useEffect에서 제스처 없이 시작돼 특히 도움이 된다).
+    if (isLiveMode) void live.unlockAudio();
     if (newMode === "auto") {
       // 수동 발화(녹음) 중이었다면 안전하게 먼저 종료 처리
       if (isRecordingRef.current) {
@@ -741,12 +825,13 @@ function MissionInner() {
       // 오디오를 강제 정지시킴), 아직 처리되지 않은 답변과 겹치는 새 child 턴을 만들어냈다
       // (버그①게이지 오증가·②말풍선 중복 쌓임·③케이가 답을 기다리지 않는 것처럼 보이는 문제의
       // 직접 원인).
-      if (!canStartRecording({
+      const canStart = canStartRecording({
         isLiveMode,
         answerInFlight: answerInFlightRef.current,
         kaySpeaking: sttTts.isSpeaking,
         turnPhase: turnPhaseRef.current,
-      })) {
+      });
+      if (!canStart) {
         return;
       }
       // 첫 클릭: Live는 K 발화 즉시 중단 후 activityStart, STT/TTS는 마이크만 켠다
@@ -770,6 +855,7 @@ function MissionInner() {
         return;
       }
       if (isLiveMode) {
+        live.logTelemetryEvent("stopRecording");
         live.sendActivityEnd();
         live.setAudioMuted(false);
       } else {
@@ -793,17 +879,14 @@ function MissionInner() {
 
 
 
-  // 과거 대화(chat_messages) 스크롤백 채워넣기 — 세션이 live가 된 직후 1회만 실행.
-  // startSession()이 자체적으로 transcript를 비우므로 그 이전에 넣으면 소용없다.
+  // 과거 대화(chat_messages) 및 현재 세션 누적 대화 스크롤백 채워넣기
+  // 자동/수동 UI가 동일한 메시지 배열을 공유하도록, 훅 내부 세션이 재시작되어 transcript가
+  // 비워질 때마다 공통 소스(pastMessagesRef)에서 전체 이력을 다시 복원(seed)한다.
   useEffect(() => {
-    if (voice.status === "live" && !pastMessagesSeededRef.current) {
-      pastMessagesSeededRef.current = true;
-      if (pastMessagesRef.current.length > 0) {
-        voice.seedTranscript(pastMessagesRef.current);
-      }
+    if (voice.status === "live" && voice.transcript.length === 0 && pastMessagesRef.current.length > 0) {
+      voice.seedTranscript(pastMessagesRef.current);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice.status]);
+  }, [voice.status, voice.transcript.length, voice.seedTranscript]);
 
   // 세션 시작 후 최초 1회만 첫 질문을 묻는다. 이후 질문은 handleTurnComplete에서
   // 답변 처리 완료 시점에 askQuestionRef를 통해 직접 트리거된다(ref 변화는 effect를
@@ -872,7 +955,10 @@ function MissionInner() {
           2차 미션은 저녁 7시~밤 12시에 만나요!
         </p>
         <button
-          onClick={() => router.replace("/child/home")}
+          onClick={() => {
+            setSessionActive(false);
+            router.replace("/child/home");
+          }}
           className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
           style={{ background: "#1a6b5a" }}
         >
@@ -889,7 +975,10 @@ function MissionInner() {
         <p className="text-base font-bold text-red-500">미션을 시작하지 못했어요</p>
         <p className="text-xs text-gray-500">{errorMsg}</p>
         <button
-          onClick={() => router.replace("/child/home")}
+          onClick={() => {
+            setSessionActive(false);
+            router.replace("/child/home");
+          }}
           className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
           style={{ background: "#1a6b5a" }}
         >
@@ -909,7 +998,10 @@ function MissionInner() {
           {voice.error || "지금은 케이와 대화를 시작하기 어려워요.\n잠시 후 다시 만나자."}
         </p>
         <button
-          onClick={() => router.replace("/child/home")}
+          onClick={() => {
+            setSessionActive(false);
+            router.replace("/child/home");
+          }}
           className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
           style={{ background: "#1a6b5a" }}
         >
@@ -925,12 +1017,37 @@ function MissionInner() {
   // "종료 발화가 아직 재생 중인지"뿐이라 화면 표시상 구분할 필요가 없다.
   const isDone = missionState !== "active" || completed;
   const missionPercent = progressPercent;
+  // Live 모드 수동 버튼 전용 — 답변 판정/다음 질문 생성 중(turnPhaseUi !== "awaiting_child")엔
+  // canStartRecording 가드가 탭을 무시하므로, 버튼을 "생각 중" 모양으로 바꿔 침묵 무시와
+  // 진짜 먹통을 아이가 구분할 수 있게 한다.
+  const isThinkingTurn = isLiveMode && !isAuto && turnPhaseUi !== "awaiting_child";
 
   return (
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+      {wakeLockWarning && (
+        <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
+            기기 설정으로 화면이 꺼질 수 있어요
+          </div>
+        </div>
+      )}
       {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
       <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
-        <div className="flex items-center justify-center px-4 pt-3 pb-1">
+        <div className="relative flex items-center justify-center px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1">
+          {/* 좌상단 뒤로가기 버튼 */}
+          <button
+            aria-label="홈으로 돌아가기"
+            onClick={() => {
+              voice.stopSession();
+              setSessionActive(false);
+              router.push("/child/home");
+            }}
+            className="absolute left-2 top-[calc(50%+env(safe-area-inset-top)/2)] -translate-y-1/2 w-12 h-12 flex items-center justify-center cursor-pointer text-gray-600 z-20"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
           <Link href="/child/home" className="cursor-pointer shrink-0">
             <Image
               src="/Images/logo/Logo.png"
@@ -973,42 +1090,17 @@ function MissionInner() {
           </div>
         </div>
 
-        <div className="relative flex justify-center items-center mb-2">
+        <div className="flex justify-center items-center gap-4 mb-2 max-w-sm mx-auto">
           <Image
             src="/Images/mascot/mascot-standing.png"
             alt="케이 마스코트"
             width={96}
             height={96}
-            className="object-contain"
+            className="object-contain shrink-0"
             priority
           />
           {!isDone && (
-            <div className="absolute left-[calc(50%+52px)] top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-full border border-gray-200 shadow-inner shrink-0 z-10">
-              <button
-                onClick={() => handleModeChange("auto")}
-                aria-pressed={isAuto}
-                aria-label="자동으로 말하기"
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
-                  isAuto
-                    ? "bg-[#1a6b5a] text-white shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                자동
-              </button>
-              <button
-                onClick={() => handleModeChange("manual")}
-                aria-pressed={!isAuto}
-                aria-label="버튼 눌러 말하기"
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
-                  !isAuto
-                    ? "bg-[#1a6b5a] text-white shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
-              >
-                수동
-              </button>
-            </div>
+            <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
           )}
         </div>
       </div>
@@ -1058,9 +1150,25 @@ function MissionInner() {
         )}
       </div>
 
+      {/* Android 등 일부 브라우저는 사용자 제스처 밖에서 만들어진 AudioContext가 계속
+          suspended로 남아 케이 목소리가 전혀 안 들릴 수 있다(자막은 정상 표시됨) — 자동 재시도가
+          모두 실패했을 때만 뜨는 최후 수단. 탭 즉시 resume()을 시도하고 성공하면(audioLocked가
+          false로 바뀌면) 스스로 사라진다. */}
+      {isLiveMode && live.audioLocked && voice.status === "live" && (
+        <div className="px-4 pb-2 shrink-0">
+          <button
+            onClick={() => void live.unlockAudio()}
+            className="w-full py-2.5 rounded-xl text-sm font-bold text-white cursor-pointer"
+            style={{ background: "#e8845a" }}
+          >
+            🔊 케이 목소리 켜기
+          </button>
+        </div>
+      )}
+
       {/* 하단 버튼 바 */}
       {mode === "voice" ? (
-        <div className="flex items-center justify-center gap-8 py-5 shrink-0 bg-white border-t border-gray-50">
+        <div className="flex items-center justify-center gap-8 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
           <button
             onClick={switchToText}
             className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
@@ -1093,20 +1201,32 @@ function MissionInner() {
                     />
                   </>
                 )}
+                {/* 아이 답변 판정/다음 질문 생성 중(최대 10~32초)엔 canStartRecording 가드가
+                    버튼 탭을 조용히 무시한다 — 이 표시가 없으면 버튼이 그대로 "말하기 시작"
+                    모양이라 "눌러도 반응이 없다"로 보였다(진짜 원인: 시각 피드백 부재). */}
+                {!isRecording && isThinkingTurn && (
+                  <div className="absolute -top-8 text-[11px] font-extrabold text-gray-500 whitespace-nowrap bg-gray-100 px-2.5 py-0.5 rounded-full border border-gray-200">
+                    케이가 생각하고 있어요…
+                  </div>
+                )}
                 <button
                   ref={buttonRef}
                   onClick={handleCentralButtonClick}
                   className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md active:scale-95 cursor-pointer transition-all duration-75 ${
                     isRecording
                       ? "bg-gradient-to-br from-orange-400 to-orange-500"
-                      : "bg-[#e8845a]"
+                      : isThinkingTurn
+                        ? "bg-gray-300"
+                        : "bg-[#e8845a]"
                   }`}
-                  aria-label={isRecording ? "말하기 완료" : "말하기 시작"}
+                  aria-label={isRecording ? "말하기 완료" : isThinkingTurn ? "케이가 생각하고 있어요" : "말하기 시작"}
                 >
                   {isRecording ? (
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
                       <rect x="6" y="6" width="12" height="12" rx="2" />
                     </svg>
+                  ) : isThinkingTurn ? (
+                    <div className="w-5 h-5 border-2 border-white/60 border-t-white rounded-full animate-spin" />
                   ) : (
                     <span className="text-2xl">🎤</span>
                   )}
@@ -1115,9 +1235,13 @@ function MissionInner() {
             )
           )}
 
-          {!isLive && !isConnecting && !isDone && (!isAuto || autoStartFailed) && (
+          {!isLive && !isConnecting && !isDone && autoStartFailed && (
             <button
               onClick={() => {
+                // 실제 탭 이벤트 안 — Android 자동재생 정책상 오디오 언락은 이 동기 호출
+                // 스택 안에서 시도해야 효과가 있다(startSession 내부의 언락 시도는 이미
+                // await를 여러 번 거친 뒤라 실패할 수 있음).
+                if (isLiveMode) void live.unlockAudio();
                 setAutoStartFailed(false);
                 voice.startSession();
               }}
@@ -1133,7 +1257,10 @@ function MissionInner() {
 
           {isDone && (
             <button
-              onClick={() => router.replace("/child/home")}
+              onClick={() => {
+                setSessionActive(false);
+                router.replace("/child/home");
+              }}
               className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
               style={{ background: "#1a6b5a" }}
               aria-label="홈으로 이동"
@@ -1151,7 +1278,7 @@ function MissionInner() {
           </button>
         </div>
       ) : (
-        <div className="flex items-center gap-2 py-3 px-3 shrink-0 bg-white border-t border-gray-50">
+        <div className="flex items-center gap-2 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
           <button
             onClick={switchToVoice}
             className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
@@ -1188,8 +1315,6 @@ function MissionInner() {
           </button>
         </div>
       )}
-
-      <RealChildNav active="미션" />
     </div>
   );
 }
