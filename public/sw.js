@@ -1,13 +1,13 @@
-const CACHE_NAME = "kbestie-shell-v3";
+const CACHE_NAME = "kbestie-shell-v4";
 
 const PRECACHE_ASSETS = [
   "/manifest.json",
   "/offline",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/maskable-icon-192.png",
-  "/icons/maskable-icon-512.png",
-  "/icons/apple-touch-icon-180.png",
+  "/icons/icon-192-v4.png",
+  "/icons/icon-512-v4.png",
+  "/icons/maskable-icon-192-v4.png",
+  "/icons/maskable-icon-512-v4.png",
+  "/icons/apple-touch-icon-180-v4.png",
   "/icons/favicon-32.png",
   "/icons/favicon-16.png",
   "/Images/logo/Logo.png",
@@ -50,7 +50,7 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   const isHTMLNavigation = event.request.mode === "navigate" || event.request.destination === "document";
-  const isRSCRequest = url.searchParams.has("_rsc");
+  const isRSCRequest = url.searchParams.has("_rsc") || event.request.headers.has("RSC");
   const isNextDataRequest = url.pathname.startsWith("/_next/data/");
 
   // 1. 네트워크 전용 요청 (캐시 우회)
