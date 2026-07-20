@@ -437,20 +437,7 @@ export default function ChatPage() {
               </button>
             )}
 
-            {isLive && isAuto && (
-              <div className="relative flex items-center justify-center">
-                <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
-                <button
-                  onClick={handleMicToggle}
-                  className="relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer bg-gradient-to-br from-orange-400 to-orange-500"
-                  aria-label="마이크 끄기"
-                >
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
-                    <rect x="6" y="6" width="12" height="12" rx="2" />
-                  </svg>
-                </button>
-              </div>
-            )}
+
 
             {isLive && !isAuto && (
               <div className="relative flex items-center justify-center">
