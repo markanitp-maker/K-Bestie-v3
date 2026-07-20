@@ -27,6 +27,9 @@ export default function ChatPage() {
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
 
+  const [micPermission, setMicPermission] = useState<PermissionState | "checking" | "not_needed">("checking");
+  const autoStartAttempted = useRef(false);
+
   const voiceBubbleRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -178,7 +181,25 @@ export default function ChatPage() {
     if (stored) {
       setChildId(stored);
       const storedMode = localStorage.getItem(`k_voice_input_mode:${stored}`);
-      if (storedMode === "manual") setIsAuto(false);
+      const auto = storedMode !== "manual";
+      setIsAuto(auto);
+      
+      if (auto) {
+        if (navigator.permissions && navigator.permissions.query) {
+          navigator.permissions.query({ name: "microphone" as PermissionName })
+            .then(res => {
+              setMicPermission(res.state);
+              res.onchange = () => setMicPermission(res.state);
+            })
+            .catch(() => {
+              setMicPermission("prompt");
+            });
+        } else {
+          setMicPermission("prompt");
+        }
+      } else {
+        setMicPermission("not_needed");
+      }
       return;
     }
     router.replace("/");
@@ -215,6 +236,25 @@ export default function ChatPage() {
     }
   }, [status, isAuto, setInputMode, setMicEnabled]);
 
+  const handleStart = useCallback(async () => {
+    if (!childId) return;
+    setReportDone(false);
+    setReportError(null);
+    setSessionActive(true);
+
+    const { data } = await getSupabase()
+      .from("chat_sessions")
+      .insert({ child_id: childId })
+      .select("id")
+      .single();
+    if (data) {
+      setSessionId(data.id);
+      sessionIdRef.current = data.id;
+      localStorage.setItem("k_session_id", data.id);
+    }
+    await startSession();
+  }, [childId, startSession, getSupabase]);
+
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (newMode === "auto") {
       // 수동 모드에서 녹음 중이던 발화가 있었다면 안전하게 먼저 확정
@@ -225,13 +265,18 @@ export default function ChatPage() {
       }
       setInputMode("auto");
       setMicEnabled(true);
+      
+      // manual -> auto 전환 시, 세션이 안 켜져있다면 즉시 시작 시도
+      if (statusRef.current === "idle" || statusRef.current === "error") {
+        handleStart();
+      }
     } else {
       setInputMode("manual");
       setMicEnabled(false);
     }
     setIsAuto(newMode === "auto");
     if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, newMode);
-  }, [childId, manualFinalize, setInputMode, setMicEnabled]);
+  }, [childId, manualFinalize, setInputMode, setMicEnabled, handleStart]);
 
   const handleCentralButtonClick = useCallback(() => {
     if (!isRecordingRef.current) {
@@ -259,25 +304,6 @@ export default function ChatPage() {
     setMicEnabled(true);
   }, [setMicEnabled]);
 
-  const handleStart = useCallback(async () => {
-    if (!childId) return;
-    setReportDone(false);
-    setReportError(null);
-    setSessionActive(true);
-
-    const { data } = await getSupabase()
-      .from("chat_sessions")
-      .insert({ child_id: childId })
-      .select("id")
-      .single();
-    if (data) {
-      setSessionId(data.id);
-      sessionIdRef.current = data.id;
-      localStorage.setItem("k_session_id", data.id);
-    }
-    await startSession();
-  }, [childId, startSession, getSupabase]);
-
   const handleSendText = useCallback(async () => {
     const text = textInput.trim();
     if (!text) return;
@@ -289,6 +315,20 @@ export default function ChatPage() {
     setTextInput("");
     sendTypedText(text);
   }, [textInput, handleStart, sendTypedText]);
+
+  // 자동 모드일 때 마이크 권한이 이미 'granted'라면 자동 시작
+  useEffect(() => {
+    if (
+      childId &&
+      isAuto &&
+      micPermission === "granted" &&
+      !autoStartAttempted.current &&
+      status === "idle"
+    ) {
+      autoStartAttempted.current = true;
+      handleStart();
+    }
+  }, [childId, isAuto, micPermission, status, handleStart]);
 
   // 상태 플래그
   const isIdle = status === "idle";
@@ -390,7 +430,15 @@ export default function ChatPage() {
           {transcript.length === 0 ? (
             <div className="flex items-center justify-center h-full text-center p-4">
               <p className="text-xs" style={{ color: "#9ca3af" }}>
-                마이크 버튼을 눌러 자유롭게 대화를 시작해 보세요! 🌿
+                {isAuto
+                  ? isLive
+                    ? "케이가 듣고 있어요. 자유롭게 이야기해 보세요."
+                    : micPermission === "checking"
+                    ? "잠시만 기다려주세요..."
+                    : micPermission === "denied"
+                    ? "마이크 권한을 허용해주세요."
+                    : "대화 시작하기 버튼을 눌러주세요!"
+                  : "마이크 버튼을 눌러 자유롭게 대화를 시작해 보세요! 🌿"}
               </p>
             </div>
           ) : (
@@ -463,7 +511,7 @@ export default function ChatPage() {
               </div>
             )}
 
-            {!isLive && !isConnecting && (
+            {!isLive && !isConnecting && !isAuto && (
               <button
                 onClick={handleMicToggle}
                 className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
@@ -472,6 +520,43 @@ export default function ChatPage() {
               >
                 🎤
               </button>
+            )}
+
+            {!isLive && !isConnecting && isAuto && (
+              micPermission === "denied" ? (
+                <div className="flex flex-col items-center">
+                  <p className="text-xs text-red-500 mb-2 font-medium">마이크 권한 재시도가 필요해요</p>
+                  <button
+                    onClick={handleMicToggle}
+                    className="px-5 py-2.5 bg-red-50 text-red-600 rounded-full text-sm font-bold border border-red-200 active:scale-95 transition-transform cursor-pointer"
+                  >
+                    권한 다시 시도하기
+                  </button>
+                </div>
+              ) : status === "error" ? (
+                <div className="flex flex-col items-center">
+                  <p className="text-xs text-red-500 mb-2 font-medium">연결 오류가 발생했어요</p>
+                  <button
+                    onClick={handleStart}
+                    className="px-5 py-2.5 bg-red-50 text-red-600 rounded-full text-sm font-bold border border-red-200 active:scale-95 transition-transform cursor-pointer"
+                  >
+                    다시 연결하기
+                  </button>
+                </div>
+              ) : micPermission === "checking" ? (
+                <button disabled className="px-6 py-3 rounded-full text-white font-bold shadow-md opacity-50 text-sm" style={{ background: "#e8845a" }}>
+                  확인 중...
+                </button>
+              ) : (
+                <button
+                  onClick={handleStart}
+                  className="px-6 py-3 rounded-full text-white font-bold shadow-md transition-transform active:scale-95 cursor-pointer text-sm"
+                  style={{ background: "#e8845a" }}
+                  aria-label="대화 시작하기"
+                >
+                  대화 시작하기
+                </button>
+              )
             )}
 
             <button
