@@ -30,8 +30,8 @@ const audit = {
 };
 
 test('Reaction Engine & Seed Data Tests', async (t) => {
-  await t.test('Total 300 items', () => {
-    assert.strictEqual(reactionSeed.length, 300, 'Seed data should have exactly 300 items');
+  await t.test('Total 306 items (300 original + 6 dedicated hungry/배고픔 group 31 entries added for the 15-category reflective engine)', () => {
+    assert.strictEqual(reactionSeed.length, 306, 'Seed data should have exactly 306 items');
   });
 
   await t.test('Exactly 10 items per group (1~30)', () => {
@@ -88,7 +88,7 @@ test('Reaction Engine & Seed Data Tests', async (t) => {
     const texts = reactionSeed.map(item => item.text);
     const uniqueTexts = new Set(texts);
     audit.duplicateCount = texts.length - uniqueTexts.size;
-    assert.strictEqual(uniqueTexts.size, 300, 'All reaction texts should be completely unique');
+    assert.strictEqual(uniqueTexts.size, 306, 'All reaction texts should be completely unique');
 
     const groups: Record<number, string[]> = {};
     for (const item of reactionSeed) {
@@ -96,7 +96,7 @@ test('Reaction Engine & Seed Data Tests', async (t) => {
       groups[item.situation_group].push(item.text);
     }
 
-    for (let i = 1; i <= 30; i++) {
+    for (let i = 1; i <= 31; i++) {
       const groupTexts = groups[i];
       const prefixCounts: Record<string, number> = {};
       for (const text of groupTexts) {

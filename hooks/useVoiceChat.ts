@@ -9,7 +9,9 @@ import { useRef, useState, useCallback, useEffect } from "react";
 // 자막은 STT/LLM이 돌려주는 텍스트를 그대로 표시하므로 Live transcription 이벤트 문제가 없다.
 
 export type SessionStatus = "idle" | "connecting" | "live" | "ended" | "error";
-export interface Turn { role: "child" | "k"; text: string }
+// id: 메시지 고유 식별자(React key 및 message_id로 사용) — appendTurn/seedTranscript가 없으면
+// 자동 생성한다. 호출부(finalizeChildTurn/speak 등)는 { role, text }만 넘기면 된다.
+export interface Turn { role: "child" | "k"; text: string; id?: string }
 
 export interface UseVoiceChatOptions {
   /** 한 턴이 완전히 끝날 때마다 호출 (child: 발화 확정 시, k: 말하기 시작 시) */
@@ -71,6 +73,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const hasSpeechRef = useRef(false);
   const silenceMsRef = useRef(0);
   const sttBusyRef = useRef(false);
+  // 자유대화 respondText() 진행 중(케이 반응 생성 중) 플래그 — 이 동안은 새 녹음을 시작하거나
+  // 무음감지로 자동 finalize가 발생하지 않도록 막는다(speakingRef와 동일한 가드 패턴 재사용).
+  const respondingRef = useRef(false);
+  const [isResponding, setIsResponding] = useState(false);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 발화(utterance) 세대 카운터 — finalize 시점마다 증가.
   // 이미 확정(final)된 뒤에 뒤늦게 도착하는 중간(interim) 응답이 확정 말풍선과
@@ -80,6 +86,13 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   // 새 speak() 호출은 이전 재생 중인 오디오를 즉시 중단시키고, 이전 호출의 응답/재생은
   // 전부 폐기한다(single-audio 보장, 말풍선·음성 중복 표시 방지).
   const speakEpochRef = useRef(0);
+  // appendTurn/seedTranscript가 부여하는 message_id 생성용 순번 — startSession/reset 시 초기화.
+  // 배열 index 대신 이 id로 React key를 잡아야 렌더 중 재조정으로 인한 말풍선 오표시를 막는다.
+  const turnSeqRef = useRef(0);
+  function nextTurnId(): string {
+    turnSeqRef.current += 1;
+    return `t${turnSeqRef.current}`;
+  }
 
   function updateStatus(s: SessionStatus) {
     statusRef.current = s;
@@ -87,7 +100,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   }
 
   function appendTurn(turn: Turn) {
-    transcriptRef.current = [...transcriptRef.current, turn];
+    const withId: Turn = turn.id ? turn : { ...turn, id: nextTurnId() };
+    transcriptRef.current = [...transcriptRef.current, withId];
     setTranscript([...transcriptRef.current]);
   }
 
@@ -140,6 +154,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     updateStatus("connecting");
     transcriptRef.current = [];
     setTranscript([]);
+    turnSeqRef.current = 0;
     chunksRef.current = [];
     hasSpeechRef.current = false;
     silenceMsRef.current = 0;
@@ -170,7 +185,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       processorRef.current = processor;
 
       processor.onaudioprocess = (ev) => {
-        if (statusRef.current !== "live" || !micEnabledRef.current || speakingRef.current) return;
+        if (statusRef.current !== "live" || !micEnabledRef.current || speakingRef.current || respondingRef.current) return;
         const float32 = ev.inputBuffer.getChannelData(0);
 
         // RMS 기반 무음 감지
@@ -245,6 +260,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     silenceMsRef.current = 0;
     speakingRef.current = false;
     setIsSpeaking(false);
+    respondingRef.current = false;
+    setIsResponding(false);
     setInterimChildText("");
     lastAsrConfidenceRef.current = undefined;
   }
@@ -258,6 +275,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     teardown();
     transcriptRef.current = [];
     setTranscript([]);
+    turnSeqRef.current = 0;
     setError(null);
     updateStatus("idle");
   }, []);
@@ -269,8 +287,9 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
    *  이전 대화를 볼 수 있게 하기 위함. 세션 연결 이후(status가 "live"가 된 뒤) 1회 호출할 것
    *  — startSession()이 자체적으로 transcript를 비우므로 그보다 먼저 호출하면 덮어써진다. */
   const seedTranscript = useCallback((turns: Turn[]) => {
-    transcriptRef.current = turns;
-    setTranscript([...turns]);
+    const withIds = turns.map((t) => (t.id ? t : { ...t, id: nextTurnId() }));
+    transcriptRef.current = withIds;
+    setTranscript([...withIds]);
   }, []);
 
   const setMicEnabled = useCallback((enabled: boolean) => {
@@ -382,6 +401,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   /** 자유대화용 — 현재까지의 대화 기록으로 Gemini 텍스트 응답을 생성해 말풍선에만 표시.
    *  케이는 자유대화에서 음성으로 말하지 않는다 — TTS 호출 없음(텍스트 전용). */
   const respondText = useCallback(async () => {
+    respondingRef.current = true;
+    setIsResponding(true);
     try {
       const res = await fetch("/api/voice/respond", {
         method: "POST",
@@ -389,6 +410,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         body: JSON.stringify({
           history: transcriptRef.current,
           sessionId: options?.getSessionId?.() ?? null,
+          asrConfidence: lastAsrConfidenceRef.current,
         }),
       });
       if (!res.ok) return;
@@ -399,6 +421,9 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       onTurnCompleteRef.current?.({ role: "k", text });
     } catch {
       // 무응답 시 침묵 — 재시도는 다음 아이 발화에서
+    } finally {
+      respondingRef.current = false;
+      setIsResponding(false);
     }
   }, []);
 
@@ -423,7 +448,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   }, []);
 
   return {
-    status, error, transcript, interimChildText, isSpeaking,
+    status, error, transcript, interimChildText, isSpeaking, isResponding,
     startSession, stopSession, reset, getTranscript, getLastAsrConfidence, seedTranscript,
     speak, respondText, sendTypedText, sayText, setMicEnabled, setInputMode, manualFinalize,
   };

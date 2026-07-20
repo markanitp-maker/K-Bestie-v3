@@ -1,9 +1,9 @@
 {
-  "total": 300,
+  "total": 306,
   "distribution": {
-    "low": 56,
-    "medium": 230,
-    "high": 14
+    "low": 58,
+    "medium": 233,
+    "high": 15
   },
   "perGroupDistribution": {
     "1": {
@@ -155,6 +155,11 @@
       "low": 10,
       "medium": 0,
       "high": 0
+    },
+    "31": {
+      "low": 2,
+      "medium": 3,
+      "high": 1
     }
   },
   "duplicateCount": 0,

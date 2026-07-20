@@ -4808,5 +4808,95 @@
     ],
     "review_status": "reviewed",
     "text": "어 그랬구나"
+  },
+  {
+    "id": "g31-01",
+    "situation_group": 31,
+    "emotion": "배고픔",
+    "intensity": "low",
+    "topic": "건강",
+    "keywords": [
+      "배고파",
+      "배고픈",
+      "배고팠",
+      "배고프"
+    ],
+    "review_status": "reviewed",
+    "text": "배가 고프구나"
+  },
+  {
+    "id": "g31-02",
+    "situation_group": 31,
+    "emotion": "배고픔",
+    "intensity": "medium",
+    "topic": "건강",
+    "keywords": [
+      "배고파",
+      "배고픈",
+      "배고팠",
+      "배고프"
+    ],
+    "review_status": "reviewed",
+    "text": "지금 먹고 싶은 게 있나 보네"
+  },
+  {
+    "id": "g31-03",
+    "situation_group": 31,
+    "emotion": "배고픔",
+    "intensity": "low",
+    "topic": "건강",
+    "keywords": [
+      "배고파",
+      "배고픈",
+      "배고팠",
+      "배고프"
+    ],
+    "review_status": "reviewed",
+    "text": "출출했겠다"
+  },
+  {
+    "id": "g31-04",
+    "situation_group": 31,
+    "emotion": "배고픔",
+    "intensity": "medium",
+    "topic": "건강",
+    "keywords": [
+      "배고파",
+      "배고픈",
+      "배고팠",
+      "배고프"
+    ],
+    "review_status": "reviewed",
+    "text": "밥 먹을 시간이 됐나 보다"
+  },
+  {
+    "id": "g31-05",
+    "situation_group": 31,
+    "emotion": "배고픔",
+    "intensity": "high",
+    "topic": "건강",
+    "keywords": [
+      "배고파",
+      "배고픈",
+      "배고팠",
+      "배고프"
+    ],
+    "review_status": "reviewed",
+    "text": "배꼽시계가 울렸나 보네"
+  },
+  {
+    "id": "g31-06",
+    "situation_group": 31,
+    "emotion": "배고픔",
+    "intensity": "medium",
+    "topic": "건강",
+    "keywords": [
+      "배고파",
+      "배고픈",
+      "배고팠",
+      "배고프"
+    ],
+    "review_status": "reviewed",
+    "text": "얼른 뭐 좀 먹어야겠다"
   }
 ]

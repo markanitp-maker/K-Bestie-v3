@@ -10,6 +10,7 @@ import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { useGeminiLive } from "@/hooks/useGeminiLive";
 import { SkeletonBox } from "@/components/Skeleton";
 import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
+import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -146,6 +147,15 @@ function MissionInner() {
   // handleTurnComplete가 useGeminiLive(live) 생성보다 먼저 정의돼야 해서(훅에 콜백으로 넘김),
   // live.lockNow()/speakClosingLine()을 직접 참조할 수 없다 — ref로 우회.
   const liveRef = useRef<ReturnType<typeof useGeminiLive> | null>(null);
+  // 같은 이유로 useVoiceChat(sttTts)의 setMicEnabled도 ref로 우회 — 답변 처리 중(classifyAnswer
+  // 대기 등, 최대 10~32초)에는 자동 모드라도 마이크를 잠가 RMS 자동확정이 또 다른 child 턴을
+  // 만들어내지 못하게 한다(버그①②③의 자동 모드측 원인 — 수동 모드는 handleCentralButtonClick의
+  // canStartRecording 가드가 동일 역할을 한다).
+  const sttSetMicEnabledRef = useRef<((enabled: boolean) => void) | undefined>(undefined);
+  // isAuto state는 handleTurnComplete보다 뒤에서 선언되므로(훅 규칙상 useRef 자체는 미리 선언
+  // 가능) 같은 이유로 ref 우회 — 답변 처리가 끝난 뒤 마이크를 다시 켜도 되는지(자동 모드일
+  // 때만) 판단하는 데 쓴다.
+  const isAutoRef = useRef(true);
   // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
   // transcript에 채워넣는다(그 전에 넣으면 startSession()이 비워버림).
   const pastMessagesRef = useRef<Turn[]>([]);
@@ -186,28 +196,45 @@ function MissionInner() {
   }
 
   const handleTurnComplete = useCallback((turn: Turn) => {
+    // missionState !== "active"면(completing/completed) 그 이후의 아이 발화는 전부 무시한다
+    // — 100% 이후 들어오는 사용자 입력을 미션 판정 로직에 태우지 않기 위함. 이 경우와 'k' 턴은
+    // 아래 재진입 가드와 무관하게 항상 저장한다(기존 동작 유지).
+    const isChildTurnDuringActiveMission = turn.role === "child" && missionStateRef.current === "active";
+    const isLive = voiceModeRef.current === "live";
+
+    // 이전 턴이 아직 처리 중인데 도착한 child 턴은 저장조차 하지 않고 완전히 폐기한다 —
+    // handleCentralButtonClick/live.sendActivityStart 호출 전 canStartRecording 가드가 정상
+    // 사용자 흐름에선 이 상황 자체를 막아주지만(케이가 말하는 중/답변 처리 중엔 새 녹음을 시작할
+    // 수 없음), 자동 모드 RMS 자동확정처럼 그 가드를 통과한 뒤 지연 도착하는 경쟁 상황에 대한
+    // 2차 방어선이다. saveMessage보다 먼저 판정해야 폐기된 턴이 화면/DB에 남지 않는다
+    // (버그①게이지 오증가·②말풍선 중복 쌓임의 직접 원인이었음 — 예전엔 저장부터 하고 나중에
+    // 판정 로직만 건너뛰었음).
+    if (isChildTurnDuringActiveMission) {
+      if (isLive) {
+        // Live 모드 전용 재진입 가드 — 케이가 아직 말하는 중(speaking_k)이거나 직전 답변을
+        // 아직 처리 중(processing_answer)이면, 강제컷 직후 지연 도착한 STT 결과 등으로 인한
+        // 동일/추가 child 턴을 무시한다(중복 /api/mission/answer·respond 호출 방지).
+        if (turnPhaseRef.current !== "awaiting_child") return;
+        turnPhaseRef.current = "processing_answer";
+        // 위에서 processing_answer로 전이했더라도, 직전 턴의 비동기 체인이 아직 answerInFlightRef를
+        // 정리하지 못한 극히 좁은 경합 구간이면 역시 폐기한다(원래 로직 그대로 유지).
+        if (answerInFlightRef.current) {
+          turnPhaseRef.current = "awaiting_child";
+          return;
+        }
+      } else if (!shouldAcceptChildTurn({
+        isLiveMode: false,
+        answerInFlight: answerInFlightRef.current,
+        turnPhase: turnPhaseRef.current,
+        missionActive: true,
+      })) {
+        return;
+      }
+    }
+
     saveMessage(turn.role, turn.text);
 
-    // missionState !== "active"면(completing/completed) 그 이후의 아이 발화는 전부 무시한다
-    // — 100% 이후 들어오는 사용자 입력을 미션 판정 로직에 태우지 않기 위함.
-    if (turn.role !== "child" || missionStateRef.current !== "active") return;
-
-    // Live 모드 전용 재진입 가드 — 케이가 아직 말하는 중(speaking_k)이거나 직전 답변을
-    // 아직 처리 중(processing_answer)이면, 강제컷 직후 지연 도착한 STT 결과 등으로 인한
-    // 동일/추가 child 턴을 무시한다(중복 /api/mission/answer·respond 호출 방지).
-    const isLive = voiceModeRef.current === "live";
-    if (isLive) {
-      if (turnPhaseRef.current !== "awaiting_child") return;
-      turnPhaseRef.current = "processing_answer";
-    }
-
-    // 이전 턴의 비동기 처리(답변 제출→다음 질문 계산)가 아직 끝나지 않았으면 이번 턴은 무시한다
-    // — currentIndexRef.current가 아직 갱신되지 않은 상태에서 같은 질문이 중복 제출되는 것을
-    // 방지(STT/TTS 모드는 turnPhaseRef 가드가 없어 이 플래그가 유일한 방어선).
-    if (answerInFlightRef.current) {
-      if (isLive) turnPhaseRef.current = "awaiting_child";
-      return;
-    }
+    if (!isChildTurnDuringActiveMission) return;
 
     const qs = questionsRef.current;
     const idx = currentIndexRef.current;
@@ -223,6 +250,10 @@ function MissionInner() {
     const childTurnId = `${sid}:${question.id}:${++childTurnSeqRef.current}`;
 
     answerInFlightRef.current = true;
+    // 답변 처리 시작 — STT/TTS 자동 모드는 마이크가 계속 켜져 있으므로(케이 TTS 재생 중에만
+    // speakingRef가 막아줌), classifyAnswer 대기 중(최대 10~32초) 아이가 다시 말하면 RMS
+    // 자동확정이 또 다른 child 턴을 만들어낼 수 있었다 — 처리가 끝날 때까지 마이크를 잠근다.
+    if (!isLive) sttSetMicEnabledRef.current?.(false);
     void (async () => {
       try {
         const res = await fetch("/api/mission/answer", {
@@ -320,12 +351,18 @@ function MissionInner() {
         if (isLive) turnPhaseRef.current = "awaiting_child";
       } finally {
         answerInFlightRef.current = false;
+        // 자동 모드에서만 마이크를 되살린다 — 수동 모드는 다음 명시적 버튼 탭 전까지 계속
+        // 꺼져 있어야 한다(handleCentralButtonClick이 그때 다시 켠다).
+        if (!isLive && isAutoRef.current && missionStateRef.current === "active") {
+          sttSetMicEnabledRef.current?.(true);
+        }
       }
     })();
   }, [saveMessage, pickNextIndex]);
 
   // 자동·수동 발화 상태 및 DOM 조작을 위한 Ref 선언
   const [isAuto, setIsAuto] = useState(true);
+  isAutoRef.current = isAuto;
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
   const recordingStartedAtRef = useRef<number>(0);
@@ -333,6 +370,7 @@ function MissionInner() {
   const pingRef = useRef<HTMLDivElement | null>(null);
 
   const sttTts = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
+  sttSetMicEnabledRef.current = sttTts.setMicEnabled;
   const live = useGeminiLive({
     onTurnComplete: handleTurnComplete,
     voiceName: liveVoiceName,
@@ -697,6 +735,20 @@ function MissionInner() {
 
   const handleCentralButtonClick = useCallback(() => {
     if (!isRecordingRef.current) {
+      // 케이가 아직 말하는 중이거나(TTS 재생/Live 발화) 직전 답변이 아직 서버에서 처리
+      // 중이면(classifyAnswer 등, 최대 10~32초) 새 녹음을 시작할 수 없다 — 이 가드가 없으면
+      // 아이가 녹음 버튼을 다시 눌러 케이 발화를 끊거나(Live: sendActivityStart가 재생 중인
+      // 오디오를 강제 정지시킴), 아직 처리되지 않은 답변과 겹치는 새 child 턴을 만들어냈다
+      // (버그①게이지 오증가·②말풍선 중복 쌓임·③케이가 답을 기다리지 않는 것처럼 보이는 문제의
+      // 직접 원인).
+      if (!canStartRecording({
+        isLiveMode,
+        answerInFlight: answerInFlightRef.current,
+        kaySpeaking: sttTts.isSpeaking,
+        turnPhase: turnPhaseRef.current,
+      })) {
+        return;
+      }
       // 첫 클릭: Live는 K 발화 즉시 중단 후 activityStart, STT/TTS는 마이크만 켠다
       if (isLiveMode) {
         live.setAudioMuted(true);
@@ -977,7 +1029,7 @@ function MissionInner() {
         ) : (
           voice.transcript.map((turn, i) => (
             <div
-              key={i}
+              key={turn.id ?? i}
               className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                 turn.role === "k" ? "self-start" : "self-end"
               }`}

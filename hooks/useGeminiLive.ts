@@ -16,7 +16,10 @@ const K_TURN_SOFT_CUT_CHARS = 50;
 const K_TURN_HARD_CUT_CHARS = 110;
 
 export type SessionStatus = "idle" | "connecting" | "live" | "ending" | "ended" | "paused" | "error";
-export interface Turn { role: "child" | "k"; text: string }
+// id: 메시지 고유 식별자(React key 및 message_id로 사용) — appendTurn/seedTranscript/
+// finalizeKTurnText가 없으면 자동 생성하고, 같은 버블에 텍스트를 이어붙이는 경우(스트리밍
+// 청크 합치기)는 기존 id를 그대로 유지한다.
+export interface Turn { role: "child" | "k"; text: string; id?: string }
 
 // ── Vertex Live 릴레이(Cloud Run) 연결 지원 ──────────────────────
 // provider=ai_studio는 GoogleGenAI SDK가 반환하는 세션 객체를 그대로 쓰고, provider=vertex는
@@ -274,6 +277,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 5번째 답변 턴의 자연스러운 연속으로 이미 다 재생돼버린 뒤에야 락이 걸려 버그①(음성 없이
   // 텍스트만)을 유발했으므로 폐기했다.
   const postCompletionLockRef = useRef<"none" | "locked" | "closingActive">("none");
+  // appendTurn/seedTranscript가 부여하는 message_id 생성용 순번 — startSession(preserveHistory
+  // 아닐 때) 시 초기화. 배열 index 대신 이 id로 React key를 잡아야 렌더 중 재조정으로 인한
+  // 말풍선 오표시를 막는다.
+  const turnSeqRef = useRef(0);
+  function nextTurnId(): string {
+    turnSeqRef.current += 1;
+    return `t${turnSeqRef.current}`;
+  }
   // speakClosingLine()이 보낸 종료 턴에서 "실제 오디오가 처음 스케줄된 순간"을 정확히 1회만
   // onClosingAudioChunk로 통지하기 위한 가드 — speakClosingLine() 호출 시 false로 리셋.
   const closingAudioStartedFiredRef = useRef(false);
@@ -352,9 +363,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     const prev = transcriptRef.current;
     const last = prev[prev.length - 1];
     if (last?.role === "k") {
-      transcriptRef.current = [...prev.slice(0, -1), { role: "k", text: safeText }];
+      transcriptRef.current = [...prev.slice(0, -1), { role: "k", text: safeText, id: last.id }];
     } else {
-      transcriptRef.current = [...prev, { role: "k", text: safeText }];
+      transcriptRef.current = [...prev, { role: "k", text: safeText, id: nextTurnId() }];
     }
     setTranscript([...transcriptRef.current]);
     return safeText;
@@ -419,9 +430,13 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     const prev = transcriptRef.current;
     const last = prev[prev.length - 1];
     if (turn.role === "k" && last?.role === "k") {
-      transcriptRef.current = [...prev.slice(0, -1), { role: "k", text: last.text + turn.text }];
+      // 같은 K 턴의 스트리밍 청크를 이어붙이는 경우(outputTranscription 델타) — 기존 버블의
+      // message_id(last.id)를 그대로 유지한다. 서로 다른 논리적 턴이 이 분기를 타면 안 되므로
+      // (그러면 진짜 "다른 메시지가 이전 말풍선에 병합"되는 버그가 됨) 호출부는 반드시 같은
+      // 논리적 K 턴의 델타에서만 appendTurn을 연속 호출해야 한다.
+      transcriptRef.current = [...prev.slice(0, -1), { role: "k", text: last.text + turn.text, id: last.id }];
     } else {
-      transcriptRef.current = [...prev, turn];
+      transcriptRef.current = [...prev, { ...turn, id: turn.id ?? nextTurnId() }];
     }
     setTranscript([...transcriptRef.current]);
   }
@@ -604,6 +619,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     if (!opts?.preserveHistory) {
       transcriptRef.current = [];
       setTranscript([]);
+      turnSeqRef.current = 0;
     }
     diagCountRef.current = 0;
     childTurnFlushedRef.current = false;
@@ -1110,8 +1126,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
    *  이전 대화를 볼 수 있게 하기 위함. 세션 연결 이후(status가 "live"가 된 뒤) 1회 호출할 것
    *  — startSession()이 자체적으로 transcript를 비우므로 그보다 먼저 호출하면 덮어써진다. */
   const seedTranscript = useCallback((turns: Turn[]) => {
-    transcriptRef.current = turns;
-    setTranscript([...turns]);
+    const withIds = turns.map((t) => (t.id ? t : { ...t, id: nextTurnId() }));
+    transcriptRef.current = withIds;
+    setTranscript([...withIds]);
   }, []);
 
   const reset = useCallback(() => {

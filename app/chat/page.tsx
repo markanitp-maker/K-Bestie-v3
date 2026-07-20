@@ -65,6 +65,7 @@ export default function ChatPage() {
     getLastAsrConfidence,
     setInputMode,
     manualFinalize,
+    isResponding,
   } = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
   respondTextRef.current = respondText;
   getLastAsrConfidenceRef.current = getLastAsrConfidence;
@@ -213,6 +214,9 @@ export default function ChatPage() {
 
   const handleCentralButtonClick = useCallback(() => {
     if (!isRecordingRef.current) {
+      // 케이가 아직 반응을 생성/전송하는 중이면 새 녹음을 시작하지 않는다(턴 겹침 방지 —
+      // useVoiceChat.ts의 respondingRef 가드와 동일한 원칙을 버튼 단에서도 재확인).
+      if (isResponding) return;
       setMicEnabled(true);
       setIsRecording(true);
       isRecordingRef.current = true;
@@ -222,7 +226,7 @@ export default function ChatPage() {
       setIsRecording(false);
       isRecordingRef.current = false;
     }
-  }, [setMicEnabled, manualFinalize]);
+  }, [setMicEnabled, manualFinalize, isResponding]);
 
   const switchToText = useCallback(() => {
     setMode("text");
@@ -293,7 +297,7 @@ export default function ChatPage() {
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
         {/* 상단 고정 영역: 헤더 + 마스코트 (스크롤되지 않음) */}
         <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
-          <div className="flex items-center justify-center px-4 pt-4 pb-2">
+          <div className="flex items-center justify-center px-4 pt-3 pb-1">
             <Link href="/child/home" className="cursor-pointer">
               <Image
                 src="/Images/logo/Logo.png"
@@ -306,14 +310,18 @@ export default function ChatPage() {
             </Link>
           </div>
 
-          <div className="text-center pt-2 pb-4">
-            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
-              {isEnded ? (reportDone ? "오늘도 이야기해줘서 고마워요" : "대화가 끝났어요") : isConnecting ? "케이를 부르는 중이에요…" : "케이가 듣고 있어요…"}
-            </h1>
-            <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
-              {isEnded ? "부모님이 리포트에서 확인할 수 있어요" : "자유롭게 이야기해 보세요"}
-            </p>
-          </div>
+          {/* 대화 종료 후에만 안내 문구 표시 — 진행 중에는 "케이가 듣고 있어요…" 류 문구 없이
+              마스코트가 곧바로 보이도록 해 상단 여백을 줄인다. */}
+          {isEnded && (
+            <div className="text-center pt-1 pb-2">
+              <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+                {reportDone ? "오늘도 이야기해줘서 고마워요" : "대화가 끝났어요"}
+              </h1>
+              <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+                부모님이 리포트에서 확인할 수 있어요
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-center mb-2">
             <Image
@@ -347,7 +355,7 @@ export default function ChatPage() {
           ) : (
             transcript.map((turn, i) => (
               <div
-                key={i}
+                key={turn.id ?? i}
                 className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                   turn.role === "k" ? "self-start" : "self-end"
                 }`}
