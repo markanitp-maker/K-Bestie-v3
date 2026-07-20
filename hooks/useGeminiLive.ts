@@ -1582,11 +1582,15 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     if (outputCtxRef.current && outputCtxRef.current.state !== "running") {
       void ensureOutputAudioRunning();
     }
+    if (inputCtxRef.current && inputCtxRef.current.state !== "running") {
+      inputCtxRef.current.resume().catch(() => {});
+    }
     if (manualFinalizingRef.current) {
       console.log("[K] Blocked sendActivityStart because finalizing GCP STT");
       return false;
     }
     if (!sessionRef.current || statusRef.current !== "live") return false;
+    console.error(`[Timing] (a) 마이크 활성화(activityStart) - ${Date.now()}`);
     console.log("[K] 📡 sendActivityStart");
     stopAllScheduledSources();
     // 수동 모드 barge-in — K가 말하는 도중 아이가 버튼을 눌러 끼어든 경우, 진행 중인 K 턴을
@@ -1629,7 +1633,8 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       turnComplete: true
     });
 
-    if (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0) {
+    if (sttModeRef.current === "gcp") {
+      console.error(`[Timing] (b) 마이크 중지(activityEnd) 및 STT 전송 시작 - ${Date.now()}, chunk개수: ${childAudioChunksRef.current.length}`);
       manualFinalizingRef.current = true;
       setInterimChildText("음성을 인식하고 있어요…");
       flushChildTurn("");
