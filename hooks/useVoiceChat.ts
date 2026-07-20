@@ -411,6 +411,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
           history: transcriptRef.current,
           sessionId: options?.getSessionId?.() ?? null,
           asrConfidence: lastAsrConfidenceRef.current,
+          appMode: inputModeRef.current,
         }),
       });
       if (!res.ok) return;

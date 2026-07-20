@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { history?: HistoryTurn[]; sessionId?: string; asrConfidence?: number };
+  let body: { history?: HistoryTurn[]; sessionId?: string; asrConfidence?: number; appMode?: string };
   try {
     body = await req.json();
   } catch {
@@ -89,13 +89,18 @@ export async function POST(req: NextRequest) {
   // 2) 안전이 아니면 15개 카테고리 반영적 경청 엔진으로 반응 생성.
   const recentKTexts = history
     .filter((t): t is HistoryTurn & { role: "k" } => t.role === "k" && !!t.text?.trim())
-    .slice(-3)
+    .slice(-20)
     .map((t) => t.text.trim());
 
   const isLowConfidenceAsr =
     typeof body.asrConfidence === "number" && body.asrConfidence < LOW_ASR_CONFIDENCE_THRESHOLD;
 
   const reflective = generateReflectiveReaction(lastChild.text.trim(), recentKTexts, { isLowConfidenceAsr });
+
+  if (reflective.category === "app_mode_question") {
+    const modeText = body.appMode === "manual" ? "수동" : "자동";
+    reflective.text = `응, 지금은 ${modeText} 모드야.`;
+  }
 
   return NextResponse.json({
     text: reflective.text,

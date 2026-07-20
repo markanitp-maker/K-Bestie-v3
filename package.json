@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test lib/mission/missionCompletionFlow.test.ts lib/mission/turnGuard.test.ts lib/stt/scriptGuard.test.ts lib/freechat/reactionEngine.test.ts lib/freechat/reflectiveEngine.test.ts",
+    "test": "tsx --test lib/mission/missionCompletionFlow.test.ts lib/mission/turnGuard.test.ts lib/stt/scriptGuard.test.ts lib/freechat/reflectiveEngine.test.ts lib/pwa/standalone.test.ts",
     "postbuild": "node scripts/verify-client-bundle-env.js"
   },
   "dependencies": {
