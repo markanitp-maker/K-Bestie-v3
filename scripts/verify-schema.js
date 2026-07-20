@@ -11,7 +11,8 @@ fs.readFileSync(path.join(__dirname, '../.env.local'), 'utf8').split('\n').forEa
 })
 
 const TOKEN = envVars['SUPABASE_ACCESS_TOKEN']
-const REF   = 'fetvnhhjicndmxvhrffk'
+const { resolveProjectRef } = require('./lib/resolveTarget')
+const REF = resolveProjectRef()
 
 async function q(label, query) {
   const res = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {

@@ -229,12 +229,25 @@ export async function closeFreeSessions(db: SupabaseClient, targetDate: string):
 export async function generateDailyReports(db: SupabaseClient, targetDate: string): Promise<DailyReportResult> {
   const result: DailyReportResult = { created: [], skipped: [], errors: [] };
 
-  const { data: sessions, error: fetchErr } = await db
+  const { data: existingReports, error: existingErr } = await db
+    .from("daily_reports")
+    .select("session_id");
+
+  if (existingErr) throw new Error(`generateDailyReports: 기존 리포트 조회 실패 — ${existingErr.message}`);
+
+  const existingSessionIds = (existingReports || []).map((r: { session_id: string }) => r.session_id);
+
+  let query = db
     .from("chat_sessions")
     .select("id, child_id")
     .gte("ended_at", `${targetDate}T00:00:00+09:00`)
-    .lte("ended_at", `${targetDate}T23:59:59+09:00`)
-    .not("id", "in", `(SELECT session_id FROM daily_reports)`);
+    .lte("ended_at", `${targetDate}T23:59:59+09:00`);
+
+  if (existingSessionIds.length > 0) {
+    query = query.not("id", "in", existingSessionIds);
+  }
+
+  const { data: sessions, error: fetchErr } = await query;
 
   if (fetchErr) throw new Error(`generateDailyReports: 세션 조회 실패 — ${fetchErr.message}`);
   if (!sessions?.length) return result;

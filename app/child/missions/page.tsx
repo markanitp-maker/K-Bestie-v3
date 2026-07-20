@@ -125,6 +125,12 @@ function MissionInner() {
   // 재진입 가드와 onAudioQueueDrained의 복귀 신호가 이 상태를 관리한다(STT/TTS 모드는 기존
   // 동작을 그대로 유지하며 이 상태를 사용하지 않음).
   const turnPhaseRef = useRef<"awaiting_child" | "processing_answer" | "speaking_k">("awaiting_child");
+  // handleTurnComplete의 비동기 처리(답변 제출→다음 질문 계산→askQuestion)가 끝나기 전 재진입
+  // 방지 가드. Live 모드는 turnPhaseRef 상태머신으로 이미 막히지만, STT/TTS(Tier1/2) 모드는
+  // 케이 발화 재생 완료를 알리는 별도 콜백이 없어 이 플래그가 유일한 재진입 방지 장치다 —
+  // 이게 없으면 이전 턴이 currentIndexRef.current를 아직 갱신하기 전에 새 턴(특히 텍스트
+  // 입력을 빠르게 연속 전송하는 경우)이 들어와 매번 같은 질문이 중복 제출된다.
+  const answerInFlightRef = useRef(false);
   // 유효한 아이 답변 턴마다 1씩 증가 — /api/mission/answer, /api/mission/respond에 함께
   // 실어 보내 서버가 같은 턴에 대한 중복 요청을 식별할 수 있게 하는 idempotency key 재료.
   const childTurnSeqRef = useRef(0);
@@ -195,6 +201,14 @@ function MissionInner() {
       turnPhaseRef.current = "processing_answer";
     }
 
+    // 이전 턴의 비동기 처리(답변 제출→다음 질문 계산)가 아직 끝나지 않았으면 이번 턴은 무시한다
+    // — currentIndexRef.current가 아직 갱신되지 않은 상태에서 같은 질문이 중복 제출되는 것을
+    // 방지(STT/TTS 모드는 turnPhaseRef 가드가 없어 이 플래그가 유일한 방어선).
+    if (answerInFlightRef.current) {
+      if (isLive) turnPhaseRef.current = "awaiting_child";
+      return;
+    }
+
     const qs = questionsRef.current;
     const idx = currentIndexRef.current;
     const question = qs[idx];
@@ -208,6 +222,7 @@ function MissionInner() {
     // 식별할 수 있도록 /api/mission/answer, /api/mission/respond에 함께 실어 보낸다.
     const childTurnId = `${sid}:${question.id}:${++childTurnSeqRef.current}`;
 
+    answerInFlightRef.current = true;
     void (async () => {
       try {
         const res = await fetch("/api/mission/answer", {
@@ -303,6 +318,8 @@ function MissionInner() {
         askQuestionRef.current?.(next, respondText);
       } catch {
         if (isLive) turnPhaseRef.current = "awaiting_child";
+      } finally {
+        answerInFlightRef.current = false;
       }
     })();
   }, [saveMessage, pickNextIndex]);
@@ -453,7 +470,6 @@ function MissionInner() {
   // 자동 모드일 때 첫 진입 시 자동으로 Live 음성 세션 시작
   useEffect(() => {
     if (
-      isLiveMode &&
       phase === "ready" &&
       mode === "voice" &&
       isAuto &&
@@ -464,7 +480,7 @@ function MissionInner() {
       hasAutoStartedRef.current = true;
       void voice.startSession();
     }
-  }, [isLiveMode, phase, mode, isAuto, voice.status, voice]);
+  }, [phase, mode, isAuto, voice.status, voice]);
 
   // 세션 상태 감시 및 자동 시작 실패 감지
   useEffect(() => {
@@ -527,6 +543,8 @@ function MissionInner() {
       return;
     }
     setChildId(cid);
+    const storedVoiceInputMode = localStorage.getItem(`k_voice_input_mode:${cid}`);
+    if (storedVoiceInputMode === "manual") setIsAuto(false);
 
     let cancelled = false;
     (async () => {
@@ -629,40 +647,66 @@ function MissionInner() {
     return () => { cancelled = true; };
   }, [searchParams, router]);
 
-  // Live 모드가 활성화될 때 interactionMode 설정 동기화
+  // Live 모드가 활성화될 때 interactionMode 설정 동기화 (STT/TTS는 setInputMode+setMicEnabled로 동일 개념 적용)
   useEffect(() => {
-    if (voice.status === "live") {
+    if (voice.status !== "live") return;
+    if (isLiveMode) {
       live.setInteractionMode(isAuto ? "auto" : "manual");
+    } else {
+      sttTts.setInputMode(isAuto ? "auto" : "manual");
+      sttTts.setMicEnabled(isAuto);
     }
-  }, [voice.status, isAuto, live.setInteractionMode]);
+  }, [voice.status, isAuto, isLiveMode, live.setInteractionMode, sttTts.setInputMode, sttTts.setMicEnabled]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (newMode === "auto") {
-      // 수동 발화(녹음) 중이었다면 안전하게 activityEnd 선전송
+      // 수동 발화(녹음) 중이었다면 안전하게 먼저 종료 처리
       if (isRecordingRef.current) {
-        live.sendActivityEnd();
-        live.setAudioMuted(false);
+        if (isLiveMode) {
+          live.sendActivityEnd();
+          live.setAudioMuted(false);
+        } else {
+          sttTts.manualFinalize();
+          sttTts.setMicEnabled(false);
+        }
         setIsRecording(false);
         isRecordingRef.current = false;
       }
-      live.setInteractionMode("auto");
+      if (isLiveMode) {
+        live.setInteractionMode("auto");
+      } else {
+        sttTts.setInputMode("auto");
+        sttTts.setMicEnabled(true);
+      }
       setIsAuto(true);
     } else {
-      live.setInteractionMode("manual");
+      if (isLiveMode) {
+        live.setInteractionMode("manual");
+      } else {
+        sttTts.setInputMode("manual");
+        sttTts.setMicEnabled(false);
+      }
       setIsAuto(false);
       setIsRecording(false);
       isRecordingRef.current = false;
     }
-  }, [live]);
+    if (childIdRef.current) {
+      localStorage.setItem(`k_voice_input_mode:${childIdRef.current}`, newMode);
+    }
+  }, [live, sttTts, isLiveMode]);
 
   const handleCentralButtonClick = useCallback(() => {
     if (!isRecordingRef.current) {
-      // 첫 클릭: K가 말하는 중이면 오디오 재생 즉시 중단 후 activityStart
-      live.setAudioMuted(true);
-      const success = live.sendActivityStart();
-      if (!success) {
-        live.setAudioMuted(false);
-        return;
+      // 첫 클릭: Live는 K 발화 즉시 중단 후 activityStart, STT/TTS는 마이크만 켠다
+      if (isLiveMode) {
+        live.setAudioMuted(true);
+        const success = live.sendActivityStart();
+        if (!success) {
+          live.setAudioMuted(false);
+          return;
+        }
+      } else {
+        sttTts.setMicEnabled(true);
       }
       setIsRecording(true);
       isRecordingRef.current = true;
@@ -673,8 +717,13 @@ function MissionInner() {
         console.log("[CentralButton] Click within 500ms limit - ignored.");
         return;
       }
-      live.sendActivityEnd();
-      live.setAudioMuted(false);
+      if (isLiveMode) {
+        live.sendActivityEnd();
+        live.setAudioMuted(false);
+      } else {
+        sttTts.manualFinalize();
+        sttTts.setMicEnabled(false);
+      }
       setIsRecording(false);
       isRecordingRef.current = false;
       
@@ -688,7 +737,7 @@ function MissionInner() {
         pingRef.current.style.opacity = "0.2";
       }
     }
-  }, [live]);
+  }, [live, sttTts, isLiveMode]);
 
 
 
@@ -881,7 +930,7 @@ function MissionInner() {
             className="object-contain"
             priority
           />
-          {isLiveMode && !isDone && (
+          {!isDone && (
             <div className="absolute left-[calc(50%+52px)] top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-full border border-gray-200 shadow-inner shrink-0 z-10">
               <button
                 onClick={() => handleModeChange("auto")}

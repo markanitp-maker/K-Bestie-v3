@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
-import { getFreeChatReaction } from "@/lib/freechat/reactionEngine";
 
 export const runtime = "nodejs";
 
@@ -135,33 +134,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  let replyText: string | undefined;
-
-  if (mode === "free" && role === "child") {
-    const { data: recentMessages } = await service
-      .from("chat_messages")
-      .select("content")
-      .eq("session_id", sessionId)
-      .eq("role", "k")
-      .order("created_at", { ascending: false })
-      .limit(30);
-
-    const history = (recentMessages || []).map((m: any) => m.content);
-    
-    // if client sends asr confidence, map it here
-    const isLowConfidenceAsr = typeof asrConfidence === "number" && asrConfidence < 0.5;
-    const reaction = getFreeChatReaction(content.trim(), history, { isLowConfidenceAsr });
-    replyText = reaction.text;
-
-    const { error: replyError } = await service
-      .from("chat_messages")
-      .insert({ session_id: sessionId, role: "k", content: replyText, mode, voice_mode: "stt_tts" });
-
-    if (replyError) {
-      console.error("[FreeChat] Failed to insert K reaction:", replyError);
-    }
-  }
-
-  return NextResponse.json({ ok: true, ...(replyText ? { reply: replyText } : {}) });
+  return NextResponse.json({ ok: true });
 }
 

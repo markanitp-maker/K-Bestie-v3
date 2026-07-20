@@ -6,6 +6,15 @@ export const metadata: Metadata = {
   title: "내친구 케이",
   description: "아이의 마음을 듣는 AI 친구, 케이",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon-180.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -21,6 +30,8 @@ export const viewport: Viewport = {
   themeColor: "#1A6B5A",
 };
 
+import { PwaServiceWorker } from "@/components/PwaServiceWorker";
+
 export default function RootLayout({
   children,
 }: {
@@ -30,6 +41,7 @@ export default function RootLayout({
     <html lang="ko" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <DemoViewProvider>{children}</DemoViewProvider>
+        <PwaServiceWorker />
       </body>
     </html>
   );

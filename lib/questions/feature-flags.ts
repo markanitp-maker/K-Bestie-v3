@@ -12,5 +12,7 @@ export function isQuestionEngineV2Enabled(childId: string): boolean {
     .map((id) => id.trim())
     .filter(Boolean);
 
+  if (seedIds.length === 0) return true;
+
   return seedIds.includes(childId);
 }

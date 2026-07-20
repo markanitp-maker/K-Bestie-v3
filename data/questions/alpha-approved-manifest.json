@@ -1,0 +1,59 @@
+{
+  "manifest_version": "1.0",
+  "reviewed_at": "2026-07-20",
+  "reviewed_by": "claude-orchestrator-automated-review",
+  "source_file": "data/questions/question-bank-v2.0.json",
+  "source_question_bank_version": "v2.0",
+  "review_scope": "46 base questions (group_code) + 92 tone variants (jokey/calm) — reviewed as one logical question per group_code, not 138 separate meanings",
+  "review_criteria": [
+    "exact_duplicate",
+    "near_duplicate",
+    "leading_question",
+    "coercive_pressure",
+    "blame_accusatory",
+    "diagnostic_labeling",
+    "parent_bias",
+    "age_inappropriate",
+    "sensitive_info_solicitation",
+    "child_refusal_right_violation"
+  ],
+  "note": "This is NOT a clinical/professional review. clinical_status in mission_questions/question_variants remains PENDING_REVIEW for all rows — this manifest only gates which PENDING_REVIEW content may be shown to alpha-allowlisted children (see lib/questions/alphaAllowlist.ts / alpha_safety_text_allowlist table) while full human clinical review is pending before external beta.",
+  "summary": {
+    "total_group_codes": 46,
+    "pass": 46,
+    "hold": 0,
+    "exclude": 0
+  },
+  "flagged_for_extra_attention": [
+    {
+      "group_code": "Q5_1",
+      "reason": "source question_intent explicitly notes '위기 4범주 주의' (crisis-category caution) — relies on existing safety_events flagging pipeline (app/api/voice/respond, lib/freeChatReactions.ts pattern) for downstream handling, not a content defect"
+    },
+    {
+      "group_code": "Q5_2",
+      "reason": "source question_intent explicitly notes '위기 신호 시 즉시 중단' (stop immediately on crisis signal) — same safety-net dependency as Q5_1"
+    },
+    {
+      "group_code": "Q5_3",
+      "reason": "same emotional-intensity follow-up series as Q5_1/Q5_2 — same safety-net dependency"
+    }
+  ],
+  "approved_group_codes": [
+    "Q1_1_1", "Q1_1_2", "Q1_1_3", "Q1_1_4", "Q1_1_5", "Q1_1_6", "Q1_1_7",
+    "Q1_2_8", "Q1_2_9", "Q1_2_10", "Q1_2_11", "Q1_2_12", "Q1_2_13",
+    "Q2_1_1", "Q2_1_2",
+    "Q2_2_3", "Q2_2_4",
+    "Q3_1", "Q3_2", "Q3_3",
+    "Q4_1", "Q4_2", "Q4_3",
+    "Q5_1", "Q5_2", "Q5_3",
+    "Q6_1", "Q6_2", "Q6_3",
+    "Q7_1", "Q7_2", "Q7_3",
+    "Q8_1", "Q8_2", "Q8_3",
+    "Q9_1", "Q9_2", "Q9_3",
+    "Q10_1", "Q10_2", "Q10_3",
+    "Q11_1", "Q11_5",
+    "Q12_1", "Q12_7", "Q12_15"
+  ],
+  "excluded_group_codes": [],
+  "hold_group_codes": []
+}

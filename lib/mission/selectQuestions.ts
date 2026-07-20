@@ -12,6 +12,9 @@
 //   6. 온보딩("친해지기") 질문은 우선 배치해 첫 1주간 매 미션마다 자연스럽게 소진
 
 import { createServiceClient } from "@/lib/supabase/server";
+import { getDeterministicQuestionId } from "@/lib/questions/deterministicQuestionId";
+import fs from "fs";
+import path from "path";
 
 export type RoundType = "round1_day" | "round2_night" | "common";
 export type CycleType = "onboarding" | "always" | "weekly" | "monthly" | "quarterly";
@@ -257,6 +260,123 @@ export async function selectQuestionsV2(
 
   const { eligible, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
 
+
+  const picked: string[] = [];
+  const pickedSet = new Set<string>();
+  const add = (ids: string[]) => {
+    for (const id of ids) {
+      if (picked.length >= TOTAL_COUNT_V2) break;
+      if (!pickedSet.has(id)) {
+        picked.push(id);
+        pickedSet.add(id);
+      }
+    }
+  };
+
+  const moodChecks = shuffle(eligible.filter((q) => q.cycle_type === "always" && q.dashboard_area_tag === "emotion"));
+  const onboarding = shuffle(eligible.filter((q) => q.cycle_type === "onboarding"));
+  const rest = shuffle(
+    eligible.filter(
+      (q) => !(q.cycle_type === "always" && q.dashboard_area_tag === "emotion") && q.cycle_type !== "onboarding"
+    )
+  );
+
+  // 4. 상시 기분체크 1~2개 필수 포함
+  add(moodChecks.slice(0, MAX_MOOD_CHECK).map((q) => q.id));
+
+  // 6. 온보딩 우선 소진 (기분체크 확보 후)
+  add(onboarding.map((q) => q.id));
+
+  // 5. 나머지로 채우기
+  add(rest.map((q) => q.id));
+
+  // [보정] 만약 주기 필터로 인해 picked 질문 개수가 10개(REQUIRED_COUNT_V2) 미만인 경우,
+  // 학년 조건에 해당하는 전체 후보(candidates) 중에서 아직 픽업되지 않은 질문들을
+  // 가장 과거에 출제되었던 순(asked_at이 없거나 오래된 순)으로 정렬하여 10개를 충족할 때까지 강제로 채웁니다.
+  if (picked.length < REQUIRED_COUNT_V2) {
+    const remainingCandidates = candidates.filter((q) => !pickedSet.has(q.id));
+    const sortedRemaining = remainingCandidates.sort((a, b) => {
+      const aTime = lastAskedAt.get(a.id) ?? 0;
+      const bTime = lastAskedAt.get(b.id) ?? 0;
+      return aTime - bTime;
+    });
+    add(sortedRemaining.map((q) => q.id));
+  }
+
+  // 예비 질문까지 포함하여 총 20개(TOTAL_COUNT_V2)를 다 채우지 못한 경우,
+  // 후보군에 남아있는 것들 중 오래된 순서대로 끝까지 채웁니다.
+  if (picked.length < TOTAL_COUNT_V2) {
+    const remainingCandidates = candidates.filter((q) => !pickedSet.has(q.id));
+    const sortedRemaining = remainingCandidates.sort((a, b) => {
+      const aTime = lastAskedAt.get(a.id) ?? 0;
+      const bTime = lastAskedAt.get(b.id) ?? 0;
+      return aTime - bTime;
+    });
+    add(sortedRemaining.map((q) => q.id));
+  }
+
+  // 기분체크가 하나도 없고 후보에 남아있다면 보정
+  if (moodChecks.length >= MIN_MOOD_CHECK) {
+    const hasMood = picked.some((id) => moodChecks.some((m) => m.id === id));
+    if (!hasMood && picked.length > 0) {
+      picked[picked.length - 1] = moodChecks[0].id;
+    }
+  }
+
+  return picked.slice(0, TOTAL_COUNT_V2);
+}
+
+export async function getAlphaApprovedCandidates(
+  grade: number,
+  roundType: RoundType
+): Promise<QuestionRow[]> {
+  const service = createServiceClient();
+  
+  // Manifest 파일 경로
+  const manifestPath = path.join(process.cwd(), "data/questions/alpha-approved-manifest.json");
+  let approvedGroupCodes: string[] = [];
+  try {
+    const fileContent = fs.readFileSync(manifestPath, "utf-8");
+    const manifest = JSON.parse(fileContent);
+    approvedGroupCodes = manifest.approved_group_codes || [];
+  } catch (error) {
+    console.error("[getAlphaApprovedCandidates] Failed to read manifest:", error);
+    return [];
+  }
+
+  if (approvedGroupCodes.length === 0) return [];
+
+  // 매니페스트에 있는 group_code들을 결정론적 UUID로 변환
+  const targetIds = approvedGroupCodes.map((code) => getDeterministicQuestionId(code));
+
+  // clinical_status, is_active 무관하게 id 목록만으로 조회, 단 round_type 제한은 그대로
+  const { data: candidatesRaw, error: qErr } = await service
+    .from("mission_questions")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .in("id", targetIds)
+    .in("round_type", [roundType, "common"]);
+
+  if (qErr || !candidatesRaw) return [];
+
+  return (candidatesRaw as QuestionRow[]).filter((q) =>
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade)
+  );
+}
+
+/**
+ * V2와 동일한 로직으로 Alpha 허용 대상자용 질문을 선택합니다.
+ */
+export async function selectAlphaQuestions(
+  childId: string,
+  grade: number,
+  roundType: RoundType
+): Promise<string[]> {
+  const service = createServiceClient();
+
+  const candidates = await getAlphaApprovedCandidates(grade, roundType);
+  if (candidates.length === 0) return [];
+
+  const { eligible, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
 
   const picked: string[] = [];
   const pickedSet = new Set<string>();

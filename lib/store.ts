@@ -115,6 +115,18 @@ export function clearStore(): void {
   localStorage.removeItem("k_child_id");
   localStorage.removeItem("k_session_id");
   localStorage.removeItem("k_family_id");
+  localStorage.removeItem("k_question_statuses");
+
+  if ("caches" in window) {
+    caches.keys().then((names) => {
+      names.forEach((name) => {
+        if (!name.startsWith("kbestie-shell-")) {
+          caches.delete(name).catch(() => {});
+        }
+      });
+    }).catch(() => {});
+  }
+
   window.dispatchEvent(new Event(STORE_EVENT));
 }
 

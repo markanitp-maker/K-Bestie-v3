@@ -18,16 +18,16 @@ export async function calculateFinalDeletionDate(familyId: string): Promise<Date
     .from('insight_retention_extensions')
     .select('extension_years_purchased')
     .eq('family_id', familyId)
-    .single();
-    
+    .limit(1);
+
   let extensionYears = 0;
-  if (!error && data) {
-    extensionYears = data.extension_years_purchased;
+  if (!error && data && data.length > 0) {
+    extensionYears = data[0].extension_years_purchased;
   }
-  
+
   // Care Insight는 Tier 2
   const retention = getEffectiveRetention(2, extensionYears);
-  
+
   const finalDate = new Date();
   finalDate.setUTCMonth(finalDate.getUTCMonth() + retention.months);
   return finalDate;

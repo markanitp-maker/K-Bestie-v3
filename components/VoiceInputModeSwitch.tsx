@@ -1,0 +1,36 @@
+"use client";
+
+interface VoiceInputModeSwitchProps {
+  isAuto: boolean;
+  onChange: (mode: "auto" | "manual") => void;
+  className?: string;
+}
+
+export function VoiceInputModeSwitch({ isAuto, onChange, className }: VoiceInputModeSwitchProps) {
+  return (
+    <div
+      className={`inline-flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-full border border-gray-200 shadow-inner shrink-0 ${className ?? ""}`}
+    >
+      <button
+        onClick={() => onChange("auto")}
+        aria-pressed={isAuto}
+        aria-label="자동으로 말하기"
+        className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
+          isAuto ? "bg-[#1a6b5a] text-white shadow-sm" : "text-gray-500 hover:text-gray-700"
+        }`}
+      >
+        자동
+      </button>
+      <button
+        onClick={() => onChange("manual")}
+        aria-pressed={!isAuto}
+        aria-label="버튼 눌러 말하기"
+        className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all duration-300 ease-out cursor-pointer ${
+          !isAuto ? "bg-[#1a6b5a] text-white shadow-sm" : "text-gray-500 hover:text-gray-700"
+        }`}
+      >
+        수동
+      </button>
+    </div>
+  );
+}

@@ -58,6 +58,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const inputCtxRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const micEnabledRef = useRef(true);
+  const inputModeRef = useRef<"auto" | "manual">("auto");
   const speakingRef = useRef(false);
   // 케이 발화(TTS) 재생 전용 AudioContext — 세션 시작(마이크 켜기, 사용자 인터랙션) 시점에
   // 1회 생성/resume해두고 이후 모든 턴이 이 컨텍스트에서 디코딩·재생한다(useGeminiLive.ts와
@@ -120,8 +121,13 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
     const audioBase64 = encodePCM16Base64(chunks);
     const { text, confidence } = await callStt(audioBase64);
-    if (!text) return;
-    if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 중복 방지를 위해 폐기
+    if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 폐기
+    if (!text) {
+      const errorText = "음성을 인식하지 못했어요. 다시 말해 주세요.";
+      appendTurn({ role: "k", text: errorText });
+      onTurnCompleteRef.current?.({ role: "k", text: errorText });
+      return;
+    }
 
     lastAsrConfidenceRef.current = confidence;
     appendTurn({ role: "child", text });
@@ -183,7 +189,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
           silenceMsRef.current = 0;
         } else {
           silenceMsRef.current += CHUNK_MS;
-          if (hasSpeechRef.current && silenceMsRef.current >= SILENCE_MS_TO_FINALIZE) {
+          if (hasSpeechRef.current && silenceMsRef.current >= SILENCE_MS_TO_FINALIZE && inputModeRef.current !== "manual") {
             void finalizeChildTurn();
           }
         }
@@ -270,6 +276,14 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const setMicEnabled = useCallback((enabled: boolean) => {
     micEnabledRef.current = enabled;
   }, []);
+
+  const setInputMode = useCallback((mode: "auto" | "manual") => {
+    inputModeRef.current = mode;
+  }, []);
+
+  const manualFinalize = useCallback(() => {
+    void finalizeChildTurn();
+  }, [finalizeChildTurn]);
 
   /** 케이 발화 재생 — TTS 합성 후 오디오 재생. 재생 중엔 마이크 캡처를 잠시 멈춘다(에코 방지).
    *  새 호출 시 이전 재생 중인 오디오를 즉시 중단하고, 이전 호출의 응답/재생은 전부 폐기해서
@@ -411,6 +425,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   return {
     status, error, transcript, interimChildText, isSpeaking,
     startSession, stopSession, reset, getTranscript, getLastAsrConfidence, seedTranscript,
-    speak, respondText, sendTypedText, sayText, setMicEnabled,
+    speak, respondText, sendTypedText, sayText, setMicEnabled, setInputMode, manualFinalize,
   };
 }

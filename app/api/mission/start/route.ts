@@ -4,6 +4,8 @@ import { selectQuestions, selectQuestionsV2, parseGrade, countApprovedV2Candidat
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
+import { isChildAlphaAllowedForQuestions } from "@/lib/questions/alphaAllowlist";
+import { selectAlphaQuestions } from "@/lib/mission/selectQuestions";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
@@ -40,6 +42,7 @@ export async function POST(req: NextRequest) {
   if (consentBlocked) return consentBlocked;
 
   let isV2 = isQuestionEngineV2Enabled(childId);
+  const isAlphaQuestionChild = await isChildAlphaAllowedForQuestions(childId);
 
   const service = createServiceClient();
 
@@ -169,7 +172,7 @@ export async function POST(req: NextRequest) {
   // 미승인·중복(쿨다운 미충족) 문항을 억지로 채워 넣지 않는다 — selectQuestionsV2가 내부적으로
   // 후보 부족 시 쿨다운 미충족 문항까지 강제로 채우는 보정 로직을 갖고 있으므로, 그 보정에 기대지 않고
   // 이 게이트에서 미리 차단한다.
-  if (isV2) {
+  if (isV2 && !isAlphaQuestionChild) {
     const eligibleCount = await countApprovedV2Candidates(childId, grade, roundType);
     if (eligibleCount < REQUIRED_COUNT_V2 || eligibleCount < TOTAL_COUNT_V2) {
       console.warn("[start/route] V2->V1 폴백: 개인화 적용 후 가용 문항 부족", {
@@ -185,11 +188,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const REQUIRED_COUNT = isV2 ? 10 : 5;
+  const REQUIRED_COUNT = (isV2 || isAlphaQuestionChild) ? 10 : 5;
 
   // 출제 질문 선별
   let questionIds: string[] = [];
-  if (isV2) {
+  if (isAlphaQuestionChild) {
+    questionIds = await selectAlphaQuestions(childId, grade, roundType);
+    isV2 = true;
+  } else if (isV2) {
     questionIds = await selectQuestionsV2(childId, grade, roundType);
   } else {
     questionIds = await selectQuestions(childId, grade, roundType);
@@ -267,7 +273,6 @@ export async function POST(req: NextRequest) {
       question_role: idx < 10 ? "PRIMARY" : "RESERVE",
       selected_order: idx + 1,
       session_id: session.id,
-      asked_at: null,
     }));
     const { error: histErr } = await service.from("mission_question_history").insert(historyRows);
     if (histErr) {

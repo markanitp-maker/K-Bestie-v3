@@ -36,7 +36,8 @@ async function generateWithRetry(prompt: string): Promise<string> {
     throw new Error("GEMMA_API_KEY is not configured");
   }
   const ai = new GoogleGenAI({ apiKey });
-  const delays = [0, 3000, 5000];
+  const delays = [0, 2000];
+  const PER_ATTEMPT_TIMEOUT_MS = 15000;
   let lastError: any;
 
   for (let attempt = 0; attempt < delays.length; attempt++) {
@@ -44,14 +45,19 @@ async function generateWithRetry(prompt: string): Promise<string> {
       await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
     }
     try {
-      const response = await ai.models.generateContent({
-        model: "gemma-4-31b-it",
-        contents: prompt,
-        config: {
-          systemInstruction:
-            "반드시 JSON 형식으로만 응답해야 합니다. Markdown 코드 블록 등 외에 어떠한 텍스트도 추가하지 마십시오.",
-        },
-      });
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model: "gemma-4-31b-it",
+          contents: prompt,
+          config: {
+            systemInstruction:
+              "반드시 JSON 형식으로만 응답해야 합니다. Markdown 코드 블록 등 외에 어떠한 텍스트도 추가하지 마십시오.",
+          },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`generateContent timeout after ${PER_ATTEMPT_TIMEOUT_MS}ms`)), PER_ATTEMPT_TIMEOUT_MS)
+        ),
+      ]);
       if (response.text) {
         return response.text;
       }

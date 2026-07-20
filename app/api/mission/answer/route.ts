@@ -377,6 +377,7 @@ export async function POST(req: NextRequest) {
             .eq("child_id", session.child_id)
             .eq("session_id", sessionId)
             .eq("question_id", questionId)
+            .not("question_role", "is", null)
             .order("selected_order", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -432,6 +433,7 @@ export async function POST(req: NextRequest) {
             .select("question_id")
             .eq("child_id", session.child_id)
             .eq("session_id", sessionId)
+            .not("question_role", "is", null)
             .order("selected_order", { ascending: true });
 
           if (sortedErr) {

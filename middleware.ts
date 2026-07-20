@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isAdminEmail } from "@/lib/admin/isAdminEmail";
+import { getSupabaseUrl, getSupabaseAnonKey } from "@/lib/supabase/env";
 
 // matcher가 "/parent/:path*" 로 좁혀져 있어 이 미들웨어는 그 경로에서만 실행된다.
 // 예전엔 거의 모든 경로(정적 파일 제외 전체)에서 매번 supabase.auth.getUser()로
@@ -15,8 +16,8 @@ export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    getSupabaseUrl(),
+    getSupabaseAnonKey(),
     {
       cookies: {
         getAll() {

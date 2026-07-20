@@ -11,7 +11,8 @@ fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
 })
 
 const TOKEN = envVars['SUPABASE_ACCESS_TOKEN']
-const PROJECT_REF = 'fetvnhhjicndmxvhrffk'
+const { resolveProjectRef } = require('./lib/resolveTarget')
+const PROJECT_REF = resolveProjectRef()
 
 if (!TOKEN) {
   console.error('ERROR: SUPABASE_ACCESS_TOKEN 이 .env.local 에 없습니다.')

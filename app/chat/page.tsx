@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
+import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -21,6 +22,9 @@ export default function ChatPage() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
+  const [isAuto, setIsAuto] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
 
   const voiceBubbleRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -59,6 +63,8 @@ export default function ChatPage() {
     sendTypedText,
     setMicEnabled,
     getLastAsrConfidence,
+    setInputMode,
+    manualFinalize,
   } = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
   respondTextRef.current = respondText;
   getLastAsrConfidenceRef.current = getLastAsrConfidence;
@@ -149,6 +155,8 @@ export default function ChatPage() {
     const stored = localStorage.getItem("k_child_id");
     if (stored) {
       setChildId(stored);
+      const storedMode = localStorage.getItem(`k_voice_input_mode:${stored}`);
+      if (storedMode === "manual") setIsAuto(false);
       return;
     }
     router.replace("/");
@@ -175,6 +183,46 @@ export default function ChatPage() {
   useEffect(() => {
     voiceBubbleRef.current?.scrollTo({ top: voiceBubbleRef.current.scrollHeight, behavior: "smooth" });
   }, [transcript, interimChildText]);
+
+  // 세션이 live가 될 때 저장된 자동/수동 모드를 훅에 반영 — 수동 모드는 아이가 명시적으로
+  // 말하기 버튼을 누르기 전까지 마이크를 꺼둔다(불필요한 상시 캡처 방지).
+  useEffect(() => {
+    if (status === "live") {
+      setInputMode(isAuto ? "auto" : "manual");
+      setMicEnabled(isAuto);
+    }
+  }, [status, isAuto, setInputMode, setMicEnabled]);
+
+  const handleModeChange = useCallback((newMode: "auto" | "manual") => {
+    if (newMode === "auto") {
+      // 수동 모드에서 녹음 중이던 발화가 있었다면 안전하게 먼저 확정
+      if (isRecordingRef.current) {
+        manualFinalize();
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
+      setInputMode("auto");
+      setMicEnabled(true);
+    } else {
+      setInputMode("manual");
+      setMicEnabled(false);
+    }
+    setIsAuto(newMode === "auto");
+    if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, newMode);
+  }, [childId, manualFinalize, setInputMode, setMicEnabled]);
+
+  const handleCentralButtonClick = useCallback(() => {
+    if (!isRecordingRef.current) {
+      setMicEnabled(true);
+      setIsRecording(true);
+      isRecordingRef.current = true;
+    } else {
+      manualFinalize();
+      setMicEnabled(false);
+      setIsRecording(false);
+      isRecordingRef.current = false;
+    }
+  }, [setMicEnabled, manualFinalize]);
 
   const switchToText = useCallback(() => {
     setMode("text");
@@ -267,7 +315,7 @@ export default function ChatPage() {
             </p>
           </div>
 
-          <div className="flex justify-center mb-4">
+          <div className="flex justify-center mb-2">
             <Image
               src="/Images/mascot/mascot-standing.png"
               alt="케이 마스코트"
@@ -277,6 +325,12 @@ export default function ChatPage() {
               priority
             />
           </div>
+
+          {mode === "voice" && (
+            <div className="flex justify-center mb-4">
+              <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
+            </div>
+          )}
         </div>
 
         {/* 대화 말풍선: 이 영역만 스크롤 */}
@@ -334,7 +388,7 @@ export default function ChatPage() {
               </button>
             )}
 
-            {isLive && (
+            {isLive && isAuto && (
               <div className="relative flex items-center justify-center">
                 <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
                 <button
@@ -345,6 +399,30 @@ export default function ChatPage() {
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
                     <rect x="6" y="6" width="12" height="12" rx="2" />
                   </svg>
+                </button>
+              </div>
+            )}
+
+            {isLive && !isAuto && (
+              <div className="relative flex items-center justify-center">
+                {isRecording && (
+                  <div className="absolute w-16 h-16 rounded-full bg-orange-400/20 animate-ping pointer-events-none" />
+                )}
+                <button
+                  onClick={handleCentralButtonClick}
+                  className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer ${
+                    isRecording ? "bg-gradient-to-br from-orange-400 to-orange-500" : ""
+                  }`}
+                  style={!isRecording ? { background: "#e8845a" } : undefined}
+                  aria-label={isRecording ? "말하기 완료" : "말하기 시작"}
+                >
+                  {isRecording ? (
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
+                      <rect x="6" y="6" width="12" height="12" rx="2" />
+                    </svg>
+                  ) : (
+                    <span className="text-2xl">🎤</span>
+                  )}
                 </button>
               </div>
             )}

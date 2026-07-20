@@ -19,6 +19,7 @@ import {
 import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
 import { calculateFinalDeletionDate, purchaseExtension } from "@/lib/plan/insightExtension";
 import { CONSENT_DOCUMENT_TEXT } from "@/lib/plan/consentDocument";
+import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 
 function formatRetentionLabel(tier: Tier): string {
   const retention = getEffectiveRetention(tier, 0);
@@ -48,6 +49,7 @@ export default function ParentSettingsPage() {
   const store = useStore();
   const { reportAlert, weeklySummary } = store.notifSettings;
   const { view: demoView } = useDemoView();
+  const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
 
   const [mounted, setMounted] = useState(false);
   const [windowWidth, setWindowWidth] = useState<number>(1200);
@@ -188,13 +190,13 @@ export default function ParentSettingsPage() {
         const { data, error } = await supabase.from("insight_retention_extensions")
           .select("extension_years_purchased")
           .eq("family_id", store.activeFamilyId)
-          .single();
+          .limit(1);
         
         if (error) {
           console.error(error);
           setExtensionYears(0);
-        } else if (data) {
-          setExtensionYears(data.extension_years_purchased);
+        } else if (data && data.length > 0) {
+          setExtensionYears(data[0].extension_years_purchased);
         } else {
           setExtensionYears(0);
         }
@@ -622,9 +624,9 @@ export default function ParentSettingsPage() {
   if (!mounted) {
     return (
       <DemoFrame>
-        <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+        <div className="h-full flex flex-col overflow-hidden md:h-auto md:overflow-visible" style={{ background: "#f3f4f6" }}>
           <ParentHeader />
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3 md:flex-none md:h-auto md:overflow-visible md:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
             {Array.from({ length: 3 }).map((_, i) => (
               <SkeletonBox key={i} className="h-16" />
             ))}
@@ -644,10 +646,10 @@ export default function ParentSettingsPage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+      <div className="h-full flex flex-col overflow-hidden md:h-auto md:overflow-visible" style={{ background: "#f3f4f6" }}>
         <ParentHeader />
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3 md:flex-none md:h-auto md:overflow-visible md:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
           {/* 1. 아이 추가 메뉴 카드 */}
           <div
             onClick={() => menuToggle("add_child")}
@@ -729,7 +731,7 @@ export default function ParentSettingsPage() {
                     </div>
 
                     <div
-                      className="max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 p-2 text-[9px] leading-relaxed text-gray-500"
+                      className="max-h-28 overflow-y-auto md:max-h-none md:overflow-y-visible whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 p-2 text-[9px] leading-relaxed text-gray-500"
                     >
                       {CONSENT_DOCUMENT_TEXT}
                     </div>
@@ -747,7 +749,7 @@ export default function ParentSettingsPage() {
                     <button
                       type="submit"
                       disabled={addLoading}
-                      className="w-full py-2.5 rounded-xl text-white text-xs font-bold active:scale-95 transition-transform"
+                      className="w-full py-2.5 rounded-xl text-white text-xs font-bold active:scale-95 transition-transform md:scroll-mb-[calc(7rem+env(safe-area-inset-bottom,0px))]"
                       style={{ background: "#1a6b5a" }}
                     >
                       {addLoading ? "아이 추가 중..." : "자녀 등록 완료"}
@@ -1012,6 +1014,31 @@ export default function ParentSettingsPage() {
               </div>
             )}
           </div>
+
+          {/* PWA 설치 안내 카드 */}
+          {!isStandalone && (
+            <div className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 mt-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
+                  📱
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>앱 설치하기</p>
+                  <p className="text-[11px]" style={{ color: "#6b7280" }}>
+                    {isIOS ? "공유 버튼 → '홈 화면에 추가'를 눌러주세요" : "홈 화면에 추가하여 더 편리하게 이용하세요"}
+                  </p>
+                </div>
+                {!isIOS && installPrompt && (
+                  <button
+                    onClick={handleInstall}
+                    className="px-3 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-lg shrink-0 active:scale-95 transition-transform"
+                  >
+                    설치
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 4. 회원 탈퇴 메뉴 카드 */}
           <div

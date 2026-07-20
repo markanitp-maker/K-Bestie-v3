@@ -12,10 +12,8 @@ if (fs.existsSync(envPath)) {
 }
 
 const TOKEN = envVars['SUPABASE_ACCESS_TOKEN'];
-// apply-migration.js를 참고한 PROJECT_REF 하드코딩 + 동적 파싱 fallback
-const PROJECT_REF = envVars['NEXT_PUBLIC_SUPABASE_URL'] 
-  ? envVars['NEXT_PUBLIC_SUPABASE_URL'].match(/https:\/\/(.+)\.supabase\.co/)?.[1]
-  : 'fetvnhhjicndmxvhrffk';
+const { resolveProjectRef } = require('./lib/resolveTarget');
+const PROJECT_REF = resolveProjectRef();
 
 const child1 = envVars['ALPHA_SAFETY_CHILD_ID_1'];
 const child2 = envVars['ALPHA_SAFETY_CHILD_ID_2'];

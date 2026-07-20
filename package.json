@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx --test lib/mission/missionCompletionFlow.test.ts lib/stt/scriptGuard.test.ts"
+    "test": "tsx --test lib/mission/missionCompletionFlow.test.ts lib/stt/scriptGuard.test.ts",
+    "postbuild": "node scripts/verify-client-bundle-env.js"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^8.3.1",

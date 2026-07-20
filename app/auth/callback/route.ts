@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies, headers as nextHeaders } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
+import { headers as nextHeaders } from "next/headers";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
   const { searchParams, origin: rawOrigin } = new URL(request.url);
@@ -28,30 +28,33 @@ export async function GET(request: Request) {
   const returnUrl = searchParams.get("returnUrl") || "/";
 
   if (code) {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
-          setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {
-              // Server Component setAll ignore
-            }
-          },
-        },
-      }
-    );
+    const supabase = await createClient();
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (user && !userError) {
+          const serviceSupabase = await createServiceClient();
+          const { error: upsertError } = await serviceSupabase
+            .from("parents")
+            .upsert(
+              { 
+                id: user.id, 
+                email: user.email ?? "", 
+                name: (user.user_metadata as any)?.name ?? "" 
+              },
+              { onConflict: "id", ignoreDuplicates: true }
+            );
+
+          if (upsertError) {
+            console.error("[auth/callback] parents table upsert error:", upsertError.message);
+          }
+        }
+      } catch (err: any) {
+        console.error("[auth/callback] parents table upsert exception:", err?.message || err);
+      }
+
       return NextResponse.redirect(`${origin}${returnUrl}`);
     }
   }

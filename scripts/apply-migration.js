@@ -12,7 +12,9 @@ if (fs.existsSync(envPath)) {
 }
 
 const TOKEN = envVars['SUPABASE_ACCESS_TOKEN'];
-const PROJECT_REF = 'fetvnhhjicndmxvhrffk';
+const { resolveProjectRef, getTargetEnv } = require('./lib/resolveTarget');
+const PROJECT_REF = resolveProjectRef();
+const TARGET_ENV = getTargetEnv();
 
 if (!TOKEN) {
   console.error('ERROR: SUPABASE_ACCESS_TOKEN 이 .env.local 에 없습니다.');
@@ -26,7 +28,7 @@ if (!fs.existsSync(sqlPath)) {
 }
 
 console.log(`=========================================`);
-console.log(`적용 대상: Production 프로젝트 ${PROJECT_REF}`);
+console.log(`적용 대상: ${TARGET_ENV.toUpperCase()} 프로젝트 ${PROJECT_REF}`);
 console.log(`파일: ${sqlPath}`);
 console.log(`=========================================`);
 
