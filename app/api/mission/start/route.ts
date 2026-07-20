@@ -49,73 +49,78 @@ export async function POST(req: NextRequest) {
   // 요금제(tier)별 음성 방식 — 미션 로직(정답판정/게이지/황금열쇠/라운드)과 무관한 부가 정보
   const { tier, voiceMode, liveVoiceName } = await getVoiceModeForChild(childId);
 
-  // ── 이어하기: 아직 끝나지 않은(ended_at IS NULL) 같은 라운드의 미션 세션이 있으면 이어서 반환
-  const { data: existingSession, error: existingSessionErr } = await service
+  // KST 기준 오늘의 시작/끝 시각 계산 (business_date 경계)
+  const now = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kstNow = new Date(now.getTime() + kstOffset);
+  const yyyy = kstNow.getUTCFullYear();
+  const mm = String(kstNow.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(kstNow.getUTCDate()).padStart(2, '0');
+  const businessDate = `${yyyy}-${mm}-${dd}`;
+  const startOfDayKst = new Date(`${businessDate}T00:00:00+09:00`).toISOString();
+  const endOfDayKst = new Date(`${businessDate}T23:59:59.999+09:00`).toISOString();
+
+  // ── 이어하기: KST 기준 오늘(business_date) 생성된, 같은 라운드(window_id)의 활성(ended_at NULL) 미션 세션 찾기
+  // (과거의 닫히지 않은 다른 라운드 세션이 잡히지 않도록 멱등성 보장)
+  let { data: existingSessionRow, error: existingSessionErr } = await service
     .from("chat_sessions")
-    .select("id")
+    .select("id, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version)")
     .eq("child_id", childId)
     .eq("session_type", "mission")
-    .is("ended_at", null)
+    .gte("started_at", startOfDayKst)
+    .lte("started_at", endOfDayKst)
+    .eq("mission_progress.round_type", roundType)
+    .is("ended_at", null) // 활성 세션 명시적 확인
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (existingSessionErr) {
-    console.error("[start/route] existingSession query error:", existingSessionErr);
+    console.error("[start/route] activeSession query error:", existingSessionErr);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
-  if (existingSession) {
-    // 1) status만 먼저 단독 조회 — isV2(라이브 플래그)와 무관하게 항상 실행
-    const { data: statusRow, error: statusErr } = await service
-      .from("mission_progress")
-      .select("status")
-      .eq("session_id", existingSession.id)
-      .eq("round_type", roundType)
+  // 만약 활성 세션이 없다면, 오늘 날짜로 이미 종료된(완료된) 세션이 있는지 확인 (중복 생성 방지)
+  if (!existingSessionRow) {
+    const { data: completedSessionRow, error: completedSessionErr } = await service
+      .from("chat_sessions")
+      .select("id, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version)")
+      .eq("child_id", childId)
+      .eq("session_type", "mission")
+      .gte("started_at", startOfDayKst)
+      .lte("started_at", endOfDayKst)
+      .not("ended_at", "is", null) // 종료된 세션 확인
+      .eq("mission_progress.round_type", roundType)
+      .eq("mission_progress.status", "COMPLETED") // 명시적 완료 확인
+      .order("started_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    if (statusErr) {
-      console.error("[start/route] status query error:", statusErr);
+    if (completedSessionErr) {
+      console.error("[start/route] completedSession query error:", completedSessionErr);
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
+    existingSessionRow = completedSessionRow;
+  }
 
-    if (statusRow?.status === "SAFETY_PAUSED") {
+  if (existingSessionRow) {
+    const existingSessionId = existingSessionRow.id;
+    // select() 결과로 배열 형태로 내려오거나 단일 객체로 내려옴(has one)
+    const existingProgress = Array.isArray(existingSessionRow.mission_progress)
+      ? existingSessionRow.mission_progress[0]
+      : existingSessionRow.mission_progress;
+
+    if (existingProgress?.status === "SAFETY_PAUSED") {
       return NextResponse.json(
-        { error: "Mission is safety paused pending review", status: "SAFETY_PAUSED", sessionId: existingSession.id },
+        { error: "Mission is safety paused pending review", status: "SAFETY_PAUSED", sessionId: existingSessionId },
         { status: 423 }
       );
-    }
-
-    interface ExistingProgressRow {
-      session_id: string;
-      valid_answer_count: number | null;
-      question_ids: string[] | null;
-      question_states: Record<string, string> | null;
-      round_type: string | null;
-      required_valid_count?: number | null;
-      engine_version?: string | null;
-    }
-
-    // 2) 나머지 필드 조회 — required_valid_count, engine_version 상시 포함
-    const fields = "session_id, valid_answer_count, question_ids, question_states, round_type, required_valid_count, engine_version";
-
-    const { data: existingProgress, error: existingProgressErr } = (await service
-      .from("mission_progress")
-      .select(fields)
-      .eq("session_id", existingSession.id)
-      .eq("round_type", roundType)
-      .maybeSingle()) as unknown as { data: ExistingProgressRow | null; error: { message: string } | null };
-
-    if (existingProgressErr) {
-      console.error("[start/route] existingProgress query error:", existingProgressErr);
-      return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
     const isExistingV2 = existingProgress?.engine_version === "v2";
     const reqCount = isExistingV2 ? (existingProgress?.required_valid_count ?? 10) : 5;
 
-    // COMPLETED 체크는 이제 statusRow 기준(플래그와 무관하게 항상 신뢰 가능)
-    if (existingProgress && (existingProgress.valid_answer_count ?? 0) < reqCount && statusRow?.status !== "COMPLETED") {
+    if (existingProgress) {
       const existingIds: string[] = existingProgress.question_ids ?? [];
       const { data: existingQuestions, error: existingQuestionsErr } = await service
         .from("mission_questions")
@@ -132,14 +137,15 @@ export async function POST(req: NextRequest) {
         .filter(Boolean);
 
       const progressPercent = (existingProgress.valid_answer_count ?? 0) * (isExistingV2 ? 10 : 20);
+      const isCompleted = existingProgress.status === "COMPLETED" || (existingProgress.valid_answer_count ?? 0) >= reqCount;
 
       return NextResponse.json({
         resumed: true,
-        sessionId: existingSession.id,
+        sessionId: existingSessionId,
         roundType,
         requiredCount: reqCount,
         progressPercent,
-        completed: (existingProgress.valid_answer_count ?? 0) >= reqCount,
+        completed: isCompleted,
         engine_version: isExistingV2 ? "v2" : "v1",
         questionIds: existingIds,
         questions: orderedExisting,
@@ -244,6 +250,8 @@ export async function POST(req: NextRequest) {
 
   const progressInsertPayload: any = {
     session_id: session.id,
+    child_id: childId,
+    business_date: businessDate,
     valid_answer_count: 0,
     question_ids: questionIds,
     question_states: questionStates,
@@ -261,6 +269,72 @@ export async function POST(req: NextRequest) {
   if (progErr) {
     console.error("[start/route] mission_progress insert error:", progErr);
     await rollbackSession(session.id);
+
+    // 중복 INSERT (유니크 제약 위반) 시 기존 세션 재조회
+    if (progErr.code === "23505" || progErr.message.includes("duplicate key") || progErr.message.includes("unique constraint")) {
+      console.warn("[start/route] Duplicate session detected via unique constraint. Re-fetching existing session...");
+      const { data: retrySessionRow } = await service
+        .from("chat_sessions")
+        .select("id, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version)")
+        .eq("child_id", childId)
+        .eq("session_type", "mission")
+        .gte("started_at", startOfDayKst)
+        .lte("started_at", endOfDayKst)
+        .eq("mission_progress.round_type", roundType)
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (retrySessionRow) {
+        const retrySessionId = retrySessionRow.id;
+        const retryProgress = Array.isArray(retrySessionRow.mission_progress)
+          ? retrySessionRow.mission_progress[0]
+          : retrySessionRow.mission_progress;
+
+        if (retryProgress?.status === "SAFETY_PAUSED") {
+          return NextResponse.json(
+            { error: "Mission is safety paused pending review", status: "SAFETY_PAUSED", sessionId: retrySessionId },
+            { status: 423 }
+          );
+        }
+
+        const isRetryV2 = retryProgress?.engine_version === "v2";
+        const retryReqCount = isRetryV2 ? (retryProgress?.required_valid_count ?? 10) : 5;
+
+        if (retryProgress) {
+          const retryIds: string[] = retryProgress.question_ids ?? [];
+          const { data: retryQuestions } = await service
+            .from("mission_questions")
+            .select("id, question_text, dashboard_area_tag, cycle_type, round_type")
+            .in("id", retryIds);
+
+          const orderedRetry = retryIds
+            .map((qid) => (retryQuestions ?? []).find((q) => q.id === qid))
+            .filter(Boolean);
+
+          const retryPercent = (retryProgress.valid_answer_count ?? 0) * (isRetryV2 ? 10 : 20);
+          const isRetryCompleted = retryProgress.status === "COMPLETED" || (retryProgress.valid_answer_count ?? 0) >= retryReqCount;
+
+          return NextResponse.json({
+            resumed: true,
+            sessionId: retrySessionId,
+            roundType,
+            requiredCount: retryReqCount,
+            progressPercent: retryPercent,
+            completed: isRetryCompleted,
+            engine_version: isRetryV2 ? "v2" : "v1",
+            questionIds: retryIds,
+            questions: orderedRetry,
+            questionStates: retryProgress.question_states ?? {},
+            validAnswerCount: retryProgress.valid_answer_count ?? 0,
+            tier,
+            voiceMode,
+            liveVoiceName,
+          });
+        }
+      }
+    }
+
     return NextResponse.json({ error: progErr.message }, { status: 500 });
   }
 
