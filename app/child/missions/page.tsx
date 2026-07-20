@@ -127,15 +127,15 @@ function MissionInner() {
   // 판정/다음 질문 생성 중) → speaking_k(케이가 말하는 중) → awaiting_child. handleTurnComplete의
   // 재진입 가드와 onAudioQueueDrained의 복귀 신호가 이 상태를 관리한다(STT/TTS 모드는 기존
   // 동작을 그대로 유지하며 이 상태를 사용하지 않음).
-  const turnPhaseRef = useRef<"awaiting_child" | "processing_answer" | "speaking_k">("awaiting_child");
+  const turnPhaseRef = useRef<"awaiting_child" | "awaiting_stt_result" | "processing_answer" | "speaking_k">("awaiting_child");
   // turnPhaseRef를 화면에 반영하기 위한 미러 state — ref만으로는 canStartRecording이 답변
   // 판정 중(processing_answer)이라 탭을 막고 있어도 버튼이 계속 "말하기 시작"(🎤)로 보여
   // 아이 입장에선 "버튼 눌러도 반응 없음"으로 느껴졌다(버튼은 정상적으로 탭을 무시하는
   // 중이었을 뿐, 시각 피드백이 전혀 없었던 게 진짜 원인). 판정 로직은 여전히 turnPhaseRef만
   // 읽고(동기·ref 기반 그대로 유지), 이 state는 오직 렌더링(생각 중 표시)에만 쓴다.
-  const [turnPhaseUi, setTurnPhaseUi] = useState<"awaiting_child" | "processing_answer" | "speaking_k">("awaiting_child");
-  const setTurnPhase = useCallback((next: "awaiting_child" | "processing_answer" | "speaking_k") => {
-    if (turnPhaseRef.current !== "awaiting_child" && next === "awaiting_child") {
+  const [turnPhaseUi, setTurnPhaseUi] = useState<"awaiting_child" | "awaiting_stt_result" | "processing_answer" | "speaking_k">("awaiting_child");
+  const setTurnPhase = useCallback((next: "awaiting_child" | "awaiting_stt_result" | "processing_answer" | "speaking_k") => {
+    if (turnPhaseRef.current !== "awaiting_child" && turnPhaseRef.current !== "awaiting_stt_result" && next === "awaiting_child") {
       liveRef.current?.logTelemetryEvent("thinkingFalse");
       liveRef.current?.logTelemetryEvent("micEnabled");
     }
@@ -236,7 +236,7 @@ function MissionInner() {
         // Live 모드 전용 재진입 가드 — 케이가 아직 말하는 중(speaking_k)이거나 직전 답변을
         // 아직 처리 중(processing_answer)이면, 강제컷 직후 지연 도착한 STT 결과 등으로 인한
         // 동일/추가 child 턴을 무시한다(중복 /api/mission/answer·respond 호출 방지).
-        if (turnPhaseRef.current !== "awaiting_child") {
+        if (turnPhaseRef.current !== "awaiting_child" && turnPhaseRef.current !== "awaiting_stt_result") {
           return;
         }
         setTurnPhase("processing_answer");
@@ -626,14 +626,23 @@ function MissionInner() {
 
   const switchToText = useCallback(() => {
     if (isRecordingRef.current) {
-      live.sendActivityEnd();
-      live.setAudioMuted(false);
-      setIsRecording(false);
-      isRecordingRef.current = false;
+      try {
+        if (isLiveMode) {
+          live.sendActivityEnd();
+          live.setAudioMuted(false);
+          setTurnPhase("awaiting_stt_result");
+        } else {
+          sttTts.manualFinalize();
+          sttTts.setMicEnabled(false);
+        }
+      } finally {
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
     }
     setMode("text");
     voice.setMicEnabled(false);
-  }, [voice, live]);
+  }, [voice, live, isLiveMode, sttTts, setTurnPhase]);
 
   const switchToVoice = useCallback(() => {
     setMode("voice");
@@ -784,15 +793,19 @@ function MissionInner() {
     if (newMode === "auto") {
       // 수동 발화(녹음) 중이었다면 안전하게 먼저 종료 처리
       if (isRecordingRef.current) {
-        if (isLiveMode) {
-          live.sendActivityEnd();
-          live.setAudioMuted(false);
-        } else {
-          sttTts.manualFinalize();
-          sttTts.setMicEnabled(false);
+        try {
+          if (isLiveMode) {
+            live.sendActivityEnd();
+            live.setAudioMuted(false);
+            setTurnPhase("awaiting_stt_result");
+          } else {
+            sttTts.manualFinalize();
+            sttTts.setMicEnabled(false);
+          }
+        } finally {
+          setIsRecording(false);
+          isRecordingRef.current = false;
         }
-        setIsRecording(false);
-        isRecordingRef.current = false;
       }
       if (isLiveMode) {
         live.setInteractionMode("auto");
@@ -854,28 +867,32 @@ function MissionInner() {
         console.log("[CentralButton] Click within 500ms limit - ignored.");
         return;
       }
-      if (isLiveMode) {
-        live.logTelemetryEvent("stopRecording");
-        live.sendActivityEnd();
-        live.setAudioMuted(false);
-      } else {
-        sttTts.manualFinalize();
-        sttTts.setMicEnabled(false);
-      }
-      setIsRecording(false);
-      isRecordingRef.current = false;
-      
-      // 레벨 시각 피드백 수동 리셋
-      if (buttonRef.current) {
-        buttonRef.current.style.transform = "scale(1)";
-        buttonRef.current.style.boxShadow = "none";
-      }
-      if (pingRef.current) {
-        pingRef.current.style.transform = "scale(1)";
-        pingRef.current.style.opacity = "0.2";
+      try {
+        if (isLiveMode) {
+          live.logTelemetryEvent("stopRecording");
+          live.sendActivityEnd();
+          live.setAudioMuted(false);
+          setTurnPhase("awaiting_stt_result");
+        } else {
+          sttTts.manualFinalize();
+          sttTts.setMicEnabled(false);
+        }
+      } finally {
+        setIsRecording(false);
+        isRecordingRef.current = false;
+        
+        // 레벨 시각 피드백 수동 리셋
+        if (buttonRef.current) {
+          buttonRef.current.style.transform = "scale(1)";
+          buttonRef.current.style.boxShadow = "none";
+        }
+        if (pingRef.current) {
+          pingRef.current.style.transform = "scale(1)";
+          pingRef.current.style.opacity = "0.2";
+        }
       }
     }
-  }, [live, sttTts, isLiveMode]);
+  }, [live, sttTts, isLiveMode, setTurnPhase]);
 
 
 

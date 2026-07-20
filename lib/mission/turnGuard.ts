@@ -15,7 +15,7 @@
 // 가드를 통과한 뒤에도 지연 도착 등 극히 드문 경쟁 상황에 대비하는 2차 방어선이다.
 
 /** Live(Tier3) 전용 미션 턴 상태머신 — missions/page.tsx의 turnPhaseRef와 동일한 타입. */
-export type TurnPhase = "awaiting_child" | "processing_answer" | "speaking_k";
+export type TurnPhase = "awaiting_child" | "awaiting_stt_result" | "processing_answer" | "speaking_k";
 
 export interface RecordingGuardInput {
   /** true면 Live(Tier3) 경로, false면 STT/TTS(Tier1/2) 경로. */
@@ -34,7 +34,7 @@ export interface RecordingGuardInput {
  * 이전 답변과 겹치는 새 녹음을 만들면 안 됨).
  */
 export function canStartRecording(input: RecordingGuardInput): boolean {
-  if (input.isLiveMode) return input.turnPhase === "awaiting_child";
+  if (input.isLiveMode) return input.turnPhase === "awaiting_child" || input.turnPhase === "speaking_k";
   return !input.answerInFlight && !input.kaySpeaking;
 }
 
@@ -54,6 +54,6 @@ export interface ChildTurnAcceptInput {
  */
 export function shouldAcceptChildTurn(input: ChildTurnAcceptInput): boolean {
   if (!input.missionActive) return true;
-  if (input.isLiveMode) return input.turnPhase === "awaiting_child";
+  if (input.isLiveMode) return input.turnPhase === "awaiting_child" || input.turnPhase === "awaiting_stt_result" || input.turnPhase === "speaking_k";
   return !input.answerInFlight;
 }

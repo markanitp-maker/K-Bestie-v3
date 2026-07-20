@@ -36,21 +36,26 @@ test("canStartRecording: STT/TTS — 처리 중이면서 동시에 케이도 말
 });
 
 // ── canStartRecording — Live(Tier3) ──────────────────────────────────────
-test("canStartRecording: Live — awaiting_child 상태에서만 허용", () => {
+test("canStartRecording: Live — awaiting_child 상태면 허용", () => {
   assert.equal(
     canStartRecording({ isLiveMode: true, answerInFlight: false, kaySpeaking: false, turnPhase: "awaiting_child" }),
     true
   );
 });
 
-for (const phase of ["processing_answer", "speaking_k"] as TurnPhase[]) {
-  test(`canStartRecording: Live — ${phase} 상태면 차단`, () => {
-    assert.equal(
-      canStartRecording({ isLiveMode: true, answerInFlight: false, kaySpeaking: false, turnPhase: phase }),
-      false
-    );
-  });
-}
+test("canStartRecording: Live — speaking_k 상태에서도 허용 (끼어들기 지원)", () => {
+  assert.equal(
+    canStartRecording({ isLiveMode: true, answerInFlight: false, kaySpeaking: false, turnPhase: "speaking_k" }),
+    true
+  );
+});
+
+test("canStartRecording: Live — processing_answer 상태면 차단", () => {
+  assert.equal(
+    canStartRecording({ isLiveMode: true, answerInFlight: false, kaySpeaking: false, turnPhase: "processing_answer" }),
+    false
+  );
+});
 
 // ── shouldAcceptChildTurn ─────────────────────────────────────────────────
 test("shouldAcceptChildTurn: 미션이 active 상태가 아니면 항상 통과(기존 동작 유지)", () => {
@@ -74,7 +79,7 @@ test("shouldAcceptChildTurn: STT/TTS — active 상태에서 이전 답변 처�
   );
 });
 
-test("shouldAcceptChildTurn: Live — awaiting_child가 아니면 폐기", () => {
+test("shouldAcceptChildTurn: Live — processing_answer 상태면 폐기", () => {
   assert.equal(
     shouldAcceptChildTurn({ isLiveMode: true, answerInFlight: false, turnPhase: "processing_answer", missionActive: true }),
     false
@@ -84,6 +89,20 @@ test("shouldAcceptChildTurn: Live — awaiting_child가 아니면 폐기", () =>
 test("shouldAcceptChildTurn: Live — awaiting_child면 통과", () => {
   assert.equal(
     shouldAcceptChildTurn({ isLiveMode: true, answerInFlight: false, turnPhase: "awaiting_child", missionActive: true }),
+    true
+  );
+});
+
+test("shouldAcceptChildTurn: Live — awaiting_stt_result면 통과", () => {
+  assert.equal(
+    shouldAcceptChildTurn({ isLiveMode: true, answerInFlight: false, turnPhase: "awaiting_stt_result", missionActive: true }),
+    true
+  );
+});
+
+test("shouldAcceptChildTurn: Live — speaking_k면 통과", () => {
+  assert.equal(
+    shouldAcceptChildTurn({ isLiveMode: true, answerInFlight: false, turnPhase: "speaking_k", missionActive: true }),
     true
   );
 });

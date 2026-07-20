@@ -233,6 +233,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 화면 말풍선·transcript에는 이 원문으로 대체한다(음성은 이미 재생되어 되돌릴 수 없음).
   const kTurnExpectedTextRef = useRef<string | null>(null);
   const kTurnLeakDetectedRef = useRef(false);
+  const expectingInterruptRef = useRef(false);
 
   // ── 스케줄 기반 오디오 재생 (갭 없는 gapless 재생) ─────────
   // 이전 큐/playNext 방식은 onended→start 사이 JS 이벤트 루프 갭으로 파직거림 발생.
@@ -991,17 +992,31 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         // 진행 중인 K 턴을 "지금까지 표시된 텍스트"로 즉시 확정하고, 이미 스케줄된 오디오도 끊은
         // 뒤 컷 상태로 전환해 이후 잔여 오디오/텍스트/turnComplete를 전부 폐기한다. 클라이언트
         // VAD가 이미 컷했다면(kTurnCutRef true) finalizeActiveKTurn은 no-op이라 중복 저장되지 않는다.
-        if (sc.interrupted && !kTurnCutRef.current) {
-          console.log("[K] 🖐️ server interrupted — finalize & discard remaining K turn");
-          stopAllScheduledSources();
-          cutActiveKTurnForBargeIn();
+        if (sc.interrupted) {
+          if (expectingInterruptRef.current) {
+            expectingInterruptRef.current = false;
+          } else if (!kTurnCutRef.current) {
+            console.log("[K] 🖐️ server interrupted — finalize & discard remaining K turn");
+            stopAllScheduledSources();
+            cutActiveKTurnForBargeIn();
+          }
+
+          // ── 강제 종료된 턴 — 진짜 turnComplete(또는 interrupted 확인)만 기다렸다가 다음 턴 준비 ──
+          // interrupted 이후 서버가 별도 turnComplete를 안 보내는 경우가 있어, interrupted 자체도
+          // 컷 해제 신호로 취급한다(그러지 않으면 kTurnCutRef가 영구히 true로 남아 다음 K 턴을 막는다).
+          if (kTurnCutRef.current) {
+            kTurnCutRef.current = false;
+            hasLiveInputTxRef.current = false;
+            speechHistoryRef.current = "";
+            kTurnCutServerDoneRef.current = true;
+            maybeUnlockCutChildTurn();
+          }
+          return;
         }
 
-        // ── 강제 종료된 턴 — 진짜 turnComplete(또는 interrupted 확인)만 기다렸다가 다음 턴 준비 ──
-        // interrupted 이후 서버가 별도 turnComplete를 안 보내는 경우가 있어, interrupted 자체도
-        // 컷 해제 신호로 취급한다(그러지 않으면 kTurnCutRef가 영구히 true로 남아 다음 K 턴을 막는다).
+        // 강제컷된 상태일 때 다른 서버 메시지는 무시
         if (kTurnCutRef.current) {
-          if (sc.turnComplete || sc.interrupted) {
+          if (sc.turnComplete) {
             kTurnCutRef.current = false;
             hasLiveInputTxRef.current = false;
             speechHistoryRef.current = "";
@@ -1454,8 +1469,14 @@ const incomingGenerationId = currentKGenerationIdRef.current;
    *  영구 전환한다. lockNow() 이후에 호출할 것. */
   const speakClosingLine = useCallback((text: string): boolean => {
     if (!sessionRef.current || statusRef.current !== "live") return false;
+    audioMutedRef.current = false;
+    if (outputCtxRef.current && outputCtxRef.current.state !== "running") {
+      void ensureOutputAudioRunning();
+    }
     closingAudioStartedFiredRef.current = false;
     postCompletionLockRef.current = "closingActive";
+    stopAllScheduledSources();
+    expectingInterruptRef.current = true;
     // 새 K 턴을 시작하므로 직전 컷 상태가 남아 있으면 해제한다 — barge-in 직후 서버가
     // interrupted/turnComplete를 못 보낸 드문 경우에도 이 K 턴이 컷에 막혀 사라지지 않도록.
     kTurnCutRef.current = false;
@@ -1496,6 +1517,12 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     if (!sessionRef.current || statusRef.current !== "live") {
       return false;
     }
+    audioMutedRef.current = false;
+    if (outputCtxRef.current && outputCtxRef.current.state !== "running") {
+      void ensureOutputAudioRunning();
+    }
+    stopAllScheduledSources();
+    expectingInterruptRef.current = true;
     // 여기서 말풍선을 낙관적으로 먼저 찍지 않는다 — 모델이 실제로 발화하며 오는
     // outputTranscription(outTx)이 onmessage에서 자동으로 말풍선을 채운다.
     // 예전엔 여기서도 appendTurn+onTurnComplete를 즉시 호출해서, 뒤이어 도착하는 outTx가
@@ -1580,21 +1607,27 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     
     // 수동 모드 지연 원인 수정: activityEnd만 보내면 Live 서버가 turnComplete로 인식하지 않고 
     // 마냥 기다리는(2~3분 지연) 문제가 발생하므로 명시적으로 turnComplete를 전송한다.
-    // 단, GCP STT를 병행하는 미션 모드에서는 이로 인해 K-A(모델 자체응답)와 K-B(API 응답)가 
-    // 둘 다 발동될 수 있으므로, K-B가 오기 전까지의 K-A를 어떻게 처리할지 제어가 필요하다.
     logTelemetryEvent("sendActivityEnd");
     generationEpochRef.current += 1;
-    kGenerationSeqRef.current += 1;
-    currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
-    activeKTurnIdRef.current = nextTurnId();
+    
+    if (sttModeRef.current === "gcp") {
+      // GCP STT 모드: Gemini 자체응답(K-A)을 무시하고, 이후 /api/mission/answer API 
+      // 처리 후 나오는 K-B만 재생하도록 현재 생성 ID를 null로 비운다.
+      currentKGenerationIdRef.current = null;
+    } else {
+      kGenerationSeqRef.current += 1;
+      currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
+      activeKTurnIdRef.current = nextTurnId();
+      startGenerationTimeout();
+      waitingForLiveReceiveRef.current = true;
+    }
     hasFiredFirstOutputRef.current = false;
-    startGenerationTimeout();
+    
     sessionRef.current.sendRealtimeInput({ activityEnd: {} });
     sessionRef.current.sendClientContent({
       turns: [],
       turnComplete: true
     });
-    waitingForLiveReceiveRef.current = true;
 
     if (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0) {
       manualFinalizingRef.current = true;
