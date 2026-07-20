@@ -3,966 +3,1851 @@
     "group_code": "Q1_1_1",
     "title": "호칭 선택",
     "question_text": "케이가 너를 뭐라고 부르면 좋아?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 편안하게 느끼는 이름이나 별명을 확인한다.",
-    "expected_answer_elements": ["원하는 호칭(이름/별명)"],
+    "expected_answer_elements": [
+      "원하는 호칭(이름/별명)"
+    ],
     "minimum_valid_answer": "하나 이상의 호칭 또는 별명 언급",
     "report_usage": "호칭 선호 정보 제공",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "헤이 친구! 케이가 너를 뭐라고 부르면 기분이 날아갈 것 같아?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "케이가 너를 어떤 이름으로 부르는 게 제일 편안할지 말해주겠니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "헤이 친구! 케이가 너를 뭐라고 부르면 기분이 날아갈 것 같아?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "케이가 너를 어떤 이름으로 부르는 게 제일 편안할지 말해주겠니?"
+      }
+    ],
+    "purpose": "rapport"
   },
   {
     "group_code": "Q1_1_2",
     "title": "별명 확인",
     "question_text": "친구들이나 가족이 부르는 별명도 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 일상에서 사용하는 친숙한 호칭을 확인한다.",
-    "expected_answer_elements": ["별명 유무 및 별명 텍스트"],
+    "expected_answer_elements": [
+      "별명 유무 및 별명 텍스트"
+    ],
     "minimum_valid_answer": "별명이 있다/없다 답변 및 별명 언급",
     "report_usage": "또래 및 가족 호칭 힌트 제공",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "가족들이나 단짝 친구들이 너를 부르는 재미있는 비밀 별명 같은 거 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "친구들이나 가족분들이 보통 너를 어떻게 부르는지 알고 싶구나." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "가족들이나 단짝 친구들이 너를 부르는 재미있는 비밀 별명 같은 거 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "친구들이나 가족분들이 보통 너를 어떻게 부르는지 알고 싶구나."
+      }
+    ],
+    "purpose": "rapport"
   },
   {
     "group_code": "Q1_1_3",
     "title": "대화 비율 선호",
     "question_text": "케이가 말을 많이 하는 게 좋아, 네 이야기를 많이 듣는 게 좋아?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 선호하는 대화 방식을 확인한다.",
-    "expected_answer_elements": ["이야기 듣기 선호 vs 말하기 선호"],
+    "expected_answer_elements": [
+      "이야기 듣기 선호 vs 말하기 선호"
+    ],
     "minimum_valid_answer": "말하기 혹은 듣기 중 하나 선택하여 응답",
     "report_usage": "자녀 대화 성향 파악 및 상호작용 피드백 제공",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "케이가 조잘조잘 재미있게 떠드는 게 좋아, 아니면 네 멋진 이야기를 듣는 게 좋아?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "케이가 주로 얘기해 주면 좋겠니, 아니면 네 이야기를 듣고 대답해 주면 좋겠니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "케이가 조잘조잘 재미있게 떠드는 게 좋아, 아니면 네 멋진 이야기를 듣는 게 좋아?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "케이가 주로 얘기해 주면 좋겠니, 아니면 네 이야기를 듣고 대답해 주면 좋겠니?"
+      }
+    ],
+    "purpose": "rapport"
   },
   {
     "group_code": "Q1_1_4",
     "title": "말투 선호",
     "question_text": "케이가 장난스럽게 말하는 게 좋아, 차분하게 말하는 게 좋아?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 편안하게 느끼는 말투를 확인한다.",
-    "expected_answer_elements": ["장난스러움 vs 차분함 말투 선호"],
+    "expected_answer_elements": [
+      "장난스러움 vs 차분함 말투 선호"
+    ],
     "minimum_valid_answer": "장난스럽게 혹은 차분하게 중 하나 선택하여 응답",
     "report_usage": "자녀 정서 말투 매칭 힌트 제공",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "케이가 장난꾸러기처럼 크크 웃으며 얘기하는 게 좋아, 아님 의젓하게 얘기하는 게 좋아?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "케이가 조용하고 친절하게 대답하는 게 편할지, 활기찬 느낌이 좋을지 골라주겠니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "케이가 장난꾸러기처럼 크크 웃으며 얘기하는 게 좋아, 아님 의젓하게 얘기하는 게 좋아?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "케이가 조용하고 친절하게 대답하는 게 편할지, 활기찬 느낌이 좋을지 골라주겠니?"
+      }
+    ],
+    "purpose": "rapport"
   },
   {
     "group_code": "Q1_1_5",
     "title": "오해 시 재질문 방식",
     "question_text": "케이가 네 말을 잘못 알아들으면 어떻게 다시 물어보면 좋겠어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 불편하지 않은 재질문 방식을 확인한다.",
-    "expected_answer_elements": ["오해 상황에서의 재질문 선호 방식"],
+    "expected_answer_elements": [
+      "오해 상황에서의 재질문 선호 방식"
+    ],
     "minimum_valid_answer": "재질문 선호 방식 언급 (예: 다시 말해달라, 골라달라 등)",
     "report_usage": "대화 교정 방식에 대한 피드백",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "만약 케이가 엉뚱한 오해를 하면 어떻게 '삐빅- 오답!'하고 신호를 줄래?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "케이가 질문을 잘 이해하지 못했을 때 너에게 어떻게 다시 묻는 것이 편하겠니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "만약 케이가 엉뚱한 오해를 하면 어떻게 '삐빅- 오답!'하고 신호를 줄래?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "케이가 질문을 잘 이해하지 못했을 때 너에게 어떻게 다시 묻는 것이 편하겠니?"
+      }
+    ],
+    "purpose": "rapport"
   },
   {
     "group_code": "Q1_1_6",
     "title": "대화 거절 표현",
     "question_text": "말하기 싫은 질문이 나오면 케이에게 뭐라고 말하고 싶어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 대화를 거절하거나 중단할 수 있는 표현을 정한다.",
-    "expected_answer_elements": ["거절 문구 정의"],
+    "expected_answer_elements": [
+      "거절 문구 정의"
+    ],
     "minimum_valid_answer": "대답 회피에 사용하고 싶은 비밀 문구나 단어 언급",
     "report_usage": "아동의 자율적 대화 거절 권리 확보 및 정서 상태 파악",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "대답하기 부끄럽거나 싫을 때 '바나나!'처럼 우리 둘만의 패스 카드가 있으면 좋겠다. 넌 뭐가 좋아?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "대답하기 불편한 일이 있을 때 케이에게 어떻게 의사표시를 하고 싶은지 알려주렴." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "대답하기 부끄럽거나 싫을 때 '바나나!'처럼 우리 둘만의 패스 카드가 있으면 좋겠다. 넌 뭐가 좋아?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "대답하기 불편한 일이 있을 때 케이에게 어떻게 의사표시를 하고 싶은지 알려주렴."
+      }
+    ],
+    "purpose": "rapport"
   },
   {
     "group_code": "Q1_1_7",
     "title": "비밀보장 한계 안내",
     "question_text": "케이가 지켜주는 비밀도 있고, 네가 많이 위험하거나 다칠 수 있는 일은 너를 지키려고 어른한테 알린다는 거, 케이가 설명해줘도 될까?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "관계 초기에 비밀보장의 한계를 아이 눈높이로 약속한다. (섹션 0 전환의 근거)",
-    "expected_answer_elements": ["비밀보장 예외 규정에 대한 동의/이해"],
+    "expected_answer_elements": [
+      "비밀보장 예외 규정에 대한 동의/이해"
+    ],
     "minimum_valid_answer": "이해했다 또는 설명해달라는 응답",
     "report_usage": "안전 가이드 동의 여부 기록",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "우리가 위험해지는 대왕 비밀은 널 지키려고 꼭 엄마 아빠한테 알릴 거란 거, 미리 새끼손가락 걸고 약속할까?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "너를 위험으로부터 안전하게 지키기 위한 중요한 규칙이 있는데, 먼저 얘기 나눠도 될지 궁금하구나." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "우리가 위험해지는 대왕 비밀은 널 지키려고 꼭 엄마 아빠한테 알릴 거란 거, 미리 새끼손가락 걸고 약속할까?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "너를 위험으로부터 안전하게 지키기 위한 중요한 규칙이 있는데, 먼저 얘기 나눠도 될지 궁금하구나."
+      }
+    ],
+    "purpose": "rapport"
   },
   {
     "group_code": "Q1_2_8",
     "title": "요즘 놀이",
     "question_text": "요즘 가장 재미있게 하는 놀이는 뭐야?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "최근 가장 관심 있는 활동을 확인한다.",
-    "expected_answer_elements": ["놀이 종류", "재미 요소"],
+    "expected_answer_elements": [
+      "놀이 종류",
+      "재미 요소"
+    ],
     "minimum_valid_answer": "최근에 즐겨 하는 놀이나 게임 언급",
     "report_usage": "최근 놀이 취향 및 신체/디지털 활동 성향 보고",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "지금 머릿속에 '이거 진짜 꿀잼!' 하고 번쩍 떠오르는 놀이가 뭐야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "요즘에 시간을 보내며 가장 즐겁게 즐기고 있는 놀이는 무엇이니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "지금 머릿속에 '이거 진짜 꿀잼!' 하고 번쩍 떠오르는 놀이가 뭐야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "요즘에 시간을 보내며 가장 즐겁게 즐기고 있는 놀이는 무엇이니?"
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "최근 가장 관심 있는 활동을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q1_2_9",
     "title": "쉬는 날 활동",
     "question_text": "쉬는 날에는 무엇을 하면서 보내는 게 좋아?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 선호하는 여가 활동을 확인한다.",
-    "expected_answer_elements": ["여가 활동 유형", "동행자 여부"],
+    "expected_answer_elements": [
+      "여가 활동 유형",
+      "동행자 여부"
+    ],
     "minimum_valid_answer": "주말이나 쉬는 날 하는 여가 행위 언급",
     "report_usage": "여가 시간 선호 활동 분석",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "학교도 학원도 안 가는 주말에 넌 어떤 해피타임을 보내니?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "학교를 쉬는 날에는 주로 무엇을 하면서 시간을 보낼 때 가장 편안하니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "학교도 학원도 안 가는 주말에 넌 어떤 해피타임을 보내니?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "학교를 쉬는 날에는 주로 무엇을 하면서 시간을 보낼 때 가장 편안하니?"
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "아이가 선호하는 여가 활동을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q1_2_10",
     "title": "좋아하는 캐릭터",
     "question_text": "요즘 가장 좋아하는 캐릭터나 주인공이 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 좋아하는 인물이나 캐릭터를 확인한다.",
-    "expected_answer_elements": ["캐릭터 이름", "좋아하는 이유"],
+    "expected_answer_elements": [
+      "캐릭터 이름",
+      "좋아하는 이유"
+    ],
     "minimum_valid_answer": "좋아하는 캐릭터 혹은 주인공이 있는지 대답 및 언급",
     "report_usage": "선호하는 영웅/캐릭터 투영 분석",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "네가 세상에서 제일 멋지다고 생각하는 우주 대스타 캐릭터가 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "책이나 영상 속의 캐릭터 중에 마음이 쓰이고 좋아하는 친구가 있는지 궁금해." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "네가 세상에서 제일 멋지다고 생각하는 우주 대스타 캐릭터가 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "책이나 영상 속의 캐릭터 중에 마음이 쓰이고 좋아하는 친구가 있는지 궁금해."
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "아이가 좋아하는 인물이나 캐릭터를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q1_2_11",
     "title": "혼자 vs 친구 놀이",
     "question_text": "혼자 할 때 재미있는 것과 친구랑 할 때 재미있는 것은 각각 뭐야?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "혼자 하는 활동과 또래 활동의 선호 차이를 확인한다.",
-    "expected_answer_elements": ["혼자 놀이 종류", "친구와 놀이 종류"],
+    "expected_answer_elements": [
+      "혼자 놀이 종류",
+      "친구와 놀이 종류"
+    ],
     "minimum_valid_answer": "두 가지 상황의 놀이를 각각 언급",
     "report_usage": "아동의 사교성 및 내향/외향 선호 파악",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "혼자 놀 땐 이게 짱이고, 친구랑 놀 땐 저게 최강이다! 어떤 비밀 무기들이 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "혼자서 조용히 즐기기 좋은 일과, 친구들과 어울려 할 때 더 기분 좋은 활동을 각각 알려줄래?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "혼자 놀 땐 이게 짱이고, 친구랑 놀 땐 저게 최강이다! 어떤 비밀 무기들이 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "혼자서 조용히 즐기기 좋은 일과, 친구들과 어울려 할 때 더 기분 좋은 활동을 각각 알려줄래?"
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "혼자 하는 활동과 또래 활동의 선호 차이를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q1_2_12",
     "title": "새로운 관심사",
     "question_text": "요즘 새롭게 좋아하게 된 것이 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "최근 관심사의 변화를 확인한다.",
-    "expected_answer_elements": ["새로운 관심 대상"],
+    "expected_answer_elements": [
+      "새로운 관심 대상"
+    ],
     "minimum_valid_answer": "새로 관심이 생겼거나 좋아진 대상 언급",
     "report_usage": "자녀의 최신 관심사 트렌드 변화 분석",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "앗, 최근에 네 마음속을 새로 노크하며 들어온 깜짝 선호 템이 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "최근에 새롭게 관심을 느끼고 좋아하기 시작한 흥미거리가 있니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "앗, 최근에 네 마음속을 새로 노크하며 들어온 깜짝 선호 템이 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "최근에 새롭게 관심을 느끼고 좋아하기 시작한 흥미거리가 있니?"
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "최근 관심사의 변화를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q1_2_13",
     "title": "케이 기억 요청",
     "question_text": "케이가 앞으로 꼭 기억해줬으면 하는 네 이야기가 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "onboarding",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "아이가 중요하게 생각하는 자기 정보를 스스로 선택하게 한다.",
-    "expected_answer_elements": ["케이에게 기억시키고 싶은 자기 정보"],
+    "expected_answer_elements": [
+      "케이에게 기억시키고 싶은 자기 정보"
+    ],
     "minimum_valid_answer": "정보 언급 또는 '없다' 등 응답",
     "report_usage": "아이가 정의하는 핵심 자기 정체성/중요 정서",
     "frequency": "onboarding",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "케이의 똑똑한 하드디스크에 '이건 절대 지우지 마!' 하고 저장해둘 중요한 사실이 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "케이가 너에 대해 항상 기억해 두었으면 하는 특별한 이야기가 있으면 하나 들려주렴." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "케이의 똑똑한 하드디스크에 '이건 절대 지우지 마!' 하고 저장해둘 중요한 사실이 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "케이가 너에 대해 항상 기억해 두었으면 하는 특별한 이야기가 있으면 하나 들려주렴."
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "아이가 중요하게 생각하는 자기 정보를 스스로 선택하게 한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q2_1_1",
     "title": "하교 후 대표 사건",
     "question_text": "오늘 있었던 일 중에서 케이한테 제일 먼저 말해주고 싶은 건 뭐야?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "recurring_stories",
     "round_type": "round1_day",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "아이가 오늘 중요하게 느낀 사건을 스스로 선택하게 한다.",
-    "expected_answer_elements": ["오늘의 대표적 에피소드"],
+    "expected_answer_elements": [
+      "오늘의 대표적 에피소드"
+    ],
     "minimum_valid_answer": "오늘 하루 겪었던 구체적 에피소드 언급",
     "report_usage": "자녀 하루 요약 및 중요 관심사 확인",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "오늘 너의 스펙터클한 하루 중 케이 귀를 가장 번쩍 뜨이게 할 특종 뉴스는 뭐야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘을 돌아볼 때 케이에게 가장 먼저 전하고 싶었던 순간은 언제였니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "오늘 너의 스펙터클한 하루 중 케이 귀를 가장 번쩍 뜨이게 할 특종 뉴스는 뭐야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "오늘을 돌아볼 때 케이에게 가장 먼저 전하고 싶었던 순간은 언제였니?"
+      }
+    ],
+    "domain_id": "⑧반복되는 이야기",
+    "daily_report_field": "recurring_stories",
+    "information_goal": "아이가 오늘 중요하게 느낀 사건을 스스로 선택하게 한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q2_1_2",
     "title": "현재 감정 날씨 비유",
     "question_text": "지금 네 마음을 날씨로 표현하면 어떤 날씨야?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "emotion",
     "round_type": "round1_day",
     "conversation_stage": "EMOTION",
     "question_intent": "아이가 현재 느끼는 감정을 쉬운 비유로 표현하게 한다.",
-    "expected_answer_elements": ["날씨 비유 감정 표현"],
+    "expected_answer_elements": [
+      "날씨 비유 감정 표현"
+    ],
     "minimum_valid_answer": "특정 날씨 상태(맑음, 비, 흐림 등) 언급",
     "report_usage": "자녀 감정 스코어링 및 감정 상태 추적",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "지금 네 기상청 마음 일보! 쨍쨍 맑음이야, 아니면 번쩍번쩍 천둥번개야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "지금 네 마음에 떠오르는 날씨를 날씨 단어로 설명해 주겠니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "지금 네 기상청 마음 일보! 쨍쨍 맑음이야, 아니면 번쩍번쩍 천둥번개야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "지금 네 마음에 떠오르는 날씨를 날씨 단어로 설명해 주겠니?"
+      }
+    ],
+    "domain_id": "③감정 힌트",
+    "daily_report_field": "emotion_hint",
+    "information_goal": "아이가 현재 느끼는 감정을 쉬운 비유로 표현하게 한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q2_2_3",
     "title": "취침 전 하루 돌아보기",
     "question_text": "오늘 하루에서 가장 좋았던 순간이나 조금 불편했던 순간이 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "recurring_stories",
     "round_type": "round2_night",
     "conversation_stage": "EMOTION",
     "question_intent": "아이가 기억에 남은 경험과 감정을 스스로 선택하게 한다.",
-    "expected_answer_elements": ["긍정적 혹은 부정적 하루 회고"],
+    "expected_answer_elements": [
+      "긍정적 혹은 부정적 하루 회고"
+    ],
     "minimum_valid_answer": "하루 중 긍정 혹은 부정적 느낌을 준 에피소드 언급",
     "report_usage": "아동 정서 긍정/부정 밸런스 측정 및 취침 전 위로",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "잠자리에 누운 지금, 오늘 하루 필름을 샥 돌려보자. 기분 짱이었던 장면이나 짜증 났던 컷이 있었어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 잠들기 전, 기분 좋게 남아있는 추억이나 마음에 걸렸던 일에 대해 이야기해 볼래?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "잠자리에 누운 지금, 오늘 하루 필름을 샥 돌려보자. 기분 짱이었던 장면이나 짜증 났던 컷이 있었어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "오늘 잠들기 전, 기분 좋게 남아있는 추억이나 마음에 걸렸던 일에 대해 이야기해 볼래?"
+      }
+    ],
+    "domain_id": "⑧반복되는 이야기",
+    "daily_report_field": "recurring_stories",
+    "information_goal": "아이가 기억에 남은 경험과 감정을 스스로 선택하게 한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q2_2_4",
     "title": "내일에 대한 생각",
     "question_text": "내일 기대되는 일이나 조금 걱정되는 일이 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "future_dreams",
     "round_type": "round2_night",
     "conversation_stage": "BRIDGE",
     "question_intent": "가까운 미래에 대한 기대와 부담을 확인한다.",
-    "expected_answer_elements": ["내일에 대한 소망/우려"],
+    "expected_answer_elements": [
+      "내일에 대한 소망/우려"
+    ],
     "minimum_valid_answer": "기대되는 일 혹은 우려되는 일 언급",
     "report_usage": "내일의 일상 스트레스 원인 예측 및 심리 상태 보고",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "내일 해가 뜨면 눈앞에 펼쳐질 꿀잼 스케줄이나, '아 그건 좀...' 하는 걱정 스케줄이 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "다가오는 내일에 대해 마음에 부푼 기대가 있는지, 혹은 염려되는 지점이 있는지 말해보렴." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "내일 해가 뜨면 눈앞에 펼쳐질 꿀잼 스케줄이나, '아 그건 좀...' 하는 걱정 스케줄이 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "다가오는 내일에 대해 마음에 부푼 기대가 있는지, 혹은 염려되는 지점이 있는지 말해보렴."
+      }
+    ],
+    "domain_id": "⑦미래·진로·꿈",
+    "daily_report_field": "future_dreams",
+    "information_goal": "가까운 미래에 대한 기대와 부담을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q3_1",
     "title": "학교 대기 시간",
     "question_text": "요즘 학교나 학원에서 가장 기다려지는 시간은 언제야?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "school_life",
     "round_type": "round1_day",
     "conversation_stage": "INTEREST",
     "question_intent": "좋아하거나 기대하는 활동을 확인한다.",
-    "expected_answer_elements": ["학교/학원 내 가장 좋아하는 시간과 이유"],
+    "expected_answer_elements": [
+      "학교/학원 내 가장 좋아하는 시간과 이유"
+    ],
     "minimum_valid_answer": "특정 시간대(점심시간, 체육시간 등) 언급",
     "report_usage": "학교 소속감 및 흥미 파악",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "학교에서 '아, 시계바늘아 달려라!' 하면서 엄청 기다려지는 시간이 언제야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "학교나 학원에 머무는 중 어떤 시간이 올 때 가장 기분이 환해지니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "학교에서 '아, 시계바늘아 달려라!' 하면서 엄청 기다려지는 시간이 언제야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "학교나 학원에 머무는 중 어떤 시간이 올 때 가장 기분이 환해지니?"
+      }
+    ],
+    "domain_id": "①학교·학원 생활",
+    "daily_report_field": "school_academy_life",
+    "information_goal": "좋아하거나 기대하는 활동을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q3_2",
     "title": "학교 기억나는 사건",
     "question_text": "오늘 수업, 쉬는 시간, 점심시간 중에서 제일 기억나는 시간은 언제야?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "school_life",
     "round_type": "round1_day",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "실제로 경험한 대표 사건을 확인한다.",
-    "expected_answer_elements": ["특정 시간대의 학교 에피소드"],
+    "expected_answer_elements": [
+      "특정 시간대의 학교 에피소드"
+    ],
     "minimum_valid_answer": "오늘 학교에서의 에피소드 언급",
     "report_usage": "구체적 학업/학교 사건 분석 및 기록",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "오늘 학교 타임라인 중에서 '와, 이 순간 박제하고 싶다!' 하는 기억나는 장면이 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 학교에 있을 때 어떤 활동이나 시간이 네 뇌리에 깊이 남아있는지 나누어 보자." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "오늘 학교 타임라인 중에서 '와, 이 순간 박제하고 싶다!' 하는 기억나는 장면이 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "오늘 학교에 있을 때 어떤 활동이나 시간이 네 뇌리에 깊이 남아있는지 나누어 보자."
+      }
+    ],
+    "domain_id": "①학교·학원 생활",
+    "daily_report_field": "school_academy_life",
+    "information_goal": "실제로 경험한 대표 사건을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q3_3",
     "title": "학교 활동 정서",
     "question_text": "그 시간에는 어떤 기분이 들었어?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "school_life",
     "round_type": "round1_day",
     "conversation_stage": "EMOTION",
     "question_intent": "경험과 연결된 감정을 확인한다.",
-    "expected_answer_elements": ["경험 당시 감정 단어"],
+    "expected_answer_elements": [
+      "경험 당시 감정 단어"
+    ],
     "minimum_valid_answer": "느꼈던 감정 종류(기뻤다, 창피했다, 화났다 등) 언급",
     "report_usage": "학교 사건 연결 정서 측정",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "바로 그 순간, 네 기분 게이지는 어느 쪽으로 쭉 올라갔어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그 상황에서 마음으로 구체적으로 어떤 기분을 느끼고 경험했니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "바로 그 순간, 네 기분 게이지는 어느 쪽으로 쭉 올라갔어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "그 상황에서 마음으로 구체적으로 어떤 기분을 느끼고 경험했니?"
+      }
+    ],
+    "domain_id": "①학교·학원 생활",
+    "daily_report_field": "school_academy_life",
+    "information_goal": "경험과 연결된 감정을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q4_1",
     "title": "또래 관계 단짝",
     "question_text": "요즘 누구와 가장 자주 이야기하거나 놀아?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "peer_relations",
     "round_type": "round1_day",
     "conversation_stage": "INTEREST",
     "question_intent": "최근 자주 관계를 맺는 친구를 확인한다.",
-    "expected_answer_elements": ["단짝 친구 이름", "자주 노는 동반자"],
+    "expected_answer_elements": [
+      "단짝 친구 이름",
+      "자주 노는 동반자"
+    ],
     "minimum_valid_answer": "자주 같이 지내는 친구의 호칭이나 이름 언급",
     "report_usage": "친밀 친구 정보 수집 및 교우관계 보고",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "요즘 네 옆에 제일 찰떡처럼 붙어있는 단짝 메이트가 누구야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "요즘 학교나 집 주변에서 시간 보낼 때 누가 네 곁에 가장 자주 있니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "요즘 네 옆에 제일 찰떡처럼 붙어있는 단짝 메이트가 누구야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "요즘 학교나 집 주변에서 시간 보낼 때 누가 네 곁에 가장 자주 있니?"
+      }
+    ],
+    "domain_id": "②친구관계와 또래생활",
+    "daily_report_field": "peer_friendship",
+    "information_goal": "최근 자주 관계를 맺는 친구를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q4_2",
     "title": "친구와 협동 활동",
     "question_text": "오늘 그 친구와 무엇을 했는지 이야기해줄래?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "peer_relations",
     "round_type": "round1_day",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "함께한 구체적 활동을 확인한다.",
-    "expected_answer_elements": ["친구와의 활동 에피소드"],
+    "expected_answer_elements": [
+      "친구와의 활동 에피소드"
+    ],
     "minimum_valid_answer": "오늘 친구와 함께 했던 대화나 활동 내용 언급",
     "report_usage": "친구와의 활동 유형 및 사회성 발달 분석",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 친구랑 오늘 쿵짝 맞춰서 무슨 재미있는 작당 모의나 놀이를 했어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 그 친구와 대화했거나 함께 움직인 순간에 대해 이야기해 줄 수 있을까?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그 친구랑 오늘 쿵짝 맞춰서 무슨 재미있는 작당 모의나 놀이를 했어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "오늘 그 친구와 대화했거나 함께 움직인 순간에 대해 이야기해 줄 수 있을까?"
+      }
+    ],
+    "domain_id": "②친구관계와 또래생활",
+    "daily_report_field": "peer_friendship",
+    "information_goal": "함께한 구체적 활동을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q4_3",
     "title": "또래 관계 정서",
     "question_text": "그 친구와 같이 있을 때 어떤 기분이 들어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "peer_relations",
     "round_type": "round1_day",
     "conversation_stage": "EMOTION",
     "question_intent": "관계에서 느끼는 감정을 확인한다.",
-    "expected_answer_elements": ["친구와 있을 때의 정서"],
+    "expected_answer_elements": [
+      "친구와 있을 때의 정서"
+    ],
     "minimum_valid_answer": "느끼는 정서적 안정감/갈등 단어 언급",
     "report_usage": "교우 정서 밀착도 보고",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 친구랑 단짝 듀오로 있으면 기분이 든든해, 아니면 엄청 흥 폭발해?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그 친구가 곁에 있을 때 드는 생각이나 감정은 어떠한지 나누어 볼래?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그 친구랑 단짝 듀오로 있으면 기분이 든든해, 아니면 엄청 흥 폭발해?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "그 친구가 곁에 있을 때 드는 생각이나 감정은 어떠한지 나누어 볼래?"
+      }
+    ],
+    "domain_id": "②친구관계와 또래생활",
+    "daily_report_field": "peer_friendship",
+    "information_goal": "관계에서 느끼는 감정을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q5_1",
     "title": "감정 자극 순간",
     "question_text": "오늘 마음이 가장 크게 움직였던 순간은 언제였어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "emotion",
     "round_type": "round2_night",
     "conversation_stage": "INTEREST",
     "question_intent": "감정을 느낀 주요 상황을 선택하게 한다. (위기 4범주 주의)",
-    "expected_answer_elements": ["정서적 동요 상황"],
+    "expected_answer_elements": [
+      "정서적 동요 상황"
+    ],
     "minimum_valid_answer": "정서가 크게 변화했던 사건의 시점이나 이름 언급",
     "report_usage": "감정 유발 지점 보고 및 고정밀 정서 측정",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "오늘 네 심장이 쿵 했거나, '오예!' 했거나, 마음에 파도가 가장 세게 친 순간이 언제야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 하루 중 마음에 특별히 강한 울림이나 변화가 느껴진 순간이 있었니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "오늘 네 심장이 쿵 했거나, '오예!' 했거나, 마음에 파도가 가장 세게 친 순간이 언제야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "오늘 하루 중 마음에 특별히 강한 울림이나 변화가 느껴진 순간이 있었니?"
+      }
+    ],
+    "domain_id": "③감정 힌트",
+    "daily_report_field": "emotion_hint",
+    "information_goal": "감정을 느낀 주요 상황을 선택하게 한다. (위기 4범주 주의)",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q5_2",
     "title": "감정 상황 탐색",
     "question_text": "오늘 마음이 크게 움직인 순간이 있었다면 어떤 일이 있었는지 말해줄래?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "emotion",
     "round_type": "round2_night",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "감정이 발생한 상황을 확인한다. (위기 신호 시 즉시 중단)",
-    "expected_answer_elements": ["감정 발생 구체적 맥락"],
+    "expected_answer_elements": [
+      "감정 발생 구체적 맥락"
+    ],
     "minimum_valid_answer": "감정을 일으킨 사건 묘사",
     "report_usage": "자녀 감정적 스트레스/안정 원인 분석",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "오늘 마음의 파도가 요동친 시간이 있었다면, 주위에 어떤 비하인드 사건이 벌어졌어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 마음이 크게 움직인 순간에 대해 조금 더 자세한 사정을 내게 말해 줄 수 있을까?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "오늘 마음의 파도가 요동친 시간이 있었다면, 주위에 어떤 비하인드 사건이 벌어졌어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "오늘 마음이 크게 움직인 순간에 대해 조금 더 자세한 사정을 내게 말해 줄 수 있을까?"
+      }
+    ],
+    "domain_id": "③감정 힌트",
+    "daily_report_field": "emotion_hint",
+    "information_goal": "감정이 발생한 상황을 확인한다. (위기 신호 시 즉시 중단)",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q5_3",
     "title": "감정의 강도와 잔류",
     "question_text": "오늘 마음이 가장 크게 움직였던 순간에 어떤 기분이 들었고, 지금은 조금 달라졌어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "emotion",
     "round_type": "round2_night",
     "conversation_stage": "EMOTION",
     "question_intent": "감정 변화를 확인한다. (위기 신호 시 즉시 중단)",
-    "expected_answer_elements": ["과거 감정 vs 현재 감정 비교"],
+    "expected_answer_elements": [
+      "과거 감정 vs 현재 감정 비교"
+    ],
     "minimum_valid_answer": "두 정서 상태 비교 언급",
     "report_usage": "자녀의 정서 조절 능력 및 해소 수준 파악",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "오늘 가장 강하게 들었던 마음이랑 지금 차분해진 마음은 서로 얼마나 같거나 달라?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 느꼈던 가장 큰 감정이 시간이 흐른 지금은 어떻게 변화했는지 들려줄래?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "오늘 가장 강하게 들었던 마음이랑 지금 차분해진 마음은 서로 얼마나 같거나 달라?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "오늘 느꼈던 가장 큰 감정이 시간이 흐른 지금은 어떻게 변화했는지 들려줄래?"
+      }
+    ],
+    "domain_id": "③감정 힌트",
+    "daily_report_field": "emotion_hint",
+    "information_goal": "감정 변화를 확인한다. (위기 신호 시 즉시 중단)",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q6_1",
     "title": "시간 몰입",
     "question_text": "요즘 시간 가는 줄 모르고 하는 것이 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "몰입하는 관심사를 확인한다.",
-    "expected_answer_elements": ["시간을 많이 쏟는 몰입 분야"],
+    "expected_answer_elements": [
+      "시간을 많이 쏟는 몰입 분야"
+    ],
     "minimum_valid_answer": "즐겨 하는 몰입 활동 언급",
     "report_usage": "아동 관심 영역 보고",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "어, 째깍째깍 타임머신 탄 것처럼 시간 순삭해버리는 네 몰입 템이 뭐야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "요즘 무언가에 깊게 빠져서 시간이 참 빨리 간다고 느끼는 일이 있니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "어, 째깍째깍 타임머신 탄 것처럼 시간 순삭해버리는 네 몰입 템이 뭐야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "요즘 무언가에 깊게 빠져서 시간이 참 빨리 간다고 느끼는 일이 있니?"
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "몰입하는 관심사를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q6_2",
     "title": "몰입 동행 여부",
     "question_text": "그건 보통 언제 하고, 혼자 해 아니면 누군가와 같이 해?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "관심사의 실제 상황을 확인한다.",
-    "expected_answer_elements": ["몰입 시간대", "동반자 존재 여부"],
+    "expected_answer_elements": [
+      "몰입 시간대",
+      "동반자 존재 여부"
+    ],
     "minimum_valid_answer": "수행 시점과 상대(혼자 혹은 친구/부모 등) 언급",
     "report_usage": "혼자 노는 아동 여부 파악 및 대인관계 확인",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 보물 같은 시간을 보통 언제 열어? 나홀로 즐겨, 아님 누구랑 같이 즐겨?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그 활동을 보통 하루 중 언제 하며 누구와 함께 즐기는지 이야기해 다오." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그 보물 같은 시간을 보통 언제 열어? 나홀로 즐겨, 아님 누구랑 같이 즐겨?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "그 활동을 보통 하루 중 언제 하며 누구와 함께 즐기는지 이야기해 다오."
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "관심사의 실제 상황을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q6_3",
     "title": "몰입의 재미 요소",
     "question_text": "그걸 할 때 어떤 점이 가장 재미있거나 좋아?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "EMOTION",
     "question_intent": "연결된 감정·선호 이유를 확인한다.",
-    "expected_answer_elements": ["구체적 선호 원인"],
+    "expected_answer_elements": [
+      "구체적 선호 원인"
+    ],
     "minimum_valid_answer": "재미를 느끼는 매력 포인트 언급",
     "report_usage": "관심 분야의 상세 몰입 가이드 라인 추천",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그걸 할 때 아드레날린 폭발하는 가장 짜릿한 하이라이트가 뭐야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그 일의 어떤 면이 너의 기분을 이렇게 행복하게 만들어 주는 걸까?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그걸 할 때 아드레날린 폭발하는 가장 짜릿한 하이라이트가 뭐야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "그 일의 어떤 면이 너의 기분을 이렇게 행복하게 만들어 주는 걸까?"
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "연결된 감정·선호 이유를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q7_1",
     "title": "공부 자신감",
     "question_text": "요즘 수업이나 공부 중에서 재미있거나 자신 있는 것은 뭐야?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "study_concerns",
     "round_type": "round1_day",
     "conversation_stage": "INTEREST",
     "question_intent": "긍정적으로 느끼는 영역을 먼저 확인한다.",
-    "expected_answer_elements": ["좋아하는 과목/학습 주제"],
+    "expected_answer_elements": [
+      "좋아하는 과목/학습 주제"
+    ],
     "minimum_valid_answer": "자신 있는 공부 도메인 언급",
     "report_usage": "자녀 학업 강점 및 효능감 확인",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "최근 공부 중 '아 이건 나한테 껌이지!' 하고 자신만만하게 할 수 있는 부분이 뭐야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "요즘 공부하는 것들 중에 흥미롭거나 내가 아주 잘 해낸다고 느끼는 과목이 있니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "최근 공부 중 '아 이건 나한테 껌이지!' 하고 자신만만하게 할 수 있는 부분이 뭐야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "요즘 공부하는 것들 중에 흥미롭거나 내가 아주 잘 해낸다고 느끼는 과목이 있니?"
+      }
+    ],
+    "domain_id": "⑤공부 고민",
+    "daily_report_field": "study_concerns",
+    "information_goal": "긍정적으로 느끼는 영역을 먼저 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q7_2",
     "title": "학습 곤란 영역",
     "question_text": "반대로 공부하거나 숙제할 때 조금 어렵거나 오래 걸리는 것은 뭐야?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "study_concerns",
     "round_type": "round1_day",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "어려움을 겪는 과제를 확인한다.",
-    "expected_answer_elements": ["어려운 과목/학습 영역"],
+    "expected_answer_elements": [
+      "어려운 과목/학습 영역"
+    ],
     "minimum_valid_answer": "어려움을 겪는 과목이나 과제 유형 언급",
     "report_usage": "자녀 학습 스트레스 지점 확인 및 지도법 제안",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "공부하다가 마치 거대한 벽에 딱 막힌 것처럼 골치 아픈 녀석이 있다면 누구야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "숙제를 하거나 공부할 때 이상하게 손이 잘 안 가고 시간이 지체되는 과목은 무엇이니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "공부하다가 마치 거대한 벽에 딱 막힌 것처럼 골치 아픈 녀석이 있다면 누구야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "숙제를 하거나 공부할 때 이상하게 손이 잘 안 가고 시간이 지체되는 과목은 무엇이니?"
+      }
+    ],
+    "domain_id": "⑤공부 고민",
+    "daily_report_field": "study_concerns",
+    "information_goal": "어려움을 겪는 과제를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q7_3",
     "title": "원하는 도움 형태",
     "question_text": "그럴 때 누가 어떻게 도와주면 가장 좋을 것 같아?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "study_concerns",
     "round_type": "round1_day",
     "conversation_stage": "EMOTION",
     "question_intent": "원하는 도움 방식을 확인한다.",
-    "expected_answer_elements": ["선호하는 조력 방법"],
+    "expected_answer_elements": [
+      "선호하는 조력 방법"
+    ],
     "minimum_valid_answer": "도움 필요 여부 및 원하는 도움 행위 언급",
     "report_usage": "학습 지도를 위한 부모 가이드 활용",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 어려운 난관을 풀기 위해 어떤 히어로가 등장해서 어떤 초능력을 써주면 좋겠어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "어려운 과제를 만났을 때 부모님이나 선생님께서 어떤 방식으로 지도해 주길 바라니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그 어려운 난관을 풀기 위해 어떤 히어로가 등장해서 어떤 초능력을 써주면 좋겠어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "어려운 과제를 만났을 때 부모님이나 선생님께서 어떤 방식으로 지도해 주길 바라니?"
+      }
+    ],
+    "domain_id": "⑤공부 고민",
+    "daily_report_field": "study_concerns",
+    "information_goal": "원하는 도움 방식을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q8_1",
     "title": "디지털 콘텐츠",
     "question_text": "요즘 가장 자주 보는 영상이나 만화, 자주 하는 게임이 뭐야?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "monthly",
     "dashboard_area_tag": "digital_interests",
     "round_type": "round2_night",
     "conversation_stage": "INTEREST",
     "question_intent": "관심 콘텐츠를 확인한다. (온라인 그루밍 등 경계)",
-    "expected_answer_elements": ["디지털 미디어 종류", "자주 시청/플레이하는 제목"],
+    "expected_answer_elements": [
+      "디지털 미디어 종류",
+      "자주 시청/플레이하는 제목"
+    ],
     "minimum_valid_answer": "즐겨 찾는 미디어 제목 또는 서비스명 언급",
     "report_usage": "디지털 과몰입 원인 분석 및 콘텐츠 지도 방향 설정",
     "frequency": "monthly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "네 스마트폰이나 태블릿에서 요즘 조회수 1위를 차지하는 최애 앱이나 영상 제목은 뭐야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "요즘 여유 시간에 유튜브나 게임을 즐긴다면 어떤 종류를 주로 접하고 있는지 듣고 싶다." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "네 스마트폰이나 태블릿에서 요즘 조회수 1위를 차지하는 최애 앱이나 영상 제목은 뭐야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "요즘 여유 시간에 유튜브나 게임을 즐긴다면 어떤 종류를 주로 접하고 있는지 듣고 싶다."
+      }
+    ],
+    "domain_id": "⑥디지털 관심사와 콘텐츠 취향",
+    "daily_report_field": "digital_content_interests",
+    "information_goal": "관심 콘텐츠를 확인한다. (온라인 그루밍 등 경계)",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q8_2",
     "title": "디지털 환경",
     "question_text": "그건 보통 언제 하고, 혼자 하는 편이야 아니면 누군가와 같이 해?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "monthly",
     "dashboard_area_tag": "digital_interests",
     "round_type": "round2_night",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "이용 상황을 확인한다.",
-    "expected_answer_elements": ["디지털 이용 시간대", "동반 플레이어 여부"],
+    "expected_answer_elements": [
+      "디지털 이용 시간대",
+      "동반 플레이어 여부"
+    ],
     "minimum_valid_answer": "이용하는 때와 같이 하는 사람 여부 응답",
     "report_usage": "디지털 노출 환경 패턴 확인",
     "frequency": "monthly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 재미난 걸 플레이하는 영광의 타임은 언제야? 나 홀로 독점해, 아님 단짝 멀티플레이야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그 기기를 사용할 때 주로 밤에 하니, 아니면 낮에 하니? 혹시 혼자서 즐겨 보는지도 궁금하다." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그 재미난 걸 플레이하는 영광의 타임은 언제야? 나 홀로 독점해, 아님 단짝 멀티플레이야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "그 기기를 사용할 때 주로 밤에 하니, 아니면 낮에 하니? 혹시 혼자서 즐겨 보는지도 궁금하다."
+      }
+    ],
+    "domain_id": "⑥디지털 관심사와 콘텐츠 취향",
+    "daily_report_field": "digital_content_interests",
+    "information_goal": "이용 상황을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q8_3",
     "title": "디지털 매력 요소",
     "question_text": "그 콘텐츠에서 어떤 장면이나 부분이 제일 재미있어?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "monthly",
     "dashboard_area_tag": "digital_interests",
     "round_type": "round2_night",
     "conversation_stage": "EMOTION",
     "question_intent": "좋아하는 이유를 확인한다.",
-    "expected_answer_elements": ["콘텐츠 내 구체적 자극 지점"],
+    "expected_answer_elements": [
+      "콘텐츠 내 구체적 자극 지점"
+    ],
     "minimum_valid_answer": "재미를 주는 부분의 설명이나 묘사 언급",
     "report_usage": "자녀 흥미 인센티브 보상 설계용 힌트",
     "frequency": "monthly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 영상이나 게임 중에서 '이 장면은 진짜 역대급 갓벽!'이라고 느낀 대박 포인트가 어디야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "너를 가장 즐겁게 해주는 그 게임이나 영상의 특별한 요소에 대해 이야기해 줄래?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그 영상이나 게임 중에서 '이 장면은 진짜 역대급 갓벽!'이라고 느낀 대박 포인트가 어디야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "너를 가장 즐겁게 해주는 그 게임이나 영상의 특별한 요소에 대해 이야기해 줄래?"
+      }
+    ],
+    "domain_id": "⑥디지털 관심사와 콘텐츠 취향",
+    "daily_report_field": "digital_content_interests",
+    "information_goal": "좋아하는 이유를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q9_1",
     "title": "도전하고 싶은 것",
     "question_text": "요즘 새롭게 배우거나 한번 해보고 싶은 것이 있어?",
-    "applicable_grades": [4, 5, 6],
+    "applicable_grades": [
+      4,
+      5,
+      6
+    ],
     "cycle_type": "quarterly",
     "dashboard_area_tag": "future_dreams",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "호기심·도전 관심사를 확인한다.",
-    "expected_answer_elements": ["도전하고 싶은 학습/취미 분야"],
+    "expected_answer_elements": [
+      "도전하고 싶은 학습/취미 분야"
+    ],
     "minimum_valid_answer": "해보고 싶은 행위나 학업 도메인 언급",
     "report_usage": "자녀 재능 및 적성 계발 지점 발견",
     "frequency": "quarterly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "몸이 근질근질! 요즘 '아, 나 이거 진짜 배워보고 싶은데!' 하는 버킷리스트가 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "아직 경험해 보지 않은 영역 중에서 기회가 닿는다면 배워 보고픈 소망이 있니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "몸이 근질근질! 요즘 '아, 나 이거 진짜 배워보고 싶은데!' 하는 버킷리스트가 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "아직 경험해 보지 않은 영역 중에서 기회가 닿는다면 배워 보고픈 소망이 있니?"
+      }
+    ],
+    "domain_id": "⑦미래·진로·꿈",
+    "daily_report_field": "future_dreams",
+    "information_goal": "호기심·도전 관심사를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q9_2",
     "title": "도전 희망 환경",
     "question_text": "그걸 실제로 해본다면 누구와 어디에서 해보고 싶어?",
-    "applicable_grades": [4, 5, 6],
+    "applicable_grades": [
+      4,
+      5,
+      6
+    ],
     "cycle_type": "quarterly",
     "dashboard_area_tag": "future_dreams",
     "round_type": "common",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "원하는 활동을 구체화한다.",
-    "expected_answer_elements": ["도전의 구체적 동행자와 장소"],
+    "expected_answer_elements": [
+      "도전의 구체적 동행자와 장소"
+    ],
     "minimum_valid_answer": "원하는 파트너나 장소 언급",
     "report_usage": "도전 활동 구체화 가이드 제공",
     "frequency": "quarterly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 버킷리스트를 해치울 영광의 아지트는 어디로 잡을래? 스페셜 파트너는 누구?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그것을 실제로 해보게 된다면 어떤 공간에서, 누구를 곁에 두고 시작하고 싶니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그 버킷리스트를 해치울 영광의 아지트는 어디로 잡을래? 스페셜 파트너는 누구?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "그것을 실제로 해보게 된다면 어떤 공간에서, 누구를 곁에 두고 시작하고 싶니?"
+      }
+    ],
+    "domain_id": "⑦미래·진로·꿈",
+    "daily_report_field": "future_dreams",
+    "information_goal": "원하는 활동을 구체화한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q9_3",
     "title": "도전 성취 정서",
     "question_text": "그걸 할 수 있게 되면 어떤 기분이 들 것 같아?",
-    "applicable_grades": [4, 5, 6],
+    "applicable_grades": [
+      4,
+      5,
+      6
+    ],
     "cycle_type": "quarterly",
     "dashboard_area_tag": "future_dreams",
     "round_type": "common",
     "conversation_stage": "EMOTION",
     "question_intent": "기대·감정을 확인한다.",
-    "expected_answer_elements": ["성취 예상 정서"],
+    "expected_answer_elements": [
+      "성취 예상 정서"
+    ],
     "minimum_valid_answer": "예상되는 정서 반응(기쁘다, 자신있다 등) 언급",
     "report_usage": "자녀 내재적 성취 욕구 및 동기 유발 가이드",
     "frequency": "quarterly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "마침내 마스터했을 때! 네 마음에서 어떤 축하 댄스를 출 것 같아?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "소원을 이룬다면 마음에 어떤 뿌듯함과 감정이 찾아올 것 같은지 상상해 보렴." }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "마침내 마스터했을 때! 네 마음에서 어떤 축하 댄스를 출 것 같아?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "소원을 이룬다면 마음에 어떤 뿌듯함과 감정이 찾아올 것 같은지 상상해 보렴."
+      }
+    ],
+    "domain_id": "⑦미래·진로·꿈",
+    "daily_report_field": "future_dreams",
+    "information_goal": "기대·감정을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q10_1",
     "title": "반복 관심사 점검",
     "question_text": "요즘 재미있게 보는 이야기나 책이 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "recurring_stories",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "관심사 유지 여부를 확인한다.",
-    "expected_answer_elements": ["이전 관심 주제의 연속성 여부"],
+    "expected_answer_elements": [
+      "이전 관심 주제의 연속성 여부"
+    ],
     "minimum_valid_answer": "여전히 좋은지, 흥미가 식었는지 상태 응답",
     "report_usage": "관심사의 진도 유지 보고",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "네 마음속 랭킹 1위 자리를 굳건히 지키고 있는 최애 이야기나 캐릭터가 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "요즘 가장 기분 좋게 흥미를 품고 있는 이야기나 관심사가 있니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "네 마음속 랭킹 1위 자리를 굳건히 지키고 있는 최애 이야기나 캐릭터가 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "요즘 가장 기분 좋게 흥미를 품고 있는 이야기나 관심사가 있니?"
+      }
+    ],
+    "domain_id": "⑧반복되는 이야기",
+    "daily_report_field": "recurring_stories",
+    "information_goal": "관심사 유지 여부를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q10_2",
     "title": "반복 정황 점검",
     "question_text": "최근에 자주 생기는 특별한 일이나 상황이 있어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "recurring_stories",
     "round_type": "common",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "상황 반복 여부를 확인한다.",
-    "expected_answer_elements": ["주요 이슈의 재발 유무"],
+    "expected_answer_elements": [
+      "주요 이슈의 재발 유무"
+    ],
     "minimum_valid_answer": "상황이 반복되고 있는지 여부 대답 및 설명",
     "report_usage": "반복 문제 정황 교정 가이드라인 보고",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "요즘 너를 은근히 신경 쓰이게 하거나 끈질기게 나타나는 일이 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "최근에도 삶 속에서 자주 발생하거나 반복되는 상황이 있는 편이니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "요즘 너를 은근히 신경 쓰이게 하거나 끈질기게 나타나는 일이 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "최근에도 삶 속에서 자주 발생하거나 반복되는 상황이 있는 편이니?"
+      }
+    ],
+    "domain_id": "⑧반복되는 이야기",
+    "daily_report_field": "recurring_stories",
+    "information_goal": "상황 반복 여부를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q10_3",
     "title": "반복 상황 정서 변화",
     "question_text": "그 일에 대한 네 마음은 어때? 기분이 어떤지 궁금해.",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "always",
     "dashboard_area_tag": "recurring_stories",
     "round_type": "common",
     "conversation_stage": "EMOTION",
     "question_intent": "감정 변화를 확인한다.",
-    "expected_answer_elements": ["정서 해소 혹은 지속성 확인"],
+    "expected_answer_elements": [
+      "정서 해소 혹은 지속성 확인"
+    ],
     "minimum_valid_answer": "전과의 감정 차이 언급",
     "report_usage": "정서 치유 궤적 평가",
     "frequency": "daily",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 일을 대하는 네 멘탈! 끄떡없어, 아님 아직 쪼끔 신경 쓰여?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그 일에 대해 네 마음이 편안한지, 아니면 조금 신경 쓰이는지 들려주겠니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "그 일을 대하는 네 멘탈! 끄떡없어, 아님 아직 쪼끔 신경 쓰여?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "그 일에 대해 네 마음이 편안한지, 아니면 조금 신경 쓰이는지 들려주겠니?"
+      }
+    ],
+    "domain_id": "⑧반복되는 이야기",
+    "daily_report_field": "recurring_stories",
+    "information_goal": "감정 변화를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q11_1",
     "title": "주간 에피소드",
     "question_text": "이번 주에 가장 기억나는 일은 뭐야?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "recurring_stories",
     "round_type": "common",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "한 주의 대표 사건을 확인한다.",
-    "expected_answer_elements": ["한 주의 가장 강렬했던 기억"],
+    "expected_answer_elements": [
+      "한 주의 가장 강렬했던 기억"
+    ],
     "minimum_valid_answer": "이번 한 주 동안 발생했던 대표 사건 한 가지 언급",
     "report_usage": "한 주간 아동 중요 에피소드 요약",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "월화수목금토일! 네 일주일 라이브 중에서 가장 하이라이트로 뽑고 싶은 사건이 뭐야?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "지나간 한 주를 곱씹어 볼 때 네 마음에 가장 깊게 흔적을 남긴 경험은 어떤 거였니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "월화수목금토일! 네 일주일 라이브 중에서 가장 하이라이트로 뽑고 싶은 사건이 뭐야?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "지나간 한 주를 곱씹어 볼 때 네 마음에 가장 깊게 흔적을 남긴 경험은 어떤 거였니?"
+      }
+    ],
+    "purpose": "nostalgia"
   },
   {
     "group_code": "Q11_5",
     "title": "주간 스트레스",
     "question_text": "이번 주에 조금 힘들거나 불편했던 일이 있었어?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "weekly",
     "dashboard_area_tag": "recurring_stories",
     "round_type": "common",
     "conversation_stage": "EMOTION",
     "question_intent": "부담을 느낀 경험을 확인한다.",
-    "expected_answer_elements": ["한 주간 고통/스트레스 요인"],
+    "expected_answer_elements": [
+      "한 주간 고통/스트레스 요인"
+    ],
     "minimum_valid_answer": "부정적 느낌을 주었던 경험 언급",
     "report_usage": "주간 정서 스트레스 지수 요약",
     "frequency": "weekly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "이번 주에 너의 미소를 찌푸리게 만든 얄미운 훼방꾼이나 속상했던 에피소드가 있었어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "지나온 며칠 동안 마음에 다소 짐스럽고 무거웠던 어려움이 있었다면 무엇이었니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "이번 주에 너의 미소를 찌푸리게 만든 얄미운 훼방꾼이나 속상했던 에피소드가 있었어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "지나온 며칠 동안 마음에 다소 짐스럽고 무거웠던 어려움이 있었다면 무엇이었니?"
+      }
+    ],
+    "domain_id": "⑧반복되는 이야기",
+    "daily_report_field": "recurring_stories",
+    "information_goal": "부담을 느낀 경험을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q12_1",
     "title": "분기별 기호",
     "question_text": "요즘 가장 좋아하는 것은 뭐야?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "quarterly",
     "dashboard_area_tag": "interests",
     "round_type": "common",
     "conversation_stage": "INTEREST",
     "question_intent": "대표 관심사를 확인한다.",
-    "expected_answer_elements": ["현재 대표 관심 브랜드/품목/활동"],
+    "expected_answer_elements": [
+      "현재 대표 관심 브랜드/품목/활동"
+    ],
     "minimum_valid_answer": "선호 품목이나 활동 이름 언급",
     "report_usage": "장기적 기호 추세 요약",
     "frequency": "quarterly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "요즘 네 하트에 정조준! 최애 등극 1순위가 무엇인지 선언해 줄래?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "근래 들어 너의 일상을 즐거움으로 메워주는 최고의 기쁨이 어떤 건지 말해 보겠니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "요즘 네 하트에 정조준! 최애 등극 1순위가 무엇인지 선언해 줄래?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "근래 들어 너의 일상을 즐거움으로 메워주는 최고의 기쁨이 어떤 건지 말해 보겠니?"
+      }
+    ],
+    "domain_id": "④관심사와 개인취향",
+    "daily_report_field": "interests_preferences",
+    "information_goal": "대표 관심사를 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q12_7",
     "title": "장기적 학습 애로",
     "question_text": "요즘 학교나 학원에서 조금 힘들게 느껴지는 부분이 있어?",
-    "applicable_grades": [3, 4, 5, 6],
+    "applicable_grades": [
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "quarterly",
     "dashboard_area_tag": "school_life",
     "round_type": "common",
     "conversation_stage": "DAILY_LIFE",
     "question_intent": "어려움을 확인한다.",
-    "expected_answer_elements": ["장기적 학습/생활 장벽"],
+    "expected_answer_elements": [
+      "장기적 학습/생활 장벽"
+    ],
     "minimum_valid_answer": "학교나 학원의 곤란 상황 언급",
     "report_usage": "학업 및 기관 적응 장기 스트레스 지점 요약",
     "frequency": "quarterly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "최근 다니는 배움의 터전에서, 널 은근히 끙끙 앓게 만드는 돌덩이가 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "요즘 교육받는 곳에서 적응이나 공부에 조금 발목이 잡힌다고 생각되는 지점이 있니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "최근 다니는 배움의 터전에서, 널 은근히 끙끙 앓게 만드는 돌덩이가 있어?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "요즘 교육받는 곳에서 적응이나 공부에 조금 발목이 잡힌다고 생각되는 지점이 있니?"
+      }
+    ],
+    "domain_id": "①학교·학원 생활",
+    "daily_report_field": "school_academy_life",
+    "information_goal": "어려움을 확인한다.",
+    "purpose": "state_check"
   },
   {
     "group_code": "Q12_15",
     "title": "원하는 위로 방식",
     "question_text": "기분이 좋지 않을 때 어떤 도움을 받으면 좋아?",
-    "applicable_grades": [2, 3, 4, 5, 6],
+    "applicable_grades": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
     "cycle_type": "quarterly",
     "dashboard_area_tag": "emotion",
     "round_type": "common",
     "conversation_stage": "EMOTION",
     "question_intent": "선호하는 정서적 도움 방식을 확인한다.",
-    "expected_answer_elements": ["울적할 때 위로받고 싶은 방식"],
+    "expected_answer_elements": [
+      "울적할 때 위로받고 싶은 방식"
+    ],
     "minimum_valid_answer": "자신만의 정서 회복 방법 혹은 원하는 주변 반응 언급",
     "report_usage": "부모의 기분 전환 대응 가이드라인 도출",
     "frequency": "quarterly",
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "기분 다운! 우울 우울 모드일 때 누가 어떻게 기분 치트키를 써주면 바로 회복돼?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "정서적으로 속상함이 밀려올 때 주변 사람들이 어떻게 너를 돌봐 주길 바라니?" }
-    ]
+      {
+        "variant_type": "tone_variant",
+        "tone": "jokey",
+        "question_text": "기분 다운! 우울 우울 모드일 때 누가 어떻게 기분 치트키를 써주면 바로 회복돼?"
+      },
+      {
+        "variant_type": "tone_variant",
+        "tone": "calm",
+        "question_text": "정서적으로 속상함이 밀려올 때 주변 사람들이 어떻게 너를 돌봐 주길 바라니?"
+      }
+    ],
+    "purpose": "rapport"
   }
 ]

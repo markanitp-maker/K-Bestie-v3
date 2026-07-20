@@ -19,6 +19,61 @@ import path from "path";
 export type RoundType = "round1_day" | "round2_night" | "common";
 export type CycleType = "onboarding" | "always" | "weekly" | "monthly" | "quarterly";
 
+let metadataMapCache: Map<string, any> | null = null;
+function getQuestionMetadataMap() {
+  if (metadataMapCache) return metadataMapCache;
+  const jsonPath = path.join(process.cwd(), "data/questions/question-bank-v2.0.json");
+  let content = "";
+  try {
+    content = fs.readFileSync(jsonPath, "utf-8");
+  } catch (e) {
+    return new Map();
+  }
+  let data: any[] = [];
+  try {
+    data = JSON.parse(content);
+  } catch (e) {
+    console.error("[getQuestionMetadataMap] Failed to parse JSON:", e);
+    return new Map();
+  }
+
+  const map = new Map<string, any>();
+  if (Array.isArray(data)) {
+    for (const q of data) {
+      try {
+        if (q && typeof q === "object" && q.group_code) {
+          const id = getDeterministicQuestionId(q.group_code);
+          map.set(id, {
+            domain_id: q.domain_id,
+            information_goal: q.information_goal,
+            daily_report_field: q.daily_report_field,
+            purpose: q.purpose,
+          });
+        }
+      } catch (err) {
+        console.error(`[getQuestionMetadataMap] Invalid structure for group_code: ${q?.group_code}`, err);
+      }
+    }
+  }
+  metadataMapCache = map;
+  return map;
+}
+
+function isValidMissionQuestion(id: string): boolean {
+  const map = getQuestionMetadataMap();
+  const meta = map.get(id);
+  if (!meta) return false;
+  if (meta.purpose !== "state_check") return false;
+  if (!meta.domain_id || !meta.information_goal || !meta.daily_report_field) return false;
+  const validDomains = [
+    "①학교·학원 생활", "②친구관계와 또래생활", "③감정 힌트", 
+    "④관심사와 개인취향", "⑤공부 고민", "⑥디지털 관심사와 콘텐츠 취향", 
+    "⑦미래·진로·꿈", "⑧반복되는 이야기"
+  ];
+  if (!validDomains.includes(meta.domain_id)) return false;
+  return true;
+}
+
 interface QuestionRow {
   id: string;
   cycle_type: CycleType;
@@ -79,7 +134,7 @@ export async function selectQuestions(
   if (qErr || !candidatesRaw) return [];
 
   const candidates = (candidatesRaw as QuestionRow[]).filter((q) =>
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade)
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id)
   );
   if (candidates.length === 0) return [];
 
@@ -208,7 +263,7 @@ export async function getApprovedV2Candidates(
   if (qErr || !candidatesRaw) return [];
 
   return (candidatesRaw as QuestionRow[]).filter((q) =>
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade)
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id)
   );
 }
 
@@ -407,7 +462,7 @@ export async function getAlphaApprovedCandidates(
   if (qErr || !candidatesRaw) return [];
 
   return (candidatesRaw as QuestionRow[]).filter((q) =>
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade)
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id)
   );
 }
 
