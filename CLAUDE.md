@@ -93,3 +93,27 @@
 - 규칙 파일 변경 시 커밋 예시: `[설정] CLAUDE.md 오케스트레이터 규칙 갱신`.
 - **규칙 파일(AGENTS.md / CLAUDE.md / GEMINI.md)을 삭제·이동·이름 변경하지 않는다.** OMC 워커가 동일 이름(`AGENTS.md` 등)의 프로토콜 문서를 생성하더라도 프로젝트 루트의 규칙 파일을 덮어쓰거나 지우지 않는다.
 - **세션 시작 시** 루트에 AGENTS.md / CLAUDE.md / GEMINI.md 세 파일이 모두 존재하는지 확인한다. 하나라도 없으면 작업 위임 전에 먼저 복원(백업 또는 `git checkout HEAD -- <파일>`)하고 커밋한다.
+
+---
+
+## 10. 환경·용어 영구 고정 (2026-07-20 확정 — 필수 준수)
+
+**"개발 서버"**(항상 이 명칭만 사용):
+- Vercel 프로젝트 `k-bestie-v3-dev`, URL `https://k-bestie-v3-dev.vercel.app`
+- Supabase "K-Bestie-v3-Dev", project ref `mkrsaaedxqrcrktapaus`
+- 테스트 계정: 부모 "안영진" 1개, 자녀 "안서둥" 1개 — **이 두 계정만 존재**한다.
+- 모든 기능 수정·Tier 3 음성·갤럭시 PWA·수동 마이크·미션·자유대화 테스트는 **오직 안서둥 계정**으로만 수행한다.
+- 개발 서버에서 서아·서현 등 실제 가족 계정을 조회·생성·복제·허용목록 등록·tier 변경하거나 프로덕션 데이터로 테스트하지 않는다(이 계정들은 개발 서버에 아예 존재하지 않는다).
+
+**"프로덕션 서버"**(항상 이 명칭만 사용):
+- Vercel 프로젝트 `k-bestie-v3`, URL `https://app.k-bestie.com`
+- Supabase "K-Bestie v3", project ref `fetvnhhjicndmxvhrffk`
+- 서아·서현을 포함한 실제 가족 계정은 **이곳에만** 존재한다.
+
+**금지 용어**: "Dev Production", "개발 서버의 Production", "Production slot" 등 혼동을 유발하는 표현은 전면 금지한다. `k-bestie-v3-dev`에 대한 모든 배포는 Vercel 내부 표시(`target: production`)나 CLI `--prod` 플래그 사용 여부와 무관하게 반드시 **"개발 서버 배포"**라고만 부른다. `k-bestie-v3`/`app.k-bestie.com`에 대한 배포만 **"프로덕션 서버 배포"**라고 부른다.
+
+**작업 범위 잠금**: 대표님이 개발 서버 통과와 프로덕션 배포를 **명시적으로 승인**하기 전에는 프로덕션 코드 배포·DB 마이그레이션·환경변수 변경·계정 변경·리포트 배치 실행을 절대 금지한다.
+
+**배포 전 fail-closed 안전장치(필수)**: 모든 배포 명령 직전에 대상 Vercel project name·project id·최종 연결 도메인·Supabase project ref를 비밀값 노출 없이 출력한다.
+- 개발 서버 배포 시 `k-bestie-v3-dev` + `mkrsaaedxqrcrktapaus`가 아니면 **즉시 중단**(fail-closed).
+- 프로덕션 서버 배포(승인 후에만) 시 `k-bestie-v3` + `fetvnhhjicndmxvhrffk`가 아니면 **즉시 중단**(fail-closed).
