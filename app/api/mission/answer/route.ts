@@ -157,6 +157,27 @@ export async function POST(req: NextRequest) {
   const states: Record<string, QuestionState> = { ...(progress.question_states ?? {}) };
   const prevState = states[questionId] ?? "pending";
 
+  if (prevState === "answered") {
+    const resPayload = {
+      valid: true,
+      reason: "already_answered",
+      refused: false,
+      previousState: prevState,
+      questionState: "answered",
+      validAnswerCount: progress.valid_answer_count ?? 0,
+      progressPercent: (progress.valid_answer_count ?? 0) * (isSessionV2 ? 10 : 20),
+      requiredCount: requiredCount,
+      completed: (progress.valid_answer_count ?? 0) >= requiredCount,
+      newlyCompleted: false,
+      progressStatus: statusRow.status,
+      engine_version: progress.engine_version ?? "v1",
+      questionStates: states,
+      rewardStatus: "none",
+    };
+    if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+    return NextResponse.json(resPayload);
+  }
+
   if (isSessionV2) {
     // ------------------ 신규 V2 질문엔진 로직 ------------------
     
@@ -254,66 +275,9 @@ export async function POST(req: NextRequest) {
     } else if (classification === "REFUSAL") {
       newState = "refused";
       answerStatus = "refused";
-    } else if (classification === "NO_RESPONSE") {
+    } else {
       newState = "skipped";
       answerStatus = "skipped";
-    } else {
-      // PARTIAL 인 경우: 꼬리질문 1회 시도
-      const { data: histList, error: histListErr } = await service
-        .from("mission_question_history")
-        .select("id")
-        .eq("child_id", session.child_id)
-        .eq("session_id", sessionId)
-        .eq("question_id", questionId)
-        .eq("follow_up_used", true);
-
-      if (histListErr) {
-        console.error("[answer/route] Failed to fetch follow-up history:", histListErr);
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
-
-      const alreadyUsedFollowUp = histList && histList.length > 0;
-
-      if (!alreadyUsedFollowUp) {
-        // 아직 꼬리질문 1회 시도 전: 꼬리질문 사용 마킹하고, 상태 pending으로 응답해 같은 질문 1회 재도전
-        newState = "pending";
-        answerStatus = "skipped";
-
-        const { error: insertPartialErr } = await service.from("mission_question_history").insert({
-          child_id: session.child_id,
-          question_id: questionId,
-          answer_status: answerStatus,
-          answer_classification: "PARTIAL",
-          follow_up_used: true,
-          session_id: sessionId,
-        });
-
-        if (insertPartialErr) {
-          console.error("[answer/route] Failed to insert PARTIAL followup history:", insertPartialErr);
-          return NextResponse.json({ error: "Database error" }, { status: 500 });
-        }
-
-        const resPayload = {
-          valid: false,
-          reason: "partial_followup",
-          refused: false,
-          previousState: prevState,
-          questionState: newState,
-          validAnswerCount: progress.valid_answer_count ?? 0,
-          progressPercent: (progress.valid_answer_count ?? 0) * 10,
-          requiredCount: requiredCount,
-          completed: false,
-          engine_version: "v2",
-          questionStates: states,
-        };
-
-        if (childTurnId) setCachedAnswer(childTurnId, resPayload);
-        return NextResponse.json(resPayload);
-      } else {
-        // 이미 꼬리질문 1회 완료 상태에서 또 VALID 획득 실패 -> 최종 실패
-        newState = "skipped";
-        answerStatus = "skipped";
-      }
     }
 
     // VALID/REFUSAL/NO_RESPONSE 판정 시 record_v2_mission_answer RPC 호출

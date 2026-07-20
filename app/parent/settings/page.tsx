@@ -1016,29 +1016,36 @@ export default function ParentSettingsPage() {
           </div>
 
           {/* PWA 설치 안내 카드 */}
-          {!isStandalone && (
-            <div className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 mt-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
-                  📱
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>앱 설치하기</p>
-                  <p className="text-[11px]" style={{ color: "#6b7280" }}>
-                    {isIOS ? "공유 버튼 → '홈 화면에 추가'를 눌러주세요" : "홈 화면에 추가하여 더 편리하게 이용하세요"}
-                  </p>
-                </div>
-                {!isIOS && installPrompt && (
-                  <button
-                    onClick={handleInstall}
-                    className="px-3 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-lg shrink-0 active:scale-95 transition-transform"
-                  >
-                    설치
-                  </button>
-                )}
+          <div className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 mt-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
+                📱
               </div>
+              {isStandalone ? (
+                <div className="flex-1">
+                  <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>설치됨</p>
+                  <p className="text-[11px]" style={{ color: "#6b7280" }}>이미 앱으로 이용 중이에요</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>앱 설치하기</p>
+                    <p className="text-[11px]" style={{ color: "#6b7280" }}>
+                      {isIOS ? "공유 버튼 → '홈 화면에 추가'를 눌러주세요" : "홈 화면에 추가하여 더 편리하게 이용하세요"}
+                    </p>
+                  </div>
+                  {!isIOS && installPrompt && (
+                    <button
+                      onClick={handleInstall}
+                      className="px-3 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-lg shrink-0 active:scale-95 transition-transform"
+                    >
+                      설치
+                    </button>
+                  )}
+                </>
+              )}
             </div>
-          )}
+          </div>
 
           {/* 4. 회원 탈퇴 메뉴 카드 */}
           <div

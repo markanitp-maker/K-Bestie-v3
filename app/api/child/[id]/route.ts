@@ -90,6 +90,17 @@ export async function PATCH(
     updateData.tier = body.tier;
   }
 
+  // child 역할(자녀 본인)은 자기 프로필에서 목소리(live_voice_name)만 바꿀 수 있다.
+  // RLS(child_profiles_update)가 child 역할의 UPDATE를 조용히 0-row로 막으므로 아래 실제
+  // 쓰기는 서비스 클라이언트로 수행한다 — 그만큼 여기서 필드를 명시적으로 제한해 자녀가
+  // tier/동의철회/이름/학년/관심사 등 부모 전용 필드를 바꾸지 못하게 한다(권한 상승 방지).
+  if (authCheck.role === "child") {
+    const disallowed = Object.keys(updateData).filter((k) => k !== "live_voice_name");
+    if (disallowed.length > 0) {
+      return NextResponse.json({ error: "권한이 없습니다" }, { status: 403 });
+    }
+  }
+
   if (Object.keys(updateData).length === 0) {
     return NextResponse.json({ error: "수정할 항목 없음" }, { status: 400 });
   }
@@ -108,7 +119,11 @@ export async function PATCH(
   }
 
   try {
-    const { error } = await supabase
+    // 실제 쓰기는 서비스 클라이언트로 수행한다 — child 역할은 RLS(child_profiles_update)가
+    // UPDATE를 조용히 0-row로 막기 때문(부모만 허용). 인가는 위에서 requireChildAccess +
+    // 소유권 SELECT로 이미 끝났고, child 역할은 위에서 live_voice_name 외 필드를 차단했다.
+    const serviceClient = createServiceClient();
+    const { error } = await serviceClient
       .from("child_profiles")
       .update(updateData)
       .eq("id", id);
