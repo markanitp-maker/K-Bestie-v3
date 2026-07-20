@@ -248,7 +248,7 @@
     "question_bank_version": "v2.0",
     "variants": [
       { "variant_type": "tone_variant", "tone": "jokey", "question_text": "앗, 최근에 네 마음속을 새로 노크하며 들어온 깜짝 선호 템이 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "전에는 몰랐는데 최근에 새롭게 관심을 느끼고 좋아하기 시작한 흥미거리가 있니?" }
+      { "variant_type": "tone_variant", "tone": "calm", "question_text": "최근에 새롭게 관심을 느끼고 좋아하기 시작한 흥미거리가 있니?" }
     ]
   },
   {
@@ -331,7 +331,7 @@
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "자기 전에 오늘 하루 필름을 샥 돌려보자. 기분 짱이었던 장면이나 짜증 났던 컷이 있었어?" },
+      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "잠자리에 누운 지금, 오늘 하루 필름을 샥 돌려보자. 기분 짱이었던 장면이나 짜증 났던 컷이 있었어?" },
       { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 잠들기 전, 기분 좋게 남아있는 추억이나 마음에 걸렸던 일에 대해 이야기해 볼래?" }
     ]
   },
@@ -506,7 +506,7 @@
   {
     "group_code": "Q5_2",
     "title": "감정 상황 탐색",
-    "question_text": "그때 어떤 일이 있었는지 말해줄래?",
+    "question_text": "오늘 마음이 크게 움직인 순간이 있었다면 어떤 일이 있었는지 말해줄래?",
     "applicable_grades": [2, 3, 4, 5, 6],
     "cycle_type": "always",
     "dashboard_area_tag": "emotion",
@@ -520,14 +520,14 @@
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "마음의 파도가 요동친 그 시간, 주위에 어떤 비하인드 사건이 벌어졌어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그때의 마음에 대해 조금 더 자세한 사정을 내게 말해 줄 수 있을까?" }
+      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "오늘 마음의 파도가 요동친 시간이 있었다면, 주위에 어떤 비하인드 사건이 벌어졌어?" },
+      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 마음이 크게 움직인 순간에 대해 조금 더 자세한 사정을 내게 말해 줄 수 있을까?" }
     ]
   },
   {
     "group_code": "Q5_3",
     "title": "감정의 강도와 잔류",
-    "question_text": "그때 어떤 기분이 들었고, 지금은 조금 달라졌어?",
+    "question_text": "오늘 마음이 가장 크게 움직였던 순간에 어떤 기분이 들었고, 지금은 조금 달라졌어?",
     "applicable_grades": [2, 3, 4, 5, 6],
     "cycle_type": "always",
     "dashboard_area_tag": "emotion",
@@ -541,8 +541,8 @@
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그때의 불타던 마음이랑 지금 차분해진 마음은 서로 얼마나 같거나 달라?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그 당시에 느껴졌던 정서가 시간이 흐른 지금은 어떻게 변화했는지 들려줄래?" }
+      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "오늘 가장 강하게 들었던 마음이랑 지금 차분해진 마음은 서로 얼마나 같거나 달라?" },
+      { "variant_type": "tone_variant", "tone": "calm", "question_text": "오늘 느꼈던 가장 큰 감정이 시간이 흐른 지금은 어떻게 변화했는지 들려줄래?" }
     ]
   },
   {
@@ -800,7 +800,7 @@
   {
     "group_code": "Q10_1",
     "title": "반복 관심사 점검",
-    "question_text": "전에 네가 좋아한다고 말했던 이야기가 있는데, 요즘도 여전히 좋아해?",
+    "question_text": "요즘 재미있게 보는 이야기나 책이 있어?",
     "applicable_grades": [2, 3, 4, 5, 6],
     "cycle_type": "always",
     "dashboard_area_tag": "recurring_stories",
@@ -814,14 +814,14 @@
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "전에 네 최애라고 도장 찍었던 거! 요즘도 네 마음속 랭킹 1위 자리를 굳건히 지키고 있어?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "예전에 네가 참 마음에 들어 했던 이야기에 대해 지금도 여전히 기분 좋게 흥미를 품고 있니?" }
+      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "네 마음속 랭킹 1위 자리를 굳건히 지키고 있는 최애 이야기나 캐릭터가 있어?" },
+      { "variant_type": "tone_variant", "tone": "calm", "question_text": "요즘 가장 기분 좋게 흥미를 품고 있는 이야기나 관심사가 있니?" }
     ]
   },
   {
     "group_code": "Q10_2",
     "title": "반복 정황 점검",
-    "question_text": "전에 이야기했던 일이 요즘에도 자주 생겨?",
+    "question_text": "최근에 자주 생기는 특별한 일이나 상황이 있어?",
     "applicable_grades": [2, 3, 4, 5, 6],
     "cycle_type": "always",
     "dashboard_area_tag": "recurring_stories",
@@ -835,14 +835,14 @@
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "전에 케이에게 알려줬던 그 사건, 혹시 요즘도 끈질기게 다시 나타나서 널 괴롭혀?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "과거에 털어놓았던 사건이나 상황이 최근에도 삶 속에서 자주 발생하는 편이니?" }
+      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "요즘 너를 은근히 신경 쓰이게 하거나 끈질기게 나타나는 일이 있어?" },
+      { "variant_type": "tone_variant", "tone": "calm", "question_text": "최근에도 삶 속에서 자주 발생하거나 반복되는 상황이 있는 편이니?" }
     ]
   },
   {
     "group_code": "Q10_3",
     "title": "반복 상황 정서 변화",
-    "question_text": "그 일에 대한 네 마음은 전과 비슷해, 아니면 조금 달라졌어?",
+    "question_text": "그 일에 대한 네 마음은 어때? 기분이 어떤지 궁금해.",
     "applicable_grades": [2, 3, 4, 5, 6],
     "cycle_type": "always",
     "dashboard_area_tag": "recurring_stories",
@@ -856,8 +856,8 @@
     "clinical_status": "PENDING_REVIEW",
     "question_bank_version": "v2.0",
     "variants": [
-      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 녀석을 대하는 네 멘탈! 예전보다 강해졌어, 아님 아직도 쪼끔 신경 쓰여?" },
-      { "variant_type": "tone_variant", "tone": "calm", "question_text": "동일한 일에 대해 네 마음이 전보다 편안해졌는지, 어떠한 변화가 생겼는지 들려주겠니?" }
+      { "variant_type": "tone_variant", "tone": "jokey", "question_text": "그 일을 대하는 네 멘탈! 끄떡없어, 아님 아직 쪼끔 신경 쓰여?" },
+      { "variant_type": "tone_variant", "tone": "calm", "question_text": "그 일에 대해 네 마음이 편안한지, 아니면 조금 신경 쓰이는지 들려주겠니?" }
     ]
   },
   {

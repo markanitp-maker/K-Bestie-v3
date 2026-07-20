@@ -99,8 +99,32 @@ export async function selectQuestions(
   const now = Date.now();
   const daysSince = (ts: number) => (now - ts) / (1000 * 60 * 60 * 24);
 
-  // 2/3. 주기 필터
-  const eligible = candidates.filter((q) => {
+  // 자녀별 관계 단계 확인 (완료된 이전 미션 세션이 없으면 first_meeting)
+  const isFirstMeeting = lastAskedAt.size === 0;
+
+  const { count: completedCount, error: sessionErr } = await service
+    .from("chat_sessions")
+    .select("id, mission_progress!inner(status)", { count: "exact", head: true })
+    .eq("child_id", childId)
+    .eq("session_type", "mission")
+    .eq("mission_progress.status", "COMPLETED");
+  if (sessionErr) {
+    console.error("[selectQuestions] session check error:", sessionErr);
+  }
+  const hasMemoryEvidence = (completedCount && completedCount > 0) ? true : false;
+
+  const memoryFilteredCandidates = candidates.filter((q) => {
+    if (q.dashboard_area_tag === "recurring_stories") {
+      if (isFirstMeeting || !hasMemoryEvidence) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // 2/3. 주기 필터 및 과거 참조(memoryEvidence) 필터
+  const eligible = memoryFilteredCandidates.filter((q) => {
+
     const last = lastAskedAt.get(q.id);
     if (q.cycle_type === "onboarding") {
       return last === undefined; // 이미 물어본 온보딩 제외
@@ -145,7 +169,7 @@ export async function selectQuestions(
   // 학년 조건에 해당하는 전체 후보(candidates) 중에서 아직 픽업되지 않은 질문들을
   // 가장 과거에 출제되었던 순(asked_at이 없거나 오래된 순)으로 정렬하여 5개를 충족할 때까지 강제로 채웁니다.
   if (picked.length < REQUIRED_COUNT) {
-    const remainingCandidates = candidates.filter((q) => !pickedSet.has(q.id));
+    const remainingCandidates = memoryFilteredCandidates.filter((q) => !pickedSet.has(q.id));
     const sortedRemaining = remainingCandidates.sort((a, b) => {
       const aTime = lastAskedAt.get(a.id) ?? 0;
       const bTime = lastAskedAt.get(b.id) ?? 0;
@@ -195,7 +219,7 @@ export async function getApprovedV2Candidates(
 async function filterV2EligibleCandidates(
   childId: string,
   candidates: QuestionRow[]
-): Promise<{ eligible: QuestionRow[]; lastAskedAt: Map<string, number> }> {
+): Promise<{ eligible: QuestionRow[]; memoryFilteredCandidates: QuestionRow[]; lastAskedAt: Map<string, number> }> {
   const service = createServiceClient();
   const { data: historyRaw } = await service
     .from("mission_question_history")
@@ -213,7 +237,31 @@ async function filterV2EligibleCandidates(
   const now = Date.now();
   const daysSince = (ts: number) => (now - ts) / (1000 * 60 * 60 * 24);
 
-  const eligible = candidates.filter((q) => {
+  // 자녀별 관계 단계 확인 (완료된 이전 미션 세션이 없으면 first_meeting)
+  const isFirstMeeting = lastAskedAt.size === 0;
+
+  const { count: completedCount, error: sessionErr } = await service
+    .from("chat_sessions")
+    .select("id, mission_progress!inner(status)", { count: "exact", head: true })
+    .eq("child_id", childId)
+    .eq("session_type", "mission")
+    .eq("mission_progress.status", "COMPLETED");
+  if (sessionErr) {
+    console.error("[filterV2EligibleCandidates] session check error:", sessionErr);
+  }
+  const hasMemoryEvidence = (completedCount && completedCount > 0) ? true : false;
+
+  const memoryFilteredCandidates = candidates.filter((q) => {
+    if (q.dashboard_area_tag === "recurring_stories") {
+      if (isFirstMeeting || !hasMemoryEvidence) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const eligible = memoryFilteredCandidates.filter((q) => {
+
     const last = lastAskedAt.get(q.id);
     if (q.cycle_type === "onboarding") {
       return last === undefined;
@@ -225,7 +273,7 @@ async function filterV2EligibleCandidates(
     return daysSince(last) >= CYCLE_INTERVAL_DAYS[q.cycle_type];
   });
 
-  return { eligible, lastAskedAt };
+  return { eligible, memoryFilteredCandidates, lastAskedAt };
 }
 
 /**
@@ -258,7 +306,7 @@ export async function selectQuestionsV2(
   const candidates = await getApprovedV2Candidates(grade, roundType);
   if (candidates.length === 0) return [];
 
-  const { eligible, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
+  const { eligible, memoryFilteredCandidates, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
 
 
   const picked: string[] = [];
@@ -294,7 +342,7 @@ export async function selectQuestionsV2(
   // 학년 조건에 해당하는 전체 후보(candidates) 중에서 아직 픽업되지 않은 질문들을
   // 가장 과거에 출제되었던 순(asked_at이 없거나 오래된 순)으로 정렬하여 10개를 충족할 때까지 강제로 채웁니다.
   if (picked.length < REQUIRED_COUNT_V2) {
-    const remainingCandidates = candidates.filter((q) => !pickedSet.has(q.id));
+    const remainingCandidates = memoryFilteredCandidates.filter((q) => !pickedSet.has(q.id));
     const sortedRemaining = remainingCandidates.sort((a, b) => {
       const aTime = lastAskedAt.get(a.id) ?? 0;
       const bTime = lastAskedAt.get(b.id) ?? 0;
@@ -306,7 +354,7 @@ export async function selectQuestionsV2(
   // 예비 질문까지 포함하여 총 20개(TOTAL_COUNT_V2)를 다 채우지 못한 경우,
   // 후보군에 남아있는 것들 중 오래된 순서대로 끝까지 채웁니다.
   if (picked.length < TOTAL_COUNT_V2) {
-    const remainingCandidates = candidates.filter((q) => !pickedSet.has(q.id));
+    const remainingCandidates = memoryFilteredCandidates.filter((q) => !pickedSet.has(q.id));
     const sortedRemaining = remainingCandidates.sort((a, b) => {
       const aTime = lastAskedAt.get(a.id) ?? 0;
       const bTime = lastAskedAt.get(b.id) ?? 0;
@@ -376,7 +424,7 @@ export async function selectAlphaQuestions(
   const candidates = await getAlphaApprovedCandidates(grade, roundType);
   if (candidates.length === 0) return [];
 
-  const { eligible, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
+  const { eligible, memoryFilteredCandidates, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
 
   const picked: string[] = [];
   const pickedSet = new Set<string>();
@@ -411,7 +459,7 @@ export async function selectAlphaQuestions(
   // 학년 조건에 해당하는 전체 후보(candidates) 중에서 아직 픽업되지 않은 질문들을
   // 가장 과거에 출제되었던 순(asked_at이 없거나 오래된 순)으로 정렬하여 10개를 충족할 때까지 강제로 채웁니다.
   if (picked.length < REQUIRED_COUNT_V2) {
-    const remainingCandidates = candidates.filter((q) => !pickedSet.has(q.id));
+    const remainingCandidates = memoryFilteredCandidates.filter((q) => !pickedSet.has(q.id));
     const sortedRemaining = remainingCandidates.sort((a, b) => {
       const aTime = lastAskedAt.get(a.id) ?? 0;
       const bTime = lastAskedAt.get(b.id) ?? 0;
@@ -423,7 +471,7 @@ export async function selectAlphaQuestions(
   // 예비 질문까지 포함하여 총 20개(TOTAL_COUNT_V2)를 다 채우지 못한 경우,
   // 후보군에 남아있는 것들 중 오래된 순서대로 끝까지 채웁니다.
   if (picked.length < TOTAL_COUNT_V2) {
-    const remainingCandidates = candidates.filter((q) => !pickedSet.has(q.id));
+    const remainingCandidates = memoryFilteredCandidates.filter((q) => !pickedSet.has(q.id));
     const sortedRemaining = remainingCandidates.sort((a, b) => {
       const aTime = lastAskedAt.get(a.id) ?? 0;
       const bTime = lastAskedAt.get(b.id) ?? 0;

@@ -235,11 +235,48 @@ ${isWeekendQuestionDay() ? `\n${WEEKEND_QUESTION_PROMPT}` : ""}
     });
 
     let text = (result.text ?? "").trim();
-    if (!text || containsPromptLeak(text)) {
-      console.warn("[mission/respond] discarding leaked/empty model response, falling back to safe text");
-      text = `그렇구나! ${finalNextQuestionText}`;
+
+    const isInvalid = (t: string) => {
+      if (!t || containsPromptLeak(t)) return true;
+      const qCount = (t.match(/\?/g) ?? []).length;
+      return t.length > 40 || qCount > 1;
+    };
+
+    if (isInvalid(text)) {
+      console.warn("[mission/respond] length/question/leak limit exceeded, retrying once...");
+      try {
+        const retryResult = await ai.models.generateContent({
+          model: missionModel.modelId,
+          contents,
+          config: {
+            systemInstruction: { parts: [{ text: systemInstruction + "\n\n(경고: 이전 응답이 너무 길거나 물음표가 많습니다. 반드시 40자 이내로 짧게, 물음표는 단 1개만 써서 대답하세요.)" }] },
+            maxOutputTokens: missionModel.maxOutputTokens ?? 1024,
+          },
+        });
+        text = (retryResult.text ?? "").trim();
+      } catch (err) {
+        console.error("[mission/respond] retry failed", err);
+      }
+      
+      if (isInvalid(text)) {
+        console.warn("[mission/respond] retry failed validation, falling back to safe text");
+        text = `그렇구나! ${finalNextQuestionText}`;
+        if (text.length > 40) {
+          text = "그렇구나! 다음 질문으로 넘어갈게.";
+        }
+      }
     }
+
     if (childTurnId) setCachedRespond(childTurnId, text);
+
+    // 길이 준수 진단 로그 — 원문은 남기지 않고 구조적 신호만(글자 수, 물음표 개수).
+    const questionMarkCount = (text.match(/\?/g) ?? []).length;
+    console.log("[mission/respond] length-compliance", {
+      charCount: text.length,
+      questionMarkCount,
+      withinCharLimit: text.length <= 40,
+      withinQuestionLimit: questionMarkCount <= 1,
+    });
 
     const tokenIn = result.usageMetadata?.promptTokenCount;
     const tokenOut = result.usageMetadata?.candidatesTokenCount;

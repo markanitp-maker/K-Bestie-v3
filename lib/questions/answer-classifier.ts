@@ -3,7 +3,6 @@ import { GoogleGenAI } from "@google/genai";
 
 export type AnswerClassification =
   | "VALID"
-  | "PARTIAL"
   | "REFUSAL"
   | "NO_RESPONSE"
   | "SAFETY_SIGNAL";
@@ -50,8 +49,17 @@ async function generateWithRetry(prompt: string): Promise<string> {
           model: "gemma-4-31b-it",
           contents: prompt,
           config: {
+            responseMimeType: "application/json",
             systemInstruction:
               "반드시 JSON 형식으로만 응답해야 합니다. Markdown 코드 블록 등 외에 어떠한 텍스트도 추가하지 마십시오.",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                classification: { type: "STRING", enum: ["VALID", "NO_RESPONSE"] },
+                reason: { type: "STRING" }
+              },
+              required: ["classification", "reason"]
+            },
           },
         }),
         new Promise<never>((_, reject) =>
@@ -71,7 +79,7 @@ async function generateWithRetry(prompt: string): Promise<string> {
 }
 
 /**
- * 아이의 답변을 분석하여 VALID/PARTIAL/REFUSAL/NO_RESPONSE/SAFETY_SIGNAL 중 하나로 분류한다.
+ * 아이의 답변을 분석하여 VALID/REFUSAL/NO_RESPONSE/SAFETY_SIGNAL 중 하나로 분류한다.
  */
 export async function classifyAnswer(
   questionText: string,
@@ -98,7 +106,6 @@ export async function classifyAnswer(
   const refusalKeywords = [
     "몰라",
     "그냥",
-    "없어",
     "비밀이야",
     "비밀",
     "말하기싫어",
@@ -131,19 +138,23 @@ export async function classifyAnswer(
     return "REFUSAL";
   }
 
-  // 4. VALID / PARTIAL 검사 (Gemma-4-31b-it 호출)
+  if (cleanText === "없어") {
+    return "VALID";
+  }
+
+  // 4. VALID 검사 (Gemma-4-31b-it 호출)
   const prompt = `질문: ${JSON.stringify(questionText)}
 아이의 답변: ${JSON.stringify(answerText)}
 
-위 질문에 대한 아이의 답변을 분석하여 다음 기준에 따라 VALID 또는 PARTIAL로 분류해주세요.
+초등학교 저학년 아이가 위 질문에 대답한 내용입니다. 다음 기준에 따라 VALID(유효한 답변) 또는 NO_RESPONSE(무관한 발화/인식 불가)로 분류해주세요.
 
-- VALID: 답변에 사람, 장소, 사건, 구체적 사물/음식/활동, 구체적 감정 단어 등 질문의 주제와 직결되는 구체적인 내용적 요소가 하나 이상 포함되어 있는 경우. (예: "스파게티"는 구체적 음식이므로 VALID)
-- PARTIAL: 질문의 주제와 관련은 있으나, 구체적인 요소가 결여되어 있고 추상적이거나 모호하게 대답한 경우. (예: "그냥 다 맛있어", "다 좋아" 등)
+- VALID: "재미있었어", "좋았어", "응", "아니" 등 짧고 단순하더라도 질문의 의미에 대응하는 답변인 경우. 문장 완성도나 구체적인 상세 설명을 요구하지 마세요.
+- NO_RESPONSE: STT 인식 실패로 인한 의미 없는 단어 나열이거나, 질문과 완전히 무관한 딴소리를 하는 경우.
 
 반드시 아래 JSON 형식으로만 응답하세요. 다른 설명이나 텍스트는 절대 포함하지 마십시오.
 
 {
-  "classification": "VALID" | "PARTIAL",
+  "classification": "VALID" | "NO_RESPONSE",
   "reason": "분류 이유 요약"
 }
 `;
@@ -151,12 +162,12 @@ export async function classifyAnswer(
   try {
     const rawResult = await generateWithRetry(prompt);
     const parsed = extractJSON(rawResult);
-    if (parsed.classification === "VALID" || parsed.classification === "PARTIAL") {
+    if (parsed.classification === "VALID" || parsed.classification === "NO_RESPONSE") {
       return parsed.classification;
     }
-    return "PARTIAL"; // 기본 폴백
+    return "VALID"; // 기본 폴백
   } catch (err) {
-    console.error("[answer-classifier] Gemma 분류 실패, PARTIAL로 폴백:", err);
-    return "PARTIAL";
+    console.error("[answer-classifier] Gemma 분류 실패, VALID로 폴백:", err);
+    return "VALID";
   }
 }
