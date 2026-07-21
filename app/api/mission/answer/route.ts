@@ -43,24 +43,31 @@ function setCachedAnswer(key: string, response: any) {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const authClient = await createClient();
   const { data: { user } } = await authClient.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) {
+    console.error("[mission/answer] Unauthorized", { sessionId: undefined });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   let body: { sessionId?: string; questionId?: string; answerText?: string; childTurnId?: string };
   try {
     body = await req.json();
   } catch {
+    console.error("[mission/answer] Invalid JSON");
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const { sessionId, questionId, answerText, childTurnId } = body;
   if (!sessionId || !questionId || typeof answerText !== "string") {
+    console.error("[mission/answer] sessionId, questionId, answerText required", { sessionId, questionId });
     return NextResponse.json({ error: "sessionId, questionId, answerText required" }, { status: 400 });
   }
 
   // answerText 길이 제한 (500자)
   if (answerText.length > 500) {
+    console.error("[mission/answer] answerText too long", { sessionId, questionId });
     return NextResponse.json({ error: "answerText too long (max 500 characters)" }, { status: 400 });
   }
 
@@ -82,15 +89,17 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (sessErr || !session) {
-    console.error("[answer/route] Session query failed:", sessErr);
+    console.error("[mission/answer] Session query failed:", { sessionId, err: sessErr });
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
   const authCheck = await requireChildAccess(service, user.id, session.child_id);
   if (!authCheck.allowed) {
+    console.error("[mission/answer] Forbidden", { sessionId, userId: user.id });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (session.session_type !== "mission") {
+    console.error("[mission/answer] Not a mission session", { sessionId });
     return NextResponse.json(
       { error: "answer validation is only allowed for mission sessions" },
       { status: 400 }
@@ -98,7 +107,10 @@ export async function POST(req: NextRequest) {
   }
 
   const consentBlocked = await checkConsentForChild(session.child_id);
-  if (consentBlocked) return consentBlocked;
+  if (consentBlocked) {
+    console.error("[mission/answer] Consent blocked", { sessionId });
+    return consentBlocked;
+  }
 
   // 기능 플래그 및 코호트 체크 (진행상태 로드 전으로 당김)
   const isV2Flag = isQuestionEngineV2Enabled(session.child_id);
@@ -111,11 +123,12 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (statusErr || !statusRow) {
-    console.error("[answer/route] status query failed:", statusErr);
+    console.error("[mission/answer] status query failed:", { sessionId, err: statusErr });
     return NextResponse.json({ error: "Mission progress not found" }, { status: 404 });
   }
 
   if (statusRow.status === "SAFETY_PAUSED" || statusRow.status === "COMPLETED") {
+    console.error("[mission/answer] Mission is already completed or safety paused", { sessionId, status: statusRow.status });
     const resPayload = { error: "Mission is already completed or safety paused", status: statusRow.status };
     if (childTurnId) setCachedAnswer(childTurnId, resPayload);
     return NextResponse.json(resPayload, { status: 423 });
@@ -142,7 +155,7 @@ export async function POST(req: NextRequest) {
     .single()) as unknown as { data: MissionProgressRow | null; error: { message: string } | null };
 
   if (progErr || !progress) {
-    console.error("[answer/route] progress query failed:", progErr);
+    console.error("[mission/answer] progress query failed:", { sessionId, err: progErr });
     return NextResponse.json({ error: "Mission progress not found" }, { status: 404 });
   }
 
@@ -151,6 +164,7 @@ export async function POST(req: NextRequest) {
 
   const questionIds: string[] = progress.question_ids ?? [];
   if (!questionIds.includes(questionId)) {
+    console.error("[mission/answer] questionId not part of this mission", { sessionId, questionId });
     return NextResponse.json({ error: "questionId not part of this mission" }, { status: 400 });
   }
 
@@ -174,6 +188,7 @@ export async function POST(req: NextRequest) {
       questionStates: states,
       rewardStatus: "none",
     };
+    console.log("[mission/answer] done", { sessionId, classification: "ALREADY_ANSWERED", valid: true, validAnswerCount: resPayload.validAnswerCount, durationMs: Date.now() - startedAt });
     if (childTurnId) setCachedAnswer(childTurnId, resPayload);
     return NextResponse.json(resPayload);
   }
@@ -189,7 +204,7 @@ export async function POST(req: NextRequest) {
       .not("asked_order", "is", null);
 
     if (askedCountErr) {
-      console.error("[answer/route] Failed to count asked_order:", askedCountErr);
+      console.error("[mission/answer] Failed to count asked_order:", { sessionId, questionId, err: askedCountErr });
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
@@ -205,7 +220,7 @@ export async function POST(req: NextRequest) {
       .is("asked_order", null);
 
     if (updOrderErr) {
-      console.error("[answer/route] Failed to update asked_order and asked_at:", updOrderErr);
+      console.error("[mission/answer] Failed to update asked_order and asked_at:", { sessionId, questionId, err: updOrderErr });
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
@@ -217,7 +232,7 @@ export async function POST(req: NextRequest) {
       .single();
     
     if (qDataErr) {
-      console.error("[answer/route] Failed to fetch question text:", qDataErr);
+      console.error("[mission/answer] Failed to fetch question text:", { sessionId, questionId, err: qDataErr });
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
     const questionText = qData?.question_text ?? "";
@@ -232,6 +247,7 @@ export async function POST(req: NextRequest) {
     } else {
       classification = await classifyAnswer(questionText, answerText);
     }
+    console.log("[mission/answer] classify", { sessionId, questionId, classification });
 
     // 1. SAFETY_SIGNAL 판정 시 즉시 중단 처리 (RPC 호출로 일괄 대체)
     if (classification === "SAFETY_SIGNAL") {
@@ -245,13 +261,14 @@ export async function POST(req: NextRequest) {
       });
 
       if (rpcErr || !rpcData || rpcData.length === 0) {
-        console.error("[answer/route] record_v2_safety_pause RPC error:", rpcErr);
+        console.error("[mission/answer] record_v2_safety_pause RPC error:", { sessionId, questionId, err: rpcErr });
         return NextResponse.json({ error: "Database error" }, { status: 500 });
       }
 
       const rpcResult = rpcData[0] as { blocked: boolean; history_id: string };
 
       if (rpcResult.blocked) {
+        console.error("[mission/answer] Blocked by safety pause", { sessionId, questionId });
         const resPayload = { error: "Mission is already completed or safety paused", status: "SAFETY_PAUSED" };
         if (childTurnId) setCachedAnswer(childTurnId, resPayload);
         return NextResponse.json(resPayload, { status: 423 });
@@ -271,6 +288,7 @@ export async function POST(req: NextRequest) {
         questionStates: states,
       };
 
+      console.log("[mission/answer] done", { sessionId, classification, valid: resPayload.valid, validAnswerCount: resPayload.validAnswerCount, durationMs: Date.now() - startedAt });
       if (childTurnId) setCachedAnswer(childTurnId, resPayload);
       return NextResponse.json(resPayload);
     }
@@ -301,7 +319,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (rpcErr || !rpcData || rpcData.length === 0) {
-      console.error("[answer/route] record_v2_mission_answer RPC error:", rpcErr);
+      console.error("[mission/answer] record_v2_mission_answer RPC error:", { sessionId, questionId, err: rpcErr });
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
@@ -315,7 +333,10 @@ export async function POST(req: NextRequest) {
       question_states: Record<string, string>;
     };
 
+    console.log("[mission/answer] progress update", { sessionId, questionId, classification, prevCount: progress.valid_answer_count ?? 0, newCount: rpcResult.valid_answer_count });
+
     if (rpcResult.blocked) {
+      console.error("[mission/answer] Blocked after answer RPC", { sessionId, questionId, status: rpcResult.status });
       const resPayload = { error: "Mission is already completed or safety paused", status: rpcResult.status };
       if (childTurnId) setCachedAnswer(childTurnId, resPayload);
       return NextResponse.json(resPayload, { status: 423 });
@@ -417,6 +438,7 @@ export async function POST(req: NextRequest) {
             const sortedIds = sortedList.map((h) => h.question_id);
             finalQuestionStates[reserveQ.question_id] = "pending";
 
+            console.log("[mission/answer] progress update", { sessionId, questionId, classification, prevCount: progress.valid_answer_count ?? 0, newCount: rpcResult.valid_answer_count });
             const { error: updateIdsErr } = await service
               .from("mission_progress")
               .update({
@@ -452,6 +474,7 @@ export async function POST(req: NextRequest) {
       rewardStatus: rpcResult.reward_status,
     };
 
+    console.log("[mission/answer] done", { sessionId, classification, valid: resPayload.valid, validAnswerCount: resPayload.validAnswerCount, durationMs: Date.now() - startedAt });
     if (childTurnId) setCachedAnswer(childTurnId, resPayload);
     return NextResponse.json(resPayload);
   }
@@ -501,6 +524,8 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       };
 
+      console.log("[mission/answer] progress update", { sessionId, questionId, classification: answerStatus, prevCount: currentProgressV1.valid_answer_count ?? 0, newCount: finalValidCountV1 });
+
       let query = service
         .from("mission_progress")
         .update(updatePayload)
@@ -515,7 +540,7 @@ export async function POST(req: NextRequest) {
       const { data: updatedRows, error: updErr } = await query.select("session_id");
 
       if (updErr) {
-        console.error(`[answer/route] V1 progress update failed (attempt ${attempt + 1}):`, updErr);
+        console.error(`[mission/answer] V1 progress update failed (attempt ${attempt + 1}):`, { sessionId, questionId, err: updErr });
         return NextResponse.json({ error: updErr.message }, { status: 500 });
       }
 
@@ -524,7 +549,7 @@ export async function POST(req: NextRequest) {
         break;
       }
 
-      console.warn(`[answer/route] V1 optimistic lock conflict. Retrying... (attempt ${attempt + 1})`);
+      console.warn(`[mission/answer] V1 optimistic lock conflict. Retrying... (attempt ${attempt + 1})`, { sessionId, questionId });
 
       const { data: latestProgressV1, error: fetchErr } = await service
         .from("mission_progress")
@@ -533,7 +558,7 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (fetchErr || !latestProgressV1) {
-        console.error("[answer/route] V1 failed to refetch progress during retry:", fetchErr);
+        console.error("[mission/answer] V1 failed to refetch progress during retry:", { sessionId, questionId, err: fetchErr });
         return NextResponse.json({ error: "Database error" }, { status: 500 });
       }
 
@@ -546,8 +571,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (!successV1) {
-      console.error("[answer/route] V1 progress update failed after 3 attempts due to conflict.");
-      return NextResponse.json({ error: "Transaction conflict, please try again" }, { status: 409 });
+        console.error("[mission/answer] V1 progress update failed after 3 attempts due to conflict.", { sessionId, questionId });
+        return NextResponse.json({ error: "Transaction conflict, please try again" }, { status: 409 });
     }
 
   const wasCompleted = (progress.valid_answer_count ?? 0) >= REQUIRED_COUNT;
@@ -580,6 +605,7 @@ export async function POST(req: NextRequest) {
     questionStates: states,
   };
 
+  console.log("[mission/answer] done", { sessionId, classification: answerStatus, valid: resPayload.valid, validAnswerCount: resPayload.validAnswerCount, durationMs: Date.now() - startedAt });
   if (childTurnId) setCachedAnswer(childTurnId, resPayload);
   return NextResponse.json(resPayload);
 }
