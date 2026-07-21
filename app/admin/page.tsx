@@ -498,16 +498,12 @@ const GROUP_LABEL: Record<ModelGroup, string> = {
 // 그룹별로 스위치 가능한 모델 후보 — ai.ts의 레지스트리와 맞춰둔다.
 const MODEL_OPTIONS: Record<ModelGroup, { provider: ProviderId; modelId: string; label: string }[]> = {
   A: [
-    { provider: "ai_studio", modelId: "gemma-4-31b-it", label: "AI Studio · gemma-4-31b-it" },
-    { provider: "ai_studio", modelId: "gemini-2.5-flash", label: "AI Studio · gemini-2.5-flash" },
     { provider: "vertex", modelId: "gemini-2.5-flash", label: "Vertex · gemini-2.5-flash" },
   ],
   B: [
-    { provider: "ai_studio", modelId: "gemini-flash-lite-latest", label: "AI Studio · gemini-flash-lite-latest" },
     { provider: "vertex", modelId: "gemini-2.5-flash", label: "Vertex · gemini-2.5-flash" },
   ],
   C: [
-    { provider: "ai_studio", modelId: "gemini-3.1-flash-live-preview", label: "AI Studio · gemini-3.1-flash-live-preview" },
     { provider: "vertex", modelId: "gemini-live-2.5-flash-native-audio", label: "Vertex · gemini-live-2.5-flash-native-audio (Cloud Run 릴레이 경유)" },
   ],
 };
@@ -556,7 +552,7 @@ function ProviderSwitchTab() {
 
   return (
     <div>
-      <SectionTitle>AI 프로바이더 스위치 (AI Studio ↔ Vertex)</SectionTitle>
+      <SectionTitle>AI 프로바이더 스위치 (Vertex 전용)</SectionTitle>
       <div style={{ fontSize: 11, color: "var(--hb-muted)", marginBottom: 12 }}>
         변경은 다음 호출부터 즉시 반영돼요. 단, 그룹C(라이브 음성)는 이미 연결된 세션이 끝날 때까지 기존 설정이 유지돼요.
       </div>

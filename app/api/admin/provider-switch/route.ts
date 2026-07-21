@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 const GROUPS = ["A", "B", "C"] as const;
-const PROVIDERS = ["ai_studio", "vertex"] as const;
+const PROVIDERS = ["vertex"] as const;
 
 // GET /api/admin/provider-switch — 그룹A/B/C 현재 provider/model 조회.
 export async function GET() {
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "group must be one of A/B/C" }, { status: 400 });
   }
   if (!provider || !PROVIDERS.includes(provider as (typeof PROVIDERS)[number])) {
-    return NextResponse.json({ error: "provider must be ai_studio or vertex" }, { status: 400 });
+    return NextResponse.json({ error: "provider must be vertex" }, { status: 400 });
   }
   if (!modelId || typeof modelId !== "string") {
     return NextResponse.json({ error: "modelId required" }, { status: 400 });
