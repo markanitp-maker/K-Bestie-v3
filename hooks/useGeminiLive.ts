@@ -897,7 +897,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Token fetch failed: ${res.status}`);
       }
-      const tokenData: { mode?: string; token?: string; relayUrl?: string; ticket?: string; model: string } = await res.json();
+      const tokenData: { mode?: string; token?: string; wsUrl?: string; model: string } = await res.json();
       console.log("[K] 🔑 token received, mode:", tokenData.mode, "model:", tokenData.model);
 
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -1226,8 +1226,10 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       // 기술 오류 대신 정해진 안내 문구만 노출한다.
       // voiceName은 더 이상 쿼리파라미터로 보내지 않는다 — /api/voice/token이 DB(child_profiles.
       // live_voice_name)에서 조회해 서명 티켓에 이미 포함시켰다(server-trust, 브라우저 조작 불가).
-      const relayWsUrl = `${tokenData.relayUrl}?ticket=${encodeURIComponent(tokenData.ticket ?? "")}`;
-      const ws = new WebSocket(relayWsUrl);
+      if (!tokenData.wsUrl || !tokenData.wsUrl.startsWith("wss://")) {
+        throw new Error("지금은 케이와 대화를 시작하기 어려워요.\n잠시 후 다시 만나자.");
+      }
+      const ws = new WebSocket(tokenData.wsUrl);
 
       const handleRelayError = (reason?: string, code?: number) => {
         console.error("[K] ❌ Vertex relay error:", reason, "code:", code);

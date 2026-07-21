@@ -58,15 +58,21 @@ export async function POST(req: NextRequest) {
   const { liveVoiceName } = await getVoiceModeForChild(body.childId);
   try {
     const ticket = mintVertexLiveTicket(body.childId, liveVoiceName);
+    const parsed = new URL(relayUrl);
+    parsed.protocol = "wss:";
+    parsed.searchParams.set("ticket", ticket);
+    if (parsed.protocol !== "wss:") {
+      throw new Error("Invalid protocol");
+    }
     return NextResponse.json({
       mode: "relay",
-      relayUrl,
-      ticket,
+      wsUrl: parsed.toString(),
       model: VERTEX_LIVE_VOICE_MODEL_ID,
     });
   } catch (error) {
+    console.error("[Voice Token] Failed to parse relay URL or mint ticket");
     return NextResponse.json({ 
-      error: error instanceof Error ? error.message : "Failed to mint live ticket" 
+      error: "Invalid relay URL configuration or failed to mint ticket" 
     }, { status: 500 });
   }
 }
