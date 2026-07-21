@@ -46,7 +46,7 @@ function extractJSON(text: string) {
   }
 }
 
-type ProviderId = "ai_studio" | "vertex";
+type ProviderId = "vertex";
 
 interface GroupAModelResolved {
   provider: ProviderId;
@@ -75,7 +75,7 @@ async function getVertexAccessToken(): Promise<string> {
 }
 
 /** 그룹A(리포트·요약) provider/model을 provider_switch_settings에서 조회.
- *  조회 실패/미실행 시 기존 getActiveReportModel() 기반 AI Studio로 안전하게 폴백. */
+ *  조회 실패/미실행 시 기존 getActiveReportModel() 기반 Vertex로 안전하게 폴백. */
 async function resolveGroupAModel(db: SupabaseClient): Promise<GroupAModelResolved> {
   const fallback = getActiveReportModel();
   try {
@@ -84,11 +84,11 @@ async function resolveGroupAModel(db: SupabaseClient): Promise<GroupAModelResolv
       .select("provider, model_id")
       .eq("group", "A")
       .maybeSingle();
-    const provider = (data?.provider as ProviderId | undefined) ?? "ai_studio";
+    const provider = (data?.provider as ProviderId | undefined) ?? "vertex";
     const modelId = data?.model_id ?? fallback.modelId;
     return { provider, modelId, apiBase: fallback.apiBase, maxOutputTokens: fallback.maxOutputTokens };
   } catch {
-    return { provider: "ai_studio", modelId: fallback.modelId, apiBase: fallback.apiBase, maxOutputTokens: fallback.maxOutputTokens };
+    return { provider: "vertex", modelId: fallback.modelId, apiBase: fallback.apiBase, maxOutputTokens: fallback.maxOutputTokens };
   }
 }
 
@@ -117,28 +117,7 @@ export function serviceClient(): SupabaseClient {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-/** AI Studio(Gemini/Gemma) REST 직접 호출 */
-async function callAiStudio(modelId: string, apiBase: string, prompt: string, maxOutputTokens: number): Promise<string> {
-  const apiKey = Deno.env.get("GEMMA_API_KEY")!;
-  const res = await fetch(
-    `${apiBase}/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens,
-        },
-      }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`Gemini API ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  }
-  const data = await res.json();
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-}
+
 
 /** Vertex AI generateContent REST 호출 — GCP_VERTEX_SA_KEY_JSON 서비스 계정 OAuth 토큰 사용. */
 async function callVertex(modelId: string, prompt: string, maxOutputTokens: number): Promise<string> {
@@ -170,19 +149,14 @@ async function callVertex(modelId: string, prompt: string, maxOutputTokens: numb
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
 }
 
-/** 그룹A 모델 호출 — provider에 따라 AI Studio/Vertex 분기. Vertex 실패 시 항상
- *  AI Studio(getActiveReportModel 고정 모델)로 교차 회귀한다(서비스 연속성). */
+/** 그룹A 모델 호출 — 오직 Vertex만 호출. Vertex 실패 시 예외를 발생시킨다.
+ *  DB 설정이 "vertex"가 아닐 경우에도 예외를 발생시켜(fail-closed) AI Studio 호출을 원천 차단한다. */
 async function callReportModel(model: GroupAModelResolved, prompt: string, maxOutputTokens: number): Promise<string> {
-  if (model.provider === "vertex") {
-    try {
-      return await callVertex(model.modelId, prompt, maxOutputTokens);
-    } catch (err) {
-      console.error(`[batch] Vertex 호출 실패, AI Studio로 교차 회귀:`, (err as Error).message);
-      const fallback = getActiveReportModel();
-      return await callAiStudio(fallback.modelId, fallback.apiBase, prompt, maxOutputTokens);
-    }
+  if (model.provider !== "vertex") {
+    throw new Error(`[batch] 지원되지 않는 provider입니다: ${model.provider}. 오직 vertex만 허용됩니다.`);
   }
-  return await callAiStudio(model.modelId, model.apiBase, prompt, maxOutputTokens);
+
+  return await callVertex(model.modelId, prompt, maxOutputTokens);
 }
 
 /** Step 1: 자유 대화 세션 마감 */
