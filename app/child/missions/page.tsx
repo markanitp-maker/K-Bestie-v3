@@ -529,17 +529,19 @@ function MissionInner() {
           setTurnPhase("awaiting_child");
         }
       } finally {
-        answerInFlightRef.current = false;
-        // 자동 모드에서만 마이크를 되살린다 — 수동 모드는 다음 명시적 버튼 탭 전까지 계속
-        // 꺼져 있어야 한다(handleCentralButtonClick이 그때 다시 켠다).
-        if (!isLive && isAutoRef.current && missionStateRef.current === "active") {
-          sttSetMicEnabledRef.current?.(true);
-        }
-        // Live 방어선 — 어떤 경로로든 processing_answer에 머문 채 이 비동기 체인이 끝나면
-        // (예상 밖 예외 등) 마이크가 영구히 잠긴다. 미션이 진행 중이면 awaiting_child로
-        // 되돌린다. speaking_k(K가 정상적으로 답변 중)와 completing/completed는 건드리지 않는다.
-        if (isLive && missionStateRef.current === "active" && turnPhaseRef.current === "processing_answer") {
-          setTurnPhase("awaiting_child");
+        if (currentEpoch === answerEpochRef.current) {
+          answerInFlightRef.current = false;
+          // 자동 모드에서만 마이크를 되살린다 — 수동 모드는 다음 명시적 버튼 탭 전까지 계속
+          // 꺼져 있어야 한다(handleCentralButtonClick이 그때 다시 켠다).
+          if (!isLive && isAutoRef.current && missionStateRef.current === "active") {
+            sttSetMicEnabledRef.current?.(true);
+          }
+          // Live 방어선 — 어떤 경로로든 processing_answer에 머문 채 이 비동기 체인이 끝나면
+          // (예상 밖 예외 등) 마이크가 영구히 잠긴다. 미션이 진행 중이면 awaiting_child로
+          // 되돌린다. speaking_k(K가 정상적으로 답변 중)와 completing/completed는 건드리지 않는다.
+          if (isLive && missionStateRef.current === "active" && turnPhaseRef.current === "processing_answer") {
+            setTurnPhase("awaiting_child");
+          }
         }
       }
     })();
