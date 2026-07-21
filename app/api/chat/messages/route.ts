@@ -54,8 +54,9 @@ export async function GET(req: NextRequest) {
 
   const { data: messages, error } = await service
     .from("chat_messages")
-    .select("role, content, created_at")
+    .select("role, content, created_at, display_sequence")
     .eq("session_id", sessionId)
+    .order("display_sequence", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -70,14 +71,14 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { sessionId?: string; role?: string; content?: string; voiceMode?: string; asrConfidence?: number };
+  let body: { sessionId?: string; role?: string; content?: string; voiceMode?: string; asrConfidence?: number; displaySequence?: number; turnId?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { sessionId, role, content, voiceMode: bodyVoiceMode, asrConfidence } = body;
+  const { sessionId, role, content, voiceMode: bodyVoiceMode, asrConfidence, displaySequence, turnId } = body;
   if (!sessionId || !role || !content?.trim()) {
     return NextResponse.json({ error: "sessionId, role, content required" }, { status: 400 });
   }
@@ -126,9 +127,26 @@ export async function POST(req: NextRequest) {
   const voiceMode: "stt_tts" | "live" =
     mode === "free" ? "stt_tts" : bodyVoiceMode === "live" ? "live" : "stt_tts";
 
+  if (mode === "mission") {
+    if (typeof displaySequence !== "number" || !Number.isInteger(displaySequence)) {
+      return NextResponse.json({ error: "displaySequence must be a valid integer for mission messages" }, { status: 400 });
+    }
+    if (typeof turnId !== "string" || !turnId.trim()) {
+      return NextResponse.json({ error: "turnId must be a valid string for mission messages" }, { status: 400 });
+    }
+  }
+
   const { error } = await service
     .from("chat_messages")
-    .insert({ session_id: sessionId, role, content: content.trim(), mode, voice_mode: voiceMode });
+    .upsert({ 
+      session_id: sessionId, 
+      turn_id: mode === "mission" ? turnId : null,
+      role, 
+      content: content.trim(), 
+      mode, 
+      voice_mode: voiceMode, 
+      display_sequence: mode === "mission" ? displaySequence : (displaySequence ?? null) 
+    }, { onConflict: "session_id,turn_id", ignoreDuplicates: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

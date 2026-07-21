@@ -6,8 +6,8 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
-import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
-import { useGeminiLive } from "@/hooks/useGeminiLive";
+import { useVoiceChat } from "@/hooks/useVoiceChat";
+import { useGeminiLive, type Turn } from "@/hooks/useGeminiLive";
 import { SkeletonBox } from "@/components/Skeleton";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
@@ -178,18 +178,31 @@ function MissionInner() {
   // transcript에 채워넣는다(그 전에 넣으면 startSession()이 비워버림).
   const pastMessagesRef = useRef<Turn[]>([]);
 
-  const saveMessage = useCallback((role: "child" | "k", content: string) => {
+  const displaySequenceCounterRef = useRef(0);
+  const nextDisplaySequence = useCallback(() => {
+    displaySequenceCounterRef.current += 1;
+    return displaySequenceCounterRef.current;
+  }, []);
+
+  const nextTurnId = useCallback(() => {
+    return crypto.randomUUID();
+  }, []);
+
+  const activeChildTurnIdRef = useRef<string | null>(null);
+  const activeChildTurnSeqRef = useRef<number | null>(null);
+
+  const saveMessage = useCallback((role: "child" | "k", content: string, displaySequence?: number, turnId?: string) => {
     const sid = sessionIdRef.current;
     if (!sid || !content.trim()) return;
 
     // 모드 전환(자동↔수동) 등 세션 재시작 시 대화 이력이 날아가는 것을 방지하기 위해,
     // 완료된 모든 턴을 공통 소스(pastMessagesRef)에 누적 저장한다.
-    pastMessagesRef.current = [...pastMessagesRef.current, { role, text: content }];
+    pastMessagesRef.current = [...pastMessagesRef.current, { role, text: content, id: turnId, displaySequence }];
 
     fetch("/api/chat/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current }),
+      body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current, displaySequence, turnId }),
     }).catch(() => {});
   }, []);
 
@@ -218,11 +231,29 @@ function MissionInner() {
   }
 
   const handleTurnComplete = useCallback((turn: Turn) => {
+    const isLive = voiceModeRef.current === "live";
+
+    let finalTurnId = turn.id;
+    let finalDisplaySequence = turn.displaySequence;
+
+    if (!isLive) {
+      if (turn.role === "child") {
+        finalTurnId = finalTurnId ?? activeChildTurnIdRef.current ?? nextTurnId();
+        finalDisplaySequence = finalDisplaySequence ?? activeChildTurnSeqRef.current ?? nextDisplaySequence();
+        activeChildTurnIdRef.current = null;
+        activeChildTurnSeqRef.current = null;
+      } else if (turn.role === "k") {
+        finalTurnId = finalTurnId ?? nextTurnId();
+        finalDisplaySequence = finalDisplaySequence ?? nextDisplaySequence();
+      }
+    }
+
+    const enrichedTurn = { ...turn, id: finalTurnId, displaySequence: finalDisplaySequence };
+
     // missionState !== "active"면(completing/completed) 그 이후의 아이 발화는 전부 무시한다
     // — 100% 이후 들어오는 사용자 입력을 미션 판정 로직에 태우지 않기 위함. 이 경우와 'k' 턴은
     // 아래 재진입 가드와 무관하게 항상 저장한다(기존 동작 유지).
-    const isChildTurnDuringActiveMission = turn.role === "child" && missionStateRef.current === "active";
-    const isLive = voiceModeRef.current === "live";
+    const isChildTurnDuringActiveMission = enrichedTurn.role === "child" && missionStateRef.current === "active";
 
     // 이전 턴이 아직 처리 중인데 도착한 child 턴은 저장조차 하지 않고 완전히 폐기한다 —
     // handleCentralButtonClick/live.sendActivityStart 호출 전 canStartRecording 가드가 정상
@@ -256,7 +287,7 @@ function MissionInner() {
       }
     }
 
-    saveMessage(turn.role, turn.text);
+    saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id);
 
     if (!isChildTurnDuringActiveMission) return;
 
@@ -284,7 +315,7 @@ function MissionInner() {
         const res = await fetch("/api/mission/answer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: turn.text, childTurnId }),
+          body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: enrichedTurn.text, childTurnId }),
         });
         if (!res.ok) {
           if (res.status === 423) {
@@ -393,7 +424,7 @@ function MissionInner() {
         }
       }
     })();
-  }, [saveMessage, pickNextIndex]);
+  }, [saveMessage, pickNextIndex, nextTurnId, nextDisplaySequence]);
 
   // 자동·수동 발화 상태 및 DOM 조작을 위한 Ref 선언
   const [isAuto, setIsAuto] = useState(true);
@@ -412,6 +443,7 @@ function MissionInner() {
     sttMode: "gcp",
     getSessionId: () => sessionIdRef.current,
     getChildId: () => childIdRef.current,
+    displaySequenceCounterRef,
     onServerTurnComplete: () => {
       if (missionControllerRef.current?.getState() === "completing") {
         missionControllerRef.current.notifyTurnComplete();
@@ -520,8 +552,10 @@ function MissionInner() {
       onClosingAudioTimeout: async () => {
         if (closingFallbackFiredRef.current) return;
         closingFallbackFiredRef.current = true;
-        liveRef.current?.appendTurn({ role: "k", text: MISSION_CLOSING_LINE });
-        saveMessage("k", MISSION_CLOSING_LINE);
+        const kId = nextTurnId();
+        const fallbackSeq = nextDisplaySequence();
+        liveRef.current?.appendTurn({ role: "k", text: MISSION_CLOSING_LINE, id: kId, displaySequence: fallbackSeq });
+        saveMessage("k", MISSION_CLOSING_LINE, fallbackSeq, kId);
         await playClosingLineViaTts(MISSION_CLOSING_LINE, sessionIdRef.current);
       },
       onLog: (event, fields) => console.log(`[MissionFlow] ${event}`, fields ?? {}),
@@ -653,8 +687,12 @@ function MissionInner() {
     const text = textInput.trim();
     if (!text) return;
     setTextInput("");
+    if (voiceModeRef.current !== "live") {
+      activeChildTurnIdRef.current = nextTurnId();
+      activeChildTurnSeqRef.current = nextDisplaySequence();
+    }
     voice.sendTypedText(text);
-  }, [textInput, voice]);
+  }, [textInput, voice, nextTurnId, nextDisplaySequence]);
 
   const handleClose = useCallback(() => {
     voice.stopSession();
@@ -757,7 +795,7 @@ function MissionInner() {
           if (msgRes.ok) {
             const msgData = await msgRes.json();
             const past: Turn[] = (msgData.messages ?? []).map(
-              (m: { role: "child" | "k"; content: string }) => ({ role: m.role, text: m.content })
+              (m: { role: "child" | "k"; content: string; display_sequence?: number }) => ({ role: m.role, text: m.content, displaySequence: m.display_sequence })
             );
             pastMessagesRef.current = past;
           }
@@ -856,6 +894,8 @@ function MissionInner() {
           return;
         }
       } else {
+        activeChildTurnIdRef.current = nextTurnId();
+        activeChildTurnSeqRef.current = nextDisplaySequence();
         sttTts.setMicEnabled(true);
       }
       setIsRecording(true);
