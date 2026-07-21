@@ -56,11 +56,17 @@ export async function POST(req: NextRequest) {
   // 미설정/미지원 시 Achernar로 대체). 릴레이는 이 v1 포맷과 예전 legacy 포맷을 모두
   // 받으므로(하위호환), 배포 타이밍이 어긋나도 서비스가 끊기지 않는다.
   const { liveVoiceName } = await getVoiceModeForChild(body.childId);
-  const ticket = mintVertexLiveTicket(body.childId, liveVoiceName);
-  return NextResponse.json({
-    mode: "relay",
-    relayUrl,
-    ticket,
-    model: VERTEX_LIVE_VOICE_MODEL_ID,
-  });
+  try {
+    const ticket = mintVertexLiveTicket(body.childId, liveVoiceName);
+    return NextResponse.json({
+      mode: "relay",
+      relayUrl,
+      ticket,
+      model: VERTEX_LIVE_VOICE_MODEL_ID,
+    });
+  } catch (error) {
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : "Failed to mint live ticket" 
+    }, { status: 500 });
+  }
 }

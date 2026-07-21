@@ -1279,6 +1279,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       // AudioContext sampleRate를 16000으로 강제 → 브라우저가 리샘플링 처리
       const inputCtx = new AudioContext({ sampleRate: 16000 });
       inputCtxRef.current = inputCtx;
+      if (inputCtx.state !== "running") {
+        inputCtx.resume().catch(() => {});
+      }
       const source = inputCtx.createMediaStreamSource(stream);
       // bufferSize 2048: 16kHz에서 128ms — 지연 줄이면서 안정적인 청크 크기
       const processor = inputCtx.createScriptProcessor(2048, 1, 1);
@@ -1706,6 +1709,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     function handleVisibilityChange() {
       if (document.visibilityState === "visible" && statusRef.current === "live") {
         void ensureOutputAudioRunning();
+        if (inputCtxRef.current && inputCtxRef.current.state !== "running") {
+          inputCtxRef.current.resume().catch(() => {});
+        }
       }
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);

@@ -174,7 +174,9 @@ export default function ChatPage() {
     const stored = localStorage.getItem("k_child_id");
     if (stored) {
       setChildId(stored);
-      restoreSession(stored);
+      void restoreSession(stored).then(() => {
+        seedTranscript(restoredTranscriptRef.current);
+      });
       const storedMode = localStorage.getItem(`k_voice_input_mode:${stored}`);
       const auto = storedMode !== "manual";
       setIsAuto(auto);
