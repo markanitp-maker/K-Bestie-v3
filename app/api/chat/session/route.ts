@@ -49,9 +49,11 @@ export async function POST(req: NextRequest) {
   const sessionData = data as { id: string; created: boolean } | null;
 
   if (rpcErr || !sessionData) {
-    console.error("[chat/session] rpc error:", rpcErr);
+    console.error("[chat/session] rpc error:", rpcErr, { businessDate, conversationWindow });
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
+
+  console.log("[chat/session] result", { childId, businessDate, conversationWindow, sessionId: sessionData.id, resumed: !sessionData.created });
 
   return NextResponse.json({
     resumed: !sessionData.created,

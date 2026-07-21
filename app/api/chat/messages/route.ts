@@ -56,12 +56,16 @@ export async function GET(req: NextRequest) {
     .from("chat_messages")
     .select("role, content, created_at, display_sequence, turn_status")
     .eq("session_id", sessionId)
+    .eq("turn_status", "finalized")
     .order("display_sequence", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  const finalizedCount = messages?.filter(m => m.turn_status === "finalized").length ?? 0;
+  console.log("[chat/messages GET] result", { sessionId, messageCount: messages?.length ?? 0, finalizedCount });
 
   return NextResponse.json({ messages: messages ?? [] });
 }

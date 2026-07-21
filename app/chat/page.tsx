@@ -234,6 +234,7 @@ export default function ChatPage() {
   }, [status, isAuto, setInputMode, setMicEnabled]);
 
   const restoreSession = useCallback(async (cId: string) => {
+    console.log("[freechat] restoreSession start", { childId: cId });
     try {
       const res = await fetch("/api/chat/session", {
         method: "POST",
@@ -241,6 +242,7 @@ export default function ChatPage() {
         body: JSON.stringify({ childId: cId }),
       });
       const data = await res.json();
+      console.log("[freechat] session response", { sessionId: data.sessionId, resumed: data.resumed, businessDate: data.businessDate, conversationWindow: data.conversationWindow });
       
       if (data.sessionId) {
         setSessionId(data.sessionId);
@@ -268,6 +270,7 @@ export default function ChatPage() {
                 text: m.content
               }));
               restoredTranscriptRef.current = mapped;
+              console.log("[freechat] restored messages", { sessionId: data.sessionId, count: mapped.length });
             }
           }
         } else {
