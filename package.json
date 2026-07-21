@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "tsx --test lib/mission/missionCompletionFlow.test.ts lib/mission/turnGuard.test.ts lib/stt/scriptGuard.test.ts lib/freechat/reflectiveEngine.test.ts lib/pwa/standalone.test.ts",
-    "postbuild": "node scripts/verify-client-bundle-env.js"
+    "postbuild": "node scripts/verify-client-bundle-env.js && node scripts/verify-no-client-secrets.js"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^8.3.1",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { Modality } from "@google/genai";
+
 import { validateFinalTranscript, resolveFinalTranscript } from "@/lib/stt/scriptGuard";
 
 const ENABLE_STT_FALLBACK = true;
@@ -929,7 +929,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       // speechConfig.languageCode: 한국어 고정 — 이게 없으면 모델이 발화 언어를 자동판별하다가
       // 일본어/중국어 등으로 잘못 인식하는 경우가 있어 명시적으로 고정한다.
       const liveConfig = {
-        responseModalities: [Modality.AUDIO],
+        responseModalities: ["AUDIO"],
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         speechConfig: {
