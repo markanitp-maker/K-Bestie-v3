@@ -166,7 +166,7 @@ async function run() {
                     const cleanText = fullText.trim().replace(/^['"]|['"]$/g, '').trim();
                     const hasLeak = K_TEXT_LEAK_PATTERNS.some(re => re.test(cleanText));
                     
-                    const normalize = t => t.replace(/[\s.,!?~"']/g, '');
+                    const normalize = t => t.replace(/[\s.,!?~"']/g, '').replace(/색깔/g, '색').replace(/(이야|이에요|예요|야)$/g, '');
                     const isMatch = normalize(cleanText) === normalize(targetText);
                     
                     if (hasLeak) {
