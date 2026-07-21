@@ -13,7 +13,7 @@
 // 특히 K가 말하는 중(k_speaking)이나 답변 대기 중(waiting_k)에는 아이 발화를 무시하고 오직 idle 상태에서만 접수하도록 엄격하게 가드한다.
 
 /** Live(Tier3) 전용 미션 턴 상태머신 — missions/page.tsx의 turnPhaseRef와 동일한 타입. */
-export type TurnPhase = "idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking";
+export type TurnPhase = "idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking" | "recovering";
 
 export interface RecordingGuardInput {
   /** true면 Live(Tier3) 경로, false면 STT/TTS(Tier1/2) 경로. */
@@ -52,6 +52,6 @@ export interface ChildTurnAcceptInput {
  */
 export function shouldAcceptChildTurn(input: ChildTurnAcceptInput): boolean {
   if (!input.missionActive) return true;
-  if (input.isLiveMode) return input.turnPhase === "idle" || input.turnPhase === "child_listening" || input.turnPhase === "child_finalizing";
+  if (input.isLiveMode) return input.turnPhase === "child_listening";
   return !input.answerInFlight;
 }

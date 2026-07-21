@@ -220,8 +220,8 @@ export async function POST(req: NextRequest) {
   const systemInstruction = `
 ${MISSION_CHAT_SYSTEM_PROMPT}
 
-지금 아이에게 자연스럽게 이어서 물어봐야 할 다음 질문은 "${finalNextQuestionText}"예요. 이 질문의 요지를 반드시 살려서 자연스럽게 물어보세요.
-${isWeekendQuestionDay() ? `\n${WEEKEND_QUESTION_PROMPT}` : ""}
+절대 질문을 생성하지 마세요. 아이의 이전 말에 대한 매우 짧은 공감이나 감탄사(리액션)만 딱 1~2문장(최대 15자)으로 생성하세요. 물음표(?)는 절대 사용 금지.
+예: "우와, 정말 재밌었겠다!", "그렇구나!", "대단한데!"
 `.trim();
 
   try {
@@ -234,48 +234,47 @@ ${isWeekendQuestionDay() ? `\n${WEEKEND_QUESTION_PROMPT}` : ""}
       },
     });
 
-    let text = (result.text ?? "").trim();
+    let reaction = (result.text ?? "").trim();
 
     const isInvalid = (t: string) => {
       if (!t || containsPromptLeak(t)) return true;
       const qCount = (t.match(/\?/g) ?? []).length;
-      return t.length > 40 || qCount > 1;
+      return t.length > 15 || qCount > 0;
     };
 
-    if (isInvalid(text)) {
+    if (isInvalid(reaction)) {
       console.warn("[mission/respond] length/question/leak limit exceeded, retrying once...");
       try {
         const retryResult = await ai.models.generateContent({
           model: missionModel.modelId,
           contents,
           config: {
-            systemInstruction: { parts: [{ text: systemInstruction + "\n\n(경고: 이전 응답이 너무 길거나 물음표가 많습니다. 반드시 40자 이내로 짧게, 물음표는 단 1개만 써서 대답하세요.)" }] },
+            systemInstruction: { parts: [{ text: systemInstruction + "\n\n(경고: 이전 리액션에 물음표가 있거나 너무 깁니다. 반드시 15자 이내로 짧게, 물음표 없이 출력하세요.)" }] },
             maxOutputTokens: missionModel.maxOutputTokens ?? 1024,
           },
         });
-        text = (retryResult.text ?? "").trim();
+        reaction = (retryResult.text ?? "").trim();
       } catch (err) {
         console.error("[mission/respond] retry failed", err);
       }
       
-      if (isInvalid(text)) {
+      if (isInvalid(reaction)) {
         console.warn("[mission/respond] retry failed validation, falling back to safe text");
-        text = `그렇구나! ${finalNextQuestionText}`;
-        if (text.length > 40) {
-          text = "그렇구나! 다음 질문으로 넘어갈게.";
-        }
+        reaction = "그렇구나!";
       }
     }
+
+    const text = `${reaction} ${finalNextQuestionText}`;
 
     if (childTurnId) setCachedRespond(childTurnId, text);
 
     // 길이 준수 진단 로그 — 원문은 남기지 않고 구조적 신호만(글자 수, 물음표 개수).
-    const questionMarkCount = (text.match(/\?/g) ?? []).length;
+    const questionMarkCount = (reaction.match(/\?/g) ?? []).length;
     console.log("[mission/respond] length-compliance", {
-      charCount: text.length,
+      charCount: reaction.length,
       questionMarkCount,
-      withinCharLimit: text.length <= 40,
-      withinQuestionLimit: questionMarkCount <= 1,
+      withinCharLimit: reaction.length <= 15,
+      withinQuestionLimit: questionMarkCount === 0,
     });
 
     const tokenIn = result.usageMetadata?.promptTokenCount;

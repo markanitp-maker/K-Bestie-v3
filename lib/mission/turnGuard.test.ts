@@ -86,17 +86,17 @@ test("shouldAcceptChildTurn: Live — waiting_k 상태면 폐기", () => {
   );
 });
 
-test("shouldAcceptChildTurn: Live — idle이면 통과", () => {
+test("shouldAcceptChildTurn: Live — idle이면 폐기", () => {
   assert.equal(
     shouldAcceptChildTurn({ isLiveMode: true, answerInFlight: false, turnPhase: "idle", missionActive: true }),
-    true
+    false
   );
 });
 
-test("shouldAcceptChildTurn: Live — child_finalizing이면 통과", () => {
+test("shouldAcceptChildTurn: Live — child_finalizing이면 폐기", () => {
   assert.equal(
     shouldAcceptChildTurn({ isLiveMode: true, answerInFlight: false, turnPhase: "child_finalizing", missionActive: true }),
-    true
+    false
   );
 });
 

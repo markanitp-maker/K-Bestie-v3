@@ -114,6 +114,7 @@ export interface UseGeminiLiveOptions {
   onKTurnFirstOutput?: () => void;
   /** K 턴의 첫 출력이 8초 동안 도착하지 않아 generation이 취소되었을 때 호출. */
   onKTurnTimeout?: () => void;
+  onRecoveryNeeded?: () => void;
   displaySequenceCounterRef?: React.MutableRefObject<number>;
 }
 
@@ -293,6 +294,17 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   onKTurnFirstOutputRef.current = options?.onKTurnFirstOutput;
   const onKTurnTimeoutRef = useRef<(() => void) | undefined>(undefined);
   onKTurnTimeoutRef.current = options?.onKTurnTimeout;
+  const onRecoveryNeededRef = useRef<(() => void) | undefined>(undefined);
+  onRecoveryNeededRef.current = options?.onRecoveryNeeded;
+  const kTurnHasAudioRef = useRef(false);
+  const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  function clearWatchdogTimer() {
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+  }
 
   // 클라이언트 VAD 및 자동·수동 모드 상태 관리 Ref
   const interactionModeRef = useRef<"auto" | "manual">("auto");
@@ -543,6 +555,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   }
 
   const cancelCurrentGeneration = useCallback(() => {
+    clearWatchdogTimer();
     cutActiveKTurnForBargeIn();
     logTelemetryEvent("generationCancelled");
   }, []);
@@ -597,6 +610,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       nextScheduleTimeRef.current = startAt + audioBuffer.duration;
       scheduledSourcesRef.current.push(source);
       kTurnAudioMsRef.current += audioBuffer.duration * 1000;
+      kTurnHasAudioRef.current = true;
 
       if (!kSpeakingRef.current) {
         kSpeakingRef.current = true; // 재생 시작 — 마이크 무음 유지
@@ -785,6 +799,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   function teardown() {
     clearVadTimersAndBuffers();
     clearGenerationTimeout();
+    clearWatchdogTimer();
     if (turnCompleteFallbackTimerRef.current) {
       clearTimeout(turnCompleteFallbackTimerRef.current);
       turnCompleteFallbackTimerRef.current = null;
@@ -1118,6 +1133,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
             clearTimeout(turnCompleteFallbackTimerRef.current);
             turnCompleteFallbackTimerRef.current = null;
           }
+          clearWatchdogTimer();
 
           if (activeKTurnIdRef.current && incomingGenerationId) {
             const set = processedTurnGenerationsRef.current;
@@ -1138,6 +1154,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           }
 
           onServerTurnCompleteRef.current?.();
+          if (!kTurnHasAudioRef.current) {
+            onAudioQueueDrainedRef.current?.();
+          }
           // speakClosingLine()이 보낸 전용 종료 발화 턴이 지금 막 끝났다 — 이 턴까지는
           // 통과시켰으니, 이후 들어오는 모든 서버 메시지는 다시 완전히 잠근다.
           if (postCompletionLockRef.current === "closingActive") {
@@ -1582,6 +1601,15 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     kGenerationCompleteRef.current = false;
     kTurnCompleteRef.current = false;
                       recoveryGateOpenRef.current = false;
+    kTurnHasAudioRef.current = false;
+    clearWatchdogTimer();
+    watchdogTimerRef.current = setTimeout(() => {
+      console.warn("[K] Watchdog timer fired. Attempting recovery...");
+      onRecoveryNeededRef.current?.();
+      updateStatus("ended");
+      teardown();
+      startSession({ preserveHistory: true }).catch(() => {});
+    }, 10000);
     startGenerationTimeout();
     sessionRef.current.sendClientContent({
       turns: [{ role: "user", parts: [{ text: `다음 문장을 자연스럽게 소리내어 그대로 말해줘: "${text}"` }] }],
@@ -1609,6 +1637,15 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     kGenerationCompleteRef.current = false;
     kTurnCompleteRef.current = false;
                       recoveryGateOpenRef.current = false;
+    kTurnHasAudioRef.current = false;
+    clearWatchdogTimer();
+    watchdogTimerRef.current = setTimeout(() => {
+      console.warn("[K] Watchdog timer fired. Attempting recovery...");
+      onRecoveryNeededRef.current?.();
+      updateStatus("ended");
+      teardown();
+      startSession({ preserveHistory: true }).catch(() => {});
+    }, 10000);
     
     return true;
   }, []);
@@ -1648,6 +1685,15 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     kGenerationCompleteRef.current = false;
     kTurnCompleteRef.current = false;
                       recoveryGateOpenRef.current = false;
+    kTurnHasAudioRef.current = false;
+    clearWatchdogTimer();
+    watchdogTimerRef.current = setTimeout(() => {
+      console.warn("[K] Watchdog timer fired. Attempting recovery...");
+      onRecoveryNeededRef.current?.();
+      updateStatus("ended");
+      teardown();
+      startSession({ preserveHistory: true }).catch(() => {});
+    }, 10000);
     startGenerationTimeout();
     waitingForLiveReceiveRef.current = true;
     sessionRef.current.sendClientContent({
