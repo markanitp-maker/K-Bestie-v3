@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
 import { getModelForGroup, VERTEX_LIVE_VOICE_MODEL_ID } from "@/app/api/_lib/ai";
 import { K_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
 import { createClient } from "@/lib/supabase/server";
@@ -43,61 +42,25 @@ export async function POST(req: NextRequest) {
   // 자격증명은 프런트에 노출 금지 — 하드룰③). 대신 별도 배포된 Cloud Run 릴레이
   // (services/vertex-live-relay)의 접속 정보 + 1회성 단기 티켓만 내려준다.
   // AI Studio 경로는 이 분기 아래에서 완전히 그대로 유지된다.
-  if (voiceModel.provider === "vertex") {
-    const relayUrl = process.env.VERTEX_LIVE_RELAY_URL;
-    if (!relayUrl) {
-      return NextResponse.json({ error: "VERTEX_LIVE_RELAY_URL not configured" }, { status: 500 });
-    }
-    // 아이 설정(child_profiles.live_voice_name)에 저장된 목소리를 서버가 직접 조회해 v1
-    // 서명 티켓에 포함시킨다 — 브라우저가 임의 값을 보낼 수 없는 server-trust 경로
-    // (mintVertexLiveTicket 내부에서도 Google 공식 30개 목록으로 한 번 더 검증,
-    // 미설정/미지원 시 Achernar로 대체). 릴레이는 이 v1 포맷과 예전 legacy 포맷을 모두
-    // 받으므로(하위호환), 배포 타이밍이 어긋나도 서비스가 끊기지 않는다.
-    const { liveVoiceName } = await getVoiceModeForChild(body.childId);
-    const ticket = mintVertexLiveTicket(body.childId, liveVoiceName);
-    return NextResponse.json({
-      mode: "relay",
-      relayUrl,
-      ticket,
-      model: VERTEX_LIVE_VOICE_MODEL_ID,
-    });
+  if (voiceModel.provider !== "vertex") {
+    return NextResponse.json({ error: "Only vertex provider is supported" }, { status: 500 });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
+  const relayUrl = process.env.VERTEX_LIVE_RELAY_URL;
+  if (!relayUrl) {
+    return NextResponse.json({ error: "VERTEX_LIVE_RELAY_URL not configured" }, { status: 500 });
   }
-  const liveModelId = voiceModel.modelId;
-
-  const ai = new GoogleGenAI({
-    apiKey,
-    httpOptions: { apiVersion: "v1alpha" },
-  });
-
-  const expireTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
-  // 토큰에는 보안 필수 항목만 잠금 (model + systemInstruction)
-  // responseModalities / transcription / speechConfig 은 브라우저 connect 시 전달
-  // lockAdditionalFields: [] 필수 — 없으면(undefined) LiveConnectConfig 전체가 잠겨
-  // connect() 시 클라이언트가 보내는 추가 필드(responseModalities 등)가 거부되어 1011로 끊긴다.
-  const token = await ai.authTokens.create({
-    config: {
-      uses: 1,
-      expireTime,
-      liveConnectConstraints: {
-        model: liveModelId,
-        config: {
-          systemInstruction: { parts: [{ text: K_SYSTEM_PROMPT }] },
-        },
-      },
-      lockAdditionalFields: [],
-    },
-  });
-
+  // 아이 설정(child_profiles.live_voice_name)에 저장된 목소리를 서버가 직접 조회해 v1
+  // 서명 티켓에 포함시킨다 — 브라우저가 임의 값을 보낼 수 없는 server-trust 경로
+  // (mintVertexLiveTicket 내부에서도 Google 공식 30개 목록으로 한 번 더 검증,
+  // 미설정/미지원 시 Achernar로 대체). 릴레이는 이 v1 포맷과 예전 legacy 포맷을 모두
+  // 받으므로(하위호환), 배포 타이밍이 어긋나도 서비스가 끊기지 않는다.
+  const { liveVoiceName } = await getVoiceModeForChild(body.childId);
+  const ticket = mintVertexLiveTicket(body.childId, liveVoiceName);
   return NextResponse.json({
-    mode: "ai_studio",
-    token: token.name,
-    model: liveModelId,
-    expiresAt: expireTime,
+    mode: "relay",
+    relayUrl,
+    ticket,
+    model: VERTEX_LIVE_VOICE_MODEL_ID,
   });
 }

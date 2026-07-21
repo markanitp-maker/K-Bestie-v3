@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { GoogleGenAI, Modality, type LiveServerMessage } from "@google/genai";
+import { Modality } from "@google/genai";
 import { validateFinalTranscript, resolveFinalTranscript } from "@/lib/stt/scriptGuard";
 
 const ENABLE_STT_FALLBACK = true;
@@ -22,10 +22,8 @@ export type SessionStatus = "idle" | "connecting" | "live" | "ending" | "ended" 
 export interface Turn { role: "child" | "k"; text: string; id?: string; generationId?: string; sealed?: boolean; displaySequence?: number; }
 
 // ── Vertex Live 릴레이(Cloud Run) 연결 지원 ──────────────────────
-// provider=ai_studio는 GoogleGenAI SDK가 반환하는 세션 객체를 그대로 쓰고, provider=vertex는
 // Cloud Run 릴레이(services/vertex-live-relay)와의 순수 WebSocket을 RelaySession으로 감싸
-// 동일한 인터페이스(sendRealtimeInput/sendClientContent/close)로 다룬다 — 아래 onmessage/
-// onaudioprocess 등 나머지 로직은 두 경로를 구분하지 않는다.
+// 공통 인터페이스(sendRealtimeInput/sendClientContent/close)로 다룬다.
 interface LiveTransport {
   sendRealtimeInput(input: {
     audio?: { data: string; mimeType: string };
@@ -36,8 +34,7 @@ interface LiveTransport {
   close(): void;
 }
 
-// AI Studio LiveServerMessage와 릴레이가 보내는 payload 둘 다 이 구조로 취급한다
-// (릴레이는 서버가 동일한 shape({data, serverContent, usageMetadata})으로 직렬화해 보냄).
+// 릴레이가 보내는 payload 구조 (서버가 AI Studio LiveServerMessage와 동일한 shape으로 직렬화해 보냄).
 interface NormalizedServerMessage {
   data?: string;
   serverContent?: {
@@ -1220,75 +1217,63 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         teardown();
       }
 
-      if (tokenData.mode === "relay") {
-        // ── Vertex Live — Cloud Run 릴레이(services/vertex-live-relay) 경유 ──
-        // 릴레이 실패 시 AI Studio로 자동 폴백하지 않는다(Plan7 §2) — 아이에게는
-        // 기술 오류 대신 정해진 안내 문구만 노출한다.
-        // voiceName은 더 이상 쿼리파라미터로 보내지 않는다 — /api/voice/token이 DB(child_profiles.
-        // live_voice_name)에서 조회해 서명 티켓에 이미 포함시켰다(server-trust, 브라우저 조작 불가).
-        const relayWsUrl = `${tokenData.relayUrl}?ticket=${encodeURIComponent(tokenData.ticket ?? "")}`;
-        const ws = new WebSocket(relayWsUrl);
-
-        const handleRelayError = (reason?: string, code?: number) => {
-          console.error("[K] ❌ Vertex relay error:", reason, "code:", code);
-          // 아이 화면 문구는 그대로 두되(Plan7 §2), 브라우저에서만 보이던 실제 실패 사유를
-          // 서버 로그로도 남겨 원인 진단이 가능하게 한다(음성/transcript 등은 보내지 않음).
-          fetch("/api/voice/relay-error", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ childId: getChildIdRef.current?.() ?? null, code: code ?? null, reason: reason ?? null }),
-            keepalive: true,
-          }).catch(() => {});
-          handleError("지금은 케이와 대화를 시작하기 어려워요.\n잠시 후 다시 만나자.");
-        };
-
-        ws.onmessage = (ev) => {
-          let parsed: { type?: string; payload?: NormalizedServerMessage; message?: string } | undefined;
-          try { parsed = JSON.parse(ev.data as string); } catch { return; }
-          if (!parsed?.type) return;
-          switch (parsed.type) {
-            case "ready":
-              handleOpen();
-              break;
-            case "message":
-              if (parsed.payload) handleMessage(parsed.payload);
-              break;
-            case "ping":
-              ws.send(JSON.stringify({ type: "pong" }));
-              break;
-            case "error":
-              handleRelayError(parsed.message);
-              break;
-          }
-        };
-        ws.onerror = () => {
-          console.error("[K] ❌ relay WebSocket-level error");
-        };
-        ws.onclose = (e) => {
-          // "ready"(=Vertex 세션 실제 오픈) 도달 전에 끊기면 연결 실패로 간주
-          if (statusRef.current === "connecting") {
-            handleRelayError(e.reason || "relay closed before ready", e.code);
-            return;
-          }
-          handleClose(e.code, e.reason);
-        };
-
-        sessionRef.current = new RelaySession(ws);
-      } else {
-        // ── AI Studio — 기존 경로, 완전히 그대로 유지 ──
-        const ai = new GoogleGenAI({ apiKey: tokenData.token, httpOptions: { apiVersion: "v1alpha" } });
-        const session = await ai.live.connect({
-          model: tokenData.model,
-          config: liveConfig,
-          callbacks: {
-            onopen: handleOpen,
-            onmessage: (msg: LiveServerMessage) => handleMessage(msg as unknown as NormalizedServerMessage),
-            onerror: (e: ErrorEvent) => handleError(e.message ?? "WebSocket error"),
-            onclose: (e: CloseEvent) => handleClose(e.code, e.reason),
-          },
-        });
-        sessionRef.current = session as unknown as LiveTransport;
+      if (tokenData.mode !== "relay") {
+        throw new Error("지금은 케이와 대화를 시작하기 어려워요.\n잠시 후 다시 만나자.");
       }
+
+      // ── Vertex Live — Cloud Run 릴레이(services/vertex-live-relay) 경유 ──
+      // 릴레이 실패 시 AI Studio로 자동 폴백하지 않는다(Plan7 §2) — 아이에게는
+      // 기술 오류 대신 정해진 안내 문구만 노출한다.
+      // voiceName은 더 이상 쿼리파라미터로 보내지 않는다 — /api/voice/token이 DB(child_profiles.
+      // live_voice_name)에서 조회해 서명 티켓에 이미 포함시켰다(server-trust, 브라우저 조작 불가).
+      const relayWsUrl = `${tokenData.relayUrl}?ticket=${encodeURIComponent(tokenData.ticket ?? "")}`;
+      const ws = new WebSocket(relayWsUrl);
+
+      const handleRelayError = (reason?: string, code?: number) => {
+        console.error("[K] ❌ Vertex relay error:", reason, "code:", code);
+        // 아이 화면 문구는 그대로 두되(Plan7 §2), 브라우저에서만 보이던 실제 실패 사유를
+        // 서버 로그로도 남겨 원인 진단이 가능하게 한다(음성/transcript 등은 보내지 않음).
+        fetch("/api/voice/relay-error", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId: getChildIdRef.current?.() ?? null, code: code ?? null, reason: reason ?? null }),
+          keepalive: true,
+        }).catch(() => {});
+        handleError("지금은 케이와 대화를 시작하기 어려워요.\n잠시 후 다시 만나자.");
+      };
+
+      ws.onmessage = (ev) => {
+        let parsed: { type?: string; payload?: NormalizedServerMessage; message?: string } | undefined;
+        try { parsed = JSON.parse(ev.data as string); } catch { return; }
+        if (!parsed?.type) return;
+        switch (parsed.type) {
+          case "ready":
+            handleOpen();
+            break;
+          case "message":
+            if (parsed.payload) handleMessage(parsed.payload);
+            break;
+          case "ping":
+            ws.send(JSON.stringify({ type: "pong" }));
+            break;
+          case "error":
+            handleRelayError(parsed.message);
+            break;
+        }
+      };
+      ws.onerror = () => {
+        console.error("[K] ❌ relay WebSocket-level error");
+      };
+      ws.onclose = (e) => {
+        // "ready"(=Vertex 세션 실제 오픈) 도달 전에 끊기면 연결 실패로 간주
+        if (statusRef.current === "connecting") {
+          handleRelayError(e.reason || "relay closed before ready", e.code);
+          return;
+        }
+        handleClose(e.code, e.reason);
+      };
+
+      sessionRef.current = new RelaySession(ws);
 
       // ── PCM 캡처 → Gemini 전송 ───────────────────────────────
       // AudioContext sampleRate를 16000으로 강제 → 브라우저가 리샘플링 처리
