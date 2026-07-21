@@ -87,6 +87,7 @@ export default function ChatPage() {
     setInputMode,
     manualFinalize,
     isResponding,
+    seedTranscript,
   } = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
   respondTextRef.current = respondText;
   getLastAsrConfidenceRef.current = getLastAsrConfidence;
@@ -287,7 +288,8 @@ export default function ChatPage() {
     await restoreSession(childId);
 
     await startSession();
-  }, [childId, startSession, restoreSession]);
+    seedTranscript(restoredTranscriptRef.current);
+  }, [childId, startSession, restoreSession, seedTranscript]);
 
   // 주기적으로 윈도우 변경을 감지하고 세션 갱신
   useEffect(() => {
@@ -295,12 +297,24 @@ export default function ChatPage() {
       if (childIdRef.current && currentWindowRef.current) {
         const currentWindow = getCurrentKSTWindow();
         if (currentWindowRef.current !== currentWindow) {
-          restoreSession(childIdRef.current);
+          const wasLive = statusRef.current === "live";
+          if (wasLive) stopSession();
+          reset();
+          
+          void restoreSession(childIdRef.current).then(() => {
+            if (wasLive) {
+              void startSession().then(() => {
+                seedTranscript(restoredTranscriptRef.current);
+              });
+            } else {
+              seedTranscript(restoredTranscriptRef.current);
+            }
+          });
         }
       }
     }, 10000); // 10초마다 확인
     return () => clearInterval(interval);
-  }, [restoreSession]);
+  }, [restoreSession, stopSession, reset, startSession, seedTranscript]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (newMode === "auto") {
