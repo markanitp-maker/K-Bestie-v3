@@ -148,7 +148,7 @@ export default function ChatPage() {
         fetch("/api/chat/pause", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: sid, turnCount, ended: false }),
+          body: JSON.stringify({ sessionId: sid, turnCount }),
           keepalive: true,
         }).catch(() => {});
       }
@@ -179,6 +179,7 @@ export default function ChatPage() {
     const stored = localStorage.getItem("k_child_id");
     if (stored) {
       setChildId(stored);
+      restoreSession(stored);
       const storedMode = localStorage.getItem(`k_voice_input_mode:${stored}`);
       const auto = storedMode !== "manual";
       setIsAuto(auto);
@@ -235,17 +236,12 @@ export default function ChatPage() {
     }
   }, [status, isAuto, setInputMode, setMicEnabled]);
 
-  const handleStart = useCallback(async () => {
-    if (!childId) return;
-    setReportDone(false);
-    setReportError(null);
-    setSessionActive(true);
-
+  const restoreSession = useCallback(async (cId: string) => {
     try {
       const res = await fetch("/api/chat/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ childId }),
+        body: JSON.stringify({ childId: cId }),
       });
       const data = await res.json();
       
@@ -274,11 +270,21 @@ export default function ChatPage() {
         }
       }
     } catch (err) {
-      console.error("Session start error:", err);
+      console.error("Session restore error:", err);
+    }
+  }, []);
+  const handleStart = useCallback(async () => {
+    if (!childId) return;
+    setReportDone(false);
+    setReportError(null);
+    setSessionActive(true);
+
+    if (!sessionIdRef.current) {
+      await restoreSession(childId);
     }
 
     await startSession();
-  }, [childId, startSession]);
+  }, [childId, startSession, restoreSession]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (newMode === "auto") {
