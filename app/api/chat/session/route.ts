@@ -62,21 +62,46 @@ export async function POST(req: NextRequest) {
 
   const { data: newSession, error: newSessionErr } = await service
     .from("chat_sessions")
-    .insert({ 
+    .upsert({ 
       child_id: childId,
       business_date: businessDate,
-      conversation_window: conversationWindow
+      conversation_window: conversationWindow,
+      session_type: "free"
+    }, {
+      onConflict: "child_id, business_date, conversation_window",
+      ignoreDuplicates: true
     })
     .select("id")
-    .single();
+    .maybeSingle();
 
-  if (newSessionErr || !newSession) {
+  if (newSessionErr) {
     console.error("[chat/session] insert error:", newSessionErr);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
-  return NextResponse.json({
-    resumed: false,
-    sessionId: newSession.id,
-  });
+  if (newSession) {
+    return NextResponse.json({
+      resumed: false,
+      sessionId: newSession.id,
+    });
+  } else {
+    const { data: retrySession, error: retryErr } = await service
+      .from("chat_sessions")
+      .select("id")
+      .eq("child_id", childId)
+      .eq("business_date", businessDate)
+      .eq("conversation_window", conversationWindow)
+      .eq("session_type", "free")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+      
+    if (retryErr || !retrySession) {
+      return NextResponse.json({ error: "Database error during retry" }, { status: 500 });
+    }
+    return NextResponse.json({
+      resumed: true,
+      sessionId: retrySession.id,
+    });
+  }
 }

@@ -14,6 +14,15 @@ import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
 
+const getCurrentKSTWindow = () => {
+  const now = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kstNow = new Date(now.getTime() + kstOffset);
+  const yyyy = kstNow.getUTCFullYear();
+  const mm = String(kstNow.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(kstNow.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}-${kstNow.getUTCHours() < 18 ? 'day' : 'evening'}`;
+};
 export default function ChatPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -36,6 +45,12 @@ export default function ChatPage() {
   const sessionIdRef = useRef<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const statusRef = useRef<string>("idle");
+  const currentWindowRef = useRef<string | null>(null);
+  const childIdRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    childIdRef.current = childId;
+  }, [childId]);
   // respondText는 훅 생성 이후에만 얻을 수 있어 ref로 우회(핸들러는 훅 생성 전에 정의 필요)
   const respondTextRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const getLastAsrConfidenceRef = useRef<(() => number | undefined) | undefined>(undefined);
@@ -139,27 +154,7 @@ export default function ChatPage() {
     }
   }, [transcript, restoredTranscript, status, triggerHardLimitStop]);
 
-  // 페이지 이탈 시 세션 마감 연동
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      const sid = sessionIdRef.current;
-      if (sid && statusRef.current !== "ended") {
-        const turnCount = [...restoredTranscriptRef.current, ...getTranscript()].filter((t) => t.role === "child").length;
-        fetch("/api/chat/pause", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: sid, turnCount }),
-          keepalive: true,
-        }).catch(() => {});
-      }
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      handleBeforeUnload();
-    };
-  }, [getTranscript]);
+  // 페이지 이탈 시 세션 마감 연동 로직 제거됨
 
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
   const getSupabase = useCallback(() => {
@@ -248,6 +243,7 @@ export default function ChatPage() {
       if (data.sessionId) {
         setSessionId(data.sessionId);
         sessionIdRef.current = data.sessionId;
+        currentWindowRef.current = getCurrentKSTWindow();
         localStorage.setItem("k_session_id", data.sessionId);
 
         if (data.resumed) {
@@ -255,9 +251,14 @@ export default function ChatPage() {
           if (msgRes.ok) {
             const msgData = await msgRes.json();
             if (msgData.messages) {
-              const mapped: Turn[] = msgData.messages.map((m: any) => ({
+              type MessageRow = {
+                display_sequence?: number;
+                role: "child" | "k" | "system";
+                content: string;
+              };
+              const mapped: Turn[] = msgData.messages.map((m: MessageRow) => ({
                 id: m.display_sequence?.toString() || Math.random().toString(),
-                role: m.role,
+                role: m.role as "child" | "k",
                 text: m.content
               }));
               setRestoredTranscript(mapped);
@@ -279,12 +280,23 @@ export default function ChatPage() {
     setReportError(null);
     setSessionActive(true);
 
-    if (!sessionIdRef.current) {
-      await restoreSession(childId);
-    }
+    await restoreSession(childId);
 
     await startSession();
   }, [childId, startSession, restoreSession]);
+
+  // 주기적으로 윈도우 변경을 감지하고 세션 갱신
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (childIdRef.current && currentWindowRef.current) {
+        const currentWindow = getCurrentKSTWindow();
+        if (currentWindowRef.current !== currentWindow) {
+          restoreSession(childIdRef.current);
+        }
+      }
+    }, 10000); // 10초마다 확인
+    return () => clearInterval(interval);
+  }, [restoreSession]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (newMode === "auto") {

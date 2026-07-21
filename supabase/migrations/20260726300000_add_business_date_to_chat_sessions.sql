@@ -11,3 +11,7 @@ SET
 WHERE business_date IS NULL;
 
 GRANT ALL ON chat_sessions TO anon, authenticated;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_sessions_free_unique
+ON chat_sessions(child_id, business_date, conversation_window)
+WHERE session_type = 'free' OR session_type IS NULL;

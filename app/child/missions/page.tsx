@@ -151,6 +151,7 @@ function MissionInner() {
   // 유효한 아이 답변 턴마다 1씩 증가 — /api/mission/answer, /api/mission/respond에 함께
   // 실어 보내 서버가 같은 턴에 대한 중복 요청을 식별할 수 있게 하는 idempotency key 재료.
   const childTurnSeqRef = useRef(0);
+  const answerEpochRef = useRef(0);
   
   // 8초 타임아웃 타이머는 useGeminiLive 내부 generationTimeout으로 이관됨
   // 종료 문구 TTS 폴백이 중복 실행되지 않도록 하는 가드(컨트롤러의 closingFinished 위에 얹는
@@ -170,9 +171,50 @@ function MissionInner() {
   // 만들어내지 못하게 한다(버그①②③의 자동 모드측 원인 — 수동 모드는 handleCentralButtonClick의
   // canStartRecording 가드가 동일 역할을 한다).
   const sttSetMicEnabledRef = useRef<((enabled: boolean) => void) | undefined>(undefined);
+  const sttCancelFinalizeRef = useRef<(() => void) | undefined>(undefined);
   // isAuto state는 handleTurnComplete보다 뒤에서 선언되므로(훅 규칙상 useRef 자체는 미리 선언
   // 가능) 같은 이유로 ref 우회 — 답변 처리가 끝난 뒤 마이크를 다시 켜도 되는지(자동 모드일
   // 때만) 판단하는 데 쓴다.
+  const isLiveModeRef = useRef(voiceMode === "live");
+  isLiveModeRef.current = voiceMode === "live";
+  const manualTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const manualAbortControllerRef = useRef<AbortController | null>(null);
+
+  const resetToAwaitingChild = useCallback((fallbackMessage?: string) => {
+    if (manualTimeoutRef.current) {
+      clearTimeout(manualTimeoutRef.current);
+      manualTimeoutRef.current = null;
+    }
+    if (manualAbortControllerRef.current) {
+      manualAbortControllerRef.current.abort();
+      manualAbortControllerRef.current = null;
+    }
+    if (!isLiveModeRef.current) {
+      sttCancelFinalizeRef.current?.();
+    }
+    answerInFlightRef.current = false;
+    setTurnPhase("awaiting_child");
+    setIsRecording(false);
+    isRecordingRef.current = false;
+    
+    if (buttonRef.current) {
+      buttonRef.current.style.transform = "scale(1)";
+      buttonRef.current.style.boxShadow = "none";
+    }
+    if (pingRef.current) {
+      pingRef.current.style.transform = "scale(1)";
+      pingRef.current.style.opacity = "0.2";
+    }
+
+    if (!isLiveModeRef.current && isAutoRef.current && missionStateRef.current === "active") {
+      sttSetMicEnabledRef.current?.(true);
+    }
+    
+    if (fallbackMessage) {
+      askQuestionRef.current?.(currentIndexRef.current, fallbackMessage);
+    }
+  }, [setTurnPhase]);
+
   const isAutoRef = useRef(true);
   // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
   // transcript에 채워넣는다(그 전에 넣으면 startSession()이 비워버림).
@@ -289,7 +331,19 @@ function MissionInner() {
 
     saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id);
 
-    if (!isChildTurnDuringActiveMission) return;
+    if (!isChildTurnDuringActiveMission) {
+      if (!isLive && manualTimeoutRef.current) {
+        clearTimeout(manualTimeoutRef.current);
+        manualTimeoutRef.current = null;
+      }
+      if (!isLive && turnPhaseRef.current === "awaiting_stt_result") {
+        setTurnPhase("awaiting_child");
+        if (isAutoRef.current && missionStateRef.current === "active") {
+          sttSetMicEnabledRef.current?.(true);
+        }
+      }
+      return;
+    }
 
     const qs = questionsRef.current;
     const idx = currentIndexRef.current;
@@ -310,12 +364,14 @@ function MissionInner() {
     // speakingRef가 막아줌), classifyAnswer 대기 중(최대 10~32초) 아이가 다시 말하면 RMS
     // 자동확정이 또 다른 child 턴을 만들어낼 수 있었다 — 처리가 끝날 때까지 마이크를 잠근다.
     if (!isLive) sttSetMicEnabledRef.current?.(false);
+    const currentEpoch = ++answerEpochRef.current;
     void (async () => {
       try {
         const res = await fetch("/api/mission/answer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: enrichedTurn.text, childTurnId }),
+          signal: manualAbortControllerRef.current?.signal,
         });
         if (!res.ok) {
           if (res.status === 423) {
@@ -327,7 +383,11 @@ function MissionInner() {
             }
             return;
           }
-          if (isLive) setTurnPhase("awaiting_child");
+          if (isLive) {
+            setTurnPhase("awaiting_child");
+          } else {
+            resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+          }
           return;
         }
         const data = await res.json();
@@ -369,7 +429,11 @@ function MissionInner() {
 
         const next = pickNextIndex(questionStatesRef.current);
         if (next === -1) {
-          if (isLive) setTurnPhase("awaiting_child");
+          if (isLive) {
+            setTurnPhase("awaiting_child");
+          } else {
+            resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+          }
           return;
         }
 
@@ -378,7 +442,11 @@ function MissionInner() {
         // 다음 질문 유도 멘트 동적 생성 및 폴백 — askQuestionRef는 정확히 1회만 호출한다.
         const nextQ = questionsRef.current[next];
         if (!nextQ) {
-          if (isLive) setTurnPhase("awaiting_child");
+          if (isLive) {
+            setTurnPhase("awaiting_child");
+          } else {
+            resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+          }
           return;
         }
 
@@ -393,6 +461,7 @@ function MissionInner() {
               nextQuestionText: nextQ.question_text,
               childTurnId,
             }),
+            signal: manualAbortControllerRef.current?.signal,
           });
           if (respondRes.ok) {
             const respondData = await respondRes.json();
@@ -401,6 +470,7 @@ function MissionInner() {
         } catch {
           // 실패 시 아래 askQuestionRef가 순정 질문 텍스트(customText 없음)로 폴백
         }
+        if (currentEpoch !== answerEpochRef.current) return;
         if (isLive) {
           setTurnPhase("speaking_k");
         }
@@ -435,8 +505,15 @@ function MissionInner() {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const pingRef = useRef<HTMLDivElement | null>(null);
 
-  const sttTts = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
+  const sttTts = useVoiceChat({ 
+    onTurnComplete: handleTurnComplete, 
+    getSessionId: () => sessionIdRef.current,
+    onEmptyAudio: () => {
+      if (!isLiveModeRef.current) resetToAwaitingChild("잘 안 들렸어. 다시 말해줄래?");
+    }
+  });
   sttSetMicEnabledRef.current = sttTts.setMicEnabled;
+  sttCancelFinalizeRef.current = sttTts.cancelFinalize;
   const live = useGeminiLive({
     onTurnComplete: handleTurnComplete,
     voiceName: liveVoiceName,
@@ -666,6 +743,10 @@ function MissionInner() {
           live.setAudioMuted(false);
           setTurnPhase("awaiting_stt_result");
         } else {
+          manualAbortControllerRef.current = new AbortController();
+          manualTimeoutRef.current = setTimeout(() => {
+            resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+          }, 8000);
           sttTts.manualFinalize();
           sttTts.setMicEnabled(false);
         }
@@ -676,7 +757,7 @@ function MissionInner() {
     }
     setMode("text");
     voice.setMicEnabled(false);
-  }, [voice, live, isLiveMode, sttTts, setTurnPhase]);
+  }, [voice, live, isLiveMode, sttTts, setTurnPhase, resetToAwaitingChild]);
 
   const switchToVoice = useCallback(() => {
     setMode("voice");
@@ -837,6 +918,10 @@ function MissionInner() {
             live.setAudioMuted(false);
             setTurnPhase("awaiting_stt_result");
           } else {
+            manualAbortControllerRef.current = new AbortController();
+            manualTimeoutRef.current = setTimeout(() => {
+              resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+            }, 8000);
             sttTts.manualFinalize();
             sttTts.setMicEnabled(false);
           }
@@ -866,7 +951,7 @@ function MissionInner() {
     if (childIdRef.current) {
       localStorage.setItem(`k_voice_input_mode:${childIdRef.current}`, newMode);
     }
-  }, [live, sttTts, isLiveMode]);
+  }, [live, sttTts, isLiveMode, setTurnPhase, resetToAwaitingChild]);
 
   const handleCentralButtonClick = useCallback(() => {
     if (!isRecordingRef.current) {
@@ -914,6 +999,10 @@ function MissionInner() {
           live.setAudioMuted(false);
           setTurnPhase("awaiting_stt_result");
         } else {
+          manualAbortControllerRef.current = new AbortController();
+          manualTimeoutRef.current = setTimeout(() => {
+            resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+          }, 8000);
           sttTts.manualFinalize();
           sttTts.setMicEnabled(false);
         }
@@ -932,7 +1021,7 @@ function MissionInner() {
         }
       }
     }
-  }, [live, sttTts, isLiveMode, setTurnPhase]);
+  }, [live, sttTts, isLiveMode, setTurnPhase, resetToAwaitingChild]);
 
 
 

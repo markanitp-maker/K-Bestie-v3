@@ -18,6 +18,8 @@ export interface UseVoiceChatOptions {
   onTurnComplete?: (turn: Turn) => void;
   /** 현재 chat_sessions.id를 반환. respondText()가 안전 이벤트 저장을 위해 /api/voice/respond에 함께 전송한다. */
   getSessionId?: () => string | null;
+  /** 빈 음성 감지 시 호출 (미션 전용) */
+  onEmptyAudio?: () => void;
 }
 
 const POLL_INTERVAL_MS = 1300;       // 중간 자막 갱신 주기
@@ -55,6 +57,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const lastAsrConfidenceRef = useRef<number | undefined>(undefined);
   const onTurnCompleteRef = useRef<((turn: Turn) => void) | undefined>(undefined);
   onTurnCompleteRef.current = options?.onTurnComplete;
+  const onEmptyAudioRef = useRef<(() => void) | undefined>(undefined);
+  onEmptyAudioRef.current = options?.onEmptyAudio;
 
   const micStreamRef = useRef<MediaStream | null>(null);
   const inputCtxRef = useRef<AudioContext | null>(null);
@@ -89,6 +93,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   // appendTurn/seedTranscript가 부여하는 message_id 생성용 순번 — startSession/reset 시 초기화.
   // 배열 index 대신 이 id로 React key를 잡아야 렌더 중 재조정으로 인한 말풍선 오표시를 막는다.
   const turnSeqRef = useRef(0);
+  const sttAbortControllerRef = useRef<AbortController | null>(null);
   function nextTurnId(): string {
     turnSeqRef.current += 1;
     return `t${turnSeqRef.current}`;
@@ -107,12 +112,17 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
   async function callStt(audioBase64: string): Promise<{ text: string; confidence?: number }> {
     try {
+      sttAbortControllerRef.current = new AbortController();
+      const signal = sttAbortControllerRef.current.signal;
+
       const sessionId = options?.getSessionId?.() ?? null;
       const res = await fetch("/api/mission/stt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ audioBase64, sessionId }),
+        signal,
       });
+      if (signal.aborted) throw new Error("aborted");
       if (!res.ok) return { text: "" };
       const data = await res.json();
       return { 
@@ -131,7 +141,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     hasSpeechRef.current = false;
     silenceMsRef.current = 0;
     setInterimChildText("");
-    if (chunks.length === 0) return;
+    if (chunks.length === 0) {
+      if (onEmptyAudioRef.current) onEmptyAudioRef.current();
+      return;
+    }
 
     const audioBase64 = encodePCM16Base64(chunks);
     const { text, confidence } = await callStt(audioBase64);
@@ -304,6 +317,12 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     void finalizeChildTurn();
   }, [finalizeChildTurn]);
 
+  const cancelFinalize = useCallback(() => {
+    sttAbortControllerRef.current?.abort();
+    sttAbortControllerRef.current = null;
+    utteranceEpochRef.current++;
+  }, []);
+
   /** 케이 발화 재생 — TTS 합성 후 오디오 재생. 재생 중엔 마이크 캡처를 잠시 멈춘다(에코 방지).
    *  새 호출 시 이전 재생 중인 오디오를 즉시 중단하고, 이전 호출의 응답/재생은 전부 폐기해서
    *  절대 두 음성이 동시에 겹치거나 말풍선이 중복 표시되지 않도록 보장한다(single-audio). */
@@ -451,6 +470,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   return {
     status, error, transcript, interimChildText, isSpeaking, isResponding,
     startSession, stopSession, reset, getTranscript, getLastAsrConfidence, seedTranscript,
-    speak, respondText, sendTypedText, sayText, setMicEnabled, setInputMode, manualFinalize,
+    speak, respondText, sendTypedText, sayText, setMicEnabled, setInputMode, manualFinalize, cancelFinalize,
   };
 }
