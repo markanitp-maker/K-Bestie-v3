@@ -74,6 +74,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  if (body.sessionId && body.childTurnId) {
+    const sId = body.sessionId;
+    const tId = body.childTurnId;
+    createServiceClient().from("turn_timing_events").insert({
+      session_id: sId,
+      turn_id: tId,
+      event_name: "stt_request"
+    }).then(({error}) => { if (error) console.error("[mission/stt] timing err", error.message); }, (e: unknown) => console.error("[mission/stt] timing exc", e));
+  }
+
   // 비용에 영향을 주는 child_id/tier/voice_mode는 클라이언트에서 직접 받지 않고
   // sessionId로만 서버가 해석한다(server-trust).
   const usageContext = await resolveUsageContext(body.sessionId);
@@ -110,6 +120,16 @@ export async function POST(req: NextRequest) {
       .map((r) => r.alternatives?.[0]?.transcript ?? "")
       .join("")
       .trim();
+
+    if (body.sessionId && body.childTurnId) {
+      const sId = body.sessionId;
+      const tId = body.childTurnId;
+      createServiceClient().from("turn_timing_events").insert({
+        session_id: sId,
+        turn_id: tId,
+        event_name: "stt_final"
+    }).then(({error}) => { if (error) console.error("[mission/stt] timing err", error.message); }, (e: unknown) => console.error("[mission/stt] timing exc", e));
+    }
 
     let minConfidence = 1;
     let hasConfidence = false;

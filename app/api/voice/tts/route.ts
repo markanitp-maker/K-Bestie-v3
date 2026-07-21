@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "TTS not configured" }, { status: 500 });
   }
 
-  let body: { text?: string; voiceName?: string; sessionId?: string };
+  let body: { text?: string; voiceName?: string; sessionId?: string; turnId?: string };
   try {
     body = await req.json();
   } catch {
@@ -82,6 +82,16 @@ export async function POST(req: NextRequest) {
   const languageCode = "ko-KR";
 
   try {
+    if (body.sessionId && body.turnId) {
+      const sId = body.sessionId;
+      const tId = body.turnId;
+      createServiceClient().from("turn_timing_events").insert({
+        session_id: sId,
+        turn_id: tId,
+        event_name: "tts_request"
+    }).then(({error}) => { if (error) console.error("[voice/tts] timing err", error.message); }, (e: unknown) => console.error("[voice/tts] timing exc", e));
+    }
+
     const gcpRes = await fetch(
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
       {
@@ -104,6 +114,16 @@ export async function POST(req: NextRequest) {
     const data = (await gcpRes.json()) as { audioContent?: string };
     if (!data.audioContent) {
       return NextResponse.json({ error: "TTS returned no audio" }, { status: 500 });
+    }
+
+    if (body.sessionId && body.turnId) {
+      const sId = body.sessionId;
+      const tId = body.turnId;
+      createServiceClient().from("turn_timing_events").insert({
+        session_id: sId,
+        turn_id: tId,
+        event_name: "tts_first_byte"
+    }).then(({error}) => { if (error) console.error("[voice/tts] timing err", error.message); }, (e: unknown) => console.error("[voice/tts] timing exc", e));
     }
 
     if (usageContext) {

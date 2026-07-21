@@ -257,6 +257,16 @@ ${MISSION_CHAT_SYSTEM_PROMPT}
 `.trim();
 
   try {
+    if (body.sessionId && childTurnId) {
+      const sId = body.sessionId;
+      const tId = childTurnId;
+      createServiceClient().from("turn_timing_events").insert({
+        session_id: sId,
+        turn_id: tId,
+        event_name: "vertex_request"
+      }).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
+    }
+
     const result = await ai.models.generateContent({
       model: missionModel.modelId,
       contents,
@@ -265,6 +275,15 @@ ${MISSION_CHAT_SYSTEM_PROMPT}
         maxOutputTokens: missionModel.maxOutputTokens ?? 1024,
       },
     });
+
+    if (body.sessionId && childTurnId) {
+      const sId = body.sessionId;
+      const tId = childTurnId;
+      createServiceClient().from("turn_timing_events").insert([
+        { session_id: sId, turn_id: tId, event_name: "vertex_first_chunk" },
+        { session_id: sId, turn_id: tId, event_name: "vertex_complete" }
+      ]).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
+    }
 
     let reaction = (result.text ?? "").trim();
 

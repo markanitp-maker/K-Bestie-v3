@@ -158,6 +158,13 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
     const audioBase64 = encodePCM16Base64(chunks);
     const predictedTurnId = `t${turnSeqRef.current + 1}`;
+
+    fetch("/api/mission/timing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: options?.getSessionId?.(), turnId: predictedTurnId, eventName: "speech_end" })
+    }).catch(() => {});
+
     console.log("[STT] calling", { turnId: predictedTurnId });
     const { text, confidence, failureReason } = await callStt(audioBase64, signal, predictedTurnId);
     console.log("[STT] result", { turnId: predictedTurnId, hasText: !!text, failureReason });
@@ -342,7 +349,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   // 넘기지 않으면 /api/voice/tts의 기본 보이스가 그대로 적용됨(기존 동작 불변).
   // 반환값(boolean)은 TTS 합성이 실제로 성공했는지 여부 — 임시 목소리 테스트 UI가
   // 실패한 보이스를 감지해 안내하는 용도로만 쓰인다(기존 호출부는 반환값 무시해도 무방).
-  const speak = useCallback(async (text: string, voiceName?: string): Promise<boolean> => {
+  const speak = useCallback(async (text: string, voiceName?: string, turnId?: string): Promise<boolean> => {
     const trimmed = text.trim();
     console.log("[MISSION-DEBUG] speak() invoked, text:", trimmed, "voiceName:", voiceName);
     if (!trimmed) return false;
@@ -366,7 +373,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       const res = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(voiceName ? { text: trimmed, voiceName, sessionId } : { text: trimmed, sessionId }),
+        body: JSON.stringify(voiceName ? { text: trimmed, voiceName, sessionId, turnId } : { text: trimmed, sessionId, turnId }),
       });
       console.log("[MISSION-DEBUG] /api/voice/tts status:", res.status);
       if (epoch !== speakEpochRef.current) { console.log("[MISSION-DEBUG] speak() epoch superseded, discarding tts response"); return false; }
@@ -407,6 +414,13 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         source.onended = () => resolve();
         try {
           source.start();
+          if (turnId) {
+            fetch("/api/mission/timing", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sessionId: options?.getSessionId?.(), turnId, eventName: "playback_start" })
+            }).catch(() => {});
+          }
         } catch (e) {
           console.error("[MISSION-DEBUG] source.start() threw:", e);
           resolve();

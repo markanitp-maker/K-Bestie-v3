@@ -1045,7 +1045,8 @@ function MissionInner() {
       if (live.setKSpeechAllowed) live.setKSpeechAllowed(true);
       live.speakAsK(textToSpeak);
     } else {
-      void sttTts.speak(textToSpeak); // voiceName 생략 — 서버 기본값(ko-KR-Wavenet-A) 사용
+      const childTurnId = lastKnownTurnIdRef.current ?? undefined;
+      void sttTts.speak(textToSpeak, undefined, childTurnId); // voiceName 생략 — 서버 기본값(ko-KR-Wavenet-A) 사용
     }
   }, [isLiveMode, live, sttTts]);
   askQuestionRef.current = askQuestion;
