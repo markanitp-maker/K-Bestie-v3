@@ -417,6 +417,71 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     return ttsOk;
   }, []);
 
+  /** 데모 모드용 오디오 재생 — fetch + decodeAudioData 직접 호출 (TTS/STT 무관) */
+  const playDemoAudio = useCallback(async (url: string, displayText?: string): Promise<boolean> => {
+    const trimmed = (displayText ?? "").trim();
+    if (!url) return false;
+
+    // 새 발화 세대로 전환
+    const epoch = ++speakEpochRef.current;
+
+    // 이전에 재생 중이던 오디오가 있으면 즉시 중단(겹침 방지)
+    if (currentSourceRef.current) {
+      try { currentSourceRef.current.stop(); } catch { /* 무시 */ }
+      currentSourceRef.current = null;
+    }
+
+    speakingRef.current = true;
+    setIsSpeaking(true);
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Demo audio fetch failed");
+      const arrayBuffer = await res.arrayBuffer();
+      
+      const audioCtx = audioCtxRef.current;
+      if (!audioCtx) throw new Error("AudioContext not initialized");
+      if (audioCtx.state === "suspended") {
+        await audioCtx.resume().catch(() => {});
+      }
+
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      if (epoch !== speakEpochRef.current) return false;
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioCtx.destination);
+      currentSourceRef.current = source;
+
+      if (trimmed) {
+        appendTurn({ role: "k", text: trimmed });
+        onTurnCompleteRef.current?.({ role: "k", text: trimmed });
+      }
+
+      let started = true;
+      await new Promise<void>((resolve) => {
+        source.onended = () => resolve();
+        try {
+          source.start();
+        } catch {
+          started = false;
+          resolve();
+        }
+      });
+      if (!started) return false;
+      return true;
+    } catch (err) {
+      console.error("[DemoAudio] playDemoAudio error:", err);
+      return false;
+    } finally {
+      if (epoch === speakEpochRef.current) {
+        speakingRef.current = false;
+        setIsSpeaking(false);
+        currentSourceRef.current = null;
+      }
+    }
+  }, []);
+
   /** 자유대화용 — 현재까지의 대화 기록으로 Gemini 텍스트 응답을 생성해 말풍선에만 표시.
    *  케이는 자유대화에서 음성으로 말하지 않는다 — TTS 호출 없음(텍스트 전용). */
   const respondText = useCallback(async () => {
@@ -470,6 +535,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   return {
     status, error, transcript, interimChildText, isSpeaking, isResponding,
     startSession, stopSession, reset, getTranscript, getLastAsrConfidence, seedTranscript,
-    speak, respondText, sendTypedText, sayText, setMicEnabled, setInputMode, manualFinalize, cancelFinalize,
+    speak, playDemoAudio, respondText, sendTypedText, sayText, setMicEnabled, setInputMode, manualFinalize, cancelFinalize,
   };
 }
