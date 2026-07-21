@@ -196,6 +196,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // K generation tracking
   const kGenerationSeqRef = useRef(0);
   const currentKGenerationIdRef = useRef<string | null>(null);
+  const kGenerationCompleteRef = useRef<boolean>(true);
+  const kTurnCompleteRef = useRef<boolean>(true);
+  const recoveryGateOpenRef = useRef<boolean>(false);
+  const turnCompleteFallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
   const generationEpochRef = useRef<number>(0);
   const cancelledGenerationIdsRef = useRef<Set<string>>(new Set());
   const processedTurnGenerationsRef = useRef<Set<string>>(new Set());
@@ -444,7 +448,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 턴을 위해 childTurnFlushedRef를 초기화한다.
   function maybeUnlockCutChildTurn() {
     if (!kTurnCutAwaitingUnlockRef.current) return;
-    if (kTurnCutServerDoneRef.current && scheduledSourcesRef.current.length === 0 && !kSpeakingRef.current) {
+    if ((kTurnCompleteRef.current || recoveryGateOpenRef.current) && scheduledSourcesRef.current.length === 0 && !kSpeakingRef.current) {
       kTurnCutAwaitingUnlockRef.current = false;
       childTurnFlushedRef.current = false;
     }
@@ -781,6 +785,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   function teardown() {
     clearVadTimersAndBuffers();
     clearGenerationTimeout();
+    if (turnCompleteFallbackTimerRef.current) {
+      clearTimeout(turnCompleteFallbackTimerRef.current);
+      turnCompleteFallbackTimerRef.current = null;
+    }
 
     notifyUsageLive("end");
     stopAllScheduledSources();
@@ -894,6 +902,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     processedTurnGenerationsRef.current.clear();
     generationEpochRef.current = 0;
     clearGenerationTimeout();
+    recoveryGateOpenRef.current = false;
 
     const connectionId = Date.now().toString();
     activeSessionIdRef.current = connectionId;
@@ -1039,35 +1048,49 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         if (!sc) return;
 
         // ── 서버 barge-in 신호 ────────────────────────────────
-        // 아이가 K 발화 도중 끼어들면 서버가 현재 K 생성을 중단했다고 interrupted=true로 알린다.
-        // 진행 중인 K 턴을 "지금까지 표시된 텍스트"로 즉시 확정하고, 이미 스케줄된 오디오도 끊은
-        // 뒤 컷 상태로 전환해 이후 잔여 오디오/텍스트/turnComplete를 전부 폐기한다. 클라이언트
-        // VAD가 이미 컷했다면(kTurnCutRef true) finalizeActiveKTurn은 no-op이라 중복 저장되지 않는다.
         if (sc.interrupted) {
+          const turnIdAtInterrupt = activeKTurnIdRef.current;
+
           if (expectingInterruptRef.current) {
             expectingInterruptRef.current = false;
-          } else if (!kTurnCutRef.current) {
-            console.log("[K] 🖐️ server interrupted — finalize & discard remaining K turn");
-            stopAllScheduledSources();
+            return; // 낡은 interrupted 무시
+          }
+          
+          console.log("[K] 🖐️ server interrupted — finalize & discard remaining K turn");
+          stopAllScheduledSources();
+          if (!kTurnCutRef.current) {
             cutActiveKTurnForBargeIn();
           }
 
-          // ── 강제 종료된 턴 — 진짜 turnComplete(또는 interrupted 확인)만 기다렸다가 다음 턴 준비 ──
-          // interrupted 이후 서버가 별도 turnComplete를 안 보내는 경우가 있어, interrupted 자체도
-          // 컷 해제 신호로 취급한다(그러지 않으면 kTurnCutRef가 영구히 true로 남아 다음 K 턴을 막는다).
-          if (kTurnCutRef.current) {
+          kGenerationCompleteRef.current = true;
+
+          // 진짜 turnComplete가 오지 않을 경우를 대비한 복구 타임아웃 (5초)
+          if (turnCompleteFallbackTimerRef.current) {
+            clearTimeout(turnCompleteFallbackTimerRef.current);
+            turnCompleteFallbackTimerRef.current = null;
+          }
+          turnCompleteFallbackTimerRef.current = setTimeout(() => {
+            if (activeKTurnIdRef.current !== turnIdAtInterrupt) return;
+            console.log("[K] ⚠️ turnComplete fallback timeout triggered after interrupted");
+            recoveryGateOpenRef.current = true;
             kTurnCutRef.current = false;
             hasLiveInputTxRef.current = false;
             speechHistoryRef.current = "";
-            kTurnCutServerDoneRef.current = true;
             maybeUnlockCutChildTurn();
-          }
+          }, 5000);
+
           return;
         }
 
         // 강제컷된 상태일 때 다른 서버 메시지는 무시
         if (kTurnCutRef.current) {
           if (sc.turnComplete) {
+            if (turnCompleteFallbackTimerRef.current) {
+              clearTimeout(turnCompleteFallbackTimerRef.current);
+              turnCompleteFallbackTimerRef.current = null;
+            }
+            kGenerationCompleteRef.current = true;
+            kTurnCompleteRef.current = true;
             kTurnCutRef.current = false;
             hasLiveInputTxRef.current = false;
             speechHistoryRef.current = "";
@@ -1088,6 +1111,14 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           if (isCancelledGeneration) return;
           if (isAlreadyProcessed) return;
           logTelemetryEvent("turnComplete");
+          
+          kGenerationCompleteRef.current = true;
+          kTurnCompleteRef.current = true;
+          if (turnCompleteFallbackTimerRef.current) {
+            clearTimeout(turnCompleteFallbackTimerRef.current);
+            turnCompleteFallbackTimerRef.current = null;
+          }
+
           if (activeKTurnIdRef.current && incomingGenerationId) {
             const set = processedTurnGenerationsRef.current;
             set.add(`${activeKTurnIdRef.current}:${incomingGenerationId}`);
@@ -1363,7 +1394,6 @@ const incomingGenerationId = currentKGenerationIdRef.current;
 
                     activeChildTurnIdRef.current = nextTurnId();
                     activeChildTurnDisplaySequenceRef.current = nextDisplaySequence();
-                    appendTurn({ role: "child", text: "", id: activeChildTurnIdRef.current, displaySequence: activeChildTurnDisplaySequenceRef.current });
 
                     sessionRef.current?.sendRealtimeInput({ activityStart: {} });
 
@@ -1430,7 +1460,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                       currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
                       activeKTurnIdRef.current = nextTurnId();
                       activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
-                      appendTurn({ role: "k", text: "", id: activeKTurnIdRef.current, generationId: currentKGenerationIdRef.current, displaySequence: activeKTurnDisplaySequenceRef.current });
+                      kGenerationCompleteRef.current = false;
+                      kTurnCompleteRef.current = false;
+                      recoveryGateOpenRef.current = false;
                       hasFiredFirstOutputRef.current = false;
                       generationEpochRef.current += 1;
                       startGenerationTimeout();
@@ -1547,7 +1579,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
     activeKTurnIdRef.current = nextTurnId();
     activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
-    appendTurn({ role: "k", text: "", id: activeKTurnIdRef.current, generationId: currentKGenerationIdRef.current, displaySequence: activeKTurnDisplaySequenceRef.current });
+    kGenerationCompleteRef.current = false;
+    kTurnCompleteRef.current = false;
+                      recoveryGateOpenRef.current = false;
     startGenerationTimeout();
     sessionRef.current.sendClientContent({
       turns: [{ role: "user", parts: [{ text: `다음 문장을 자연스럽게 소리내어 그대로 말해줘: "${text}"` }] }],
@@ -1572,7 +1606,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
     activeKTurnIdRef.current = nextTurnId();
     activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
-    appendTurn({ role: "k", text: "", id: activeKTurnIdRef.current, generationId: currentKGenerationIdRef.current, displaySequence: activeKTurnDisplaySequenceRef.current });
+    kGenerationCompleteRef.current = false;
+    kTurnCompleteRef.current = false;
+                      recoveryGateOpenRef.current = false;
     
     return true;
   }, []);
@@ -1609,7 +1645,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
     activeKTurnIdRef.current = nextTurnId();
     activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
-    appendTurn({ role: "k", text: "", id: activeKTurnIdRef.current, generationId: currentKGenerationIdRef.current, displaySequence: activeKTurnDisplaySequenceRef.current });
+    kGenerationCompleteRef.current = false;
+    kTurnCompleteRef.current = false;
+                      recoveryGateOpenRef.current = false;
     startGenerationTimeout();
     waitingForLiveReceiveRef.current = true;
     sessionRef.current.sendClientContent({
@@ -1671,7 +1709,6 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     isChildSpeakingRef.current = true;
     activeChildTurnIdRef.current = nextTurnId();
     activeChildTurnDisplaySequenceRef.current = nextDisplaySequence();
-    appendTurn({ role: "child", text: "", id: activeChildTurnIdRef.current, displaySequence: activeChildTurnDisplaySequenceRef.current });
     sessionRef.current.sendRealtimeInput({ activityStart: {} });
     return true;
   }, []);
@@ -1695,7 +1732,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
       activeKTurnIdRef.current = nextTurnId();
       activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
-      appendTurn({ role: "k", text: "", id: activeKTurnIdRef.current, generationId: currentKGenerationIdRef.current, displaySequence: activeKTurnDisplaySequenceRef.current });
+      kGenerationCompleteRef.current = false;
+      kTurnCompleteRef.current = false;
+                      recoveryGateOpenRef.current = false;
       startGenerationTimeout();
       waitingForLiveReceiveRef.current = true;
     }

@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
 
   const { data: messages, error } = await service
     .from("chat_messages")
-    .select("role, content, created_at, display_sequence")
+    .select("role, content, created_at, display_sequence, turn_status")
     .eq("session_id", sessionId)
     .order("display_sequence", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: true });
@@ -151,6 +151,65 @@ export async function POST(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(req: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  let body: { sessionId?: string; turnId?: string; turnStatus?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const { sessionId, turnId, turnStatus } = body;
+  if (!sessionId || !turnId || turnStatus !== "cancelled") {
+    return NextResponse.json({ error: "sessionId, turnId, turnStatus='cancelled' required" }, { status: 400 });
+  }
+
+  const service = createServiceClient();
+
+  const { data: session, error: sessionError } = await service
+    .from("chat_sessions")
+    .select("id, child_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (sessionError || !session) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const { data: child } = await service
+    .from("child_profiles")
+    .select("member_id")
+    .eq("id", session.child_id)
+    .maybeSingle();
+  if (!child?.member_id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { data: member } = await service
+    .from("family_members")
+    .select("user_id")
+    .eq("id", child.member_id)
+    .maybeSingle();
+
+  if (!member?.user_id || member.user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // 업데이트 수행 (에러가 나도 실패 응답하지 않음)
+  await service
+    .from("chat_messages")
+    .update({ turn_status: "cancelled" })
+    .eq("session_id", sessionId)
+    .eq("turn_id", turnId)
+    .eq("turn_status", "finalized");
 
   return NextResponse.json({ ok: true });
 }

@@ -127,15 +127,15 @@ function MissionInner() {
   // 판정/다음 질문 생성 중) → speaking_k(케이가 말하는 중) → awaiting_child. handleTurnComplete의
   // 재진입 가드와 onAudioQueueDrained의 복귀 신호가 이 상태를 관리한다(STT/TTS 모드는 기존
   // 동작을 그대로 유지하며 이 상태를 사용하지 않음).
-  const turnPhaseRef = useRef<"awaiting_child" | "awaiting_stt_result" | "processing_answer" | "speaking_k">("awaiting_child");
+  const turnPhaseRef = useRef<"idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking">("idle");
   // turnPhaseRef를 화면에 반영하기 위한 미러 state — ref만으로는 canStartRecording이 답변
   // 판정 중(processing_answer)이라 탭을 막고 있어도 버튼이 계속 "말하기 시작"(🎤)로 보여
   // 아이 입장에선 "버튼 눌러도 반응 없음"으로 느껴졌다(버튼은 정상적으로 탭을 무시하는
   // 중이었을 뿐, 시각 피드백이 전혀 없었던 게 진짜 원인). 판정 로직은 여전히 turnPhaseRef만
   // 읽고(동기·ref 기반 그대로 유지), 이 state는 오직 렌더링(생각 중 표시)에만 쓴다.
-  const [turnPhaseUi, setTurnPhaseUi] = useState<"awaiting_child" | "awaiting_stt_result" | "processing_answer" | "speaking_k">("awaiting_child");
-  const setTurnPhase = useCallback((next: "awaiting_child" | "awaiting_stt_result" | "processing_answer" | "speaking_k") => {
-    if (turnPhaseRef.current !== "awaiting_child" && turnPhaseRef.current !== "awaiting_stt_result" && next === "awaiting_child") {
+  const [turnPhaseUi, setTurnPhaseUi] = useState<"idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking">("idle");
+  const setTurnPhase = useCallback((next: "idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking") => {
+    if (turnPhaseRef.current !== "idle" && turnPhaseRef.current !== "child_listening" && turnPhaseRef.current !== "child_finalizing" && next === "idle") {
       liveRef.current?.logTelemetryEvent("thinkingFalse");
       liveRef.current?.logTelemetryEvent("micEnabled");
     }
@@ -179,8 +179,10 @@ function MissionInner() {
   isLiveModeRef.current = voiceMode === "live";
   const manualTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const manualAbortControllerRef = useRef<AbortController | null>(null);
+  const kSpeakingSafetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastKnownTurnIdRef = useRef<string | null>(null);
 
-  const resetToAwaitingChild = useCallback((fallbackMessage?: string) => {
+  const resetToIdle = useCallback((fallbackMessage?: string) => {
     answerEpochRef.current += 1;
     if (manualTimeoutRef.current) {
       clearTimeout(manualTimeoutRef.current);
@@ -190,11 +192,15 @@ function MissionInner() {
       manualAbortControllerRef.current.abort();
       manualAbortControllerRef.current = null;
     }
+    if (kSpeakingSafetyTimeoutRef.current) {
+      clearTimeout(kSpeakingSafetyTimeoutRef.current);
+      kSpeakingSafetyTimeoutRef.current = null;
+    }
     if (!isLiveModeRef.current) {
       sttCancelFinalizeRef.current?.();
     }
     answerInFlightRef.current = false;
-    setTurnPhase("awaiting_child");
+    setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
     setIsRecording(false);
@@ -295,6 +301,10 @@ function MissionInner() {
 
     const enrichedTurn = { ...turn, id: finalTurnId, displaySequence: finalDisplaySequence };
 
+    if (enrichedTurn.role === "child") {
+      lastKnownTurnIdRef.current = enrichedTurn.id ?? null;
+    }
+
     // missionState !== "active"면(completing/completed) 그 이후의 아이 발화는 전부 무시한다
     // — 100% 이후 들어오는 사용자 입력을 미션 판정 로직에 태우지 않기 위함. 이 경우와 'k' 턴은
     // 아래 재진입 가드와 무관하게 항상 저장한다(기존 동작 유지).
@@ -312,14 +322,14 @@ function MissionInner() {
         // Live 모드 전용 재진입 가드 — 케이가 아직 말하는 중(speaking_k)이거나 직전 답변을
         // 아직 처리 중(processing_answer)이면, 강제컷 직후 지연 도착한 STT 결과 등으로 인한
         // 동일/추가 child 턴을 무시한다(중복 /api/mission/answer·respond 호출 방지).
-        if (turnPhaseRef.current !== "awaiting_child" && turnPhaseRef.current !== "awaiting_stt_result") {
+        if (turnPhaseRef.current !== "idle" && turnPhaseRef.current !== "child_listening" && turnPhaseRef.current !== "child_finalizing") {
           return;
         }
-        setTurnPhase("processing_answer");
+        setTurnPhase("waiting_k");
         // 위에서 processing_answer로 전이했더라도, 직전 턴의 비동기 체인이 아직 answerInFlightRef를
         // 정리하지 못한 극히 좁은 경합 구간이면 역시 폐기한다(원래 로직 그대로 유지).
         if (answerInFlightRef.current) {
-          setTurnPhase("awaiting_child");
+          setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
           return;
@@ -341,8 +351,8 @@ function MissionInner() {
         clearTimeout(manualTimeoutRef.current);
         manualTimeoutRef.current = null;
       }
-      if (!isLive && turnPhaseRef.current === "awaiting_stt_result") {
-        setTurnPhase("awaiting_child");
+      if (!isLive && turnPhaseRef.current === "child_finalizing") {
+        setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
         if (isAutoRef.current && missionStateRef.current === "active") {
@@ -357,7 +367,7 @@ function MissionInner() {
     const question = qs[idx];
     const sid = sessionIdRef.current;
     if (!question || !sid) {
-      if (isLive) setTurnPhase("awaiting_child");
+      if (isLive) setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
       return;
@@ -385,17 +395,17 @@ function MissionInner() {
           manualAbortControllerRef.current.abort();
           manualAbortControllerRef.current = null;
         }
-        setTurnPhase("awaiting_child");
+        setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
         if (liveRef.current?.status === "live") {
           if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
           if (!success) {
-            resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+            resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
           }
         } else {
-          resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+          resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
         }
       }, 8000);
     }
@@ -431,20 +441,20 @@ function MissionInner() {
               clearTimeout(manualTimeoutRef.current);
               manualTimeoutRef.current = null;
             }
-            setTurnPhase("awaiting_child");
+            setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
               if (!success) {
-                resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+                resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
               }
             } else {
-              resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+              resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
             }
           } else {
-            resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+            resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
           }
           return;
         }
@@ -482,7 +492,7 @@ function MissionInner() {
           // "종료 발화의 turnComplete + 오디오 재생 완료 + 700ms" 이후에만 세션을 닫는다.
           // 일반 후속 질문 큐(pickNextIndex/askQuestion)는 절대 실행하지 않는다.
           if (voiceModeRef.current === "live") {
-            setTurnPhase("speaking_k");
+            setTurnPhase("k_speaking");
             liveRef.current?.lockNow();
             const success = liveRef.current?.speakClosingLine("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
             missionControllerRef.current?.start({ immediateTtsFallback: !success });
@@ -497,7 +507,7 @@ function MissionInner() {
               manualAbortControllerRef.current.abort();
               manualAbortControllerRef.current = null;
             }
-            setTurnPhase("speaking_k");
+            setTurnPhase("k_speaking");
             sttSetMicEnabledRef.current?.(false);
             await sttTts.speak("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
             missionStateRef.current = "completed";
@@ -514,20 +524,20 @@ function MissionInner() {
               clearTimeout(manualTimeoutRef.current);
               manualTimeoutRef.current = null;
             }
-            setTurnPhase("awaiting_child");
+            setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
               if (!success) {
-                resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+                resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
               }
             } else {
-              resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+              resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
             }
           } else {
-            resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+            resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
           }
           return;
         }
@@ -542,20 +552,20 @@ function MissionInner() {
               clearTimeout(manualTimeoutRef.current);
               manualTimeoutRef.current = null;
             }
-            setTurnPhase("awaiting_child");
+            setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
               if (!success) {
-                resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+                resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
               }
             } else {
-              resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+              resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
             }
           } else {
-            resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+            resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
           }
           return;
         }
@@ -579,24 +589,24 @@ function MissionInner() {
           } else {
             if (currentEpoch !== answerEpochRef.current) return;
             if (!isLive) {
-              resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+              resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
               return;
             } else {
               if (manualTimeoutRef.current) {
                 clearTimeout(manualTimeoutRef.current);
                 manualTimeoutRef.current = null;
               }
-              setTurnPhase("awaiting_child");
+              setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
               if (liveRef.current?.status === "live") {
                 if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
                 if (!success) {
-                  resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+                  resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
                 }
               } else {
-                resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+                resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
               }
               return;
             }
@@ -605,24 +615,24 @@ function MissionInner() {
           // 예외 발생 시에도 오류 복구 경로로 이동
           if (currentEpoch !== answerEpochRef.current) return;
           if (!isLive) {
-            resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+            resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
             return;
           } else {
             if (manualTimeoutRef.current) {
               clearTimeout(manualTimeoutRef.current);
               manualTimeoutRef.current = null;
             }
-            setTurnPhase("awaiting_child");
+            setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
               if (!success) {
-                resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+                resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
               }
             } else {
-              resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+              resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
             }
             return;
           }
@@ -633,7 +643,7 @@ function MissionInner() {
           manualTimeoutRef.current = null;
         }
         if (isLive) {
-          setTurnPhase("speaking_k");
+          setTurnPhase("k_speaking");
         }
         askQuestionRef.current?.(next, respondText);
       } catch {
@@ -643,17 +653,17 @@ function MissionInner() {
             clearTimeout(manualTimeoutRef.current);
             manualTimeoutRef.current = null;
           }
-          setTurnPhase("awaiting_child");
+          setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
           if (liveRef.current?.status === "live") {
             if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
             if (!success) {
-              resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+              resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
             }
           } else {
-            resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+            resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
           }
         }
       } finally {
@@ -667,8 +677,8 @@ function MissionInner() {
           // Live 방어선 — 어떤 경로로든 processing_answer에 머문 채 이 비동기 체인이 끝나면
           // (예상 밖 예외 등) 마이크가 영구히 잠긴다. 미션이 진행 중이면 awaiting_child로
           // 되돌린다. speaking_k(K가 정상적으로 답변 중)와 completing/completed는 건드리지 않는다.
-          if (isLive && missionStateRef.current === "active" && turnPhaseRef.current === "processing_answer") {
-            setTurnPhase("awaiting_child");
+          if (isLive && missionStateRef.current === "active" && turnPhaseRef.current === "waiting_k") {
+            setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
           }
@@ -690,7 +700,7 @@ function MissionInner() {
     onTurnComplete: handleTurnComplete, 
     getSessionId: () => sessionIdRef.current,
     onEmptyAudio: () => {
-      if (!isLiveModeRef.current) resetToAwaitingChild("잘 안 들렸어. 다시 말해줄래?");
+      if (!isLiveModeRef.current) resetToIdle("잘 안 들렸어. 다시 말해줄래?");
     }
   });
   sttSetMicEnabledRef.current = sttTts.setMicEnabled;
@@ -708,27 +718,27 @@ function MissionInner() {
       }
       // K 턴이 서버에서 완전히 끝난 시점 — 오디오 큐 drain(onAudioQueueDrained)이 유실돼도
       // 여기서 speaking_k를 확실히 awaiting_child로 되돌린다(마이크 영구 잠김 방지, 이중 방어).
-      if (missionStateRef.current === "active" && turnPhaseRef.current === "speaking_k") {
-        setTurnPhase("awaiting_child");
-        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
-        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
+      if (missionStateRef.current === "active" && turnPhaseRef.current === "k_speaking") {
+        if (kSpeakingSafetyTimeoutRef.current) {
+          clearTimeout(kSpeakingSafetyTimeoutRef.current);
+        }
+        kSpeakingSafetyTimeoutRef.current = setTimeout(() => {
+          if (missionStateRef.current === "active" && turnPhaseRef.current === "k_speaking") {
+            setTurnPhase("idle");
+            if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+            if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
+          }
+        }, 5000);
       }
     },
     // K 발화의 "첫 출력(텍스트/오디오)"이 화면/스피커에 도달하는 순간마다 mic를 unlock한다.
     onKTurnFirstOutput: () => {
-      if (
-        missionStateRef.current === "active" &&
-        (turnPhaseRef.current === "speaking_k" || turnPhaseRef.current === "processing_answer")
-      ) {
-        setTurnPhase("awaiting_child");
-        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
-        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
-      }
+      // idle 전환 로직 제거
     },
     // K 턴의 첫 출력이 8초 동안 없어서 generation이 취소되었을 때 호출
     onKTurnTimeout: () => {
-      if (missionStateRef.current === "active" && turnPhaseRef.current !== "awaiting_child") {
-        setTurnPhase("awaiting_child");
+      if (missionStateRef.current === "active" && turnPhaseRef.current !== "idle") {
+        setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
         liveRef.current?.appendTurn({ role: "k", text: "통신이 고르지 않아요. 조금 전 대답을 다시 한번 말해줄래요?" });
@@ -738,10 +748,14 @@ function MissionInner() {
       if (missionControllerRef.current?.getState() === "completing") {
         missionControllerRef.current.notifyAudioDrained();
       }
+      if (kSpeakingSafetyTimeoutRef.current) {
+        clearTimeout(kSpeakingSafetyTimeoutRef.current);
+        kSpeakingSafetyTimeoutRef.current = null;
+      }
       // 케이가 실제로 말을 완전히 마친 시점(오디오 큐 비움) — speaking_k였다면 다음 아이
       // 발화를 받을 수 있는 awaiting_child로 되돌린다.
-      if (missionStateRef.current === "active" && turnPhaseRef.current === "speaking_k") {
-        setTurnPhase("awaiting_child");
+      if (missionStateRef.current === "active" && turnPhaseRef.current === "k_speaking") {
+        setTurnPhase("idle");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
       }
@@ -756,8 +770,8 @@ function MissionInner() {
     // 1회만 재생한다. askedIndex/currentIndex를 건드리지 않으므로 같은 질문에 대한
     // awaiting_child 상태로 복귀한다(onAudioQueueDrained가 재생 종료 시 되돌림).
     onTranscriptRejected: () => {
-      if (turnPhaseRef.current === "speaking_k") return; // 이미 재질문 재생 중 — 중복 방지
-      setTurnPhase("speaking_k");
+      if (turnPhaseRef.current === "k_speaking") return; // 이미 재질문 재생 중 — 중복 방지
+      setTurnPhase("k_speaking");
       if (live.setKSpeechAllowed) live.setKSpeechAllowed(true);
       live.speakAsK("잘 못 들었어. 다시 한번 말해줄래?");
     },
@@ -869,9 +883,59 @@ function MissionInner() {
     }
   }, [phase, missionState]);
 
-  // 페이지 이탈(언마운트) 시 false 처리
+  
+  // 화면 이탈 시 미완료 턴 취소 처리(신규)
   useEffect(() => {
-    return () => setSessionActive(false);
+    const handleLeave = () => {
+      // (c) turnPhase가 "idle"이 아닌 경우 미완료 턴 취소 처리
+      if (turnPhaseRef.current !== "idle") {
+        const sid = sessionIdRef.current;
+        const currentTurnId = activeChildTurnIdRef.current || lastKnownTurnIdRef.current;
+        if (sid && currentTurnId) {
+          fetch("/api/chat/messages", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            keepalive: true,
+            body: JSON.stringify({ sessionId: sid, turnId: currentTurnId, turnStatus: "cancelled" }),
+          }).catch(() => {});
+        }
+      }
+      // (b) 진행 중인 fetch 중단
+      if (manualAbortControllerRef.current) {
+        manualAbortControllerRef.current.abort();
+      }
+      // (a) WS 연결 종료
+      if (liveRef.current) {
+        liveRef.current.stopSession();
+      } else if (sttCancelFinalizeRef.current) {
+        // stt fallback
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        handleLeave();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", handleLeave);
+    
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", handleLeave);
+      handleLeave();
+    };
+  }, []);
+
+  // 페이지 이탈(언마운트) 시 false 처리 및 타이머 정리
+  useEffect(() => {
+    return () => {
+      setSessionActive(false);
+      if (kSpeakingSafetyTimeoutRef.current) {
+        clearTimeout(kSpeakingSafetyTimeoutRef.current);
+      }
+    };
   }, []);
 
 
@@ -935,13 +999,13 @@ function MissionInner() {
         if (isLiveMode) {
           live.sendActivityEnd();
           live.setAudioMuted(false);
-          setTurnPhase("awaiting_stt_result");
+          setTurnPhase("child_finalizing");
         } else {
           manualAbortControllerRef.current = new AbortController();
           manualTimeoutRef.current = setTimeout(() => {
-            resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+            resetToIdle("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
           }, 8000);
-          setTurnPhase("awaiting_stt_result");
+          setTurnPhase("child_finalizing");
           sttTts.manualFinalize(manualAbortControllerRef.current.signal);
           sttTts.setMicEnabled(false);
         }
@@ -952,7 +1016,7 @@ function MissionInner() {
     }
     setMode("text");
     voice.setMicEnabled(false);
-  }, [voice, live, isLiveMode, sttTts, setTurnPhase, resetToAwaitingChild]);
+  }, [voice, live, isLiveMode, sttTts, setTurnPhase, resetToIdle]);
 
   const switchToVoice = useCallback(() => {
     setMode("voice");
@@ -1070,9 +1134,11 @@ function MissionInner() {
           const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`);
           if (msgRes.ok) {
             const msgData = await msgRes.json();
-            const past: Turn[] = (msgData.messages ?? []).map(
-              (m: { role: "child" | "k"; content: string; display_sequence?: number }) => ({ role: m.role, text: m.content, displaySequence: m.display_sequence })
-            );
+            const past: Turn[] = (msgData.messages ?? [])
+              .filter((m: any) => m.content && m.content.trim() !== "" && (m.turn_status ? m.turn_status === "finalized" : true))
+              .map(
+                (m: any) => ({ role: m.role, text: m.content, displaySequence: m.display_sequence })
+              );
             pastMessagesRef.current = past;
           }
         } catch {
@@ -1111,13 +1177,13 @@ function MissionInner() {
           if (isLiveMode) {
             live.sendActivityEnd();
             live.setAudioMuted(false);
-            setTurnPhase("awaiting_stt_result");
+            setTurnPhase("child_finalizing");
           } else {
             manualAbortControllerRef.current = new AbortController();
             manualTimeoutRef.current = setTimeout(() => {
-              resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+              resetToIdle("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
             }, 8000);
-            setTurnPhase("awaiting_stt_result");
+            setTurnPhase("child_finalizing");
             sttTts.manualFinalize(manualAbortControllerRef.current.signal);
             sttTts.setMicEnabled(false);
           }
@@ -1146,7 +1212,7 @@ function MissionInner() {
     if (childIdRef.current) {
       localStorage.setItem(`k_voice_input_mode:${childIdRef.current}`, newMode);
     }
-  }, [live, sttTts, isLiveMode, setTurnPhase, resetToAwaitingChild]);
+  }, [live, sttTts, isLiveMode, setTurnPhase, resetToIdle]);
 
   const handleCentralButtonClick = useCallback(() => {
     if (!isRecordingRef.current) {
@@ -1173,10 +1239,12 @@ function MissionInner() {
           live.setAudioMuted(false);
           return;
         }
+        setTurnPhase("child_listening");
       } else {
         activeChildTurnIdRef.current = nextTurnId();
         activeChildTurnSeqRef.current = nextDisplaySequence();
         sttTts.setMicEnabled(true);
+        setTurnPhase("child_listening");
       }
       setIsRecording(true);
       isRecordingRef.current = true;
@@ -1192,13 +1260,13 @@ function MissionInner() {
           live.logTelemetryEvent("stopRecording");
           live.sendActivityEnd();
           live.setAudioMuted(false);
-          setTurnPhase("awaiting_stt_result");
+          setTurnPhase("child_finalizing");
         } else {
           manualAbortControllerRef.current = new AbortController();
           manualTimeoutRef.current = setTimeout(() => {
-            resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+            resetToIdle("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
           }, 8000);
-          setTurnPhase("awaiting_stt_result");
+          setTurnPhase("child_finalizing");
           sttTts.manualFinalize(manualAbortControllerRef.current.signal);
           sttTts.setMicEnabled(false);
         }
@@ -1217,7 +1285,7 @@ function MissionInner() {
         }
       }
     }
-  }, [live, sttTts, isLiveMode, setTurnPhase, resetToAwaitingChild]);
+  }, [live, sttTts, isLiveMode, setTurnPhase, resetToIdle]);
 
 
 
@@ -1359,10 +1427,10 @@ function MissionInner() {
   // "종료 발화가 아직 재생 중인지"뿐이라 화면 표시상 구분할 필요가 없다.
   const isDone = missionState !== "active" || completed;
   const missionPercent = progressPercent;
-  // Live 모드 수동 버튼 전용 — 답변 판정/다음 질문 생성 중(turnPhaseUi !== "awaiting_child")엔
+  // Live 모드 수동 버튼 전용 — 답변 판정/다음 질문 생성 중(turnPhaseUi !== "idle")엔
   // canStartRecording 가드가 탭을 무시하므로, 버튼을 "생각 중" 모양으로 바꿔 침묵 무시와
   // 진짜 먹통을 아이가 구분할 수 있게 한다.
-  const isThinkingTurn = isLiveMode && !isAuto && turnPhaseUi !== "awaiting_child";
+  const isThinkingTurn = isLiveMode && !isAuto && turnPhaseUi !== "idle";
 
   return (
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>

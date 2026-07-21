@@ -7,15 +7,13 @@
 // classifyAnswer가 최대 10~32초 걸릴 수 있는데 그 사이 아이가 다시 녹음을 시작하면:
 //  - 그 발화가 화면에 새 말풍선으로 표시되고 chat_messages에도 저장되지만,
 //  - answerInFlightRef(또는 Live의 turnPhaseRef)에 막혀 /api/mission/answer로 제출되지 않고
-//    조용히 버려진다 → 게이지가 그 턴만큼 증가하지 않음(버그①) + 같은 role 말풍선이 연달아
-//    쌓임(버그②) + 아이 입장에선 "케이가 내 답을 기다리지 않고 진행한다"로 느껴짐(버그③).
+// 쌓임(버그②) + 아이 입장에선 "케이가 내 답을 기다리지 않고 진행한다"로 느껴짐(버그③).
 // 이 모듈은 "지금 새 녹음을 시작해도 되는가"(canStartRecording)와 "지금 도착한 child 턴을
-// 실제로 저장/제출해도 되는가"(shouldAcceptChildTurn)를 각각 명시적으로 판정한다 — 전자는
-// 정상적인 사용자 흐름에서 애초에 문제 상황이 생기지 않도록 막는 1차 방어선이고, 후자는 그
-// 가드를 통과한 뒤에도 지연 도착 등 극히 드문 경쟁 상황에 대비하는 2차 방어선이다.
+// 실제로 저장/제출해도 되는가"(shouldAcceptChildTurn)를 각각 명시적으로 판정한다.
+// 특히 K가 말하는 중(k_speaking)이나 답변 대기 중(waiting_k)에는 아이 발화를 무시하고 오직 idle 상태에서만 접수하도록 엄격하게 가드한다.
 
 /** Live(Tier3) 전용 미션 턴 상태머신 — missions/page.tsx의 turnPhaseRef와 동일한 타입. */
-export type TurnPhase = "awaiting_child" | "awaiting_stt_result" | "processing_answer" | "speaking_k";
+export type TurnPhase = "idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking";
 
 export interface RecordingGuardInput {
   /** true면 Live(Tier3) 경로, false면 STT/TTS(Tier1/2) 경로. */
@@ -34,7 +32,7 @@ export interface RecordingGuardInput {
  * 이전 답변과 겹치는 새 녹음을 만들면 안 됨).
  */
 export function canStartRecording(input: RecordingGuardInput): boolean {
-  if (input.isLiveMode) return input.turnPhase === "awaiting_child" || input.turnPhase === "speaking_k";
+  if (input.isLiveMode) return input.turnPhase === "idle";
   return !input.answerInFlight && !input.kaySpeaking;
 }
 
@@ -54,6 +52,6 @@ export interface ChildTurnAcceptInput {
  */
 export function shouldAcceptChildTurn(input: ChildTurnAcceptInput): boolean {
   if (!input.missionActive) return true;
-  if (input.isLiveMode) return input.turnPhase === "awaiting_child" || input.turnPhase === "awaiting_stt_result" || input.turnPhase === "speaking_k";
+  if (input.isLiveMode) return input.turnPhase === "idle" || input.turnPhase === "child_listening" || input.turnPhase === "child_finalizing";
   return !input.answerInFlight;
 }
