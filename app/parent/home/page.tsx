@@ -457,7 +457,6 @@ export default function ParentHomePage() {
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
           <ParentHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
-            <SkeletonBox className="h-[72px] mb-6" />
             <SkeletonBox className="w-28 h-5 mb-3" />
             <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3`}>
               {Array.from({ length: 8 }).map((_, i) => (
