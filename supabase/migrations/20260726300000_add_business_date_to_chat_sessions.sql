@@ -32,7 +32,7 @@ BEGIN
       AND chat_sessions.conversation_window = p_conversation_window
       AND chat_sessions.session_type = 'free'
     GROUP BY chat_sessions.id, chat_sessions.started_at
-    ORDER BY COALESCE(MAX(chat_messages.created_at), chat_sessions.started_at) DESC
+    ORDER BY (COUNT(chat_messages.id) > 0) DESC, COALESCE(MAX(chat_messages.created_at), chat_sessions.started_at) DESC
     LIMIT 1;
 
     IF v_session_id IS NOT NULL THEN
