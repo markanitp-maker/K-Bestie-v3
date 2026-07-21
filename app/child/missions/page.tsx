@@ -372,6 +372,7 @@ function MissionInner() {
       if (manualTimeoutRef.current) clearTimeout(manualTimeoutRef.current);
       manualTimeoutRef.current = setTimeout(() => {
         if (answerEpochRef.current !== currentEpoch) return;
+        answerEpochRef.current += 1;
         if (manualAbortControllerRef.current) {
           manualAbortControllerRef.current.abort();
           manualAbortControllerRef.current = null;
