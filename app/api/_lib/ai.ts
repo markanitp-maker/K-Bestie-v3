@@ -103,7 +103,7 @@ export function getActiveMissionModel(): MissionModelConfig {
 
 // ── 그룹별 조회(Vertex 전환 스위치) ───────────────────────────
 // 그룹A=리포트·요약 / 그룹B=미션 대화 / 그룹C=라이브 음성.
-export type ProviderId = "ai_studio" | "vertex";
+export type ProviderId = "vertex";
 export type ModelGroup = "A" | "B" | "C";
 
 export interface GroupModelConfig {
@@ -112,26 +112,19 @@ export interface GroupModelConfig {
   modelId: string;
   apiBase: string;
   maxOutputTokens?: number;
-  /** ai_studio일 때만 의미 있음 — 호출부가 이 이름으로 process.env를 조회한다. */
+  /** 호출부가 이 이름으로 process.env를 조회한다. */
   apiKeyEnv: string;
 }
 
-/** provider_switch_settings 미조회/미설정 시 안전하게 쓰는 기존 ACTIVE_* 기반 기본값(AI Studio 고정). */
+/** provider_switch_settings 미조회/미설정 시 안전하게 쓰는 기본값(Vertex 고정). */
 function getStaticModelForGroup(group: ModelGroup): GroupModelConfig {
-  switch (group) {
-    case "A": {
-      const m = getActiveReportModel();
-      return { group, provider: "ai_studio", modelId: m.modelId, apiBase: m.apiBase, maxOutputTokens: m.maxOutputTokens, apiKeyEnv: "GEMMA_API_KEY" };
-    }
-    case "B": {
-      const m = getActiveMissionModel();
-      return { group, provider: "ai_studio", modelId: m.modelId, apiBase: m.apiBase, maxOutputTokens: m.maxOutputTokens, apiKeyEnv: "GEMMA_API_KEY" };
-    }
-    case "C": {
-      const m = getActiveVoiceModel();
-      return { group, provider: "ai_studio", modelId: m.modelId, apiBase: m.apiBase, apiKeyEnv: "GEMMA_API_KEY" };
-    }
-  }
+  return {
+    group,
+    provider: "vertex",
+    modelId: "gemini-2.5-flash",
+    apiBase: "https://generativelanguage.googleapis.com",
+    apiKeyEnv: "GCP_VERTEX_SA_KEY_JSON",
+  };
 }
 
 // request-scoped에 가까운 짧은 TTL 메모 — 매 호출 DB 왕복 없이도 스위치 변경이 수 초 내 반영됨.
@@ -155,6 +148,11 @@ export async function getModelForGroup(group: ModelGroup): Promise<GroupModelCon
       .maybeSingle();
 
     const provider = ((data as { provider?: string } | null)?.provider as ProviderId) ?? fallback.provider;
+    
+    if (provider !== "vertex") {
+      throw new Error(`Unsupported provider from DB: ${provider}. Only vertex is allowed.`);
+    }
+    
     const modelId = (data as { model_id?: string } | null)?.model_id ?? fallback.modelId;
 
     const config: GroupModelConfig = {
@@ -163,7 +161,7 @@ export async function getModelForGroup(group: ModelGroup): Promise<GroupModelCon
       modelId,
       apiBase: fallback.apiBase,
       maxOutputTokens: fallback.maxOutputTokens,
-      apiKeyEnv: provider === "vertex" ? "GCP_VERTEX_SA_KEY_JSON" : "GEMMA_API_KEY",
+      apiKeyEnv: "GCP_VERTEX_SA_KEY_JSON",
     };
     switchCache.set(group, { config, expiresAt: Date.now() + SWITCH_TTL_MS });
     return config;
@@ -177,24 +175,15 @@ export async function getModelForGroup(group: ModelGroup): Promise<GroupModelCon
  *  Vertex: GCP_VERTEX_SA_KEY_JSON 서비스 계정 키(GCP_BILLING_SA_KEY_JSON과 완전 분리) +
  *  GOOGLE_CLOUD_PROJECT/GOOGLE_CLOUD_LOCATION(Google Gen AI SDK 표준 환경변수명). AI Studio: GEMMA_API_KEY. */
 export function createGenAIClient(config: Pick<GroupModelConfig, "provider" | "apiKeyEnv">): GoogleGenAI {
-  if (config.provider === "vertex") {
-    const keyJson = process.env.GCP_VERTEX_SA_KEY_JSON;
-    const project = process.env.GOOGLE_CLOUD_PROJECT;
-    if (!keyJson) throw new Error("GCP_VERTEX_SA_KEY_JSON not configured");
-    if (!project) throw new Error("GOOGLE_CLOUD_PROJECT not configured");
-    const location = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
-    const credentials = JSON.parse(keyJson);
-    return new GoogleGenAI({ vertexai: true, project, location, googleAuthOptions: { credentials } });
+  if (config.provider !== "vertex") {
+    throw new Error("Unsupported provider: only vertex is allowed");
   }
-  const apiKey = process.env[config.apiKeyEnv];
-  if (!apiKey) throw new Error(`${config.apiKeyEnv} not configured`);
-  return new GoogleGenAI({ apiKey });
-}
-
-/** 폴백 전용: provider와 무관하게 항상 AI Studio(GEMMA_API_KEY)로 교차 회귀하는 클라이언트.
- *  Vertex 장애 시에도 서비스 연속성을 확보하기 위함(report/generate 폴백 경로 전용). */
-export function createAIStudioFallbackClient(): GoogleGenAI {
-  const apiKey = process.env.GEMMA_API_KEY;
-  if (!apiKey) throw new Error("GEMMA_API_KEY not configured");
-  return new GoogleGenAI({ apiKey });
+  
+  const keyJson = process.env.GCP_VERTEX_SA_KEY_JSON;
+  const project = process.env.GOOGLE_CLOUD_PROJECT;
+  if (!keyJson) throw new Error("GCP_VERTEX_SA_KEY_JSON not configured");
+  if (!project) throw new Error("GOOGLE_CLOUD_PROJECT not configured");
+  const location = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+  const credentials = JSON.parse(keyJson);
+  return new GoogleGenAI({ vertexai: true, project, location, googleAuthOptions: { credentials } });
 }

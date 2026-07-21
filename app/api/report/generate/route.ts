@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { getModelForGroup, createGenAIClient, createAIStudioFallbackClient } from "@/app/api/_lib/ai";
+import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
 import { sanitizeReportJson } from "@/app/api/_lib/reportSafetyGuard";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
@@ -77,7 +77,8 @@ export async function POST(req: NextRequest) {
   const transcriptText = transcript
     .map((t) => `${t.role === "child" ? "아이" : "케이"}: ${t.text}`)
     .join("\n");
-  const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
+  const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText) +
+    "\n\nYou MUST return the response ONLY in a valid JSON format. Do not include any text outside the JSON object.";
 
   let ai;
   try {
@@ -106,14 +107,28 @@ export async function POST(req: NextRequest) {
         model: reportModel.modelId,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
-          responseMimeType: "application/json",
           maxOutputTokens: reportModel.maxOutputTokens,
         },
       });
 
       resultText = (response.text ?? "").trim();
-      // JSON 문법 유효성 사전 검사
-      JSON.parse(resultText);
+      
+      // 코드펜스 제거
+      resultText = resultText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+      
+      try {
+        JSON.parse(resultText);
+      } catch (parseErr) {
+        // 실패 시 정규식으로 JSON 블록 추출 시도
+        const jsonMatch = resultText.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+        if (jsonMatch) {
+          resultText = jsonMatch[0];
+          JSON.parse(resultText);
+        } else {
+          throw parseErr;
+        }
+      }
+      
       success = true;
       usedTokenIn = response.usageMetadata?.promptTokenCount;
       usedTokenOut = response.usageMetadata?.candidatesTokenCount;
@@ -127,31 +142,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3-2. 실패 시 gemini-2.5-flash 모델로 폴백 — provider와 무관하게 항상 AI Studio로
-  // 교차 회귀한다(Vertex 장애 시에도 서비스 연속성 확보).
   if (!success) {
-    console.warn(`[report/generate] ${reportModel.modelId}(${reportModel.provider}) failed completely. Falling back to AI Studio gemini-2.5-flash...`);
-    try {
-      const fallbackAi = createAIStudioFallbackClient();
-      const response = await fallbackAi.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 1024,
-        },
-      });
-
-      resultText = (response.text ?? "").trim();
-      JSON.parse(resultText);
-      success = true;
-      usedTokenIn = response.usageMetadata?.promptTokenCount;
-      usedTokenOut = response.usageMetadata?.candidatesTokenCount;
-      console.log(`[report/generate] Success with fallback model: gemini-2.5-flash`);
-    } catch (fallbackErr) {
-      console.error(`[report/generate] Fallback model also failed:`, (fallbackErr as Error).message);
-      return NextResponse.json({ error: "Gemma 4 and fallback model both failed to generate valid report" }, { status: 500 });
-    }
+    return NextResponse.json({ error: "Report generation failed completely" }, { status: 500 });
   }
 
   // usage_events(kind='llm') 계측 — 응답 자체를 막지 않도록 after()로 비동기 처리.
