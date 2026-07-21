@@ -23,6 +23,8 @@ export default function ChatPage() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
+  const [restoredTranscript, setRestoredTranscript] = useState<Turn[]>([]);
+  const restoredTranscriptRef = useRef<Turn[]>([]);
   const [isAuto, setIsAuto] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
@@ -130,23 +132,23 @@ export default function ChatPage() {
   // 턴 수 제한 하드 리밋 감지
   useEffect(() => {
     if (status === "live") {
-      const childTurns = transcript.filter((t) => t.role === "child").length;
+      const childTurns = [...restoredTranscript, ...transcript].filter((t) => t.role === "child").length;
       if (childTurns >= MAX_SESSION_TURNS) {
         triggerHardLimitStop("오늘 대화는 여기까지야! 다음에 더 재미있는 이야기 많이 들려줘 👋");
       }
     }
-  }, [transcript, status, triggerHardLimitStop]);
+  }, [transcript, restoredTranscript, status, triggerHardLimitStop]);
 
   // 페이지 이탈 시 세션 마감 연동
   useEffect(() => {
     const handleBeforeUnload = () => {
       const sid = sessionIdRef.current;
       if (sid && statusRef.current !== "ended") {
-        const turnCount = getTranscript().filter((t) => t.role === "child").length;
+        const turnCount = [...restoredTranscriptRef.current, ...getTranscript()].filter((t) => t.role === "child").length;
         fetch("/api/chat/pause", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: sid, turnCount, ended: true }),
+          body: JSON.stringify({ sessionId: sid, turnCount, ended: false }),
           keepalive: true,
         }).catch(() => {});
       }
@@ -167,9 +169,6 @@ export default function ChatPage() {
 
   useEffect(() => {
     reset();
-    localStorage.removeItem("k_session_id");
-    setSessionId(null);
-    sessionIdRef.current = null;
     setReportDone(false);
     setReportError(null);
     setMounted(true);
@@ -209,7 +208,7 @@ export default function ChatPage() {
   // 대화 종료 시 리포트 자동 생성
   useEffect(() => {
     if (status !== "ended" || !sessionId) return;
-    const t = getTranscript();
+    const t = [...restoredTranscriptRef.current, ...getTranscript()];
     fetch("/api/report/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -225,7 +224,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     voiceBubbleRef.current?.scrollTo({ top: voiceBubbleRef.current.scrollHeight, behavior: "smooth" });
-  }, [transcript, interimChildText]);
+  }, [transcript, interimChildText, restoredTranscript]);
 
   // 세션이 live가 될 때 저장된 자동/수동 모드를 훅에 반영 — 수동 모드는 아이가 명시적으로
   // 말하기 버튼을 누르기 전까지 마이크를 꺼둔다(불필요한 상시 캡처 방지).
@@ -242,18 +241,44 @@ export default function ChatPage() {
     setReportError(null);
     setSessionActive(true);
 
-    const { data } = await getSupabase()
-      .from("chat_sessions")
-      .insert({ child_id: childId })
-      .select("id")
-      .single();
-    if (data) {
-      setSessionId(data.id);
-      sessionIdRef.current = data.id;
-      localStorage.setItem("k_session_id", data.id);
+    try {
+      const res = await fetch("/api/chat/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ childId }),
+      });
+      const data = await res.json();
+      
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+        sessionIdRef.current = data.sessionId;
+        localStorage.setItem("k_session_id", data.sessionId);
+
+        if (data.resumed) {
+          const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`);
+          if (msgRes.ok) {
+            const msgData = await msgRes.json();
+            if (msgData.messages) {
+              const mapped: Turn[] = msgData.messages.map((m: any) => ({
+                id: m.display_sequence?.toString() || Math.random().toString(),
+                role: m.role,
+                text: m.content
+              }));
+              setRestoredTranscript(mapped);
+              restoredTranscriptRef.current = mapped;
+            }
+          }
+        } else {
+          setRestoredTranscript([]);
+          restoredTranscriptRef.current = [];
+        }
+      }
+    } catch (err) {
+      console.error("Session start error:", err);
     }
+
     await startSession();
-  }, [childId, startSession, getSupabase]);
+  }, [childId, startSession]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (newMode === "auto") {
@@ -427,7 +452,7 @@ export default function ChatPage() {
           ref={voiceBubbleRef}
           className="flex-1 min-h-0 px-4 flex flex-col gap-3 overflow-y-auto pb-4"
         >
-          {transcript.length === 0 ? (
+          {restoredTranscript.length === 0 && transcript.length === 0 ? (
             <div className="flex items-center justify-center h-full text-center p-4">
               <p className="text-xs" style={{ color: "#9ca3af" }}>
                 {isAuto
@@ -442,7 +467,7 @@ export default function ChatPage() {
               </p>
             </div>
           ) : (
-            transcript.map((turn, i) => (
+            [...restoredTranscript, ...transcript].map((turn, i) => (
               <div
                 key={turn.id ?? i}
                 className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
