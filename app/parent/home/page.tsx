@@ -714,22 +714,6 @@ export default function ParentHomePage() {
     );
   }
 
-  // 학년 기준 만 나이 및 포맷 계산
-  const gradeMatch = activeChild ? activeChild.grade.match(/\d/) : null;
-  const gradeNum = gradeMatch ? parseInt(gradeMatch[0]) : 4;
-  const childAge = gradeNum + 7;
-  const formattedGrade = activeChild ? (activeChild.grade.includes("학년") ? activeChild.grade : `${activeChild.grade}학년`) : "";
-
-  // 최근 대화일 포맷팅
-  let lastChatDate = "대화 기록 없음";
-  if (latestReport) {
-    const d = new Date(latestReport.created_at);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    lastChatDate = `${y}.${m}.${day}`;
-  }
-
   // 대시보드 카드 구성
   const dbCards = latestReport?.dashboard_cards ?? {};
   const currentEmotionLevel = latestReport?.emotion_level ?? null;
@@ -755,29 +739,6 @@ export default function ParentHomePage() {
         <ParentHeader />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
-          {/* 프로필 카드 — 아이 전환은 상단 이름 버튼에서 처리 */}
-          <div className="flex items-center justify-between bg-white rounded-2xl px-4 py-4 shadow-sm mb-6">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-11 h-11 rounded-full flex items-center justify-center text-lg select-none"
-                style={{ background: "#f3f4f6" }}
-              >
-                🧒
-              </div>
-              <p className="text-xs" style={{ color: "#6b7280" }}>
-                ({formattedGrade}, {childAge}세)
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px]" style={{ color: "#6b7280" }}>
-                최근 대화일
-              </p>
-              <p className="text-xs font-bold" style={{ color: "#1e1e2d" }}>
-                {lastChatDate}
-              </p>
-            </div>
-          </div>
-
           <h2 className="text-base font-bold mb-3" style={{ color: "#1e1e2d" }}>
             아이 현황 보기
           </h2>
