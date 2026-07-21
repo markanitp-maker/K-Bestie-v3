@@ -243,7 +243,11 @@ export default function ChatPage() {
       if (data.sessionId) {
         setSessionId(data.sessionId);
         sessionIdRef.current = data.sessionId;
-        currentWindowRef.current = getCurrentKSTWindow();
+        if (data.businessDate && data.conversationWindow) {
+          currentWindowRef.current = `${data.businessDate}-${data.conversationWindow}`;
+        } else {
+          currentWindowRef.current = getCurrentKSTWindow();
+        }
         localStorage.setItem("k_session_id", data.sessionId);
 
         if (data.resumed) {

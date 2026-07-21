@@ -57,51 +57,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       resumed: true,
       sessionId: existingSessionRow.id,
+      businessDate,
+      conversationWindow,
     });
   }
 
-  const { data: newSession, error: newSessionErr } = await service
-    .from("chat_sessions")
-    .upsert({ 
-      child_id: childId,
-      business_date: businessDate,
-      conversation_window: conversationWindow,
-      session_type: "free"
-    }, {
-      onConflict: "child_id, business_date, conversation_window",
-      ignoreDuplicates: true
-    })
-    .select("id")
-    .maybeSingle();
+  const { data: sessionId, error: rpcErr } = await service
+    .rpc("get_or_create_chat_session", {
+      p_child_id: childId,
+      p_business_date: businessDate,
+      p_conversation_window: conversationWindow
+    });
 
-  if (newSessionErr) {
-    console.error("[chat/session] insert error:", newSessionErr);
+  if (rpcErr || !sessionId) {
+    console.error("[chat/session] rpc error:", rpcErr);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
-  if (newSession) {
-    return NextResponse.json({
-      resumed: false,
-      sessionId: newSession.id,
-    });
-  } else {
-    const { data: retrySession, error: retryErr } = await service
-      .from("chat_sessions")
-      .select("id")
-      .eq("child_id", childId)
-      .eq("business_date", businessDate)
-      .eq("conversation_window", conversationWindow)
-      .eq("session_type", "free")
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-      
-    if (retryErr || !retrySession) {
-      return NextResponse.json({ error: "Database error during retry" }, { status: 500 });
-    }
-    return NextResponse.json({
-      resumed: true,
-      sessionId: retrySession.id,
-    });
-  }
+  return NextResponse.json({
+    resumed: false,
+    sessionId: sessionId as string,
+    businessDate,
+    conversationWindow,
+  });
 }
