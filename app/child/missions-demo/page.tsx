@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 
-export default function MissionDemoPage() {
+function MissionsDemoContent() {
   const searchParams = useSearchParams();
   const mode = searchParams.get("mode") === "manual" ? "manual" : "auto";
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -155,5 +155,13 @@ export default function MissionDemoPage() {
 
       {completed && <div className="text-2xl font-bold text-green-500">🎉 미션 완료! 🎉</div>}
     </div>
+  );
+}
+
+export default function MissionDemoPage() {
+  return (
+    <Suspense fallback={<div>로딩중...</div>}>
+      <MissionsDemoContent />
+    </Suspense>
   );
 }
