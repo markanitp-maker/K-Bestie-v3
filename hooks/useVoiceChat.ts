@@ -110,10 +110,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setTranscript([...transcriptRef.current]);
   }
 
-  async function callStt(audioBase64: string): Promise<{ text: string; confidence?: number }> {
+  async function callStt(audioBase64: string, customSignal?: AbortSignal): Promise<{ text: string; confidence?: number }> {
     try {
       sttAbortControllerRef.current = new AbortController();
-      const signal = sttAbortControllerRef.current.signal;
+      const signal = customSignal ?? sttAbortControllerRef.current.signal;
 
       const sessionId = options?.getSessionId?.() ?? null;
       const res = await fetch("/api/mission/stt", {
@@ -134,7 +134,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     }
   }
 
-  const finalizeChildTurn = useCallback(async () => {
+  const finalizeChildTurn = useCallback(async (signal?: AbortSignal) => {
     const epoch = ++utteranceEpochRef.current; // 새 세대로 전환 — 이전 세대의 낡은 interim 응답은 이후 전부 무시됨
     const chunks = chunksRef.current;
     chunksRef.current = [];
@@ -147,7 +147,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     }
 
     const audioBase64 = encodePCM16Base64(chunks);
-    const { text, confidence } = await callStt(audioBase64);
+    const { text, confidence } = await callStt(audioBase64, signal);
     if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 폐기
     if (!text) {
       const errorText = "음성을 인식하지 못했어요. 다시 말해 주세요.";
@@ -313,8 +313,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     inputModeRef.current = mode;
   }, []);
 
-  const manualFinalize = useCallback(() => {
-    void finalizeChildTurn();
+  const manualFinalize = useCallback((signal?: AbortSignal) => {
+    void finalizeChildTurn(signal);
   }, [finalizeChildTurn]);
 
   const cancelFinalize = useCallback(() => {

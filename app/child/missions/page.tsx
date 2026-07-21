@@ -181,6 +181,7 @@ function MissionInner() {
   const manualAbortControllerRef = useRef<AbortController | null>(null);
 
   const resetToAwaitingChild = useCallback((fallbackMessage?: string) => {
+    answerEpochRef.current += 1;
     if (manualTimeoutRef.current) {
       clearTimeout(manualTimeoutRef.current);
       manualTimeoutRef.current = null;
@@ -376,6 +377,14 @@ function MissionInner() {
         if (!res.ok) {
           if (res.status === 423) {
             // 이미 완료되었거나 안전 중단된 경우 대화 차단
+            if (manualTimeoutRef.current) {
+              clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+            }
+            if (manualAbortControllerRef.current) {
+              manualAbortControllerRef.current.abort();
+              manualAbortControllerRef.current = null;
+            }
             missionStateRef.current = "completed";
             setMissionState("completed");
             if (isLive) {
@@ -391,9 +400,18 @@ function MissionInner() {
           return;
         }
         const data = await res.json();
+        if (currentEpoch !== answerEpochRef.current) return;
         
         if (data.reason === "safety_signal" || data.status === "SAFETY_PAUSED") {
           // 안전 중단 처리: 다음 질문으로 넘어가지 않고 멈춤
+          if (manualTimeoutRef.current) {
+            clearTimeout(manualTimeoutRef.current);
+            manualTimeoutRef.current = null;
+          }
+          if (manualAbortControllerRef.current) {
+            manualAbortControllerRef.current.abort();
+            manualAbortControllerRef.current = null;
+          }
           missionStateRef.current = "completed"; // UI 비활성화를 위해 completed 처리
           setMissionState("completed");
           if (isLive) {
@@ -421,6 +439,14 @@ function MissionInner() {
           } else {
             // STT/TTS(Tier1/2) 경로는 연속 스트리밍 세션이 아니라 매 발화가 개별 TTS
             // 호출로 끝나므로 기존의 단순 즉시 종료 방식을 그대로 유지한다.
+            if (manualTimeoutRef.current) {
+              clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+            }
+            if (manualAbortControllerRef.current) {
+              manualAbortControllerRef.current.abort();
+              manualAbortControllerRef.current = null;
+            }
             missionStateRef.current = "completed";
             setMissionState("completed");
           }
@@ -466,9 +492,24 @@ function MissionInner() {
           if (respondRes.ok) {
             const respondData = await respondRes.json();
             if (respondData.text) respondText = respondData.text;
+          } else {
+            if (!isLive) {
+              resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+              return;
+            } else {
+              setTurnPhase("awaiting_child");
+              return;
+            }
           }
         } catch {
-          // 실패 시 아래 askQuestionRef가 순정 질문 텍스트(customText 없음)로 폴백
+          // 예외 발생 시에도 오류 복구 경로로 이동
+          if (!isLive) {
+            resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
+            return;
+          } else {
+            setTurnPhase("awaiting_child");
+            return;
+          }
         }
         if (currentEpoch !== answerEpochRef.current) return;
         if (isLive) {
@@ -747,7 +788,8 @@ function MissionInner() {
           manualTimeoutRef.current = setTimeout(() => {
             resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
           }, 8000);
-          sttTts.manualFinalize();
+          setTurnPhase("awaiting_stt_result");
+          sttTts.manualFinalize(manualAbortControllerRef.current.signal);
           sttTts.setMicEnabled(false);
         }
       } finally {
@@ -922,7 +964,8 @@ function MissionInner() {
             manualTimeoutRef.current = setTimeout(() => {
               resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
             }, 8000);
-            sttTts.manualFinalize();
+            setTurnPhase("awaiting_stt_result");
+            sttTts.manualFinalize(manualAbortControllerRef.current.signal);
             sttTts.setMicEnabled(false);
           }
         } finally {
@@ -1003,7 +1046,8 @@ function MissionInner() {
           manualTimeoutRef.current = setTimeout(() => {
             resetToAwaitingChild("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
           }, 8000);
-          sttTts.manualFinalize();
+          setTurnPhase("awaiting_stt_result");
+          sttTts.manualFinalize(manualAbortControllerRef.current.signal);
           sttTts.setMicEnabled(false);
         }
       } finally {
