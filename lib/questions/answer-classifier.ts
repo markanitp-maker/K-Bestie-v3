@@ -1,5 +1,5 @@
 import { pickReaction } from "@/lib/freeChatReactions";
-import { GoogleGenAI } from "@google/genai";
+import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 
 export type AnswerClassification =
   | "VALID"
@@ -30,11 +30,8 @@ function extractJSON(text: string) {
 }
 
 async function generateWithRetry(prompt: string): Promise<string> {
-  const apiKey = process.env.GEMMA_API_KEY || process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMMA_API_KEY is not configured");
-  }
-  const ai = new GoogleGenAI({ apiKey });
+  const modelConfig = await getModelForGroup("B");
+  const ai = createGenAIClient(modelConfig);
   const delays = [0, 2000];
   const PER_ATTEMPT_TIMEOUT_MS = 15000;
   let lastError: any;
@@ -46,7 +43,7 @@ async function generateWithRetry(prompt: string): Promise<string> {
     try {
       const response = await Promise.race([
         ai.models.generateContent({
-          model: "gemma-4-31b-it",
+          model: modelConfig.modelId,
           contents: prompt,
           config: {
             responseMimeType: "application/json",
