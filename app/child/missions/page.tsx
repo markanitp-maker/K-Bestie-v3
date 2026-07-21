@@ -987,7 +987,6 @@ function MissionInner() {
         live.setInteractionMode("auto");
       } else {
         sttTts.setInputMode("auto");
-        sttTts.setMicEnabled(true);
       }
       setIsAuto(true);
     } else {
