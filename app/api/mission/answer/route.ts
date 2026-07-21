@@ -222,7 +222,16 @@ export async function POST(req: NextRequest) {
     }
     const questionText = qData?.question_text ?? "";
 
-    const classification = await classifyAnswer(questionText, answerText);
+    let classification: string;
+    const lowerAns = answerText.trim().toLowerCase();
+    const cleanAns = lowerAns.replace(/\s+|[.!?]/g, "");
+    if (!cleanAns) {
+      classification = "NO_RESPONSE";
+    } else if (/^(몰라|모르겠어|안해|싫어|응|아니|네|아니요|웅|응응)$/.test(cleanAns)) {
+      classification = "VALID";
+    } else {
+      classification = await classifyAnswer(questionText, answerText);
+    }
 
     // 1. SAFETY_SIGNAL 판정 시 즉시 중단 처리 (RPC 호출로 일괄 대체)
     if (classification === "SAFETY_SIGNAL") {

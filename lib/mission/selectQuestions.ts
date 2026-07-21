@@ -545,3 +545,98 @@ export async function selectAlphaQuestions(
 
   return picked.slice(0, TOTAL_COUNT_V2);
 }
+
+/**
+ * 10개의 고정된 질문 구조(인사 1 + 8영역 + 일상 1)를 뽑아 배열로 반환한다.
+ */
+export async function selectFixedMissionQuestions(
+  childId: string,
+  grade: number,
+  roundType: RoundType
+): Promise<string[]> {
+  const service = createServiceClient();
+  const { data: allActiveRaw, error: qErr } = await service
+    .from("mission_questions")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .eq("is_active", true);
+
+  if (qErr || !allActiveRaw) return [];
+  const allActive = allActiveRaw as QuestionRow[];
+
+  // 1차 후보: 학년 + 라운드 일치
+  const candidates = allActive.filter((q) =>
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) &&
+    (q.round_type === roundType || q.round_type === "common")
+  );
+
+  // 2차 후보: 학년 일치 (라운드 무관)
+  const candidatesRelaxRound = allActive.filter((q) =>
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade)
+  );
+
+  // 아이의 출제이력 로드 (question_id -> 마지막 asked_at) - 쿨다운 적용을 위해
+  const { data: historyRaw } = await service
+    .from("mission_question_history")
+    .select("question_id, asked_at")
+    .eq("child_id", childId);
+
+  const lastAskedAt = new Map<string, number>();
+  for (const h of (historyRaw ?? []) as { question_id: string; asked_at: string | null }[]) {
+    if (!h.asked_at) continue;
+    const t = new Date(h.asked_at).getTime();
+    const prev = lastAskedAt.get(h.question_id);
+    if (prev === undefined || t > prev) lastAskedAt.set(h.question_id, t);
+  }
+
+  const now = Date.now();
+  const daysSince = (ts: number) => (now - ts) / (1000 * 60 * 60 * 24);
+
+  // 쿨다운(주기) 필터 적용된 1차 후보
+  const eligible = candidates.filter((q) => {
+    const last = lastAskedAt.get(q.id);
+    if (q.cycle_type === "onboarding") {
+      return last === undefined;
+    }
+    if (q.cycle_type === "always") {
+      return true;
+    }
+    if (last === undefined) return true;
+    return daysSince(last) >= CYCLE_INTERVAL_DAYS[q.cycle_type];
+  });
+
+  const getSlotId = (tag: string): string => {
+    let available = eligible.filter((q) => q.dashboard_area_tag === tag);
+    if (available.length > 0) return shuffle(available)[0].id;
+
+    available = candidates.filter((q) => q.dashboard_area_tag === tag);
+    if (available.length > 0) return shuffle(available)[0].id;
+
+    available = candidatesRelaxRound.filter((q) => q.dashboard_area_tag === tag);
+    if (available.length > 0) return shuffle(available)[0].id;
+
+    available = allActive.filter((q) => q.dashboard_area_tag === tag);
+    if (available.length > 0) return shuffle(available)[0].id;
+
+    throw new Error(`[selectFixedMissionQuestions] No candidate found for tag: ${tag}`);
+  };
+
+  const picked: string[] = [];
+  const tagsConfig = [
+    "greeting",
+    "school_life",
+    "peer_relations",
+    "emotion",
+    "interests",
+    "study_concerns",
+    "digital_interests",
+    "future_dreams",
+    "recurring_stories",
+    "daily_general",
+  ];
+
+  for (const tag of tagsConfig) {
+    picked.push(getSlotId(tag));
+  }
+  
+  return picked; // 무조건 10개 반환
+}

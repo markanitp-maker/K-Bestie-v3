@@ -5,7 +5,7 @@ import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
 import { isChildAlphaAllowedForQuestions } from "@/lib/questions/alphaAllowlist";
-import { selectAlphaQuestions } from "@/lib/mission/selectQuestions";
+import { selectAlphaQuestions, selectFixedMissionQuestions } from "@/lib/mission/selectQuestions";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
@@ -194,18 +194,28 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const REQUIRED_COUNT = (isV2 || isAlphaQuestionChild) ? 10 : 5;
-
   // 출제 질문 선별
   let questionIds: string[] = [];
-  if (isAlphaQuestionChild) {
-    questionIds = await selectAlphaQuestions(childId, grade, roundType);
-    isV2 = true;
-  } else if (isV2) {
-    questionIds = await selectQuestionsV2(childId, grade, roundType);
-  } else {
-    questionIds = await selectQuestions(childId, grade, roundType);
+  try {
+    questionIds = await selectFixedMissionQuestions(childId, grade, roundType);
+  } catch (err) {
+    console.warn("[start/route] selectFixedMissionQuestions failed, falling back:", err instanceof Error ? err.message : err);
   }
+
+  if (questionIds.length === 10) {
+     isV2 = true; // 10개이므로 V2로 간주
+  } else {
+    if (isAlphaQuestionChild) {
+      questionIds = await selectAlphaQuestions(childId, grade, roundType);
+      isV2 = true;
+    } else if (isV2) {
+      questionIds = await selectQuestionsV2(childId, grade, roundType);
+    } else {
+      questionIds = await selectQuestions(childId, grade, roundType);
+    }
+  }
+
+  const REQUIRED_COUNT = isV2 ? 10 : 5;
 
   if (questionIds.length === 0) {
     return NextResponse.json({ error: "No eligible questions" }, { status: 409 });

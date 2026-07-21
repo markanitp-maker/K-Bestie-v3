@@ -459,9 +459,9 @@ function MissionInner() {
         setGauge(data.validAnswerCount ?? 0);
         setProgressPercent(data.progressPercent ?? 0);
         setRequiredCount(data.requiredCount ?? 5);
-        setCompleted(data.completed ?? false);
         setEngineVersion(data.engine_version ?? "v1");
 
+        // setCompleted는 발화 완료 후 상태 전이 시에 호출되도록 위임
         if (data.completed) {
           // 5번째 유효 답변 확정 — 여기서 곧바로 세션을 끊지 않는다(케이가 아직 종료 발화를
           // 하는/할 중일 수 있음). Live 모드는 별도 종료 플로우(missionCompletionFlow)가
@@ -470,7 +470,8 @@ function MissionInner() {
           if (voiceModeRef.current === "live") {
             setTurnPhase("speaking_k");
             liveRef.current?.lockNow();
-            missionControllerRef.current?.start({ immediateTtsFallback: true });
+            const success = liveRef.current?.speakClosingLine("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
+            missionControllerRef.current?.start({ immediateTtsFallback: !success });
           } else {
             // STT/TTS(Tier1/2) 경로는 연속 스트리밍 세션이 아니라 매 발화가 개별 TTS
             // 호출로 끝나므로 기존의 단순 즉시 종료 방식을 그대로 유지한다.
@@ -482,8 +483,12 @@ function MissionInner() {
               manualAbortControllerRef.current.abort();
               manualAbortControllerRef.current = null;
             }
+            setTurnPhase("speaking_k");
+            sttSetMicEnabledRef.current?.(false);
+            await sttTts.speak("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
             missionStateRef.current = "completed";
             setMissionState("completed");
+            setCompleted(true);
           }
           return;
         }
@@ -755,6 +760,7 @@ function MissionInner() {
         // completing 진입 즉시 마이크·추가 입력 차단(방어적 이중 조치 — UI도 isDone 기준으로
         // 버튼을 감춘다). 종료 발화는 이미 진행 중인 세션을 통해 계속 재생된다.
         if (s === "completing") liveRef.current?.setMicEnabled(false);
+        if (s === "completed") setCompleted(true);
       },
       // fallback/외부 종료 경로 전용 — 정상 경로는 케이 본인의 발화가 이미 화면에 떠 있다.
       onShowCompletionText: () => {
