@@ -33,6 +33,11 @@ export default function ChatPage() {
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
   const restoredTranscriptRef = useRef<Turn[]>([]);
+  const displaySequenceCounterRef = useRef(0);
+  const nextDisplaySequence = useCallback(() => {
+    displaySequenceCounterRef.current += 1;
+    return displaySequenceCounterRef.current;
+  }, []);
   const [isAuto, setIsAuto] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
@@ -59,16 +64,26 @@ export default function ChatPage() {
     const sid = sessionIdRef.current;
     if (sid) {
       const asrConfidence = turn.role === "child" ? getLastAsrConfidenceRef.current?.() : undefined;
+      const turnId = turn.id || crypto.randomUUID();
+      const displaySequence = (turn as any).displaySequence ?? nextDisplaySequence();
+      
       fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sid, role: turn.role, content: turn.text, asrConfidence }),
+        body: JSON.stringify({ 
+          sessionId: sid, 
+          role: turn.role, 
+          content: turn.text, 
+          asrConfidence,
+          turnId,
+          displaySequence
+        }),
       }).catch(() => {});
     }
     if (turn.role === "child") {
       void respondTextRef.current?.();
     }
-  }, []);
+  }, [nextDisplaySequence]);
 
   const {
     status: rawStatus,
@@ -260,15 +275,21 @@ export default function ChatPage() {
             const msgData = await msgRes.json();
             if (msgData.messages) {
               type MessageRow = {
+                turn_id?: string;
                 display_sequence?: number;
                 role: "child" | "k" | "system";
                 content: string;
               };
               const mapped: Turn[] = msgData.messages.map((m: MessageRow) => ({
-                id: m.display_sequence?.toString() || Math.random().toString(),
+                id: m.turn_id || m.display_sequence?.toString() || Math.random().toString(),
                 role: m.role as "child" | "k",
-                text: m.content
-              }));
+                text: m.content,
+                displaySequence: m.display_sequence
+              } as Turn));
+              
+              const maxSeq = Math.max(0, ...msgData.messages.map((m: MessageRow) => m.display_sequence ?? 0));
+              displaySequenceCounterRef.current = Math.max(displaySequenceCounterRef.current, maxSeq);
+
               restoredTranscriptRef.current = mapped;
               console.log("[freechat] restored messages", { sessionId: data.sessionId, count: mapped.length });
             }
