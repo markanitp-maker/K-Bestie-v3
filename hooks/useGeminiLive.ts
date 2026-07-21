@@ -245,6 +245,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const generationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // 세션 식별용 - 이전 연결 메시지 무시용
   const activeSessionIdRef = useRef<string | null>(null);
+  const connectionIdRef = useRef<string>("none");
+  const connectionGenerationRef = useRef<number>(0);
 
   // speakAsK/speakClosingLine으로 "이 문장을 그대로 말해줘"라고 지시했을 때 이미 검증된
   // 안전한 원문 — 모델이 실제로 낸 outputTranscription이 프롬프트 누출 패턴을 포함하면
@@ -260,6 +262,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     return displaySequenceCounterRef.current;
   }, [displaySequenceCounterRef]);
 
+  const getLogPrefix = useCallback(() => {
+    return `[K][conn=${connectionIdRef.current}][kTurn=${activeKTurnIdRef.current}][cTurn=${activeChildTurnIdRef.current}][seq=${displaySequenceCounterRef.current}]`;
+  }, [displaySequenceCounterRef]);
 
   // ── 스케줄 기반 오디오 재생 (갭 없는 gapless 재생) ─────────
   // 이전 큐/playNext 방식은 onended→start 사이 JS 이벤트 루프 갭으로 파직거림 발생.
@@ -601,6 +606,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       // 20ms lookahead — 버퍼가 도착하기 전 컨텍스트 시간을 지나치지 않도록
       const startAt = Math.max(ctx.currentTime + 0.02, nextScheduleTimeRef.current);
       if (kTurnAudioMsRef.current === 0) {
+        console.log(`${getLogPrefix()} 🔊 scheduleAudio 재생 시작`);
         console.error(`[Timing] (e) 케이 첫 오디오 재생 시작 - ${Date.now()}`);
       }
       const source = ctx.createBufferSource();
@@ -631,6 +637,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         const i = arr.indexOf(source);
         if (i !== -1) arr.splice(i, 1);
         if (arr.length === 0) {
+          console.log(`${getLogPrefix()} 🔇 scheduleAudio 재생 종료 (큐 비워짐)`);
           kSpeakingRef.current = false; // 마지막 버퍼 재생 종료 — 마이크 재개
           maybeUnlockCutChildTurn();
           onAudioQueueDrainedRef.current?.();
@@ -919,7 +926,12 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     clearGenerationTimeout();
     recoveryGateOpenRef.current = false;
 
-    const connectionId = Date.now().toString();
+    connectionGenerationRef.current += 1;
+    const myGeneration = connectionGenerationRef.current;
+    
+    // connectionId 생성 및 할당
+    connectionIdRef.current = crypto.randomUUID().slice(0, 8);
+    const connectionId = connectionIdRef.current;
     activeSessionIdRef.current = connectionId;
 
     try {
@@ -982,7 +994,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
       // ── 공용 핸들러 — AI Studio(SDK 직결)/Vertex(Cloud Run 릴레이) 두 경로가 공유 ──
       function handleOpen() {
-        console.log("[K] ✅ Live session open");
+        if (myGeneration !== connectionGenerationRef.current) return;
+        console.log(`${getLogPrefix()} ✅ Live session open`);
         updateStatus("live");
         notifyUsageLive("start");
 
@@ -1003,6 +1016,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       
 
       function handleMessage(msg: NormalizedServerMessage) {
+        if (myGeneration !== connectionGenerationRef.current) return;
         if (activeSessionIdRef.current !== connectionId) return;
 
 const incomingGenerationId = currentKGenerationIdRef.current;
@@ -1071,7 +1085,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
             return; // 낡은 interrupted 무시
           }
           
-          console.log("[K] 🖐️ server interrupted — finalize & discard remaining K turn");
+          console.log(`${getLogPrefix()} 🖐️ server interrupted — finalize & discard remaining K turn`);
           stopAllScheduledSources();
           if (!kTurnCutRef.current) {
             cutActiveKTurnForBargeIn();
@@ -1125,6 +1139,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         if (sc.turnComplete) {
           if (isCancelledGeneration) return;
           if (isAlreadyProcessed) return;
+          console.log(`${getLogPrefix()} 🏁 server turnComplete`);
           logTelemetryEvent("turnComplete");
           
           kGenerationCompleteRef.current = true;
@@ -1257,14 +1272,16 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       }
 
       function handleError(message: string) {
-        console.error("[K] ❌ error:", message);
+        if (myGeneration !== connectionGenerationRef.current) return;
+        console.error(`${getLogPrefix()} ❌ error:`, message);
         setError(message);
         updateStatus("error");
         teardown();
       }
 
       function handleClose(code: number, reason: string) {
-        console.log("[K] 🔌 closed — code:", code, reason || "");
+        if (myGeneration !== connectionGenerationRef.current) return;
+        console.log(`${getLogPrefix()} 🔌 closed — code:`, code, reason || "");
         // 세션 종료 전 미완료 아이/K 턴 flush
         if (pendingChildTextRef.current || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) {
           flushChildTurn(pendingChildTextRef.current);
@@ -1296,7 +1313,8 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       const ws = new WebSocket(tokenData.wsUrl);
 
       const handleRelayError = (reason?: string, code?: number) => {
-        console.error("[K] ❌ Vertex relay error:", reason, "code:", code);
+        if (myGeneration !== connectionGenerationRef.current) return;
+        console.error(`${getLogPrefix()} ❌ Vertex relay error:`, reason, "code:", code);
         // 아이 화면 문구는 그대로 두되(Plan7 §2), 브라우저에서만 보이던 실제 실패 사유를
         // 서버 로그로도 남겨 원인 진단이 가능하게 한다(음성/transcript 등은 보내지 않음).
         fetch("/api/voice/relay-error", {
@@ -1328,9 +1346,11 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         }
       };
       ws.onerror = () => {
-        console.error("[K] ❌ relay WebSocket-level error");
+        if (myGeneration !== connectionGenerationRef.current) return;
+        console.error(`${getLogPrefix()} ❌ relay WebSocket-level error`);
       };
       ws.onclose = (e) => {
+        if (myGeneration !== connectionGenerationRef.current) return;
         // "ready"(=Vertex 세션 실제 오픈) 도달 전에 끊기면 연결 실패로 간주
         if (statusRef.current === "connecting") {
           handleRelayError(e.reason || "relay closed before ready", e.code);
@@ -1408,7 +1428,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                     cutActiveKTurnForBargeIn();
 
                     // 1. activityStart 전송 (정확히 1회)
-                    console.log("[VAD] Auto Speech Start -> send activityStart");
+                    console.log(`${getLogPrefix()} [VAD] Auto Speech Start -> send activityStart`);
                     isChildSpeakingRef.current = true;
 
                     activeChildTurnIdRef.current = nextTurnId();
@@ -1473,7 +1493,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                 if (!silenceTimerRef.current) {
                   silenceTimerRef.current = setTimeout(() => {
                     if (statusRef.current === "live" && sessionRef.current && vadStateRef.current === "active") {
-                      console.log("[VAD] Auto Speech End -> send activityEnd");
+                      console.log(`${getLogPrefix()} [VAD] Auto Speech End -> send activityEnd`);
                       logTelemetryEvent("sendActivityEnd");
                       kGenerationSeqRef.current += 1;
                       currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
@@ -1604,7 +1624,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     kTurnHasAudioRef.current = false;
     clearWatchdogTimer();
     watchdogTimerRef.current = setTimeout(() => {
-      console.warn("[K] Watchdog timer fired. Attempting recovery...");
+      console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
       onRecoveryNeededRef.current?.();
       updateStatus("ended");
       teardown();
@@ -1640,7 +1660,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     kTurnHasAudioRef.current = false;
     clearWatchdogTimer();
     watchdogTimerRef.current = setTimeout(() => {
-      console.warn("[K] Watchdog timer fired. Attempting recovery...");
+      console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
       onRecoveryNeededRef.current?.();
       updateStatus("ended");
       teardown();
@@ -1688,7 +1708,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     kTurnHasAudioRef.current = false;
     clearWatchdogTimer();
     watchdogTimerRef.current = setTimeout(() => {
-      console.warn("[K] Watchdog timer fired. Attempting recovery...");
+      console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
       onRecoveryNeededRef.current?.();
       updateStatus("ended");
       teardown();
@@ -1744,7 +1764,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     }
     if (!sessionRef.current || statusRef.current !== "live") return false;
     console.error(`[Timing] (a) 마이크 활성화(activityStart) - ${Date.now()}`);
-    console.log("[K] 📡 sendActivityStart");
+    console.log(`${getLogPrefix()} 📡 sendActivityStart (Manual)`);
     stopAllScheduledSources();
     // 수동 모드 barge-in — K가 말하는 도중 아이가 버튼을 눌러 끼어든 경우, 진행 중인 K 턴을
     // "지금까지 표시된 텍스트"로 즉시 확정하고 이후 잔여 오디오/텍스트/turnComplete를 폐기한다.
@@ -1761,7 +1781,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
 
   const sendActivityEnd = useCallback((): boolean => {
     if (!sessionRef.current || statusRef.current !== "live") return false;
-    console.log("[K] 📡 sendActivityEnd");
+    console.log(`${getLogPrefix()} 📡 sendActivityEnd (Manual)`);
     isChildSpeakingRef.current = false;
     
     // 수동 모드 지연 원인 수정: activityEnd만 보내면 Live 서버가 turnComplete로 인식하지 않고 
