@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { data: sessionData, error: rpcErr } = await service
+  const { data, error: rpcErr } = await service
     .rpc("get_or_create_chat_session", {
       p_child_id: childId,
       p_business_date: businessDate,
@@ -70,14 +70,16 @@ export async function POST(req: NextRequest) {
     })
     .single();
 
+  const sessionData = data as { id: string; created: boolean } | null;
+
   if (rpcErr || !sessionData) {
     console.error("[chat/session] rpc error:", rpcErr);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
   return NextResponse.json({
-    resumed: !(sessionData as any).created,
-    sessionId: (sessionData as any).id as string,
+    resumed: !sessionData.created,
+    sessionId: sessionData.id,
     businessDate,
     conversationWindow,
   });
