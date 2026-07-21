@@ -12,6 +12,152 @@ export type ReflectiveCategory =
   | "safety_signal"
   | "neutral_statement";
 
+export const UNCLEAR_AUDIO_TEMPLATES = [
+  "말을 잘 못 알아들었어. 다시 말해도 괜찮아.",
+  "미안해, 잘 안 들렸어. 다시 한 번 말해줄래?",
+  "음, 무슨 말인지 놓쳤어. 다시 얘기해줄 수 있을까?",
+  "내가 잘 이해를 못했어. 다시 말해줄래?",
+  "미안, 다시 한 번만 말해주면 안 될까?",
+  "아, 잘 못 들었어. 다시 말해줄래?",
+  "어, 다시 한 번 얘기해줄래?",
+  "미안한데, 다시 한 번 말해주면 좋겠어.",
+  "잘 안 들렸어, 다시 말해줄 수 있어?",
+  "음, 놓쳐버렸어. 다시 말해줄래?",
+  "뭐라고 했는지 못 들었어. 다시 말해줘.",
+  "아차, 못 들었네. 다시 얘기해줄래?",
+  "미안, 한 번만 더 말해줄래?",
+  "잘 못 알아들었어. 다시 얘기해줘.",
+  "어라, 잘 안 들렸어. 다시 말해볼래?",
+  "다시 한 번 말해줄 수 있을까? 잘 못 들었어.",
+  "미안, 무슨 말인지 잘 안 들렸어.",
+  "응? 다시 한 번 말해줄래?",
+  "다시 얘기해줘, 잘 안 들렸거든.",
+  "뭐라고 했어? 다시 말해줄래?",
+  "잘 못 들었어. 한 번 더 말해줄래?"
+];
+
+export const APP_MODE_TEMPLATES = [
+  "그건 잘 모르겠어.",
+  "아쉽게도 그 부분은 내가 잘 몰라.",
+  "미안해, 그건 내가 대답하기 어려워.",
+  "그건 내가 아는 내용이 아니네.",
+  "음, 그건 잘 모르겠어.",
+  "아, 그건 내가 잘 모르는 거야.",
+  "미안, 그건 잘 모르겠네.",
+  "어, 그건 잘 모르겠어.",
+  "저기, 그건 내가 잘 모르는 부분이야.",
+  "그건 대답하기가 좀 어려워.",
+  "미안한데, 그건 잘 모르겠어.",
+  "그 부분은 내가 잘 모르는 거네.",
+  "음... 그건 내가 잘 모르는 내용이야.",
+  "아쉽지만 그건 잘 모르겠어.",
+  "그건 잘 모르겠는데?",
+  "그건 내가 잘 알지 못하는 거야.",
+  "미안해, 그건 잘 모르겠어.",
+  "그건 내가 대답하기 힘든 질문이네.",
+  "그건 잘 모르는 거야. 미안해.",
+  "어, 그건 내가 잘 모르겠어.",
+  "그건 내가 잘 아는 게 아니야."
+];
+
+export const REPEAT_TEMPLATES = [
+  "계속 반복돼서 답답했구나.",
+  "아, 계속 반복돼서 답답했구나.",
+  "음, 계속 반복돼서 답답했구나.",
+  "그래, 계속 반복돼서 답답했구나.",
+  "자꾸 반복돼서 답답했구나.",
+  "반복되니까 답답했구나.",
+  "아, 반복돼서 많이 답답했구나.",
+  "음, 자꾸 반복되니까 답답했지.",
+  "계속 반복되니까 답답했구나.",
+  "반복되는 게 답답했구나.",
+  "아하, 반복돼서 답답했구나.",
+  "맞아, 반복되면 답답하지.",
+  "음, 계속 반복돼서 답답했지.",
+  "어, 반복돼서 답답했구나.",
+  "저런, 계속 반복돼서 답답했구나.",
+  "계속 반복되어서 답답했구나.",
+  "반복돼서 답답했지?",
+  "자꾸 반복되는 게 답답했구나.",
+  "그래, 계속 반복되니까 답답했겠다.",
+  "아, 반복돼서 답답한 거구나.",
+  "음, 계속 반복되는 게 답답했구나."
+];
+
+export const STOP_TEMPLATES = [
+  "이제 그만했으면 좋겠구나.",
+  "아, 이제 그만했으면 좋겠구나.",
+  "음, 이제 그만했으면 좋겠구나.",
+  "그래, 이제 그만했으면 좋겠구나.",
+  "그만했으면 좋겠구나.",
+  "이제 그만하고 싶구나.",
+  "아, 그만했으면 하는구나.",
+  "음, 이제 그만하고 싶구나.",
+  "그만했으면 좋겠다는 뜻이구나.",
+  "아하, 이제 그만하고 싶다는 거구나.",
+  "맞아, 이제 그만했으면 좋겠지.",
+  "음, 그만했으면 좋겠다는 거지.",
+  "어, 이제 그만했으면 좋겠구나.",
+  "저런, 이제 그만했으면 좋겠구나.",
+  "이제 그만할까 싶구나.",
+  "그만했으면 좋겠지?",
+  "이제 그만했으면 하는 마음이구나.",
+  "그래, 그만하고 싶구나.",
+  "아, 이제 그만하고 싶은 거구나.",
+  "음, 그만했으면 좋겠구나.",
+  "이제 그만하고 싶다는 이야기구나."
+];
+
+export const PASSIVE_TEMPLATES = [
+  "수동으로 이야기하고 싶구나.",
+  "아, 수동으로 이야기하고 싶구나.",
+  "음, 수동으로 이야기하고 싶구나.",
+  "그래, 수동으로 이야기하고 싶구나.",
+  "수동으로 하고 싶구나.",
+  "수동 모드로 이야기하고 싶구나.",
+  "아, 수동으로 하고 싶구나.",
+  "음, 수동으로 이야기하고 싶다는 거구나.",
+  "수동으로 이야기하고 싶다는 뜻이구나.",
+  "아하, 수동으로 하고 싶구나.",
+  "맞아, 수동으로 이야기하고 싶지.",
+  "음, 수동으로 하고 싶다는 거지.",
+  "어, 수동으로 이야기하고 싶구나.",
+  "수동 모드를 원하는구나.",
+  "수동으로 이야기할까 싶구나.",
+  "수동으로 하고 싶지?",
+  "수동으로 이야기하고 싶은 마음이구나.",
+  "그래, 수동으로 하고 싶구나.",
+  "아, 수동으로 하고 싶은 거구나.",
+  "음, 수동으로 하고 싶구나.",
+  "수동으로 이야기하고 싶다는 이야기구나."
+];
+
+export function getNeutralTemplates(formatted: string): string[] {
+  return [
+    `${formatted}구나.`,
+    `아, ${formatted}구나.`,
+    `음, ${formatted}구나.`,
+    `그래, ${formatted}구나.`,
+    `그렇게 ${formatted}구나.`,
+    `정말 ${formatted}구나.`,
+    `아하, ${formatted}구나.`,
+    `음... ${formatted}구나.`,
+    `진짜 ${formatted}구나.`,
+    `오, ${formatted}구나.`,
+    `맞아, ${formatted}구나.`,
+    `응, ${formatted}구나.`,
+    `어, ${formatted}구나.`,
+    `저런, ${formatted}구나.`,
+    `그랬지, ${formatted}구나.`,
+    `아무래도 ${formatted}구나.`,
+    `역시 ${formatted}구나.`,
+    `그렇지, ${formatted}구나.`,
+    `그러게, ${formatted}구나.`,
+    `확실히 ${formatted}구나.`,
+    `정말로 ${formatted}구나.`
+  ];
+}
+
 export interface ReactionSeedItem {
   id: string;
   intent: string;
@@ -144,14 +290,89 @@ export function classifyAndExtract(text: string, opts?: ReflectiveReactionOption
   }
 
   // fallback if too vague
-  return { category: "neutral_statement", extracted: null };
+  const cleanText = text.replace(/[.?!,]/g, '').trim();
+  if (cleanText.length >= 2) {
+    const normText = cleanText.replace(/\s+/g, '');
+    if (normText.includes("너무많이반복해")) return { category: "neutral_statement", extracted: "계속 반복돼서 답답했" };
+    if (normText.includes("이제그만해")) return { category: "neutral_statement", extracted: "이제 그만했으면 좋겠" };
+    if (normText.includes("수동으로해줘")) return { category: "neutral_statement", extracted: "수동으로 이야기하고 싶" };
+    
+    return { category: "neutral_statement", extracted: cleanText };
+  }
+  return { category: "unclear_audio", extracted: null };
 }
 
-function pickAvoiding<T>(list: T[], avoid: Set<string>, textOf: (item: T) => string, rand: () => number): T | null {
-  const candidates = list.filter((item) => !avoid.has(textOf(item)));
-  const finalPool = candidates.length > 0 ? candidates : list;
-  if (finalPool.length === 0) return null;
-  return finalPool[Math.floor(rand() * finalPool.length)];
+function normalizeText(t: string) {
+  return t.replace(/[\s.?!,]/g, '');
+}
+
+
+const VARIANTS = [
+  (t: string) => `아, ${t}`,
+  (t: string) => `음, ${t}`,
+  (t: string) => `그렇구나. ${t}`,
+  (t: string) => `그래, ${t}`,
+  (t: string) => `${t} 그랬구나.`,
+  (t: string) => `정말 ${t}`,
+  (t: string) => `${t} 맞지?`,
+  (t: string) => `${t} 알겠어.`,
+  (t: string) => `${t} 이해했어.`,
+  (t: string) => `아하, ${t}`,
+  (t: string) => `음... ${t}`,
+  (t: string) => `진짜 ${t}`,
+  (t: string) => `그랬구나, ${t}`,
+  (t: string) => `그렇게 ${t}`,
+  (t: string) => `정말로 ${t}`,
+  (t: string) => `오, ${t}`,
+  (t: string) => `그렇구나, ${t}`,
+  (t: string) => `알았어. ${t}`,
+  (t: string) => `${t} 그렇구나.`,
+  (t: string) => `맞아, ${t}`,
+  (t: string) => `응, ${t}`,
+  (t: string) => `어, ${t}`,
+  (t: string) => `저런, ${t}`,
+  (t: string) => `그랬구나... ${t}`
+];
+
+function pickAvoiding<T>(
+  list: T[], 
+  history: string[], 
+  textOf: (item: T) => string, 
+  rand: () => number,
+  mutate?: (item: T, idx: number) => T
+): T | null {
+  if (list.length === 0) return null;
+  const normHistory = history.filter(Boolean).map(normalizeText);
+  const avoid = new Set(normHistory);
+
+  let candidates = list.filter((item) => !avoid.has(normalizeText(textOf(item))));
+  
+  if (candidates.length > 0) {
+    return candidates[Math.floor(rand() * candidates.length)];
+  }
+
+  if (mutate) {
+    const variations: T[] = [];
+    for (let i = 0; i < VARIANTS.length; i++) {
+      for (const item of list) {
+        variations.push(mutate(item, i));
+      }
+    }
+    candidates = variations.filter((item) => !avoid.has(normalizeText(textOf(item))));
+    if (candidates.length > 0) {
+      return candidates[Math.floor(rand() * candidates.length)];
+    }
+  }
+
+  for (let keep = normHistory.length - 1; keep >= 1; keep--) {
+    const smallerAvoid = new Set(normHistory.slice(-keep));
+    const fallbackCandidates = list.filter(item => !smallerAvoid.has(normalizeText(textOf(item))));
+    if (fallbackCandidates.length > 0) {
+      return fallbackCandidates[Math.floor(rand() * fallbackCandidates.length)];
+    }
+  }
+
+  return list[Math.floor(rand() * list.length)];
 }
 
 function fillSlot(template: string, extracted: string | null): string {
@@ -165,24 +386,51 @@ export function generateReflectiveReaction(
   opts?: ReflectiveReactionOptions
 ): ReflectiveReactionResult {
   const rand = opts?.rand ?? Math.random;
-  const avoid = new Set(recentKTexts.filter(Boolean));
-
+  
   let { category, extracted } = classifyAndExtract(childText, opts);
 
   if (extracted && extracted.length > 15) {
     extracted = null;
   }
 
-  if (category === "unclear_audio") {
-    return { text: "말을 잘 못 알아들었어. 천천히 다시 말해도 괜찮아.", category };
+  
+  if (category === "unclear_audio" || (!extracted && category === "neutral_statement")) {
+    const text = pickAvoiding(UNCLEAR_AUDIO_TEMPLATES, recentKTexts, t => t, rand)!;
+    return { text, category: "unclear_audio" };
   }
   
   if (category === "app_mode_question") {
-    return { text: "그건 잘 모르겠어.", category };
+    const text = pickAvoiding(APP_MODE_TEMPLATES, recentKTexts, t => t, rand)!;
+    return { text, category };
   }
 
-  if (category === "neutral_statement") {
-    return { text: "그랬구나.", category };
+
+  if (category === "neutral_statement" && extracted) {
+    let formatted = extracted;
+    if (formatted === "계속 반복돼서 답답했") {
+       const text = pickAvoiding(REPEAT_TEMPLATES, recentKTexts, t => t, rand)!;
+       return { text, category };
+    }
+    if (formatted === "이제 그만했으면 좋겠") {
+       const text = pickAvoiding(STOP_TEMPLATES, recentKTexts, t => t, rand)!;
+       return { text, category };
+    }
+    if (formatted === "수동으로 이야기하고 싶") {
+       const text = pickAvoiding(PASSIVE_TEMPLATES, recentKTexts, t => t, rand)!;
+       return { text, category };
+    }
+
+    if (formatted.endsWith("해줘")) formatted = formatted.replace(/해줘$/, "하고 싶");
+    else if (formatted.endsWith("해")) formatted = formatted.replace(/해$/, "하");
+    else if (formatted.endsWith("고 싶어")) formatted = formatted.replace(/고 싶어$/, "고 싶");
+    else if (formatted.endsWith("싶어")) formatted = formatted.replace(/싶어$/, "싶");
+    else if (formatted.endsWith("야")) formatted = formatted.replace(/야$/, "이");
+    else if (formatted.endsWith("다")) formatted = formatted.replace(/다$/, "");
+    else if (formatted.endsWith("어")) formatted = formatted.replace(/어$/, "었");
+
+    const templates = getNeutralTemplates(formatted);
+    const reflectText = pickAvoiding(templates, recentKTexts, t => t, rand);
+    return { text: reflectText!, category };
   }
 
   let pool = reactionSeed.filter((item) => item.intent === category);
@@ -196,7 +444,10 @@ export function generateReflectiveReaction(
   }
 
   if (pool.length === 0) {
-    return { text: "그랬구나.", category };
+    {
+    const text = pickAvoiding(UNCLEAR_AUDIO_TEMPLATES, recentKTexts, t => t, rand)!;
+    return { text, category: "unclear_audio" };
+  }
   }
 
   const filledPool = pool.map(item => ({
@@ -204,19 +455,28 @@ export function generateReflectiveReaction(
     filledText: fillSlot(item.text, extracted)
   }));
 
-  const reflectItem = pickAvoiding(filledPool, avoid, (item) => item.filledText, rand);
+  const reflectItem = pickAvoiding(filledPool, recentKTexts, (item) => item.filledText, rand, (item, idx) => ({ ...item, filledText: VARIANTS[idx % VARIANTS.length](item.filledText) }));
   if (!reflectItem) {
-    return { text: "그랬구나.", category };
+    {
+    const text = pickAvoiding(UNCLEAR_AUDIO_TEMPLATES, recentKTexts, t => t, rand)!;
+    return { text, category: "unclear_audio" };
+  }
   }
 
   let finalText = reflectItem.filledText;
 
   if (finalText.includes("{")) {
-    finalText = "그랬구나.";
+    {
+    const text = pickAvoiding(UNCLEAR_AUDIO_TEMPLATES, recentKTexts, t => t, rand)!;
+    return { text, category: "unclear_audio" };
+  }
   }
 
   if (finalText.split(/\s+/).length > 15) {
-    finalText = "그랬구나.";
+    {
+    const text = pickAvoiding(UNCLEAR_AUDIO_TEMPLATES, recentKTexts, t => t, rand)!;
+    return { text, category: "unclear_audio" };
+  }
   }
 
   return { text: finalText, category };

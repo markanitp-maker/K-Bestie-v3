@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyAndExtract, generateReflectiveReaction, type ReflectiveCategory } from "./reactionEngine";
+import { classifyAndExtract, generateReflectiveReaction, type ReflectiveCategory, REPEAT_TEMPLATES, STOP_TEMPLATES, PASSIVE_TEMPLATES, UNCLEAR_AUDIO_TEMPLATES, APP_MODE_TEMPLATES } from "./reactionEngine";
 
 const zeroRand = () => 0;
 
@@ -70,7 +70,7 @@ test("classifyAndExtract: 저신뢰 ASR이면 항상 unclear_audio", () => {
 test("generateReflectiveReaction: 저신뢰 ASR이면 구체적 내용을 지어내지 않는다", () => {
   const reaction = generateReflectiveReaction("asdf 잘안들려 mumble", [], { isLowConfidenceAsr: true, rand: zeroRand });
   assert.equal(reaction.category, "unclear_audio");
-  assert.equal(reaction.text, "말을 잘 못 알아들었어. 천천히 다시 말해도 괜찮아.");
+  assert.equal(reaction.text, "말을 잘 못 알아들었어. 다시 말해도 괜찮아.");
 });
 
 // 동일 문장 반복 방지
@@ -86,4 +86,76 @@ test("generateReflectiveReaction: app_mode_question 반환 확인", () => {
   const reaction = generateReflectiveReaction("레고 수동으로 동작해?", [], { rand: zeroRand });
   assert.equal(reaction.category, "app_mode_question");
   assert.equal(reaction.text, "그건 잘 모르겠어.");
+});
+
+// 1. 3개 예시 매핑 및 과잉 일반화 방지 테스트
+test("generateReflectiveReaction: 대표님 지정 3개 매핑 최종 출력 텍스트 검증 및 부정어 회귀 테스트", () => {
+  const r1 = generateReflectiveReaction("너무 많이 반복해", [], { rand: zeroRand });
+  assert.ok(REPEAT_TEMPLATES.includes(r1.text), `비정상 문장 생성: ${r1.text}`);
+  
+  const r2 = generateReflectiveReaction("이제 그만해", [], { rand: zeroRand });
+  assert.ok(STOP_TEMPLATES.includes(r2.text), `비정상 문장 생성: ${r2.text}`);
+  
+  const r3 = generateReflectiveReaction("수동으로 해줘", [], { rand: zeroRand });
+  assert.ok(PASSIVE_TEMPLATES.includes(r3.text), `비정상 문장 생성: ${r3.text}`);
+
+  // 부정문 오추론 방지 회귀 테스트
+  const r4 = generateReflectiveReaction("자동 안내가 싫어", [], { rand: zeroRand });
+  assert.equal(r4.text, "자동 안내가 싫었구나.");
+});
+
+// 2. neutral 특수 분기의 반복 방지
+test("generateReflectiveReaction: neutral_statement 템플릿 반복 방지 동작 (20턴 회피 검증)", () => {
+  const history: string[] = [];
+  for (let i = 0; i < 20; i++) {
+    const res = generateReflectiveReaction("수동 싫어", history, { rand: zeroRand });
+    assert.ok(!history.includes(res.text), `중복 발생: ${res.text} (턴: ${i})`);
+    history.push(res.text);
+  }
+});
+
+// 3. 3개 특수 매핑에 대한 반복 방지
+test("generateReflectiveReaction: 3개 특수 매핑 응답도 반복 방지가 적용됨 (20턴 회피 검증)", () => {
+  const history: string[] = [];
+  for (let i = 0; i < 20; i++) {
+    const res = generateReflectiveReaction("너무 많이 반복해", history, { rand: zeroRand });
+    assert.ok(!history.includes(res.text), `중복 발생: ${res.text} (턴: ${i})`);
+    assert.ok(REPEAT_TEMPLATES.includes(res.text), `비정상 문장 생성: ${res.text}`);
+    history.push(res.text);
+  }
+});
+
+test("generateReflectiveReaction: unclear_audio 반복 방지 동작 (20턴 회피 검증)", () => {
+  const history: string[] = [];
+  for (let i = 0; i < 20; i++) {
+    const res = generateReflectiveReaction("asdf 잘안들려 mumble", history, { isLowConfidenceAsr: true, rand: zeroRand });
+    assert.ok(!history.includes(res.text), `중복 발생: ${res.text} (턴: ${i})`);
+    assert.ok(UNCLEAR_AUDIO_TEMPLATES.includes(res.text), `비정상 문장 생성: ${res.text}`);
+    history.push(res.text);
+  }
+});
+
+test("generateReflectiveReaction: app_mode_question 반복 방지 동작 (20턴 회피 검증)", () => {
+  const history: string[] = [];
+  for (let i = 0; i < 20; i++) {
+    const res = generateReflectiveReaction("레고 수동으로 동작해?", history, { rand: zeroRand });
+    assert.ok(!history.includes(res.text), `중복 발생: ${res.text} (턴: ${i})`);
+    assert.ok(APP_MODE_TEMPLATES.includes(res.text), `비정상 문장 생성: ${res.text}`);
+    history.push(res.text);
+  }
+});
+
+// 4. '그랬구나' 단독 응답 및 제네릭 fallback 금지 확인, fail-closed 동작 확인
+test("generateReflectiveReaction: 단독 제네릭 응답 금지 및 fail-closed 처리", () => {
+  // extracted가 너무 길어서 null이 되는 경우 (unclear_audio로 fail-closed 되어야 함)
+  const res = generateReflectiveReaction("이건정말아주많이매우엄청나게긴중립문장입니다", [], { rand: zeroRand });
+  assert.equal(res.category, "unclear_audio");
+  assert.equal(res.text, "말을 잘 못 알아들었어. 다시 말해도 괜찮아.");
+  
+  // 전체 대표 샘플에 대해 "그런 마음이었구나." 또는 "그랬구나."(단독)이 나오지 않음을 확인
+  for (const { text } of REPRESENTATIVE) {
+    const reaction = generateReflectiveReaction(text, [], { rand: zeroRand });
+    assert.notEqual(reaction.text, "그런 마음이었구나.");
+    assert.notEqual(reaction.text, "그랬구나.");
+  }
 });
