@@ -102,6 +102,7 @@ function MissionInner() {
   const [completed, setCompleted] = useState(false);
   const [engineVersion, setEngineVersion] = useState("v1");
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
+  const [inputErrorNotice, setInputErrorNotice] = useState<string | null>(null);
   // active → completing → completed (자세한 전이 규칙은 lib/mission/missionCompletionFlow.ts 참고).
   // completing부터 이미 100% 취급(마이크·입력 비활성화) — completed와의 차이는 "종료 발화가
   // 아직 재생 중인지"뿐이다.
@@ -221,7 +222,12 @@ function MissionInner() {
     }
     
     if (fallbackMessage) {
-      askQuestionRef.current?.(currentIndexRef.current, fallbackMessage);
+      if (isLiveModeRef.current) {
+        askQuestionRef.current?.(currentIndexRef.current, fallbackMessage);
+      } else {
+        setInputErrorNotice(fallbackMessage);
+        setTimeout(() => setInputErrorNotice(null), 3000);
+      }
     }
   }, [setTurnPhase]);
 
@@ -702,6 +708,9 @@ function MissionInner() {
     getSessionId: () => sessionIdRef.current,
     onEmptyAudio: () => {
       if (!isLiveModeRef.current) resetToIdle("잘 안 들렸어. 다시 말해줄래?");
+    },
+    onSttFailed: (reason) => {
+      resetToIdle("잘 못 들었어요, 다시 말해줄래?");
     }
   });
   sttSetMicEnabledRef.current = sttTts.setMicEnabled;
@@ -1514,6 +1523,11 @@ function MissionInner() {
           {recoveryNotice && (
             <div className="mt-2 text-center text-xs font-bold text-orange-600 bg-orange-50 py-1 rounded-full border border-orange-200">
               {recoveryNotice}
+            </div>
+          )}
+          {inputErrorNotice && (
+            <div className="mt-2 text-center text-xs font-bold text-orange-600 bg-orange-50 py-1 rounded-full border border-orange-200 animate-in fade-in">
+              {inputErrorNotice}
             </div>
           )}
         </div>

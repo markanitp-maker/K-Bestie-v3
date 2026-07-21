@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
 
     if (!gcpRes.ok) {
       // 응답 바디에 API 키가 섞여있을 수 있으므로 그대로 노출하지 않음
-      console.error("[mission/stt] GCP STT failed:", gcpRes.status);
+      console.error("[mission/stt] gcp call failed", { status: gcpRes.status, sessionId: body.sessionId });
       return NextResponse.json({ error: "STT request failed" }, { status: 500 });
     }
 
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ transcript, confidence });
   } catch (err) {
-    console.error("[mission/stt] error:", (err as Error).message);
+    console.error("[mission/stt] error:", (err as Error).message, { sessionId: body.sessionId });
     return NextResponse.json({ error: "STT request failed" }, { status: 500 });
   }
 }

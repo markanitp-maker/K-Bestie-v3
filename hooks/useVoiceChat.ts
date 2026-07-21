@@ -20,6 +20,8 @@ export interface UseVoiceChatOptions {
   getSessionId?: () => string | null;
   /** 빈 음성 감지 시 호출 (미션 전용) */
   onEmptyAudio?: () => void;
+  /** STT 텍스트 변환 실패 시 호출 */
+  onSttFailed?: (reason?: string) => void;
 }
 
 const POLL_INTERVAL_MS = 1300;       // 중간 자막 갱신 주기
@@ -59,6 +61,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   onTurnCompleteRef.current = options?.onTurnComplete;
   const onEmptyAudioRef = useRef<(() => void) | undefined>(undefined);
   onEmptyAudioRef.current = options?.onEmptyAudio;
+  const onSttFailedRef = useRef<((reason?: string) => void) | undefined>(undefined);
+  onSttFailedRef.current = options?.onSttFailed;
 
   const micStreamRef = useRef<MediaStream | null>(null);
   const inputCtxRef = useRef<AudioContext | null>(null);
@@ -110,7 +114,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setTranscript([...transcriptRef.current]);
   }
 
-  async function callStt(audioBase64: string, customSignal?: AbortSignal): Promise<{ text: string; confidence?: number }> {
+  async function callStt(audioBase64: string, customSignal?: AbortSignal): Promise<{ text: string; confidence?: number; failureReason?: "network" | "http_error" | "timeout" | "aborted" }> {
     try {
       sttAbortControllerRef.current = new AbortController();
       const signal = customSignal ?? sttAbortControllerRef.current.signal;
@@ -122,15 +126,21 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         body: JSON.stringify({ audioBase64, sessionId }),
         signal,
       });
-      if (signal.aborted) throw new Error("aborted");
-      if (!res.ok) return { text: "" };
+      if (signal.aborted) return { text: "", failureReason: "aborted" };
+      if (!res.ok) {
+        console.error("[STT] http error", res.status);
+        return { text: "", failureReason: "http_error" };
+      }
       const data = await res.json();
       return { 
         text: typeof data.transcript === "string" ? data.transcript.trim() : "",
         confidence: typeof data.confidence === "number" ? data.confidence : undefined
       };
-    } catch {
-      return { text: "" };
+    } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        return { text: "", failureReason: "aborted" };
+      }
+      return { text: "", failureReason: "network" };
     }
   }
 
@@ -147,12 +157,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     }
 
     const audioBase64 = encodePCM16Base64(chunks);
-    const { text, confidence } = await callStt(audioBase64, signal);
+    const { text, confidence, failureReason } = await callStt(audioBase64, signal);
     if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 폐기
     if (!text) {
-      const errorText = "음성을 인식하지 못했어요. 다시 말해 주세요.";
-      appendTurn({ role: "k", text: errorText });
-      onTurnCompleteRef.current?.({ role: "k", text: errorText });
+      onSttFailedRef.current?.(failureReason);
       return;
     }
 
