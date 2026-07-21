@@ -176,6 +176,16 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 동안 호출부(missions 페이지)가 "케이 목소리 켜기" 버튼을 노출해 명시적 재시도를 유도한다.
   const [audioLocked, setAudioLocked] = useState(false);
 
+  // 미션 모드에서 아이의 답변을 듣는 중일 때 모델이 마이크 소리에 자체적으로 반응하여
+  // 의도치 않은 발화를 생성하는 것을 막기 위한 가드.
+  const kSpeechAllowedRef = useRef(true);
+  const setKSpeechAllowed = useCallback((allowed: boolean) => {
+    kSpeechAllowedRef.current = allowed;
+    if (!allowed) {
+      console.log("[K] 🔇 unprompted speech guard activated (kSpeechAllowed=false)");
+    }
+  }, []);
+
   const statusRef     = useRef<SessionStatus>("idle");
   const transcriptRef = useRef<Turn[]>([]);
   const sessionRef    = useRef<LiveTransport | null>(null);
@@ -1006,18 +1016,20 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         if (msg.data && !kTurnCutRef.current) {
           if (isCancelledGeneration) return;
           if (isAlreadyProcessed) return;
-          if (!hasFiredFirstOutputRef.current) {
-            hasFiredFirstOutputRef.current = true;
-            clearGenerationTimeout();
-            logTelemetryEvent("firstAudioChunk");
-            onKTurnFirstOutputRef.current?.();
-          }
-          scheduleAudio(msg.data);
-          // 전용 종료 발화 턴에서 실제 오디오가 처음 스케줄된 순간 1회만 통지 —
-          // 미션 종료 플로우가 2.5초 TTS 폴백을 취소하는 신호.
-          if (postCompletionLockRef.current === "closingActive" && !closingAudioStartedFiredRef.current) {
-            closingAudioStartedFiredRef.current = true;
-            onClosingAudioChunkRef.current?.();
+          if (kSpeechAllowedRef.current) {
+            if (!hasFiredFirstOutputRef.current) {
+              hasFiredFirstOutputRef.current = true;
+              clearGenerationTimeout();
+              logTelemetryEvent("firstAudioChunk");
+              onKTurnFirstOutputRef.current?.();
+            }
+            scheduleAudio(msg.data);
+            // 전용 종료 발화 턴에서 실제 오디오가 처음 스케줄된 순간 1회만 통지 —
+            // 미션 종료 플로우가 2.5초 TTS 폴백을 취소하는 신호.
+            if (postCompletionLockRef.current === "closingActive" && !closingAudioStartedFiredRef.current) {
+              closingAudioStartedFiredRef.current = true;
+              onClosingAudioChunkRef.current?.();
+            }
           }
         }
 
@@ -1154,7 +1166,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
             kTurnLeakDetectedRef.current = true;
             console.warn("[K] ⚠️ prompt leak pattern detected in K speech — suppressing display for this turn");
           }
-          if (!kTurnLeakDetectedRef.current) {
+          if (kSpeechAllowedRef.current && !kTurnLeakDetectedRef.current) {
             console.log("[K] 💬 k:", outTx);
             appendTurn({ role: "k", text: outTx, id: activeKTurnIdRef.current ?? undefined, generationId: currentKGenerationIdRef.current ?? undefined, displaySequence: activeKTurnDisplaySequenceRef.current ?? undefined });
           }
@@ -1735,7 +1747,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
   return {
     status, error, transcript, interimChildText, audioLocked,
     startSession, stopSession, pauseSession, getTranscript, reset,
-    sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn, seedTranscript,
+    sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn, seedTranscript, setKSpeechAllowed,
     lockNow, speakClosingLine, unlockAudio,
     setInteractionMode, sendActivityStart, sendActivityEnd,
     cancelCurrentGeneration, logTelemetryEvent

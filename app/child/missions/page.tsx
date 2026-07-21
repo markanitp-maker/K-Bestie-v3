@@ -195,6 +195,8 @@ function MissionInner() {
     }
     answerInFlightRef.current = false;
     setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
     setIsRecording(false);
     isRecordingRef.current = false;
     
@@ -318,6 +320,8 @@ function MissionInner() {
         // 정리하지 못한 극히 좁은 경합 구간이면 역시 폐기한다(원래 로직 그대로 유지).
         if (answerInFlightRef.current) {
           setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
           return;
         }
       } else if (!shouldAcceptChildTurn({
@@ -339,6 +343,8 @@ function MissionInner() {
       }
       if (!isLive && turnPhaseRef.current === "awaiting_stt_result") {
         setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
         if (isAutoRef.current && missionStateRef.current === "active") {
           sttSetMicEnabledRef.current?.(true);
         }
@@ -352,6 +358,8 @@ function MissionInner() {
     const sid = sessionIdRef.current;
     if (!question || !sid) {
       if (isLive) setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
       return;
     }
 
@@ -378,8 +386,11 @@ function MissionInner() {
           manualAbortControllerRef.current = null;
         }
         setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
         if (liveRef.current?.status === "live") {
-          const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+          if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
+              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
           if (!success) {
             resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
           }
@@ -421,7 +432,10 @@ function MissionInner() {
               manualTimeoutRef.current = null;
             }
             setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
+              if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
               if (!success) {
                 resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
@@ -501,7 +515,10 @@ function MissionInner() {
               manualTimeoutRef.current = null;
             }
             setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
+              if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
               if (!success) {
                 resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
@@ -526,7 +543,10 @@ function MissionInner() {
               manualTimeoutRef.current = null;
             }
             setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
+              if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
               if (!success) {
                 resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
@@ -567,8 +587,11 @@ function MissionInner() {
                 manualTimeoutRef.current = null;
               }
               setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
               if (liveRef.current?.status === "live") {
-                const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+                if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
+              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
                 if (!success) {
                   resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
                 }
@@ -590,7 +613,10 @@ function MissionInner() {
               manualTimeoutRef.current = null;
             }
             setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
+              if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
               if (!success) {
                 resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
@@ -618,8 +644,11 @@ function MissionInner() {
             manualTimeoutRef.current = null;
           }
           setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
           if (liveRef.current?.status === "live") {
-            const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+            if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
+              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
             if (!success) {
               resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
             }
@@ -640,6 +669,8 @@ function MissionInner() {
           // 되돌린다. speaking_k(K가 정상적으로 답변 중)와 completing/completed는 건드리지 않는다.
           if (isLive && missionStateRef.current === "active" && turnPhaseRef.current === "processing_answer") {
             setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
           }
         }
       }
@@ -679,6 +710,8 @@ function MissionInner() {
       // 여기서 speaking_k를 확실히 awaiting_child로 되돌린다(마이크 영구 잠김 방지, 이중 방어).
       if (missionStateRef.current === "active" && turnPhaseRef.current === "speaking_k") {
         setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
       }
     },
     // K 발화의 "첫 출력(텍스트/오디오)"이 화면/스피커에 도달하는 순간마다 mic를 unlock한다.
@@ -688,12 +721,16 @@ function MissionInner() {
         (turnPhaseRef.current === "speaking_k" || turnPhaseRef.current === "processing_answer")
       ) {
         setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
       }
     },
     // K 턴의 첫 출력이 8초 동안 없어서 generation이 취소되었을 때 호출
     onKTurnTimeout: () => {
       if (missionStateRef.current === "active" && turnPhaseRef.current !== "awaiting_child") {
         setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
         liveRef.current?.appendTurn({ role: "k", text: "통신이 고르지 않아요. 조금 전 대답을 다시 한번 말해줄래요?" });
       }
     },
@@ -705,6 +742,8 @@ function MissionInner() {
       // 발화를 받을 수 있는 awaiting_child로 되돌린다.
       if (missionStateRef.current === "active" && turnPhaseRef.current === "speaking_k") {
         setTurnPhase("awaiting_child");
+        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
       }
     },
     onClosingAudioChunk: () => {
@@ -719,6 +758,7 @@ function MissionInner() {
     onTranscriptRejected: () => {
       if (turnPhaseRef.current === "speaking_k") return; // 이미 재질문 재생 중 — 중복 방지
       setTurnPhase("speaking_k");
+      if (live.setKSpeechAllowed) live.setKSpeechAllowed(true);
       live.speakAsK("잘 못 들었어. 다시 한번 말해줄래?");
     },
     onAudioLevelChange: (level) => {
@@ -834,6 +874,8 @@ function MissionInner() {
     return () => setSessionActive(false);
   }, []);
 
+
+
   // 화면 wake lock — Rules of Hooks 위반 방지를 위해 아래쪽의 phase==="loading"/"closed"/
   // "error" 조기 return들보다 반드시 먼저 호출해야 한다(모든 렌더에서 동일한 순서로 호출
   //돼야 함 — early return 뒤로 옮기면 phase에 따라 훅 호출 개수가 달라져 React #310으로
@@ -879,6 +921,7 @@ function MissionInner() {
     // 마지막(5번째) 질문에도 종료 지시를 텍스트에 심지 않는다 — 종료 발화는 답변 확정 후
     // 별도의 speakClosingLine() 전용 턴으로 처리한다(handleTurnComplete의 completed 분기).
     if (isLiveMode) {
+      if (live.setKSpeechAllowed) live.setKSpeechAllowed(true);
       live.speakAsK(textToSpeak);
     } else {
       void sttTts.speak(textToSpeak); // voiceName 생략 — 서버 기본값(ko-KR-Wavenet-A) 사용
