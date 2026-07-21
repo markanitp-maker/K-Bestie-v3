@@ -364,8 +364,29 @@ function MissionInner() {
     // 답변 처리 시작 — STT/TTS 자동 모드는 마이크가 계속 켜져 있으므로(케이 TTS 재생 중에만
     // speakingRef가 막아줌), classifyAnswer 대기 중(최대 10~32초) 아이가 다시 말하면 RMS
     // 자동확정이 또 다른 child 턴을 만들어낼 수 있었다 — 처리가 끝날 때까지 마이크를 잠근다.
-    if (!isLive) sttSetMicEnabledRef.current?.(false);
     const currentEpoch = ++answerEpochRef.current;
+    if (!isLive) {
+      sttSetMicEnabledRef.current?.(false);
+    } else {
+      manualAbortControllerRef.current = new AbortController();
+      if (manualTimeoutRef.current) clearTimeout(manualTimeoutRef.current);
+      manualTimeoutRef.current = setTimeout(() => {
+        if (answerEpochRef.current !== currentEpoch) return;
+        if (manualAbortControllerRef.current) {
+          manualAbortControllerRef.current.abort();
+          manualAbortControllerRef.current = null;
+        }
+        setTurnPhase("awaiting_child");
+        if (liveRef.current?.status === "live") {
+          const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+          if (!success) {
+            resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+          }
+        } else {
+          resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+        }
+      }, 8000);
+    }
     void (async () => {
       try {
         const res = await fetch("/api/mission/answer", {
@@ -394,7 +415,19 @@ function MissionInner() {
             return;
           }
           if (isLive) {
+            if (manualTimeoutRef.current) {
+              clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+            }
             setTurnPhase("awaiting_child");
+            if (liveRef.current?.status === "live") {
+              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              if (!success) {
+                resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+              }
+            } else {
+              resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+            }
           } else {
             resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
           }
@@ -457,7 +490,19 @@ function MissionInner() {
         const next = pickNextIndex(questionStatesRef.current);
         if (next === -1) {
           if (isLive) {
+            if (manualTimeoutRef.current) {
+              clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+            }
             setTurnPhase("awaiting_child");
+            if (liveRef.current?.status === "live") {
+              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              if (!success) {
+                resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+              }
+            } else {
+              resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+            }
           } else {
             resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
           }
@@ -470,7 +515,19 @@ function MissionInner() {
         const nextQ = questionsRef.current[next];
         if (!nextQ) {
           if (isLive) {
+            if (manualTimeoutRef.current) {
+              clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+            }
             setTurnPhase("awaiting_child");
+            if (liveRef.current?.status === "live") {
+              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              if (!success) {
+                resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+              }
+            } else {
+              resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+            }
           } else {
             resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
           }
@@ -499,7 +556,19 @@ function MissionInner() {
               resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
               return;
             } else {
+              if (manualTimeoutRef.current) {
+                clearTimeout(manualTimeoutRef.current);
+                manualTimeoutRef.current = null;
+              }
               setTurnPhase("awaiting_child");
+              if (liveRef.current?.status === "live") {
+                const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+                if (!success) {
+                  resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+                }
+              } else {
+                resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+              }
               return;
             }
           }
@@ -510,7 +579,19 @@ function MissionInner() {
             resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
             return;
           } else {
+            if (manualTimeoutRef.current) {
+              clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+            }
             setTurnPhase("awaiting_child");
+            if (liveRef.current?.status === "live") {
+              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              if (!success) {
+                resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+              }
+            } else {
+              resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+            }
             return;
           }
         }
@@ -526,7 +607,19 @@ function MissionInner() {
       } catch {
         if (currentEpoch !== answerEpochRef.current) return;
         if (isLive) {
+          if (manualTimeoutRef.current) {
+            clearTimeout(manualTimeoutRef.current);
+            manualTimeoutRef.current = null;
+          }
           setTurnPhase("awaiting_child");
+          if (liveRef.current?.status === "live") {
+            const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+            if (!success) {
+              resetToAwaitingChild("마이크 상태가 이상해요. 다시 말해줄래?");
+            }
+          } else {
+            resetToAwaitingChild("서버 연결이 끊겼어요. 다시 말해줄래?");
+          }
         }
       } finally {
         if (currentEpoch === answerEpochRef.current) {

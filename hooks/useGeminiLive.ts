@@ -634,32 +634,19 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   function appendTurn(turn: Turn) {
     const prev = transcriptRef.current;
     
-    if (turn.id) {
-      const existingIdx = prev.findIndex(t => t.id === turn.id);
+    if (turn.role === "child") {
+      const existingIdx = prev.findIndex(t => turn.id && t.id === turn.id);
       if (existingIdx !== -1) {
         const newPrev = [...prev];
-        const existing = newPrev[existingIdx];
-        if (turn.role === "k") {
-          newPrev[existingIdx] = { 
-            ...existing, 
-            text: existing.text + turn.text, 
-            generationId: turn.generationId ?? existing.generationId 
-          };
-        } else {
-          newPrev[existingIdx] = { ...existing, text: turn.text };
-          for (let i = 0; i < existingIdx; i++) {
-            if (newPrev[i].role === "k") newPrev[i].sealed = true;
-          }
+        newPrev[existingIdx] = { ...newPrev[existingIdx], ...turn };
+        for (let i = 0; i < existingIdx; i++) {
+          if (newPrev[i].role === "k") newPrev[i].sealed = true;
         }
         transcriptRef.current = newPrev;
-        setTranscript([...transcriptRef.current]);
-        return;
+      } else {
+        const sealedPrev = prev.map(t => t.role === "k" ? { ...t, sealed: true } : t);
+        transcriptRef.current = [...sealedPrev, { ...turn, id: turn.id ?? nextTurnId(), displaySequence: turn.displaySequence ?? nextDisplaySequence() }];
       }
-    }
-
-    if (turn.role === "child") {
-      const sealedPrev = prev.map(t => t.role === "k" ? { ...t, sealed: true } : t);
-      transcriptRef.current = [...sealedPrev, { ...turn, id: turn.id ?? nextTurnId(), displaySequence: turn.displaySequence ?? nextDisplaySequence() }];
       setTranscript([...transcriptRef.current]);
       return;
     }
@@ -669,15 +656,30 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       if (turn.generationId && turn.generationId !== currentKGenerationIdRef.current) return;
       const turnKey = `${turn.id ?? activeKTurnIdRef.current}:${turn.generationId}`;
       if (turn.generationId && processedTurnGenerationsRef.current.has(turnKey)) return;
-    }
 
-    const last = prev[prev.length - 1];
-    if (last?.role === "k" && last.generationId === turn.generationId && !last.sealed) {
-      transcriptRef.current = [...prev.slice(0, -1), { ...last, text: last.text + turn.text }];
-    } else {
-      transcriptRef.current = [...prev, { ...turn, id: turn.id ?? activeKTurnIdRef.current ?? nextTurnId(), displaySequence: turn.displaySequence ?? nextDisplaySequence() }];
+      const existingIdx = prev.findIndex(t => turn.id && t.id === turn.id);
+      if (existingIdx !== -1) {
+        const newPrev = [...prev];
+        const existing = newPrev[existingIdx];
+        newPrev[existingIdx] = { 
+          ...existing, 
+          text: existing.text + turn.text, 
+          generationId: turn.generationId ?? existing.generationId 
+        };
+        transcriptRef.current = newPrev;
+        setTranscript([...transcriptRef.current]);
+        return;
+      }
+
+      const last = prev[prev.length - 1];
+      if (last?.role === "k" && last.generationId === turn.generationId && !last.sealed) {
+        transcriptRef.current = [...prev.slice(0, -1), { ...last, text: last.text + turn.text }];
+      } else {
+        transcriptRef.current = [...prev, { ...turn, id: turn.id ?? activeKTurnIdRef.current ?? nextTurnId(), displaySequence: turn.displaySequence ?? nextDisplaySequence() }];
+      }
+      setTranscript([...transcriptRef.current]);
+      return;
     }
-    setTranscript([...transcriptRef.current]);
   }
 
   function concatChunksToBase64(chunks: Uint8Array[]): string {
@@ -730,6 +732,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
     const chunks = childAudioChunksRef.current;
     childAudioChunksRef.current = [];
+    const cid = activeChildTurnIdRef.current ?? nextTurnId();
+    const seq = activeChildTurnDisplaySequenceRef.current ?? nextDisplaySequence();
 
     void (async () => {
       try {
@@ -745,8 +749,6 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
         if (finalText) {
           setInterimChildText("");
-          const cid = activeChildTurnIdRef.current ?? nextTurnId();
-          const seq = activeChildTurnDisplaySequenceRef.current ?? nextDisplaySequence();
           appendTurn({ role: "child", text: finalText, id: cid, displaySequence: seq });
           onTurnCompleteRef.current?.({ role: "child", text: finalText, id: cid, displaySequence: seq });
         } else {
