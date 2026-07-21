@@ -37,30 +37,6 @@ export async function POST(req: NextRequest) {
 
   const service = createServiceClient();
 
-  const { data: existingSessionRow, error: existingSessionErr } = await service
-    .from("chat_sessions")
-    .select("id")
-    .eq("child_id", childId)
-    .eq("session_type", "free")
-    .eq("business_date", businessDate)
-    .eq("conversation_window", conversationWindow)
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (existingSessionErr) {
-    console.error("[chat/session] query error:", existingSessionErr);
-    return NextResponse.json({ error: "Database error" }, { status: 500 });
-  }
-
-  if (existingSessionRow) {
-    return NextResponse.json({
-      resumed: true,
-      sessionId: existingSessionRow.id,
-      businessDate,
-      conversationWindow,
-    });
-  }
 
   const { data, error: rpcErr } = await service
     .rpc("get_or_create_chat_session", {

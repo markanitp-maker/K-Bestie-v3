@@ -26,11 +26,13 @@ BEGIN
 
     SELECT chat_sessions.id INTO v_session_id
     FROM chat_sessions
-    WHERE child_id = p_child_id
-      AND business_date = p_business_date
-      AND conversation_window = p_conversation_window
-      AND session_type = 'free'
-    ORDER BY started_at DESC
+    LEFT JOIN chat_messages ON chat_sessions.id = chat_messages.session_id
+    WHERE chat_sessions.child_id = p_child_id
+      AND chat_sessions.business_date = p_business_date
+      AND chat_sessions.conversation_window = p_conversation_window
+      AND chat_sessions.session_type = 'free'
+    GROUP BY chat_sessions.id, chat_sessions.started_at
+    ORDER BY COALESCE(MAX(chat_messages.created_at), chat_sessions.started_at) DESC
     LIMIT 1;
 
     IF v_session_id IS NOT NULL THEN
