@@ -62,21 +62,22 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { data: sessionId, error: rpcErr } = await service
+  const { data: sessionData, error: rpcErr } = await service
     .rpc("get_or_create_chat_session", {
       p_child_id: childId,
       p_business_date: businessDate,
       p_conversation_window: conversationWindow
-    });
+    })
+    .single();
 
-  if (rpcErr || !sessionId) {
+  if (rpcErr || !sessionData) {
     console.error("[chat/session] rpc error:", rpcErr);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
   return NextResponse.json({
-    resumed: false,
-    sessionId: sessionId as string,
+    resumed: !(sessionData as any).created,
+    sessionId: (sessionData as any).id as string,
     businessDate,
     conversationWindow,
   });
