@@ -29,7 +29,7 @@ export const REPORT_MODELS: Record<string, ReportModelConfig> = {
 };
 
 // 여기만 바꾸면 전체 적용
-export const ACTIVE_REPORT_MODEL_ID = "gemma-4-31b-it";
+export const ACTIVE_REPORT_MODEL_ID = "gemini-2.5-flash";
 
 export function getActiveReportModel(): ReportModelConfig {
   const config = REPORT_MODELS[ACTIVE_REPORT_MODEL_ID];
