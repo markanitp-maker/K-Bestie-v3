@@ -8,7 +8,6 @@
 
 export interface ReportModelConfig {
   modelId: string;
-  apiBase: string;
   maxOutputTokens: number;
 }
 
@@ -17,13 +16,11 @@ export const REPORT_MODELS: Record<string, ReportModelConfig> = {
   // JSON 모드 안정 지원 — 리포트 생성 기본값
   "gemini-2.5-flash": {
     modelId: "gemini-2.5-flash",
-    apiBase: "https://generativelanguage.googleapis.com",
     maxOutputTokens: 1024,
   },
   // Gemma 계열 (JSON 모드 불안정 — 필요 시 프롬프트 튜닝 필요)
   "gemma-4-31b-it": {
     modelId: "gemma-4-31b-it",
-    apiBase: "https://generativelanguage.googleapis.com",
     maxOutputTokens: 1024,
   },
 };

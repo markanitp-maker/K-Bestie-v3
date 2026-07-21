@@ -51,7 +51,6 @@ type ProviderId = "vertex";
 interface GroupAModelResolved {
   provider: ProviderId;
   modelId: string;
-  apiBase: string;
   maxOutputTokens: number;
 }
 
@@ -86,9 +85,9 @@ async function resolveGroupAModel(db: SupabaseClient): Promise<GroupAModelResolv
       .maybeSingle();
     const provider = (data?.provider as ProviderId | undefined) ?? "vertex";
     const modelId = data?.model_id ?? fallback.modelId;
-    return { provider, modelId, apiBase: fallback.apiBase, maxOutputTokens: fallback.maxOutputTokens };
+    return { provider, modelId, maxOutputTokens: fallback.maxOutputTokens };
   } catch {
-    return { provider: "vertex", modelId: fallback.modelId, apiBase: fallback.apiBase, maxOutputTokens: fallback.maxOutputTokens };
+    return { provider: "vertex", modelId: fallback.modelId, maxOutputTokens: fallback.maxOutputTokens };
   }
 }
 
