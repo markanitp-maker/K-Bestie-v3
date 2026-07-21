@@ -12,21 +12,7 @@ SET
     END
 WHERE business_date IS NULL;
 
-WITH duplicates AS (
-    SELECT id,
-           ROW_NUMBER() OVER(PARTITION BY child_id, business_date, conversation_window ORDER BY started_at DESC) as rn
-    FROM chat_sessions
-    WHERE session_type = 'free' AND business_date IS NOT NULL AND conversation_window IS NOT NULL
-)
-UPDATE chat_sessions
-SET conversation_window = NULL
-WHERE id IN (SELECT id FROM duplicates WHERE rn > 1);
-
 GRANT ALL ON chat_sessions TO anon, authenticated;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_sessions_free_unique
-ON chat_sessions(child_id, business_date, conversation_window)
-WHERE session_type = 'free';
 
 CREATE OR REPLACE FUNCTION get_or_create_chat_session(
     p_child_id UUID,
@@ -36,6 +22,8 @@ CREATE OR REPLACE FUNCTION get_or_create_chat_session(
 DECLARE
     v_session_id UUID;
 BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext(p_child_id::text || p_business_date::text || p_conversation_window));
+
     SELECT id INTO v_session_id
     FROM chat_sessions
     WHERE child_id = p_child_id
@@ -51,20 +39,7 @@ BEGIN
 
     INSERT INTO chat_sessions (child_id, business_date, conversation_window, session_type)
     VALUES (p_child_id, p_business_date, p_conversation_window, 'free')
-    ON CONFLICT (child_id, business_date, conversation_window) WHERE session_type = 'free'
-    DO NOTHING
     RETURNING id INTO v_session_id;
-
-    IF v_session_id IS NULL THEN
-        SELECT id INTO v_session_id
-        FROM chat_sessions
-        WHERE child_id = p_child_id
-          AND business_date = p_business_date
-          AND conversation_window = p_conversation_window
-          AND session_type = 'free'
-        ORDER BY started_at DESC
-        LIMIT 1;
-    END IF;
 
     RETURN v_session_id;
 END;

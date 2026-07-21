@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     .from("chat_sessions")
     .select("id")
     .eq("child_id", childId)
-    .or("session_type.eq.free,session_type.is.null")
+    .eq("session_type", "free")
     .eq("business_date", businessDate)
     .eq("conversation_window", conversationWindow)
     .order("started_at", { ascending: false })
