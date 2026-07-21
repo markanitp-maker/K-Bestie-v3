@@ -375,6 +375,7 @@ function MissionInner() {
           signal: manualAbortControllerRef.current?.signal,
         });
         if (!res.ok) {
+          if (currentEpoch !== answerEpochRef.current) return;
           if (res.status === 423) {
             // 이미 완료되었거나 안전 중단된 경우 대화 차단
             if (manualTimeoutRef.current) {
@@ -493,6 +494,7 @@ function MissionInner() {
             const respondData = await respondRes.json();
             if (respondData.text) respondText = respondData.text;
           } else {
+            if (currentEpoch !== answerEpochRef.current) return;
             if (!isLive) {
               resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
               return;
@@ -503,6 +505,7 @@ function MissionInner() {
           }
         } catch {
           // 예외 발생 시에도 오류 복구 경로로 이동
+          if (currentEpoch !== answerEpochRef.current) return;
           if (!isLive) {
             resetToAwaitingChild("서버 연결이 불안정해요. 다시 말해줄래?");
             return;
@@ -512,11 +515,16 @@ function MissionInner() {
           }
         }
         if (currentEpoch !== answerEpochRef.current) return;
+        if (manualTimeoutRef.current) {
+          clearTimeout(manualTimeoutRef.current);
+          manualTimeoutRef.current = null;
+        }
         if (isLive) {
           setTurnPhase("speaking_k");
         }
         askQuestionRef.current?.(next, respondText);
       } catch {
+        if (currentEpoch !== answerEpochRef.current) return;
         if (isLive) {
           setTurnPhase("awaiting_child");
         }
