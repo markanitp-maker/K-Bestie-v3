@@ -114,7 +114,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setTranscript([...transcriptRef.current]);
   }
 
-  async function callStt(audioBase64: string, customSignal?: AbortSignal): Promise<{ text: string; confidence?: number; failureReason?: "network" | "http_error" | "timeout" | "aborted" }> {
+  async function callStt(audioBase64: string, customSignal?: AbortSignal, childTurnId?: string): Promise<{ text: string; confidence?: number; failureReason?: "network" | "http_error" | "timeout" | "aborted" }> {
     try {
       sttAbortControllerRef.current = new AbortController();
       const signal = customSignal ?? sttAbortControllerRef.current.signal;
@@ -123,7 +123,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       const res = await fetch("/api/mission/stt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64, sessionId }),
+        body: JSON.stringify({ audioBase64, sessionId, childTurnId }),
         signal,
       });
       if (signal.aborted) return { text: "", failureReason: "aborted" };
@@ -157,7 +157,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     }
 
     const audioBase64 = encodePCM16Base64(chunks);
-    const { text, confidence, failureReason } = await callStt(audioBase64, signal);
+    const predictedTurnId = `t${turnSeqRef.current + 1}`;
+    console.log("[STT] calling", { turnId: predictedTurnId });
+    const { text, confidence, failureReason } = await callStt(audioBase64, signal, predictedTurnId);
+    console.log("[STT] result", { turnId: predictedTurnId, hasText: !!text, failureReason });
     if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 폐기
     if (!text) {
       onSttFailedRef.current?.(failureReason);
@@ -241,7 +244,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         sttBusyRef.current = true;
         const epoch = utteranceEpochRef.current;
         const audioBase64 = encodePCM16Base64(chunksRef.current);
-        void callStt(audioBase64).then(({ text }) => {
+        const predictedTurnId = `t${turnSeqRef.current + 1}`;
+        void callStt(audioBase64, undefined, predictedTurnId).then(({ text }) => {
           sttBusyRef.current = false;
           // 이미 finalize되어 다음 세대로 넘어간 뒤 도착한 낡은 응답이면 폐기(중복 표시 방지)
           if (epoch !== utteranceEpochRef.current) return;

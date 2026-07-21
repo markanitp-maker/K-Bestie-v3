@@ -67,22 +67,31 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) {
+    console.error("[chat/messages] POST Unauthorized", { user: null });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   let body: { sessionId?: string; role?: string; content?: string; voiceMode?: string; asrConfidence?: number; displaySequence?: number; turnId?: string };
   try {
     body = await req.json();
-  } catch {
+  } catch (err) {
+    console.error("[chat/messages] POST Invalid JSON", { error: err instanceof Error ? err.message : String(err) });
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const { sessionId, role, content, voiceMode: bodyVoiceMode, asrConfidence, displaySequence, turnId } = body;
+  console.log("[chat/messages] POST start", { sessionId, turnId, role });
+
   if (!sessionId || !role || !content?.trim()) {
+    console.error("[chat/messages] missing required fields", { sessionId, turnId, role });
     return NextResponse.json({ error: "sessionId, role, content required" }, { status: 400 });
   }
   if (role !== "child" && role !== "k") {
+    console.error("[chat/messages] invalid role", { sessionId, turnId, role });
     return NextResponse.json({ error: "role must be child or k" }, { status: 400 });
   }
 
@@ -95,6 +104,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (sessionError || !session) {
+    console.error("[chat/messages] session not found", { sessionId, turnId });
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
@@ -104,6 +114,7 @@ export async function POST(req: NextRequest) {
     .eq("id", session.child_id)
     .maybeSingle();
   if (!child?.member_id) {
+    console.error("[chat/messages] forbidden (child)", { sessionId, turnId });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -115,11 +126,15 @@ export async function POST(req: NextRequest) {
 
   // 세션 소유 아이 본인만 통과 — 부모/다른 가족 구성원은 user_id가 달라 여기서 막힘
   if (!member?.user_id || member.user_id !== user.id) {
+    console.error("[chat/messages] forbidden (member)", { sessionId, turnId });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const consentBlocked = await checkConsentForChild(session.child_id);
-  if (consentBlocked) return consentBlocked;
+  if (consentBlocked) {
+    console.error("[chat/messages] consent blocked", { sessionId, turnId });
+    return consentBlocked;
+  }
 
   // mode: 기존 session_type 재사용(추가 쿼리 없음). 자유대화는 라이브가 없으므로
   // voice_mode를 클라이언트 입력과 무관하게 항상 stt_tts로 서버가 클램프한다.
@@ -129,9 +144,11 @@ export async function POST(req: NextRequest) {
 
   if (mode === "mission") {
     if (typeof displaySequence !== "number" || !Number.isInteger(displaySequence)) {
+      console.error("[chat/messages] invalid displaySequence", { sessionId, turnId, displaySequence });
       return NextResponse.json({ error: "displaySequence must be a valid integer for mission messages" }, { status: 400 });
     }
     if (typeof turnId !== "string" || !turnId.trim()) {
+      console.error("[chat/messages] invalid turnId", { sessionId, turnId });
       return NextResponse.json({ error: "turnId must be a valid string for mission messages" }, { status: 400 });
     }
   }
@@ -149,9 +166,11 @@ export async function POST(req: NextRequest) {
     }, { onConflict: "session_id,turn_id", ignoreDuplicates: true });
 
   if (error) {
+    console.error("[chat/messages] upsert failed", { sessionId, turnId, role, mode, message: error.message, code: error.code });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  console.log("[chat/messages] POST done", { sessionId, turnId, durationMs: Date.now() - startedAt, status: "success" });
   return NextResponse.json({ ok: true });
 }
 

@@ -73,14 +73,19 @@ function setCachedRespond(key: string, text: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) {
+    console.error("[mission/respond] Unauthorized");
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   let body: { sessionId?: string; history?: HistoryTurn[]; nextQuestionText?: string; childTurnId?: string };
   try {
     body = await req.json();
   } catch {
+    console.error("[mission/respond] Invalid JSON");
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
@@ -89,14 +94,21 @@ export async function POST(req: NextRequest) {
   const childTurnId = typeof body.childTurnId === "string" ? body.childTurnId : null;
 
   if (history.length === 0 || !nextQuestionText) {
+    console.error("[mission/respond] history and nextQuestionText required", { sessionId: body.sessionId, childTurnId });
     return NextResponse.json({ error: "history and nextQuestionText required" }, { status: 400 });
   }
   if (!body.sessionId) {
+    console.error("[mission/respond] sessionId required", { childTurnId });
     return NextResponse.json({ error: "sessionId required" }, { status: 400 });
   }
 
+  console.log("[mission/respond] start", { sessionId: body.sessionId, childTurnId, mode: "stt_tts" });
+
   const consentBlocked = await checkConsentForSession(body.sessionId);
-  if (consentBlocked) return consentBlocked;
+  if (consentBlocked) {
+    console.error("[mission/respond] consent blocked", { sessionId: body.sessionId, childTurnId });
+    return consentBlocked;
+  }
 
   const authService = createServiceClient();
   const { data: session } = await authService
@@ -105,12 +117,31 @@ export async function POST(req: NextRequest) {
     .eq("id", body.sessionId)
     .single();
   if (!session) {
+    console.error("[mission/respond] Session not found", { sessionId: body.sessionId, childTurnId });
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
   const authCheck = await requireChildAccess(authService, user.id, session.child_id);
   if (!authCheck.allowed) {
+    console.error("[mission/respond] Forbidden", { sessionId: body.sessionId, childTurnId });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // C. 순서 강제: 직전 메시지가 k인지 확인
+  const { data: lastMsg, error: lastMsgError } = await authService
+    .from("chat_messages")
+    .select("role")
+    .eq("session_id", body.sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastMsgError) {
+    console.error("[mission/respond] order-check query failed", { sessionId: body.sessionId, childTurnId, error: lastMsgError.message });
+  } else if (lastMsg && lastMsg.role === "k") {
+    console.error("[order-violation] K without child turn", { sessionId: body.sessionId, childTurnId });
+    // 연속 질문 차단 (409 Conflict 반환)
+    return NextResponse.json({ error: "Conflict: Waiting for child answer" }, { status: 409 });
   }
 
   if (childTurnId) {
@@ -125,6 +156,7 @@ export async function POST(req: NextRequest) {
   try {
     ai = createGenAIClient(missionModel);
   } catch (err) {
+    console.error("[mission/respond] AI client creation failed", { sessionId: body.sessionId, childTurnId, error: (err as Error).message });
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 
@@ -302,9 +334,10 @@ ${MISSION_CHAT_SYSTEM_PROMPT}
       });
     }
 
+    console.log("[mission/respond] done", { sessionId: body.sessionId, childTurnId, durationMs: Date.now() - startedAt, status: "success" });
     return NextResponse.json({ text });
   } catch (err) {
-    console.error("[mission/respond] error:", (err as Error).message);
+    console.error("[mission/respond] error:", (err as Error).message, { sessionId: body.sessionId, childTurnId });
     return NextResponse.json({ error: "미션 응답 생성 실패" }, { status: 500 });
   }
 }

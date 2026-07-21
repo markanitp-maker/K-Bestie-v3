@@ -17,32 +17,45 @@ interface SpeechResponse {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) {
+    console.error("[mission/stt] Unauthorized", { user: null });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const apiKey = process.env.GCP_STT_API_KEY;
   if (!apiKey) {
+    console.error("[mission/stt] STT not configured", { apiKey: null });
     return NextResponse.json({ error: "STT not configured" }, { status: 500 });
   }
 
-  let body: { audioBase64?: string; sessionId?: string };
+  let body: { audioBase64?: string; sessionId?: string; childTurnId?: string };
   try {
     body = await req.json();
-  } catch {
+  } catch (err) {
+    console.error("[mission/stt] Invalid JSON", { error: err instanceof Error ? err.message : String(err) });
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const audioBase64 = body.audioBase64;
   if (!audioBase64 || typeof audioBase64 !== "string") {
+    console.error("[mission/stt] audioBase64 required", { sessionId: body.sessionId, childTurnId: body.childTurnId });
     return NextResponse.json({ error: "audioBase64 required" }, { status: 400 });
   }
   if (!body.sessionId) {
+    console.error("[mission/stt] sessionId required", { childTurnId: body.childTurnId });
     return NextResponse.json({ error: "sessionId required" }, { status: 400 });
   }
 
+  console.log("[mission/stt] start", { sessionId: body.sessionId, childTurnId: body.childTurnId, mode: "stt_tts" });
+
   const consentBlocked = await checkConsentForSession(body.sessionId);
-  if (consentBlocked) return consentBlocked;
+  if (consentBlocked) {
+    console.error("[mission/stt] consent blocked", { sessionId: body.sessionId, childTurnId: body.childTurnId });
+    return consentBlocked;
+  }
 
   const authService = createServiceClient();
   const { data: session } = await authService
@@ -51,11 +64,13 @@ export async function POST(req: NextRequest) {
     .eq("id", body.sessionId)
     .single();
   if (!session) {
+    console.error("[mission/stt] Session not found", { sessionId: body.sessionId, childTurnId: body.childTurnId });
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
   const authCheck = await requireChildAccess(authService, user.id, session.child_id);
   if (!authCheck.allowed) {
+    console.error("[mission/stt] Forbidden", { sessionId: body.sessionId, childTurnId: body.childTurnId });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -86,7 +101,7 @@ export async function POST(req: NextRequest) {
 
     if (!gcpRes.ok) {
       // 응답 바디에 API 키가 섞여있을 수 있으므로 그대로 노출하지 않음
-      console.error("[mission/stt] gcp call failed", { status: gcpRes.status, sessionId: body.sessionId });
+      console.error("[mission/stt] gcp call failed", { status: gcpRes.status, sessionId: body.sessionId, childTurnId: body.childTurnId });
       return NextResponse.json({ error: "STT request failed" }, { status: 500 });
     }
 
@@ -128,9 +143,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    console.log("[mission/stt] done", { sessionId: body.sessionId, childTurnId: body.childTurnId, durationMs: Date.now() - startedAt, status: "success" });
     return NextResponse.json({ transcript, confidence });
   } catch (err) {
-    console.error("[mission/stt] error:", (err as Error).message, { sessionId: body.sessionId });
+    console.error("[mission/stt] error:", (err as Error).message, { sessionId: body.sessionId, childTurnId: body.childTurnId });
     return NextResponse.json({ error: "STT request failed" }, { status: 500 });
   }
 }
