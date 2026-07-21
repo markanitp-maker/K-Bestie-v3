@@ -12,11 +12,21 @@ SET
     END
 WHERE business_date IS NULL;
 
+WITH duplicates AS (
+    SELECT id,
+           ROW_NUMBER() OVER(PARTITION BY child_id, business_date, conversation_window ORDER BY started_at DESC) as rn
+    FROM chat_sessions
+    WHERE session_type = 'free' AND business_date IS NOT NULL AND conversation_window IS NOT NULL
+)
+UPDATE chat_sessions
+SET conversation_window = NULL
+WHERE id IN (SELECT id FROM duplicates WHERE rn > 1);
+
 GRANT ALL ON chat_sessions TO anon, authenticated;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_sessions_free_unique
 ON chat_sessions(child_id, business_date, conversation_window)
-WHERE session_type = 'free' OR session_type IS NULL;
+WHERE session_type = 'free';
 
 CREATE OR REPLACE FUNCTION get_or_create_chat_session(
     p_child_id UUID,
@@ -31,10 +41,9 @@ BEGIN
     WHERE child_id = p_child_id
       AND business_date = p_business_date
       AND conversation_window = p_conversation_window
-      AND (session_type = 'free' OR session_type IS NULL)
+      AND session_type = 'free'
     ORDER BY started_at DESC
-    LIMIT 1
-    FOR UPDATE;
+    LIMIT 1;
 
     IF v_session_id IS NOT NULL THEN
         RETURN v_session_id;
@@ -42,7 +51,7 @@ BEGIN
 
     INSERT INTO chat_sessions (child_id, business_date, conversation_window, session_type)
     VALUES (p_child_id, p_business_date, p_conversation_window, 'free')
-    ON CONFLICT (child_id, business_date, conversation_window) WHERE (session_type = 'free' OR session_type IS NULL)
+    ON CONFLICT (child_id, business_date, conversation_window) WHERE session_type = 'free'
     DO NOTHING
     RETURNING id INTO v_session_id;
 
@@ -52,7 +61,7 @@ BEGIN
         WHERE child_id = p_child_id
           AND business_date = p_business_date
           AND conversation_window = p_conversation_window
-          AND (session_type = 'free' OR session_type IS NULL)
+          AND session_type = 'free'
         ORDER BY started_at DESC
         LIMIT 1;
     END IF;
