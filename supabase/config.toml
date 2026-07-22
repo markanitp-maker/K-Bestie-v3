@@ -10,3 +10,6 @@ verify_jwt = false
 
 [functions.weekly-batch]
 verify_jwt = false
+
+[functions.memory-batch]
+verify_jwt = false
