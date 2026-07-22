@@ -92,11 +92,15 @@ Copy
 
 ```
 
-tmux new-session -d -s codex- "codex exec --read-only  
--p '<검증 지시문 + §5 체크리스트>' 2>&1 | tee /tmp/codex-.log"
+tmux new-session -d -s codex- "codex exec -s read-only \
+'<검증 지시문 + §5 체크리스트>' 2>&1 | tee /tmp/codex-.log"
 
 ```
 Copy
+**주의(2026-07-22 실측 확인):** 이 codex CLI 버전에서 `-p`는 프롬프트가 아니라 `--profile`(설정 프로파일) 옵션이다.
+프롬프트는 반드시 위치 인자로 전달하고, 읽기전용 강제는 `-s read-only`(또는 `--sandbox read-only`)를 쓴다.
+`--read-only`나 `-p '<프롬프트>'` 형태는 인자 에러로 즉시 실패하니 사용하지 않는다.
+
 codex 반환: "검증 통과 – 위반 없음" 또는 "[단순]/[복잡]" 태그 붙인 문제 목록.
 Claude는 이 로그를 근거로 §2 ③에서 분기한다.
 
