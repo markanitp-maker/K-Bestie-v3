@@ -33,16 +33,16 @@ CLAUDE.md — K-Bestie-v3 오케스트레이션 규칙 (v5: agy 1차 코딩 + co
 
 ## 1. 역할 분담
 
-- **agy (안티그라비티 / Gemini 3.6 Flash (High)) = 1차 코딩 주체.**
+- **agy (안티그라비티 / Gemini 3.1 Pro (High)) = 1차 코딩 주체.**
   신규 작성, 기능 추가, 대량 수정, 리팩터링, 단순 작업 — 코딩은 전부 agy가 먼저 한다.
-  설정: `~/.gemini/antigravity-cli/settings.json` (model: `Gemini 3.6 Flash (High)`).
+  설정: `~/.gemini/antigravity-cli/settings.json` (model: `Gemini 3.1 Pro (High)`).
 - **codex = 검증 게이트 (읽기 전용).**
   agy 결과물을 리뷰. 미완성 구현·엣지케이스(null/빈배열/레이스)·차선책·로직 오류를 잡는다.
   직접 파일 수정 금지.
 - **Claude Code = 지휘자 + 어려운 문제 해결사.**
   전체 오케스트레이션 담당. codex가 "복잡한 로직 문제"로 잡은 것만 직접 수정한다.
 
-**모델 라우팅:** 설계/계획 = Opus, 오케스트레이션/지휘 = Sonnet, 실제 코드 실행 = Gemini 3.6 Flash (High).
+**모델 라우팅:** 설계/계획 = Opus, 오케스트레이션/지휘 = Sonnet, 실제 코드 실행 = Gemini 3.1 Pro (High).
 
 ---
 
@@ -79,7 +79,7 @@ Copy
 
 tmux new-session -d -s agy- "timeout 300 agy --dangerously-skip-permissions  
 --add-dir /mnt/e/VibeCoding/K-Bestie-v3  
---model='Gemini 3.6 Flash (High)'  
+--model='Gemini 3.1 Pro (High)'  
 -p '<지시문>' 2>&1 | tee /tmp/agy-.log"
 
 ```
@@ -163,12 +163,14 @@ Claude는 이 로그를 근거로 §2 ③에서 분기한다.
 4. 대표님의 결정·승인·추가 정보가 필요해 대기 상태로 들어감
 
 ```bash
-'/mnt/c/Users/Home/AppData/Local/Programs/Python/Python313/Scripts/hermes.exe' -p secretary send --to discord:1517194137604980866 '대표님, [K-Bestie-v3] <완료/중단/확인 필요> — <한 줄 결론>. <변경 내용, 검증 결과, 막힌 사유 또는 대표님께 필요한 정확한 결정>.'
+'/mnt/c/Users/Home/AppData/Local/Programs/Python/Python313/Scripts/hermes.exe' -p secretary send --to discord:1517194137604980866 $'대표님, [K-Bestie-v3] 상태: <완료/중단/확인 필요>\n\n✅ 완료\n- <대표님이 알아야 할 결과 1~3개>\n\n🟡 남은 일·이슈\n- <없으면 없음 / 있으면 원인과 영향>\n\n👤 대표님 확인\n- <없으면 없음 / 있으면 대표님이 선택할 내용과 선택지>'
 ```
 
-- **완료 보고:** 변경 파일, codex 검증 결과, 남은 리스크를 포함한다.
-- **중단/오류 보고:** 중단·오류 원인, 마지막 성공 지점, 재개 방법(명령 또는 절차)을 포함한다.
-- **확인 필요 보고:** 대표님이 선택할 항목과 선택지별 영향을 한 번에 명확히 적는다.
+- **모든 보고는 위 양식을 반드시 사용한다.** 기술 로그·파일명 나열·도구명·내부 작업 순서는 본문에 쓰지 않는다.
+- **✅ 완료:** 대표님 관점의 결과, 검증 완료 여부, 수치가 의미 있을 때만 핵심 수치만 적는다.
+- **🟡 남은 일·이슈:** 미검증·중단·리스크를 숨기지 않는다. 없으면 `없음`이라고 적는다.
+- **👤 대표님 확인:** 대표님 행동이 필요한 경우에만 한 줄로 명확히 쓴다. 없으면 `없음`이라고 적는다.
+- **중단/오류 보고:** 위 양식을 유지하고, 🟡 항목에 원인·마지막 성공 지점·재개 방법을 적는다.
 - **이 보고 명령을 실행하기 전에는 절대 작업을 끝내거나 대기 상태로 전환하지 않는다.** 보고 없이 조용히 대기·종료하는 것은 금지한다.
 - 보고 명령이 실패하면 오류 원문과 대체 보고 방법을 즉시 화면에 남긴다.
 
