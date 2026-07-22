@@ -10,14 +10,6 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return new Response("Unauthorized", { status: 401 });
-
-    const svc = createServiceClient();
-    const child = await resolveTestChild(svc, user.id);
-    if (!child) return new Response("Forbidden", { status: 403 });
-
     const body = await req.json();
     const { questionText, answerText, sessionId, childTurnId } = body;
 
@@ -34,11 +26,26 @@ export async function POST(req: NextRequest) {
 
     const userPrompt = `질문: "${questionText}"\n아이의 답변: "${answerText}"`;
 
+    // 인증/테스트계정 확인(DB 왕복 2~3회)과 Gemini 호출을 순차가 아니라 병렬로 시작한다 —
+    // 인증 체크가 느려도 모델의 첫 토큰 생성 시작이 그만큼 늦어지지 않게 하기 위함(실측상
+    // 이 부분이 순차일 때 child_bubble_rendered→llm_first_token이 1.3~2.3초까지 늘어났다).
+    // 스트림은 인증 결과가 확정된 뒤에만 클라이언트로 내보낸다 — 미인증 사용자에게 생성 결과가
+    // 새어나가지 않는다.
+    const authCheckPromise = (async (): Promise<{ ok: true } | { ok: false; status: 401 | 403 }> => {
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { ok: false, status: 401 };
+      const svc = createServiceClient();
+      const child = await resolveTestChild(svc, user.id);
+      if (!child) return { ok: false, status: 403 };
+      return { ok: true };
+    })();
+
     const ai = createGenAIClient({ provider: "vertex" });
 
     // LLM 호출은 정확히 1회만 시도한다(요구사항 — 실패 시 같은 모델로도 재시도하지 않음).
-    // 실패하면 여기서 그대로 던져 바깥 catch가 500을 반환하고, 클라이언트의 1200ms 폴백이 처리한다.
-    const responseStream = await ai.models.generateContentStream({
+    // await하지 않고 Promise만 먼저 만들어 인증 체크와 동시에 진행되게 한다.
+    const streamPromise = ai.models.generateContentStream({
       model: LEAN_E_MODEL_ID,
       contents: [{ role: "user", parts: [{ text: userPrompt }] }],
       config: {
@@ -48,6 +55,19 @@ export async function POST(req: NextRequest) {
         thinkingConfig: { thinkingBudget: 0 },
       },
     });
+    // 인증 실패로 이 Promise를 버릴 수도 있으므로, 그 경우에도 unhandled rejection이 나지 않게
+    // 미리 안전하게 소비해둔다.
+    streamPromise.catch(() => {});
+
+    // 인증 결과를 먼저 확인한다 — 인증에 실패하면 Gemini 호출 결과와 무관하게 즉시 401/403을
+    // 반환한다(느린 쪽을 기다리지 않고, 실패 사유도 정확하게 유지된다).
+    const authResult = await authCheckPromise;
+    if (!authResult.ok) {
+      return new Response(authResult.status === 401 ? "Unauthorized" : "Forbidden", { status: authResult.status });
+    }
+
+    // 인증을 통과한 뒤에야 실제로 스트림 생성 결과를 기다린다 — 여기서 실패하면 진짜 500.
+    const responseStream = await streamPromise;
 
     let tokenIn = 0;
     let tokenOut = 0;
