@@ -49,6 +49,7 @@ export function TestModeERunner() {
   }, []);
   const sttFailStreakRef = useRef(0);
   const lowLatencyEnabledRef = useRef(true);
+  const personalizedReactionEnabledRef = useRef(true);
   const lastReactionRef = useRef<string | null>(null);
   const turnTimingsRef = useRef<Array<Record<string, number>>>([]);
   const pendingTimingRef = useRef<Record<string, number>>({});
@@ -157,22 +158,147 @@ export function TestModeERunner() {
     try {
       const isLowLatency = lowLatencyEnabledRef.current;
       const endpoint = isLowLatency ? "/api/mission/answer-lean" : "/api/mission/answer";
+      const usePersonalized = isLowLatency && personalizedReactionEnabledRef.current;
 
-      const ansRes = await fetch(endpoint, {
+      const answerFetchPromise = fetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: sid, questionId: currentQ.id, answerText: text, childTurnId }),
       });
-      if (myEpoch !== loadEpochRef.current) return; // 재시작됨 → 무효
-      if (ansRes.status === 423) { completedRef.current = true; setCompleted(true); return; }
-      if (!ansRes.ok) { setNotice("답변 처리에 실패했어요. 다시 말해줄래?"); return; }
+
+      let reactionAbortController: AbortController | null = null;
+      let thinkingTurnId: string | null = null;
+      let thinkingDisplaySeq: number | null = null;
+      let reactionResultPromise: Promise<{ text: string }> | null = null;
+
+      if (usePersonalized) {
+        thinkingDisplaySeq = ++dispSeqRef.current;
+        thinkingTurnId = uuid();
+        setBubbles((prev) => [...prev, { role: "k", text: "···", displaySequence: thinkingDisplaySeq!, turnId: thinkingTurnId! }]);
+
+        reactionAbortController = new AbortController();
+
+        reactionResultPromise = (async () => {
+          const fallbackResult = pickNonRepeatingReaction(lastReactionRef.current);
+
+          try {
+            const res = await fetch("/api/mission/reaction-lean", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: reactionAbortController!.signal,
+              body: JSON.stringify({
+                questionText: currentQ.question_text,
+                answerText: text,
+                sessionId: sid,
+                childTurnId
+              })
+            });
+            if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulated = "";
+
+            try {
+              // 1200ms 안에 "첫 청크"가 도착하지 않으면 즉시 폴백(fetch 응답이 아니라
+              // 실제 스트림 첫 read()를 기준으로 재야 한다 — 응답 헤더는 거의 즉시 오지만
+              // 모델의 첫 토큰은 그보다 훨씬 늦게 올 수 있음).
+              let timeoutId: ReturnType<typeof setTimeout> | undefined;
+              const timeoutMarker = Symbol("timeout");
+              const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
+                timeoutId = setTimeout(() => resolve(timeoutMarker), 1200);
+              });
+
+              const firstRead = await Promise.race([reader.read(), timeoutPromise]);
+              clearTimeout(timeoutId);
+
+              if (firstRead === timeoutMarker) {
+                reactionAbortController?.abort();
+                // releaseLock()은 pending read가 남아있으면 TypeError를 던진다 — cancel()이
+                // 완료(= 그 pending read()도 함께 정리됨)될 때까지 반드시 기다린 뒤 finally로 넘어간다.
+                await reader.cancel().catch(() => {});
+                pendingTimingRef.current.reaction_complete = Date.now();
+                return { text: fallbackResult };
+              }
+
+              if (myEpoch !== loadEpochRef.current) {
+                await reader.cancel().catch(() => {});
+                return { text: "" };
+              }
+
+              const { done: firstDone, value: firstValue } = firstRead as ReadableStreamReadResult<Uint8Array>;
+              if (!firstDone && firstValue) {
+                pendingTimingRef.current.llm_first_token = Date.now();
+                accumulated += decoder.decode(firstValue, { stream: true });
+                const currentReaction = accumulated;
+                setBubbles((prev) =>
+                  prev.map((b) => (b.turnId === thinkingTurnId ? { ...b, text: currentReaction } : b))
+                );
+              }
+
+              // 첫 청크 이후로는 추가 타임아웃 없이 스트림 끝까지 읽는다(첫 토큰만 1200ms 가드).
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (myEpoch !== loadEpochRef.current) {
+                  await reader.cancel().catch(() => {});
+                  return { text: "" };
+                }
+                const chunk = decoder.decode(value, { stream: true });
+                accumulated += chunk;
+                const currentReaction = accumulated;
+                setBubbles((prev) =>
+                  prev.map((b) => (b.turnId === thinkingTurnId ? { ...b, text: currentReaction } : b))
+                );
+              }
+
+              pendingTimingRef.current.reaction_complete = Date.now();
+              const trimmed = accumulated.trim();
+              return { text: trimmed || fallbackResult };
+            } finally {
+              reader.releaseLock();
+            }
+          } catch {
+            pendingTimingRef.current.reaction_complete = Date.now();
+            return { text: fallbackResult };
+          }
+        })();
+      } else if (isLowLatency) {
+        reactionResultPromise = Promise.resolve({ text: pickNonRepeatingReaction(lastReactionRef.current) });
+      }
+
+      const ansRes = await answerFetchPromise;
+
+      if (myEpoch !== loadEpochRef.current) {
+        reactionAbortController?.abort();
+        if (thinkingTurnId) setBubbles((prev) => prev.filter((b) => b.turnId !== thinkingTurnId));
+        return; // 재시작됨 → 무효
+      }
+      if (ansRes.status === 423) {
+        reactionAbortController?.abort();
+        if (thinkingTurnId) setBubbles((prev) => prev.filter((b) => b.turnId !== thinkingTurnId));
+        completedRef.current = true; setCompleted(true); return;
+      }
+      if (!ansRes.ok) {
+        reactionAbortController?.abort();
+        if (thinkingTurnId) setBubbles((prev) => prev.filter((b) => b.turnId !== thinkingTurnId));
+        setNotice("답변 처리에 실패했어요. 다시 말해줄래?"); return;
+      }
+      
       const ans = await ansRes.json();
       pendingTimingRef.current.server_state_confirmed = Date.now();
-      if (myEpoch !== loadEpochRef.current) return;
+      
+      if (myEpoch !== loadEpochRef.current) {
+        reactionAbortController?.abort();
+        if (thinkingTurnId) setBubbles((prev) => prev.filter((b) => b.turnId !== thinkingTurnId));
+        return;
+      }
       statesRef.current = ans.questionStates ?? statesRef.current;
       setValidCount(ans.validAnswerCount ?? 0);
       setProgress(ans.progressPercent ?? 0);
 
       if (ans.completed) {
+        reactionAbortController?.abort();
+        if (thinkingTurnId) setBubbles((prev) => prev.filter((b) => b.turnId !== thinkingTurnId));
         completedRef.current = true; setCompleted(true);
         addBubble("k", "오늘의 미션을 모두 완료했어! 🔑 황금열쇠를 받았어. 내일 또 만나자!");
         pendingTimingRef.current.k_reaction_rendered = Date.now();
@@ -184,14 +310,46 @@ export function TestModeERunner() {
       }
 
       const next = pickNextPending(statesRef.current);
-      if (next < 0) return;
+      if (next < 0) {
+        reactionAbortController?.abort();
+        if (thinkingTurnId) setBubbles((prev) => prev.filter((b) => b.turnId !== thinkingTurnId));
+        return;
+      }
       const nextQ = qs[next];
 
       if (isLowLatency) {
-        const reaction = pickNonRepeatingReaction(lastReactionRef.current);
-        lastReactionRef.current = reaction;
-        const finalKText = `${reaction} ${nextQ.question_text}`;
-        addBubble("k", finalKText);
+        const { text: reactionText } = await reactionResultPromise!;
+        // reaction 스트리밍 도중 새 테스트로 재시작됐으면(에포크 불일치) 이 결과는 폐기하고
+        // placeholder 말풍선도 제거한다 — 옛 턴의 다음 질문을 새 세션에 잘못 반영하지 않기 위함.
+        if (myEpoch !== loadEpochRef.current) {
+          if (thinkingTurnId) setBubbles((prev) => prev.filter((b) => b.turnId !== thinkingTurnId));
+          return;
+        }
+        lastReactionRef.current = reactionText;
+        const finalKText = `${reactionText} ${nextQ.question_text}`;
+
+        if (usePersonalized) {
+          setBubbles((prev) =>
+            prev.map((b) => (b.turnId === thinkingTurnId ? { ...b, text: finalKText } : b))
+          );
+          if (sid && thinkingDisplaySeq && thinkingTurnId) {
+            fetch("/api/chat/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sessionId: sid,
+                role: "k",
+                content: finalKText,
+                voiceMode: null,
+                displaySequence: thinkingDisplaySeq,
+                turnId: thinkingTurnId,
+              }),
+            }).catch(() => {});
+          }
+        } else {
+          addBubble("k", finalKText);
+        }
+        
         currentIndexRef.current = next;
 
         pendingTimingRef.current.k_reaction_rendered = Date.now();
@@ -359,8 +517,10 @@ export function TestModeERunner() {
     if (lowLatRes?.ok) {
       const lowLatData = await lowLatRes.json();
       lowLatencyEnabledRef.current = lowLatData.enabled !== false;
+      personalizedReactionEnabledRef.current = lowLatData?.personalizedReaction !== false;
     } else {
       lowLatencyEnabledRef.current = true;
+      personalizedReactionEnabledRef.current = true;
     }
 
     const gate = await fetch("/api/child/test-mode");
