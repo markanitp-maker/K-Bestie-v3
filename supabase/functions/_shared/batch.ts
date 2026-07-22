@@ -560,3 +560,132 @@ export function checkAuth(req: Request): Response | null {
   }
   return null;
 }
+
+export interface MemoryBatchResult {
+  childrenProcessed: string[];
+  longTermFactsCreated: number;
+  skipped: string[];
+  errors: { childId: string; error: string }[];
+}
+
+export async function generateMemorySummaries(db: SupabaseClient, targetDate: string): Promise<MemoryBatchResult> {
+  const result: MemoryBatchResult = { childrenProcessed: [], longTermFactsCreated: 0, skipped: [], errors: [] };
+
+  const { data: sessions, error: fetchErr } = await db
+    .from("chat_sessions")
+    .select("id, child_id")
+    .eq("demo_mode", false)
+    .gte("ended_at", `${targetDate}T00:00:00+09:00`)
+    .lte("ended_at", `${targetDate}T23:59:59+09:00`);
+
+  if (fetchErr) throw new Error(`generateMemorySummaries: 세션 조회 실패 — ${fetchErr.message}`);
+  if (!sessions?.length) return result;
+
+  const sessionsByChild = new Map<string, string[]>();
+  for (const s of sessions) {
+    if (!sessionsByChild.has(s.child_id)) sessionsByChild.set(s.child_id, []);
+    sessionsByChild.get(s.child_id)!.push(s.id);
+  }
+
+  const reportModel = await resolveGroupAModel(db);
+
+  for (const [childId, sessionIds] of sessionsByChild) {
+    try {
+      const { data: messages, error: msgErr } = await db
+        .from("chat_messages")
+        .select("role, content")
+        .in("session_id", sessionIds)
+        .order("created_at", { ascending: true });
+
+      if (msgErr) throw new Error(msgErr.message);
+      if (!messages?.length) {
+        result.skipped.push(childId);
+        continue;
+      }
+
+      const transcriptText = (messages as { role: string; content: string }[])
+        .map((m) => `${m.role === "child" ? "아이" : "케이"}: ${m.content}`)
+        .join("\n");
+
+      const prompt = `너는 아이와 나눈 하루치 대화를 부모에게 보여주는 게 아니라, "케이"라는 AI 친구가 나중에
+이 아이와 다시 대화할 때 참고할 내부 기억으로 정리하는 역할이다.
+
+아래는 오늘 하루 아이와 나눈 대화 원문이다.
+
+${transcriptText}
+
+다음 형식의 JSON으로만 응답해라(다른 텍스트 없이):
+{
+  "daily_summary": "오늘 하루 있었던 일을 케이 입장에서 짧게 정리한 요약 (3~5문장)",
+  "long_term_facts": [
+    { "category": "interest" | "friend" | "family" | "dream" | "event", "content": "짧은 사실 문장" }
+  ]
+}
+- long_term_facts는 반복해서 기억할 가치가 있는 것만 담아라(좋아하는 것, 친구 이름, 가족
+  이야기, 꿈, 특별한 사건 등). 없으면 빈 배열로 둬라.
+- 아이의 안전을 위협하거나 민감한 개인정보(주소, 전화번호 등)는 절대 담지 마라.`;
+
+      const text = await callReportModel(reportModel, prompt, reportModel.maxOutputTokens);
+
+      let parsed: {
+        daily_summary?: string;
+        long_term_facts?: { category: string; content: string }[];
+      };
+      try {
+        parsed = extractJSON(text);
+      } catch {
+        throw new Error(`JSON 파싱 실패: ${text.slice(0, 100)}`);
+      }
+
+      const { error: deleteErr } = await db
+        .from("child_memory")
+        .delete()
+        .eq("child_id", childId)
+        .eq("business_date", targetDate);
+      if (deleteErr) throw new Error(`기존 메모리 삭제 실패: ${deleteErr.message}`);
+
+      if (parsed.daily_summary) {
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { error: shortErr } = await db
+          .from("child_memory")
+          .insert({
+            child_id: childId,
+            memory_type: "short_term",
+            category: null,
+            content: parsed.daily_summary,
+            source_session_ids: sessionIds,
+            business_date: targetDate,
+            expires_at: expiresAt,
+          });
+        if (shortErr) throw new Error(`단기 기억 저장 실패: ${shortErr.message}`);
+      }
+
+      if (parsed.long_term_facts && Array.isArray(parsed.long_term_facts)) {
+        const allowedCategories = ["interest", "friend", "family", "dream", "event"];
+        for (const fact of parsed.long_term_facts) {
+          if (allowedCategories.includes(fact.category) && fact.content) {
+            const { error: longErr } = await db
+              .from("child_memory")
+              .insert({
+                child_id: childId,
+                memory_type: "long_term",
+                category: fact.category,
+                content: fact.content,
+                source_session_ids: sessionIds,
+                business_date: targetDate,
+                expires_at: null,
+              });
+            if (longErr) throw new Error(`장기 기억 저장 실패: ${longErr.message}`);
+            result.longTermFactsCreated++;
+          }
+        }
+      }
+
+      result.childrenProcessed.push(childId);
+    } catch (e) {
+      result.errors.push({ childId, error: String(e) });
+    }
+  }
+
+  return result;
+}
