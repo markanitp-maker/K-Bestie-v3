@@ -1803,12 +1803,58 @@ function MissionInner() {
   );
 }
 
+// 테스트 계정이 A~E 대화방식 테스트에서 E안을 선택한 경우, /child/missions 실제 실행 경로에서
+// 기존 미션 대신 E안 러너를 렌더한다. 일반 계정(및 E 미선택)은 기존 MissionInner 그대로 —
+// 게이트가 'e'로 결정되기 전엔 MissionInner를 마운트하지 않아 기존 흐름에 회귀가 없다.
+function MissionRouteGate() {
+  const [decision, setDecision] = useState<"loading" | "e" | "cd" | "normal">("loading");
+  const [cdMode, setCdMode] = useState<"C" | "D">("C");
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/child/test-mode")
+      .then((r) => (r.status === 200 ? r.json() : null))
+      .then((d) => { 
+        if (!cancelled) {
+          if (d?.selectedMode === "E") {
+            setDecision("e");
+          } else if (d?.selectedMode === "C" || d?.selectedMode === "D") {
+            setCdMode(d.selectedMode);
+            setDecision("cd");
+          } else {
+            setDecision("normal");
+          }
+        }
+      })
+      .catch(() => { if (!cancelled) setDecision("normal"); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (decision === "loading") {
+    return (
+      <div className="flex items-center justify-center" style={{ height: "100dvh", background: "#fafaf8" }}>
+        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+      </div>
+    );
+  }
+  // E안 테스트 화면은 디바이스 프레임(DemoFrame) 없이 전체 화면으로 렌더 — 프레임/토글·중첩 스크롤 제거.
+  if (decision === "e") {
+    return <TestModeERunner />;
+  }
+  if (decision === "cd") {
+    return <TestModeCDRunner selectedMode={cdMode} />;
+  }
+  // 일반 계정 미션은 기존 그대로(DemoFrame) — 회귀 없음.
+  return (
+    <DemoFrame>
+      <MissionInner />
+    </DemoFrame>
+  );
+}
+
 export default function ChildMissionsPage() {
   return (
     <Suspense fallback={null}>
-      <DemoFrame>
-        <MissionInner />
-      </DemoFrame>
+      <MissionRouteGate />
     </Suspense>
   );
 }
