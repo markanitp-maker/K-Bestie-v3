@@ -179,53 +179,58 @@ export function TestModeERunner() {
 
         reactionResultPromise = (async () => {
           const fallbackResult = pickNonRepeatingReaction(lastReactionRef.current);
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          const timeoutMarker = Symbol("timeout");
 
           try {
-            const res = await fetch("/api/mission/reaction-lean", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              signal: reactionAbortController!.signal,
-              body: JSON.stringify({
-                questionText: currentQ.question_text,
-                answerText: text,
-                sessionId: sid,
-                childTurnId
-              })
+            // 1200ms 안에 "첫 청크"가 도착하지 않으면 즉시 폴백 — fetch(네트워크 왕복 포함)부터
+            // 첫 read()까지 전체를 재야 한다. fetch 응답(헤더) 도착 이후만 재면, fetch 자체가
+            // 이미 1초 넘게 걸리는 경우를 못 잡는다(실측으로 확인된 문제).
+            const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
+              timeoutId = setTimeout(() => resolve(timeoutMarker), 1200);
             });
-            if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
 
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let accumulated = "";
+            const fetchAndFirstChunk = (async () => {
+              const res = await fetch("/api/mission/reaction-lean", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: reactionAbortController!.signal,
+                body: JSON.stringify({
+                  questionText: currentQ.question_text,
+                  answerText: text,
+                  sessionId: sid,
+                  childTurnId
+                })
+              });
+              if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
+              const reader = res.body.getReader();
+              const decoder = new TextDecoder();
+              const first = await reader.read();
+              return { reader, decoder, first };
+            })();
+
+            const raceResult = await Promise.race([fetchAndFirstChunk, timeoutPromise]);
+            clearTimeout(timeoutId);
+
+            if (raceResult === timeoutMarker) {
+              reactionAbortController?.abort();
+              // fetchAndFirstChunk가 나중에 resolve/reject되어도 아무도 기다리지 않으므로
+              // unhandled rejection이 나지 않게 안전하게 소비해둔다.
+              fetchAndFirstChunk.catch(() => {});
+              pendingTimingRef.current.reaction_complete = Date.now();
+              return { text: fallbackResult };
+            }
+
+            const { reader, decoder, first } = raceResult;
 
             try {
-              // 1200ms 안에 "첫 청크"가 도착하지 않으면 즉시 폴백(fetch 응답이 아니라
-              // 실제 스트림 첫 read()를 기준으로 재야 한다 — 응답 헤더는 거의 즉시 오지만
-              // 모델의 첫 토큰은 그보다 훨씬 늦게 올 수 있음).
-              let timeoutId: ReturnType<typeof setTimeout> | undefined;
-              const timeoutMarker = Symbol("timeout");
-              const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
-                timeoutId = setTimeout(() => resolve(timeoutMarker), 1200);
-              });
-
-              const firstRead = await Promise.race([reader.read(), timeoutPromise]);
-              clearTimeout(timeoutId);
-
-              if (firstRead === timeoutMarker) {
-                reactionAbortController?.abort();
-                // releaseLock()은 pending read가 남아있으면 TypeError를 던진다 — cancel()이
-                // 완료(= 그 pending read()도 함께 정리됨)될 때까지 반드시 기다린 뒤 finally로 넘어간다.
-                await reader.cancel().catch(() => {});
-                pendingTimingRef.current.reaction_complete = Date.now();
-                return { text: fallbackResult };
-              }
-
               if (myEpoch !== loadEpochRef.current) {
                 await reader.cancel().catch(() => {});
                 return { text: "" };
               }
 
-              const { done: firstDone, value: firstValue } = firstRead as ReadableStreamReadResult<Uint8Array>;
+              let accumulated = "";
+              const { done: firstDone, value: firstValue } = first;
               if (!firstDone && firstValue) {
                 pendingTimingRef.current.llm_first_token = Date.now();
                 accumulated += decoder.decode(firstValue, { stream: true });
