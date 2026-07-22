@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
+import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
+import { pickNonRepeatingReaction } from "@/lib/mission/eReactionPool";
 
 // E안 실행 러너 (Plan01 §4 E안 — 테스트 계정 전용).
 // /child/missions 실제 실행 경로에서 테스트 계정 + E override일 때 렌더된다(일반 계정은 기존 미션 그대로).
@@ -34,6 +36,25 @@ export function TestModeERunner() {
   const [textInput, setTextInput] = useState("");
   const [listening, setListening] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isAuto, setIsAuto] = useState(true);
+  const isAutoRef = useRef(isAuto);
+  isAutoRef.current = isAuto;
+
+  type AutoPhase = "idle" | "listening" | "speaking" | "finalizing" | "responding" | "error";
+  const [autoPhase, setAutoPhaseState] = useState<AutoPhase>("idle");
+  const autoPhaseRef = useRef<AutoPhase>("idle");
+  const setAutoPhase = useCallback((phase: AutoPhase) => {
+    autoPhaseRef.current = phase;
+    setAutoPhaseState(phase);
+  }, []);
+  const sttFailStreakRef = useRef(0);
+  const lowLatencyEnabledRef = useRef(true);
+  const lastReactionRef = useRef<string | null>(null);
+  const turnTimingsRef = useRef<Array<Record<string, number>>>([]);
+  const pendingTimingRef = useRef<Record<string, number>>({});
+
+  const timingBeginSpeech = useCallback(() => { pendingTimingRef.current = { speech_begin: Date.now() }; }, []);
+  const timingEndSpeech = useCallback(() => { pendingTimingRef.current.speech_end = Date.now(); }, []);
 
   const sessionIdRef = useRef<string | null>(null);
   const questionsRef = useRef<Q[]>([]);
@@ -52,6 +73,32 @@ export function TestModeERunner() {
   // 자동 스크롤: 사용자가 하단 근처를 보고 있을 때만 최신 말풍선으로 이동(과거 열람 중엔 강제 이동 안 함).
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const nearBottomRef = useRef(true);
+
+  const checkAutoFail = useCallback(() => {
+    if (isAuto && sttFailStreakRef.current >= 2) {
+      setIsAuto(false);
+      voiceRef.current?.setInputMode("manual");
+      setAutoPhase("error");
+      setNotice("자동 듣기가 잘 안 되고 있어 수동 모드로 바꿨어. 🎤 버튼을 눌러 말해줘.");
+    }
+  }, [isAuto]);
+
+  const handleModeChange = useCallback(async (newMode: "auto"|"manual") => {
+    if (newMode === "manual") {
+      if (voiceRef.current?.status === "live" && autoPhaseRef.current !== "responding") {
+        voiceRef.current.setInputMode("manual");
+        voiceRef.current.setMicEnabled(true);
+      }
+    } else {
+      voiceRef.current?.setInputMode("auto");
+      if (voiceRef.current?.status !== "live") {
+        await voiceRef.current?.startSession();
+      }
+      voiceRef.current?.setMicEnabled(!busyRef.current);
+    }
+    setIsAuto(newMode === "auto");
+  }, []);
+
   const onChatScroll = useCallback(() => {
     const el = chatScrollRef.current;
     if (!el) return;
@@ -97,15 +144,21 @@ export function TestModeERunner() {
 
     const myEpoch = loadEpochRef.current; // 새 테스트로 재시작되면 이 턴의 결과 반영을 중단한다.
     busyRef.current = true; setBusy(true); setNotice(null);
+    setAutoPhase("responding");
+    if (isAuto) voiceRef.current?.setMicEnabled(false);
     // 자동스크롤은 '이미 하단 근처'일 때만(nearBottomRef) — 사용자가 과거 메시지를 보는 중엔 강제 이동하지 않는다.
     // respond용 history는 '현재 답변 포함'으로 동기 구성(비동기 상태 갱신 경합 방지).
     const priorHistory = bubblesRef.current.map((b) => ({ role: b.role, text: b.text }));
     // 아이 말풍선 저장/표시 (E안: 아이 말풍선 표시)
     const childSaved = addBubble("child", text).saved;
+    pendingTimingRef.current.child_bubble_rendered = Date.now();
     const childTurnId = `${sid}:${currentQ.id}:${++seqRef.current}`;
 
     try {
-      const ansRes = await fetch("/api/mission/answer", {
+      const isLowLatency = lowLatencyEnabledRef.current;
+      const endpoint = isLowLatency ? "/api/mission/answer-lean" : "/api/mission/answer";
+
+      const ansRes = await fetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: sid, questionId: currentQ.id, answerText: text, childTurnId }),
       });
@@ -113,6 +166,7 @@ export function TestModeERunner() {
       if (ansRes.status === 423) { completedRef.current = true; setCompleted(true); return; }
       if (!ansRes.ok) { setNotice("답변 처리에 실패했어요. 다시 말해줄래?"); return; }
       const ans = await ansRes.json();
+      pendingTimingRef.current.server_state_confirmed = Date.now();
       if (myEpoch !== loadEpochRef.current) return;
       statesRef.current = ans.questionStates ?? statesRef.current;
       setValidCount(ans.validAnswerCount ?? 0);
@@ -121,12 +175,30 @@ export function TestModeERunner() {
       if (ans.completed) {
         completedRef.current = true; setCompleted(true);
         addBubble("k", "오늘의 미션을 모두 완료했어! 🔑 황금열쇠를 받았어. 내일 또 만나자!");
+        pendingTimingRef.current.k_reaction_rendered = Date.now();
+        pendingTimingRef.current.next_question_rendered = pendingTimingRef.current.k_reaction_rendered;
+        turnTimingsRef.current.push({ ...pendingTimingRef.current });
+        pendingTimingRef.current = {};
+        console.log("[E-LOWLATENCY-TIMING]", JSON.stringify(turnTimingsRef.current));
         return;
       }
 
       const next = pickNextPending(statesRef.current);
       if (next < 0) return;
       const nextQ = qs[next];
+
+      if (isLowLatency) {
+        const reaction = pickNonRepeatingReaction(lastReactionRef.current);
+        lastReactionRef.current = reaction;
+        const finalKText = `${reaction} ${nextQ.question_text}`;
+        addBubble("k", finalKText);
+        currentIndexRef.current = next;
+
+        pendingTimingRef.current.k_reaction_rendered = Date.now();
+        pendingTimingRef.current.next_question_rendered = pendingTimingRef.current.k_reaction_rendered;
+        turnTimingsRef.current.push({...pendingTimingRef.current});
+        pendingTimingRef.current = {};
+      } else {
       // 아이 말풍선 저장 완료를 기다린 뒤 respond-lean 호출(메시지 순서 경합/409 방지).
       await childSaved;
       // 케이 답변(LLM 스트리밍) — 반응 + 다음 확정 질문. conversation_mode='E' 태깅(§23 usage_events).
@@ -214,22 +286,60 @@ export function TestModeERunner() {
           }),
         }).catch(() => {});
       }
+      
+      pendingTimingRef.current.k_reaction_rendered = Date.now();
+      pendingTimingRef.current.next_question_rendered = pendingTimingRef.current.k_reaction_rendered;
+      turnTimingsRef.current.push({...pendingTimingRef.current});
+      pendingTimingRef.current = {};
+      }
     } catch {
       if (myEpoch === loadEpochRef.current) setNotice("연결이 불안정해요. 다시 말해줄래?");
     } finally {
       // 재시작(새 테스트)됐으면 새 세션 상태를 건드리지 않는다(stale 갱신 방지).
-      if (myEpoch === loadEpochRef.current) { busyRef.current = false; setBusy(false); }
+      if (myEpoch === loadEpochRef.current) { 
+        busyRef.current = false; setBusy(false); 
+        if (isAuto && !completedRef.current) {
+          setAutoPhase("listening");
+          voiceRef.current?.setMicEnabled(true);
+        } else {
+          setAutoPhase("idle");
+        }
+      }
     }
-  }, [addBubble, pickNextPending]);
+  }, [addBubble, pickNextPending, isAuto]);
 
   // STT(음성 입력) — E안: 케이 음성 없음이라 speak()를 절대 호출하지 않는다.
   const voice = useVoiceChat({
     getSessionId: () => sessionIdRef.current,
     conversationMode: "E",
-    onTurnComplete: (turn) => { if (turn.role === "child" && turn.text.trim()) void processAnswer(turn.text); },
-    onSttFailed: () => setNotice("잘 못 들었어요. 다시 말해줄래?"),
-    onEmptyAudio: () => setNotice("소리가 안 들렸어요. 다시 말해줄래?"),
+    onSpeechBegin: () => { setAutoPhase("speaking"); timingBeginSpeech(); },
+    onSpeechEnd: () => { setAutoPhase("finalizing"); timingEndSpeech(); },
+    onTurnComplete: (turn) => { 
+      if (turn.role === "child") {
+        pendingTimingRef.current.stt_final = Date.now();
+        sttFailStreakRef.current = 0;
+        if (turn.text.trim()) void processAnswer(turn.text); 
+      }
+    },
+    onSttFailed: () => {
+      sttFailStreakRef.current++;
+      checkAutoFail();
+      setNotice("잘 못 들었어요. 다시 말해줄래?");
+    },
+    onEmptyAudio: () => {
+      sttFailStreakRef.current++;
+      checkAutoFail();
+      setNotice("소리가 안 들렸어요. 다시 말해줄래?");
+    },
   });
+  
+  useEffect(() => {
+    if (voice.status === "error" && isAuto) {
+      setAutoPhase("error");
+      setIsAuto(false);
+      setNotice("마이크를 사용할 수 없어 수동 모드로 전환했어요. 텍스트로 답해줘도 괜찮아.");
+    }
+  }, [voice.status, isAuto]);
   voiceRef.current = voice;
 
   // 세션 로드/시작. forceNew=true면 '새 테스트 시작'(과거 세션 종료·이력 보존, 새 mission_session_id).
@@ -244,6 +354,14 @@ export function TestModeERunner() {
     completedRef.current = false; busyRef.current = false;
     currentIndexRef.current = 0; dispSeqRef.current = 0; seqRef.current = 0; statesRef.current = {};
     nearBottomRef.current = true;
+
+    const lowLatRes = await fetch("/api/child/test-mode/e-low-latency").catch(()=>null);
+    if (lowLatRes?.ok) {
+      const lowLatData = await lowLatRes.json();
+      lowLatencyEnabledRef.current = lowLatData.enabled !== false;
+    } else {
+      lowLatencyEnabledRef.current = true;
+    }
 
     const gate = await fetch("/api/child/test-mode");
     if (gate.status !== 200) { setStatus("denied"); return; }
@@ -285,6 +403,11 @@ export function TestModeERunner() {
     }
     setStatus("ready");
     if (!restored && !s.completed) setTimeout(() => addBubble("k", qs[idx]?.question_text ?? ""), 0);
+    
+    if (isAutoRef.current) {
+      voiceRef.current?.setInputMode("auto");
+      void voiceRef.current?.startSession();
+    }
   }, [addBubble]);
 
   useEffect(() => { void loadSession(false); }, [loadSession]);
@@ -344,6 +467,9 @@ export function TestModeERunner() {
               🔄 새 테스트
             </button>
           </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+            <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
             <span data-testid="progress" style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>
               {completed ? "완료" : `질문 ${currentStep}/10`} · {progress}%
@@ -399,15 +525,27 @@ export function TestModeERunner() {
               </div>
             </div>
           ) : (
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-              <button
-                data-testid="mic"
-                onClick={toggleVoice}
-                disabled={busy}
-                style={{ ...btnBase, background: listening ? "#dc2626" : "#1a6b5a", minWidth: 92, minHeight: 44, whiteSpace: "nowrap", flexShrink: 0, opacity: busy ? 0.5 : 1 }}
-              >
-                {listening ? "⏹ 완료" : "🎤 말하기"}
-              </button>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+              {isAuto ? (
+                <button
+                  disabled={true}
+                  style={{ ...btnBase, background: autoPhase === "error" ? "#dc2626" : "#1a6b5a", minWidth: 92, minHeight: 44, whiteSpace: "nowrap", flexShrink: 0, opacity: 0.7 }}
+                >
+                  {autoPhase === "listening" ? "🎧 듣고 있어요" : 
+                   autoPhase === "speaking" ? "🗣️ 말하는 중" :
+                   autoPhase === "finalizing" || autoPhase === "responding" ? "⏳ 생각 중..." :
+                   autoPhase === "error" ? "❌ 오류" : "🎧 듣는 중"}
+                </button>
+              ) : (
+                <button
+                  data-testid="mic"
+                  onClick={toggleVoice}
+                  disabled={busy}
+                  style={{ ...btnBase, background: listening ? "#dc2626" : "#1a6b5a", minWidth: 92, minHeight: 44, whiteSpace: "nowrap", flexShrink: 0, opacity: busy ? 0.5 : 1 }}
+                >
+                  {listening ? "⏹ 완료" : "🎤 말하기"}
+                </button>
+              )}
               <input
                 data-testid="text-input"
                 value={textInput}

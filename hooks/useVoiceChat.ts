@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
+import { logVoiceEvent, maskText } from "@/lib/voiceTimelineLog";
 
 // Gemini Live 네이티브 오디오 API를 폐기하고 STT(근사 스트리밍) + 텍스트 LLM + TTS 분리 구조로 전환.
 // 구성: 아이 음성 → GCP STT(/api/mission/stt, recognize REST 주기호출) → 텍스트
@@ -22,6 +23,12 @@ export interface UseVoiceChatOptions {
   onEmptyAudio?: () => void;
   /** STT 텍스트 변환 실패 시 호출 */
   onSttFailed?: (reason?: string) => void;
+  /** 음성 발화 시작 시(무음->유음 전환 최초 1회) 호출 (E 저지연 타임스탬프 전용) */
+  onSpeechBegin?: () => void;
+  /** 음성 발화 종료 시(무음 감지로 확정되기 직전) 호출 (E 저지연 타임스탬프 전용) */
+  onSpeechEnd?: () => void;
+  /** A~E 테스트 모드 태깅용 conversation_mode(§23). 미지정 시 기존 동작 그대로(usage_events는 미분류). */
+  conversationMode?: string;
 }
 
 const POLL_INTERVAL_MS = 1300;       // 중간 자막 갱신 주기
@@ -63,6 +70,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   onEmptyAudioRef.current = options?.onEmptyAudio;
   const onSttFailedRef = useRef<((reason?: string) => void) | undefined>(undefined);
   onSttFailedRef.current = options?.onSttFailed;
+  const onSpeechBeginRef = useRef<(() => void) | undefined>(undefined);
+  onSpeechBeginRef.current = options?.onSpeechBegin;
+  const onSpeechEndRef = useRef<(() => void) | undefined>(undefined);
+  onSpeechEndRef.current = options?.onSpeechEnd;
 
   const micStreamRef = useRef<MediaStream | null>(null);
   const inputCtxRef = useRef<AudioContext | null>(null);
@@ -123,7 +134,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       const res = await fetch("/api/mission/stt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64, sessionId, childTurnId }),
+        body: JSON.stringify({ audioBase64, sessionId, childTurnId, conversationMode: options?.conversationMode }),
         signal,
       });
       if (signal.aborted) return { text: "", failureReason: "aborted" };
@@ -145,6 +156,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   }
 
   const finalizeChildTurn = useCallback(async (signal?: AbortSignal) => {
+    logVoiceEvent({ ts: Date.now(), eventType: "finalizeChildTurn_start" });
     const epoch = ++utteranceEpochRef.current; // 새 세대로 전환 — 이전 세대의 낡은 interim 응답은 이후 전부 무시됨
     const chunks = chunksRef.current;
     chunksRef.current = [];
@@ -166,7 +178,9 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     }).catch(() => {});
 
     console.log("[STT] calling", { turnId: predictedTurnId });
+    logVoiceEvent({ ts: Date.now(), eventType: "stt_request", childTurnId: predictedTurnId });
     const { text, confidence, failureReason } = await callStt(audioBase64, signal, predictedTurnId);
+    logVoiceEvent({ ts: Date.now(), eventType: "stt_response", childTurnId: predictedTurnId, textPreview: maskText(text), extra: { failureReason } });
     console.log("[STT] result", { turnId: predictedTurnId, hasText: !!text, failureReason });
     if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 폐기
     if (!text) {
@@ -175,6 +189,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     }
 
     lastAsrConfidenceRef.current = confidence;
+    logVoiceEvent({ ts: Date.now(), eventType: "appendTurn_voicechat", extra: { role: "child" } });
     appendTurn({ role: "child", text });
     onTurnCompleteRef.current?.({ role: "child", text });
   }, []);
@@ -184,6 +199,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setError(null);
     updateStatus("connecting");
     transcriptRef.current = [];
+    logVoiceEvent({ ts: Date.now(), eventType: "transcript_reset" });
     setTranscript([]);
     turnSeqRef.current = 0;
     chunksRef.current = [];
@@ -231,11 +247,16 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         chunksRef.current.push(new Uint8Array(buf.buffer.slice(0)));
 
         if (rms >= RMS_SILENCE_THRESHOLD) {
+          if (!hasSpeechRef.current) {
+            onSpeechBeginRef.current?.();
+          }
           hasSpeechRef.current = true;
           silenceMsRef.current = 0;
         } else {
           silenceMsRef.current += CHUNK_MS;
           if (hasSpeechRef.current && silenceMsRef.current >= SILENCE_MS_TO_FINALIZE && inputModeRef.current !== "manual") {
+            onSpeechEndRef.current?.();
+            logVoiceEvent({ ts: Date.now(), eventType: "silence_detected" });
             void finalizeChildTurn();
           }
         }
@@ -370,12 +391,14 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
     try {
       const sessionId = options?.getSessionId?.() ?? null;
+      logVoiceEvent({ ts: Date.now(), eventType: "tts_request", extra: { turnId } });
       const res = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(voiceName ? { text: trimmed, voiceName, sessionId, turnId } : { text: trimmed, sessionId, turnId }),
       });
       console.log("[MISSION-DEBUG] /api/voice/tts status:", res.status);
+      logVoiceEvent({ ts: Date.now(), eventType: "tts_response" });
       if (epoch !== speakEpochRef.current) { console.log("[MISSION-DEBUG] speak() epoch superseded, discarding tts response"); return false; }
       if (!res.ok) {
         const errBody = await res.text().catch(() => "");
@@ -414,6 +437,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         source.onended = () => resolve();
         try {
           source.start();
+          logVoiceEvent({ ts: Date.now(), eventType: "tts_playback_start" });
           if (turnId) {
             fetch("/api/mission/timing", {
               method: "POST",
