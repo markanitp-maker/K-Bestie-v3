@@ -125,8 +125,10 @@ async function callVertex(modelId: string, prompt: string, maxOutputTokens: numb
   const location = Deno.env.get("GOOGLE_CLOUD_LOCATION") || "us-central1";
   const accessToken = await getVertexAccessToken();
 
+  const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+
   const res = await fetch(
-    `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/${modelId}:generateContent`,
+    `https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${modelId}:generateContent`,
     {
       method: "POST",
       headers: {
@@ -137,6 +139,7 @@ async function callVertex(modelId: string, prompt: string, maxOutputTokens: numb
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           maxOutputTokens,
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
     },
