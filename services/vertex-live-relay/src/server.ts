@@ -55,6 +55,7 @@ type LogFields = {
   version?: number | null;
   hasVoiceName?: boolean;
   parseStage?: string;
+  lastMessageAgoMs?: number;
 };
 
 // 허용 필드만 받도록 타입으로 강제 — 음성 원본/전체 transcript/키/토큰/서비스계정 정보는
@@ -91,6 +92,7 @@ interface ActiveEntry {
   maxTimer: NodeJS.Timeout | null;
   heartbeatTimer: NodeJS.Timeout | null;
   lastPongAt: number;
+  lastMessageAt: number;
 }
 
 // 아이(childId) 1명당 활성 연결 1개만 유지 — 중복 연결 방지.
@@ -116,6 +118,7 @@ async function handleConnection(ws: WebSocket, childId: string, voiceName: strin
     maxTimer: null,
     heartbeatTimer: null,
     lastPongAt: Date.now(),
+    lastMessageAt: Date.now(),
   };
   activeSessions.set(childId, entry);
 
@@ -211,8 +214,8 @@ async function handleConnection(ws: WebSocket, childId: string, voiceName: strin
           sendJson(ws, { type: "error", message: "vertex_connection_failed" });
           cleanup("vertex_error");
         },
-        onclose: (e: { code?: number }) => {
-          log({ event: "vertex_close", childId, sessionId, code: e.code });
+        onclose: (e: { code?: number; reason?: string }) => {
+          log({ event: "vertex_close", childId, sessionId, code: e.code, reason: e.reason });
           cleanup("vertex_close");
         },
       },
@@ -233,6 +236,11 @@ async function handleConnection(ws: WebSocket, childId: string, voiceName: strin
       return;
     }
     if (!parsed?.type) return;
+
+    if (["audio", "activityStart", "activityEnd", "text"].includes(parsed.type)) {
+      entry.lastMessageAt = Date.now();
+    }
+
     if (parsed.type === "audio" && typeof parsed.data === "string") {
       entry.vertexSession?.sendRealtimeInput({ audio: { data: parsed.data, mimeType: "audio/pcm;rate=16000" } });
     } else if (parsed.type === "activityStart") {
@@ -249,8 +257,15 @@ async function handleConnection(ws: WebSocket, childId: string, voiceName: strin
     }
   });
 
-  ws.on("close", () => {
-    log({ event: "client_close", childId, sessionId });
+  ws.on("close", (code, reason) => {
+    log({
+      event: "client_close",
+      childId,
+      sessionId,
+      code,
+      reason: reason ? reason.toString() : undefined,
+      lastMessageAgoMs: Date.now() - entry.lastMessageAt
+    });
     cleanup("client_close");
   });
   ws.on("error", () => {
