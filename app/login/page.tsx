@@ -75,6 +75,8 @@ function LoginContent() {
       return;
     }
 
+    fetch("/api/analytics/login", { method: "POST" }).catch(() => {});
+
     if (returnUrl) {
       router.push(returnUrl);
     } else {

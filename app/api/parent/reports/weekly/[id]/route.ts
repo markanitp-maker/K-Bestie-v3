@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getTierForChild, isDetailAllowed } from "@/lib/plan/requireDetailAccess";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,23 @@ export async function GET(
   const tier = await getTierForChild(weekly.child_id);
   const restricted = !isDetailAllowed(tier);
   const safeWeekly = restricted ? { ...weekly, detail_text: "", detail_dashboard_cards: {} } : weekly;
+
+  try {
+    const { data: member } = await supabase.from('family_members').select('family_id').eq('user_id', user.id).maybeSingle();
+    if (member?.family_id) {
+      await logBehaviorEvent({
+        eventName: "parent_report_view",
+        actorType: "parent",
+        actorId: user.id,
+        familyId: member.family_id,
+        childId: weekly.child_id,
+        feature: "weekly_report",
+        route: "/parent/report/weekly/[id]"
+      });
+    }
+  } catch (e) {
+    // 의도적 무시
+  }
 
   return NextResponse.json({ weeklySummary: safeWeekly, restricted });
 }

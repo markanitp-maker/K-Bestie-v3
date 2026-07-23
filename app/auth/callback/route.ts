@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { headers as nextHeaders } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 export async function GET(request: Request) {
   const { searchParams, origin: rawOrigin } = new URL(request.url);
@@ -49,6 +50,27 @@ export async function GET(request: Request) {
 
           if (upsertError) {
             console.error("[auth/callback] parents table upsert error:", upsertError.message);
+          }
+
+          try {
+            const { data: member } = await serviceSupabase
+              .from("family_members")
+              .select("family_id")
+              .eq("user_id", user.id)
+              .maybeSingle();
+
+            if (member?.family_id) {
+              await logBehaviorEvent({
+                eventName: "parent_login",
+                actorType: "parent",
+                actorId: user.id,
+                familyId: member.family_id,
+                feature: "auth",
+                route: "/auth/callback"
+              });
+            }
+          } catch (e) {
+            console.error("[auth/callback] behavior event logging failed:", e);
           }
         }
       } catch (err: any) {

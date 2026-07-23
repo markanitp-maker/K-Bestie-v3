@@ -5,6 +5,7 @@ import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { checkAndDeductQuota } from "@/lib/plan/parentQuestionQuota";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 function extractJSON(text: string) {
   try {
@@ -48,6 +49,23 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  try {
+    const { data: member } = await supabase.from('family_members').select('family_id').eq('user_id', user.id).maybeSingle();
+    if (member?.family_id) {
+      await logBehaviorEvent({
+        eventName: "parent_conversation_topic_view",
+        actorType: "parent",
+        actorId: user.id,
+        familyId: member.family_id,
+        childId: childId,
+        feature: "conversation_topic",
+        route: "/parent/questions"
+      });
+    }
+  } catch (e) {
+    // 의도적 무시
   }
 
   return NextResponse.json({ questions: questions ?? [] });
