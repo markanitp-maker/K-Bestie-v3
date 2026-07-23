@@ -6,13 +6,15 @@ import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { pickNonRepeatingReaction } from "@/lib/mission/eReactionPool";
 
-// E안 실행 러너 (Plan01 §4 E안 — 테스트 계정 전용).
-// /child/missions 실제 실행 경로에서 테스트 계정 + E override일 때 렌더된다(일반 계정은 기존 미션 그대로).
-// 아이 음성 입력 → STT(/api/mission/stt) → 아이 텍스트 말풍선 저장/표시
+import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
+
+// E안, F안 실행 러너 (Plan01 §4 E, F안 — 테스트 계정 전용).
+// /child/missions 실제 실행 경로에서 테스트 계정 + E/F override일 때 렌더된다(일반 계정은 기존 미션 그대로).
+// 아이 음성 입력 → STT(/api/mission/stt) → 아이 텍스트 말풍선 저장/표시 (F안은 숨김)
 //   → 공통 오케스트레이터(/api/mission/answer) → 유효답변 판정·진행률·완료·황금열쇠(record_v2_mission_answer RPC)
 //   → 케이 답변(/api/mission/respond, LLM) → 케이 텍스트 말풍선 저장/표시.
 // TTS API 호출·오디오 재생은 절대 하지 않는다(useVoiceChat.speak()를 호출하지 않음).
-// conversation_mode='E'를 mission/stt·mission/respond 에 실어 usage_events에 태깅(§23).
+// conversation_mode='E' (또는 'F')를 mission/stt·mission/respond 에 실어 usage_events에 태깅(§23).
 // 고정 10개 질문(test-mission/start)을 순서대로 진행. 새로고침·재입장 시 chat_messages로 복원.
 //
 // 레이아웃: 디바이스 프레임 없이 전체 화면(100dvh) = 고정 헤더 + flex:1 채팅 스크롤 + 하단 고정 composer.
@@ -23,7 +25,7 @@ interface Q { id: string; question_text: string; dashboard_area_tag: string }
 
 const uuid = () => crypto.randomUUID();
 
-export function TestModeERunner() {
+export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
   const router = useRouter();
   const [status, setStatus] = useState<"loading" | "denied" | "ready">("loading");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -74,6 +76,9 @@ export function TestModeERunner() {
   // 자동 스크롤: 사용자가 하단 근처를 보고 있을 때만 최신 말풍선으로 이동(과거 열람 중엔 강제 이동 안 함).
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const nearBottomRef = useRef(true);
+
+  const strategy = getModeStrategy(selectedMode);
+  const showChildBubble = strategy.showChildBubble;
 
   const checkAutoFail = useCallback(() => {
     if (isAuto && sttFailStreakRef.current >= 2) {
@@ -372,7 +377,7 @@ export function TestModeERunner() {
           history: [...priorHistory, { role: "child", text }],
           nextQuestionText: nextQ.question_text,
           childTurnId,
-          conversationMode: "E",
+          conversationMode: selectedMode,
         }),
       });
 
@@ -474,7 +479,7 @@ export function TestModeERunner() {
   // STT(음성 입력) — E안: 케이 음성 없음이라 speak()를 절대 호출하지 않는다.
   const voice = useVoiceChat({
     getSessionId: () => sessionIdRef.current,
-    conversationMode: "E",
+    conversationMode: selectedMode,
     onSpeechBegin: () => { setAutoPhase("speaking"); timingBeginSpeech(); },
     onSpeechEnd: () => { setAutoPhase("finalizing"); timingEndSpeech(); },
     onTurnComplete: (turn) => { 
@@ -531,7 +536,7 @@ export function TestModeERunner() {
     const gate = await fetch("/api/child/test-mode");
     if (gate.status !== 200) { setStatus("denied"); return; }
     const g = await gate.json();
-    if (g.selectedMode !== "E") { setNotice("이 화면은 E안 전용이에요. 대화 방식에서 E안을 선택해 주세요."); setStatus("denied"); return; }
+    if (g.selectedMode !== "E" && g.selectedMode !== "F") { setNotice(`이 화면은 E/F안 전용이에요. 대화 방식에서 E/F안을 선택해 주세요. (현재: ${g.selectedMode})`); setStatus("denied"); return; }
 
     const startRes = await fetch("/api/child/test-mission/start", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ forceNew }),
@@ -623,7 +628,7 @@ export function TestModeERunner() {
         {/* ── 고정 헤더: 방식 · 현재 단계 · 진행률 ── */}
         <div style={{ flexShrink: 0, padding: "calc(10px + env(safe-area-inset-top)) 14px 10px", borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: "#1a6b5a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>대화 방식 테스트 · E안</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#1a6b5a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>대화 방식 테스트 · {selectedMode}안</span>
             <button
               data-testid="new-test"
               onClick={() => { void loadSession(true); }}
@@ -652,29 +657,32 @@ export function TestModeERunner() {
           data-testid="bubbles"
           style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", gap: 8, padding: "14px 12px" }}
         >
-          {bubbles.map((b, i) => (
-            <div
-              key={b.turnId ?? i}
-              data-role={b.role}
-              data-seq={b.displaySequence}
-              style={{
-                alignSelf: b.role === "child" ? "flex-end" : "flex-start",
-                maxWidth: "82%",
-                padding: "10px 14px",
-                borderRadius: 16,
-                background: b.role === "child" ? "#1a6b5a" : "#fff",
-                color: b.role === "child" ? "#fff" : "#1e1e2d",
-                border: b.role === "k" ? "1px solid #e5e7eb" : "none",
-                fontSize: 14,
-                lineHeight: 1.45,
-                overflowWrap: "anywhere",
-                wordBreak: "break-word",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {b.text}
-            </div>
-          ))}
+          {bubbles.map((b, i) => {
+            if (b.role === "child" && !showChildBubble) return null;
+            return (
+              <div
+                key={b.turnId ?? i}
+                data-role={b.role}
+                data-seq={b.displaySequence}
+                style={{
+                  alignSelf: b.role === "child" ? "flex-end" : "flex-start",
+                  maxWidth: "82%",
+                  padding: "10px 14px",
+                  borderRadius: 16,
+                  background: b.role === "child" ? "#1a6b5a" : "#fff",
+                  color: b.role === "child" ? "#fff" : "#1e1e2d",
+                  border: b.role === "k" ? "1px solid #e5e7eb" : "none",
+                  fontSize: 14,
+                  lineHeight: 1.45,
+                  overflowWrap: "anywhere",
+                  wordBreak: "break-word",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {b.text}
+              </div>
+            );
+          })}
         </div>
 
         {notice && <div style={{ flexShrink: 0, fontSize: 12, color: "#dc2626", padding: "0 14px 6px" }}>{notice}</div>}

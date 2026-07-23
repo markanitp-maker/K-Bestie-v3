@@ -76,7 +76,7 @@ export default function TestModesPage() {
 
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px" }}>
-      <h1 style={{ fontSize: 18, fontWeight: 800, color: "#1e1e2d", marginBottom: 4 }}>대화 방식 테스트 (A~E)</h1>
+      <h1 style={{ fontSize: 18, fontWeight: 800, color: "#1e1e2d", marginBottom: 4 }}>대화 방식 테스트 (A~F)</h1>
       <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
         테스트 계정 전용 · 선택한 방식은 요금제(tier)를 바꾸지 않는 테스트 세션 설정으로만 저장돼요.
       </p>
@@ -109,7 +109,7 @@ export default function TestModesPage() {
         })}
       </div>
 
-      {(selected === "A" || selected === "B" || selected === "C" || selected === "D" || selected === "E") && (
+      {(selected === "A" || selected === "B" || selected === "C" || selected === "D" || selected === "E" || selected === "F") && (
         <button
           onClick={() => router.push("/child/missions")}
           style={{ marginTop: 16, width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "#1a6b5a", color: "white", fontWeight: 800, cursor: "pointer" }}

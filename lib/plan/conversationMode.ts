@@ -1,12 +1,13 @@
-// A~E 대화방식(conversation_mode) 단일 소스 — usage_events 태깅/집계/필터/내보내기/관리자 UI가 공유한다.
-// Plan01 §4/§23. A~E UI가 아직 구현 전이라 현재 기록되는 이벤트는 대부분 mode 미지정(=미분류)이다.
+// A~F 대화방식(conversation_mode) 단일 소스 — usage_events 태깅/집계/필터/내보내기/관리자 UI가 공유한다.
+// Plan01 §4/§23. A~F UI가 아직 구현 전이라 현재 기록되는 이벤트는 대부분 mode 미지정(=미분류)이다.
 //   - A: Live API + 아이 말풍선 표시
 //   - B: Live API + 아이 말풍선 미표시
 //   - C: STT+LLM+TTS + 아이 말풍선 표시
 //   - D: STT+LLM+TTS + 아이 말풍선 미표시
 //   - E: STT+LLM 텍스트 채팅(케이 음성 없음)
+//   - F: STT+LLM 텍스트 채팅(케이 음성 없음) + 아이 말풍선 미표시
 
-export const CONVERSATION_MODES = ["A", "B", "C", "D", "E"] as const;
+export const CONVERSATION_MODES = ["A", "B", "C", "D", "E", "F"] as const;
 export type ConversationMode = (typeof CONVERSATION_MODES)[number];
 
 /** 집계/표시에서 mode 미지정 이벤트를 담는 버킷 키. DB에는 NULL로 저장되고, 화면에는 '미분류'로 노출한다. */
@@ -19,6 +20,7 @@ export const MODE_LABELS: Record<ModeBucket, string> = {
   C: "C안 (STT·LLM·TTS·아이말풍선)",
   D: "D안 (STT·LLM·TTS·아이말풍선 없음)",
   E: "E안 (음성입력·텍스트채팅)",
+  F: "F안 (음성입력·텍스트채팅·아이말풍선 없음)",
   unclassified: "미분류",
 };
 

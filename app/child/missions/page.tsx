@@ -1811,16 +1811,17 @@ function MissionInner() {
 // 기존 미션 대신 E안 러너를 렌더한다. 일반 계정(및 E 미선택)은 기존 MissionInner 그대로 —
 // 게이트가 'e'로 결정되기 전엔 MissionInner를 마운트하지 않아 기존 흐름에 회귀가 없다.
 function MissionRouteGate() {
-  const [decision, setDecision] = useState<"loading" | "ab" | "e" | "cd" | "normal">("loading");
-  const [selectedMode, setSelectedMode] = useState<"A" | "B" | "C" | "D">("C");
+  const [decision, setDecision] = useState<"loading" | "ab" | "ef" | "cd" | "normal">("loading");
+  const [selectedMode, setSelectedMode] = useState<"A" | "B" | "C" | "D" | "E" | "F">("C");
   useEffect(() => {
     let cancelled = false;
     fetch("/api/child/test-mode")
       .then((r) => (r.status === 200 ? r.json() : null))
       .then((d) => { 
         if (!cancelled) {
-          if (d?.selectedMode === "E") {
-            setDecision("e");
+          if (d?.selectedMode === "E" || d?.selectedMode === "F") {
+            setSelectedMode(d.selectedMode);
+            setDecision("ef");
           } else if (d?.selectedMode === "C" || d?.selectedMode === "D") {
             setSelectedMode(d.selectedMode);
             setDecision("cd");
@@ -1843,9 +1844,9 @@ function MissionRouteGate() {
       </div>
     );
   }
-  // E안 테스트 화면은 디바이스 프레임(DemoFrame) 없이 전체 화면으로 렌더 — 프레임/토글·중첩 스크롤 제거.
-  if (decision === "e") {
-    return <TestModeERunner />;
+  // E/F안 테스트 화면은 디바이스 프레임(DemoFrame) 없이 전체 화면으로 렌더 — 프레임/토글·중첩 스크롤 제거.
+  if (decision === "ef") {
+    return <TestModeERunner selectedMode={selectedMode as "E" | "F"} />;
   }
   if (decision === "cd") {
     return <TestModeCDRunner selectedMode={selectedMode as "C" | "D"} />;

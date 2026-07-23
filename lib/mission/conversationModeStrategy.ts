@@ -31,6 +31,7 @@ export const MODE_STRATEGY: Record<ConversationMode, ModeStrategy> = {
   C: { mode: "C", transport: "pipeline", useTTS: true,  showChildBubble: true,  isLive: false, label: "STT·LLM·TTS · 양쪽 말풍선" },
   D: { mode: "D", transport: "pipeline", useTTS: true,  showChildBubble: false, isLive: false, label: "STT·LLM·TTS · 아이 말풍선 숨김" },
   E: { mode: "E", transport: "text",     useTTS: false, showChildBubble: true,  isLive: false, label: "STT·LLM · 텍스트 채팅" },
+  F: { mode: "F", transport: "text",     useTTS: false, showChildBubble: false, isLive: false, label: "STT·LLM · 텍스트 채팅 · 아이 말풍선 없음" },
 };
 
 export function getModeStrategy(mode: ConversationMode): ModeStrategy {

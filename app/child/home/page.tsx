@@ -50,6 +50,9 @@ export default function ChildHomePage() {
   const [child, setChild] = useState<ChildInfo | null>(null);
   const [noChild, setNoChild] = useState(false);
   const [loading, setLoading] = useState(true);
+  // A~F 대화방식 테스트 진입 버튼은 테스트 계정(is_test_account=true)에만 노출.
+  // 서버가 /api/child/test-mode 에서 재검증하므로, 200이면 테스트 계정 → 버튼 표시.
+  const [isTestAccount, setIsTestAccount] = useState(false);
 
   useEffect(() => {
     // 1. /api/child/me를 호출하여 세션 기반의 아이 프로필 확인
@@ -91,6 +94,13 @@ export default function ChildHomePage() {
         setNoChild(true);
         setLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    // 테스트 계정 여부 서버 재검증(일반 계정은 403 → 버튼 미노출).
+    fetch("/api/child/test-mode")
+      .then((r) => setIsTestAccount(r.status === 200))
+      .catch(() => setIsTestAccount(false));
   }, []);
 
   const handleLogout = async () => {
@@ -196,6 +206,26 @@ export default function ChildHomePage() {
                 <span className="text-white text-lg">→</span>
               </Link>
             ))}
+
+            {isTestAccount && (
+              <Link
+                href="/child/test-modes"
+                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98] border-2 border-dashed"
+                style={{ background: "#fff", borderColor: "#1a6b5a" }}
+              >
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0"
+                  style={{ background: "rgba(26,107,90,0.12)" }}
+                >
+                  🧪
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="font-bold text-base" style={{ color: "#1a6b5a" }}>대화 방식 테스트</p>
+                  <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>A~F 방식 선택 (테스트 계정 전용)</p>
+                </div>
+                <span className="text-lg" style={{ color: "#1a6b5a" }}>→</span>
+              </Link>
+            )}
           </div>
         </div>
 

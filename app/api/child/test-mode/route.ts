@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const mode = normalizeConversationMode(body.mode);
-  if (!mode) return NextResponse.json({ error: "mode는 A~E 중 하나여야 합니다" }, { status: 400 });
+  if (!mode) return NextResponse.json({ error: "mode는 A~F 중 하나여야 합니다" }, { status: 400 });
 
   const svc = createServiceClient();
   const { error } = await svc
