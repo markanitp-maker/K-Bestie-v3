@@ -57,6 +57,7 @@ async function playClosingLineViaTts(text: string, sessionId: string | null): Pr
     });
     if (!res.ok) return;
     const data = await res.json();
+        logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
     if (!data.audioContent) return;
     ctx = new AudioContext();
     const audioBuffer = await ctx.decodeAudioData(base64ToArrayBuffer(data.audioContent));
@@ -141,6 +142,7 @@ function MissionInner() {
   // 읽고(동기·ref 기반 그대로 유지), 이 state는 오직 렌더링(생각 중 표시)에만 쓴다.
   const [turnPhaseUi, setTurnPhaseUi] = useState<"idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking" | "recovering">("idle");
   const setTurnPhase = useCallback((next: "idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking" | "recovering") => {
+    logVoiceEvent({ ts: Date.now(), eventType:"setTurnPhase", turnPhaseBefore: turnPhaseRef.current, turnPhaseAfter: next, sessionId: sessionIdRef.current, mode: voiceModeRef.current ?? undefined });
     if (turnPhaseRef.current !== "idle" && turnPhaseRef.current !== "child_listening" && turnPhaseRef.current !== "child_finalizing" && turnPhaseRef.current !== "recovering" && next === "idle") {
       liveRef.current?.logTelemetryEvent("thinkingFalse");
       liveRef.current?.logTelemetryEvent("micEnabled");
@@ -297,6 +299,7 @@ function MissionInner() {
   }
 
   const handleTurnComplete = useCallback((turn: Turn) => {
+    logVoiceEvent({ ts: Date.now(), eventType: "handleTurnComplete_start", extra: { role: turn.role }, transcriptSummary: (getTranscriptRef.current?.() ?? []).map(t => ({ role: t.role, id: t.id, displaySequence: t.displaySequence })) });
     const isLive = voiceModeRef.current === "live";
 
     let finalTurnId = turn.id;
@@ -365,6 +368,7 @@ function MissionInner() {
       }
     }
 
+    logVoiceEvent({ ts: Date.now(), eventType: "saveMessage_call", childTurnId: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence });
     saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id);
 
     if (!isChildTurnDuringActiveMission) {
@@ -438,6 +442,7 @@ function MissionInner() {
     }
     void (async () => {
       try {
+        logVoiceEvent({ ts: Date.now(), eventType: "answer_request" });
         const res = await fetch("/api/mission/answer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -486,6 +491,7 @@ function MissionInner() {
           return;
         }
         const data = await res.json();
+        logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
         if (currentEpoch !== answerEpochRef.current) return;
         
         if (data.reason === "safety_signal" || data.status === "SAFETY_PAUSED") {
@@ -519,6 +525,18 @@ function MissionInner() {
           // "종료 발화의 turnComplete + 오디오 재생 완료 + 700ms" 이후에만 세션을 닫는다.
           // 일반 후속 질문 큐(pickNextIndex/askQuestion)는 절대 실행하지 않는다.
           if (voiceModeRef.current === "live") {
+            // 8초 수동 타임아웃(manualTimeoutRef)이 여기서 정리되지 않으면, 미션이 이미
+            // 완료되고 케이가 종료 인사를 마친 뒤에도 그 타이머가 뒤늦게 발화해 불필요한
+            // speakAsK("시간이 좀 걸리네...") 재시도를 추가로 트리거한다(다른 모든 분기는
+            // manualTimeoutRef/manualAbortControllerRef를 정리하는데, 이 분기만 빠져있었음).
+            if (manualTimeoutRef.current) {
+              clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+            }
+            if (manualAbortControllerRef.current) {
+              manualAbortControllerRef.current.abort();
+              manualAbortControllerRef.current = null;
+            }
             setTurnPhase("k_speaking");
             liveRef.current?.lockNow();
             const success = liveRef.current?.speakClosingLine("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
@@ -610,6 +628,7 @@ function MissionInner() {
 
         let respondText: string | undefined;
         try {
+          logVoiceEvent({ ts: Date.now(), eventType: "respond_request" });
           const respondRes = await fetch("/api/mission/respond", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -623,6 +642,7 @@ function MissionInner() {
           });
           if (respondRes.ok) {
             const respondData = await respondRes.json();
+          logVoiceEvent({ ts: Date.now(), eventType: "respond_response" });
             if (respondData.text) respondText = respondData.text;
           } else {
             if (currentEpoch !== answerEpochRef.current) return;
@@ -947,7 +967,7 @@ function MissionInner() {
       // (c) turnPhase가 "idle"이 아닌 경우 미완료 턴 취소 처리
       if (turnPhaseRef.current !== "idle") {
         const sid = sessionIdRef.current;
-        const currentTurnId = activeChildTurnIdRef.current || lastKnownTurnIdRef.current;
+        const currentTurnId = activeChildTurnIdRef.current;
         if (sid && currentTurnId) {
           fetch("/api/chat/messages", {
             method: "PATCH",
@@ -1121,11 +1141,11 @@ function MissionInner() {
       const hour = getKstHour();
       const qpRound = searchParams.get("roundType") as RoundType | null;
 
-      // 운영시간 게이트 on/off — 서버 환경변수 CHILD_TIME_RESTRICTIONS_ENABLED로 제어(기본 true=
-      // 기존 제한 정상 적용). false면 게이트 결과가 null이어도 "common" 라운드로 대체해 언제든
-      // 미션을 시작할 수 있게 한다. 게이트 로직(getKstHour/currentRound) 자체는 그대로 유지 —
-      // 이 스위치는 "적용 여부"만 바꾼다. 조회 실패 시 안전하게 기존 제한(true)을 유지한다.
-      let timeRestrictionsEnabled = true;
+      // 운영시간 게이트 on/off — 서버 환경변수 MISSION_TIME_GATE_ENABLED(단일 플래그)로 제어.
+      // 값이 "true"일 때만 기존 제한이 적용되고, 그 외에는 기본적으로 비활성화(시간 무관 진입
+      // 가능)된다. 게이트 로직(getKstHour/currentRound) 자체는 그대로 유지 — 이 스위치는
+      // 적용 여부만 바꾼다. 조회 실패 시에도 기본값(false, 제한 비활성화)으로 안전하게 진행한다.
+      let timeRestrictionsEnabled = false;
       try {
         const cfgRes = await fetch("/api/config/child-time-restrictions");
         if (cfgRes.ok) {
@@ -1133,7 +1153,7 @@ function MissionInner() {
           if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
         }
       } catch {
-        // 조회 실패 — 기본값(true, 기존 제한 유지)으로 안전하게 진행
+        // 조회 실패 — 기본값(false, 제한 비활성화)으로 안전하게 진행
       }
       if (cancelled) return;
 
@@ -1151,6 +1171,7 @@ function MissionInner() {
           body: JSON.stringify({ childId: cid, roundType: round }),
         });
         const data = await res.json();
+        logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
         if (cancelled) return;
         if (!res.ok) {
           setErrorMsg(data.error ?? "미션을 시작하지 못했어요");
@@ -1159,6 +1180,34 @@ function MissionInner() {
         }
         setSessionId(data.sessionId);
         sessionIdRef.current = data.sessionId;
+
+        if (navigator.serviceWorker?.controller) {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = (e) => {
+            fetch("/api/client-version", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sessionId: data.sessionId,
+                childId: cid,
+                clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
+                swVersion: e.data?.swVersion ?? "unknown",
+              }),
+            }).catch(() => {});
+          };
+          navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" }, [channel.port2]);
+        } else {
+          fetch("/api/client-version", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: data.sessionId,
+              childId: cid,
+              clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
+              swVersion: "no-sw-controller",
+            }),
+          }).catch(() => {});
+        }
         const qs: MissionQuestion[] = data.questions ?? [];
 
         if (data.resumed) {
@@ -1195,9 +1244,11 @@ function MissionInner() {
 
         // 스크롤백용 — 이 세션에 이미 저장된 과거 대화를 불러와 둔다(live 전환 시 채워짐).
         try {
+          logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_start" });
           const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`);
           if (msgRes.ok) {
             const msgData = await msgRes.json();
+            logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_complete", extra: { messageCount: msgData.messages?.length ?? 0 } });
             const past: Turn[] = (msgData.messages ?? [])
               .filter((m: any) => m.content && m.content.trim() !== "" && (m.turn_status ? m.turn_status === "finalized" : true))
               .map(
@@ -1312,6 +1363,7 @@ function MissionInner() {
         sttTts.setMicEnabled(true);
         setTurnPhase("child_listening");
       }
+      logVoiceEvent({ ts: Date.now(), eventType: "recording_started_manual" });
       setIsRecording(true);
       isRecordingRef.current = true;
       recordingStartedAtRef.current = Date.now();
@@ -1362,7 +1414,9 @@ function MissionInner() {
   // 비워질 때마다 공통 소스(pastMessagesRef)에서 전체 이력을 다시 복원(seed)한다.
   useEffect(() => {
     if (voice.status === "live" && voice.transcript.length === 0 && pastMessagesRef.current.length > 0) {
+      logVoiceEvent({ ts: Date.now(), eventType: "seed_before", transcriptSummary: voice.transcript.map(t => ({ role: t.role, id: t.id, displaySequence: (t as any).displaySequence })), extra: { transcriptLengthBeforeSeed: voice.transcript.length } });
       voice.seedTranscript(pastMessagesRef.current);
+      logVoiceEvent({ ts: Date.now(), eventType: "seed_after", transcriptSummary: voice.transcript.map(t => ({ role: t.role, id: t.id, displaySequence: (t as any).displaySequence })) });
     }
   }, [voice.status, voice.transcript.length, voice.seedTranscript]);
 

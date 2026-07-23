@@ -386,7 +386,7 @@ export function TestModeCDRunner({ selectedMode }: { selectedMode: "C" | "D" }) 
     conversationMode: selectedMode,
     onSpeechBegin: () => { setAutoPhase("speaking"); timingBeginSpeech(); },
     onSpeechEnd: () => { setAutoPhase("finalizing"); timingEndSpeech(); },
-    onTurnComplete: (turn) => { 
+    onTurnComplete: (turn) => {
       if (turn.role === "child") {
         pendingTimingRef.current.stt_final = Date.now();
         sttFailStreakRef.current = 0;

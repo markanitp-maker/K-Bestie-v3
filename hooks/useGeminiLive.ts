@@ -144,14 +144,27 @@ function encodePCM16(float32: Float32Array): string {
 // 모델이 실제로 낸 K 발화(outputTranscription)에 프롬프트/지시문이 그대로 새어나온
 // 흔적이 있는지 검사한다. speakAsK/speakClosingLine으로 이미 안전한 원문을 알고 있는
 // 턴에서만 이 결과로 화면 표시를 원문으로 대체한다(오디오는 이미 재생되어 되돌릴 수 없음).
+// speakAsK/speakClosingLine이 "다음 문장을 ... 그대로 말해줘" 형태로 지시하면, Vertex Live
+// 모델이 이걸 그냥 실행하지 않고 그 지시 자체를 대화 소재로 삼아 메타 발언(예: "...라고 말하면
+// 자연스러울 것 같아", "이 문장을 그대로 말하는 건 어렵지만", "죄송해요, 저는 입력된 문장을
+// 그대로 말할 수는 없어요")을 하는 경우가 실측으로 다수 확인됐다. 예전 패턴은 몇 가지 정확한
+// 문구만 하드코딩돼 있어 이런 변형을 대부분 놓쳤다 — 그래서 문구 몇 개를 추가하는 대신, 이
+// 메타 발언들이 공통으로 쓰는 조각(그대로/따라 + 말하다 활용형, 역할·사용자님·입력된 문장 같은
+// 자기지시 표현, "말할 수는 없다" 류의 거부 표현)을 넓게 잡는다.
 const K_TEXT_LEAK_PATTERNS = [
   /\[[^\]]*\]/,
-  /라고.{0,6}말하면.{0,4}(돼|될까요|되나요|될지)/,
-  /그대로\s*말하면/,
+  /라고.{0,10}말하면/,
+  /그대로\s*(말하면|말하는|말할|말해)/,
+  /(따라)?\s*말(할|해)\s*(줄\s*)?수는?\s*없/,
   /소리내어\s*그대로/,
   /시스템\s*지시/,
   /다음\s*문장을?\s*(그대로|자연스럽게)/,
   /현재\s*물어봐야\s*할/,
+  /친구\s*역할/,
+  /사용자님의\s*(말씀|문장)/,
+  /입력된\s*문장/,
+  /이\s*문장을/,
+  /자연스러울\s*것\s*같/,
 ];
 function containsLeakPattern(text: string): boolean {
   return K_TEXT_LEAK_PATTERNS.some((re) => re.test(text));
@@ -207,6 +220,15 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const generationEpochRef = useRef<number>(0);
   const cancelledGenerationIdsRef = useRef<Set<string>>(new Set());
   const processedTurnGenerationsRef = useRef<Set<string>>(new Set());
+  // GCP STT 모드에서 currentKGenerationIdRef를 null로 비워 K-A(Vertex의 원치 않는 자동 응답)를
+  // 억제하는 동안, K-A 자신의 turnComplete가 실제로 도착할 때까지 다음 K 발화(K-B, speakAsK/
+  // speakClosingLine)의 시작을 늦춘다. null 비교만으로는 speakAsK가 새 generation을 이미 발급한
+  // "뒤에" 도착하는 지연된 K-A가 그 새 generation으로 오인돼 재생될 수 있어(단순 null-out만으로는
+  // 막을 수 없는 잔여 경합) — K-A의 turnComplete를 실제로 확인(또는 안전 타임아웃)한 뒤에만 다음
+  // K 발화를 시작하게 해 두 generation의 메시지 스트림이 절대 겹치지 않도록 한다.
+  const awaitingNullGenerationSettleRef = useRef(false);
+  const pendingPostSettleActionRef = useRef<(() => void) | null>(null);
+  const settleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeKTurnIdRef = useRef<string | null>(null);
   const activeKTurnDisplaySequenceRef = useRef<number | null>(null);
   const activeChildTurnIdRef = useRef<string | null>(null);
@@ -254,6 +276,62 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const lastCloseReconnectAtRef = useRef<number>(0);
   const closeReconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const stabilityResetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const qualityRecomputeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── 연결 품질 계측(실측치 기반, 가짜 신호 막대 아님) ──────────────────────
+  // speakAsK/sendText/speakClosingLine이 응답을 기다리기 시작한 시각(watchdog가 걸리는
+  // 시점과 동일) — 첫 출력(오디오/텍스트)이 도착하면 이 시각과의 차이를 지연시간으로 기록한다.
+  const requestSentAtRef = useRef<number | null>(null);
+  // 최근 지연시간(ms) 최대 8개 — 평균으로 품질에 반영.
+  const recentLatenciesRef = useRef<number[]>([]);
+  // 최근 5분 내 watchdog(10초 무응답) 발동 시각들 — 응답 실패율 반영.
+  const watchdogFireTimestampsRef = useRef<number[]>([]);
+  const CONNECTION_QUALITY_WINDOW_MS = 5 * 60 * 1000;
+  const [connectionQuality, setConnectionQuality] = useState<number>(5);
+
+  function armLatencyClock() {
+    requestSentAtRef.current = Date.now();
+  }
+  function recordFirstOutputLatency() {
+    if (requestSentAtRef.current == null) return;
+    const latency = Date.now() - requestSentAtRef.current;
+    requestSentAtRef.current = null;
+    const arr = recentLatenciesRef.current;
+    arr.push(latency);
+    if (arr.length > 8) arr.shift();
+    recomputeConnectionQuality();
+  }
+  function recordWatchdogFire() {
+    const now = Date.now();
+    const arr = watchdogFireTimestampsRef.current;
+    arr.push(now);
+    const cutoff = now - CONNECTION_QUALITY_WINDOW_MS;
+    while (arr.length && arr[0] < cutoff) arr.shift();
+    recomputeConnectionQuality();
+  }
+  // 5단계(0~5, 5가 가장 좋음) — 실측 가능한 값만 사용한다: WebSocket 연결 상태, 최근
+  // 재연결 횟수(closeReconnectCountRef, 기존 재연결 로직이 이미 추적), 최근 응답 지연시간
+  // 평균(recentLatenciesRef), 최근 5분 내 watchdog(무응답) 발동 횟수. 임의의 신호 막대를
+  // 그리지 않고 이 값들로부터 직접 계산한다.
+  function recomputeConnectionQuality() {
+    if (statusRef.current !== "live") {
+      setConnectionQuality(statusRef.current === "connecting" ? 3 : 0);
+      return;
+    }
+    let level = 5;
+    if (closeReconnectCountRef.current >= 1) level -= Math.min(closeReconnectCountRef.current, 2);
+    const now = Date.now();
+    const cutoff = now - CONNECTION_QUALITY_WINDOW_MS;
+    const recentWatchdogFires = watchdogFireTimestampsRef.current.filter((t) => t >= cutoff).length;
+    level -= Math.min(recentWatchdogFires * 2, 4);
+    const latencies = recentLatenciesRef.current;
+    if (latencies.length > 0) {
+      const avg = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+      if (avg > 6000) level -= 2;
+      else if (avg > 3000) level -= 1;
+    }
+    setConnectionQuality(Math.max(0, Math.min(5, level)));
+  }
 
   // speakAsK/speakClosingLine으로 "이 문장을 그대로 말해줘"라고 지시했을 때 이미 검증된
   // 안전한 원문 — 모델이 실제로 낸 outputTranscription이 프롬프트 누출 패턴을 포함하면
@@ -436,6 +514,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   function updateStatus(s: SessionStatus) {
     statusRef.current = s;
     setStatus(s);
+    // 연결 품질 표시가 상태 변화(연결됨/끊김/에러 등) 즉시 반영되도록 매 전이마다 재계산한다.
+    recomputeConnectionQuality();
   }
 
   function logTelemetryEvent(eventName: string) {
@@ -545,6 +625,50 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 이 K 턴의 잔여 오디오/텍스트/turnComplete를 전부 폐기하도록 컷 상태로 전환한다.
   // K가 실제로 말하는 중이 아니었으면(정상적인 아이 차례 시작) 컷 플래그는 세우지 않는다 —
   // 그러지 않으면 존재하지도 않는 K 턴을 컷 대기로 잠가 다음 흐름이 막힌다.
+  // 새 generation을 시작하기 직전에 호출 — 지금까지의 currentKGenerationIdRef를
+  // cancelledGenerationIdsRef에 봉인한다. 이걸 안 하면, Vertex가 이미 끝난 이전
+  // generation에 대해 뒤늦게(수 초~수십 초 후) 보내는 자발적 추가 응답("모델이 스스로
+  // 이어가려는 문장" — lockNow 주석에도 명시된 기존에 알려진 모델 동작)이, handleMessage가
+  // incomingGenerationId를 항상 "그 시점의 현재" ref 값과 비교하는 탓에 이미 새로 바뀐
+  // generation/턴 소속으로 오인되어 재생된다 — 아이 발화 1회에 케이가 2회 응답하는 P0 버그의
+  // 근본 원인. cutActiveKTurnForBargeIn()이 barge-in 시나리오에서만 하던 봉인을, K가 새
+  // 턴(자동/수동 activityEnd, speakClosingLine/sendText/speakAsK)을 시작하는 모든 지점으로
+  // 확장한다.
+  function sealCurrentGeneration() {
+    if (currentKGenerationIdRef.current) {
+      const set = cancelledGenerationIdsRef.current;
+      set.add(currentKGenerationIdRef.current);
+      if (set.size > 50) {
+        const first = set.values().next().value;
+        if (first) set.delete(first);
+      }
+    }
+  }
+
+  // GCP STT 모드에서 K-A 억제를 위해 currentKGenerationIdRef를 null로 비운 직후 호출한다.
+  // K-A 자신의 turnComplete가 도착(settleNow) 또는 안전 타임아웃 전까지, speakAsK/
+  // speakClosingLine이 다음 K 발화를 시작하지 않고 pendingPostSettleActionRef에 대기시킨다.
+  function armSettleWait() {
+    awaitingNullGenerationSettleRef.current = true;
+    if (settleTimeoutRef.current) clearTimeout(settleTimeoutRef.current);
+    settleTimeoutRef.current = setTimeout(() => {
+      console.warn(`${getLogPrefix()} ⚠️ K-A(억제된 generation) turnComplete 대기 타임아웃 — 강제 settle`);
+      settleTimeoutRef.current = null;
+      settleNow();
+    }, 4000);
+  }
+
+  function settleNow() {
+    if (settleTimeoutRef.current) {
+      clearTimeout(settleTimeoutRef.current);
+      settleTimeoutRef.current = null;
+    }
+    awaitingNullGenerationSettleRef.current = false;
+    const action = pendingPostSettleActionRef.current;
+    pendingPostSettleActionRef.current = null;
+    action?.();
+  }
+
   function cutActiveKTurnForBargeIn() {
     clearGenerationTimeout();
     hasFiredFirstOutputRef.current = false;
@@ -554,14 +678,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       scheduledSourcesRef.current.length > 0;
     generationEpochRef.current += 1;
     finalizeActiveKTurn();
-    if (currentKGenerationIdRef.current) {
-      const set = cancelledGenerationIdsRef.current;
-      set.add(currentKGenerationIdRef.current);
-      if (set.size > 50) {
-        const first = set.values().next().value;
-        if (first) set.delete(first);
-      }
-    }
+    sealCurrentGeneration();
     currentKGenerationIdRef.current = null; // 이전 generation의 이벤트 전부 폐기
     if (kWasActive) {
       kTurnCutRef.current = true;
@@ -867,6 +984,19 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       clearTimeout(stabilityResetTimerRef.current);
       stabilityResetTimerRef.current = null;
     }
+    if (qualityRecomputeIntervalRef.current) {
+      clearInterval(qualityRecomputeIntervalRef.current);
+      qualityRecomputeIntervalRef.current = null;
+    }
+    // settle-wait 대기 상태를 여기서 반드시 정리한다 — 안 하면, 세션이 끊기고 4초 안에
+    // 재연결돼 새 세션이 live가 될 경우, 이전(끊긴) 세션에서 대기하던 pendingPostSettleAction
+    // (예: speakAsK)이 새 세션에서 뒤늦게 실행되어 엉뚱한 K 발화를 유발할 수 있다.
+    if (settleTimeoutRef.current) {
+      clearTimeout(settleTimeoutRef.current);
+      settleTimeoutRef.current = null;
+    }
+    awaitingNullGenerationSettleRef.current = false;
+    pendingPostSettleActionRef.current = null;
 
     notifyUsageLive("end");
     stopAllScheduledSources();
@@ -1054,10 +1184,19 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
       // ── 공용 핸들러 — AI Studio(SDK 직결)/Vertex(Cloud Run 릴레이) 두 경로가 공유 ──
       function handleOpen() {
-        if (myGeneration !== connectionGenerationRef.current) return;
+        if (myGeneration !== connectionGenerationRef.current) {
+          // 이 연결 시도가 더 최신 generation에 의해 이미 대체됨 — 이 시도를 기다리던
+          // connectionReadyPromise가 있다면 영원히 대기하지 않도록 실패 처리한다.
+          settleConnectionReadyFail("superseded by newer connection generation");
+          return;
+        }
         console.log(`${getLogPrefix()} ✅ Live session open`);
         updateStatus("live");
         notifyUsageLive("start");
+        // relay의 ready(=setupComplete) 수신 시점 — status가 실제로 "live"로 확정된 지금에서야
+        // startSession()의 대기 중인 Promise를 resolve한다(P0: setupComplete 이전에 speakAsK(Q1)
+        // 이 먼저 실행돼 조용히 버려지는 문제의 근본 수정).
+        settleConnectionReadyOk();
         // 연결이 열리자마자 바로 리셋하면 "열리자마자 다시 닫히는" 반복 실패 시나리오에서
         // 매번 1회차로 되돌아가 버려 재연결 제한이 무력화된다(codex 지적) — 일정 시간
         // 안정적으로 열려 있었을 때만 반복-실패 카운터를 리셋한다.
@@ -1066,7 +1205,19 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         stabilityResetTimerRef.current = setTimeout(() => {
           closeReconnectCountRef.current = 0;
           stabilityResetTimerRef.current = null;
+          // 재연결 카운트가 회복됐으니 연결 품질 표시도 즉시 반영한다(codex 지적 — 안 하면
+          // 실제로는 안정화됐는데도 막대가 계속 감점된 채로 남는다).
+          recomputeConnectionQuality();
         }, STABLE_CONNECTION_MS);
+
+        // watchdog 발동 기록은 5분이 지나면 더 이상 감점에 반영되지 않아야 하는데,
+        // recomputeConnectionQuality()는 호출될 때만 그 창을 다시 계산한다 — 그 사이 아무
+        // 이벤트(응답 도착·재연결 등)도 없으면 오래된 감점이 그대로 남는다(codex 지적).
+        // 연결이 열려있는 동안 30초마다 재계산해 시간 경과에 따른 회복이 반영되게 한다.
+        if (qualityRecomputeIntervalRef.current) clearInterval(qualityRecomputeIntervalRef.current);
+        qualityRecomputeIntervalRef.current = setInterval(() => {
+          recomputeConnectionQuality();
+        }, 30000);
 
         // 로컬 STT 폴백 시작 — gcp 모드에서는 브라우저 폴백을 켜지 않음(초기화도 안 함)
         if (ENABLE_STT_FALLBACK && sttModeRef.current !== "gcp") {
@@ -1092,6 +1243,16 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         const isCancelledGeneration = incomingGenerationId === null || cancelledGenerationIdsRef.current.has(incomingGenerationId);
         const currentTurnKey = activeKTurnIdRef.current && incomingGenerationId ? `${activeKTurnIdRef.current}:${incomingGenerationId}` : null;
         const isAlreadyProcessed = currentTurnKey ? processedTurnGenerationsRef.current.has(currentTurnKey) : false;
+
+        // K-A(억제된/null 처리된 generation)가 실제로 끝났다는 신호 — armSettleWait()로 대기
+        // 중이던 다음 K 발화(K-B)를 지금 시작한다. 이 메시지 자체의 콘텐츠는 isCancelledGeneration
+        // 으로 뒤에서 어차피 폐기되지만, settle 판정만은 그 어떤 조기 반환(waitingForLiveReceive/
+        // postCompletionLock/usageMetadata/audio data 등)보다도 먼저 확인해야 한다 — 안 그러면
+        // turnComplete와 함께 usageMetadata 등이 딸려온 흔한 경우 이 판정이 조용히 스킵되어
+        // 매번 4초 안전 타임아웃까지 기다리게 된다.
+        if (msg.serverContent?.turnComplete && incomingGenerationId === null && awaitingNullGenerationSettleRef.current) {
+          settleNow();
+        }
 
         if (waitingForLiveReceiveRef.current && (msg.serverContent?.outputTranscription || msg.data)) {
           if (isCancelledGeneration) return;
@@ -1125,10 +1286,15 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         if (msg.data && !kTurnCutRef.current) {
           if (isCancelledGeneration) return;
           if (isAlreadyProcessed) return;
-          if (kSpeechAllowedRef.current) {
+          // 이 턴에서 프롬프트 누출(메타 발언)이 이미 감지됐다면, 텍스트뿐 아니라 그 뒤에 오는
+          // 오디오 청크도 더 이상 재생하지 않는다 — 이미 재생된 앞부분은 되돌릴 수 없지만,
+          // 누출이 확정된 시점 이후로는 최대한 짧게 끊는다(볼륨을 임의로 죽이는 게 아니라, 감지된
+          // "메타 발언 턴"의 나머지를 재생하지 않는 것).
+          if (kSpeechAllowedRef.current && !kTurnLeakDetectedRef.current) {
             if (!hasFiredFirstOutputRef.current) {
               hasFiredFirstOutputRef.current = true;
               clearGenerationTimeout();
+              recordFirstOutputLatency();
               logTelemetryEvent("firstAudioChunk");
               onKTurnFirstOutputRef.current?.();
             }
@@ -1295,6 +1461,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
             if (!hasFiredFirstOutputRef.current) {
               hasFiredFirstOutputRef.current = true;
               clearGenerationTimeout();
+              recordFirstOutputLatency();
               logTelemetryEvent("firstTextDelta");
               onKTurnFirstOutputRef.current?.();
             } else {
@@ -1445,10 +1612,46 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       if (!tokenData.wsUrl || !tokenData.wsUrl.startsWith("wss://")) {
         throw new Error("지금은 케이와 대화를 시작하기 어려워요.\n잠시 후 다시 만나자.");
       }
+      // connectionReadyPromise: WebSocket 객체 생성 시점이 아니라, relay가 실제로 "ready"
+      // (=Vertex 세션 setupComplete)를 보내 handleOpen()이 실행되고 status가 "live"로 확정된
+      // 시점에만 resolve된다. startSession()이 이 Promise를 기다린 뒤에야 반환되므로, 호출부
+      // (예: loadSession의 speakAsK(질문1))가 setupComplete 이전에 첫 발화를 요청해 조용히
+      // 버려지는 경합을 없앤다(P0 수정 — 미션 초기화/VAD/오디오/중복응답 로직은 건드리지 않음).
+      // 한 번 settle되면 이후 호출은 전부 no-op(중복 settle 방지). ready 이전에 WebSocket
+      // 에러·닫힘·(재연결 등으로) 이 연결 시도 자체가 폐기되면 reject하고, 8초 안에 ready가
+      // 오지 않으면 timeout으로 reject해 무한 대기하지 않는다 — 두 경우 모두 등록해둔
+      // 타이머를 반드시 정리한다.
+      let connectionReadySettled = false;
+      let resolveConnectionReady: (() => void) | null = null;
+      let rejectConnectionReady: ((err: Error) => void) | null = null;
+      const connectionReadyPromise = new Promise<void>((resolve, reject) => {
+        resolveConnectionReady = resolve;
+        rejectConnectionReady = reject;
+      });
+      let connectionReadyTimeoutId: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        settleConnectionReadyFail("connection ready timeout(8s) — relay ready 신호 없음");
+      }, 8000);
+      function settleConnectionReadyOk() {
+        if (connectionReadySettled) return;
+        connectionReadySettled = true;
+        if (connectionReadyTimeoutId) { clearTimeout(connectionReadyTimeoutId); connectionReadyTimeoutId = null; }
+        resolveConnectionReady?.();
+      }
+      function settleConnectionReadyFail(reason: string) {
+        if (connectionReadySettled) return;
+        connectionReadySettled = true;
+        if (connectionReadyTimeoutId) { clearTimeout(connectionReadyTimeoutId); connectionReadyTimeoutId = null; }
+        rejectConnectionReady?.(new Error(reason));
+      }
+
       const ws = new WebSocket(tokenData.wsUrl);
 
       const handleRelayError = (reason?: string, code?: number) => {
         if (myGeneration !== connectionGenerationRef.current) return;
+        // 이 시점(handleRelayError 호출 시점)은 항상 ready 도달 이전이므로(ws.onclose의
+        // "connecting"일 때만/ws.onmessage의 "error" 타입만 여기로 옴), 대기 중인
+        // connectionReadyPromise가 있다면 무한 대기하지 않도록 실패 처리한다.
+        settleConnectionReadyFail(reason || "relay error");
         console.error(`${getLogPrefix()} ❌ Vertex relay error:`, reason, "code:", code);
         // 아이 화면 문구는 그대로 두되(Plan7 §2), 브라우저에서만 보이던 실제 실패 사유를
         // 서버 로그로도 남겨 원인 진단이 가능하게 한다(음성/transcript 등은 보내지 않음).
@@ -1483,6 +1686,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       ws.onerror = () => {
         if (myGeneration !== connectionGenerationRef.current) return;
         console.error(`${getLogPrefix()} ❌ relay WebSocket-level error`);
+        // ready 이전 WebSocket 레벨 에러 — 대기 중인 connectionReadyPromise를 실패 처리한다
+        // (ready 이후라면 이미 settle되어 있으므로 no-op).
+        settleConnectionReadyFail("websocket-level error");
       };
       ws.onclose = (e) => {
         if (myGeneration !== connectionGenerationRef.current) return;
@@ -1568,6 +1774,13 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                     // 1. activityStart 전송 (정확히 1회)
                     console.log(`${getLogPrefix()} [VAD] Auto Speech Start -> send activityStart`);
                     isChildSpeakingRef.current = true;
+                    // sendActivityStart(수동 모드)와 동일하게, 새 아이 발화 턴이 시작되는 시점에
+                    // 곧바로 초기화한다 — 이전엔 K-A(억제 전)의 turnComplete가 이 리셋을 대신
+                    // 해줬지만, gcp 모드에서 K-A를 null로 억제한 뒤로는 그 turnComplete 자체가
+                    // 처리되지 않아(isCancelledGeneration) 이 리셋이 영원히 일어나지 않고
+                    // childTurnFlushedRef가 true로 고정돼 두 번째 발화부터 flushChildTurn이
+                    // 전부 조용히 무시되는 회귀가 생겼다 — 실제 fake-audio 검증 중 발견.
+                    childTurnFlushedRef.current = false;
 
                     activeChildTurnIdRef.current = nextTurnId();
                     activeChildTurnDisplaySequenceRef.current = nextDisplaySequence();
@@ -1634,18 +1847,56 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                     if (statusRef.current === "live" && sessionRef.current && vadStateRef.current === "active") {
                       console.log(`${getLogPrefix()} [VAD] Auto Speech End -> send activityEnd`);
                       logTelemetryEvent("sendActivityEnd");
-                      kGenerationSeqRef.current += 1;
-                      currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
-                      activeKTurnIdRef.current = nextTurnId();
-                      activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
-                      kGenerationCompleteRef.current = false;
-                      kTurnCompleteRef.current = false;
-                      recoveryGateOpenRef.current = false;
-                      hasFiredFirstOutputRef.current = false;
                       generationEpochRef.current += 1;
-                      startGenerationTimeout();
+                      sealCurrentGeneration();
+
+                      // sendActivityEnd(수동 모드)와 반드시 동일하게 분기해야 한다 — 이 분기가
+                      // 없던 게 P0 버그("아이 발화 1회에 케이 응답 2회")의 실제 원인이었다: GCP
+                      // STT 모드에서는 Gemini 자체 응답(K-A, 원본 오디오에 대한 Vertex의 자동
+                      // 반응)을 재생하지 않고 /api/mission/answer 처리 후 나오는 K-B(speakAsK)만
+                      // 재생해야 하는데, 이 분기 없이 매번 새 generation id를 발급해버리면 K-A가
+                      // 정식 generation으로 추적돼 그대로 재생된 뒤 곧이어 speakAsK가 K-B도
+                      // 재생해 실제로 두 응답이 모두 나갔다(자동 모드에서만 재현 — 수동 모드는
+                      // 원래부터 이 분기가 있어 영향 없었다).
+                      if (sttModeRef.current === "gcp") {
+                        currentKGenerationIdRef.current = null;
+                      } else {
+                        kGenerationSeqRef.current += 1;
+                        currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
+                        activeKTurnIdRef.current = nextTurnId();
+                        activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
+                        kGenerationCompleteRef.current = false;
+                        kTurnCompleteRef.current = false;
+                        recoveryGateOpenRef.current = false;
+                        startGenerationTimeout();
+                      }
+                      hasFiredFirstOutputRef.current = false;
                       sessionRef.current?.sendRealtimeInput({ activityEnd: {} });
                       logVoiceEvent({ ts: Date.now(), eventType: "activityEnd", mode: "live" });
+                      if (sttModeRef.current === "gcp") {
+                        // sendActivityEnd(수동 모드)와 동일하게: activityEnd만 보내면 Live 서버가
+                        // turnComplete로 인식하지 않고 계속 기다리며(지연/자발적 계속 생성 유발)
+                        // K-A를 이어갈 수 있어, 명시적으로 turnComplete도 함께 전송해 이번(폐기
+                        // 대상) 턴을 확정적으로 종료시킨다. gcp 분기에서만 보낸다 — 비-gcp(네이티브
+                        // 전사) 자동 모드는 원래 이 신호를 보내지 않았고, 그 프로토콜에 영향을 주지
+                        // 않기 위해 기존 동작을 그대로 유지한다.
+                        sessionRef.current?.sendClientContent({ turns: [], turnComplete: true });
+                        // K-A(방금 null 처리한 generation) 자신의 turnComplete가 실제로 도착할
+                        // 때까지 다음 K 발화(K-B, speakAsK)의 시작을 늦춘다(안전 타임아웃 포함) —
+                        // null 비교만으로는 speakAsK가 새 generation을 이미 발급한 뒤에 도착하는
+                        // 지연된 K-A를 걸러내지 못한다(핸들메시지는 항상 "현재" ref 값 기준으로
+                        // 판별하므로).
+                        armSettleWait();
+                        // sendActivityEnd(수동 모드)와 동일하게: K-A의 outputTranscription에
+                        // 얹혀 flush되길 기다리지 않고, 여기서 곧바로 flushChildTurn을 호출해
+                        // GCP STT 인식을 시작한다 — K-A를 null로 비운 이상 그 이벤트에 기대는
+                        // flush 트리거는 더 이상 오지 않기 때문에 반드시 필요하다(안 하면 자동
+                        // 모드 아이 발화가 인식조차 되지 않는다).
+                        console.error(`[Timing] (b) 마이크 중지(activityEnd) 및 STT 전송 시작 - ${Date.now()}, chunk개수: ${childAudioChunksRef.current.length}`);
+                        manualFinalizingRef.current = true;
+                        setInterimChildText("음성을 인식하고 있어요…");
+                        flushChildTurn("");
+                      }
                       clearVadTimersAndBuffers(); // idle 복귀 및 리셋
                     }
                     silenceTimerRef.current = null;
@@ -1666,6 +1917,10 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       source.connect(processor);
       processor.connect(inputCtx.destination);
 
+      // startSession()은 이제 WebSocket 객체 생성 시점이 아니라, relay의 ready(=setupComplete)
+      // 신호를 실제로 받아 status가 "live"로 확정된 뒤에만 반환된다 — 실패/타임아웃 시 아래
+      // catch가 기존과 동일하게 처리한다(에러 노출 + teardown).
+      await connectionReadyPromise;
     } catch (err) {
       console.error("[K] 🚨 startSession error (voiceName:", voiceNameRef.current, "):", err);
       setError((err as Error).message);
@@ -1736,51 +1991,66 @@ const incomingGenerationId = currentKGenerationIdRef.current;
    *  영구 전환한다. lockNow() 이후에 호출할 것. */
   const speakClosingLine = useCallback((text: string): boolean => {
     if (!sessionRef.current || statusRef.current !== "live") return false;
-    audioMutedRef.current = false;
-    if (outputCtxRef.current && outputCtxRef.current.state !== "running") {
-      void ensureOutputAudioRunning();
+    const run = () => {
+      if (!sessionRef.current || statusRef.current !== "live") return;
+      console.log(`${getLogPrefix()} 📣 speakClosingLine 호출 — text길이:${text.length}, kGenSeq:${kGenerationSeqRef.current}, childTurnId:${activeChildTurnIdRef.current}`);
+      audioMutedRef.current = false;
+      if (outputCtxRef.current && outputCtxRef.current.state !== "running") {
+        void ensureOutputAudioRunning();
+      }
+      closingAudioStartedFiredRef.current = false;
+      postCompletionLockRef.current = "closingActive";
+      stopAllScheduledSources();
+      expectingInterruptRef.current = true;
+      // 새 K 턴을 시작하므로 직전 컷 상태가 남아 있으면 해제한다 — barge-in 직후 서버가
+      // interrupted/turnComplete를 못 보낸 드문 경우에도 이 K 턴이 컷에 막혀 사라지지 않도록.
+      kTurnCutRef.current = false;
+      kTurnCutAwaitingUnlockRef.current = false;
+      kTurnCutServerDoneRef.current = false;
+      pendingKTextRef.current = "";
+      kTurnExpectedTextRef.current = text;
+      kTurnLeakDetectedRef.current = false;
+      hasFiredFirstOutputRef.current = false;
+      generationEpochRef.current += 1;
+      sealCurrentGeneration();
+      kGenerationSeqRef.current += 1;
+      currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
+      activeKTurnIdRef.current = nextTurnId();
+      activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
+      kGenerationCompleteRef.current = false;
+      kTurnCompleteRef.current = false;
+      recoveryGateOpenRef.current = false;
+      kTurnHasAudioRef.current = false;
+      clearWatchdogTimer();
+      armLatencyClock();
+      watchdogTimerRef.current = setTimeout(() => {
+        console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
+        recordWatchdogFire();
+        onRecoveryNeededRef.current?.();
+        updateStatus("ended");
+        teardown("watchdog:speakClosingLine");
+        startSession({ preserveHistory: true }).catch(() => {});
+      }, 10000);
+      startGenerationTimeout();
+      sessionRef.current.sendClientContent({
+        turns: [{ role: "user", parts: [{ text: `다음 문장만 그대로 자연스럽게 소리 내어 말해줘. 설명하거나 되묻거나 다른 말을 덧붙이지 말고 이 문장만 말해: "${text}"` }] }],
+        turnComplete: true,
+      });
+    };
+    // K-A(억제된 generation)가 아직 settle 대기 중이면, 그게 끝난 뒤(또는 안전 타임아웃 뒤)
+    // 실행되도록 미룬다 — 두 generation의 메시지 스트림이 겹치지 않게 하기 위함(P0 근본 원인 수정).
+    if (awaitingNullGenerationSettleRef.current) {
+      pendingPostSettleActionRef.current = run;
+    } else {
+      run();
     }
-    closingAudioStartedFiredRef.current = false;
-    postCompletionLockRef.current = "closingActive";
-    stopAllScheduledSources();
-    expectingInterruptRef.current = true;
-    // 새 K 턴을 시작하므로 직전 컷 상태가 남아 있으면 해제한다 — barge-in 직후 서버가
-    // interrupted/turnComplete를 못 보낸 드문 경우에도 이 K 턴이 컷에 막혀 사라지지 않도록.
-    kTurnCutRef.current = false;
-    kTurnCutAwaitingUnlockRef.current = false;
-    kTurnCutServerDoneRef.current = false;
-    pendingKTextRef.current = "";
-    kTurnExpectedTextRef.current = text;
-    kTurnLeakDetectedRef.current = false;
-    hasFiredFirstOutputRef.current = false;
-    generationEpochRef.current += 1;
-    kGenerationSeqRef.current += 1;
-    currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
-    activeKTurnIdRef.current = nextTurnId();
-    activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
-    kGenerationCompleteRef.current = false;
-    kTurnCompleteRef.current = false;
-                      recoveryGateOpenRef.current = false;
-    kTurnHasAudioRef.current = false;
-    clearWatchdogTimer();
-    watchdogTimerRef.current = setTimeout(() => {
-      console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
-      onRecoveryNeededRef.current?.();
-      updateStatus("ended");
-      teardown("watchdog:speakClosingLine");
-      startSession({ preserveHistory: true }).catch(() => {});
-    }, 10000);
-    startGenerationTimeout();
-    sessionRef.current.sendClientContent({
-      turns: [{ role: "user", parts: [{ text: `다음 문장을 자연스럽게 소리내어 그대로 말해줘: "${text}"` }] }],
-      turnComplete: true,
-    });
     return true;
   }, []);
 
   /** 텍스트 메시지 전송 — child 턴으로 즉시 추가 후 onTurnComplete 호출 */
   const sendText = useCallback((text: string): boolean => {
     if (!sessionRef.current || statusRef.current !== "live") return false;
+    console.log(`${getLogPrefix()} 📣 sendText 호출 — text길이:${text.length}, kGenSeq:${kGenerationSeqRef.current}, childTurnId:${activeChildTurnIdRef.current}`);
     const cid = nextTurnId();
     const cSeq = nextDisplaySequence();
     appendTurn({ role: "child", text, id: cid, displaySequence: cSeq });
@@ -1789,7 +2059,8 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       turns: [{ role: "user", parts: [{ text }] }],
       turnComplete: true,
     });
-    
+
+    sealCurrentGeneration();
     kGenerationSeqRef.current += 1;
     currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
     activeKTurnIdRef.current = nextTurnId();
@@ -1799,14 +2070,16 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                       recoveryGateOpenRef.current = false;
     kTurnHasAudioRef.current = false;
     clearWatchdogTimer();
+    armLatencyClock();
     watchdogTimerRef.current = setTimeout(() => {
       console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
+      recordWatchdogFire();
       onRecoveryNeededRef.current?.();
       updateStatus("ended");
       teardown("watchdog:sendText");
       startSession({ preserveHistory: true }).catch(() => {});
     }, 10000);
-    
+
     return true;
   }, []);
 
@@ -1815,51 +2088,70 @@ const incomingGenerationId = currentKGenerationIdRef.current;
    *  role:"k"로 호출되어(child 판정/미션 답변 로직을 타지 않음) 대화 로그에는 남되 오답 처리되지 않는다. */
   const speakAsK = useCallback((text: string): boolean => {
     if (!sessionRef.current || statusRef.current !== "live") {
+      // status 미준비 상태(대개 "connecting")로 speakAsK가 조용히 사라지던 게 P0
+      // 원인이었다(startSession()이 ready 이전에 반환되던 문제는 이제 수정됨) — 그래도 다른
+      // 경로로 재진입/타이밍 문제가 생기면 즉시 눈에 띄도록 진단 로그만 남기고, 여기서
+      // 자동 재시도는 하지 않는다(호출부가 필요하면 스스로 재시도 정책을 가져야 함).
+      console.warn(`${getLogPrefix()} ⚠️ speakAsK 호출 실패 — status 미준비(status:${statusRef.current}, session:${!!sessionRef.current}), text길이:${text.length}`);
       return false;
     }
-    audioMutedRef.current = false;
-    if (outputCtxRef.current && outputCtxRef.current.state !== "running") {
-      void ensureOutputAudioRunning();
+    const run = () => {
+      if (!sessionRef.current || statusRef.current !== "live") return;
+      console.log(`${getLogPrefix()} 📣 speakAsK 호출 — text길이:${text.length}, kGenSeq:${kGenerationSeqRef.current}, childTurnId:${activeChildTurnIdRef.current}`);
+      audioMutedRef.current = false;
+      if (outputCtxRef.current && outputCtxRef.current.state !== "running") {
+        void ensureOutputAudioRunning();
+      }
+      stopAllScheduledSources();
+      expectingInterruptRef.current = true;
+      // 여기서 말풍선을 낙관적으로 먼저 찍지 않는다 — 모델이 실제로 발화하며 오는
+      // outputTranscription(outTx)이 onmessage에서 자동으로 말풍선을 채운다.
+      // 예전엔 여기서도 appendTurn+onTurnComplete를 즉시 호출해서, 뒤이어 도착하는 outTx가
+      // 같은 "k" 턴으로 병합되며 같은 문장이 말풍선 안에 두 번 붙는 문제가 있었음
+      // (예: "...뭐니?안녕~ 난 케이야...").
+      // 새 K 턴을 시작하므로 직전 barge-in 컷 상태가 남아 있으면 해제한다(이 K 턴이 컷에
+      // 막혀 말풍선/음성이 안 나오는 것을 방지 — 컷 해제는 원래 서버 turnComplete에 의존).
+      kTurnCutRef.current = false;
+      kTurnCutAwaitingUnlockRef.current = false;
+      kTurnCutServerDoneRef.current = false;
+      pendingKTextRef.current = "";
+      kTurnExpectedTextRef.current = text;
+      kTurnLeakDetectedRef.current = false;
+      hasFiredFirstOutputRef.current = false;
+      generationEpochRef.current += 1;
+      sealCurrentGeneration();
+      kGenerationSeqRef.current += 1;
+      currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
+      activeKTurnIdRef.current = nextTurnId();
+      activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
+      kGenerationCompleteRef.current = false;
+      kTurnCompleteRef.current = false;
+      recoveryGateOpenRef.current = false;
+      kTurnHasAudioRef.current = false;
+      clearWatchdogTimer();
+      armLatencyClock();
+      watchdogTimerRef.current = setTimeout(() => {
+        console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
+        recordWatchdogFire();
+        onRecoveryNeededRef.current?.();
+        updateStatus("ended");
+        teardown("watchdog:speakAsK");
+        startSession({ preserveHistory: true }).catch(() => {});
+      }, 10000);
+      startGenerationTimeout();
+      waitingForLiveReceiveRef.current = true;
+      sessionRef.current.sendClientContent({
+        turns: [{ role: "user", parts: [{ text: `다음 문장만 그대로 자연스럽게 소리 내어 말해줘. 설명하거나 되묻거나 다른 말을 덧붙이지 말고 이 문장만 말해: "${text}"` }] }],
+        turnComplete: true,
+      });
+    };
+    // K-A(억제된 generation)가 아직 settle 대기 중이면, 그게 끝난 뒤(또는 안전 타임아웃 뒤)
+    // 실행되도록 미룬다 — 두 generation의 메시지 스트림이 겹치지 않게 하기 위함(P0 근본 원인 수정).
+    if (awaitingNullGenerationSettleRef.current) {
+      pendingPostSettleActionRef.current = run;
+    } else {
+      run();
     }
-    stopAllScheduledSources();
-    expectingInterruptRef.current = true;
-    // 여기서 말풍선을 낙관적으로 먼저 찍지 않는다 — 모델이 실제로 발화하며 오는
-    // outputTranscription(outTx)이 onmessage에서 자동으로 말풍선을 채운다.
-    // 예전엔 여기서도 appendTurn+onTurnComplete를 즉시 호출해서, 뒤이어 도착하는 outTx가
-    // 같은 "k" 턴으로 병합되며 같은 문장이 말풍선 안에 두 번 붙는 문제가 있었음
-    // (예: "...뭐니?안녕~ 난 케이야...").
-    // 새 K 턴을 시작하므로 직전 barge-in 컷 상태가 남아 있으면 해제한다(이 K 턴이 컷에
-    // 막혀 말풍선/음성이 안 나오는 것을 방지 — 컷 해제는 원래 서버 turnComplete에 의존).
-    kTurnCutRef.current = false;
-    kTurnCutAwaitingUnlockRef.current = false;
-    kTurnCutServerDoneRef.current = false;
-    pendingKTextRef.current = "";
-    kTurnExpectedTextRef.current = text;
-    kTurnLeakDetectedRef.current = false;
-    hasFiredFirstOutputRef.current = false;
-    generationEpochRef.current += 1;
-    kGenerationSeqRef.current += 1;
-    currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
-    activeKTurnIdRef.current = nextTurnId();
-    activeKTurnDisplaySequenceRef.current = nextDisplaySequence();
-    kGenerationCompleteRef.current = false;
-    kTurnCompleteRef.current = false;
-                      recoveryGateOpenRef.current = false;
-    kTurnHasAudioRef.current = false;
-    clearWatchdogTimer();
-    watchdogTimerRef.current = setTimeout(() => {
-      console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
-      onRecoveryNeededRef.current?.();
-      updateStatus("ended");
-      teardown("watchdog:speakAsK");
-      startSession({ preserveHistory: true }).catch(() => {});
-    }, 10000);
-    startGenerationTimeout();
-    waitingForLiveReceiveRef.current = true;
-    sessionRef.current.sendClientContent({
-      turns: [{ role: "user", parts: [{ text: `다음 문장을 자연스럽게 소리내어 그대로 말해줘: "${text}"` }] }],
-      turnComplete: true,
-    });
     return true;
   }, []);
 
@@ -1930,11 +2222,16 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     // 마냥 기다리는(2~3분 지연) 문제가 발생하므로 명시적으로 turnComplete를 전송한다.
     logTelemetryEvent("sendActivityEnd");
     generationEpochRef.current += 1;
-    
+    sealCurrentGeneration();
+
     if (sttModeRef.current === "gcp") {
-      // GCP STT 모드: Gemini 자체응답(K-A)을 무시하고, 이후 /api/mission/answer API 
+      // GCP STT 모드: Gemini 자체응답(K-A)을 무시하고, 이후 /api/mission/answer API
       // 처리 후 나오는 K-B만 재생하도록 현재 생성 ID를 null로 비운다.
       currentKGenerationIdRef.current = null;
+      // K-A 자신의 turnComplete가 실제로 도착할 때까지 다음 K 발화(K-B, speakAsK)의 시작을
+      // 늦춘다(안전 타임아웃 포함) — null 비교만으로는 speakAsK가 새 generation을 이미 발급한
+      // 뒤에 도착하는 지연된 K-A를 걸러내지 못한다.
+      armSettleWait();
     } else {
       kGenerationSeqRef.current += 1;
       currentKGenerationIdRef.current = `gen_${kGenerationSeqRef.current}`;
@@ -2001,6 +2298,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn, seedTranscript, setKSpeechAllowed,
     lockNow, speakClosingLine, unlockAudio,
     setInteractionMode, sendActivityStart, sendActivityEnd,
-    cancelCurrentGeneration, logTelemetryEvent
+    cancelCurrentGeneration, logTelemetryEvent,
+    // 실측 기반 연결 품질(0~5, 5가 가장 좋음) — WebSocket 상태·최근 재연결 횟수·최근 watchdog
+    // (10초 무응답) 발동 횟수·최근 응답 지연시간 평균으로 계산. 가짜 신호 막대 아님.
+    connectionQuality,
   };
 }

@@ -196,6 +196,7 @@ async function handleConnection(ws: WebSocket, childId: string, voiceName: strin
           if (sc?.inputTranscription?.text) log({ event: "input_transcription", childId, sessionId, received: true });
           if (sc?.outputTranscription?.text) log({ event: "output_transcription", childId, sessionId, received: true });
           if (msg.data) log({ event: "output_audio_chunk", childId, sessionId, bytes: Math.floor(msg.data.length * 3 / 4) });
+          if (sc?.interrupted) log({ event: "server_interrupted", childId, sessionId });
           if (sc?.turnComplete) log({ event: "turn_complete", childId, sessionId });
           sendJson(ws, {
             type: "message",
@@ -248,10 +249,13 @@ async function handleConnection(ws: WebSocket, childId: string, voiceName: strin
       log({ event: "input_audio_chunk", childId, sessionId, bytes: Math.floor(parsed.data.length * 3 / 4) });
       entry.vertexSession?.sendRealtimeInput({ audio: { data: parsed.data, mimeType: "audio/pcm;rate=16000" } });
     } else if (parsed.type === "activityStart") {
+      log({ event: "activity_start", childId, sessionId });
       entry.vertexSession?.sendRealtimeInput({ activityStart: {} });
     } else if (parsed.type === "activityEnd") {
+      log({ event: "activity_end", childId, sessionId });
       entry.vertexSession?.sendRealtimeInput({ activityEnd: {} });
     } else if (parsed.type === "text" && typeof parsed.text === "string") {
+      log({ event: "client_text_message", childId, sessionId, bytes: Math.floor(parsed.text.length) });
       entry.vertexSession?.sendClientContent({
         turns: [{ role: "user", parts: [{ text: parsed.text }] }],
         turnComplete: true,

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGeminiLive } from "@/hooks/useGeminiLive";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
+import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndicator";
 import { pickNonRepeatingReaction } from "@/lib/mission/eReactionPool";
 import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
 import type { ConversationMode } from "@/lib/plan/conversationMode";
@@ -49,6 +50,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
     setAutoPhaseState(phase);
   }, []);
 
+  const processedChildTurnIdsRef = useRef<Set<string>>(new Set());
   const sttFailStreakRef = useRef(0);
   const lowLatencyEnabledRef = useRef(true);
   const personalizedReactionEnabledRef = useRef(true);
@@ -401,6 +403,11 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
       // 도착하는 이전 세션의 지연 턴은 여기서 걸러 새 세션 상태를 오염시키지 않는다.
       if (activeEpochRef.current !== loadEpochRef.current) return;
       if (turn.role === "child") {
+        if (turn.id && processedChildTurnIdsRef.current.has(turn.id)) {
+          console.warn(`[TestModeABRunner] 이미 처리된 아이 턴(${turn.id}) 재수신 — processAnswer 중복 호출 방지`);
+          return;
+        }
+        if (turn.id) processedChildTurnIdsRef.current.add(turn.id);
         pendingTimingRef.current.stt_final = Date.now();
         sttFailStreakRef.current = 0;
         if (turn.text.trim()) void processAnswer(turn.text); 
@@ -435,7 +442,8 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
       }
     },
     onRecoveryNeeded: () => {
-      setNotice("연결이 불안정해요, 다시 시도할게요");
+      // 이 시점의 연결 불안정 신호는 이제 하단 실측 연결 품질 표시(ConnectionQualityIndicator)가
+      // 상시 전달하므로, 별도 토스트 문구는 더 띄우지 않는다(중복 노출 방지).
       setAutoPhase("idle");
       setTurnPhase("idle");
       setListening(false);
@@ -466,6 +474,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
     setStatus("loading"); setNotice(null);
     setProgress(0); setValidCount(0); setCompleted(false); setBusy(false);
     completedRef.current = false; busyRef.current = false;
+    processedChildTurnIdsRef.current.clear();
     currentIndexRef.current = 0; dispSeqRef.current = 0; seqRef.current = 0; statesRef.current = {};
     nearBottomRef.current = true;
 
@@ -544,7 +553,12 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
 
     if (!restored && !s.completed) {
       setTurnPhase("k_speaking");
-      liveRef.current?.speakAsK(qs[idx]?.question_text ?? "");
+      // 새 미션을 시작할 때 첫 질문만 곧바로 던지지 않고 짧은 인사를 붙여서 말한다 —
+      // 같은 speakAsK 호출 안에 합쳐야 별도 두 번째 발화로 취급되어 generation이 겹치는
+      // 문제(P0 중복응답 방지 로직)를 그대로 유지할 수 있다.
+      const greeting = "안녕! 오늘도 만나서 반가워.";
+      const firstQuestion = qs[idx]?.question_text ?? "";
+      liveRef.current?.speakAsK(firstQuestion ? `${greeting} ${firstQuestion}` : greeting);
     }
   }, []);
 
@@ -656,6 +670,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
           })}
         </div>
 
+        <ConnectionQualityIndicator quality={live.connectionQuality} live={live.status === "live"} />
         {notice && <div style={{ flexShrink: 0, fontSize: 12, color: "#dc2626", padding: "0 14px 6px" }}>{notice}</div>}
 
         <div style={{ flexShrink: 0, borderTop: "1px solid #e5e7eb", background: "#fff", padding: "10px 12px calc(10px + env(safe-area-inset-bottom))" }}>
