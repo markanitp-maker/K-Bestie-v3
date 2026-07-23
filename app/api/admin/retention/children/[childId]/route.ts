@@ -5,11 +5,11 @@ import { toKSTDateStr, getOffsetDateStr } from "@/lib/analytics/kstDate";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest, { params }: { params: { childId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ childId: string }> }) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const childId = params.childId;
+  const { childId } = await params;
   const service = createServiceClient();
 
   const nowKST = new Date();
