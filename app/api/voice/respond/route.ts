@@ -4,6 +4,11 @@ import { pickReaction } from "@/lib/freeChatReactions";
 import { generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
+import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
+import { resolveUsageContext } from "@/lib/plan/voiceMode";
+import { estimateCost } from "@/lib/plan/pricing";
+import { after } from "next/server";
 
 export const runtime = "nodejs";
 
@@ -85,6 +90,43 @@ export async function POST(req: NextRequest) {
       flaggedForParent: true,
     });
   }
+
+  // 1.5) 기억 회상(Memory Recall) 질의 감지 및 처리
+  const childText = lastChild.text.trim();
+  if (isMemoryRecallQuery(childText)) {
+    const memoryRes = await generateMemoryRecallResponse(service, session.child_id, childText);
+    if (memoryRes && memoryRes.text) {
+      // 기록 남기기 (usage_events) - fire-and-forget
+      after(async () => {
+        try {
+          const ctx = await resolveUsageContext(sessionId);
+          if (!ctx) return;
+          const serviceRole = createServiceClient();
+          const estCostKrw = estimateCost({ kind: "llm", tokenIn: memoryRes.tokenIn, tokenOut: memoryRes.tokenOut });
+          await serviceRole.from("usage_events").insert({
+            child_id: ctx.childId,
+            tier: ctx.tier,
+            voice_mode: ctx.voiceMode,
+            kind: "llm",
+            token_in: memoryRes.tokenIn,
+            token_out: memoryRes.tokenOut,
+            est_cost_krw: estCostKrw,
+            conversation_mode: null, // 자유대화는 A~E에 해당하지 않으므로 null (또는 생략)
+          });
+        } catch (err) {
+          console.error("[voice/respond] usage_events insert failed:", (err as Error).message);
+        }
+      });
+
+      return NextResponse.json({
+        text: memoryRes.text,
+        category: "memory_recall",
+        flaggedForParent: false,
+      });
+    }
+    // 기억이 없거나 오류 시 자연스럽게 아래의 반영적 경청 엔진으로 폴백
+  }
+
 
   // 2) 안전이 아니면 15개 카테고리 반영적 경청 엔진으로 반응 생성.
   const recentKTexts = history
