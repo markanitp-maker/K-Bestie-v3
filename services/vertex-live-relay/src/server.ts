@@ -61,7 +61,7 @@ type LogFields = {
 // 허용 필드만 받도록 타입으로 강제 — 음성 원본/전체 transcript/키/토큰/서비스계정 정보는
 // 이 함수의 파라미터 자체에 없어서 구조적으로 실수로도 못 넣는다.
 function log(fields: LogFields) {
-  console.log(JSON.stringify({ provider: "vertex", ts: new Date().toISOString(), ...fields }));
+  console.log(JSON.stringify({ provider: "vertex", environment: process.env.RELAY_ENVIRONMENT || "unknown", ts: new Date().toISOString(), ...fields }));
 }
 
 function sendJson(ws: WebSocket, obj: unknown) {

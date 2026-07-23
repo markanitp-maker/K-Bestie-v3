@@ -75,13 +75,15 @@ gcloud run deploy vertex-live-relay \
   --image=us-west1-docker.pkg.dev/k-bestie3/vertex-live-relay/vertex-live-relay:latest \
   --service-account=vertex-live-relay-runtime@k-bestie3.iam.gserviceaccount.com \
   --set-secrets=VERTEX_LIVE_RELAY_SECRET=vertex-live-relay-secret:latest \
-  --set-env-vars="^;^GOOGLE_CLOUD_PROJECT=k-bestie3;GOOGLE_CLOUD_LOCATION=us-west1;ALLOWED_ORIGINS=https://app.k-bestie.com,http://localhost:3000" \
+  --set-env-vars="^;^GOOGLE_CLOUD_PROJECT=k-bestie3;GOOGLE_CLOUD_LOCATION=us-west1;ALLOWED_ORIGINS=https://app.k-bestie.com,http://localhost:3000;RELAY_ENVIRONMENT=production" \
   --allow-unauthenticated \
   --min-instances=0 \
   --max-instances=1 \
   --concurrency=20 \
   --timeout=900
 ```
+
+> **참고**: `RELAY_ENVIRONMENT` 변수(예: `production`, `development`)를 `--set-env-vars`에 추가하면, 로깅 시 어떤 환경의 트래픽인지 구분하는 데 사용됩니다.
 
 ### `--max-instances=1`을 초과 확대하기 전에 반드시 해야 하는 것
 
