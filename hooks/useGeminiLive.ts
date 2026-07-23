@@ -388,12 +388,18 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   onRecoveryNeededRef.current = options?.onRecoveryNeeded;
   const kTurnHasAudioRef = useRef(false);
   const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // 현재 armed 된 no-response watchdog 이 "어느 K generation 의 완료를 기다리는지" 저장한다.
+  // watchdog 은 전역 단일 타이머이고 서버 turnComplete 에는 generation id 가 실려오지 않으므로,
+  // 이 소유 generation 을 함께 추적해야 (a)그 generation 의 완료/강제컷 turnComplete 일 때만,
+  // 또는 (b)그 generation 이 seal(=barge-in 등으로 취소/대체)될 때만 정확히 해제할 수 있다.
+  const watchdogOwnerGenRef = useRef<string | null>(null);
 
   function clearWatchdogTimer() {
     if (watchdogTimerRef.current) {
       clearTimeout(watchdogTimerRef.current);
       watchdogTimerRef.current = null;
     }
+    watchdogOwnerGenRef.current = null;
   }
 
   // 클라이언트 VAD 및 자동·수동 모드 상태 관리 Ref
@@ -641,6 +647,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       if (set.size > 50) {
         const first = set.values().next().value;
         if (first) set.delete(first);
+      }
+      // 이 generation 이 현재 watchdog 의 소유자라면, 여기서 그 턴이 취소/대체되는 것이므로
+      // (barge-in 으로 아이가 케이 발화 도중 끼어들어 새 턴으로 넘어가는 등) no-response
+      // watchdog 을 해제한다 — 취소된 턴은 재연결로 복구할 필요가 없다. 안 그러면 그 턴의
+      // turnComplete 가 isCancelledGeneration 조기 return 에 걸려 watchdog 이 orphan 되어
+      // 10초 뒤 멀쩡한 세션을 teardown+재연결한다("질문 도중 끼어들기" 후 발생하던 원인).
+      if (watchdogOwnerGenRef.current === currentKGenerationIdRef.current) {
+        clearWatchdogTimer();
       }
     }
   }
@@ -1355,6 +1369,17 @@ const incomingGenerationId = currentKGenerationIdRef.current;
               clearTimeout(turnCompleteFallbackTimerRef.current);
               turnCompleteFallbackTimerRef.current = null;
             }
+            // 강제컷(길이제한)된 K 턴의 turnComplete 도 "이 턴이 실제로 끝났다"는 신호이므로,
+            // 이 경로가 정상 turnComplete 분기(하단 clearWatchdogTimer)에 도달하지 못하고 여기서
+            // return 하기 때문에 여기서 watchdog 을 해제한다 — 안 하면 케이가 응답을 다 하고도
+            // watchdog 이 orphan 되어 10초 뒤 재연결한다(자유대화 등 긴 응답에서 발생하던 원인).
+            // owner 일치 시에만 해제한다: 컷 이후 다음 턴이 이미 새 watchdog 을 arm(owner 교체)한
+            // 상태에서 이전 컷 턴의 지연 turnComplete 가 들어와 새 watchdog 을 오인 해제하는 것을
+            // 최대한 막는다(turnComplete 에 generation id 가 없어 완전 차단은 불가 — 정상 분기도
+            // 동일한 한계. 아래 소유권 가드는 그 창을 좁히는 최선의 방어).
+            if (watchdogOwnerGenRef.current === currentKGenerationIdRef.current) {
+              clearWatchdogTimer();
+            }
             kGenerationCompleteRef.current = true;
           logVoiceEvent({ ts: Date.now(), eventType: "generationComplete" });
             kTurnCompleteRef.current = true;
@@ -2031,6 +2056,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         teardown("watchdog:speakClosingLine");
         startSession({ preserveHistory: true }).catch(() => {});
       }, 10000);
+      watchdogOwnerGenRef.current = currentKGenerationIdRef.current;
       startGenerationTimeout();
       sessionRef.current.sendClientContent({
         turns: [{ role: "user", parts: [{ text: `다음 문장만 그대로 자연스럽게 소리 내어 말해줘. 설명하거나 되묻거나 다른 말을 덧붙이지 말고 이 문장만 말해: "${text}"` }] }],
@@ -2079,6 +2105,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       teardown("watchdog:sendText");
       startSession({ preserveHistory: true }).catch(() => {});
     }, 10000);
+    watchdogOwnerGenRef.current = currentKGenerationIdRef.current;
 
     return true;
   }, []);
@@ -2138,6 +2165,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         teardown("watchdog:speakAsK");
         startSession({ preserveHistory: true }).catch(() => {});
       }, 10000);
+      watchdogOwnerGenRef.current = currentKGenerationIdRef.current;
       startGenerationTimeout();
       waitingForLiveReceiveRef.current = true;
       sessionRef.current.sendClientContent({
