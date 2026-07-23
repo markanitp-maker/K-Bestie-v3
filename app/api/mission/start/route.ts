@@ -8,6 +8,7 @@ import { isChildAlphaAllowedForQuestions } from "@/lib/questions/alphaAllowlist"
 import { selectAlphaQuestions, selectFixedMissionQuestions } from "@/lib/mission/selectQuestions";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 export const runtime = "nodejs";
 
@@ -275,6 +276,20 @@ export async function POST(req: NextRequest) {
   }
 
   const { error: progErr } = await service.from("mission_progress").insert(progressInsertPayload);
+
+  if (!progErr) {
+    const { data: childData } = await service.from("child_profiles").select("family_id").eq("id", childId).single();
+    await logBehaviorEvent({
+      eventName: "mission_start",
+      actorType: "child",
+      childId,
+      familyId: childData?.family_id,
+      sessionId: session.id,
+      feature: "mission",
+      conversationMode: null,
+      route: "/api/mission/start",
+    }).catch(() => {});
+  }
 
   if (progErr) {
     console.error("[start/route] mission_progress insert error:", progErr);

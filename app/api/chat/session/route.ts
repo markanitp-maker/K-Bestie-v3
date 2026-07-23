@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,19 @@ export async function POST(req: NextRequest) {
   }
 
   console.log("[chat/session] result", { childId, businessDate, conversationWindow, sessionId: sessionData.id, resumed: !sessionData.created });
+
+  if (sessionData.created) {
+    const { data: childData } = await service.from("child_profiles").select("family_id").eq("id", childId).single();
+    await logBehaviorEvent({
+      eventName: "freechat_start",
+      actorType: "child",
+      childId,
+      familyId: childData?.family_id,
+      sessionId: sessionData.id,
+      feature: "freechat",
+      route: "/api/chat/session",
+    }).catch(() => {});
+  }
 
   return NextResponse.json({
     resumed: !sessionData.created,

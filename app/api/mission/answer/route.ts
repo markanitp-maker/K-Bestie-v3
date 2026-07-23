@@ -13,6 +13,7 @@ import { pickReaction } from "@/lib/freeChatReactions";
 // - progress_awarded: 이 답변이 실제로 진행률에 반영됐는지 여부(boolean).
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 export const runtime = "nodejs";
 
@@ -342,6 +343,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(resPayload, { status: 423 });
     }
 
+    if (rpcResult.newly_completed) {
+      const { data: childData } = await service.from("child_profiles").select("family_id").eq("id", session.child_id).single();
+      await logBehaviorEvent({
+        eventName: "mission_complete",
+        actorType: "child",
+        childId: session.child_id,
+        familyId: childData?.family_id,
+        sessionId,
+        feature: "mission",
+        route: "/api/mission/answer",
+      }).catch(() => {});
+    }
+
     const finalQuestionStates = { ...rpcResult.question_states };
 
     // 실패(skipped/refused)인 경우 예비질문 승격 로직
@@ -578,7 +592,27 @@ export async function POST(req: NextRequest) {
   const wasCompleted = (progress.valid_answer_count ?? 0) >= REQUIRED_COUNT;
   const completed = validCount >= REQUIRED_COUNT;
 
-  // 게이지 5칸 최초 달성 시점에만 황금열쇠 적립 (재호출로 중복 적립 방지)
+  // 분석 이벤트 전용 완료 판정 — optimistic lock 재시도가 있었다면(currentProgressV1/
+  // finalValidCountV1이 latestProgressV1 기준으로 갱신됨) 그 실제로 반영된 값을 기준으로
+  // 판단한다. 재시도가 없었다면 progress/validCount와 동일한 값이라 결과는 같다. 위의
+  // wasCompleted/completed(황금열쇠 적립 판정, 기존 로직)는 이 분석 이벤트와 무관하게
+  // 그대로 둔다 — 재시도 경합 시의 정합성은 이번 작업 범위(분석 계측) 밖의 별도 이슈다.
+  const trueWasCompleted = (currentProgressV1.valid_answer_count ?? 0) >= REQUIRED_COUNT;
+  const trueCompleted = finalValidCountV1 >= REQUIRED_COUNT;
+  if (trueCompleted && !trueWasCompleted) {
+    const { data: childData } = await service.from("child_profiles").select("family_id").eq("id", session.child_id).single();
+    await logBehaviorEvent({
+      eventName: "mission_complete",
+      actorType: "child",
+      childId: session.child_id,
+      familyId: childData?.family_id,
+      sessionId,
+      feature: "mission",
+      route: "/api/mission/answer",
+    }).catch(() => {});
+  }
+
+  // 게이지 5칸 최초 달성 시점에만 황금열쇠 적립 (재호출로 중복 적립 방지) — 기존 로직 그대로.
   if (completed && !wasCompleted) {
     try {
       const goldKeyResult = await earnMissionCompleteKey(session.child_id);

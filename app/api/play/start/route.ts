@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 export const runtime = "nodejs";
 
@@ -48,6 +49,19 @@ export async function POST(req: NextRequest) {
     await service.rpc("restore_gold_key_reservation", { p_reservation_id: reservation_id });
     return NextResponse.json({ error: startResult.reason || "start_failed" }, { status: 400 });
   }
+
+  const { data: childData } = await service.from("child_profiles").select("family_id").eq("id", child_id).single();
+  const validPlayTypes = ["comic_book", "quiz", "hairstyle", "mbti"];
+  await logBehaviorEvent({
+    eventName: "play_start",
+    actorType: "child",
+    childId: child_id,
+    familyId: childData?.family_id,
+    sessionId: startResult.session_id,
+    feature: "play",
+    playType: validPlayTypes.includes(play_type) ? (play_type as any) : null,
+    route: "/api/play/start",
+  }).catch(() => {});
 
   return NextResponse.json({
     session_id: startResult.session_id,
