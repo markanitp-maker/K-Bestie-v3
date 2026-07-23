@@ -8,6 +8,7 @@ import { pickNonRepeatingReaction } from "@/lib/mission/eReactionPool";
 
 import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
+import { useTestSessionExit } from "@/hooks/useTestSessionExit";
 
 // E안, F안 실행 러너 (Plan01 §4 E, F안 — 테스트 계정 전용).
 // /child/missions 실제 실행 경로에서 테스트 계정 + E/F override일 때 렌더된다(일반 계정은 기존 미션 그대로).
@@ -58,6 +59,7 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
   const lastReactionRef = useRef<string | null>(null);
   const turnTimingsRef = useRef<Array<Record<string, number>>>([]);
   const pendingTimingRef = useRef<Record<string, number>>({});
+  const reactionAbortControllerRef = useRef<AbortController | null>(null);
 
   const timingBeginSpeech = useCallback(() => { pendingTimingRef.current = { speech_begin: Date.now() }; }, []);
   const timingEndSpeech = useCallback(() => { pendingTimingRef.current.speech_end = Date.now(); }, []);
@@ -76,9 +78,15 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
   const loadEpochRef = useRef(0);
   const voiceRef = useRef<ReturnType<typeof useVoiceChat> | null>(null);
 
-  // 자동 스크롤: 사용자가 하단 근처를 보고 있을 때만 최신 말풍선으로 이동(과거 열람 중엔 강제 이동 안 함).
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const nearBottomRef = useRef(true);
+
+  const { requestExit, ExitSheet, safeCleanup } = useTestSessionExit(useCallback(() => {
+    try {
+      voiceRef.current?.stopSession();
+    } catch {}
+    reactionAbortControllerRef.current?.abort();
+  }, []));
 
   const strategy = getModeStrategy(selectedMode);
   const showChildBubble = strategy.showChildBubble;
@@ -184,6 +192,7 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
         setBubbles((prev) => [...prev, { role: "k", text: "···", displaySequence: thinkingDisplaySeq!, turnId: thinkingTurnId! }]);
 
         reactionAbortController = new AbortController();
+        reactionAbortControllerRef.current = reactionAbortController;
 
         reactionResultPromise = (async () => {
           const fallbackResult = pickNonRepeatingReaction(lastReactionRef.current);
@@ -619,7 +628,7 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
       <div style={{ ...fullCenter, flexDirection: "column", padding: 24, textAlign: "center" }}>
         <p style={{ fontSize: 40, margin: 0 }}>🔒</p>
         <p style={{ fontWeight: 700, color: "#1e1e2d", marginTop: 8 }}>{notice ?? "접근 권한이 없어요"}</p>
-        <button onClick={() => router.replace("/child/test-modes")} style={{ ...btnBase, background: "#1a6b5a", marginTop: 16, padding: "12px 20px" }}>대화 방식으로</button>
+        <button onClick={() => { safeCleanup(); router.replace("/child/test-modes"); }} style={{ ...btnBase, background: "#1a6b5a", marginTop: 16, padding: "12px 20px" }}>대화 방식으로</button>
       </div>
     );
   }
@@ -631,6 +640,12 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
         {/* ── 고정 헤더: 방식 · 현재 단계 · 진행률 ── */}
         <div style={{ flexShrink: 0, padding: "calc(10px + env(safe-area-inset-top)) 14px 10px", borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
+            <button
+              onClick={requestExit}
+              style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#6b7280", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}
+            >
+              ← 테스트 종료
+            </button>
             <span style={{ fontSize: 13, fontWeight: 800, color: "#1a6b5a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>대화 방식 테스트 · {selectedMode}안</span>
             <button
               data-testid="new-test"
@@ -696,8 +711,9 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
             <div data-testid="completed" style={{ textAlign: "center", padding: "10px 8px", background: "#f0fdf4", borderRadius: 12, color: "#166534", fontWeight: 700, fontSize: 14 }}>
               🎉 미션 완료 · 황금열쇠 지급됨
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <button data-testid="retry" onClick={() => { void loadSession(true); }} style={{ ...btnBase, background: "#1a6b5a", flex: 1, minHeight: 44 }}>🔄 다시 테스트</button>
-                <button onClick={() => router.replace("/child/test-modes")} style={{ ...btnBase, background: "#374151", flex: 1, minHeight: 44 }}>대화 방식으로</button>
+                <button data-testid="retry" onClick={() => { void loadSession(true); }} style={{ ...btnBase, background: "#1a6b5a", flex: 1, minHeight: 44, padding: "0 8px", fontSize: 13 }}>🔄 다시 테스트</button>
+                <button onClick={() => { safeCleanup(); router.replace("/child/test-modes"); }} style={{ ...btnBase, background: "#374151", flex: 1, minHeight: 44, padding: "0 8px", fontSize: 13 }}>대화 방식으로</button>
+                <button onClick={() => { safeCleanup(); router.replace("/child/home"); }} style={{ ...btnBase, background: "#374151", flex: 1, minHeight: 44, padding: "0 8px", fontSize: 13 }}>아이 홈으로</button>
               </div>
             </div>
           ) : (
@@ -743,6 +759,7 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
           )}
         </div>
       </div>
+      <ExitSheet />
     </div>
   );
 }
