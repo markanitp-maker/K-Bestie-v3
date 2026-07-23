@@ -109,7 +109,7 @@ export default function TestModesPage() {
         })}
       </div>
 
-      {(selected === "C" || selected === "D" || selected === "E") && (
+      {(selected === "A" || selected === "B" || selected === "C" || selected === "D" || selected === "E") && (
         <button
           onClick={() => router.push("/child/missions")}
           style={{ marginTop: 16, width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "#1a6b5a", color: "white", fontWeight: 800, cursor: "pointer" }}
@@ -117,11 +117,7 @@ export default function TestModesPage() {
           {selected}안으로 미션 시작 →
         </button>
       )}
-      {(selected === "A" || selected === "B") && (
-        <p style={{ marginTop: 16, fontSize: 12, color: "#9ca3af", textAlign: "center" }}>
-          {selected}안 실행은 준비 중이에요. (현재 C·D·E안만 실행 가능, A·B안은 준비 중)
-        </p>
-      )}
+
 
       <button
         onClick={endTest}

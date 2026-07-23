@@ -116,6 +116,8 @@ export interface UseGeminiLiveOptions {
   onKTurnTimeout?: () => void;
   onRecoveryNeeded?: () => void;
   displaySequenceCounterRef?: React.MutableRefObject<number>;
+  /** A~E 대화방식 모드 — usage_events.conversation_mode 태깅용 */
+  conversationMode?: string;
 }
 
 // ── 클라이언트 VAD (자동 발화 감지) 설정 상수 ──────────────────
@@ -386,6 +388,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   getSessionIdRef.current = options?.getSessionId;
   const getChildIdRef = useRef<(() => string | null) | undefined>(undefined);
   getChildIdRef.current = options?.getChildId;
+  const conversationModeRef = useRef<string | undefined>(options?.conversationMode);
+  conversationModeRef.current = options?.conversationMode;
   // teardown()이 여러 지점(정상 종료/에러/언마운트)에서 중복 호출돼도 end 요청은 1회만 나가도록 가드
   const liveUsageStartedRef = useRef(false);
   // Gemini usageMetadata의 최신(세션 누적) 토큰 카운트 — end 시점에 /api/usage/live로 전달.
@@ -404,12 +408,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     if (event === "end") liveUsageStartedRef.current = false;
     const tokenIn = lastTokenInRef.current;
     const tokenOut = lastTokenOutRef.current;
+    const conversationMode = conversationModeRef.current;
     fetch("/api/usage/live", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         event,
         sessionId,
+        ...(conversationMode ? { conversationMode } : {}),
         ...(event === "end" && tokenIn != null && tokenOut != null ? { tokenIn, tokenOut } : {}),
       }),
     }).catch(() => {});

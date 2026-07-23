@@ -10,9 +10,13 @@ import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { useGeminiLive, type Turn } from "@/hooks/useGeminiLive";
 import { SkeletonBox } from "@/components/Skeleton";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
+import { TestModeERunner } from "@/components/TestModeERunner";
+import { TestModeCDRunner } from "@/components/TestModeCDRunner";
+import { TestModeABRunner } from "@/components/TestModeABRunner";
 import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
+import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -1807,8 +1811,8 @@ function MissionInner() {
 // 기존 미션 대신 E안 러너를 렌더한다. 일반 계정(및 E 미선택)은 기존 MissionInner 그대로 —
 // 게이트가 'e'로 결정되기 전엔 MissionInner를 마운트하지 않아 기존 흐름에 회귀가 없다.
 function MissionRouteGate() {
-  const [decision, setDecision] = useState<"loading" | "e" | "cd" | "normal">("loading");
-  const [cdMode, setCdMode] = useState<"C" | "D">("C");
+  const [decision, setDecision] = useState<"loading" | "ab" | "e" | "cd" | "normal">("loading");
+  const [selectedMode, setSelectedMode] = useState<"A" | "B" | "C" | "D">("C");
   useEffect(() => {
     let cancelled = false;
     fetch("/api/child/test-mode")
@@ -1818,8 +1822,11 @@ function MissionRouteGate() {
           if (d?.selectedMode === "E") {
             setDecision("e");
           } else if (d?.selectedMode === "C" || d?.selectedMode === "D") {
-            setCdMode(d.selectedMode);
+            setSelectedMode(d.selectedMode);
             setDecision("cd");
+          } else if (d?.selectedMode === "A" || d?.selectedMode === "B") {
+            setSelectedMode(d.selectedMode);
+            setDecision("ab");
           } else {
             setDecision("normal");
           }
@@ -1841,7 +1848,10 @@ function MissionRouteGate() {
     return <TestModeERunner />;
   }
   if (decision === "cd") {
-    return <TestModeCDRunner selectedMode={cdMode} />;
+    return <TestModeCDRunner selectedMode={selectedMode as "C" | "D"} />;
+  }
+  if (decision === "ab") {
+    return <TestModeABRunner selectedMode={selectedMode as "A" | "B"} />;
   }
   // 일반 계정 미션은 기존 그대로(DemoFrame) — 회귀 없음.
   return (
