@@ -279,6 +279,21 @@ export async function POST(req: NextRequest) {
 
   if (!progErr) {
     const { data: childData } = await service.from("child_profiles").select("family_id").eq("id", childId).single();
+    
+    let cMode = null;
+    try {
+      const { data: tm } = await service
+        .from("test_mode_overrides")
+        .select("conversation_mode")
+        .eq("child_id", childId)
+        .maybeSingle();
+      if (tm) {
+        cMode = tm.conversation_mode;
+      }
+    } catch (e) {
+      cMode = null;
+    }
+
     await logBehaviorEvent({
       eventName: "mission_start",
       actorType: "child",
@@ -286,7 +301,7 @@ export async function POST(req: NextRequest) {
       familyId: childData?.family_id,
       sessionId: session.id,
       feature: "mission",
-      conversationMode: null,
+      conversationMode: cMode,
       route: "/api/mission/start",
     }).catch(() => {});
   }
