@@ -12,6 +12,7 @@ import {
   generateDailyReports,
   kstToday,
   checkAuth,
+  deleteExpiredChatMessages,
 } from "../_shared/batch.ts";
 
 Deno.serve(async (req: Request) => {
@@ -35,10 +36,21 @@ Deno.serve(async (req: Request) => {
     // 순서 보장: (1) 세션 마감 → (2) 일일 리포트
     const step1 = await closeFreeSessions(db, targetDate);
     const step2 = await generateDailyReports(db, targetDate);
+    
+    // Step 3: 대화 내역(chat_messages) 7일 경과 자동 파기
+    const isDeleteEnabled = Deno.env.get("CHAT_RETENTION_DELETE_ENABLED") === "true";
+    const step3 = await deleteExpiredChatMessages(db, !isDeleteEnabled);
+
     return new Response(
       JSON.stringify({
         ok: true,
-        result: { date: targetDate, step1_close: step1, step2_reports: step2, durationMs: Date.now() - start },
+        result: { 
+          date: targetDate, 
+          step1_close: step1, 
+          step2_reports: step2,
+          step3_retentionDelete: step3,
+          durationMs: Date.now() - start 
+        },
       }),
       { headers: { "Content-Type": "application/json" } },
     );

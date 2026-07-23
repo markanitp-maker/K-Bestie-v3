@@ -211,7 +211,9 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
 
   if (existingErr) throw new Error(`generateDailyReports: 기존 리포트 조회 실패 — ${existingErr.message}`);
 
-  const existingSessionIds = (existingReports || []).map((r: { session_id: string }) => r.session_id);
+  const existingSessionIds = Array.from(
+    new Set((existingReports || []).map((r: { session_id: string }) => r.session_id))
+  );
 
   let query = db
     .from("chat_sessions")
@@ -220,7 +222,7 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
     .lte("ended_at", `${targetDate}T23:59:59+09:00`);
 
   if (existingSessionIds.length > 0) {
-    query = query.not("id", "in", existingSessionIds);
+    query = query.not("id", "in", `(${existingSessionIds.join(",")})`);
   }
 
   const { data: sessions, error: fetchErr } = await query;
@@ -284,7 +286,44 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
       const transcriptText = messages
         .map((m: { role: string; content: string }) => `${m.role === "child" ? "아이" : "케이"}: ${m.content}`)
         .join("\n");
-      const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
+
+      let memoryContext = "(이전 기억 없음)";
+      try {
+        const { data: ltData, error: ltErr } = await db
+          .from("child_memory")
+          .select("memory_type, business_date, category, content")
+          .eq("child_id", session.child_id)
+          .eq("memory_type", "long_term")
+          .order("business_date", { ascending: false })
+          .limit(15);
+        
+        const { data: stData, error: stErr } = await db
+          .from("child_memory")
+          .select("memory_type, business_date, category, content, expires_at")
+          .eq("child_id", session.child_id)
+          .eq("memory_type", "short_term")
+          .neq("business_date", targetDate)
+          .order("business_date", { ascending: false });
+        
+        if (ltErr || stErr) {
+          console.error("child_memory 조회 실패(daily report):", ltErr || stErr);
+        } else {
+          const validSt = (stData || [])
+            .filter((m: { expires_at: string | null }) => !m.expires_at || new Date(m.expires_at) > new Date())
+            .slice(0, 3);
+          
+          const combined = [...(ltData || []), ...validSt];
+          if (combined.length > 0) {
+            memoryContext = combined.map((m: { business_date: string; memory_type: string; content: string }) => `[${m.business_date}] (${m.memory_type}): ${m.content}`).join("\n");
+          }
+        }
+      } catch (err) {
+        console.error("child_memory 예외 발생(daily report):", err);
+      }
+
+      const prompt = REPORT_PROMPT_TEMPLATE
+        .replace("{{MEMORY_CONTEXT}}", memoryContext)
+        .replace("{{TRANSCRIPT}}", transcriptText);
 
       const text = await callReportModel(reportModel, prompt, reportModel.maxOutputTokens);
 
@@ -689,6 +728,87 @@ ${transcriptText}
       result.errors.push({ childId, error: String(e) });
     }
   }
+
+  return result;
+}
+
+export interface RetentionDeleteResult {
+  targetSessionIds: string[];
+  deletedMessageCount: number;
+  dryRun: boolean;
+}
+
+export async function deleteExpiredChatMessages(db: SupabaseClient, dryRun: boolean): Promise<RetentionDeleteResult> {
+  const result: RetentionDeleteResult = {
+    targetSessionIds: [],
+    deletedMessageCount: 0,
+    dryRun,
+  };
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  let allSessionIds: string[] = [];
+  const pageSize = 1000;
+  let rangeFrom = 0;
+  
+  while (true) {
+    const rangeTo = rangeFrom + pageSize - 1;
+    const { data: reports, error: reportErr } = await db
+      .from("daily_reports")
+      .select("session_id")
+      .lt("created_at", sevenDaysAgo)
+      .order("id", { ascending: true })
+      .range(rangeFrom, rangeTo);
+
+    if (reportErr) throw new Error(`deleteExpiredChatMessages: 리포트 조회 실패 — ${reportErr.message}`);
+    
+    if (!reports || reports.length === 0) {
+      break;
+    }
+
+    allSessionIds.push(...reports.map((r: { session_id: string }) => r.session_id));
+
+    if (reports.length < pageSize) {
+      break;
+    }
+    
+    rangeFrom += pageSize;
+  }
+
+  const sessionIds = Array.from(new Set(allSessionIds));
+  if (sessionIds.length === 0) {
+    return result;
+  }
+
+  result.targetSessionIds = sessionIds;
+
+  const chunkSize = 200;
+  let totalMessagesCount = 0;
+
+  for (let i = 0; i < sessionIds.length; i += chunkSize) {
+    const chunk = sessionIds.slice(i, i + chunkSize);
+    
+    if (dryRun) {
+      const { count, error: countErr } = await db
+        .from("chat_messages")
+        .select("*", { count: "exact", head: true })
+        .in("session_id", chunk);
+
+      if (countErr) throw new Error(`deleteExpiredChatMessages: 메시지 개수 조회 실패 — ${countErr.message}`);
+      totalMessagesCount += count ?? 0;
+    } else {
+      const { data: deleted, error: deleteErr } = await db
+        .from("chat_messages")
+        .delete()
+        .in("session_id", chunk)
+        .select("id");
+
+      if (deleteErr) throw new Error(`deleteExpiredChatMessages: 삭제 실행 실패 — ${deleteErr.message}`);
+      totalMessagesCount += deleted ? deleted.length : 0;
+    }
+  }
+
+  result.deletedMessageCount = totalMessagesCount;
 
   return result;
 }

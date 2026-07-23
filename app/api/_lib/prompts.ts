@@ -61,8 +61,11 @@ export const FREE_CHAT_SYSTEM_PROMPT = `
 // 리포트 생성 프롬프트 — Gemma 호출용
 // {{TRANSCRIPT}} 자리에 대화 내용 치환
 export const REPORT_PROMPT_TEMPLATE = `
-다음은 아이와 AI 친구 '케이'의 대화 내용입니다.
-부모님께 전달할 요약 리포트를 아래 JSON 형식으로 작성해주세요.
+다음은 아이와 AI 친구 '케이'의 오늘 대화 원문입니다.
+이 대화를 바탕으로 부모님을 위한 일일 리포트를 작성해주세요.
+
+이 아이에 대해 이전에 기억해둔 정보(참고용, 오늘 대화에 없으면 아래 정보를 억지로 언급하지 말고 자연스러울 때만 반영할 것):
+{{MEMORY_CONTEXT}}
 
 대화 내용:
 {{TRANSCRIPT}}
