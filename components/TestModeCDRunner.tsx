@@ -7,6 +7,7 @@ import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { pickNonRepeatingReaction } from "@/lib/mission/eReactionPool";
 import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
 import type { ConversationMode } from "@/lib/plan/conversationMode";
+import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 
 interface Q { id: string; question_text: string; dashboard_area_tag: string }
 
@@ -27,6 +28,8 @@ export function TestModeCDRunner({ selectedMode }: { selectedMode: "C" | "D" }) 
   const [isAuto, setIsAuto] = useState(true);
   const isAutoRef = useRef(isAuto);
   isAutoRef.current = isAuto;
+
+  useScreenWakeLock(status === "ready" && !completed);
 
   const strategy = getModeStrategy(selectedMode);
   const showChildBubble = strategy.showChildBubble;

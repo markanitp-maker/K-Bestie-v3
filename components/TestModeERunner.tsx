@@ -7,6 +7,7 @@ import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { pickNonRepeatingReaction } from "@/lib/mission/eReactionPool";
 
 import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
+import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 
 // E안, F안 실행 러너 (Plan01 §4 E, F안 — 테스트 계정 전용).
 // /child/missions 실제 실행 경로에서 테스트 계정 + E/F override일 때 렌더된다(일반 계정은 기존 미션 그대로).
@@ -41,6 +42,8 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
   const [isAuto, setIsAuto] = useState(true);
   const isAutoRef = useRef(isAuto);
   isAutoRef.current = isAuto;
+
+  useScreenWakeLock(status === "ready" && !completed);
 
   type AutoPhase = "idle" | "listening" | "speaking" | "finalizing" | "responding" | "error";
   const [autoPhase, setAutoPhaseState] = useState<AutoPhase>("idle");
