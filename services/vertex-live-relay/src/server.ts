@@ -48,6 +48,7 @@ type LogFields = {
   latencyMs?: number;
   durationMs?: number;
   received?: boolean;
+  bytes?: number;
   // 티켓 파싱 진단 — 원문 티켓 값은 절대 포함하지 않는다(services/vertex-live-relay/src/ticket.ts의
   // TicketDiag와 1:1 대응).
   ticketLength?: number;
@@ -194,6 +195,8 @@ async function handleConnection(ws: WebSocket, childId: string, voiceName: strin
           const sc = msg.serverContent;
           if (sc?.inputTranscription?.text) log({ event: "input_transcription", childId, sessionId, received: true });
           if (sc?.outputTranscription?.text) log({ event: "output_transcription", childId, sessionId, received: true });
+          if (msg.data) log({ event: "output_audio_chunk", childId, sessionId, bytes: Math.floor(msg.data.length * 3 / 4) });
+          if (sc?.turnComplete) log({ event: "turn_complete", childId, sessionId });
           sendJson(ws, {
             type: "message",
             payload: {
@@ -242,6 +245,7 @@ async function handleConnection(ws: WebSocket, childId: string, voiceName: strin
     }
 
     if (parsed.type === "audio" && typeof parsed.data === "string") {
+      log({ event: "input_audio_chunk", childId, sessionId, bytes: Math.floor(parsed.data.length * 3 / 4) });
       entry.vertexSession?.sendRealtimeInput({ audio: { data: parsed.data, mimeType: "audio/pcm;rate=16000" } });
     } else if (parsed.type === "activityStart") {
       entry.vertexSession?.sendRealtimeInput({ activityStart: {} });

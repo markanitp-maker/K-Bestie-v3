@@ -276,7 +276,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // ── 스케줄 기반 오디오 재생 (갭 없는 gapless 재생) ─────────
   // 이전 큐/playNext 방식은 onended→start 사이 JS 이벤트 루프 갭으로 파직거림 발생.
   // AudioContext.currentTime 기반 startAt 스케줄링으로 버퍼 경계 클릭 제거.
-  const scheduledSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const scheduledSourcesRef = useRef<{ source: AudioBufferSourceNode; watchdogTimer: NodeJS.Timeout }[]>([]);
   const nextScheduleTimeRef = useRef(0);
   // 이번 K 턴 동안 scheduleAudio가 실제로 예약한 오디오 버퍼 길이 합(ms) — 길이 준수 진단
   // 로그(logKTurnLengthCompliance)가 턴 완료 시 읽고 다음 턴을 위해 리셋한다.
@@ -598,7 +598,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   }
 
   function scheduleAudio(base64: string) {
-    logVoiceEvent({ ts: Date.now(), eventType: "audioChunkReceived", audioQueueLength: scheduledSourcesRef.current.length });
+    logVoiceEvent({ ts: Date.now(), eventType: "audioChunkReceived", audioQueueLength: scheduledSourcesRef.current.length, extra: { approxBytes: Math.floor(base64.length * 3 / 4) } });
     if (audioMutedRef.current) {
       return;
     }
@@ -626,7 +626,13 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       source.connect(ctx.destination);
       source.start(startAt);
       nextScheduleTimeRef.current = startAt + audioBuffer.duration;
-      scheduledSourcesRef.current.push(source);
+      const watchdogDelayMs = Math.max(0, (startAt + audioBuffer.duration - ctx.currentTime) * 1000) + 2000;
+      const watchdogTimer = setTimeout(() => {
+        console.warn(`${getLogPrefix()} ⚠️ 오디오 재생 종료(onended) 신호가 오지 않아 워치독이 강제로 재생 큐를 정리함`);
+        handleSourceEnded(true);
+      }, watchdogDelayMs);
+
+      scheduledSourcesRef.current.push({ source, watchdogTimer });
       kTurnAudioMsRef.current += audioBuffer.duration * 1000;
       kTurnHasAudioRef.current = true;
 
@@ -643,11 +649,28 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       }
 
       const epoch = generationEpochRef.current;
-      source.onended = () => {
-        if (generationEpochRef.current !== epoch) return;
+      function handleSourceEnded(isWatchdog: boolean) {
         const arr = scheduledSourcesRef.current;
-        const i = arr.indexOf(source);
-        if (i !== -1) arr.splice(i, 1);
+        const i = arr.findIndex(item => item.source === source);
+        if (i === -1) return; // 이미 처리됨
+
+        const item = arr[i];
+        if (!isWatchdog) {
+          clearTimeout(item.watchdogTimer);
+        } else {
+          // 워치독 발동 — 화면 복귀 등으로 AudioContext가 되살아났을 때 이 소스가 뒤늦게
+          // 다시 재생되며 이미 재개된 마이크와 겹치는 일이 없도록 명시적으로 정지시킨다
+          // (codex 지적: 벽시계 타이머만으로는 "정말 끝났는지"를 보장할 수 없다).
+          try { source.stop(); } catch { /* 이미 정지/종료된 경우 무시 */ }
+        }
+        arr.splice(i, 1);
+
+        // barge-in 컷 등으로 이미 다음 세대로 넘어간 낡은 엔트리라면, 큐에서 제거만 하고
+        // "재생 종료" 후속 처리(마이크 재개 등)는 현재 세대 몫이 아니므로 실행하지 않는다
+        // — 이 체크를 배열 정리보다 먼저 하면 낡은 엔트리가 영원히 배열에 남아, 그 뒤로는
+        // arr.length가 다시는 0이 되지 않아 마이크가 영구적으로 막히는 문제가 있었다(codex 지적).
+        if (generationEpochRef.current !== epoch) return;
+
         if (arr.length === 0) {
           console.log(`${getLogPrefix()} 🔇 scheduleAudio 재생 종료 (큐 비워짐)`);
           kSpeakingRef.current = false; // 마지막 버퍼 재생 종료 — 마이크 재개
@@ -667,12 +690,19 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
             childTurnFlushedRef.current = false;
           }
         }
+      }
+
+      source.onended = () => {
+        handleSourceEnded(false);
       };
     } catch { /* 손상된 프레임 무시 */ }
   }
 
   function stopAllScheduledSources() {
-    scheduledSourcesRef.current.forEach(src => { try { src.stop(); } catch { /* already stopped */ } });
+    scheduledSourcesRef.current.forEach(item => {
+      clearTimeout(item.watchdogTimer);
+      try { item.source.stop(); } catch { /* already stopped */ }
+    });
     scheduledSourcesRef.current = [];
     nextScheduleTimeRef.current = 0;
     kSpeakingRef.current = false;
@@ -984,7 +1014,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       console.log("[K] 🎙️ mic:", stream.getAudioTracks()[0]?.label);
 
       // 출력 AudioContext: Gemini는 24kHz PCM16을 보냄
-      outputCtxRef.current = new AudioContext({ sampleRate: 24000 });
+      const outputCtx = new AudioContext({ sampleRate: 24000 });
+      outputCtx.onstatechange = () => {
+        console.log(`${getLogPrefix()} 🔈 outputCtx state change:`, outputCtx.state, Date.now());
+      };
+      outputCtxRef.current = outputCtx;
       nextScheduleTimeRef.current = 0;
       // 여기 도달하기 전 이미 await(토큰 fetch, getUserMedia 권한 프롬프트)를 거쳐 원래
       // 제스처의 user-activation이 소진됐을 수 있다 — 되든 안 되든 즉시 한 번 resume을
@@ -1465,6 +1499,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       // ── PCM 캡처 → Gemini 전송 ───────────────────────────────
       // AudioContext sampleRate를 16000으로 강제 → 브라우저가 리샘플링 처리
       const inputCtx = new AudioContext({ sampleRate: 16000 });
+      inputCtx.onstatechange = () => {
+        console.log(`${getLogPrefix()} 🎤 inputCtx state change:`, inputCtx.state, Date.now());
+      };
       inputCtxRef.current = inputCtx;
       if (inputCtx.state !== "running") {
         inputCtx.resume().catch(() => {});
@@ -1934,6 +1971,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
   // 실패해도 무해하게 "케이 목소리 켜기" 버튼으로 자연스럽게 이어진다.
   useEffect(() => {
     function handleVisibilityChange() {
+      console.log(`${getLogPrefix()} 👁 visibility change:`, document.visibilityState, Date.now());
       if (document.visibilityState === "visible" && statusRef.current === "live") {
         void ensureOutputAudioRunning();
         if (inputCtxRef.current && inputCtxRef.current.state !== "running") {
