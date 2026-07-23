@@ -5,5 +5,5 @@
 import { TestModeERunner } from "@/components/TestModeERunner";
 
 export default function TestModeRunRoute() {
-  return <TestModeERunner />;
+  return <TestModeERunner selectedMode="E" />;
 }
