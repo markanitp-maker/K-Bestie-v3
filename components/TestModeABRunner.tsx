@@ -56,6 +56,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
   const timingEndSpeech = useCallback(() => { pendingTimingRef.current.speech_end = Date.now(); }, []);
 
   const sessionIdRef = useRef<string | null>(null);
+  const childIdRef = useRef<string | null>(null);
   const questionsRef = useRef<Q[]>([]);
   const currentIndexRef = useRef(0);
   const statesRef = useRef<Record<string, string>>({});
@@ -377,6 +378,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
 
   const live = useGeminiLive({
     getSessionId: () => sessionIdRef.current,
+    getChildId: () => childIdRef.current,
     conversationMode: selectedMode,
     sttMode: "gcp",
     onTurnComplete: (turn) => {
@@ -466,6 +468,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
     if (gate.status !== 200) { setStatus("denied"); return; }
     const g = await gate.json();
     if (myLoadEpoch !== loadEpochRef.current) return;
+    childIdRef.current = g.childId ?? null;
     if (g.selectedMode !== "A" && g.selectedMode !== "B") {
       setNotice(`이 화면은 A/B안 전용이에요. (현재: ${g.selectedMode})`);
       setStatus("denied");
