@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 // handleRelayError가 계속 고정 안내 문구만 보여줌). 여기서는 childId/code/reason만 기록하고
 // 음성 원본·transcript·토큰 등은 애초에 받지도 않는다.
 export async function POST(req: NextRequest) {
-  let body: { childId?: string; code?: number; reason?: string };
+  let body: { childId?: string; code?: number; reason?: string; phase?: string };
   try {
     body = await req.json();
   } catch {
@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
       childId: body.childId ?? null,
       code: body.code ?? null,
       reason: body.reason ?? null,
+      phase: body.phase ?? "pre-ready",
       ts: new Date().toISOString(),
     })
   );

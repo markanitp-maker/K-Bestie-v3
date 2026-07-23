@@ -1305,6 +1305,19 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       function handleClose(code: number, reason: string) {
         if (myGeneration !== connectionGenerationRef.current) return;
         console.log(`${getLogPrefix()} 🔌 closed — code:`, code, reason || "");
+        
+        fetch("/api/voice/relay-error", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            childId: getChildIdRef.current?.() ?? null,
+            code,
+            reason: reason || null,
+            phase: "mid-session",
+          }),
+          keepalive: true,
+        }).catch(() => {});
+
         // 세션 종료 전 미완료 아이/K 턴 flush
         if (pendingChildTextRef.current || (sttModeRef.current === "gcp" && childAudioChunksRef.current.length > 0)) {
           flushChildTurn(pendingChildTextRef.current);
