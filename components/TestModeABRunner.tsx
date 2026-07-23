@@ -436,6 +436,11 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
     },
     onRecoveryNeeded: () => {
       setNotice("연결이 불안정해요, 다시 시도할게요");
+      setAutoPhase("idle");
+      setTurnPhase("idle");
+      setListening(false);
+      busyRef.current = false;
+      setBusy(false);
     }
   });
   
