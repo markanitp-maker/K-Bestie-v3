@@ -250,6 +250,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const activeSessionIdRef = useRef<string | null>(null);
   const connectionIdRef = useRef<string>("none");
   const connectionGenerationRef = useRef<number>(0);
+  const closeReconnectCountRef = useRef<number>(0);
+  const lastCloseReconnectAtRef = useRef<number>(0);
+  const closeReconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const stabilityResetTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // speakAsK/speakClosingLine으로 "이 문장을 그대로 말해줘"라고 지시했을 때 이미 검증된
   // 안전한 원문 — 모델이 실제로 낸 outputTranscription이 프롬프트 누출 패턴을 포함하면
@@ -825,6 +829,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       clearTimeout(turnCompleteFallbackTimerRef.current);
       turnCompleteFallbackTimerRef.current = null;
     }
+    if (closeReconnectTimerRef.current) {
+      clearTimeout(closeReconnectTimerRef.current);
+      closeReconnectTimerRef.current = null;
+    }
+    if (stabilityResetTimerRef.current) {
+      clearTimeout(stabilityResetTimerRef.current);
+      stabilityResetTimerRef.current = null;
+    }
 
     notifyUsageLive("end");
     stopAllScheduledSources();
@@ -1012,6 +1024,15 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         console.log(`${getLogPrefix()} ✅ Live session open`);
         updateStatus("live");
         notifyUsageLive("start");
+        // 연결이 열리자마자 바로 리셋하면 "열리자마자 다시 닫히는" 반복 실패 시나리오에서
+        // 매번 1회차로 되돌아가 버려 재연결 제한이 무력화된다(codex 지적) — 일정 시간
+        // 안정적으로 열려 있었을 때만 반복-실패 카운터를 리셋한다.
+        const STABLE_CONNECTION_MS = 5000;
+        clearTimeout(stabilityResetTimerRef.current ?? undefined);
+        stabilityResetTimerRef.current = setTimeout(() => {
+          closeReconnectCountRef.current = 0;
+          stabilityResetTimerRef.current = null;
+        }, STABLE_CONNECTION_MS);
 
         // 로컬 STT 폴백 시작 — gcp 모드에서는 브라우저 폴백을 켜지 않음(초기화도 안 함)
         if (ENABLE_STT_FALLBACK && sttModeRef.current !== "gcp") {
@@ -1324,6 +1345,13 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           pendingChildTextRef.current = "";
         }
         finalizeActiveKTurn();
+        // stopSession()/pauseSession()이 이미 "ending"/"paused"로 세팅해둔 의도된 종료인지를
+        // updateStatus("ended")로 덮어쓰기 전에 먼저 판단해둔다 — 실측 결과, 지금까지는 이
+        // 값과 무관하게 handleClose가 teardown()만 하고 끝나서, watchdog이 우연히 같은
+        // 타이밍에 겹치지 않는 한(예: Vertex 쪽에서 먼저 연결을 끊는 경우) 재연결 시도 자체가
+        // 전혀 일어나지 않았다 — 아이 화면이 아무 알림도 없이 그냥 멈춘 채로 남는 원인이었다.
+        const wasIntentionalStop =
+          statusRef.current === "ending" || statusRef.current === "paused";
         if (
           statusRef.current !== "ending" &&
           statusRef.current !== "ended" &&
@@ -1332,6 +1360,43 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           updateStatus("ended");
         }
         teardown("handleClose:code=" + code);
+        // 의도된 종료(stopSession/pauseSession)가 아니면 watchdog 발동 여부와 무관하게 항상
+        // 복구를 시도한다 — watchdog과 동일하게 알림 표시 + preserveHistory 재연결.
+        // 단, Vertex/네트워크가 연결 직후 반복적으로 끊어버리는 상황에서 무한/고빈도 재연결
+        // 루프가 되지 않도록 짧은 시간창 내 재시도 횟수를 세어 지수 백오프를 적용하고,
+        // 한도를 넘으면 자동 재연결을 포기한다(codex 검증에서 지적된 위험 보완).
+        if (!wasIntentionalStop) {
+          const RAPID_RECONNECT_WINDOW_MS = 30000;
+          const MAX_RAPID_RECONNECTS = 4;
+          const now = Date.now();
+          if (now - lastCloseReconnectAtRef.current < RAPID_RECONNECT_WINDOW_MS) {
+            closeReconnectCountRef.current += 1;
+          } else {
+            closeReconnectCountRef.current = 1;
+          }
+          lastCloseReconnectAtRef.current = now;
+
+          onRecoveryNeededRef.current?.();
+
+          if (closeReconnectCountRef.current > MAX_RAPID_RECONNECTS) {
+            console.warn(
+              `${getLogPrefix()} ⛔ 자동 재연결 중단 — ${RAPID_RECONNECT_WINDOW_MS}ms 내 ${closeReconnectCountRef.current}회 반복 실패`
+            );
+            updateStatus("ended");
+          } else {
+            const backoffMs = Math.min(1000 * 2 ** (closeReconnectCountRef.current - 1), 8000);
+            const reconnectGeneration = myGeneration;
+            // teardown()이 stopSession/pauseSession/reset/unmount에서 이 타이머를 취소하므로,
+            // 백오프 대기 중 사용자가 의도적으로 세션을 끝내면 재연결이 실행되지 않는다.
+            closeReconnectTimerRef.current = setTimeout(() => {
+              closeReconnectTimerRef.current = null;
+              // 대기하는 동안 다른 경로(watchdog/수동 재시작 등)가 이미 새 세대를 시작했다면
+              // 중복 재연결을 하지 않는다.
+              if (reconnectGeneration !== connectionGenerationRef.current) return;
+              startSession({ preserveHistory: true }).catch(() => {});
+            }, backoffMs);
+          }
+        }
       }
 
       if (tokenData.mode !== "relay") {
