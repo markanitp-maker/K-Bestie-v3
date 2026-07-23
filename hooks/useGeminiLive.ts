@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 
+import { logVoiceEvent, maskText } from "@/lib/voiceTimelineLog";
 import { validateFinalTranscript, resolveFinalTranscript } from "@/lib/stt/scriptGuard";
 
 const ENABLE_STT_FALLBACK = true;
@@ -593,6 +594,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   }
 
   function scheduleAudio(base64: string) {
+    logVoiceEvent({ ts: Date.now(), eventType: "audioChunkReceived", audioQueueLength: scheduledSourcesRef.current.length });
     if (audioMutedRef.current) {
       return;
     }
@@ -646,6 +648,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
           console.log(`${getLogPrefix()} 🔇 scheduleAudio 재생 종료 (큐 비워짐)`);
           kSpeakingRef.current = false; // 마지막 버퍼 재생 종료 — 마이크 재개
           maybeUnlockCutChildTurn();
+          logVoiceEvent({ ts: Date.now(), eventType: "audioQueueDrained" });
           onAudioQueueDrainedRef.current?.();
           // 스피커 잔향이 빠질 시간을 약간 두고 브라우저 STT 재시작
           if (ENABLE_STT_FALLBACK && sttModeRef.current !== "gcp") {
@@ -754,9 +757,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // child 턴 flush — gemini 모드는 즉시 동기 처리(기존 동작 유지),
   // gcp 모드는 누적 오디오를 /api/mission/stt로 전사(fire-and-forget)해 최종 텍스트로 콜백.
   function flushChildTurn(fallbackText: string) {
+    logVoiceEvent({ ts: Date.now(), eventType: "flushChildTurn_start", childTurnId: activeChildTurnIdRef.current ?? undefined, textPreview: maskText(fallbackText) });
     // 이번 아이 발화 턴은 이미 flush됨 — 브라우저 STT 폴백/Gemini 전사 중 먼저 도착한
     // 한쪽만 반영하고 나머지는 무시(말풍선 중복 생성 방지)
     if (childTurnFlushedRef.current) {
+      logVoiceEvent({ ts: Date.now(), eventType: "flushChildTurn_complete", childTurnId: activeChildTurnIdRef.current ?? undefined, textPreview: maskText(fallbackText) });
       return;
     }
     childTurnFlushedRef.current = true;
@@ -767,6 +772,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       const seq = activeChildTurnDisplaySequenceRef.current ?? nextDisplaySequence();
       appendTurn({ role: "child", text: fallbackText, id: cid, displaySequence: seq });
       onTurnCompleteRef.current?.({ role: "child", text: fallbackText, id: cid, displaySequence: seq });
+      logVoiceEvent({ ts: Date.now(), eventType: "flushChildTurn_complete", childTurnId: activeChildTurnIdRef.current ?? undefined, textPreview: maskText(fallbackText) });
       return;
     }
 
@@ -807,9 +813,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         manualFinalizingRef.current = false;
       }
     })();
+    logVoiceEvent({ ts: Date.now(), eventType: "flushChildTurn_complete", childTurnId: activeChildTurnIdRef.current ?? undefined, textPreview: maskText(fallbackText) });
   }
 
-  function teardown() {
+  function teardown(reason: string = "unknown") {
+    console.log(getLogPrefix(), "🧹 teardown called, reason:", reason);
     clearVadTimersAndBuffers();
     clearGenerationTimeout();
     clearWatchdogTimer();
@@ -1084,6 +1092,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
 
         // ── 서버 barge-in 신호 ────────────────────────────────
         if (sc.interrupted) {
+          logVoiceEvent({ ts: Date.now(), eventType: "interrupted" });
           const turnIdAtInterrupt = activeKTurnIdRef.current;
 
           if (expectingInterruptRef.current) {
@@ -1098,6 +1107,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           }
 
           kGenerationCompleteRef.current = true;
+          logVoiceEvent({ ts: Date.now(), eventType: "generationComplete" });
 
           // 진짜 turnComplete가 오지 않을 경우를 대비한 복구 타임아웃 (5초)
           if (turnCompleteFallbackTimerRef.current) {
@@ -1125,7 +1135,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
               turnCompleteFallbackTimerRef.current = null;
             }
             kGenerationCompleteRef.current = true;
+          logVoiceEvent({ ts: Date.now(), eventType: "generationComplete" });
             kTurnCompleteRef.current = true;
+          logVoiceEvent({ ts: Date.now(), eventType: "turnComplete", kTurnId: activeKTurnIdRef.current ?? undefined });
             kTurnCutRef.current = false;
             hasLiveInputTxRef.current = false;
             speechHistoryRef.current = "";
@@ -1149,7 +1161,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           logTelemetryEvent("turnComplete");
           
           kGenerationCompleteRef.current = true;
+          logVoiceEvent({ ts: Date.now(), eventType: "generationComplete" });
           kTurnCompleteRef.current = true;
+          logVoiceEvent({ ts: Date.now(), eventType: "turnComplete", kTurnId: activeKTurnIdRef.current ?? undefined });
           if (turnCompleteFallbackTimerRef.current) {
             clearTimeout(turnCompleteFallbackTimerRef.current);
             turnCompleteFallbackTimerRef.current = null;
@@ -1176,7 +1190,8 @@ const incomingGenerationId = currentKGenerationIdRef.current;
 
           onServerTurnCompleteRef.current?.();
           if (!kTurnHasAudioRef.current) {
-            onAudioQueueDrainedRef.current?.();
+            logVoiceEvent({ ts: Date.now(), eventType: "audioQueueDrained" });
+          onAudioQueueDrainedRef.current?.();
           }
           // speakClosingLine()이 보낸 전용 종료 발화 턴이 지금 막 끝났다 — 이 턴까지는
           // 통과시켰으니, 이후 들어오는 모든 서버 메시지는 다시 완전히 잠근다.
@@ -1191,6 +1206,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         if (inTx) {
           console.log("[K] 📝 child (buf):", inTx);
           pendingChildTextRef.current += inTx;
+          logVoiceEvent({ ts: Date.now(), eventType: "inputTranscription", textPreview: maskText(pendingChildTextRef.current) });
           setInterimChildText(pendingChildTextRef.current);
 
           // 라이브 전사 성공 시 로컬 STT는 무력화
@@ -1201,6 +1217,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         // ── 케이 응답 트랜스크립션 ────────────────────────────
         const outTx = sc.outputTranscription?.text;
         if (outTx) {
+          logVoiceEvent({ ts: Date.now(), eventType: "outputTranscription", kTurnId: activeKTurnIdRef.current ?? undefined, generationId: (sc as any).modelTurn?.parts?.[0]?.generationId ?? undefined, textPreview: maskText(outTx) });
           if (isCancelledGeneration) return;
           if (isAlreadyProcessed) return;
 
@@ -1282,7 +1299,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         console.error(`${getLogPrefix()} ❌ error:`, message);
         setError(message);
         updateStatus("error");
-        teardown();
+        teardown("handleError:" + message);
       }
 
       function handleClose(code: number, reason: string) {
@@ -1301,7 +1318,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         ) {
           updateStatus("ended");
         }
-        teardown();
+        teardown("handleClose:code=" + code);
       }
 
       if (tokenData.mode !== "relay") {
@@ -1441,6 +1458,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                     activeChildTurnDisplaySequenceRef.current = nextDisplaySequence();
 
                     sessionRef.current?.sendRealtimeInput({ activityStart: {} });
+                    logVoiceEvent({ ts: Date.now(), eventType: "activityStart", mode: "live", childTurnId: activeChildTurnIdRef.current, micEnabled: !!micEnabledRef.current });
 
                     // 2. 후보 버퍼 PCM 전송 (시간순)
                     const buffered = candidateBufferRef.current;
@@ -1512,6 +1530,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                       generationEpochRef.current += 1;
                       startGenerationTimeout();
                       sessionRef.current?.sendRealtimeInput({ activityEnd: {} });
+                      logVoiceEvent({ ts: Date.now(), eventType: "activityEnd", mode: "live" });
                       clearVadTimersAndBuffers(); // idle 복귀 및 리셋
                     }
                     silenceTimerRef.current = null;
@@ -1536,19 +1555,19 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       console.error("[K] 🚨 startSession error (voiceName:", voiceNameRef.current, "):", err);
       setError((err as Error).message);
       updateStatus("error");
-      teardown();
+      teardown("startSession:catch:" + (err as Error).message);
     }
   }, []);
 
   const stopSession = useCallback(() => {
     updateStatus("ending");
-    teardown();
+    teardown("stopSession");
     updateStatus("ended");
   }, []);
 
   const pauseSession = useCallback(() => {
     // WebSocket·오디오만 끊음 — transcript/sessionId는 유지
-    teardown();
+    teardown("pauseSession");
     updateStatus("paused");
   }, []);
 
@@ -1569,7 +1588,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
   }, []);
 
   const reset = useCallback(() => {
-    teardown();
+    teardown("reset");
     interactionModeRef.current = "auto";
     transcriptRef.current = [];
     setTranscript([]);
@@ -1633,7 +1652,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
       onRecoveryNeededRef.current?.();
       updateStatus("ended");
-      teardown();
+      teardown("watchdog:speakClosingLine");
       startSession({ preserveHistory: true }).catch(() => {});
     }, 10000);
     startGenerationTimeout();
@@ -1669,7 +1688,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
       onRecoveryNeededRef.current?.();
       updateStatus("ended");
-      teardown();
+      teardown("watchdog:sendText");
       startSession({ preserveHistory: true }).catch(() => {});
     }, 10000);
     
@@ -1717,7 +1736,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       console.warn(`${getLogPrefix()} 🐕 Watchdog timer fired. Attempting recovery...`);
       onRecoveryNeededRef.current?.();
       updateStatus("ended");
-      teardown();
+      teardown("watchdog:speakAsK");
       startSession({ preserveHistory: true }).catch(() => {});
     }, 10000);
     startGenerationTimeout();
@@ -1735,6 +1754,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       if (sessionRef.current && statusRef.current === "live") {
         try {
           sessionRef.current.sendRealtimeInput({ activityEnd: {} });
+          logVoiceEvent({ ts: Date.now(), eventType: "activityEnd", mode: "live" });
         } catch (e) {
           console.error("[VAD] Failed to send activityEnd during transition:", e);
         }
@@ -1782,6 +1802,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     activeChildTurnIdRef.current = nextTurnId();
     activeChildTurnDisplaySequenceRef.current = nextDisplaySequence();
     sessionRef.current.sendRealtimeInput({ activityStart: {} });
+    logVoiceEvent({ ts: Date.now(), eventType: "activityStart", mode: "live", childTurnId: activeChildTurnIdRef.current, micEnabled: !!micEnabledRef.current });
     return true;
   }, []);
 
@@ -1813,6 +1834,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     hasFiredFirstOutputRef.current = false;
     
     sessionRef.current.sendRealtimeInput({ activityEnd: {} });
+          logVoiceEvent({ ts: Date.now(), eventType: "activityEnd", mode: "live" });
     sessionRef.current.sendClientContent({
       turns: [],
       turnComplete: true
@@ -1853,7 +1875,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
 
   useEffect(() => {
     return () => {
-      teardown();
+      teardown("unmount-cleanup");
     };
   }, []);
 
