@@ -25,3 +25,13 @@ export function pickNonRepeatingReaction(lastReaction: string | null): string {
 
   return selected;
 }
+
+export function buildContentEchoReaction(answerText: string, lastReaction: string | null): string {
+  const trimmed = answerText.trim();
+  if (!trimmed) {
+    // 답변 텍스트 자체가 비어있으면(STT 실패 등) 인용할 내용이 없으니 기존 방식으로 대체.
+    return pickNonRepeatingReaction(lastReaction);
+  }
+  const excerpt = trimmed.length > 24 ? `${trimmed.slice(0, 24)}…` : trimmed;
+  return `"${excerpt}" 얘기 잘 들었어, 들려줘서 고마워!`;
+}

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
-import { pickNonRepeatingReaction } from "@/lib/mission/eReactionPool";
+import { pickNonRepeatingReaction, buildContentEchoReaction } from "@/lib/mission/eReactionPool";
 
 import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
@@ -196,7 +196,7 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
         reactionAbortControllerRef.current = reactionAbortController;
 
         reactionResultPromise = (async () => {
-          const fallbackResult = pickNonRepeatingReaction(lastReactionRef.current);
+          const fallbackResult = buildContentEchoReaction(text, lastReactionRef.current);
           let timeoutId: ReturnType<typeof setTimeout> | undefined;
           const timeoutMarker = Symbol("timeout");
 
@@ -205,7 +205,7 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
             // 첫 read()까지 전체를 재야 한다. fetch 응답(헤더) 도착 이후만 재면, fetch 자체가
             // 이미 1초 넘게 걸리는 경우를 못 잡는다(실측으로 확인된 문제).
             const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
-              timeoutId = setTimeout(() => resolve(timeoutMarker), 1200);
+              timeoutId = setTimeout(() => resolve(timeoutMarker), 2200); // 실측 p95=1558ms 기준 여유를 둔 값(2026-07-24)
             });
 
             const fetchAndFirstChunk = (async () => {
@@ -286,7 +286,7 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
           }
         })();
       } else if (isLowLatency) {
-        reactionResultPromise = Promise.resolve({ text: pickNonRepeatingReaction(lastReactionRef.current) });
+        reactionResultPromise = Promise.resolve({ text: buildContentEchoReaction(text, lastReactionRef.current) });
       }
 
       const ansRes = await answerFetchPromise;

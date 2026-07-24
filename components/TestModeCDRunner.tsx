@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
-import { pickNonRepeatingReaction } from "@/lib/mission/eReactionPool";
+import { pickNonRepeatingReaction, buildContentEchoReaction } from "@/lib/mission/eReactionPool";
 import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
 import type { ConversationMode } from "@/lib/plan/conversationMode";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
@@ -156,13 +156,13 @@ export function TestModeCDRunner({ selectedMode }: { selectedMode: "C" | "D" }) 
         const reactionAbortController = new AbortController();
         reactionAbortControllerRef.current = reactionAbortController;
         reactionResultPromise = (async () => {
-          const fallbackResult = pickNonRepeatingReaction(lastReactionRef.current);
+          const fallbackResult = buildContentEchoReaction(text, lastReactionRef.current);
           let timeoutId: ReturnType<typeof setTimeout> | undefined;
           const timeoutMarker = Symbol("timeout");
 
           try {
             const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
-              timeoutId = setTimeout(() => resolve(timeoutMarker), 1200);
+              timeoutId = setTimeout(() => resolve(timeoutMarker), 2200); // 실측 p95=1558ms 기준 여유를 둔 값(2026-07-24)
             });
 
             const fetchAndFirstChunk = (async () => {
@@ -233,7 +233,7 @@ export function TestModeCDRunner({ selectedMode }: { selectedMode: "C" | "D" }) 
           }
         })();
       } else if (isLowLatency) {
-        reactionResultPromise = Promise.resolve({ text: pickNonRepeatingReaction(lastReactionRef.current) });
+        reactionResultPromise = Promise.resolve({ text: buildContentEchoReaction(text, lastReactionRef.current) });
       }
 
       const ansRes = await answerFetchPromise;
