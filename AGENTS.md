@@ -3,7 +3,7 @@
 > 환경: **WSL2 · Codex (gpt-5.6-sol)** · OMC(oh-my-claudecode) v4.15.x (Team-first)
 > 프로젝트 경로: `/mnt/e/VibeCoding/K-Bestie-v3`
 > 역할: Codex = **검증 워커** (코드리뷰·보안리뷰·테스트·정합성 체크 전담)
-> 오케스트레이터는 Claude, 실제 1차 코딩은 agy(Antigravity/Gemini 3.6 Flash (High))가 담당한다.
+> 오케스트레이터는 Claude, 실제 1차 코딩은 agy(Antigravity/Gemini 3.1 Pro (High))가 담당한다.
 
 ---
 

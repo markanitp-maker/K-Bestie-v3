@@ -56,3 +56,5 @@ k-bestie3-*.json
 # 테스트 계정 자격정보(로그인/비번) — 로컬 전용, 절대 커밋 금지
 scratch/
 
+
+.vercel

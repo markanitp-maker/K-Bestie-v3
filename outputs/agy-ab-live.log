@@ -1,0 +1,17 @@
+[구현 계획]
+- **대상 파일**:
+  1. `hooks/useGeminiLive.ts` (`UseGeminiLiveOptions`에 `conversationMode?: string` 추가, `notifyUsageLive` 내 `/api/usage/live` 호출 시 `conversationMode` 전달 — 그 외 로직 불변)
+  2. `components/TestModeABRunner.tsx` (신규 생성: `TestModeCDRunner`의 상태머신·레이아웃·UI를 복제하되 음성 계층을 `useGeminiLive`로 교체, tier3 `MissionInner`의 `turnPhase` 가드 및 `speakAsK`, `lockNow` 준용, A/B 말풍선 가시성 처리)
+  3. `app/child/missions/page.tsx` (`MissionRouteGate`에 `"ab"` 분기 추가 및 `TestModeABRunner` 마운트)
+  4. `app/child/test-modes/page.tsx` (A~E안 선택 시 `○안으로 미션 시작 → /child/missions` 버튼 표시, 전체 구현 완료에 따른 미구현 안내 문구 제거)
+- **변경 개요**:
+  - `useGeminiLive`가 세션 시작/종료 시 `/api/usage/live`에 `conversationMode`를 전달하도록 안전하게 확장 (`conversationModeRef` 활용).
+  - `TestModeABRunner`를 신규 작성하여 A안(아이·케이 말풍선 모두 표시)과 B안(아이 말풍선만 렌더 숨김, 기록 및 답변 API 호출은 A안과 동일)을 완벽 구현.
+  - 라우트 게이트(`MissionRouteGate`)와 테스트 모드 선택 페이지(`TestModesPage`)를 연결.
+- **위험 요소 및 방어**:
+  - Live 음성 스트림에서 barge-in 발생 시 중복 `/api/mission/answer(-lean)` 호출 및 중복 말풍선이 생성되지 않도록 `turnPhaseRef` 가드와 `isChildTurnDuringActiveMission` 가드를 적용.
+  - 재시작(`loadSession(true)`) 시 in-flight 비동기 턴이 이전 epoch로 인해 무효화되도록 `loadEpochRef` 가드 철저히 적용.
+
+이제 바로 코드 작성을 진행하겠습니다.
+Error: timeout waiting for response
+AGY_EXIT=0

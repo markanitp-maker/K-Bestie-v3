@@ -45,6 +45,9 @@ self.addEventListener("message", (event) => {
     self.skipWaiting();
     self.clients.claim();
   }
+  if (event.data && event.data.type === "GET_VERSION" && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ swVersion: CACHE_NAME });
+  }
 });
 
 self.addEventListener("fetch", (event) => {

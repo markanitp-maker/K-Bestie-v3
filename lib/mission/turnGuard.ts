@@ -12,6 +12,8 @@
 // 실제로 저장/제출해도 되는가"(shouldAcceptChildTurn)를 각각 명시적으로 판정한다.
 // 특히 K가 말하는 중(k_speaking)이나 답변 대기 중(waiting_k)에는 아이 발화를 무시하고 오직 idle 상태에서만 접수하도록 엄격하게 가드한다.
 
+import { logVoiceEvent } from "@/lib/voiceTimelineLog";
+
 /** Live(Tier3) 전용 미션 턴 상태머신 — missions/page.tsx의 turnPhaseRef와 동일한 타입. */
 export type TurnPhase = "idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking" | "recovering";
 
@@ -32,8 +34,12 @@ export interface RecordingGuardInput {
  * 이전 답변과 겹치는 새 녹음을 만들면 안 됨).
  */
 export function canStartRecording(input: RecordingGuardInput): boolean {
-  if (input.isLiveMode) return input.turnPhase === "idle";
-  return !input.answerInFlight && !input.kaySpeaking;
+  const result = input.isLiveMode ? (input.turnPhase === "idle") : (!input.answerInFlight && !input.kaySpeaking);
+  logVoiceEvent({ ts: Date.now(), eventType: "canStartRecording_check",
+    turnPhaseBefore: input.turnPhase,
+    extra: { isLiveMode: input.isLiveMode, result }
+  });
+  return result;
 }
 
 export interface ChildTurnAcceptInput {

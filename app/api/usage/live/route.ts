@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { normalizeConversationMode } from "@/lib/plan/conversationMode";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     const { tier, voiceMode } = await getVoiceModeForChild(childId);
     const { data: inserted, error } = await service
       .from("usage_events")
-      .insert({ child_id: childId, tier, voice_mode: voiceMode, kind: "live_audio" })
+      .insert({ child_id: childId, tier, voice_mode: voiceMode, kind: "live_audio", conversation_mode: normalizeConversationMode((body as { conversationMode?: unknown }).conversationMode) })
       .select("id")
       .single();
 

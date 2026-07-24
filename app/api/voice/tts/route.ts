@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { normalizeConversationMode } from "@/lib/plan/conversationMode";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
@@ -140,6 +141,7 @@ export async function POST(req: NextRequest) {
             kind: "tts",
             char_count: charCount,
             est_cost_krw: estCostKrw,
+            conversation_mode: normalizeConversationMode((body as { conversationMode?: unknown }).conversationMode),
           });
         } catch (err) {
           console.error("[voice/tts] usage_events insert failed:", (err as Error).message);

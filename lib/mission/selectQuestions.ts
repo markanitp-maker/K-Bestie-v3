@@ -609,13 +609,25 @@ export async function selectFixedMissionQuestions(
     if (available.length > 0) return shuffle(available)[0].id;
 
     available = candidates.filter((q) => q.dashboard_area_tag === tag);
-    if (available.length > 0) return shuffle(available)[0].id;
+    if (available.length > 0) {
+      const notRecentlyAsked = available.filter((q) => !lastAskedAt.has(q.id));
+      if (notRecentlyAsked.length > 0) return shuffle(notRecentlyAsked)[0].id;
+      return shuffle(available)[0].id;
+    }
 
     available = candidatesRelaxRound.filter((q) => q.dashboard_area_tag === tag);
-    if (available.length > 0) return shuffle(available)[0].id;
+    if (available.length > 0) {
+      const notRecentlyAsked = available.filter((q) => !lastAskedAt.has(q.id));
+      if (notRecentlyAsked.length > 0) return shuffle(notRecentlyAsked)[0].id;
+      return shuffle(available)[0].id;
+    }
 
     available = allActive.filter((q) => q.dashboard_area_tag === tag);
-    if (available.length > 0) return shuffle(available)[0].id;
+    if (available.length > 0) {
+      const notRecentlyAsked = available.filter((q) => !lastAskedAt.has(q.id));
+      if (notRecentlyAsked.length > 0) return shuffle(notRecentlyAsked)[0].id;
+      return shuffle(available)[0].id;
+    }
 
     throw new Error(`[selectFixedMissionQuestions] No candidate found for tag: ${tag}`);
   };

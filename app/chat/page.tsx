@@ -10,6 +10,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
+import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -61,6 +62,7 @@ export default function ChatPage() {
 
   // 실시간 메시지 저장 + 아이 발화 시 케이 텍스트 응답 생성(음성 없음, 텍스트만)
   const handleTurnComplete = useCallback((turn: Turn) => {
+    logVoiceEvent({ ts: Date.now(), eventType: "freechat_handleTurnComplete", extra: { role: turn.role } });
     const sid = sessionIdRef.current;
     if (sid) {
       const asrConfidence = turn.role === "child" ? getLastAsrConfidenceRef.current?.() : undefined;
@@ -249,6 +251,7 @@ export default function ChatPage() {
   }, [status, isAuto, setInputMode, setMicEnabled]);
 
   const restoreSession = useCallback(async (cId: string) => {
+    logVoiceEvent({ ts: Date.now(), eventType: "freechat_restore_start", extra: { childId: cId } });
     console.log("[freechat] restoreSession start", { childId: cId });
     try {
       const res = await fetch("/api/chat/session", {
@@ -257,6 +260,7 @@ export default function ChatPage() {
         body: JSON.stringify({ childId: cId }),
       });
       const data = await res.json();
+      logVoiceEvent({ ts: Date.now(), eventType: "freechat_session_response", extra: { resumed: data.resumed, sessionId: data.sessionId, conversationWindow: data.conversationWindow } });
       console.log("[freechat] session response", { sessionId: data.sessionId, resumed: data.resumed, businessDate: data.businessDate, conversationWindow: data.conversationWindow });
       
       if (data.sessionId) {
@@ -273,6 +277,7 @@ export default function ChatPage() {
           const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`);
           if (msgRes.ok) {
             const msgData = await msgRes.json();
+            logVoiceEvent({ ts: Date.now(), eventType: "freechat_restore_messages", extra: { messageCount: msgData.messages?.length ?? 0 } });
             if (msgData.messages) {
               type MessageRow = {
                 turn_id?: string;
@@ -312,6 +317,34 @@ export default function ChatPage() {
 
     await startSession();
     seedTranscript(restoredTranscriptRef.current);
+
+    if (navigator.serviceWorker?.controller) {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = (e) => {
+        fetch("/api/client-version", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: sessionIdRef.current,
+            childId,
+            clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
+            swVersion: e.data?.swVersion ?? "unknown",
+          }),
+        }).catch(() => {});
+      };
+      navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" }, [channel.port2]);
+    } else {
+      fetch("/api/client-version", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          sessionId: sessionIdRef.current, 
+          childId, 
+          clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA, 
+          swVersion: "no-sw-controller" 
+        }),
+      }).catch(() => {});
+    }
   }, [childId, startSession, restoreSession, seedTranscript]);
 
   // 주기적으로 윈도우 변경을 감지하고 세션 갱신

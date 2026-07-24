@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CHILD_SPEECH_HINTS, CHILD_SPEECH_HINT_BOOST } from "@/lib/stt/childSpeechHints";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { normalizeConversationMode } from "@/lib/plan/conversationMode";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest) {
             kind: "stt",
             duration_sec: durationSec,
             est_cost_krw: estCostKrw,
+            conversation_mode: normalizeConversationMode((body as { conversationMode?: unknown }).conversationMode),
           });
         } catch (err) {
           console.error("[mission/stt] usage_events insert failed:", (err as Error).message);

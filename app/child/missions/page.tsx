@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
+import { MissionConversationLayout } from "@/components/MissionConversationLayout";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
@@ -20,6 +21,8 @@ import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { toKoreanVocative } from "@/lib/utils/koreanName";
+import { usePipelineConnectionQuality } from "@/hooks/usePipelineConnectionQuality";
+import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndicator";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -98,6 +101,7 @@ function currentRound(hour: number): RoundType | null {
 function MissionInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { quality: connectionQuality, recordStageResult } = usePipelineConnectionQuality();
 
   const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -636,6 +640,7 @@ function MissionInner() {
 
         let respondText: string | undefined;
         if (!isLive) {
+          const llmStartedAt = Date.now();
           const reactionText = await fetchPersonalizedReaction({
             questionText: question.question_text,
             answerText: enrichedTurn.text,
@@ -644,6 +649,7 @@ function MissionInner() {
             lastReaction: lastReactionRef.current,
             isStale: () => currentEpoch !== answerEpochRef.current,
           });
+          recordStageResult("llm", true, Date.now() - llmStartedAt);
           if (currentEpoch !== answerEpochRef.current) return;
           lastReactionRef.current = reactionText;
           respondText = `${reactionText} ${nextQ.question_text}`;
@@ -1601,6 +1607,207 @@ function MissionInner() {
   // canStartRecording 가드가 탭을 무시하므로, 버튼을 "생각 중" 모양으로 바꿔 침묵 무시와
   // 진짜 먹통을 아이가 구분할 수 있게 한다.
   const isThinkingTurn = isLiveMode && !isAuto && turnPhaseUi !== "idle";
+
+  if (!isLiveMode) {
+    const visibleTurns = voice.transcript.filter((t) => t.role !== "child");
+    const activeVisibleTurn = visibleTurns.length > 0 ? visibleTurns[visibleTurns.length - 1] : null;
+    const historyTurns = visibleTurns.slice(0, -1);
+    const missionDoneNow = missionStateRef.current !== "active" || completed;
+
+    return (
+      <div className="h-full relative overflow-hidden" style={{ background: "#fafaf8" }}>
+        {wakeLockWarning && (
+          <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
+              기기 설정으로 화면이 꺼질 수 있어요
+            </div>
+          </div>
+        )}
+
+        {missionDoneNow && (
+          <div className="absolute top-[64px] left-0 right-0 z-30 text-center px-4 pointer-events-none">
+            <h1 className="text-base font-bold" style={{ color: "#1e1e2d" }}>
+              오늘의 미션을 완료했어요!
+            </h1>
+            <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
+              {missionState === "completed"
+                ? MISSION_CLOSING_LINE
+                : "황금열쇠를 받았어요. 내일 또 만나요! 🔑"}
+            </p>
+          </div>
+        )}
+
+        {(recoveryNotice || inputErrorNotice) && (
+          <div className="absolute top-[64px] left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
+            <div className="text-center text-xs font-bold text-orange-600 bg-orange-50 py-1 px-3 rounded-full border border-orange-200 animate-in fade-in">
+              {recoveryNotice || inputErrorNotice}
+            </div>
+          </div>
+        )}
+
+        <MissionConversationLayout
+          onBack={() => {
+            voice.stopSession();
+            setSessionActive(false);
+            router.push("/child/home");
+          }}
+          progressCurrent={gauge}
+          progressTotal={requiredCount}
+          history={historyTurns.map((t, i) => ({
+            id: t.id ?? `h-${i}`,
+            role: t.role === "child" ? "child" : "k",
+            text: t.text,
+          }))}
+          activeTurn={
+            activeVisibleTurn
+              ? {
+                  id: activeVisibleTurn.id ?? "active",
+                  role: activeVisibleTurn.role === "child" ? "child" : "k",
+                  text: activeVisibleTurn.text,
+                }
+              : null
+          }
+          mascotSlot={<KBestieMascotAnimation state="idle" size={72} />}
+          isListening={isRecording}
+          micLevel={isRecording ? 0.6 : 0}
+          headerExtraSlot={
+            <div className="flex items-center gap-2">
+              <ConnectionQualityIndicator quality={connectionQuality} live={true} />
+              <button
+                onClick={toggleKVoice}
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-white shadow-sm text-base cursor-pointer transition-transform active:scale-95"
+                aria-label={kVoiceEnabled ? "케이 음성 끄기" : "케이 음성 켜기"}
+              >
+                {kVoiceEnabled ? "🔊" : "🔇"}
+              </button>
+              {!missionDoneNow && (
+                <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
+              )}
+            </div>
+          }
+        />
+
+        {/* 실제 조작 가능한 하단 컨트롤(마이크 버튼 / 텍스트 입력) - 기존 로직·핸들러 그대로,
+            MissionConversationLayout의 장식용 마이크 파형 존 위에 겹쳐서 표시한다.
+            MissionConversationLayout.tsx 자체는 버튼을 모르므로 여기서 별도로 얹는다. */}
+        <div className="absolute bottom-0 left-0 right-0 z-20">
+          {mode === "voice" ? (
+            <div className="flex items-center justify-center gap-8 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
+              <button
+                onClick={switchToText}
+                className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+                aria-label="텍스트로 대화하기"
+              >
+                💬
+              </button>
+
+              {isConnecting && (
+                <button disabled className="w-16 h-16 rounded-full flex items-center justify-center bg-gray-100 shadow-sm cursor-not-allowed">
+                  <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                </button>
+              )}
+
+              {isLive && !missionDoneNow && (
+                isAuto ? (
+                  <div className="w-16 h-16" />
+                ) : (
+                  <button
+                    onClick={handleCentralButtonClick}
+                    className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+                    style={{ background: isRecording ? "#e05a3f" : "#e8845a" }}
+                    aria-label={isRecording ? "말하기 완료" : isThinkingTurn ? "케이가 생각하고 있어요" : "말하기 시작"}
+                  >
+                    {isRecording ? (
+                      <div className="w-5 h-5 rounded-sm bg-white" />
+                    ) : (
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                        <circle cx="12" cy="12" r="8" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              )}
+
+              {!isLive && !isConnecting && !missionDoneNow && autoStartFailed && (
+                <button
+                  onClick={() => {
+                    setAutoStartFailed(false);
+                    voice.startSession();
+                  }}
+                  className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+                  style={{ background: "#e8845a" }}
+                  aria-label="미션 시작"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </button>
+              )}
+
+              {missionDoneNow && (
+                <button
+                  onClick={() => {
+                    setSessionActive(false);
+                    router.replace("/child/home");
+                  }}
+                  className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
+                  style={{ background: "#1a6b5a" }}
+                  aria-label="홈으로 이동"
+                >
+                  ✕
+                </button>
+              )}
+
+              <button
+                onClick={handleClose}
+                className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
+              <button
+                onClick={switchToVoice}
+                className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+                aria-label="음성으로 전환"
+              >
+                🎤
+              </button>
+              <input
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
+                }}
+                placeholder="케이에게 답해봐..."
+                disabled={missionDoneNow}
+                className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
+                maxLength={200}
+              />
+              <button
+                onClick={handleSendText}
+                disabled={missionDoneNow || !textInput.trim()}
+                className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
+                style={{ background: "#e8845a" }}
+                aria-label="전송"
+              >
+                ➤
+              </button>
+              <button
+                onClick={handleClose}
+                className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>

@@ -12,6 +12,7 @@ import {
   Legend,
 } from "recharts";
 import type { ProviderId, ModelGroup } from "@/app/api/_lib/ai";
+import { MODE_LABELS, ALL_MODE_BUCKETS, type ModeBucket } from "@/lib/plan/conversationMode";
 
 
 interface ChatMessageRow {
@@ -145,7 +146,7 @@ interface TierHeadcount {
 }
 
 interface CostBreakdownItem {
-  key: "stt" | "tts" | "live_audio" | "llm" | "vercel" | "supabase";
+  key: "stt" | "tts" | "live_audio" | "llm" | "vercel" | "supabase" | "cloud_run";
   label: string;
   category: "ai" | "infra";
   usage: number;
@@ -164,16 +165,41 @@ interface TopUser {
   costKrw: number;
 }
 
+interface ProfitLine {
+  revenueKrw: number;
+  costKrw: number;
+  netProfitKrw: number;
+}
+
+interface ModeBreakdownRow {
+  mode: ModeBucket;
+  eventCount: number;
+  stt: number;
+  tts: number;
+  live_audio: number;
+  llm: number;
+  totalKrw: number;
+}
+
 interface UsageOverview {
   period: Period;
-  scope: { mode: "all" } | { mode: "child"; childId: string; childName: string };
+  scope:
+    | { mode: "all"; conversationMode: ModeBucket | null }
+    | { mode: "child"; childId: string; childName: string; conversationMode: ModeBucket | null };
   profitSummary: {
     revenueMode: string;
+    isFreePeriod: boolean;
+    actual: ProfitLine & { costBasis: string };
+    projected: ProfitLine & { changeRate: { revenue: number | null; cost: number | null; profit: number | null } };
+    note: string;
+    // 하위호환(기존 UI 유지)
     projectedRevenueKrw: number;
     costKrw: number;
     netProfitKrw: number;
     changeRate: { revenue: number | null; cost: number | null; profit: number | null };
   };
+  fx: { usdToKrw: number; asOf: string; note: string };
+  modeBreakdown: ModeBreakdownRow[];
   subSummary: { totalChildren: number; byTier: TierHeadcount[] };
   dailyTrend: DailyTrendPoint[];
   costBreakdown: CostBreakdownItem[];
@@ -884,6 +910,7 @@ function AccountRestoreTab() {
 function AdminDashboard() {
   const [page, setPage] = useState<AdminPageId>("overview");
   const [period, setPeriod] = useState<Period>("month");
+  const [mode, setMode] = useState<ModeBucket | "">(""); // "" = 전체 A~F
   const [data, setData] = useState<UsageOverview | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
 
@@ -901,12 +928,16 @@ function AdminDashboard() {
     let cancelled = false;
     setData(null);
     setLoadFailed(false);
-    fetch(`/api/admin/usage-overview?period=${period}`)
+    fetch(`/api/admin/usage-overview?period=${period}${mode ? `&mode=${mode}` : ""}`)
       .then((r) => r.json())
       .then((d) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setLoadFailed(true); });
     return () => { cancelled = true; };
-  }, [period]);
+  }, [period, mode]);
+
+  // 내보내기(익명 집계) — 현재 기간·모드 필터를 그대로 전달. CSV/XLSX만 노출(JSON은 dev/QA API 전용).
+  const exportHref = (fmt: "csv" | "xlsx") =>
+    `/api/admin/usage-overview/export?period=${period}${mode ? `&mode=${mode}` : ""}&format=${fmt}`;
 
   const toggleService = (key: string) => {
     setExpandedServiceKey((prev) => (prev === key ? null : key));
@@ -956,7 +987,7 @@ function AdminDashboard() {
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           {(Object.keys(PERIOD_LABEL) as Period[]).map((p) => (
             <button
               key={p}
@@ -975,6 +1006,47 @@ function AdminDashboard() {
               {PERIOD_LABEL[p]}
             </button>
           ))}
+        </div>
+
+        {/* A~F 대화방식 필터 + 익명 내보내기 — 사용량/비용 탭 공통 */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: "var(--hb-muted)", marginRight: 2 }}>대화방식</span>
+          {(["", ...ALL_MODE_BUCKETS] as (ModeBucket | "")[]).map((m) => {
+            const label = m === "" ? "전체" : m === "unclassified" ? "미분류" : m;
+            const activeM = mode === m;
+            return (
+              <button
+                key={m || "all"}
+                onClick={() => setMode(m)}
+                title={m && m !== "unclassified" ? MODE_LABELS[m as ModeBucket] : undefined}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: activeM ? 700 : 400,
+                  border: activeM ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
+                  background: activeM ? "var(--hb-primary-light)" : "var(--hb-card)",
+                  color: activeM ? "var(--hb-primary)" : "var(--hb-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+          <div style={{ flex: 1 }} />
+          <a
+            href={exportHref("csv")}
+            style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid var(--hb-border)", background: "var(--hb-card)", color: "#1e1e2d", textDecoration: "none" }}
+          >
+            ⬇ CSV
+          </a>
+          <a
+            href={exportHref("xlsx")}
+            style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid var(--hb-border)", background: "var(--hb-card)", color: "#1e1e2d", textDecoration: "none" }}
+          >
+            ⬇ XLSX
+          </a>
         </div>
 
         {loadFailed ? (
@@ -1019,6 +1091,34 @@ function AdminDashboard() {
                     }
                     changeRate={data.profitSummary.changeRate.profit}
                   />
+                </div>
+
+                {/* 실제 vs 예상 손익 — 무료 제공 기간 명확 구분(Plan01 §23 결정3) */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                  <div style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: "14px 18px", borderLeft: "4px solid var(--hb-danger)" }}>
+                    <div style={{ fontSize: 12, color: "var(--hb-muted)", marginBottom: 6, fontWeight: 700 }}>
+                      실제 손익 {data.profitSummary.isFreePeriod && <span style={{ color: "var(--hb-danger)" }}>· 무료 제공 기간</span>}
+                    </div>
+                    <div style={{ fontSize: 13, color: "#1e1e2d" }}>
+                      실매출 <b>{won(data.profitSummary.actual.revenueKrw)}</b> − 실비용 <b>{won(data.profitSummary.actual.costKrw)}</b>
+                    </div>
+                    <div style={{ fontSize: "clamp(15px,1.6vw,20px)", fontWeight: 800, marginTop: 4, color: data.profitSummary.actual.netProfitKrw >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)" }}>
+                      = {won(data.profitSummary.actual.netProfitKrw)}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 4 }}>
+                      비용 근거: {data.profitSummary.actual.costBasis === "bigquery_actual" ? "BigQuery 실청구(회사 전체)" : "추정치"} · 환율 {data.fx.usdToKrw.toLocaleString("ko-KR")}원({data.fx.asOf})
+                    </div>
+                  </div>
+                  <div style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: "14px 18px", borderLeft: "4px solid var(--hb-primary)" }}>
+                    <div style={{ fontSize: 12, color: "var(--hb-muted)", marginBottom: 6, fontWeight: 700 }}>예상 손익 · 전원 유료 가정</div>
+                    <div style={{ fontSize: 13, color: "#1e1e2d" }}>
+                      예상매출 <b>{won(data.profitSummary.projected.revenueKrw)}</b> − 비용 <b>{won(data.profitSummary.projected.costKrw)}</b>
+                    </div>
+                    <div style={{ fontSize: "clamp(15px,1.6vw,20px)", fontWeight: 800, marginTop: 4, color: data.profitSummary.projected.netProfitKrw >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)" }}>
+                      = {won(data.profitSummary.projected.netProfitKrw)}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 4 }}>{data.profitSummary.note}</div>
+                  </div>
                 </div>
 
                 {/* 보조 요약 — 한 줄 카드 */}
@@ -1156,6 +1256,44 @@ function AdminDashboard() {
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 6 }}>AI 서비스 항목을 클릭하면 바로 아래에 TOP10 유저가 펼쳐집니다.</div>
+
+                {/* A~F 대화방식별 원가 배분 (Plan01 §23 결정1) */}
+                <SectionTitle>A~F 대화방식별 원가 배분 ({PERIOD_LABEL[period]})</SectionTitle>
+                <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>대화방식</th>
+                        <th style={thStyle}>이벤트 수</th>
+                        <th style={thStyle}>STT</th>
+                        <th style={thStyle}>TTS</th>
+                        <th style={thStyle}>Live</th>
+                        <th style={thStyle}>LLM</th>
+                        <th style={thStyle}>합계(추정원가)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.modeBreakdown.filter((r) => r.eventCount > 0).length === 0 ? (
+                        <tr><td colSpan={7} style={tdStyle}><EmptyState text="기간 내 대화방식별 원가 데이터가 없어요." /></td></tr>
+                      ) : (
+                        data.modeBreakdown.filter((r) => r.eventCount > 0).map((r) => (
+                          <tr key={r.mode} style={r.mode === "unclassified" ? { background: "var(--hb-primary-light)" } : undefined}>
+                            <td style={tdStyle}>{MODE_LABELS[r.mode]}</td>
+                            <td style={tdStyle}>{r.eventCount.toLocaleString("ko-KR")}</td>
+                            <td style={tdStyle}>{won(r.stt)}</td>
+                            <td style={tdStyle}>{won(r.tts)}</td>
+                            <td style={tdStyle}>{won(r.live_audio)}</td>
+                            <td style={tdStyle}>{won(r.llm)}</td>
+                            <td style={{ ...tdStyle, fontWeight: 700 }}>{won(r.totalKrw)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 6 }}>
+                  A~F 태깅 이전/미지정 이벤트는 <b>미분류</b>로 집계됩니다. 위 값은 usage_events 추정 원가 기준이며, 회사 전체 실청구(BigQuery)는 아이/모드 단위로 직접 쪼갤 수 없어 사용량 비중 기반 배분 추정입니다.
+                </div>
               </div>
             )}
 

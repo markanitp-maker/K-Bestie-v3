@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
     .from("chat_messages")
     .upsert({ 
       session_id: sessionId, 
-      turn_id: mode === "mission" ? turnId : null,
+      turn_id: turnId ?? null,
       role, 
       content: content.trim(), 
       mode, 

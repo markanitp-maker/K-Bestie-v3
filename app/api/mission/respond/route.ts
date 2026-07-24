@@ -4,6 +4,7 @@ import { MISSION_CHAT_SYSTEM_PROMPT, WEEKEND_QUESTION_PROMPT } from "@/app/api/_
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
+import { normalizeConversationMode } from "@/lib/plan/conversationMode";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
@@ -346,6 +347,7 @@ ${MISSION_CHAT_SYSTEM_PROMPT}
             token_in: tokenIn,
             token_out: tokenOut,
             est_cost_krw: estCostKrw,
+            conversation_mode: normalizeConversationMode((body as { conversationMode?: unknown }).conversationMode),
           });
         } catch (err) {
           console.error("[mission/respond] usage_events insert failed:", (err as Error).message);

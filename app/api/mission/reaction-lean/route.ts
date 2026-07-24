@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { resolveTestChild } from "@/lib/child/testAccount";
+import { resolveChildForUser } from "@/lib/child/testAccount";
 import { createGenAIClient, LEAN_E_MODEL_ID, REACTION_LEAN_MAX_OUTPUT_TOKENS } from "@/app/api/_lib/ai";
 import { after } from "next/server";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { ok: false, status: 401 };
       const svc = createServiceClient();
-      const child = await resolveTestChild(svc, user.id);
+      const child = await resolveChildForUser(svc, user.id);
       if (!child) return { ok: false, status: 403 };
       return { ok: true };
     })();

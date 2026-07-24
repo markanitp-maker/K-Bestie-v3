@@ -7,8 +7,10 @@
 // usageMetadata(토큰 카운트)가 있으면 아래 GEMINI_LIVE_* 공식 단가로 계산하고, 없을 때만 이 값을 쓴다.
 export const LIVE_KRW_PER_MIN = 70;
 
-// 이 저장소에 별도의 USD/KRW 환율 상수가 없어 여기서 1400원으로 고정 — 실제 청구/정산에는 사용하지 말 것.
-const USD_TO_KRW = 1400;
+// USD/KRW 환율 — 저장소 단일 소스(gcpBilling.ts 등에서 import). 고정 환율(근사)이며 실시간 FX는 백로그.
+// 화면에는 이 값과 기준일(FX_AS_OF)을 '적용 환율·기준일'로 함께 표기한다(Plan01 §23.3).
+export const USD_TO_KRW = 1400;
+export const FX_AS_OF = "2026-07-22";
 
 // Wavenet TTS: 100만 자당 약 $4 — 위 환율로 환산.
 export const TTS_KRW_PER_MILLION_CHARS = 4 * USD_TO_KRW;
