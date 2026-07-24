@@ -16,6 +16,7 @@ import { TestModeCDRunner } from "@/components/TestModeCDRunner";
 import { TestModeABRunner } from "@/components/TestModeABRunner";
 import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
+import { buildContentEchoReaction } from "@/lib/mission/eReactionPool";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { toKoreanVocative } from "@/lib/utils/koreanName";
@@ -128,6 +129,7 @@ function MissionInner() {
   const voiceModeRef = useRef<VoiceMode | null>(null);
   voiceModeRef.current = voiceMode;
   const questionsRef = useRef<MissionQuestion[]>([]);
+  const lastReactionRef = useRef<string | null>(null);
   const currentIndexRef = useRef(0);
   const questionStatesRef = useRef<Record<string, QuestionState>>({});
   const askedIndexRef = useRef<number>(-1);
@@ -633,29 +635,98 @@ function MissionInner() {
         }
 
         let respondText: string | undefined;
-        try {
-          logVoiceEvent({ ts: Date.now(), eventType: "respond_request" });
-          const respondRes = await fetch("/api/mission/respond", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sessionId: sessionIdRef.current,
-              history: getTranscriptRef.current?.() ?? [],
-              nextQuestionText: nextQ.question_text,
-              childTurnId,
-            }),
-            signal: isLive ? manualAbortControllerRef.current?.signal : apiAbortControllerRef.current?.signal,
-          });
-          if (respondRes.ok) {
-            const respondData = await respondRes.json();
-          logVoiceEvent({ ts: Date.now(), eventType: "respond_response" });
-            if (respondData.text) respondText = respondData.text;
-          } else {
-            if (currentEpoch !== answerEpochRef.current) return;
-            if (!isLive) {
-              resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
-              return;
+        if (!isLive) {
+          const fallbackResult = buildContentEchoReaction(enrichedTurn.text, lastReactionRef.current);
+          let reactionText = fallbackResult;
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          const timeoutMarker = Symbol("timeout");
+
+          try {
+            const reactionAbortController = new AbortController();
+            const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
+              timeoutId = setTimeout(() => resolve(timeoutMarker), 2200);
+            });
+
+            const fetchAndFirstChunk = (async () => {
+              const res = await fetch("/api/mission/reaction-lean", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: reactionAbortController.signal,
+                body: JSON.stringify({
+                  questionText: question.question_text,
+                  answerText: enrichedTurn.text,
+                  sessionId: sid,
+                  childTurnId
+                })
+              });
+              if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
+              const reader = res.body.getReader();
+              const decoder = new TextDecoder();
+              const first = await reader.read();
+              return { reader, decoder, first };
+            })();
+            fetchAndFirstChunk.catch(() => {});
+
+            const raceResult = await Promise.race([fetchAndFirstChunk, timeoutPromise]);
+            clearTimeout(timeoutId);
+
+            if (raceResult === timeoutMarker) {
+              reactionAbortController.abort();
             } else {
+              const { reader, decoder, first } = raceResult;
+              try {
+                if (currentEpoch !== answerEpochRef.current) {
+                  await reader.cancel().catch(() => {});
+                  return;
+                }
+
+                let accumulated = "";
+                const { done: firstDone, value: firstValue } = first;
+                if (!firstDone && firstValue) {
+                  accumulated += decoder.decode(firstValue, { stream: true });
+                }
+
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  if (currentEpoch !== answerEpochRef.current) {
+                    await reader.cancel().catch(() => {});
+                    return;
+                  }
+                  accumulated += decoder.decode(value, { stream: true });
+                }
+
+                const trimmed = accumulated.trim();
+                reactionText = trimmed || fallbackResult;
+              } finally {
+                reader.releaseLock();
+              }
+            }
+          } catch {
+            reactionText = fallbackResult;
+          }
+          lastReactionRef.current = reactionText;
+          respondText = `${reactionText} ${nextQ.question_text}`;
+        } else {
+          try {
+            logVoiceEvent({ ts: Date.now(), eventType: "respond_request" });
+            const respondRes = await fetch("/api/mission/respond", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sessionId: sessionIdRef.current,
+                history: getTranscriptRef.current?.() ?? [],
+                nextQuestionText: nextQ.question_text,
+                childTurnId,
+              }),
+              signal: manualAbortControllerRef.current?.signal,
+            });
+            if (respondRes.ok) {
+              const respondData = await respondRes.json();
+            logVoiceEvent({ ts: Date.now(), eventType: "respond_response" });
+              if (respondData.text) respondText = respondData.text;
+            } else {
+              if (currentEpoch !== answerEpochRef.current) return;
               if (manualTimeoutRef.current) {
                 clearTimeout(manualTimeoutRef.current);
                 manualTimeoutRef.current = null;
@@ -674,14 +745,9 @@ function MissionInner() {
               }
               return;
             }
-          }
-        } catch {
-          // 예외 발생 시에도 오류 복구 경로로 이동
-          if (currentEpoch !== answerEpochRef.current) return;
-          if (!isLive) {
-            resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
-            return;
-          } else {
+          } catch {
+            // 예외 발생 시에도 오류 복구 경로로 이동
+            if (currentEpoch !== answerEpochRef.current) return;
             if (manualTimeoutRef.current) {
               clearTimeout(manualTimeoutRef.current);
               manualTimeoutRef.current = null;
@@ -1457,6 +1523,17 @@ function MissionInner() {
   useEffect(() => {
     if (voice.status !== "live" || missionState !== "active") return;
     if (askedIndexRef.current !== -1) return;
+
+    const currentQ = questionsRef.current[currentIndexRef.current];
+    const past = pastMessagesRef.current;
+    const lastK = [...past].reverse().find((m) => m.role === "k");
+
+    if (currentQ && lastK && lastK.text && lastK.text.includes(currentQ.question_text)) {
+      // 재접속 전에 이미 물어본 질문 — 다시 발화하지 않고 아이 답변을 기다린다.
+      askedIndexRef.current = currentIndexRef.current;
+      return;
+    }
+
     askQuestion(currentIndexRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice.status, missionState, askQuestion]);
