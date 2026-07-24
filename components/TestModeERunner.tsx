@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { pickNonRepeatingReaction, buildContentEchoReaction } from "@/lib/mission/eReactionPool";
+import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
 
 import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
@@ -195,96 +196,24 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
         reactionAbortController = new AbortController();
         reactionAbortControllerRef.current = reactionAbortController;
 
-        reactionResultPromise = (async () => {
-          const fallbackResult = buildContentEchoReaction(text, lastReactionRef.current);
-          let timeoutId: ReturnType<typeof setTimeout> | undefined;
-          const timeoutMarker = Symbol("timeout");
-
-          try {
-            // 1200ms 안에 "첫 청크"가 도착하지 않으면 즉시 폴백 — fetch(네트워크 왕복 포함)부터
-            // 첫 read()까지 전체를 재야 한다. fetch 응답(헤더) 도착 이후만 재면, fetch 자체가
-            // 이미 1초 넘게 걸리는 경우를 못 잡는다(실측으로 확인된 문제).
-            const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
-              timeoutId = setTimeout(() => resolve(timeoutMarker), 2200); // 실측 p95=1558ms 기준 여유를 둔 값(2026-07-24)
-            });
-
-            const fetchAndFirstChunk = (async () => {
-              const res = await fetch("/api/mission/reaction-lean", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                signal: reactionAbortController!.signal,
-                body: JSON.stringify({
-                  questionText: currentQ.question_text,
-                  answerText: text,
-                  sessionId: sid,
-                  childTurnId
-                })
-              });
-              if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
-              const reader = res.body.getReader();
-              const decoder = new TextDecoder();
-              const first = await reader.read();
-              return { reader, decoder, first };
-            })();
-
-            const raceResult = await Promise.race([fetchAndFirstChunk, timeoutPromise]);
-            clearTimeout(timeoutId);
-
-            if (raceResult === timeoutMarker) {
-              reactionAbortController?.abort();
-              // fetchAndFirstChunk가 나중에 resolve/reject되어도 아무도 기다리지 않으므로
-              // unhandled rejection이 나지 않게 안전하게 소비해둔다.
-              fetchAndFirstChunk.catch(() => {});
-              pendingTimingRef.current.reaction_complete = Date.now();
-              return { text: fallbackResult };
-            }
-
-            const { reader, decoder, first } = raceResult;
-
-            try {
-              if (myEpoch !== loadEpochRef.current) {
-                await reader.cancel().catch(() => {});
-                return { text: "" };
-              }
-
-              let accumulated = "";
-              const { done: firstDone, value: firstValue } = first;
-              if (!firstDone && firstValue) {
-                pendingTimingRef.current.llm_first_token = Date.now();
-                accumulated += decoder.decode(firstValue, { stream: true });
-                const currentReaction = accumulated;
-                setBubbles((prev) =>
-                  prev.map((b) => (b.turnId === thinkingTurnId ? { ...b, text: currentReaction } : b))
-                );
-              }
-
-              // 첫 청크 이후로는 추가 타임아웃 없이 스트림 끝까지 읽는다(첫 토큰만 1200ms 가드).
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (myEpoch !== loadEpochRef.current) {
-                  await reader.cancel().catch(() => {});
-                  return { text: "" };
-                }
-                const chunk = decoder.decode(value, { stream: true });
-                accumulated += chunk;
-                const currentReaction = accumulated;
-                setBubbles((prev) =>
-                  prev.map((b) => (b.turnId === thinkingTurnId ? { ...b, text: currentReaction } : b))
-                );
-              }
-
-              pendingTimingRef.current.reaction_complete = Date.now();
-              const trimmed = accumulated.trim();
-              return { text: trimmed || fallbackResult };
-            } finally {
-              reader.releaseLock();
-            }
-          } catch {
-            pendingTimingRef.current.reaction_complete = Date.now();
-            return { text: fallbackResult };
-          }
-        })();
+        reactionResultPromise = fetchPersonalizedReaction({
+          questionText: currentQ.question_text,
+          answerText: text,
+          sessionId: sid,
+          childTurnId,
+          lastReaction: lastReactionRef.current,
+          isStale: () => myEpoch !== loadEpochRef.current,
+          onFirstToken: () => { pendingTimingRef.current.llm_first_token = Date.now(); },
+          onChunk: (accumulatedSoFar) => {
+            setBubbles((prev) =>
+              prev.map((b) => (b.turnId === thinkingTurnId ? { ...b, text: accumulatedSoFar } : b))
+            );
+          },
+          abortController: reactionAbortController,
+        }).then((text) => {
+          pendingTimingRef.current.reaction_complete = Date.now();
+          return { text };
+        });
       } else if (isLowLatency) {
         reactionResultPromise = Promise.resolve({ text: buildContentEchoReaction(text, lastReactionRef.current) });
       }

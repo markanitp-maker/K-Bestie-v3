@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { pickNonRepeatingReaction, buildContentEchoReaction } from "@/lib/mission/eReactionPool";
+import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
 import { getModeStrategy } from "@/lib/mission/conversationModeStrategy";
 import type { ConversationMode } from "@/lib/plan/conversationMode";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
@@ -155,83 +156,19 @@ export function TestModeCDRunner({ selectedMode }: { selectedMode: "C" | "D" }) 
       if (usePersonalized) {
         const reactionAbortController = new AbortController();
         reactionAbortControllerRef.current = reactionAbortController;
-        reactionResultPromise = (async () => {
-          const fallbackResult = buildContentEchoReaction(text, lastReactionRef.current);
-          let timeoutId: ReturnType<typeof setTimeout> | undefined;
-          const timeoutMarker = Symbol("timeout");
-
-          try {
-            const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
-              timeoutId = setTimeout(() => resolve(timeoutMarker), 2200); // 실측 p95=1558ms 기준 여유를 둔 값(2026-07-24)
-            });
-
-            const fetchAndFirstChunk = (async () => {
-              const res = await fetch("/api/mission/reaction-lean", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                signal: reactionAbortController.signal,
-                body: JSON.stringify({
-                  questionText: currentQ.question_text,
-                  answerText: text,
-                  sessionId: sid,
-                  childTurnId
-                })
-              });
-              if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
-              const reader = res.body.getReader();
-              const decoder = new TextDecoder();
-              const first = await reader.read();
-              return { reader, decoder, first };
-            })();
-            // 늦게 도착하는 fetch/read가 unhandled rejection을 내지 않게 미리 방어.
-            fetchAndFirstChunk.catch(() => {});
-
-            const raceResult = await Promise.race([fetchAndFirstChunk, timeoutPromise]);
-            clearTimeout(timeoutId);
-
-            if (raceResult === timeoutMarker) {
-              // fetch 자체를 취소해 늦게 도착할 reader/연결이 방치되지 않게 한다.
-              reactionAbortController.abort();
-              pendingTimingRef.current.reaction_complete = Date.now();
-              return { text: fallbackResult };
-            }
-
-            const { reader, decoder, first } = raceResult;
-
-            try {
-              if (myEpoch !== loadEpochRef.current) {
-                await reader.cancel().catch(() => {});
-                return { text: "" };
-              }
-
-              let accumulated = "";
-              const { done: firstDone, value: firstValue } = first;
-              if (!firstDone && firstValue) {
-                pendingTimingRef.current.llm_first_token = Date.now();
-                accumulated += decoder.decode(firstValue, { stream: true });
-              }
-
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (myEpoch !== loadEpochRef.current) {
-                  await reader.cancel().catch(() => {});
-                  return { text: "" };
-                }
-                accumulated += decoder.decode(value, { stream: true });
-              }
-
-              pendingTimingRef.current.reaction_complete = Date.now();
-              const trimmed = accumulated.trim();
-              return { text: trimmed || fallbackResult };
-            } finally {
-              reader.releaseLock();
-            }
-          } catch {
-            pendingTimingRef.current.reaction_complete = Date.now();
-            return { text: fallbackResult };
-          }
-        })();
+        reactionResultPromise = fetchPersonalizedReaction({
+          questionText: currentQ.question_text,
+          answerText: text,
+          sessionId: sid,
+          childTurnId,
+          lastReaction: lastReactionRef.current,
+          isStale: () => myEpoch !== loadEpochRef.current,
+          onFirstToken: () => { pendingTimingRef.current.llm_first_token = Date.now(); },
+          abortController: reactionAbortController,
+        }).then((text) => {
+          pendingTimingRef.current.reaction_complete = Date.now();
+          return { text };
+        });
       } else if (isLowLatency) {
         reactionResultPromise = Promise.resolve({ text: buildContentEchoReaction(text, lastReactionRef.current) });
       }

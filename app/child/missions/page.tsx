@@ -16,7 +16,7 @@ import { TestModeCDRunner } from "@/components/TestModeCDRunner";
 import { TestModeABRunner } from "@/components/TestModeABRunner";
 import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
-import { buildContentEchoReaction } from "@/lib/mission/eReactionPool";
+import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { toKoreanVocative } from "@/lib/utils/koreanName";
@@ -636,75 +636,15 @@ function MissionInner() {
 
         let respondText: string | undefined;
         if (!isLive) {
-          const fallbackResult = buildContentEchoReaction(enrichedTurn.text, lastReactionRef.current);
-          let reactionText = fallbackResult;
-          let timeoutId: ReturnType<typeof setTimeout> | undefined;
-          const timeoutMarker = Symbol("timeout");
-
-          try {
-            const reactionAbortController = new AbortController();
-            const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
-              timeoutId = setTimeout(() => resolve(timeoutMarker), 2200);
-            });
-
-            const fetchAndFirstChunk = (async () => {
-              const res = await fetch("/api/mission/reaction-lean", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                signal: reactionAbortController.signal,
-                body: JSON.stringify({
-                  questionText: question.question_text,
-                  answerText: enrichedTurn.text,
-                  sessionId: sid,
-                  childTurnId
-                })
-              });
-              if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
-              const reader = res.body.getReader();
-              const decoder = new TextDecoder();
-              const first = await reader.read();
-              return { reader, decoder, first };
-            })();
-            fetchAndFirstChunk.catch(() => {});
-
-            const raceResult = await Promise.race([fetchAndFirstChunk, timeoutPromise]);
-            clearTimeout(timeoutId);
-
-            if (raceResult === timeoutMarker) {
-              reactionAbortController.abort();
-            } else {
-              const { reader, decoder, first } = raceResult;
-              try {
-                if (currentEpoch !== answerEpochRef.current) {
-                  await reader.cancel().catch(() => {});
-                  return;
-                }
-
-                let accumulated = "";
-                const { done: firstDone, value: firstValue } = first;
-                if (!firstDone && firstValue) {
-                  accumulated += decoder.decode(firstValue, { stream: true });
-                }
-
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  if (currentEpoch !== answerEpochRef.current) {
-                    await reader.cancel().catch(() => {});
-                    return;
-                  }
-                  accumulated += decoder.decode(value, { stream: true });
-                }
-
-                const trimmed = accumulated.trim();
-                reactionText = trimmed || fallbackResult;
-              } finally {
-                reader.releaseLock();
-              }
-            }
-          } catch {
-            reactionText = fallbackResult;
-          }
+          const reactionText = await fetchPersonalizedReaction({
+            questionText: question.question_text,
+            answerText: enrichedTurn.text,
+            sessionId: sid,
+            childTurnId,
+            lastReaction: lastReactionRef.current,
+            isStale: () => currentEpoch !== answerEpochRef.current,
+          });
+          if (currentEpoch !== answerEpochRef.current) return;
           lastReactionRef.current = reactionText;
           respondText = `${reactionText} ${nextQ.question_text}`;
         } else {
@@ -1771,7 +1711,9 @@ function MissionInner() {
             </p>
           </div>
         ) : (
-          voice.transcript.map((turn, i) => (
+          voice.transcript
+            .filter((turn) => isLiveMode || turn.role !== "child")
+            .map((turn, i) => (
             <div
               key={turn.id ?? i}
               className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
@@ -1788,7 +1730,7 @@ function MissionInner() {
           ))
         )}
         {/* 아이가 말하는 도중의 실시간 중간 자막 — 확정 전이라 옅게 표시 */}
-        {voice.interimChildText && (
+        {isLiveMode && voice.interimChildText && (
           <div
             className="max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed self-end opacity-60"
             style={{
