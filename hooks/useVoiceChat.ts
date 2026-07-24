@@ -33,6 +33,8 @@ export interface UseVoiceChatOptions {
   onSttResult?: (success: boolean, latencyMs: number) => void;
   /** TTS(음성합성) 결과 - 재생 시작 직전까지 걸린 시간(ms). 재생 자체의 길이는 포함 안 함. */
   onTtsResult?: (success: boolean, latencyMs: number) => void;
+  /** 오디오 재생 완료/실패 결과 - 재생 중단은 실패로 치지 않는다. */
+  onPlayResult?: (success: boolean) => void;
 }
 
 const POLL_INTERVAL_MS = 1300;       // 중간 자막 갱신 주기
@@ -78,6 +80,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   onSttResultRef.current = options?.onSttResult;
   const onTtsResultRef = useRef<((success: boolean, latencyMs: number) => void) | undefined>(undefined);
   onTtsResultRef.current = options?.onTtsResult;
+  const onPlayResultRef = useRef<((success: boolean) => void) | undefined>(undefined);
+  onPlayResultRef.current = options?.onPlayResult;
   const onSpeechBeginRef = useRef<(() => void) | undefined>(undefined);
   onSpeechBeginRef.current = options?.onSpeechBegin;
   const onSpeechEndRef = useRef<(() => void) | undefined>(undefined);
@@ -449,7 +453,12 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       onTtsResultRef.current?.(true, Date.now() - ttsStartedAt);
 
       await new Promise<void>((resolve) => {
-        source.onended = () => resolve();
+        source.onended = () => {
+          if (epoch === speakEpochRef.current) {
+            onPlayResultRef.current?.(true);
+          }
+          resolve();
+        };
         try {
           source.start();
           logVoiceEvent({ ts: Date.now(), eventType: "tts_playback_start" });
@@ -462,11 +471,17 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
           }
         } catch (e) {
           console.error("[MISSION-DEBUG] source.start() threw:", e);
+          if (epoch === speakEpochRef.current) {
+            onPlayResultRef.current?.(false);
+          }
           resolve();
         }
       });
     } catch (err) {
       console.error("[MISSION-DEBUG] speak() caught exception:", err, "voice:", voiceName);
+      if (spoken && epoch === speakEpochRef.current) {
+        onPlayResultRef.current?.(false);
+      }
       // TTS가 실패하더라도 자막은 반드시 출력(단, 이 호출이 여전히 최신 세대일 때만)
       if (!spoken && epoch === speakEpochRef.current) {
         appendTurn({ role: "k", text: trimmed });

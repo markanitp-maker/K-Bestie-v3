@@ -847,6 +847,9 @@ function MissionInner() {
     },
     onTtsResult: (success, latencyMs) => {
       if (!isLiveModeRef.current) recordStageResult("tts", success, latencyMs);
+    },
+    onPlayResult: (success) => {
+      if (!isLiveModeRef.current) recordStageResult("play", success, 0);
     }
   });
   sttSetMicEnabledRef.current = sttTts.setMicEnabled;

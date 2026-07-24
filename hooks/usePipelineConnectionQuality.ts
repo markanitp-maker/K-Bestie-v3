@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useRef, useState, useEffect } from "react";
 
-export type PipelineStage = "stt" | "llm" | "tts";
+export type PipelineStage = "stt" | "llm" | "tts" | "play";
 
 export function usePipelineConnectionQuality() {
   const [quality, setQuality] = useState(5); // 0~5, 5=최고
@@ -51,9 +51,11 @@ export function usePipelineConnectionQuality() {
     if (success) {
       consecutiveFailuresRef.current = 0; // 성공 시 연속 실패 초기화
       
-      recentLatenciesRef.current.push(latencyMs);
-      if (recentLatenciesRef.current.length > 5) {
-        recentLatenciesRef.current.shift(); // 최근 5건 유지
+      if (stage !== "play") {
+        recentLatenciesRef.current.push(latencyMs);
+        if (recentLatenciesRef.current.length > 5) {
+          recentLatenciesRef.current.shift(); // 최근 5건 유지
+        }
       }
     } else {
       consecutiveFailuresRef.current += 1;
