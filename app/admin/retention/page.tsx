@@ -49,6 +49,133 @@ function MetricCard({ label, value, sub }: { label: string; value: string; sub?:
   );
 }
 
+const thStyle = { padding: "12px 16px", fontSize: 13, color: "var(--hb-muted)", borderBottom: "1px solid var(--hb-border)" };
+const tdStyle = { padding: "12px 16px", fontSize: 14, color: "#1e1e2d" };
+const linkStyle = { color: "var(--hb-primary)", textDecoration: "none", fontWeight: 600 };
+
+function DrillDownSection() {
+  const [activeTab, setActiveTab] = useState<"families" | "children" | "parents">("families");
+  const [listData, setListData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/admin/retention/${activeTab}`)
+      .then(res => res.json())
+      .then(d => {
+        if (activeTab === "families") setListData(d.families);
+        if (activeTab === "children") setListData(d.children);
+        if (activeTab === "parents") setListData(d.parents);
+        setLoading(false);
+      })
+      .catch(() => {
+        setListData([]);
+        setLoading(false);
+      });
+  }, [activeTab]);
+
+  return (
+    <div style={{ marginTop: 40 }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#1e1e2d", marginBottom: 16 }}>드릴다운 상세 보기</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {(["families", "children", "parents"] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 999,
+              border: activeTab === tab ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
+              background: activeTab === tab ? "var(--hb-primary)" : "white",
+              color: activeTab === tab ? "white" : "var(--hb-muted)",
+              fontSize: 14,
+              fontWeight: activeTab === tab ? 700 : 400,
+              cursor: "pointer",
+            }}
+          >
+            {tab === "families" ? "가족 목록" : tab === "children" ? "아이 목록" : "부모 목록"}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ background: "var(--hb-card)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--hb-shadow)" }}>
+        {loading ? (
+          <div style={{ padding: 24, textAlign: "center", color: "var(--hb-muted)" }}>불러오는 중...</div>
+        ) : !listData || listData.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "var(--hb-muted)" }}>데이터가 없습니다.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", whiteSpace: "nowrap" }}>
+              <thead style={{ background: "var(--hb-primary-light)" }}>
+                <tr>
+                  {activeTab === "families" && (
+                    <>
+                      <th style={thStyle}>가족 ID</th>
+                      <th style={thStyle}>가입일</th>
+                      <th style={thStyle}>부모 수</th>
+                      <th style={thStyle}>아이 수</th>
+                      <th style={thStyle}>최근 7일 동시활성</th>
+                    </>
+                  )}
+                  {activeTab === "children" && (
+                    <>
+                      <th style={thStyle}>아이 ID</th>
+                      <th style={thStyle}>학년</th>
+                      <th style={thStyle}>활성 일수</th>
+                      <th style={thStyle}>미션/대화/놀이 수</th>
+                      <th style={thStyle}>D1/D7 재방문</th>
+                    </>
+                  )}
+                  {activeTab === "parents" && (
+                    <>
+                      <th style={thStyle}>부모 ID</th>
+                      <th style={thStyle}>가족 ID</th>
+                      <th style={thStyle}>방문/리포트/토픽 수</th>
+                      <th style={thStyle}>상태</th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {listData.map((item: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: "1px solid var(--hb-border)" }}>
+                    {activeTab === "families" && (
+                      <>
+                        <td style={tdStyle}><Link href={`/admin/retention/families/${item.familyId}`} style={linkStyle}>{item.familyId}</Link></td>
+                        <td style={tdStyle}>{new Date(item.createdAt).toLocaleDateString()}</td>
+                        <td style={tdStyle}>{item.parentCount}명</td>
+                        <td style={tdStyle}>{item.childCount}명</td>
+                        <td style={tdStyle}>{item.dualActive7d ? "✅" : "-"}</td>
+                      </>
+                    )}
+                    {activeTab === "children" && (
+                      <>
+                        <td style={tdStyle}><Link href={`/admin/retention/children/${item.childId}`} style={linkStyle}>{item.childId}</Link></td>
+                        <td style={tdStyle}>{item.grade}</td>
+                        <td style={tdStyle}>{item.activeDaysTotal}일</td>
+                        <td style={tdStyle}>{item.missionCount} / {item.freechatCount} / {item.playCount}</td>
+                        <td style={tdStyle}>{(item.d1Retained ? "✅" : (item.d1Retained===false?"❌":"-"))} / {(item.d7Retained ? "✅" : (item.d7Retained===false?"❌":"-"))}</td>
+                      </>
+                    )}
+                    {activeTab === "parents" && (
+                      <>
+                        <td style={tdStyle}><Link href={`/admin/retention/parents/${item.actorId}`} style={linkStyle}>{item.actorId}</Link></td>
+                        <td style={tdStyle}><Link href={`/admin/retention/families/${item.familyId}`} style={linkStyle}>{item.familyId}</Link></td>
+                        <td style={tdStyle}>{item.visitCount} / {item.reportViewCount} / {item.topicViewCount}</td>
+                        <td style={tdStyle}>{item.status}</td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminRetentionPage() {
   const [period, setPeriod] = useState<Period>("7d");
   const [data, setData] = useState<RetentionData | null>(null);
@@ -183,6 +310,7 @@ export default function AdminRetentionPage() {
                 </tbody>
               </table>
             </div>
+            <DrillDownSection />
           </>
         ) : null}
       </main>
