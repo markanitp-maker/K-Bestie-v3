@@ -18,6 +18,7 @@ import { MissionCompletionController, type MissionCompletionState } from "@/lib/
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
+import { toKoreanVocative } from "@/lib/utils/koreanName";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -1245,7 +1246,15 @@ function MissionInner() {
           setEngineVersion(data.engine_version ?? "v1");
         } else {
           if (qs.length > 0) {
-            qs[0].question_text = "안녕~ 난 케이야. 넌 이름이 뭐니?";
+            const givenName = typeof data.givenName === "string" ? data.givenName : null;
+            if (givenName) {
+              // 이미 이름을 아는 아이에게는 절대 이름을 묻지 않는다 — 저장된 이름으로만
+              // 자연스럽게 인사하고, 실제 첫 질문은 그대로 이어간다(질문 자체를 정체성
+              // 질문으로 대체하지 않음).
+              qs[0].question_text = `${toKoreanVocative(givenName)}! 오늘도 만나서 반가워. ${qs[0].question_text}`;
+            } else {
+              qs[0].question_text = "안녕~ 난 케이야. 넌 이름이 뭐니?";
+            }
           }
           const initStates: Record<string, QuestionState> = {};
           for (const q of qs) initStates[q.id] = "pending";

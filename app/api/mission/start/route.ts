@@ -47,6 +47,13 @@ export async function POST(req: NextRequest) {
 
   const service = createServiceClient();
 
+  const { data: childProfile } = await service
+    .from("child_profiles")
+    .select("given_name")
+    .eq("id", childId)
+    .maybeSingle();
+  const givenName = childProfile?.given_name ?? null;
+
   // 요금제(tier)별 음성 방식 — 미션 로직(정답판정/게이지/황금열쇠/라운드)과 무관한 부가 정보
   const { tier, voiceMode, liveVoiceName } = await getVoiceModeForChild(childId);
 
@@ -155,6 +162,7 @@ export async function POST(req: NextRequest) {
         tier,
         voiceMode,
         liveVoiceName,
+        givenName,
       });
     }
   }
@@ -370,6 +378,7 @@ export async function POST(req: NextRequest) {
             tier,
             voiceMode,
             liveVoiceName,
+            givenName,
           });
         }
       }
@@ -435,5 +444,6 @@ export async function POST(req: NextRequest) {
     tier,
     voiceMode,
     liveVoiceName,
+    givenName,
   });
 }
