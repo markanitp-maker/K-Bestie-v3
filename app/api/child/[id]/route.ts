@@ -54,6 +54,8 @@ export async function PATCH(
 
   let body: {
     name?: string;
+    familyName?: string;
+    givenName?: string;
     grade?: string;
     interests?: string[];
     liveVoiceName?: string;
@@ -74,7 +76,15 @@ export async function PATCH(
     updateData.guardian_consent = false;
     updateData.guardian_consent_withdrawn_at = new Date().toISOString();
   }
-  if (body.name?.trim()) updateData.name = body.name.trim();
+  
+  if (typeof body.familyName === "string" && typeof body.givenName === "string") {
+    updateData.family_name = body.familyName.trim();
+    updateData.given_name = body.givenName.trim();
+    updateData.name = (body.familyName.trim() + body.givenName.trim()).trim();
+  } else if (body.name?.trim()) {
+    updateData.name = body.name.trim();
+  }
+  
   if (body.grade) updateData.grade = body.grade;
   if (Array.isArray(body.interests)) updateData.interests = body.interests;
   if (body.liveVoiceName) {

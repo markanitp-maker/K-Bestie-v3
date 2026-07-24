@@ -54,7 +54,9 @@ export async function POST(
   let body: {
     username: string;
     password: string;
-    name: string;
+    name?: string;
+    familyName?: string;
+    givenName?: string;
     grade: string;
     interests: string[];
     guardian_consent: boolean;
@@ -65,9 +67,19 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { username, password, name, grade, interests, guardian_consent } = body;
+  const { username, password, grade, interests, guardian_consent } = body;
+  let name = body.name || "";
+  let familyName = body.familyName;
+  let givenName = body.givenName;
 
-  if (!username?.trim() || !password || !name?.trim() || !grade ||
+  if (typeof familyName === "string" && typeof givenName === "string") {
+    if (!givenName.trim()) {
+      return NextResponse.json({ error: "이름을 입력해주세요" }, { status: 400 });
+    }
+    name = (familyName.trim() + givenName.trim()).trim();
+  }
+
+  if (!username?.trim() || !password || !name.trim() || !grade ||
       !Array.isArray(interests) || interests.length === 0) {
     return NextResponse.json({ error: "username, password, name, grade, interests 필수" }, { status: 400 });
   }
@@ -157,6 +169,8 @@ export async function POST(
       family_id: familyId,
       member_id: familyMember.id,
       name: name.trim(),
+      family_name: typeof familyName === "string" ? familyName.trim() : null,
+      given_name: typeof givenName === "string" ? givenName.trim() : null,
       grade,
       interests,
       email: null,

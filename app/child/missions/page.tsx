@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
@@ -1633,14 +1634,7 @@ function MissionInner() {
         </div>
 
         <div className="flex justify-center items-center gap-4 mb-2 max-w-sm mx-auto">
-          <Image
-            src="/Images/mascot/mascot-standing.png"
-            alt="케이 마스코트"
-            width={96}
-            height={96}
-            className="object-contain shrink-0"
-            priority
-          />
+          <KBestieMascotAnimation state="idle" size={96} />
           {!isDone && (
             <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
           )}

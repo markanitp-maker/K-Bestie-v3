@@ -72,7 +72,8 @@ export default function ParentSettingsPage() {
 
   // 구성원 추가 폼 상태
   const [inviteEmail, setInviteEmail] = useState("");
-  const [addName, setAddName] = useState("");
+  const [addFamilyName, setAddFamilyName] = useState("");
+  const [addGivenName, setAddGivenName] = useState("");
   const [addUsername, setAddUsername] = useState("");
   const [addPassword, setAddPassword] = useState("");
   const [addChildGrade, setAddChildGrade] = useState("1학년");
@@ -96,7 +97,8 @@ export default function ParentSettingsPage() {
     editChildIdRef.current = editChild?.id ?? null;
   }, [editChild]);
 
-  const [editName, setEditName] = useState("");
+  const [editFamilyName, setEditFamilyName] = useState("");
+  const [editGivenName, setEditGivenName] = useState("");
   const [editGrade, setEditGrade] = useState("");
   const [editInterests, setEditInterests] = useState<string[]>([]);
   const [editTier, setEditTier] = useState<number>(1);
@@ -283,6 +285,8 @@ export default function ParentSettingsPage() {
           mustChangePassword: acc?.must_change_password ?? false,
           isMe: m.user_id === user.id,
           childId: childProf?.id || "",
+          familyName: childProf?.family_name || "",
+          givenName: childProf?.given_name || "",
           grade: childProf?.grade || "",
           interests: childProf?.interests || [],
           tier: childProf?.tier ?? 1,
@@ -346,12 +350,13 @@ export default function ParentSettingsPage() {
   }, [store.activeFamilyId, isOwner]);
 
   const commitChildSave = async () => {
-    if (!editName.trim() || !editChild) return;
+    if (!editGivenName.trim() || !editChild) return;
     updateChild(editChild.id, {
-      name: editName.trim(),
+      familyName: editFamilyName.trim(),
+      givenName: editGivenName.trim(),
       grade: editGrade,
       interests: editInterests,
-    });
+    } as any);
     if (editTier !== editOriginalTier) {
       setSavingTier(true);
       try {
@@ -431,7 +436,7 @@ export default function ParentSettingsPage() {
     e.preventDefault();
     setAddError(null);
 
-    if (!addName.trim()) { setAddError("이름을 입력해주세요."); return; }
+    if (!addGivenName.trim()) { setAddError("이름을 입력해주세요."); return; }
     if (!addUsername.trim()) { setAddError("아이디를 입력해주세요."); return; }
     if (addPassword.length < 6) { setAddError("비밀번호는 6자 이상이어야 합니다."); return; }
     if (addChildInterests.length === 0) { setAddError("관심사를 하나 이상 선택해주세요."); return; }
@@ -442,7 +447,8 @@ export default function ParentSettingsPage() {
       const body = {
         username: addUsername.trim(),
         password: addPassword,
-        name: addName.trim(),
+        familyName: addFamilyName.trim(),
+        givenName: addGivenName.trim(),
         grade: addChildGrade,
         interests: addChildInterests,
         guardian_consent: addChildConsent
@@ -460,7 +466,8 @@ export default function ParentSettingsPage() {
         return;
       }
 
-      setAddName("");
+      setAddFamilyName("");
+      setAddGivenName("");
       setAddUsername("");
       setAddPassword("");
       setAddChildInterests([]);
@@ -670,13 +677,22 @@ export default function ParentSettingsPage() {
               <div className="pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
                 {isOwner ? (
                   <form onSubmit={handleAddChild} className="flex flex-col gap-3">
-                    <input
-                      type="text"
-                      placeholder="아이 이름"
-                      value={addName}
-                      onChange={(e) => setAddName(e.target.value)}
-                      className="px-3.5 py-2 text-xs border border-gray-200 rounded-xl outline-none bg-gray-50/50"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="성"
+                        value={addFamilyName}
+                        onChange={(e) => setAddFamilyName(e.target.value)}
+                        className="w-1/3 px-3.5 py-2 text-xs border border-gray-200 rounded-xl outline-none bg-gray-50/50"
+                      />
+                      <input
+                        type="text"
+                        placeholder="이름"
+                        value={addGivenName}
+                        onChange={(e) => setAddGivenName(e.target.value)}
+                        className="w-2/3 px-3.5 py-2 text-xs border border-gray-200 rounded-xl outline-none bg-gray-50/50"
+                      />
+                    </div>
                     <input
                       type="text"
                       placeholder="아이디 (로그인용)"
@@ -829,7 +845,8 @@ export default function ParentSettingsPage() {
                                       grade: m.grade,
                                       interests: m.interests
                                     });
-                                    setEditName(m.displayName);
+                                    setEditFamilyName(m.familyName ?? "");
+                                    setEditGivenName(m.givenName ?? "");
                                     setEditGrade(m.grade);
                                     setEditInterests(m.interests ?? []);
                                     setEditTier(m.tier ?? 1);
@@ -1208,12 +1225,22 @@ export default function ParentSettingsPage() {
                 자녀 프로필 수정
               </p>
 
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                className="px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="성"
+                  value={editFamilyName}
+                  onChange={(e) => setEditFamilyName(e.target.value)}
+                  className="w-1/3 px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="이름"
+                  value={editGivenName}
+                  onChange={(e) => setEditGivenName(e.target.value)}
+                  className="w-2/3 px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
+                />
+              </div>
 
               <div>
                 <p className="text-[9px] text-gray-400 mb-1">학년</p>
@@ -1493,7 +1520,7 @@ export default function ParentSettingsPage() {
               <div className="flex gap-2 mt-1">
                 <button
                   onClick={async () => {
-                    if (!editName.trim() || !editChild) return;
+                    if (!editGivenName.trim() || !editChild) return;
                     // 다운그레이드(요금제 하향)면 저장 직전 확인 모달을 먼저 띄운다 — "확인"을
                     // 누르기 전까지는 이름/관심사 등 다른 항목도 포함해 어떤 변경도 커밋하지 않는다.
                     if (editTier < editOriginalTier) {
