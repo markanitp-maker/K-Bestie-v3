@@ -1,11 +1,14 @@
 import { buildContentEchoReaction } from "@/lib/mission/eReactionPool";
 
+import { ChildConversationContext } from "./ChildConversationContext";
+
 export interface FetchPersonalizedReactionParams {
   questionText: string;
   answerText: string;
   sessionId: string;
   childTurnId: string;
   lastReaction: string | null;
+  childContext?: ChildConversationContext;
   /** 이 호출이 더 이상 유효하지 않은지(예: 세션 재시작으로 epoch이 바뀜) 확인하는 함수.
    *  true를 반환하면 스트림을 취소하고 빈 문자열을 반환한다(호출부가 이 경우 결과를
    *  버리도록 기존 D/F 로직과 동일하게 처리해야 한다). */
@@ -31,7 +34,7 @@ export interface FetchPersonalizedReactionParams {
 export async function fetchPersonalizedReaction(
   params: FetchPersonalizedReactionParams
 ): Promise<string> {
-  const { questionText, answerText, sessionId, childTurnId, lastReaction, isStale, onFirstToken, onChunk, timeoutMs = 2200 } = params;
+  const { questionText, answerText, sessionId, childTurnId, lastReaction, childContext, isStale, onFirstToken, onChunk, timeoutMs = 2200 } = params;
   const fallbackResult = buildContentEchoReaction(answerText, lastReaction);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutMarker = Symbol("timeout");
@@ -47,7 +50,7 @@ export async function fetchPersonalizedReaction(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: reactionAbortController.signal,
-        body: JSON.stringify({ questionText, answerText, sessionId, childTurnId }),
+        body: JSON.stringify({ questionText, answerText, sessionId, childTurnId, childContext }),
       });
       if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
       const reader = res.body.getReader();

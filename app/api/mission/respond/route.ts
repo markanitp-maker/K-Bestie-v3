@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { sessionId?: string; history?: HistoryTurn[]; nextQuestionText?: string; childTurnId?: string };
+  let body: { sessionId?: string; history?: HistoryTurn[]; nextQuestionText?: string; childTurnId?: string; childContext?: any };
   try {
     body = await req.json();
   } catch {
@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
   const history = Array.isArray(body.history) ? body.history : [];
   const nextQuestionText = typeof body.nextQuestionText === "string" ? body.nextQuestionText.trim() : "";
   const childTurnId = typeof body.childTurnId === "string" ? body.childTurnId : null;
+  const childContext = body.childContext;
 
   if (history.length === 0 || !nextQuestionText) {
     console.error("[mission/respond] history and nextQuestionText required", { sessionId: body.sessionId, childTurnId });
@@ -250,10 +251,14 @@ export async function POST(req: NextRequest) {
     contents.push({ role: "user", parts: [{ text: finalNextQuestionText }] });
   }
 
+  const knownContextMsg = childContext && childContext.givenName
+    ? `아이의 이름은 '${childContext.givenName}'이고 ${childContext.grade}학년입니다. 아이가 자기 이름이나 학년을 물어보면 모른다고 하지 말고 알고 있는 정보를 자연스럽게 말해주세요.\n`
+    : "";
+
   const systemInstruction = `
 ${MISSION_CHAT_SYSTEM_PROMPT}
 
-절대 질문을 생성하지 마세요. 아이의 이전 말에 대한 매우 짧은 공감이나 감탄사(리액션)만 딱 1~2문장(최대 15자)으로 생성하세요. 물음표(?)는 절대 사용 금지.
+${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말에 대한 매우 짧은 공감이나 감탄사(리액션)만 딱 1~2문장(최대 15자)으로 생성하세요. 물음표(?)는 절대 사용 금지.
 예: "우와, 정말 재밌었겠다!", "그렇구나!", "대단한데!"
 `.trim();
 

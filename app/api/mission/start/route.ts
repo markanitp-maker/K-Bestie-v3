@@ -6,6 +6,7 @@ import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
 import { isChildAlphaAllowedForQuestions } from "@/lib/questions/alphaAllowlist";
 import { selectAlphaQuestions, selectFixedMissionQuestions, selectAdditionalReserveQuestions, RESERVE_TARGET_COUNT } from "@/lib/mission/selectQuestions";
+import { ChildConversationContext } from "@/lib/mission/ChildConversationContext";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
@@ -49,10 +50,19 @@ export async function POST(req: NextRequest) {
 
   const { data: childProfile } = await service
     .from("child_profiles")
-    .select("given_name")
+    .select("name, given_name, grade")
     .eq("id", childId)
     .maybeSingle();
   const givenName = childProfile?.given_name ?? null;
+  const gradeValue = childProfile?.grade;
+
+  const childContext: ChildConversationContext = {
+    childId,
+    displayName: childProfile?.name ?? "",
+    givenName,
+    grade: parseGrade(gradeValue) ?? 0,
+    knownProfileFacts: {}
+  };
 
   // 요금제(tier)별 음성 방식 — 미션 로직(정답판정/게이지/황금열쇠/라운드)과 무관한 부가 정보
   const { tier, voiceMode, liveVoiceName } = await getVoiceModeForChild(childId);
@@ -163,22 +173,16 @@ export async function POST(req: NextRequest) {
         voiceMode,
         liveVoiceName,
         givenName,
+        childContext,
       });
     }
   }
 
-  // 아이 학년 조회
-  const { data: child, error: childErr } = await service
-    .from("child_profiles")
-    .select("id, grade")
-    .eq("id", childId)
-    .single();
-
-  if (childErr || !child) {
+  if (!childProfile) {
     return NextResponse.json({ error: "Child not found" }, { status: 404 });
   }
 
-  const grade = parseGrade(child.grade);
+  const grade = parseGrade(gradeValue);
   if (grade === null) {
     return NextResponse.json({ error: "Cannot parse child grade" }, { status: 400 });
   }
@@ -188,7 +192,7 @@ export async function POST(req: NextRequest) {
   // 후보 부족 시 쿨다운 미충족 문항까지 강제로 채우는 보정 로직을 갖고 있으므로, 그 보정에 기대지 않고
   // 이 게이트에서 미리 차단한다.
   if (isV2 && !isAlphaQuestionChild) {
-    const eligibleCount = await countApprovedV2Candidates(childId, grade, roundType);
+    const eligibleCount = await countApprovedV2Candidates(childId, grade, roundType, childContext);
     if (eligibleCount < REQUIRED_COUNT_V2 || eligibleCount < TOTAL_COUNT_V2) {
       console.warn("[start/route] V2->V1 폴백: 개인화 적용 후 가용 문항 부족", {
         childId,
@@ -206,7 +210,7 @@ export async function POST(req: NextRequest) {
   // 출제 질문 선별
   let questionIds: string[] = [];
   try {
-    questionIds = await selectFixedMissionQuestions(childId, grade, roundType);
+    questionIds = await selectFixedMissionQuestions(childId, grade, roundType, childContext);
   } catch (err) {
     console.warn("[start/route] selectFixedMissionQuestions failed, falling back:", err instanceof Error ? err.message : err);
   }
@@ -215,12 +219,12 @@ export async function POST(req: NextRequest) {
      isV2 = true; // Fixed 선택기 결과(PRIMARY 10개 + RESERVE 0~10개)
   } else {
     if (isAlphaQuestionChild) {
-      questionIds = await selectAlphaQuestions(childId, grade, roundType);
+      questionIds = await selectAlphaQuestions(childId, grade, roundType, childContext);
       isV2 = true;
     } else if (isV2) {
-      questionIds = await selectQuestionsV2(childId, grade, roundType);
+      questionIds = await selectQuestionsV2(childId, grade, roundType, childContext);
     } else {
-      questionIds = await selectQuestions(childId, grade, roundType);
+      questionIds = await selectQuestions(childId, grade, roundType, childContext);
     }
   }
 
@@ -379,6 +383,7 @@ export async function POST(req: NextRequest) {
             voiceMode,
             liveVoiceName,
             givenName,
+            childContext,
           });
         }
       }
@@ -409,7 +414,7 @@ export async function POST(req: NextRequest) {
     if (reserveCount < RESERVE_TARGET_COUNT) {
       const shortfall = RESERVE_TARGET_COUNT - reserveCount;
       try {
-        const backfillIds = await selectAdditionalReserveQuestions(childId, grade, roundType, questionIds, shortfall);
+        const backfillIds = await selectAdditionalReserveQuestions(childId, grade, roundType, questionIds, shortfall, childContext);
         if (backfillIds.length > 0) {
           const maxOrder = Math.max(...historyRows.map((r) => r.selected_order));
           const backfillRows = backfillIds.map((qid, i) => ({
@@ -479,5 +484,6 @@ export async function POST(req: NextRequest) {
     voiceMode,
     liveVoiceName,
     givenName,
+    childContext,
   });
 }

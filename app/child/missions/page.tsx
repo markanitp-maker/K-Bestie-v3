@@ -18,6 +18,7 @@ import { TestModeABRunner } from "@/components/TestModeABRunner";
 import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
 import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
+import { ChildConversationContext } from "@/lib/mission/ChildConversationContext";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { toKoreanVocative } from "@/lib/utils/koreanName";
@@ -101,7 +102,7 @@ function currentRound(hour: number): RoundType | null {
 function MissionInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { quality: connectionQuality, recordStageResult } = usePipelineConnectionQuality();
+  const { quality: connectionQuality, recordStageResult, recordNormalTurn } = usePipelineConnectionQuality();
 
   const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error">("loading");
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -169,6 +170,8 @@ function MissionInner() {
   // 실어 보내 서버가 같은 턴에 대한 중복 요청을 식별할 수 있게 하는 idempotency key 재료.
   const childTurnSeqRef = useRef(0);
   const answerEpochRef = useRef(0);
+  
+  const childContextRef = useRef<ChildConversationContext | null>(null);
   
   // 8초 타임아웃 타이머는 useGeminiLive 내부 generationTimeout으로 이관됨
   // 종료 문구 TTS 폴백이 중복 실행되지 않도록 하는 가드(컨트롤러의 closingFinished 위에 얹는
@@ -311,6 +314,13 @@ function MissionInner() {
 
   const handleTurnComplete = useCallback((turn: Turn) => {
     logVoiceEvent({ ts: Date.now(), eventType: "handleTurnComplete_start", extra: { role: turn.role }, transcriptSummary: (getTranscriptRef.current?.() ?? []).map(t => ({ role: t.role, id: t.id, displaySequence: t.displaySequence })) });
+    // 케이("k") 턴이 끝까지 완료됐다는 건 이번 턴의 파이프라인(Live: 생성+재생 / 비Live:
+    // STT→LLM→TTS→재생)이 실제로 성공했다는 신호다 - 연결 품질의 "마지막 정상 턴" 시각을
+    // 여기서 갱신해야 90초 무갱신 강제 저하가 실제 성공 이벤트와 무관하게 발동하지 않는다
+    // (Live/비Live 공통 콜백이라 두 모드 모두 이 시점에서 회복된다).
+    if (turn.role === "k") {
+      recordNormalTurn();
+    }
     const isLive = voiceModeRef.current === "live";
 
     let finalTurnId = turn.id;
@@ -476,6 +486,7 @@ function MissionInner() {
             sessionId: sid,
             childTurnId,
             lastReaction: lastReactionRef.current,
+            childContext: childContextRef.current ?? undefined,
             isStale: () => currentEpoch !== answerEpochRef.current,
             abortController: reactionAbortControllerRef.current,
           }).then((text) => {
@@ -720,6 +731,7 @@ function MissionInner() {
                 history: getTranscriptRef.current?.() ?? [],
                 nextQuestionText: nextQ.question_text,
                 childTurnId,
+                childContext: childContextRef.current ?? undefined,
               }),
               signal: manualAbortControllerRef.current?.signal,
             });
@@ -822,7 +834,7 @@ function MissionInner() {
         }
       }
     })();
-  }, [saveMessage, pickNextIndex, nextTurnId, nextDisplaySequence]);
+  }, [saveMessage, pickNextIndex, nextTurnId, nextDisplaySequence, recordNormalTurn]);
 
   // 자동·수동 발화 상태 및 DOM 조작을 위한 Ref 선언
   const [isAuto, setIsAuto] = useState(true);
@@ -1311,6 +1323,7 @@ function MissionInner() {
           }).catch(() => {});
         }
         const qs: MissionQuestion[] = data.questions ?? [];
+        childContextRef.current = data.childContext ?? null;
 
         if (data.resumed) {
           // 이어하기 — 오프닝 인사말을 다시 덮어쓰지 않고(이미 지나간 질문일 수 있음),

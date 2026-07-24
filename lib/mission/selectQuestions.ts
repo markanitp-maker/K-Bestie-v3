@@ -15,6 +15,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getDeterministicQuestionId } from "@/lib/questions/deterministicQuestionId";
 import fs from "fs";
 import path from "path";
+import { ChildConversationContext } from "./ChildConversationContext";
 
 export type RoundType = "round1_day" | "round2_night" | "common";
 export type CycleType = "onboarding" | "always" | "weekly" | "monthly" | "quarterly";
@@ -80,6 +81,22 @@ interface QuestionRow {
   dashboard_area_tag: string;
   round_type: RoundType;
   applicable_grades: number[];
+  question_text: string;
+}
+
+function filterIdentityQuestions(q: QuestionRow, context?: ChildConversationContext): boolean {
+  if (!context || !q.question_text) return true;
+  if (context.givenName) {
+    if (q.question_text.includes("넌 누구니") || q.question_text.includes("이름이 뭐니") || q.question_text.includes("이름이 뭐야")) {
+      return false;
+    }
+  }
+  if (context.grade) {
+    if (q.question_text.includes("몇 학년") || q.question_text.includes("무슨 학년")) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const REQUIRED_COUNT = 5;
@@ -120,21 +137,22 @@ function shuffle<T>(arr: T[]): T[] {
 export async function selectQuestions(
   childId: string,
   grade: number,
-  roundType: RoundType
+  roundType: RoundType,
+  context?: ChildConversationContext
 ): Promise<string[]> {
   const service = createServiceClient();
 
   // 1. 학년 + 회차 후보 (활성 질문). round_type 은 해당 회차 또는 common 포함
   const { data: candidatesRaw, error: qErr } = await service
     .from("mission_questions")
-    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades, question_text")
     .eq("is_active", true)
     .in("round_type", [roundType, "common"]);
 
   if (qErr || !candidatesRaw) return [];
 
   const candidates = (candidatesRaw as QuestionRow[]).filter((q) =>
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id)
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id) && filterIdentityQuestions(q, context)
   );
   if (candidates.length === 0) return [];
 
@@ -251,12 +269,13 @@ export const RESERVE_TARGET_COUNT = 10; // Fixed 선택기의 예비 문항 목�
 
 export async function getApprovedV2Candidates(
   grade: number,
-  roundType: RoundType
+  roundType: RoundType,
+  context?: ChildConversationContext
 ): Promise<QuestionRow[]> {
   const service = createServiceClient();
   const { data: candidatesRaw, error: qErr } = await service
     .from("mission_questions")
-    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades, question_text")
     .eq("is_active", true)
     .eq("clinical_status", "APPROVED")
     .in("round_type", [roundType, "common"]);
@@ -264,7 +283,7 @@ export async function getApprovedV2Candidates(
   if (qErr || !candidatesRaw) return [];
 
   return (candidatesRaw as QuestionRow[]).filter((q) =>
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id)
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id) && filterIdentityQuestions(q, context)
   );
 }
 
@@ -340,9 +359,10 @@ async function filterV2EligibleCandidates(
 export async function countApprovedV2Candidates(
   childId: string,
   grade: number,
-  roundType: RoundType
+  roundType: RoundType,
+  context?: ChildConversationContext
 ): Promise<number> {
-  const candidates = await getApprovedV2Candidates(grade, roundType);
+  const candidates = await getApprovedV2Candidates(grade, roundType, context);
   if (candidates.length === 0) return 0;
   const { eligible } = await filterV2EligibleCandidates(childId, candidates);
   return eligible.length;
@@ -355,11 +375,12 @@ export async function countApprovedV2Candidates(
 export async function selectQuestionsV2(
   childId: string,
   grade: number,
-  roundType: RoundType
+  roundType: RoundType,
+  context?: ChildConversationContext
 ): Promise<string[]> {
   const service = createServiceClient();
 
-  const candidates = await getApprovedV2Candidates(grade, roundType);
+  const candidates = await getApprovedV2Candidates(grade, roundType, context);
   if (candidates.length === 0) return [];
 
   const { eligible, memoryFilteredCandidates, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
@@ -432,7 +453,8 @@ export async function selectQuestionsV2(
 
 export async function getAlphaApprovedCandidates(
   grade: number,
-  roundType: RoundType
+  roundType: RoundType,
+  context?: ChildConversationContext
 ): Promise<QuestionRow[]> {
   const service = createServiceClient();
   
@@ -456,14 +478,14 @@ export async function getAlphaApprovedCandidates(
   // clinical_status, is_active 무관하게 id 목록만으로 조회, 단 round_type 제한은 그대로
   const { data: candidatesRaw, error: qErr } = await service
     .from("mission_questions")
-    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades, question_text")
     .in("id", targetIds)
     .in("round_type", [roundType, "common"]);
 
   if (qErr || !candidatesRaw) return [];
 
   return (candidatesRaw as QuestionRow[]).filter((q) =>
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id)
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) && isValidMissionQuestion(q.id) && filterIdentityQuestions(q, context)
   );
 }
 
@@ -473,11 +495,12 @@ export async function getAlphaApprovedCandidates(
 export async function selectAlphaQuestions(
   childId: string,
   grade: number,
-  roundType: RoundType
+  roundType: RoundType,
+  context?: ChildConversationContext
 ): Promise<string[]> {
   const service = createServiceClient();
 
-  const candidates = await getAlphaApprovedCandidates(grade, roundType);
+  const candidates = await getAlphaApprovedCandidates(grade, roundType, context);
   if (candidates.length === 0) return [];
 
   const { eligible, memoryFilteredCandidates, lastAskedAt } = await filterV2EligibleCandidates(childId, candidates);
@@ -553,12 +576,13 @@ export async function selectAlphaQuestions(
 export async function selectFixedMissionQuestions(
   childId: string,
   grade: number,
-  roundType: RoundType
+  roundType: RoundType,
+  context?: ChildConversationContext
 ): Promise<string[]> {
   const service = createServiceClient();
   const { data: allActiveRaw, error: qErr } = await service
     .from("mission_questions")
-    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades, question_text")
     .eq("is_active", true);
 
   if (qErr || !allActiveRaw) return [];
@@ -567,12 +591,14 @@ export async function selectFixedMissionQuestions(
   // 1차 후보: 학년 + 라운드 일치
   const candidates = allActive.filter((q) =>
     Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) &&
-    (q.round_type === roundType || q.round_type === "common")
+    (q.round_type === roundType || q.round_type === "common") &&
+    filterIdentityQuestions(q, context)
   );
 
   // 2차 후보: 학년 일치 (라운드 무관)
   const candidatesRelaxRound = allActive.filter((q) =>
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade)
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) &&
+    filterIdentityQuestions(q, context)
   );
 
   // 아이의 출제이력 로드 (question_id -> 마지막 asked_at) - 쿨다운 적용을 위해
@@ -635,34 +661,46 @@ export async function selectFixedMissionQuestions(
     return undefined;
   };
 
-  const getSlotId = (tag: string): string => {
-    const id = getSlotIdExcluding(tag, new Set());
+  const picked: string[] = [];
+  const tagsConfig = context?.givenName
+    ? [
+        "school_life",
+        "peer_relations",
+        "emotion",
+        "interests",
+        "study_concerns",
+        "digital_interests",
+        "future_dreams",
+        "recurring_stories",
+        "daily_general",
+        "daily_general",
+      ]
+    : [
+        "greeting",
+        "school_life",
+        "peer_relations",
+        "emotion",
+        "interests",
+        "study_concerns",
+        "digital_interests",
+        "future_dreams",
+        "recurring_stories",
+        "daily_general",
+      ];
+
+  // 같은 태그(예: 이름을 아는 아이의 경우 "daily_general")가 tagsConfig에 두 번 나올 수 있으므로,
+  // 매 반복마다 이미 뽑힌 id를 제외해야 동일 문항이 PRIMARY 10개 안에 중복되지 않는다.
+  const pickedSet = new Set<string>();
+  for (const tag of tagsConfig) {
+    const id = getSlotIdExcluding(tag, pickedSet);
     if (id === undefined) {
       throw new Error(`[selectFixedMissionQuestions] No candidate found for tag: ${tag}`);
     }
-    return id;
-  };
-
-  const picked: string[] = [];
-  const tagsConfig = [
-    "greeting",
-    "school_life",
-    "peer_relations",
-    "emotion",
-    "interests",
-    "study_concerns",
-    "digital_interests",
-    "future_dreams",
-    "recurring_stories",
-    "daily_general",
-  ];
-
-  for (const tag of tagsConfig) {
-    picked.push(getSlotId(tag));
+    picked.push(id);
+    pickedSet.add(id);
   }
-  
+
   // RESERVE: PRIMARY 10개를 제외하고 태그당 1개씩 예비 후보를 추가로 찾는다.
-  const pickedSet = new Set(picked);
   const reserves: string[] = [];
 
   for (const tag of tagsConfig) {
@@ -698,12 +736,13 @@ export async function selectAdditionalReserveQuestions(
   grade: number,
   roundType: RoundType,
   excludeIds: string[],
-  count: number = 1
+  count: number = 1,
+  context?: ChildConversationContext
 ): Promise<string[]> {
   const service = createServiceClient();
   const { data: allActiveRaw, error: qErr } = await service
     .from("mission_questions")
-    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades, question_text")
     .eq("is_active", true);
   if (qErr || !allActiveRaw) return [];
   const allActive = allActiveRaw as QuestionRow[];
@@ -722,7 +761,8 @@ export async function selectAdditionalReserveQuestions(
   }
 
   const remainingPool = allActive.filter((q) => !exclude.has(q.id) &&
-    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade));
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade) &&
+    filterIdentityQuestions(q, context));
   const notRecentlyAsked = shuffle(remainingPool.filter((q) => !lastAskedAt.has(q.id)));
   const rest = shuffle(remainingPool.filter((q) => lastAskedAt.has(q.id)));
 
