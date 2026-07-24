@@ -5,41 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
-import {
-  AUTO_REFUND_STAGES,
-  isMbtiCloseRequest,
-  isMbtiCompleted,
-  isMbtiError,
-  isMbtiInitAck,
-  isMbtiProgress,
-  isMbtiReady,
-  isPlayBugReport,
-  MbtiInitPayload
-} from "@/lib/play/protocol";
-
-// 실제 MBTI 앱 URL이 유효한지 판정 - mock/dev fixture로 보이는 호스트거나, 이 앱
-// 자기 자신의 origin이거나, 아예 안 정해져 있으면 전부 "사용 불가"로 취급한다.
-// 이 판정에 실패하면 절대 mock-mbti로 자동 폴백하지 않는다 - 사용자에게 "준비 중"만
-// 보여준다.
-function getRealMbtiUrl(): string | null {
-  const rawUrl = process.env.NEXT_PUBLIC_MBTI_APP_URL;
-  if (!rawUrl) return null;
-  try {
-    const parsed = new URL("/play/mbti", rawUrl);
-    const hostLower = parsed.host.toLowerCase();
-    const pathLower = parsed.pathname.toLowerCase();
-    if (hostLower.includes("mock") || pathLower.includes("mock") || hostLower.includes("test-fixture") || pathLower.includes("test-fixture")) {
-      return null;
-    }
-    if (typeof window !== "undefined" && parsed.origin === window.location.origin) {
-      // 이 앱 자기 자신을 가리키면 별도 MBTI 앱이 아니라 mock/자기참조 - 거부.
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
+import { writeMbtiSessionHandoff } from "@/lib/play/mbtiSessionHandoff";
 
 const GAMES = [
   { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "#e8845a", keys: 2 },
@@ -47,164 +13,6 @@ const GAMES = [
   { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "#22c55e", keys: 3 },
   { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "#2d9f8f", keys: 3 },
 ];
-
-function MbtiGameScreen({
-  childId,
-  sessionInfo,
-  onComplete,
-}: {
-  childId: string;
-  sessionInfo: { sessionId: string; startMode: "new" | "resume"; expiresAt: string };
-  onComplete: () => void;
-}) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const realMbtiUrl = getRealMbtiUrl();
-  const MBTI_ORIGIN = realMbtiUrl ? new URL(realMbtiUrl).origin : "*";
-
-  useEffect(() => {
-    if (!realMbtiUrl) {
-      // 여기까지 왔다는 건 위 카드/handleGameClick 방어선이 뚫린 것 - 절대 mock으로
-      // 폴백하지 않고 즉시 종료한다(황금열쇠는 이미 handleStart 이전 단계에서
-      // 소비되지 않도록 막혀있어야 하지만, 혹시 세션이 만들어졌다면 화면만이라도
-      // 즉시 닫아 사용자가 mock을 보지 않게 한다).
-      onComplete();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // 1. origin check
-      if (MBTI_ORIGIN !== "*" && event.origin !== MBTI_ORIGIN) return;
-      // 2. source check
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      // 3. schema check
-      const data = event.data;
-
-      if (data && typeof data === 'object' && data !== null && 'playSessionId' in data && (data as any).playSessionId !== sessionInfo.sessionId) {
-        console.warn(`[MbtiGameScreen] Ignored message for mismatched session ID. Expected ${sessionInfo.sessionId}, got ${(data as any).playSessionId}`);
-        return;
-      }
-
-      if (isMbtiReady(data)) {
-        const initPayload: MbtiInitPayload = {
-          playType: "mbti",
-          eventType: "MBTI_INIT",
-          occurredAt: new Date().toISOString(),
-          playSessionId: sessionInfo.sessionId,
-          childId: childId,
-          startMode: sessionInfo.startMode,
-          expiresAt: sessionInfo.expiresAt,
-        };
-        iframeRef.current?.contentWindow?.postMessage(initPayload, MBTI_ORIGIN);
-
-        initTimeoutRef.current = setTimeout(() => {
-          fetch("/api/play/callback/refund", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              child_id: childId,
-              play_session_id: sessionInfo.sessionId,
-              stage: "init",
-              error_code: "init_ack_timeout",
-              error_message: "MBTI_INIT 전송 후 15초 이내 MBTI_INIT_ACK 미수신",
-            }),
-          })
-            .then((r) => r.json())
-            .then((resData) => {
-              if (resData.refunded) {
-                alert(`정상적으로 시작되지 않아 황금열쇠를 ${resData.refunded_quantity}개 되돌렸어요.`);
-              }
-              onComplete();
-            });
-        }, 15000);
-      } else if (isMbtiInitAck(data)) {
-        if (data.playSessionId === sessionInfo.sessionId) {
-          if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
-        }
-      } else if (isMbtiError(data)) {
-        if (AUTO_REFUND_STAGES.has(data.stage)) {
-          fetch("/api/play/callback/refund", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              child_id: childId,
-              play_session_id: data.playSessionId,
-              stage: data.stage,
-              error_code: data.errorCode,
-              error_message: data.errorMessage,
-            }),
-          })
-            .then((r) => r.json())
-            .then((resData) => {
-              if (resData.refunded) {
-                alert(`정상적으로 시작되지 않아 황금열쇠를 ${resData.refunded_quantity}개 되돌렸어요.`);
-              }
-            });
-        }
-      } else if (isMbtiProgress(data)) {
-        // 서버 진행상태 기록(자동환불 오남용 방지의 서버측 근거). 진행률 백분율만 저장.
-        fetch("/api/play/progress", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            child_id: childId,
-            play_session_id: sessionInfo.sessionId,
-            progress_percent: data.progressPercent,
-          }),
-        });
-      } else if (isPlayBugReport(data)) {
-        if (data.sessionId !== sessionInfo.sessionId) {
-          console.warn(`[MbtiGameScreen] Ignored bug report for mismatched session ID. Expected ${sessionInfo.sessionId}, got ${data.sessionId}`);
-          return;
-        }
-        fetch("/api/play/bug-report", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        });
-      } else if (isMbtiCompleted(data)) {
-        fetch("/api/play/callback/complete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            child_id: childId,
-            play_session_id: sessionInfo.sessionId,
-            result_type: data.resultType,
-          }),
-        }).catch(() => {});
-        if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
-        onComplete();
-      } else if (isMbtiCloseRequest(data)) {
-        if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
-        onComplete();
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => {
-      window.removeEventListener("message", handleMessage);
-      if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
-    };
-  }, [childId, sessionInfo, MBTI_ORIGIN, onComplete]);
-
-  if (!realMbtiUrl) return null;
-
-  const iframeSrc = realMbtiUrl;
-
-  return (
-    <div className="absolute inset-0 bg-[#fafaf8] z-[60] flex flex-col animate-in fade-in duration-300">
-      <iframe
-        ref={iframeRef}
-        src={iframeSrc}
-        className="w-full h-full border-0"
-        allow="camera; microphone"
-      />
-    </div>
-  );
-}
 
 export default function ChildPlayPage() {
   const router = useRouter();
@@ -237,7 +45,6 @@ export default function ChildPlayPage() {
 
   // mbti specific
   const mbtiIdemKeyRef = useRef<string | null>(null);
-  const [mbtiSessionInfo, setMbtiSessionInfo] = useState<{ sessionId: string; startMode: "new" | "resume"; expiresAt: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -275,10 +82,6 @@ export default function ChildPlayPage() {
   }, [childId, refetchBalance]);
 
   const handleGameClick = async (game: typeof GAMES[0]) => {
-    if (game.id === "mbti" && !getRealMbtiUrl()) {
-      alert("아직 준비 중인 놀이예요. 조금만 기다려주세요!");
-      return;
-    }
     if (!childId) {
       alert("로그인 정보가 필요합니다. 다시 로그인해주세요.");
       return;
@@ -324,11 +127,10 @@ export default function ChildPlayPage() {
           return;
         } else if (res.ok) {
           const data = await res.json();
-          setMbtiSessionInfo({ sessionId: data.session_id, startMode: data.start_mode, expiresAt: data.expires_at });
-          setShowActionModal(false);
-          setShowGameScreen(true);
           mbtiIdemKeyRef.current = null;
-          refetchBalance(childId);
+          setShowActionModal(false);
+          writeMbtiSessionHandoff({ sessionId: data.session_id, childId });
+          router.push("/play/mbti");
         } else {
           alert("놀이 예약에 실패했습니다.");
         }
@@ -383,11 +185,10 @@ export default function ChildPlayPage() {
         });
         if (res.ok) {
           const data = await res.json();
-          setMbtiSessionInfo({ sessionId: data.session_id, startMode: data.start_mode, expiresAt: data.expires_at });
-          setShowActionModal(false);
-          setShowGameScreen(true);
           mbtiIdemKeyRef.current = null;
-          refetchBalance(childId);
+          setShowActionModal(false);
+          writeMbtiSessionHandoff({ sessionId: data.session_id, childId });
+          router.push("/play/mbti");
         } else {
           alert("이어하기 처리에 실패했습니다.");
         }
@@ -453,19 +254,13 @@ export default function ChildPlayPage() {
 
           <div className="grid grid-cols-2 gap-4 pb-20">
             {GAMES.map((game) => {
-              const mbtiBlocked = game.id === "mbti" && !getRealMbtiUrl();
               return (
                 <div
                   key={game.id}
-                  onClick={() => { if (!mbtiBlocked) handleGameClick(game); }}
-                  className={`flex flex-col items-center justify-center gap-3 rounded-3xl px-3 py-6 shadow-md select-none active:scale-95 transition-transform relative overflow-hidden ${mbtiBlocked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                  onClick={() => { handleGameClick(game); }}
+                  className="flex flex-col items-center justify-center gap-3 rounded-3xl px-3 py-6 shadow-md select-none active:scale-95 transition-transform relative overflow-hidden cursor-pointer"
                   style={{ background: game.bg }}
                 >
-                  {mbtiBlocked && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10">
-                      <span className="text-white text-xs font-bold bg-black/40 px-2 py-1 rounded-full">준비 중인 놀이예요</span>
-                    </div>
-                  )}
                   <div className="absolute top-2 right-3 bg-black/20 text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                     🔑 필요 {game.keys}
                   </div>
@@ -590,36 +385,24 @@ export default function ChildPlayPage() {
           </div>
         )}
 
-        {/* 3. 실제 게임 진행 화면 */}
+        {/* 3. 실제 게임 진행 화면 (comic_book/quiz/hairstyle — MBTI는 /play/mbti 네이티브 페이지로 이동) */}
         {showGameScreen && selectedGame && (
-          selectedGame.id === "mbti" && childId && mbtiSessionInfo ? (
-            <MbtiGameScreen 
-              childId={childId} 
-              sessionInfo={mbtiSessionInfo} 
-              onComplete={() => {
-                setShowGameScreen(false);
-                setMbtiSessionInfo(null);
-                if (childId) refetchBalance(childId);
-              }} 
-            />
-          ) : (
-            <div className="absolute inset-0 bg-[#fafaf8] z-[60] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
-              <div className="w-24 h-24 bg-white rounded-[32px] shadow-sm flex items-center justify-center text-5xl mb-6">
-                🚀
-              </div>
-              <p className="font-bold text-2xl text-gray-800 mb-3 tracking-tight">놀이 준비 완료!</p>
-              <p className="text-gray-500 mb-10 leading-relaxed">
-                별도 케이 놀이 앱에서 이어집니다<br/>
-                <span className="text-sm bg-gray-200 px-2 py-1 rounded-md mt-2 inline-block">(준비 중)</span>
-              </p>
-              <button 
-                onClick={() => setShowGameScreen(false)} 
-                className="w-full max-w-[200px] py-4 rounded-2xl font-bold text-white bg-gray-800 shadow-md active:scale-95 transition-transform"
-              >
-                홈으로 돌아가기
-              </button>
+          <div className="absolute inset-0 bg-[#fafaf8] z-[60] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+            <div className="w-24 h-24 bg-white rounded-[32px] shadow-sm flex items-center justify-center text-5xl mb-6">
+              🚀
             </div>
-          )
+            <p className="font-bold text-2xl text-gray-800 mb-3 tracking-tight">놀이 준비 완료!</p>
+            <p className="text-gray-500 mb-10 leading-relaxed">
+              별도 케이 놀이 앱에서 이어집니다<br/>
+              <span className="text-sm bg-gray-200 px-2 py-1 rounded-md mt-2 inline-block">(준비 중)</span>
+            </p>
+            <button
+              onClick={() => setShowGameScreen(false)}
+              className="w-full max-w-[200px] py-4 rounded-2xl font-bold text-white bg-gray-800 shadow-md active:scale-95 transition-transform"
+            >
+              홈으로 돌아가기
+            </button>
+          </div>
         )}
 
       </div>
