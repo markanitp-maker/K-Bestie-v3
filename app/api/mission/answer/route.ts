@@ -298,6 +298,8 @@ export async function POST(req: NextRequest) {
     let questionPoolExhausted = false;
     let newState: QuestionState;
     let answerStatus: "answered" | "skipped" | "refused";
+    let finalQuestionIds: string[] | undefined = undefined;
+    let finalQuestions: any[] | undefined = undefined;
 
     if (classification === "VALID") {
       newState = "answered";
@@ -471,6 +473,7 @@ export async function POST(req: NextRequest) {
           if (sortedList) {
             const sortedIds = sortedList.map((h) => h.question_id);
             finalQuestionStates[reserveQ.question_id] = "pending";
+            finalQuestionIds = sortedIds;
 
             console.log("[mission/answer] progress update", { sessionId, questionId, classification, prevCount: progress.valid_answer_count ?? 0, newCount: rpcResult.valid_answer_count });
             const { error: updateIdsErr } = await service
@@ -609,6 +612,7 @@ export async function POST(req: NextRequest) {
               if (sortedList) {
                 const sortedIds = sortedList.map((h) => h.question_id);
                 finalQuestionStates[reserveQ.question_id] = "pending";
+                finalQuestionIds = sortedIds;
 
                 console.log("[mission/answer] progress update", { sessionId, questionId, classification, prevCount: progress.valid_answer_count ?? 0, newCount: rpcResult.valid_answer_count });
                 const { error: updateIdsErr } = await service
@@ -631,6 +635,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (finalQuestionIds) {
+      const { data: updatedQuestions, error: qErr } = await service
+        .from("mission_questions")
+        .select("id, question_text, dashboard_area_tag, cycle_type, round_type")
+        .in("id", finalQuestionIds);
+      if (!qErr && updatedQuestions) {
+        finalQuestions = finalQuestionIds
+          .map((qid) => updatedQuestions.find((q) => q.id === qid))
+          .filter(Boolean);
+      }
+    }
+
     const resPayload = {
       valid: classification === "VALID",
       reason: classification !== "VALID" ? classification : null,
@@ -647,6 +663,7 @@ export async function POST(req: NextRequest) {
       questionStates: finalQuestionStates,
       rewardStatus: rpcResult.reward_status,
       questionPoolExhausted,
+      ...(finalQuestionIds && finalQuestions ? { questionIds: finalQuestionIds, questions: finalQuestions } : {}),
     };
 
     console.log("[mission/answer] done", { sessionId, classification, valid: resPayload.valid, validAnswerCount: resPayload.validAnswerCount, durationMs: Date.now() - startedAt });

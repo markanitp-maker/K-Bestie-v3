@@ -554,6 +554,13 @@ function MissionInner() {
         }
 
         questionStatesRef.current = data.questionStates ?? questionStatesRef.current;
+        if (data.questions) {
+          questionsRef.current = data.questions;
+          const newIndex = data.questions.findIndex((q: any) => q.id === question.id);
+          if (newIndex !== -1) {
+            currentIndexRef.current = newIndex;
+          }
+        }
         setGauge(data.validAnswerCount ?? 0);
         setProgressPercent(data.progressPercent ?? 0);
         setRequiredCount(data.requiredCount ?? 5);
@@ -609,14 +616,39 @@ function MissionInner() {
 
         const next = pickNextIndex(questionStatesRef.current);
         if (next === -1) {
+          if (data.questionPoolExhausted) {
+            console.error("MISSION_QUESTION_POOL_EXHAUSTED", { sessionId: sid });
+            if (isLive) {
+              if (manualTimeoutRef.current) {
+                clearTimeout(manualTimeoutRef.current);
+                manualTimeoutRef.current = null;
+              }
+              setTurnPhase("waiting_k");
+              if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+              if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
+              if (liveRef.current?.status === "live") {
+                if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
+                const success = liveRef.current.speakAsK("다음 질문을 준비하지 못했어요. 나중에 다시 해보자.");
+                if (!success) {
+                  resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
+                }
+              } else {
+                resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
+              }
+            } else {
+              resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
+            }
+            return;
+          }
+
           if (isLive) {
-          if (manualTimeoutRef.current) {
+            if (manualTimeoutRef.current) {
               clearTimeout(manualTimeoutRef.current);
               manualTimeoutRef.current = null;
             }
             setTurnPhase("waiting_k");
-        if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
-        if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
+            if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
+            if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
               const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
