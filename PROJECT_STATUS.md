@@ -91,5 +91,38 @@
   testi02로 직접 실측 검증됨(이 세션에서).
 
 ---
+
+## 진행 중인 병렬 에이전트 (2026-07-24 14:54 시작)
+
+| tmux 세션 | 담당 트랙 | worktree/브랜치 | 소유 파일 |
+|---|---|---|---|
+| agy-mission-personalize | ①(신규 발견) 실서비스 MissionInner 개인화+중복질문 수정 | 메인 저장소(feat/family-backend) | app/child/missions/page.tsx (단독 소유, tier1/2만) |
+| agy-layout | ④ 미션 레이아웃 컴포넌트 | .claude/worktrees/track-layout (branch track-layout) | components/MissionConversationLayout.tsx (신규) |
+| agy-connquality | ⑤ 파이프라인 연결 품질 훅 | .claude/worktrees/track-connquality (branch track-connquality) | hooks/usePipelineConnectionQuality.ts (신규) |
+| agy-retention | ② 리텐션 D3/D14/D30+CSV 내보내기 | .claude/worktrees/track-retention (branch track-retention) | app/admin/retention/page.tsx, app/api/admin/retention/route.ts, app/api/admin/retention/export/route.ts (신규) |
+
+파일 소유권: app/child/missions/page.tsx는 agy-mission-personalize만 수정한다.
+layout/connquality 트랙은 새 독립 파일만 만들고 missions/page.tsx에 아직 연결하지
+않는다(연결은 트랙①이 완료된 뒤 Claude가 직접 통합). retention 트랙은 완전히 다른
+파일 집합이라 충돌 없음.
+
+**신규 발견(이번 라운드)**: 실제 운영 MissionInner는 D/F 테스트 화면이 쓰는
+`answer-lean`/`reaction-lean`이 아니라 구버전 `/api/mission/answer`+`/api/mission/respond`를
+쓰고 있었다 — `respond`의 15자 제한이 비현실적으로 타이트해 거의 매 턴 "그렇구나!"로
+폴백(김서아·김서현 실제 세션에서 100% 재현 확인). 재접속 시 같은 질문이 반복 출제되는
+버그도 같은 파일에서 확인(`askedIndexRef` 재마운트 시 초기화). agy-mission-personalize가
+이 두 가지를 함께 수정 중.
+
+⑥ 이름 요구사항 관련 추가 확인: 이번 라운드 지시에서 "김서아=서아야·김서현=서현아"
+호칭이 재확인됨 — 이미 배포된 toKoreanVocative()가 정확히 이 결과를 내는지(받침
+없는 "서아"→서아+야, 받침 없는 "서현"→서현+아... 실제로 "서현"은 받침 없는
+음절로 끝나 "서현아"가 맞는지 재확인 필요, "서아"도 마찬가지) 병렬 트랙 완료 후 직접
+재확인 예정.
+
+⑧ 퀴즈왕 마스터: 여전히 이 저장소·접근 가능한 서버 어디에도 관련 코드/스펙 없음(재확인).
+착수하려면 대표님이 위치를 알려주셔야 한다 — MBTI처럼 외부 앱 연동으로 추정되나 확정
+불가.
+
+---
 마지막 갱신: 2026-07-24 (Claude, 이 세션). Codex 사용량 제한으로 검증은 Claude가
 직접 diff 검토로 대체 중.
