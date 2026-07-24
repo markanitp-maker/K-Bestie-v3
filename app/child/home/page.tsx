@@ -48,6 +48,7 @@ const getFriendlyName = (fullName: string): string => {
 
 export default function ChildHomePage() {
   const [child, setChild] = useState<ChildInfo | null>(null);
+  const [goldKeyBalance, setGoldKeyBalance] = useState<number | null>(null);
   const [noChild, setNoChild] = useState(false);
   const [loading, setLoading] = useState(true);
   // A~F 대화방식 테스트 진입 버튼은 테스트 계정(is_test_account=true)에만 노출.
@@ -95,6 +96,14 @@ export default function ChildHomePage() {
         setLoading(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (!child?.id) return;
+    fetch(`/api/goldkey/balance?childId=${child.id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) setGoldKeyBalance(data.balance); })
+      .catch(() => {});
+  }, [child?.id]);
 
   useEffect(() => {
     // 테스트 계정 여부 서버 재검증(일반 계정은 403 → 버튼 미노출).
@@ -201,7 +210,12 @@ export default function ChildHomePage() {
                 </div>
                 <div className="flex-1 text-left">
                   <p className="text-white font-bold text-base">{card.title}</p>
-                  <p className="text-white/85 text-xs mt-0.5">{card.desc}</p>
+                  <p className="text-white/85 text-xs mt-0.5">
+                    {card.desc}
+                    {card.href === "/child/play" && goldKeyBalance !== null && (
+                      <span className="ml-1.5 font-bold">· 🔑 {goldKeyBalance}개 보유</span>
+                    )}
+                  </p>
                 </div>
                 <span className="text-white text-lg">→</span>
               </Link>

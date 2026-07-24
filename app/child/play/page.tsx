@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
@@ -181,6 +181,17 @@ function MbtiGameScreen({
 export default function ChildPlayPage() {
   const router = useRouter();
   const [childId, setChildId] = useState<string | null>(null);
+  const [goldKeyBalance, setGoldKeyBalance] = useState<number | null>(null);
+
+  const refetchBalance = useCallback(async (cid: string) => {
+    try {
+      const res = await fetch(`/api/goldkey/balance?childId=${cid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setGoldKeyBalance(data.balance);
+      }
+    } catch {}
+  }, []);
 
   // States for flows
   const [selectedGame, setSelectedGame] = useState<typeof GAMES[0] | null>(null);
@@ -192,6 +203,7 @@ export default function ChildPlayPage() {
   
   const [showFinalConfirm, setShowFinalConfirm] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
+  const [showInsufficientModal, setShowInsufficientModal] = useState(false);
 
   const [showGameScreen, setShowGameScreen] = useState(false);
 
@@ -204,6 +216,7 @@ export default function ChildPlayPage() {
     const id = localStorage.getItem("k_child_id");
     if (id) {
       setChildId(id);
+      refetchBalance(id);
     } else {
       fetch("/api/child/me")
         .then(r => r.ok ? r.json() : null)
@@ -211,11 +224,12 @@ export default function ChildPlayPage() {
           if (active && data?.id) {
             setChildId(data.id);
             localStorage.setItem("k_child_id", data.id);
+            refetchBalance(data.id);
           }
         });
     }
     return () => { active = false; };
-  }, []);
+  }, [refetchBalance]);
 
   useEffect(() => {
     let active = true;
@@ -225,11 +239,12 @@ export default function ChildPlayPage() {
         .then(data => {
           if (active && data?.notification) {
             alert(`정상적으로 시작되지 않아 황금열쇠를 ${data.notification.refunded_quantity}개 되돌렸어요.`);
+            refetchBalance(childId);
           }
         });
     }
     return () => { active = false; };
-  }, [childId]);
+  }, [childId, refetchBalance]);
 
   const handleGameClick = async (game: typeof GAMES[0]) => {
     if (!childId) {
@@ -271,14 +286,17 @@ export default function ChildPlayPage() {
         });
         
         if (res.status === 402) {
-          alert("황금열쇠가 부족합니다.");
+          setIsStarting(false);
           setShowActionModal(false);
+          setShowInsufficientModal(true);
+          return;
         } else if (res.ok) {
           const data = await res.json();
           setMbtiSessionInfo({ sessionId: data.session_id, startMode: data.start_mode, expiresAt: data.expires_at });
           setShowActionModal(false);
           setShowGameScreen(true);
           mbtiIdemKeyRef.current = null;
+          refetchBalance(childId);
         } else {
           alert("놀이 예약에 실패했습니다.");
         }
@@ -292,8 +310,10 @@ export default function ChildPlayPage() {
         if (res.status === 409) {
           setShowFinalConfirm(true);
         } else if (res.status === 402) {
-          alert("황금열쇠가 부족합니다.");
+          setIsStarting(false);
           setShowActionModal(false);
+          setShowInsufficientModal(true);
+          return;
         } else if (res.ok) {
           const { reservation_id } = await res.json();
           const startRes = await fetch("/api/play/start", {
@@ -304,6 +324,7 @@ export default function ChildPlayPage() {
           if (startRes.ok) {
             setShowActionModal(false);
             setShowGameScreen(true);
+            refetchBalance(childId);
           } else {
             alert("놀이 세션 시작에 실패했습니다.");
           }
@@ -334,6 +355,7 @@ export default function ChildPlayPage() {
           setShowActionModal(false);
           setShowGameScreen(true);
           mbtiIdemKeyRef.current = null;
+          refetchBalance(childId);
         } else {
           alert("이어하기 처리에 실패했습니다.");
         }
@@ -361,6 +383,7 @@ export default function ChildPlayPage() {
         setShowFinalConfirm(false);
         setShowActionModal(false);
         setShowGameScreen(true);
+        refetchBalance(childId);
       } else {
         alert("초기화에 실패했습니다. 기존 상태가 유지됩니다.");
         setShowFinalConfirm(false);
@@ -378,10 +401,16 @@ export default function ChildPlayPage() {
       <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "#fafaf8" }}>
         
         {/* 헤더 */}
-        <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2 z-10">
+        <div className="shrink-0 relative flex items-center justify-center px-4 pt-4 pb-2 z-10">
           <Link href="/child/home" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
             케이와 놀이
           </Link>
+          <div
+            className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white shadow-sm rounded-full px-3 py-1 text-xs font-bold"
+            style={{ color: "#1a6b5a" }}
+          >
+            🔑 {goldKeyBalance ?? "-"}개 보유
+          </div>
         </div>
 
         {/* 놀이 목록 */}
@@ -399,7 +428,7 @@ export default function ChildPlayPage() {
                 style={{ background: game.bg }}
               >
                 <div className="absolute top-2 right-3 bg-black/20 text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  🔑 {game.keys}
+                  🔑 필요 {game.keys}
                 </div>
                 <div
                   className="w-14 h-14 mt-3 rounded-2xl flex items-center justify-center text-3xl"
@@ -416,7 +445,7 @@ export default function ChildPlayPage() {
         <RealChildNav active="놀이" />
 
         {/* 1. 이어하기/시작하기 액션 모달 */}
-        {showActionModal && selectedGame && !showFinalConfirm && !showGameScreen && (
+        {showActionModal && selectedGame && !showFinalConfirm && !showGameScreen && !showInsufficientModal && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-40 p-5">
             <div className="bg-white rounded-[28px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-200">
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl mb-4" style={{ background: `${selectedGame.bg}20` }}>
@@ -469,6 +498,26 @@ export default function ChildPlayPage() {
           </div>
         )}
 
+        {/* 1-1. 황금열쇠 부족 모달 */}
+        {showInsufficientModal && selectedGame && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-40 p-5">
+            <div className="bg-white rounded-[28px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-200">
+              <div className="text-4xl mb-3">🔑</div>
+              <p className="font-bold text-gray-800 text-lg mb-2">황금열쇠가 부족해요</p>
+              <p className="text-gray-600 text-sm mb-6">
+                현재 {goldKeyBalance ?? 0}개 · 필요 {selectedGame.keys}개 · {Math.max(0, selectedGame.keys - (goldKeyBalance ?? 0))}개 부족
+              </p>
+              <button
+                onClick={() => setShowInsufficientModal(false)}
+                className="w-full py-3.5 rounded-2xl text-white font-bold shadow-md active:scale-95 transition-transform"
+                style={{ background: selectedGame.bg }}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 2. 기존 놀이 초기화 확인 모달 (409 에러 시) */}
         {showFinalConfirm && selectedGame && !showGameScreen && (
           <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50 p-5">
@@ -510,6 +559,7 @@ export default function ChildPlayPage() {
               onComplete={() => {
                 setShowGameScreen(false);
                 setMbtiSessionInfo(null);
+                if (childId) refetchBalance(childId);
               }} 
             />
           ) : (
