@@ -1593,6 +1593,19 @@ function MissionInner() {
       return;
     }
 
+    // Live 모드에서 handleTurnComplete의 재진입 가드(turnPhase==='child_listening')가
+    // 아이 답변을 받아들이려면, 케이가 말하는 동안 turnPhase가 반드시 "k_speaking"을
+    // 거쳐야 onAudioQueueDrained가 "child_listening"으로 전환해준다(handleTurnComplete
+    // 내부의 후속 질문 호출부, 약 820번째 줄과 동일한 패턴). 이 effect는 세션당 최초
+    // 1회(첫 질문/인사) 질문을 발화하는 유일한 지점인데 이 설정이 빠져 있어서, turnPhase가
+    // 기본값 "idle"에 계속 머무르고 — 케이가 자연스럽게 대화를 이어가는 것처럼 보여도
+    // 첫 질문에 대한 아이의 답변이 재진입 가드에서 조용히 폐기돼(saveMessage/
+    // /api/mission/answer 호출 전에 return) 진행률이 전혀 오르지 않는 버그였다
+    // (2026-07-25 Dev 실환경 진단 로그로 재현·확정). 후속 질문 경로와 동일하게 여기서도
+    // 미리 k_speaking으로 전환한다.
+    if (isLiveModeRef.current) {
+      setTurnPhase("k_speaking");
+    }
     askQuestion(currentIndexRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice.status, missionState, askQuestion]);
