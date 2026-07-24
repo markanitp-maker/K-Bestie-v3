@@ -141,7 +141,19 @@ function MbtiGameScreen({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
         });
-      } else if (isMbtiCloseRequest(data) || isMbtiCompleted(data)) {
+      } else if (isMbtiCompleted(data)) {
+        fetch("/api/play/callback/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            child_id: childId,
+            play_session_id: sessionInfo.sessionId,
+            result_type: data.resultType,
+          }),
+        }).catch(() => {});
+        if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
+        onComplete();
+      } else if (isMbtiCloseRequest(data)) {
         if (initTimeoutRef.current) clearTimeout(initTimeoutRef.current);
         onComplete();
       }
