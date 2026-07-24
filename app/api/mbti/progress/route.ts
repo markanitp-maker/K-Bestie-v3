@@ -13,11 +13,21 @@
  * progress_state.mbti 네임스페이스 아래에만 쓴다 — 루트의 progressPercent(범용 놀이
  * 대시보드/자동환불 판단용, app/api/play/progress/route.ts가 다른 놀이 타입에도
  * 동일하게 쓰는 필드)와 충돌하지 않도록 병합 저장한다.
+ *
+ * 세션 검증(lib/play/sessionAuth)·네임스페이스 조립·버전 CAS 저장
+ * (lib/play/progressState)은 놀이 공통 인프라(2026-07-25 리팩터링)로 추출됐다 —
+ * 신규 놀이 타입도 이 두 모듈만 재사용하면 동일한 진행 저장 라우트를 만들 수 있다.
  */
 
 import { NextResponse } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/server";
+import { loadPlaySession } from "@/lib/play/sessionAuth";
+import {
+  buildProgressState,
+  readNamespace,
+  saveProgressWithVersionCas,
+} from "@/lib/play/progressState";
 import {
   parseMbtiAnswers,
   parseMbtiProgressState,
@@ -28,6 +38,7 @@ import {
 
 export const runtime = "nodejs";
 
+const PLAY_TYPE = "mbti";
 const MBTI_TOTAL_QUESTIONS = 16;
 
 interface RawSaveProgressRequestBody {
@@ -71,60 +82,41 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const service = createServiceClient();
 
-  const { data: sessionRow, error: sessionError } = await service
-    .from("k_play_sessions")
-    .select("id, child_id, status, progress_state, resume_expires_at")
-    .eq("id", sessionId)
-    .eq("play_type", "mbti")
-    .maybeSingle();
-
-  if (sessionError) {
-    console.error("[POST /api/mbti/progress] session lookup failed:", sessionError);
-    return errorResponse(500, {
-      reason: "internal_error",
-      message: "진행 저장 처리 중 오류가 발생했습니다.",
-    });
+  const validity = await loadPlaySession(service, sessionId, PLAY_TYPE);
+  if (!validity.valid) {
+    switch (validity.reason) {
+      case "lookup_error":
+        return errorResponse(500, {
+          reason: "internal_error",
+          message: "진행 저장 처리 중 오류가 발생했습니다.",
+        });
+      case "not_found":
+        return errorResponse(404, {
+          reason: "session_not_found",
+          message: "세션을 찾을 수 없습니다.",
+        });
+      case "expired":
+        return errorResponse(409, {
+          reason: "session_not_in_progress",
+          message: "만료된 세션에는 진행 상태를 저장할 수 없습니다.",
+        });
+      case "not_in_progress":
+        return errorResponse(409, {
+          reason: "session_not_in_progress",
+          message: "이미 종료된 세션에는 진행 상태를 저장할 수 없습니다.",
+        });
+      case "forbidden":
+        // 이 라우트는 expectedChildId를 넘기지 않으므로 이론상 도달하지 않는다(방어적 처리).
+        return errorResponse(500, {
+          reason: "internal_error",
+          message: "진행 저장 처리 중 오류가 발생했습니다.",
+        });
+    }
   }
 
-  if (!sessionRow) {
-    return errorResponse(404, {
-      reason: "session_not_found",
-      message: "세션을 찾을 수 없습니다.",
-    });
-  }
-
-  // 6시간 이어하기 창(resume_expires_at) 경과 시 진행 저장 대상이 아니다.
-  const resumeExpiresAt = sessionRow.resume_expires_at as string | null;
-  if (!resumeExpiresAt || new Date(resumeExpiresAt).getTime() <= Date.now()) {
-    return errorResponse(409, {
-      reason: "session_not_in_progress",
-      message: "만료된 세션에는 진행 상태를 저장할 수 없습니다.",
-    });
-  }
-
-  if (sessionRow.status !== "in_progress") {
-    return errorResponse(409, {
-      reason: "session_not_in_progress",
-      message: "이미 종료된 세션에는 진행 상태를 저장할 수 없습니다.",
-    });
-  }
-
-  const existingProgressState =
-    typeof sessionRow.progress_state === "object" && sessionRow.progress_state !== null
-      ? (sessionRow.progress_state as Record<string, unknown>)
-      : {};
-
-  const storedProgress = parseMbtiProgressState(existingProgressState.mbti);
-  const storedVersion = storedProgress?.progressVersion ?? 0;
-
-  // 버전 가드 — 오래된(더 작거나 같은) 버전의 요청은 최신 진행 상태를 절대 덮어쓰지 못한다.
-  if (progressVersion <= storedVersion) {
-    const response: SaveMbtiProgressResponse = {
-      applied: false,
-      reason: "stale_progress_version",
-    };
-    return NextResponse.json(response, { status: 200 });
-  }
+  const sessionRow = validity.session;
+  const storedProgress = parseMbtiProgressState(readNamespace(sessionRow.progress_state, PLAY_TYPE));
+  const storedVersion = storedProgress?.progressVersion ?? null;
 
   const nextMbtiState: MbtiProgressState = {
     questionIndex,
@@ -132,40 +124,28 @@ export async function POST(request: Request): Promise<NextResponse> {
     progressVersion,
     savedAt: new Date().toISOString(),
   };
-
-  const nextProgressState = {
-    ...existingProgressState,
-    mbti: nextMbtiState,
+  const nextProgressState = buildProgressState(sessionRow.progress_state, PLAY_TYPE, { ...nextMbtiState }, {
     progressPercent: Math.round((answers.length / MBTI_TOTAL_QUESTIONS) * 100),
-  };
+  });
 
-  // 조건부(CAS) UPDATE — 조회와 쓰기 사이 경쟁을 막기 위해 이전 상태 일치 조건을 WHERE에 건다.
-  let updateQuery = service
-    .from("k_play_sessions")
-    .update({ progress_state: nextProgressState })
-    .eq("id", sessionId)
-    .eq("status", "in_progress");
+  const result = await saveProgressWithVersionCas(
+    service,
+    sessionId,
+    PLAY_TYPE,
+    storedVersion,
+    progressVersion,
+    nextProgressState,
+  );
 
-  updateQuery =
-    storedProgress === null
-      ? updateQuery.is("progress_state->mbti", null)
-      : updateQuery.eq("progress_state->mbti->>progressVersion", String(storedVersion));
-
-  const { data: updatedRows, error: updateError } = await updateQuery.select("id");
-
-  if (updateError) {
-    console.error("[POST /api/mbti/progress] progress update failed:", updateError);
-    return errorResponse(500, {
-      reason: "internal_error",
-      message: "진행 저장 처리 중 오류가 발생했습니다.",
-    });
-  }
-
-  if (!updatedRows || updatedRows.length === 0) {
-    const response: SaveMbtiProgressResponse = {
-      applied: false,
-      reason: "progress_version_conflict",
-    };
+  if (!result.applied) {
+    if (result.reason === "internal_error") {
+      console.error("[POST /api/mbti/progress] progress update failed:", result.error);
+      return errorResponse(500, {
+        reason: "internal_error",
+        message: "진행 저장 처리 중 오류가 발생했습니다.",
+      });
+    }
+    const response: SaveMbtiProgressResponse = { applied: false, reason: result.reason };
     return NextResponse.json(response, { status: 200 });
   }
 
