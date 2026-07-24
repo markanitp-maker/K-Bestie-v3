@@ -207,6 +207,12 @@ function MissionInner() {
   const reactionAbortControllerRef = useRef<AbortController | null>(null);
   const kSpeakingSafetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastKnownTurnIdRef = useRef<string | null>(null);
+  // STT가 빈 텍스트를 반환한 연속 횟수 - 배경소음/짧은 헛기침 등으로 인한 1회성 인식 실패를
+  // "대화가 끊겼다"는 오해성 경고로 즉시 처리하지 않기 위한 허용 카운터. 첫 실패는 조용히
+  // 마이크만 다시 연다(재도전 1회 허용과 동일한 원칙); 같은 턴에서 연속 2회째 실패해야만
+  // 사용자에게 안내하고 상태를 정리한다. 실제 답변이 성공하면(onSttResult success) 0으로
+  // 리셋된다.
+  const emptySttStreakRef = useRef(0);
 
   const resetToIdle = useCallback((fallbackMessage?: string) => {
     answerEpochRef.current += 1;
@@ -850,12 +856,37 @@ function MissionInner() {
     onTurnComplete: handleTurnComplete, 
     getSessionId: () => sessionIdRef.current,
     onEmptyAudio: () => {
-      if (!isLiveModeRef.current) resetToIdle("지금 대화가 잠시 끊겼나봐. 다시 한번 말해줄래?");
+      if (isLiveModeRef.current) return;
+      emptySttStreakRef.current += 1;
+      if (emptySttStreakRef.current < 2) {
+        // 배경소음/짧은 헛기침 등 1회성 인식 실패 - 대화를 끊지 않고 조용히 마이크만 다시 연다.
+        // 수동 모드에서 답변 제출 시 걸어둔 10초 STT 워치독(sttTimeoutRef)이 이 조용한
+        // 재시도로는 자연히 해제되지 않으므로(resetToIdle/onTurnComplete 어느 쪽도 타지
+        // 않음) 여기서 명시적으로 정리한다 - 안 그러면 10초 뒤 엉뚱하게 "서버 연결이
+        // 불안정해요" 워치독 메시지가 뒤늦게 튀어나온다(claude-review 지적, 실제 회귀).
+        if (sttTimeoutRef.current) { clearTimeout(sttTimeoutRef.current); sttTimeoutRef.current = null; }
+        if (isAutoRef.current && missionStateRef.current === "active") {
+          sttSetMicEnabledRef.current?.(true);
+        }
+        return;
+      }
+      resetToIdle("케이가 잘 못 들었어. 다시 한번 말해줄래?");
     },
     onSttFailed: (reason) => {
-      resetToIdle("지금 대화가 잠시 끊겼나봐요. 다시 한번 말해줄래?");
+      if (isLiveModeRef.current) return;
+      emptySttStreakRef.current += 1;
+      if (emptySttStreakRef.current < 2) {
+        // 위 onEmptyAudio와 동일한 이유로 수동 모드 워치독을 여기서도 정리한다.
+        if (sttTimeoutRef.current) { clearTimeout(sttTimeoutRef.current); sttTimeoutRef.current = null; }
+        if (isAutoRef.current && missionStateRef.current === "active") {
+          sttSetMicEnabledRef.current?.(true);
+        }
+        return;
+      }
+      resetToIdle("케이가 잘 못 들었어. 다시 한번 말해줄래?");
     },
     onSttResult: (success, latencyMs) => {
+      if (success) emptySttStreakRef.current = 0;
       if (!isLiveModeRef.current) recordStageResult("stt", success, latencyMs);
     },
     onTtsResult: (success, latencyMs) => {

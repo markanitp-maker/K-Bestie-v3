@@ -38,12 +38,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // 단일 원자적 UPDATE: read-modify-write 없이 progress_state 를 { progressPercent } 로만 저장한다.
+  // progress_state 는 이 놀이(MBTI 등)가 자체적으로 questionIndex/answers/progressVersion/
+  // savedAt 같은 상세 진행 상태를 이미 저장해 두는 JSONB 컬럼이다 - { progressPercent }만
+  // 통째로 덮어쓰면(과거 버그) 그 상세 진행 상태가 사라져서, 이후 그 놀이 앱 자신의 진행
+  // 저장이 CAS 버전 비교에 실패해 매번 progress_version_conflict로 무시되는 2차 문제를
+  // 일으켰다. progressPercent 필드만 병합(merge)해 얹고 나머지 필드는 보존한다.
+  const { data: existingSession, error: readErr } = await service
+    .from("k_play_sessions")
+    .select("progress_state")
+    .eq("id", play_session_id)
+    .eq("child_id", child_id)
+    .maybeSingle();
+
+  if (readErr) {
+    console.error("[play/progress] read error:", readErr);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+  if (!existingSession) {
+    return NextResponse.json({ error: "Session not found or forbidden" }, { status: 403 });
+  }
+
+  const existingProgressState =
+    typeof existingSession.progress_state === "object" && existingSession.progress_state !== null
+      ? (existingSession.progress_state as Record<string, unknown>)
+      : {};
+  const mergedProgressState = { ...existingProgressState, progressPercent: clamped };
+
   // 세션 소유(id + child_id)를 WHERE 로 강제하므로 위조 세션은 0행 갱신되어 403 처리된다.
-  // 진행률 백분율 외 민감정보는 저장하지 않는다.
   const { data: updated, error: updErr } = await service
     .from("k_play_sessions")
-    .update({ progress_state: { progressPercent: clamped } })
+    .update({ progress_state: mergedProgressState })
     .eq("id", play_session_id)
     .eq("child_id", child_id)
     .select("id");
