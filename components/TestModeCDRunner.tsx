@@ -67,6 +67,7 @@ export function TestModeCDRunner({ selectedMode }: { selectedMode: "C" | "D" }) 
 
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const nearBottomRef = useRef(true);
+  const prevSelectedModeRef = useRef(selectedMode);
 
   const { requestExit, ExitSheet, safeCleanup } = useTestSessionExit(useCallback(() => {
     try {
@@ -495,6 +496,13 @@ export function TestModeCDRunner({ selectedMode }: { selectedMode: "C" | "D" }) 
       void voiceRef.current?.speak(qs[idx]?.question_text ?? "");
     }
   }, []);
+
+  useEffect(() => {
+    if (prevSelectedModeRef.current !== selectedMode) {
+      prevSelectedModeRef.current = selectedMode;
+      void loadSession(false);
+    }
+  }, [selectedMode, loadSession]);
 
   useEffect(() => { void loadSession(false); }, [loadSession]);
 

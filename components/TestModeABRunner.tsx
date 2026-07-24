@@ -30,6 +30,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
   const [isAuto, setIsAuto] = useState(true);
   const isAutoRef = useRef(isAuto);
   isAutoRef.current = isAuto;
+  const prevSelectedModeRef = useRef(selectedMode);
 
   useScreenWakeLock(status === "ready" && !completed);
 
@@ -595,6 +596,13 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
   }, []);
 
   useEffect(() => { void loadSession(false); }, [loadSession]);
+
+  useEffect(() => {
+    if (prevSelectedModeRef.current !== selectedMode) {
+      prevSelectedModeRef.current = selectedMode;
+      void loadSession(false);
+    }
+  }, [selectedMode, loadSession]);
 
   const submitText = () => {
     const t = textInput.trim();
