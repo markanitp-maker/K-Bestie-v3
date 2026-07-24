@@ -56,5 +56,11 @@ k-bestie3-*.json
 # 테스트 계정 자격정보(로그인/비번) — 로컬 전용, 절대 커밋 금지
 scratch/
 
+# 작업 큐 처리 결과물(완료/실패 아카이브·로그·보류 기록) — 로컬 진행 상태, 커밋 안 함
+requests/_done/
+requests/_failed/
+requests/_log.md
+requests/_blocked.md
+
 
 .vercel
