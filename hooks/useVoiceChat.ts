@@ -515,6 +515,18 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     onTurnCompleteRef.current?.({ role: "k", text: trimmed });
   }, []);
 
+  /** 재생 중인 케이 음성을 즉시 중단한다(음성 끄기 토글 등에서 사용). 진행 중이던
+   *  speak() 호출의 후속 콜백은 epoch 불일치로 자동 무시된다. */
+  const stopSpeaking = useCallback(() => {
+    speakEpochRef.current += 1;
+    if (currentSourceRef.current) {
+      try { currentSourceRef.current.stop(); } catch { /* 이미 정지된 경우 무시 */ }
+      currentSourceRef.current = null;
+    }
+    speakingRef.current = false;
+    setIsSpeaking(false);
+  }, []);
+
   useEffect(() => {
     return () => teardown();
   }, []);
@@ -522,6 +534,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   return {
     status, error, transcript, interimChildText, isSpeaking, isResponding,
     startSession, stopSession, reset, getTranscript, getLastAsrConfidence, seedTranscript,
-    speak, respondText, sendTypedText, sayText, setMicEnabled, setInputMode, manualFinalize, cancelFinalize,
+    speak, respondText, sendTypedText, sayText, stopSpeaking, setMicEnabled, setInputMode, manualFinalize, cancelFinalize,
   };
 }

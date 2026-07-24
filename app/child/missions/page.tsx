@@ -555,7 +555,11 @@ function MissionInner() {
             }
             setTurnPhase("k_speaking");
             sttSetMicEnabledRef.current?.(false);
-            await sttTts.speak("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
+            if (kVoiceEnabledRef.current) {
+              await sttTts.speak("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
+            } else {
+              sttTts.sayText("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
+            }
             missionStateRef.current = "completed";
             setMissionState("completed");
             setCompleted(true);
@@ -763,10 +767,10 @@ function MissionInner() {
     onTurnComplete: handleTurnComplete, 
     getSessionId: () => sessionIdRef.current,
     onEmptyAudio: () => {
-      if (!isLiveModeRef.current) resetToIdle("잘 안 들렸어. 다시 말해줄래?");
+      if (!isLiveModeRef.current) resetToIdle("지금 대화가 잠시 끊겼나봐. 다시 한번 말해줄래?");
     },
     onSttFailed: (reason) => {
-      resetToIdle("잘 못 들었어요, 다시 말해줄래?");
+      resetToIdle("지금 대화가 잠시 끊겼나봐요. 다시 한번 말해줄래?");
     }
   });
   sttSetMicEnabledRef.current = sttTts.setMicEnabled;
@@ -845,7 +849,7 @@ function MissionInner() {
       if (turnPhaseRef.current === "k_speaking") return; // 이미 재질문 재생 중 — 중복 방지
       setTurnPhase("k_speaking");
       if (live.setKSpeechAllowed) live.setKSpeechAllowed(true);
-      live.speakAsK("잘 못 들었어. 다시 한번 말해줄래?");
+      live.speakAsK("지금 대화가 잠시 끊겼나봐. 다시 한번 말해줄래?");
     },
     onAudioLevelChange: (level) => {
       if (!buttonRef.current) return;
@@ -917,6 +921,21 @@ function MissionInner() {
   }
 
   const isLiveMode = voiceMode === "live";
+
+  const [kVoiceEnabled, setKVoiceEnabled] = useState(true);
+  const kVoiceEnabledRef = useRef(true);
+  kVoiceEnabledRef.current = kVoiceEnabled;
+
+  const toggleKVoice = useCallback(() => {
+    setKVoiceEnabled((prev) => {
+      const next = !prev;
+      if (!next) {
+        // 끄는 순간 재생 중이던 케이 음성을 즉시 중단 — 다음 응답부터 무음 텍스트로 진행.
+        sttTts.stopSpeaking();
+      }
+      return next;
+    });
+  }, [sttTts]);
 
   const voice = isLiveMode
     ? {
@@ -1069,9 +1088,11 @@ function MissionInner() {
     if (isLiveMode) {
       if (live.setKSpeechAllowed) live.setKSpeechAllowed(true);
       live.speakAsK(textToSpeak);
-    } else {
+    } else if (kVoiceEnabledRef.current) {
       const childTurnId = lastKnownTurnIdRef.current ?? undefined;
       void sttTts.speak(textToSpeak, undefined, childTurnId); // voiceName 생략 — 서버 기본값(ko-KR-Wavenet-A) 사용
+    } else {
+      sttTts.sayText(textToSpeak);
     }
   }, [isLiveMode, live, sttTts]);
   askQuestionRef.current = askQuestion;
@@ -1635,6 +1656,15 @@ function MissionInner() {
 
         <div className="flex justify-center items-center gap-4 mb-2 max-w-sm mx-auto">
           <KBestieMascotAnimation state="idle" size={96} />
+          {!isLiveMode && (
+            <button
+              onClick={toggleKVoice}
+              className="w-10 h-10 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer transition-transform active:scale-95"
+              aria-label={kVoiceEnabled ? "케이 음성 끄기" : "케이 음성 켜기"}
+            >
+              {kVoiceEnabled ? "🔊" : "🔇"}
+            </button>
+          )}
           {!isDone && (
             <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
           )}
