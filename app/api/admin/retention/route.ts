@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
   }
 
   const fetchFrom = new Date(from);
-  fetchFrom.setDate(fetchFrom.getDate() - 7); // For D7 retention calculation
+  fetchFrom.setDate(fetchFrom.getDate() - 30); // For D30 retention calculation
 
   const service = createServiceClient();
 
@@ -144,26 +144,47 @@ export async function GET(req: NextRequest) {
   }
 
   let possibleD1 = 0, retainedD1 = 0;
+  let possibleD3 = 0, retainedD3 = 0;
   let possibleD7 = 0, retainedD7 = 0;
+  let possibleD14 = 0, retainedD14 = 0;
+  let possibleD30 = 0, retainedD30 = 0;
 
   for (const dStr of periodDates) {
     const prev1Str = getOffsetDateStr(dStr, -1);
+    const prev3Str = getOffsetDateStr(dStr, -3);
     const prev7Str = getOffsetDateStr(dStr, -7);
+    const prev14Str = getOffsetDateStr(dStr, -14);
+    const prev30Str = getOffsetDateStr(dStr, -30);
 
     for (const days of activeDaysByChild.values()) {
       if (days.has(prev1Str)) {
         possibleD1++;
         if (days.has(dStr)) retainedD1++;
       }
+      if (days.has(prev3Str)) {
+        possibleD3++;
+        if (days.has(dStr)) retainedD3++;
+      }
       if (days.has(prev7Str)) {
         possibleD7++;
         if (days.has(dStr)) retainedD7++;
+      }
+      if (days.has(prev14Str)) {
+        possibleD14++;
+        if (days.has(dStr)) retainedD14++;
+      }
+      if (days.has(prev30Str)) {
+        possibleD30++;
+        if (days.has(dStr)) retainedD30++;
       }
     }
   }
 
   const d1RetentionRate = possibleD1 > 0 ? retainedD1 / possibleD1 : 0;
+  const d3RetentionRate = possibleD3 > 0 ? retainedD3 / possibleD3 : 0;
   const d7RetentionRate = possibleD7 > 0 ? retainedD7 / possibleD7 : 0;
+  const d14RetentionRate = possibleD14 > 0 ? retainedD14 / possibleD14 : 0;
+  const d30RetentionRate = possibleD30 > 0 ? retainedD30 / possibleD30 : 0;
 
   // 3. 미션 완료율
   const currentMissionSessions = currentSessions.filter(s => s.session_type === "mission");
@@ -272,7 +293,10 @@ export async function GET(req: NextRequest) {
     avgTurnsPerSession,
     dailyGoalAchievementRate,
     d1RetentionRate,
+    d3RetentionRate,
     d7RetentionRate,
+    d14RetentionRate,
+    d30RetentionRate,
     perChildDaily,
   });
 }

@@ -21,7 +21,10 @@ interface RetentionData {
   avgTurnsPerSession: number;
   dailyGoalAchievementRate: number;
   d1RetentionRate: number;
+  d3RetentionRate: number;
   d7RetentionRate: number;
+  d14RetentionRate: number;
+  d30RetentionRate: number;
   perChildDaily: PerChildDaily[];
 }
 
@@ -86,25 +89,45 @@ export default function AdminRetentionPage() {
       </header>
 
       <main style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 20px" }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
-          {(["today", "7d", "month"] as Period[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 999,
-                border: period === p ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
-                background: period === p ? "var(--hb-primary)" : "white",
-                color: period === p ? "white" : "var(--hb-muted)",
-                fontSize: 14,
-                fontWeight: period === p ? 700 : 400,
-                cursor: "pointer",
-              }}
-            >
-              {p === "today" ? "오늘" : p === "7d" ? "최근 7일" : "이번 달"}
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 8, marginBottom: 24, justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            {(["today", "7d", "month"] as Period[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 999,
+                  border: period === p ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
+                  background: period === p ? "var(--hb-primary)" : "white",
+                  color: period === p ? "white" : "var(--hb-muted)",
+                  fontSize: 14,
+                  fontWeight: period === p ? 700 : 400,
+                  cursor: "pointer",
+                }}
+              >
+                {p === "today" ? "오늘" : p === "7d" ? "최근 7일" : "이번 달"}
+              </button>
+            ))}
+          </div>
+          <a
+            href={`/api/admin/retention/export?period=${period}`}
+            download
+            style={{
+              padding: "8px 16px",
+              borderRadius: 999,
+              background: "#1e1e2d",
+              color: "white",
+              fontSize: 14,
+              fontWeight: 700,
+              textDecoration: "none",
+              display: "flex",
+              alignItems: "center",
+              gap: 6
+            }}
+          >
+            CSV 다운로드
+          </a>
         </div>
 
         {error && (
@@ -124,7 +147,10 @@ export default function AdminRetentionPage() {
               <MetricCard label="평균 체류시간" value={formatDuration(data.avgSessionDurationSec)} sub="세션 1회당 평균" />
               <MetricCard label="대화 턴 수" value={`${data.avgTurnsPerSession.toFixed(1)}턴`} sub="세션 1회당 오가는 메시지 수" />
               <MetricCard label="D1 재방문율" value={pct(data.d1RetentionRate)} sub="전날 접속자 중 오늘 재접속한 비율" />
+              <MetricCard label="D3 재방문율" value={pct(data.d3RetentionRate)} sub="3일 전 접속자 중 오늘 재접속한 비율" />
               <MetricCard label="D7 재방문율" value={pct(data.d7RetentionRate)} sub="7일 전 접속자 중 오늘 재접속한 비율" />
+              <MetricCard label="D14 재방문율" value={pct(data.d14RetentionRate)} sub="14일 전 접속자 중 오늘 재접속한 비율" />
+              <MetricCard label="D30 재방문율" value={pct(data.d30RetentionRate)} sub="30일 전 접속자 중 오늘 재접속한 비율" />
             </div>
 
             <div style={{ fontSize: 16, fontWeight: 700, color: "#1e1e2d", marginBottom: 12 }}>아이별 접속 요약</div>
