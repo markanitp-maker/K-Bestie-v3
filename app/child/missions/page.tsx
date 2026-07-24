@@ -24,6 +24,7 @@ import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { toKoreanVocative } from "@/lib/utils/koreanName";
 import { usePipelineConnectionQuality } from "@/hooks/usePipelineConnectionQuality";
 import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndicator";
+import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -1683,6 +1684,22 @@ function MissionInner() {
   // completing 단계부터 이미 100%/완료 취급(마이크·입력 비활성화) — completed와의 차이는
   // "종료 발화가 아직 재생 중인지"뿐이라 화면 표시상 구분할 필요가 없다.
   const isDone = missionState !== "active" || completed;
+
+  let voiceState: VoiceConversationState = "idle";
+  if (isConnecting) {
+    voiceState = "connecting";
+  } else if (turnPhaseUi === "child_listening" || turnPhaseUi === "child_finalizing") {
+    voiceState = "listening";
+  } else if (turnPhaseUi === "waiting_k") {
+    voiceState = "thinking";
+  } else if (turnPhaseUi === "k_speaking") {
+    voiceState = "speaking";
+  } else if (turnPhaseUi === "recovering") {
+    voiceState = "idle";
+  }
+  if (isDone) {
+    voiceState = "idle";
+  }
   const missionPercent = progressPercent;
   // Live 모드 수동 버튼 전용 — 답변 판정/다음 질문 생성 중(turnPhaseUi !== "idle")엔
   // canStartRecording 가드가 탭을 무시하므로, 버튼을 "생각 중" 모양으로 바꿔 침묵 무시와
@@ -1748,7 +1765,12 @@ function MissionInner() {
                 }
               : null
           }
-          mascotSlot={<KBestieMascotAnimation state="idle" size={72} />}
+          mascotSlot={
+            <div className="relative inline-flex items-center justify-center">
+              <KBestieMascotAnimation state={turnPhaseUi === "k_speaking" ? "talking" : "idle"} size={72} />
+              <VoiceConversationStateBadge state={voiceState} />
+            </div>
+          }
           isListening={isRecording}
           micLevel={isRecording ? 0.6 : 0}
           headerExtraSlot={
