@@ -277,6 +277,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const closeReconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const stabilityResetTimerRef = useRef<NodeJS.Timeout | null>(null);
   const qualityRecomputeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tabHiddenAtRef = useRef<number | null>(null);
 
   // ── 연결 품질 계측(실측치 기반, 가짜 신호 막대 아님) ──────────────────────
   // speakAsK/sendText/speakClosingLine이 응답을 기다리기 시작한 시각(watchdog가 걸리는
@@ -2303,10 +2304,38 @@ const incomingGenerationId = currentKGenerationIdRef.current;
   useEffect(() => {
     function handleVisibilityChange() {
       console.log(`${getLogPrefix()} 👁 visibility change:`, document.visibilityState, Date.now());
+      if (document.visibilityState === "hidden") {
+        tabHiddenAtRef.current = Date.now();
+        return;
+      }
+      const hiddenForMs = tabHiddenAtRef.current ? Date.now() - tabHiddenAtRef.current : 0;
+      tabHiddenAtRef.current = null;
       if (document.visibilityState === "visible" && statusRef.current === "live") {
         void ensureOutputAudioRunning();
         if (inputCtxRef.current && inputCtxRef.current.state !== "running") {
           inputCtxRef.current.resume().catch(() => {});
+        }
+        // 백그라운드 동안 AudioContext가 완전히 멈춰 있었다면 재생 종료(onended)/워치독
+        // 타이머가 전혀 발동하지 못해 kSpeakingRef가 true로 고착되고, 그 결과 VAD 마이크
+        // 게이트(isLiveActive = ... && !kSpeakingRef.current)가 영원히 닫힌 채로 남아
+        // 아이 발화를 전혀 감지하지 못하는 문제가 있다 — 일정 시간 이상 숨겨졌다가
+        // 돌아왔을 때만 강제로 재생 큐/발화 상태를 정리해 복구한다. 짧은 탭 전환까지
+        // 케이 음성을 끊으면 안 되므로 5초 미만이면 아무것도 하지 않는다.
+        if (hiddenForMs > 5000 && (kSpeakingRef.current || scheduledSourcesRef.current.length > 0)) {
+          console.warn(`${getLogPrefix()} ⚠️ 장시간 백그라운드(${hiddenForMs}ms) 복귀 — 고착된 재생 큐/발화 상태 강제 정리`);
+          stopAllScheduledSources();
+          maybeUnlockCutChildTurn();
+          vadStateRef.current = "idle";
+          isChildSpeakingRef.current = false;
+          candidateBufferRef.current = new Float32Array(0);
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
+          if (speechStartTimerRef.current) {
+            clearTimeout(speechStartTimerRef.current);
+            speechStartTimerRef.current = null;
+          }
         }
       }
     }
