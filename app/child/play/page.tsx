@@ -17,6 +17,30 @@ import {
   MbtiInitPayload
 } from "@/lib/play/protocol";
 
+// 실제 MBTI 앱 URL이 유효한지 판정 - mock/dev fixture로 보이는 호스트거나, 이 앱
+// 자기 자신의 origin이거나, 아예 안 정해져 있으면 전부 "사용 불가"로 취급한다.
+// 이 판정에 실패하면 절대 mock-mbti로 자동 폴백하지 않는다 - 사용자에게 "준비 중"만
+// 보여준다.
+function getRealMbtiUrl(): string | null {
+  const rawUrl = process.env.NEXT_PUBLIC_MBTI_APP_URL;
+  if (!rawUrl) return null;
+  try {
+    const parsed = new URL("/play/mbti", rawUrl);
+    const hostLower = parsed.host.toLowerCase();
+    const pathLower = parsed.pathname.toLowerCase();
+    if (hostLower.includes("mock") || pathLower.includes("mock") || hostLower.includes("test-fixture") || pathLower.includes("test-fixture")) {
+      return null;
+    }
+    if (typeof window !== "undefined" && parsed.origin === window.location.origin) {
+      // 이 앱 자기 자신을 가리키면 별도 MBTI 앱이 아니라 mock/자기참조 - 거부.
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 const GAMES = [
   { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "#e8845a", keys: 2 },
   { id: "quiz", icon: "🧠", title: "퀴즈 게임", bg: "#3b82f6", keys: 2 },
@@ -36,19 +60,19 @@ function MbtiGameScreen({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  let iframeSrc = "";
-  let MBTI_ORIGIN = "*";
+  const realMbtiUrl = getRealMbtiUrl();
+  const MBTI_ORIGIN = realMbtiUrl ? new URL(realMbtiUrl).origin : "*";
 
-  try {
-    const rawUrl = process.env.NEXT_PUBLIC_MBTI_APP_URL;
-    if (!rawUrl) throw new Error("No URL");
-    const parsed = new URL("/play/mbti", rawUrl);
-    iframeSrc = parsed.toString();
-    MBTI_ORIGIN = parsed.origin;
-  } catch (e) {
-    iframeSrc = typeof window !== "undefined" ? `${window.location.origin}/play/mock-mbti` : "";
-    MBTI_ORIGIN = typeof window !== "undefined" ? window.location.origin : "*";
-  }
+  useEffect(() => {
+    if (!realMbtiUrl) {
+      // 여기까지 왔다는 건 위 카드/handleGameClick 방어선이 뚫린 것 - 절대 mock으로
+      // 폴백하지 않고 즉시 종료한다(황금열쇠는 이미 handleStart 이전 단계에서
+      // 소비되지 않도록 막혀있어야 하지만, 혹시 세션이 만들어졌다면 화면만이라도
+      // 즉시 닫아 사용자가 mock을 보지 않게 한다).
+      onComplete();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -166,6 +190,10 @@ function MbtiGameScreen({
     };
   }, [childId, sessionInfo, MBTI_ORIGIN, onComplete]);
 
+  if (!realMbtiUrl) return null;
+
+  const iframeSrc = realMbtiUrl;
+
   return (
     <div className="absolute inset-0 bg-[#fafaf8] z-[60] flex flex-col animate-in fade-in duration-300">
       <iframe
@@ -247,6 +275,10 @@ export default function ChildPlayPage() {
   }, [childId, refetchBalance]);
 
   const handleGameClick = async (game: typeof GAMES[0]) => {
+    if (game.id === "mbti" && !getRealMbtiUrl()) {
+      alert("아직 준비 중인 놀이예요. 조금만 기다려주세요!");
+      return;
+    }
     if (!childId) {
       alert("로그인 정보가 필요합니다. 다시 로그인해주세요.");
       return;
@@ -420,25 +452,33 @@ export default function ChildPlayPage() {
           </p>
 
           <div className="grid grid-cols-2 gap-4 pb-20">
-            {GAMES.map((game) => (
-              <div
-                key={game.id}
-                onClick={() => handleGameClick(game)}
-                className="flex flex-col items-center justify-center gap-3 rounded-3xl px-3 py-6 shadow-md cursor-pointer select-none active:scale-95 transition-transform relative overflow-hidden"
-                style={{ background: game.bg }}
-              >
-                <div className="absolute top-2 right-3 bg-black/20 text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  🔑 필요 {game.keys}
-                </div>
+            {GAMES.map((game) => {
+              const mbtiBlocked = game.id === "mbti" && !getRealMbtiUrl();
+              return (
                 <div
-                  className="w-14 h-14 mt-3 rounded-2xl flex items-center justify-center text-3xl"
-                  style={{ background: "rgba(255,255,255,0.25)" }}
+                  key={game.id}
+                  onClick={() => { if (!mbtiBlocked) handleGameClick(game); }}
+                  className={`flex flex-col items-center justify-center gap-3 rounded-3xl px-3 py-6 shadow-md select-none active:scale-95 transition-transform relative overflow-hidden ${mbtiBlocked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                  style={{ background: game.bg }}
                 >
-                  {game.icon}
+                  {mbtiBlocked && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-10">
+                      <span className="text-white text-xs font-bold bg-black/40 px-2 py-1 rounded-full">준비 중인 놀이예요</span>
+                    </div>
+                  )}
+                  <div className="absolute top-2 right-3 bg-black/20 text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    🔑 필요 {game.keys}
+                  </div>
+                  <div
+                    className="w-14 h-14 mt-3 rounded-2xl flex items-center justify-center text-3xl"
+                    style={{ background: "rgba(255,255,255,0.25)" }}
+                  >
+                    {game.icon}
+                  </div>
+                  <p className="text-white font-bold text-[13px] text-center tracking-tight">{game.title}</p>
                 </div>
-                <p className="text-white font-bold text-[13px] text-center tracking-tight">{game.title}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
