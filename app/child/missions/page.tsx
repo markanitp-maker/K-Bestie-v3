@@ -164,6 +164,7 @@ function MissionInner() {
   // 이게 없으면 이전 턴이 currentIndexRef.current를 아직 갱신하기 전에 새 턴(특히 텍스트
   // 입력을 빠르게 연속 전송하는 경우)이 들어와 매번 같은 질문이 중복 제출된다.
   const answerInFlightRef = useRef(false);
+  const [isProcessingAnswer, setIsProcessingAnswer] = useState(false);
   // 유효한 아이 답변 턴마다 1씩 증가 — /api/mission/answer, /api/mission/respond에 함께
   // 실어 보내 서버가 같은 턴에 대한 중복 요청을 식별할 수 있게 하는 idempotency key 재료.
   const childTurnSeqRef = useRef(0);
@@ -218,6 +219,7 @@ function MissionInner() {
       sttCancelFinalizeRef.current?.();
     }
     answerInFlightRef.current = false;
+    setIsProcessingAnswer(false);
     setTurnPhase("child_listening");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
@@ -409,8 +411,14 @@ function MissionInner() {
     // 이번 아이 답변 턴의 idempotency key 재료 — 서버가 같은 턴에 대한 중복 요청을
     // 식별할 수 있도록 /api/mission/answer, /api/mission/respond에 함께 실어 보낸다.
     const childTurnId = `${sid}:${question.id}:${++childTurnSeqRef.current}`;
+    if (answerInFlightRef.current) {
+      // 이미 처리 중인데 여기까지 온 경우(위 UI 잠금을 어떤 경로로든 우회한 경우) -
+      // 안전하게 폐기한다. 새 턴을 또 만들지 않는다.
+      return;
+    }
 
     answerInFlightRef.current = true;
+    setIsProcessingAnswer(true);
     console.error(`[Timing] (b) 서버 전송 (answer API 호출) - ${Date.now()}`);
     // 답변 처리 시작 — STT/TTS 자동 모드는 마이크가 계속 켜져 있으므로(케이 TTS 재생 중에만
     // speakingRef가 막아줌), classifyAnswer 대기 중(최대 10~32초) 아이가 다시 말하면 RMS
@@ -745,6 +753,7 @@ function MissionInner() {
       } finally {
         if (currentEpoch === answerEpochRef.current) {
           answerInFlightRef.current = false;
+          setIsProcessingAnswer(false);
           if (apiTimeoutRef.current) {
             clearTimeout(apiTimeoutRef.current);
             apiTimeoutRef.current = null;
@@ -1143,6 +1152,7 @@ function MissionInner() {
   }, [voice]);
 
   const handleSendText = useCallback(() => {
+    if (answerInFlightRef.current) return; // 처리 중엔 새 제출을 아예 막는다
     const text = textInput.trim();
     if (!text) return;
     setTextInput("");
@@ -1375,6 +1385,7 @@ function MissionInner() {
   }, [live, sttTts, isLiveMode, setTurnPhase, resetToIdle]);
 
   const handleCentralButtonClick = useCallback(() => {
+    if (answerInFlightRef.current && !isRecording) return; // 이전 답변 처리 중엔 새 녹음 시작 차단(단, 이미 녹음 중이던 걸 끝내는 동작은 막지 않음)
     if (!isRecordingRef.current) {
       // 케이가 아직 말하는 중이거나(TTS 재생/Live 발화) 직전 답변이 아직 서버에서 처리
       // 중이면(classifyAnswer 등, 최대 10~32초) 새 녹음을 시작할 수 없다 — 이 가드가 없으면
@@ -1782,13 +1793,13 @@ function MissionInner() {
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
                 }}
                 placeholder="케이에게 답해봐..."
-                disabled={missionDoneNow}
+                disabled={missionDoneNow || isProcessingAnswer}
                 className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
                 maxLength={200}
               />
               <button
                 onClick={handleSendText}
-                disabled={missionDoneNow || !textInput.trim()}
+                disabled={missionDoneNow || !textInput.trim() || isProcessingAnswer}
                 className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
                 style={{ background: "#e8845a" }}
                 aria-label="전송"
@@ -2094,13 +2105,13 @@ function MissionInner() {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
             }}
             placeholder="케이에게 답해봐..."
-            disabled={isDone}
+            disabled={isDone || isProcessingAnswer}
             className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
             maxLength={200}
           />
           <button
             onClick={handleSendText}
-            disabled={isDone || !textInput.trim()}
+            disabled={isDone || !textInput.trim() || isProcessingAnswer}
             className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
             style={{ background: "#e8845a" }}
             aria-label="전송"
