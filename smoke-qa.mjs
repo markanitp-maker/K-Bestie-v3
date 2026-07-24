@@ -40,34 +40,61 @@ async function ensureTextMode(page) {
   await page.waitForSelector('input[placeholder="케이에게 답해봐..."]', { timeout: 15000 });
 }
 
-function bubbleTexts(page) {
+const STATIC_UI_LINES = new Set([
+  "태블릿", "스마트폰", "9:41", "← 뒤로가기", "내친구 케이", "🔊", "🔇", "자동", "수동",
+  "대기 중...", "듣고 있어요", "💬", "✕", "🎤", "➤",
+  "기기 설정으로 화면이 꺼질 수 있어요",
+]);
+
+function isStaticUiLine(line) {
+  if (STATIC_UI_LINES.has(line)) return true;
+  if (/^\d+\/\d+$/.test(line)) return true; // "3/10" 진행률
+  return false;
+}
+
+async function rawLineCount(page) {
   return page.evaluate(() => {
-    const nodes = Array.from(document.querySelectorAll('div.flex-1.min-h-0 > div'));
-    return nodes.map((n) => n.textContent?.trim() ?? "");
+    const text = document.body.innerText || "";
+    return text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0).length;
   });
 }
 
-async function sendAndCheck(page, c, bubblesBeforeLen) {
+function filterDynamic(lines) {
+  return lines.filter((l) => !isStaticUiLine(l));
+}
+
+async function bubbleTexts(page) {
+  const lines = await page.evaluate(() => {
+    const text = document.body.innerText || "";
+    return text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  });
+  return filterDynamic(lines);
+}
+
+async function sendAndCheck(page, c, rawBeforeCount) {
   await page.evaluate(() => { window.__ttsStartTimes = []; });
   await page.fill('input[placeholder="케이에게 답해봐..."]', c.answer);
   await page.click('button[aria-label="전송"]');
 
   await page.waitForFunction(
-    (n) => document.querySelectorAll('div.flex-1.min-h-0 > div').length > n,
-    bubblesBeforeLen,
+    (n) => {
+      const text = document.body.innerText || "";
+      return text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0).length > n;
+    },
+    rawBeforeCount,
     { timeout: 20000 }
   ).catch(() => {});
   await page.waitForTimeout(3000);
 
-  const after = await bubbleTexts(page);
-  const newBubbles = after.slice(bubblesBeforeLen);
-  const childBubbleLeak = newBubbles.some((t) => t === c.answer);
-  const latestK = newBubbles[newBubbles.length - 1] ?? "(none)";
+  const afterDynamic = await bubbleTexts(page);
+  const rawAfterCount = await rawLineCount(page);
+  const childBubbleLeak = afterDynamic.some((t) => t === c.answer);
+  const latestK = afterDynamic[afterDynamic.length - 1] ?? "(none)";
   const hasKeyword = c.key.some((k) => latestK.includes(k));
   const isGenericOnly = GENERIC_ONLY.some((g) => latestK.trim() === g);
   const ttsPlayed = (await page.evaluate(() => window.__ttsStartTimes.length)) > 0;
 
-  return { answer: c.answer, response: latestK, hasKeyword, isGenericOnly, childBubbleLeak, ttsPlayed, bubblesAfter: after };
+  return { answer: c.answer, response: latestK, hasKeyword, isGenericOnly, childBubbleLeak, ttsPlayed, rawAfterCount };
 }
 
 (async () => {
@@ -111,16 +138,16 @@ async function sendAndCheck(page, c, bubblesBeforeLen) {
   await ensureTextMode(page);
   await page.waitForTimeout(4000);
 
-  let bubblesBefore = await bubbleTexts(page);
+  let rawBefore = await rawLineCount(page);
   const results = [];
   const seenLatestBubbles = [];
 
   // Case 0: 음성 켜짐
   {
-    const r = await sendAndCheck(page, CASES[0], bubblesBefore.length);
+    const r = await sendAndCheck(page, CASES[0], rawBefore);
     results.push({ voice: "ON", ...r });
     seenLatestBubbles.push(r.response);
-    bubblesBefore = r.bubblesAfter;
+    rawBefore = r.rawAfterCount;
   }
 
   // Case 1: 음성 켜짐 상태로 전송 + TTS 시작 직후 즉시 음소거 → 즉시 중단 확인
@@ -135,29 +162,28 @@ async function sendAndCheck(page, c, bubblesBeforeLen) {
     const countRightAfterMute = await page.evaluate(() => window.__ttsStartTimes.length);
     await page.waitForTimeout(3000);
     const countAfterSettle = await page.evaluate(() => window.__ttsStartTimes.length);
-    const after = await bubbleTexts(page);
-    const newBubbles = after.slice(bubblesBefore.length);
-    const latestK = newBubbles[newBubbles.length - 1] ?? "(none)";
+    const afterDynamic = await bubbleTexts(page);
+    const latestK = afterDynamic[afterDynamic.length - 1] ?? "(none)";
     results.push({
       voice: "ON(즉시중단 테스트)",
       answer: CASES[1].answer,
       response: latestK,
       hasKeyword: CASES[1].key.some((k) => latestK.includes(k)),
       isGenericOnly: GENERIC_ONLY.some((g) => latestK.trim() === g),
-      childBubbleLeak: newBubbles.some((t) => t === CASES[1].answer),
+      childBubbleLeak: afterDynamic.some((t) => t === CASES[1].answer),
       ttsPlayed: ttsStartedBeforeMute,
       immediateStopOk: countRightAfterMute === countAfterSettle,
     });
     seenLatestBubbles.push(latestK);
-    bubblesBefore = after;
+    rawBefore = await rawLineCount(page);
   }
 
   // Case 2, 3: 음성 꺼진 상태 유지
   for (const c of CASES.slice(2)) {
-    const r = await sendAndCheck(page, c, bubblesBefore.length);
+    const r = await sendAndCheck(page, c, rawBefore);
     results.push({ voice: "OFF", ...r });
     seenLatestBubbles.push(r.response);
-    bubblesBefore = r.bubblesAfter;
+    rawBefore = r.rawAfterCount;
   }
 
   await context.close();
