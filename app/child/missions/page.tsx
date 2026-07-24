@@ -200,6 +200,7 @@ function MissionInner() {
   const sttAbortControllerRef = useRef<AbortController | null>(null);
   const apiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const apiAbortControllerRef = useRef<AbortController | null>(null);
+  const reactionAbortControllerRef = useRef<AbortController | null>(null);
   const kSpeakingSafetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastKnownTurnIdRef = useRef<string | null>(null);
 
@@ -459,6 +460,30 @@ function MissionInner() {
     void (async () => {
       try {
         logVoiceEvent({ ts: Date.now(), eventType: "answer_request" });
+
+        let reactionResultPromise: Promise<string> | null = null;
+        if (!isLive) {
+          const llmStartedAt = Date.now();
+          // 답변 저장 fetch(apiAbortControllerRef)와는 별도의 AbortController를 쓴다 -
+          // fetchPersonalizedReaction은 2200ms 내부 타임아웃 시 이 컨트롤러를 스스로
+          // abort()하는데, 컨트롤러를 공유하면 그 abort가 답변 저장 fetch까지 취소시켜
+          // 아이 답변이 저장되지 않는 사고로 이어진다(D안 TestModeCDRunner도 전용
+          // reactionAbortController를 별도로 만들어 쓴다 - 동일 패턴 유지).
+          reactionAbortControllerRef.current = new AbortController();
+          reactionResultPromise = fetchPersonalizedReaction({
+            questionText: question.question_text,
+            answerText: enrichedTurn.text,
+            sessionId: sid,
+            childTurnId,
+            lastReaction: lastReactionRef.current,
+            isStale: () => currentEpoch !== answerEpochRef.current,
+            abortController: reactionAbortControllerRef.current,
+          }).then((text) => {
+            recordStageResult("llm", true, Date.now() - llmStartedAt);
+            return text;
+          });
+        }
+
         const res = await fetch("/api/mission/answer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -648,16 +673,7 @@ function MissionInner() {
 
         let respondText: string | undefined;
         if (!isLive) {
-          const llmStartedAt = Date.now();
-          const reactionText = await fetchPersonalizedReaction({
-            questionText: question.question_text,
-            answerText: enrichedTurn.text,
-            sessionId: sid,
-            childTurnId,
-            lastReaction: lastReactionRef.current,
-            isStale: () => currentEpoch !== answerEpochRef.current,
-          });
-          recordStageResult("llm", true, Date.now() - llmStartedAt);
+          const reactionText = await reactionResultPromise!;
           if (currentEpoch !== answerEpochRef.current) return;
           lastReactionRef.current = reactionText;
           respondText = `${reactionText} ${nextQ.question_text}`;
