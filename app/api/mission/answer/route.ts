@@ -14,6 +14,7 @@ import { pickReaction } from "@/lib/freeChatReactions";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
+import { selectAdditionalReserveQuestions } from "@/lib/mission/selectQuestions";
 
 export const runtime = "nodejs";
 
@@ -294,18 +295,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(resPayload);
     }
 
+    let questionPoolExhausted = false;
     let newState: QuestionState;
     let answerStatus: "answered" | "skipped" | "refused";
 
     if (classification === "VALID") {
       newState = "answered";
       answerStatus = "answered";
-    } else if (classification === "REFUSAL") {
-      newState = "refused";
-      answerStatus = "refused";
     } else {
-      newState = "skipped";
-      answerStatus = "skipped";
+      // 동일 문항 재도전은 최대 1회까지만 허용한다 - 이 문항에 대해 이전에 이미
+      // 실패(skipped/refused)한 이력이 있으면 이번이 2번째 이상 실패이므로 더 재시도
+      // 하지 않고 즉시 무효 처리한다(REFUSAL/NO_RESPONSE 구분 없이 동일하게 취급).
+      const { count: priorFailureCount, error: priorFailureErr } = await service
+        .from("mission_question_history")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", sessionId)
+        .eq("question_id", questionId)
+        .in("answer_status", ["skipped", "refused"]);
+
+      if (priorFailureErr) {
+        console.error("[mission/answer] Failed to count prior failures:", { sessionId, questionId, err: priorFailureErr });
+      }
+
+      const isRepeatedFailure = (priorFailureCount ?? 0) >= 1;
+      if (isRepeatedFailure) {
+        newState = "refused";
+        answerStatus = "refused";
+      } else {
+        newState = "skipped";
+        answerStatus = "skipped";
+      }
     }
 
     // VALID/REFUSAL/NO_RESPONSE 판정 시 record_v2_mission_answer RPC 호출
@@ -359,7 +378,8 @@ export async function POST(req: NextRequest) {
     const finalQuestionStates = { ...rpcResult.question_states };
 
     // 실패(skipped/refused)인 경우 예비질문 승격 로직
-    if (newState === "skipped" || newState === "refused") {
+    // 무효 처리(refused - 2번째 이상 실패)인 경우에만 예비질문 승격을 시도한다.
+    if (newState === "refused") {
       try {
         const { data: reserveList, error: reserveErr } = await service
           .from("mission_question_history")
@@ -465,6 +485,146 @@ export async function POST(req: NextRequest) {
               throw new Error(`Failed to update sorted ids in progress: ${updateIdsErr.message}`);
             }
           }
+        } else {
+          // 예비 문항이 하나도 없다 - 미션에서 이미 쓰인 모든 문항을 제외하고 즉시
+          // 1개를 추가로 찾아 RESERVE로 승격 시도한다.
+          const usedIds: string[] = progress.question_ids ?? [];
+          const { data: childProfile } = await service
+            .from("child_profiles")
+            .select("grade")
+            .eq("id", session.child_id)
+            .maybeSingle();
+          const { data: progressRoundType } = await service
+            .from("mission_progress")
+            .select("round_type")
+            .eq("session_id", sessionId)
+            .maybeSingle();
+
+          const gradeNum = typeof childProfile?.grade === "string" ? parseInt(childProfile.grade, 10) : (childProfile?.grade ?? null);
+          const roundTypeVal = progressRoundType?.round_type;
+
+          let backfillIds: string[] = [];
+          if (gradeNum && roundTypeVal) {
+            try {
+              backfillIds = await selectAdditionalReserveQuestions(session.child_id, gradeNum, roundTypeVal as any, usedIds, 1);
+            } catch (e) {
+              console.error("[answer/route] mid-session reserve backfill failed:", e);
+            }
+          }
+
+          if (backfillIds.length === 0) {
+            console.error("[answer/route] MISSION_QUESTION_POOL_EXHAUSTED", {
+              sessionId, questionId, childId: session.child_id,
+            });
+            questionPoolExhausted = true;
+          } else {
+            const { data: insertedReserve, error: insertReserveErr } = await service
+              .from("mission_question_history")
+              .insert({
+                child_id: session.child_id,
+                question_id: backfillIds[0],
+                question_role: "RESERVE",
+                selected_order: 9999,
+                session_id: sessionId,
+              })
+              .select("id, question_id, selected_order")
+              .single();
+
+            if (insertReserveErr || !insertedReserve) {
+              console.error("[answer/route] Failed to insert backfilled reserve question:", insertReserveErr);
+              questionPoolExhausted = true;
+            } else {
+              const reserveQ = insertedReserve;
+              
+              // 현재 질문의 selected_order 조회
+              const { data: failedQ, error: failedQErr } = await service
+                .from("mission_question_history")
+                .select("selected_order")
+                .eq("child_id", session.child_id)
+                .eq("session_id", sessionId)
+                .eq("question_id", questionId)
+                .not("question_role", "is", null)
+                .order("selected_order", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (failedQErr) {
+                throw new Error(`Failed to query failed question order: ${failedQErr.message}`);
+              }
+
+              const currentOrder = failedQ?.selected_order ?? 0;
+
+              // 이후의 selected_order들 1씩 밀기
+              const { data: shiftList, error: shiftListErr } = await service
+                .from("mission_question_history")
+                .select("id, selected_order")
+                .eq("child_id", session.child_id)
+                .eq("session_id", sessionId)
+                .gt("selected_order", currentOrder);
+
+              if (shiftListErr) {
+                throw new Error(`Failed to query shift list: ${shiftListErr.message}`);
+              }
+
+              if (shiftList) {
+                for (const row of shiftList) {
+                  const { error: shiftErr } = await service
+                    .from("mission_question_history")
+                    .update({ selected_order: row.selected_order + 1 })
+                    .eq("id", row.id);
+
+                  if (shiftErr) {
+                    throw new Error(`Failed to update shift order: ${shiftErr.message}`);
+                  }
+                }
+              }
+
+              // RESERVE -> PRIMARY 승격 및 순서 삽입
+              const { error: promoteErr } = await service
+                .from("mission_question_history")
+                .update({
+                  question_role: "PRIMARY",
+                  selected_order: currentOrder + 1,
+                  asked_at: new Date().toISOString(),
+                })
+                .eq("id", reserveQ.id);
+
+              if (promoteErr) {
+                throw new Error(`Failed to promote reserve question: ${promoteErr.message}`);
+              }
+
+              // progress.question_ids 정렬 갱신
+              const { data: sortedList, error: sortedErr } = await service
+                .from("mission_question_history")
+                .select("question_id")
+                .eq("child_id", session.child_id)
+                .eq("session_id", sessionId)
+                .not("question_role", "is", null)
+                .order("selected_order", { ascending: true });
+
+              if (sortedErr) {
+                throw new Error(`Failed to query sorted questions: ${sortedErr.message}`);
+              }
+
+              if (sortedList) {
+                const sortedIds = sortedList.map((h) => h.question_id);
+                finalQuestionStates[reserveQ.question_id] = "pending";
+
+                console.log("[mission/answer] progress update", { sessionId, questionId, classification, prevCount: progress.valid_answer_count ?? 0, newCount: rpcResult.valid_answer_count });
+                const { error: updateIdsErr } = await service
+                  .from("mission_progress")
+                  .update({
+                    question_ids: sortedIds,
+                    question_states: finalQuestionStates,
+                  })
+                  .eq("session_id", sessionId);
+
+                if (updateIdsErr) {
+                  throw new Error(`Failed to update sorted ids in progress: ${updateIdsErr.message}`);
+                }
+              }
+            }
+          }
         }
       } catch (e: any) {
         console.error("[answer/route] reserve promotion failed (non-fatal, answer already committed):", e);
@@ -486,6 +646,7 @@ export async function POST(req: NextRequest) {
       engine_version: "v2",
       questionStates: finalQuestionStates,
       rewardStatus: rpcResult.reward_status,
+      questionPoolExhausted,
     };
 
     console.log("[mission/answer] done", { sessionId, classification, valid: resPayload.valid, validAnswerCount: resPayload.validAnswerCount, durationMs: Date.now() - startedAt });

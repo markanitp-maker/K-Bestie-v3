@@ -29,6 +29,10 @@ export interface UseVoiceChatOptions {
   onSpeechEnd?: () => void;
   /** A~E 테스트 모드 태깅용 conversation_mode(§23). 미지정 시 기존 동작 그대로(usage_events는 미분류). */
   conversationMode?: string;
+  /** STT(음성인식) 결과 - 매 발화 종료 시 성공/실패와 걸린 시간(ms)을 알려준다. */
+  onSttResult?: (success: boolean, latencyMs: number) => void;
+  /** TTS(음성합성) 결과 - 재생 시작 직전까지 걸린 시간(ms). 재생 자체의 길이는 포함 안 함. */
+  onTtsResult?: (success: boolean, latencyMs: number) => void;
 }
 
 const POLL_INTERVAL_MS = 1300;       // 중간 자막 갱신 주기
@@ -70,6 +74,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   onEmptyAudioRef.current = options?.onEmptyAudio;
   const onSttFailedRef = useRef<((reason?: string) => void) | undefined>(undefined);
   onSttFailedRef.current = options?.onSttFailed;
+  const onSttResultRef = useRef<((success: boolean, latencyMs: number) => void) | undefined>(undefined);
+  onSttResultRef.current = options?.onSttResult;
+  const onTtsResultRef = useRef<((success: boolean, latencyMs: number) => void) | undefined>(undefined);
+  onTtsResultRef.current = options?.onTtsResult;
   const onSpeechBeginRef = useRef<(() => void) | undefined>(undefined);
   onSpeechBeginRef.current = options?.onSpeechBegin;
   const onSpeechEndRef = useRef<(() => void) | undefined>(undefined);
@@ -179,14 +187,18 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
     console.log("[STT] calling", { turnId: predictedTurnId });
     logVoiceEvent({ ts: Date.now(), eventType: "stt_request", childTurnId: predictedTurnId });
+    const sttStartedAt = Date.now();
     const { text, confidence, failureReason } = await callStt(audioBase64, signal, predictedTurnId);
+    const sttLatencyMs = Date.now() - sttStartedAt;
     logVoiceEvent({ ts: Date.now(), eventType: "stt_response", childTurnId: predictedTurnId, textPreview: maskText(text), extra: { failureReason } });
     console.log("[STT] result", { turnId: predictedTurnId, hasText: !!text, failureReason });
-    if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 폐기
+    if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 폐기(계측 안 함 - 정상 취소이지 실패가 아님)
     if (!text) {
+      onSttResultRef.current?.(false, sttLatencyMs);
       onSttFailedRef.current?.(failureReason);
       return;
     }
+    onSttResultRef.current?.(true, sttLatencyMs);
 
     lastAsrConfidenceRef.current = confidence;
     logVoiceEvent({ ts: Date.now(), eventType: "appendTurn_voicechat", extra: { role: "child" } });
@@ -375,6 +387,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     console.log("[MISSION-DEBUG] speak() invoked, text:", trimmed, "voiceName:", voiceName);
     if (!trimmed) return false;
 
+    const ttsStartedAt = Date.now();
+
     // 새 발화 세대로 전환 — 이전 세대의 진행 중이던 응답/재생은 이후 전부 무시됨
     const epoch = ++speakEpochRef.current;
 
@@ -432,6 +446,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       appendTurn({ role: "k", text: trimmed });
       onTurnCompleteRef.current?.({ role: "k", text: trimmed });
       spoken = true;
+      onTtsResultRef.current?.(true, Date.now() - ttsStartedAt);
 
       await new Promise<void>((resolve) => {
         source.onended = () => resolve();
@@ -456,6 +471,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       if (!spoken && epoch === speakEpochRef.current) {
         appendTurn({ role: "k", text: trimmed });
         onTurnCompleteRef.current?.({ role: "k", text: trimmed });
+        onTtsResultRef.current?.(false, Date.now() - ttsStartedAt);
       }
     } finally {
       if (epoch === speakEpochRef.current) {

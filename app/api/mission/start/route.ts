@@ -5,7 +5,7 @@ import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
 import { isChildAlphaAllowedForQuestions } from "@/lib/questions/alphaAllowlist";
-import { selectAlphaQuestions, selectFixedMissionQuestions } from "@/lib/mission/selectQuestions";
+import { selectAlphaQuestions, selectFixedMissionQuestions, selectAdditionalReserveQuestions, RESERVE_TARGET_COUNT } from "@/lib/mission/selectQuestions";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
@@ -211,8 +211,8 @@ export async function POST(req: NextRequest) {
     console.warn("[start/route] selectFixedMissionQuestions failed, falling back:", err instanceof Error ? err.message : err);
   }
 
-  if (questionIds.length === 10) {
-     isV2 = true; // 10개이므로 V2로 간주
+  if (questionIds.length >= 10) {
+     isV2 = true; // Fixed 선택기 결과(PRIMARY 10개 + RESERVE 0~10개)
   } else {
     if (isAlphaQuestionChild) {
       questionIds = await selectAlphaQuestions(childId, grade, roundType);
@@ -393,7 +393,7 @@ export async function POST(req: NextRequest) {
     const historyRows = questionIds.map((qid, idx) => ({
       child_id: childId,
       question_id: qid,
-      question_role: idx < 10 ? "PRIMARY" : "RESERVE",
+      question_role: idx < 10 ? ("PRIMARY" as const) : ("RESERVE" as const),
       selected_order: idx + 1,
       session_id: session.id,
     }));
@@ -402,6 +402,40 @@ export async function POST(req: NextRequest) {
       console.error("[start/route] mission_question_history V2 insert error:", histErr);
       await rollbackSession(session.id);
       return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    // RESERVE가 목표(10개)에 못 미치면 즉시 보충을 시도한다.
+    const reserveCount = historyRows.filter((r) => r.question_role === "RESERVE").length;
+    if (reserveCount < RESERVE_TARGET_COUNT) {
+      const shortfall = RESERVE_TARGET_COUNT - reserveCount;
+      try {
+        const backfillIds = await selectAdditionalReserveQuestions(childId, grade, roundType, questionIds, shortfall);
+        if (backfillIds.length > 0) {
+          const maxOrder = Math.max(...historyRows.map((r) => r.selected_order));
+          const backfillRows = backfillIds.map((qid, i) => ({
+            child_id: childId,
+            question_id: qid,
+            question_role: "RESERVE" as const,
+            selected_order: maxOrder + 1 + i,
+            session_id: session.id,
+          }));
+          const { error: backfillErr } = await service.from("mission_question_history").insert(backfillRows);
+          if (backfillErr) {
+            console.error("[start/route] RESERVE backfill insert error:", backfillErr);
+          }
+        }
+        if (backfillIds.length < shortfall) {
+          console.error("[start/route] MISSION_QUESTION_POOL_EXHAUSTED", {
+            sessionId: session.id,
+            childId,
+            roundType,
+            reserveCountAfterBackfill: reserveCount + backfillIds.length,
+            targetReserveCount: RESERVE_TARGET_COUNT,
+          });
+        }
+      } catch (e) {
+        console.error("[start/route] RESERVE backfill failed:", e);
+      }
     }
   } else {
     // V1: 기존 그대로 기록 (answer_status=NULL)

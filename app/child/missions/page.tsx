@@ -602,7 +602,7 @@ function MissionInner() {
               resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
             }
           } else {
-            resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
+            resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
           }
           return;
         }
@@ -641,7 +641,7 @@ function MissionInner() {
               resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
             }
           } else {
-            resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
+            resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
           }
           return;
         }
@@ -793,6 +793,12 @@ function MissionInner() {
     },
     onSttFailed: (reason) => {
       resetToIdle("지금 대화가 잠시 끊겼나봐요. 다시 한번 말해줄래?");
+    },
+    onSttResult: (success, latencyMs) => {
+      if (!isLiveModeRef.current) recordStageResult("stt", success, latencyMs);
+    },
+    onTtsResult: (success, latencyMs) => {
+      if (!isLiveModeRef.current) recordStageResult("tts", success, latencyMs);
     }
   });
   sttSetMicEnabledRef.current = sttTts.setMicEnabled;

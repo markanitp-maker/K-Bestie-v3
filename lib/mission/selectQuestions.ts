@@ -247,6 +247,7 @@ export async function selectQuestions(
 export const REQUIRED_COUNT_V2 = 10;
 const RESERVE_COUNT_V2 = 10;
 export const TOTAL_COUNT_V2 = REQUIRED_COUNT_V2 + RESERVE_COUNT_V2; // 20
+export const RESERVE_TARGET_COUNT = 10; // Fixed 선택기의 예비 문항 목표 개수
 
 export async function getApprovedV2Candidates(
   grade: number,
@@ -604,32 +605,42 @@ export async function selectFixedMissionQuestions(
     return daysSince(last) >= CYCLE_INTERVAL_DAYS[q.cycle_type];
   });
 
-  const getSlotId = (tag: string): string => {
-    let available = eligible.filter((q) => q.dashboard_area_tag === tag);
+  const getSlotIdExcluding = (tag: string, exclude: Set<string>): string | undefined => {
+    const filterEx = (arr: typeof allActive) => arr.filter((q) => !exclude.has(q.id));
+
+    let available = filterEx(eligible.filter((q) => q.dashboard_area_tag === tag));
     if (available.length > 0) return shuffle(available)[0].id;
 
-    available = candidates.filter((q) => q.dashboard_area_tag === tag);
+    available = filterEx(candidates.filter((q) => q.dashboard_area_tag === tag));
     if (available.length > 0) {
       const notRecentlyAsked = available.filter((q) => !lastAskedAt.has(q.id));
       if (notRecentlyAsked.length > 0) return shuffle(notRecentlyAsked)[0].id;
       return shuffle(available)[0].id;
     }
 
-    available = candidatesRelaxRound.filter((q) => q.dashboard_area_tag === tag);
+    available = filterEx(candidatesRelaxRound.filter((q) => q.dashboard_area_tag === tag));
     if (available.length > 0) {
       const notRecentlyAsked = available.filter((q) => !lastAskedAt.has(q.id));
       if (notRecentlyAsked.length > 0) return shuffle(notRecentlyAsked)[0].id;
       return shuffle(available)[0].id;
     }
 
-    available = allActive.filter((q) => q.dashboard_area_tag === tag);
+    available = filterEx(allActive.filter((q) => q.dashboard_area_tag === tag));
     if (available.length > 0) {
       const notRecentlyAsked = available.filter((q) => !lastAskedAt.has(q.id));
       if (notRecentlyAsked.length > 0) return shuffle(notRecentlyAsked)[0].id;
       return shuffle(available)[0].id;
     }
 
-    throw new Error(`[selectFixedMissionQuestions] No candidate found for tag: ${tag}`);
+    return undefined;
+  };
+
+  const getSlotId = (tag: string): string => {
+    const id = getSlotIdExcluding(tag, new Set());
+    if (id === undefined) {
+      throw new Error(`[selectFixedMissionQuestions] No candidate found for tag: ${tag}`);
+    }
+    return id;
   };
 
   const picked: string[] = [];
@@ -650,5 +661,75 @@ export async function selectFixedMissionQuestions(
     picked.push(getSlotId(tag));
   }
   
-  return picked; // 무조건 10개 반환
+  // RESERVE: PRIMARY 10개를 제외하고 태그당 1개씩 예비 후보를 추가로 찾는다.
+  const pickedSet = new Set(picked);
+  const reserves: string[] = [];
+
+  for (const tag of tagsConfig) {
+    if (reserves.length >= RESERVE_TARGET_COUNT) break;
+    const id = getSlotIdExcluding(tag, pickedSet);
+    if (id !== undefined) {
+      reserves.push(id);
+      pickedSet.add(id);
+    }
+  }
+
+  // 태그당 1개씩으로 목표(10개)를 못 채웠으면, 태그 구분 없이 남은 전체 후보 중에서 더 채운다.
+  if (reserves.length < RESERVE_TARGET_COUNT) {
+    const remainingPool = allActive.filter((q) => !pickedSet.has(q.id) &&
+      Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade));
+    const notRecentlyAsked = shuffle(remainingPool.filter((q) => !lastAskedAt.has(q.id)));
+    const rest = shuffle(remainingPool.filter((q) => lastAskedAt.has(q.id)));
+    for (const q of [...notRecentlyAsked, ...rest]) {
+      if (reserves.length >= RESERVE_TARGET_COUNT) break;
+      if (!pickedSet.has(q.id)) {
+        reserves.push(q.id);
+        pickedSet.add(q.id);
+      }
+    }
+  }
+
+  return [...picked, ...reserves];
+}
+
+/** 미션 진행 중 RESERVE 문항이 소진됐을 때 추가로 후보를 찾는다 */
+export async function selectAdditionalReserveQuestions(
+  childId: string,
+  grade: number,
+  roundType: RoundType,
+  excludeIds: string[],
+  count: number = 1
+): Promise<string[]> {
+  const service = createServiceClient();
+  const { data: allActiveRaw, error: qErr } = await service
+    .from("mission_questions")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades")
+    .eq("is_active", true);
+  if (qErr || !allActiveRaw) return [];
+  const allActive = allActiveRaw as QuestionRow[];
+  const exclude = new Set(excludeIds);
+
+  const { data: historyRaw } = await service
+    .from("mission_question_history")
+    .select("question_id, asked_at")
+    .eq("child_id", childId);
+  const lastAskedAt = new Map<string, number>();
+  for (const h of (historyRaw ?? []) as { question_id: string; asked_at: string | null }[]) {
+    if (!h.asked_at) continue;
+    const t = new Date(h.asked_at).getTime();
+    const prev = lastAskedAt.get(h.question_id);
+    if (prev === undefined || t > prev) lastAskedAt.set(h.question_id, t);
+  }
+
+  const remainingPool = allActive.filter((q) => !exclude.has(q.id) &&
+    Array.isArray(q.applicable_grades) && q.applicable_grades.includes(grade));
+  const notRecentlyAsked = shuffle(remainingPool.filter((q) => !lastAskedAt.has(q.id)));
+  const rest = shuffle(remainingPool.filter((q) => lastAskedAt.has(q.id)));
+
+  const picked: string[] = [];
+  for (const q of [...notRecentlyAsked, ...rest]) {
+    if (picked.length >= count) break;
+    picked.push(q.id);
+  }
+  return picked;
 }
