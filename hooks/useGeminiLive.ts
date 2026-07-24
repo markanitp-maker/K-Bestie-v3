@@ -330,6 +330,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       if (avg > 6000) level -= 2;
       else if (avg > 3000) level -= 1;
     }
+    if (requestSentAtRef.current != null) {
+      const currentWait = now - requestSentAtRef.current;
+      if (currentWait > 4000) level -= 2;
+    }
     setConnectionQuality(Math.max(0, Math.min(5, level)));
   }
 
@@ -1227,11 +1231,11 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         // watchdog 발동 기록은 5분이 지나면 더 이상 감점에 반영되지 않아야 하는데,
         // recomputeConnectionQuality()는 호출될 때만 그 창을 다시 계산한다 — 그 사이 아무
         // 이벤트(응답 도착·재연결 등)도 없으면 오래된 감점이 그대로 남는다(codex 지적).
-        // 연결이 열려있는 동안 30초마다 재계산해 시간 경과에 따른 회복이 반영되게 한다.
+        // 연결이 열려있는 동안 1초마다 재계산해 무응답 지연시간(4~5초) 등이 즉시 반영되게 한다.
         if (qualityRecomputeIntervalRef.current) clearInterval(qualityRecomputeIntervalRef.current);
         qualityRecomputeIntervalRef.current = setInterval(() => {
           recomputeConnectionQuality();
-        }, 30000);
+        }, 1000);
 
         // 로컬 STT 폴백 시작 — gcp 모드에서는 브라우저 폴백을 켜지 않음(초기화도 안 함)
         if (ENABLE_STT_FALLBACK && sttModeRef.current !== "gcp") {
@@ -1872,6 +1876,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                     if (statusRef.current === "live" && sessionRef.current && vadStateRef.current === "active") {
                       console.log(`${getLogPrefix()} [VAD] Auto Speech End -> send activityEnd`);
                       logTelemetryEvent("sendActivityEnd");
+                      armLatencyClock();
                       generationEpochRef.current += 1;
                       sealCurrentGeneration();
 
@@ -2249,6 +2254,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     // 수동 모드 지연 원인 수정: activityEnd만 보내면 Live 서버가 turnComplete로 인식하지 않고 
     // 마냥 기다리는(2~3분 지연) 문제가 발생하므로 명시적으로 turnComplete를 전송한다.
     logTelemetryEvent("sendActivityEnd");
+    armLatencyClock();
     generationEpochRef.current += 1;
     sealCurrentGeneration();
 

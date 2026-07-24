@@ -78,6 +78,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
   // 시작 시 별도로 얼려(freeze)두고 콜백 안에서 그 값과 현재 epoch을 비교해 stale 턴을 버린다.
   const activeEpochRef = useRef(0);
   const liveRef = useRef<ReturnType<typeof useGeminiLive> | null>(null);
+  const awaitingClosingAudioRef = useRef(false);
 
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const nearBottomRef = useRef(true);
@@ -174,78 +175,96 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
         reactionResultPromise = (async () => {
           const fallbackResult = pickNonRepeatingReaction(lastReactionRef.current);
           let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          let overallTimeoutId: ReturnType<typeof setTimeout> | undefined;
           const timeoutMarker = Symbol("timeout");
+          const overallTimeoutMarker = Symbol("overallTimeout");
 
           try {
-            const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
-              timeoutId = setTimeout(() => resolve(timeoutMarker), 1200);
+            const overallTimeoutPromise = new Promise<typeof overallTimeoutMarker>((resolve) => {
+              overallTimeoutId = setTimeout(() => resolve(overallTimeoutMarker), 4500);
             });
 
-            const fetchAndFirstChunk = (async () => {
-              const res = await fetch("/api/mission/reaction-lean", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                signal: reactionAbortController.signal,
-                body: JSON.stringify({
-                  questionText: currentQ.question_text,
-                  answerText: text,
-                  sessionId: sid,
-                  childTurnId
-                })
+            const mainTask = (async () => {
+              const timeoutPromise = new Promise<typeof timeoutMarker>((resolve) => {
+                timeoutId = setTimeout(() => resolve(timeoutMarker), 1200);
               });
-              if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
-              const reader = res.body.getReader();
-              const decoder = new TextDecoder();
-              const first = await reader.read();
-              return { reader, decoder, first };
+
+              const fetchAndFirstChunk = (async () => {
+                const res = await fetch("/api/mission/reaction-lean", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  signal: reactionAbortController.signal,
+                  body: JSON.stringify({
+                    questionText: currentQ.question_text,
+                    answerText: text,
+                    sessionId: sid,
+                    childTurnId
+                  })
+                });
+                if (!res.ok || !res.body) throw new Error("Reaction fetch failed");
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                const first = await reader.read();
+                return { reader, decoder, first };
+              })();
+              // 늦게 도착하는 fetch/read가 unhandled rejection을 내지 않게 미리 방어.
+              fetchAndFirstChunk.catch(() => {});
+
+              const raceResult = await Promise.race([fetchAndFirstChunk, timeoutPromise]);
+              clearTimeout(timeoutId);
+
+              if (raceResult === timeoutMarker) {
+                return timeoutMarker;
+              }
+
+              const { reader, decoder, first } = raceResult;
+
+              try {
+                if (myEpoch !== loadEpochRef.current) {
+                  await reader.cancel().catch(() => {});
+                  return { text: "" };
+                }
+
+                let accumulated = "";
+                const { done: firstDone, value: firstValue } = first;
+                if (!firstDone && firstValue) {
+                  pendingTimingRef.current.llm_first_token = Date.now();
+                  accumulated += decoder.decode(firstValue, { stream: true });
+                }
+
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  if (myEpoch !== loadEpochRef.current) {
+                    await reader.cancel().catch(() => {});
+                    return { text: "" };
+                  }
+                  accumulated += decoder.decode(value, { stream: true });
+                }
+
+                pendingTimingRef.current.reaction_complete = Date.now();
+                const trimmed = accumulated.trim();
+                return { text: trimmed || fallbackResult };
+              } finally {
+                reader.releaseLock();
+              }
             })();
-            // 늦게 도착하는 fetch/read가 unhandled rejection을 내지 않게 미리 방어.
-            fetchAndFirstChunk.catch(() => {});
 
-            const raceResult = await Promise.race([fetchAndFirstChunk, timeoutPromise]);
-            clearTimeout(timeoutId);
+            const result = await Promise.race([mainTask, overallTimeoutPromise]);
 
-            if (raceResult === timeoutMarker) {
-              // fetch 자체를 취소해 늦게 도착할 reader/연결이 방치되지 않게 한다.
+            if (result === overallTimeoutMarker || result === timeoutMarker) {
               reactionAbortController.abort();
               pendingTimingRef.current.reaction_complete = Date.now();
               return { text: fallbackResult };
             }
 
-            const { reader, decoder, first } = raceResult;
-
-            try {
-              if (myEpoch !== loadEpochRef.current) {
-                await reader.cancel().catch(() => {});
-                return { text: "" };
-              }
-
-              let accumulated = "";
-              const { done: firstDone, value: firstValue } = first;
-              if (!firstDone && firstValue) {
-                pendingTimingRef.current.llm_first_token = Date.now();
-                accumulated += decoder.decode(firstValue, { stream: true });
-              }
-
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (myEpoch !== loadEpochRef.current) {
-                  await reader.cancel().catch(() => {});
-                  return { text: "" };
-                }
-                accumulated += decoder.decode(value, { stream: true });
-              }
-
-              pendingTimingRef.current.reaction_complete = Date.now();
-              const trimmed = accumulated.trim();
-              return { text: trimmed || fallbackResult };
-            } finally {
-              reader.releaseLock();
-            }
+            return result;
           } catch {
             pendingTimingRef.current.reaction_complete = Date.now();
             return { text: fallbackResult };
+          } finally {
+            clearTimeout(timeoutId);
+            clearTimeout(overallTimeoutId);
           }
         })();
       } else if (isLowLatency) {
@@ -272,13 +291,19 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
       setProgress(ans.progressPercent ?? 0);
 
       if (ans.completed) {
-        completedRef.current = true; setCompleted(true);
         const finalMsg = "오늘의 미션을 모두 완료했어! 황금열쇠를 받았어. 내일 또 만나자!";
         liveRef.current?.lockNow();
-        liveRef.current?.speakClosingLine?.(finalMsg) || liveRef.current?.speakAsK(finalMsg);
-        // speak() 재생 도중 "새 테스트"로 재시작됐으면(loadSession이 stopSession()으로 재생을
-        // 강제 중단시켜 await가 여기서 풀림) 옛 턴 결과로 새 세션 상태/DB를 건드리지 않는다.
-        if (myEpoch !== loadEpochRef.current) return;
+        setTimeout(() => {
+          if (myEpoch !== loadEpochRef.current) return;
+          awaitingClosingAudioRef.current = true;
+          liveRef.current?.speakClosingLine?.(finalMsg) || liveRef.current?.speakAsK(finalMsg);
+          setTimeout(() => {
+            if (myEpoch === loadEpochRef.current && awaitingClosingAudioRef.current) {
+              awaitingClosingAudioRef.current = false;
+              completedRef.current = true; setCompleted(true);
+            }
+          }, 8000);
+        }, 600);
         // K message saved via onTurnComplete
 
         
@@ -396,6 +421,13 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
     getChildId: () => childIdRef.current,
     conversationMode: selectedMode,
     sttMode: "gcp",
+    onAudioQueueDrained: () => {
+      if (activeEpochRef.current !== loadEpochRef.current) return;
+      if (awaitingClosingAudioRef.current) {
+        awaitingClosingAudioRef.current = false;
+        completedRef.current = true; setCompleted(true);
+      }
+    },
     onTurnComplete: (turn) => {
       // 이 콜백은 useGeminiLive 초기화 시 한 번 고정되어 세션이 바뀌어도 계속 호출된다.
       // "새 테스트" 등으로 loadSession이 다시 시작되면 loadEpochRef가 먼저 증가하고
@@ -473,7 +505,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
     try { liveRef.current?.stopSession(); } catch { /* noop */ }
     setStatus("loading"); setNotice(null);
     setProgress(0); setValidCount(0); setCompleted(false); setBusy(false);
-    completedRef.current = false; busyRef.current = false;
+    completedRef.current = false; busyRef.current = false; awaitingClosingAudioRef.current = false;
     processedChildTurnIdsRef.current.clear();
     currentIndexRef.current = 0; dispSeqRef.current = 0; seqRef.current = 0; statesRef.current = {};
     nearBottomRef.current = true;
