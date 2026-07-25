@@ -15,10 +15,7 @@ export function RealChildNav({ active }: { active: string }) {
   const pathname = usePathname();
 
   return (
-    <div
-      className="shrink-0 flex items-stretch border-t"
-      style={{ background: "#ffffff", borderColor: "#f3f4f6" }}
-    >
+    <div className="shrink-0 flex items-stretch border-t bg-surface border-hairline">
       {NAV_ITEMS.map((item) => {
         const isActive =
           item.label === active ||
@@ -33,10 +30,7 @@ export function RealChildNav({ active }: { active: string }) {
             <span className="text-lg" style={{ opacity: isActive ? 1 : 0.55 }}>
               {item.icon}
             </span>
-            <span
-              className="text-[10px] font-bold"
-              style={{ color: isActive ? "#1a6b5a" : "#6b7280" }}
-            >
+            <span className={`text-[10px] font-bold ${isActive ? "text-primary" : "text-muted"}`}>
               {item.label}
             </span>
           </Link>

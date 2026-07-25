@@ -14,21 +14,22 @@ const HOME_CARDS = [
     title: "미션 진행",
     desc: "오늘의 미션을 시작해요",
     href: "/child/missions",
-    bg: "#22c55e",
+    // 014: 기존 #22c55e(원색 그린)는 스킬 팔레트에 없는 색이라 브랜드 딥그린(primary)으로 교체
+    bg: "var(--color-primary)",
   },
   {
     icon: "💬",
     title: "대화하기",
     desc: "케이랑 이야기 나눠요",
     href: "/chat",
-    bg: "#e8845a",
+    bg: "var(--color-coral)",
   },
   {
     icon: "🎮",
     title: "케이와 놀이",
     desc: "재미있는 놀이를 해봐요",
     href: "/child/play",
-    bg: "#2d9f8f",
+    bg: "var(--color-secondary)",
   },
 ];
 
@@ -124,8 +125,8 @@ export default function ChildHomePage() {
   if (loading) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+        <div className="h-full flex items-center justify-center bg-warm-white">
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-primary) var(--color-primary) transparent transparent" }} />
         </div>
       </DemoFrame>
     );
@@ -134,14 +135,11 @@ export default function ChildHomePage() {
   if (noChild) {
     return (
       <DemoFrame>
-        <div
-          className="h-full flex flex-col items-center justify-center px-6 py-8 text-center"
-          style={{ background: "#fafaf8" }}
-        >
-          <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-md border border-emerald-500/10">
+        <div className="h-full flex flex-col items-center justify-center px-6 py-8 text-center bg-warm-white">
+          <div className="max-w-md w-full bg-surface rounded-3xl p-8 shadow-md border border-primary/10">
             <p className="text-5xl mb-4">🌱</p>
-            <p className="text-lg font-bold text-gray-800">가족 연결이 필요해요</p>
-            <p className="text-xs mt-3 leading-relaxed text-gray-500">
+            <p className="text-lg font-bold text-charcoal">가족 연결이 필요해요</p>
+            <p className="text-xs mt-3 leading-relaxed text-muted">
               현재 로그인한 구글 계정이 가족에 등록되어 있지 않습니다.
               <br />
               부모님 앱에서 아이 추가 화면을 통해 이메일을 예약 등록했는지 확인해 주세요.
@@ -149,8 +147,7 @@ export default function ChildHomePage() {
 
             <button
               onClick={handleLogout}
-              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform mt-6 cursor-pointer"
-              style={{ background: "#1a6b5a" }}
+              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform mt-6 cursor-pointer bg-primary"
             >
               로그아웃 후 다시 로그인하기
             </button>
@@ -162,7 +159,7 @@ export default function ChildHomePage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col overflow-hidden bg-warm-white">
         <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
           <Link href="/child/home" className="cursor-pointer">
             <Image
@@ -186,10 +183,10 @@ export default function ChildHomePage() {
               className="object-contain mb-2"
               priority
             />
-            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+            <h1 className="text-lg font-bold text-charcoal">
               {child ? `안녕, ${getFriendlyName(child.name)}! 오늘은 뭐 하고 놀까?` : "안녕! 오늘은 뭐 하고 놀까?"}
             </h1>
-            <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
+            <p className="text-xs mt-1 text-muted">
               케이랑 같이 재미있게 보내봐요
             </p>
           </div>
@@ -224,20 +221,16 @@ export default function ChildHomePage() {
             {isTestAccount && (
               <Link
                 href="/child/test-modes"
-                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98] border-2 border-dashed"
-                style={{ background: "#fff", borderColor: "#1a6b5a" }}
+                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98] border-2 border-dashed bg-surface border-primary"
               >
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0"
-                  style={{ background: "rgba(26,107,90,0.12)" }}
-                >
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 bg-tint">
                   🧪
                 </div>
                 <div className="flex-1 text-left">
-                  <p className="font-bold text-base" style={{ color: "#1a6b5a" }}>대화 방식 테스트</p>
-                  <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>A~F 방식 선택 (테스트 계정 전용)</p>
+                  <p className="font-bold text-base text-primary">대화 방식 테스트</p>
+                  <p className="text-xs mt-0.5 text-muted">A~F 방식 선택 (테스트 계정 전용)</p>
                 </div>
-                <span className="text-lg" style={{ color: "#1a6b5a" }}>→</span>
+                <span className="text-lg text-primary">→</span>
               </Link>
             )}
           </div>

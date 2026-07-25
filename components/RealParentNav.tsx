@@ -60,10 +60,7 @@ export function RealParentNav({ active }: { active?: string }) {
   }, [pathname]);
 
   return (
-    <div
-      className="shrink-0 sticky bottom-0 z-20 flex items-stretch border-t"
-      style={{ background: "#ffffff", borderColor: "#f3f4f6" }}
-    >
+    <div className="shrink-0 sticky bottom-0 z-20 flex items-stretch border-t bg-surface border-hairline">
       {NAV_ITEMS.map((item) => {
         const isActive =
           item.label === active ||
@@ -79,15 +76,12 @@ export function RealParentNav({ active }: { active?: string }) {
             className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 select-none cursor-pointer relative"
           >
             {item.label === "케이와 대화" && hasNewQuestion && (
-              <span className="absolute top-1.5 right-[calc(50%-12px)] w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-sm" />
+              <span className="absolute top-1.5 right-[calc(50%-12px)] w-2 h-2 bg-danger rounded-full animate-pulse shadow-sm" />
             )}
             <span className="text-lg" style={{ opacity: isActive ? 1 : 0.55 }}>
               {item.icon}
             </span>
-            <span
-              className="text-[10px] font-bold"
-              style={{ color: isActive ? "#1a6b5a" : "#6b7280" }}
-            >
+            <span className={`text-[10px] font-bold ${isActive ? "text-primary" : "text-muted"}`}>
               {item.label}
             </span>
           </Link>

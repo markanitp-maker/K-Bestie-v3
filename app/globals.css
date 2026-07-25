@@ -1,28 +1,66 @@
 @import "tailwindcss";
 
+/* 014: naechingu-k-design 스킬 폰트(CDN) — Pretendard/Gaegu가 그동안 --font-base에
+   이름만 적혀 있고 실제로 로드된 적이 없어(어느 레이아웃에도 <link>/@font-face 없음)
+   전 화면이 조용히 시스템 폰트로만 렌더되고 있었다. */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css");
+@import url("https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap");
+
 @theme {
-  /* ── 브랜드 컬러 ── */
+  /* ── 브랜드 컬러(기존, 유지) ── */
   --color-primary: #1A6B5A;
   --color-primary-light: #2a8a72;
   --color-accent: hsl(17 76% 63%);
 
-  /* ── 배경 ── */
+  /* ── 배경(기존, 유지 — 실사용 0건이라 값은 그대로 두고 건드리지 않음) ── */
   --color-bg: #FFF8E7;
   --color-child-bg: hsl(44 100% 95%);
   --color-parent-bg: hsl(210 17% 98%);
 
-  /* ── 텍스트 ── */
+  /* ── 텍스트(기존, 유지) ── */
   --color-text-base: #1a1a1a;
   --color-text-muted: #6b7280;
 
-  /* ── 폰트 ── */
+  /* ── 폰트(기존, 유지 — 값은 그대로, 위 CDN import로 실제 로드되게 함) ── */
   --font-base: 'Pretendard Variable', 'Pretendard', -apple-system, sans-serif;
   --font-child: 'NanumSquareRound', 'Pretendard Variable', sans-serif;
+  /* 014 신규: 브랜드/포인트 문구 전용(마스코트 말풍선, 환영 문구 등 짧은 곳에만 — 본문/데이터 금지) */
+  --font-brand: 'Gaegu', var(--font-base);
 
-  /* ── 레이아웃 ── */
+  /* ── 레이아웃(기존, 유지) ── */
   --max-width-app: 480px;
   --radius-base: 1rem;
   --radius-sm: 0.5rem;
+
+  /* ══════════════════════════════════════════════════════════════════
+     014: naechingu-k-design 스킬 디자인 토큰 (신규 추가분)
+     기존 --color-* 토큰과 이름이 겹치지 않는 새 이름만 추가했다(위 기존 토큰은
+     실사용 0건 확인 후에도 안전을 위해 값을 바꾸지 않고 그대로 남겨둠 — 이번
+     Phase 1 범위는 공통 내비게이션 2개 + 대표 화면 2개뿐이라, 이 신규 토큰만
+     사용해서 그 범위 밖 화면에 영향이 가지 않게 했다). 62개 파일에 흩어진
+     인라인 hex 색상 조사 결과 가장 많이 쓰이는 값(#1a6b5a #fafaf8 #e8845a
+     #3a3a4a #1e1e2d #ffffff)이 이미 이 스킬 팔레트와 정확히 일치했다 — 즉
+     색상 자체를 바꾸는 게 아니라 이미 맞는 값을 토큰으로 승격시키는 작업이다.
+     ══════════════════════════════════════════════════════════════════ */
+  --color-warm-white: #FAFAF8;
+  --color-surface: #FFFFFF;
+  --color-secondary: #2D9F8F;
+  --color-coral: #E8845A;
+  --color-coral-hover: #D9714A;
+  --color-charcoal: #1E1E2D;
+  --color-body: #3A3A4A;
+  --color-muted: #8A8A97;
+  --color-tint: #ECF5F2;
+  --color-coral-tint: #FBECE3;
+  --color-hairline: #E7ECEA;
+  --color-success: #1A6B5A;
+  --color-success-bg: #ECF5F2;
+  --color-info: #2D9F8F;
+  --color-info-bg: #E4F2EF;
+  --color-warning: #E8A54A;
+  --color-warning-bg: #FBF0DD;
+  --color-danger: #D9534F;
+  --color-danger-bg: #FBE9E8;
 }
 
 /* ── 글로벌 기본값 ── */
