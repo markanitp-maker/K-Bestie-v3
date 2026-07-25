@@ -1797,11 +1797,18 @@ function MissionInner() {
     voiceState = "idle";
   }
   const missionPercent = progressPercent;
-  // 수동 버튼 전용 — 답변 판정/다음 질문 생성 중엔 canStartRecording 가드가 탭을 무시하므로,
-  // 버튼을 "생각 중" 모양으로 바꿔 침묵 무시와 진짜 먹통을 아이가 구분할 수 있게 한다.
-  // Live 모드는 turnPhaseUi로, STT/TTS 모드는 isProcessingAnswer로 판단한다(011 "문제 A" —
-  // 이 값이 예전엔 Live 전용으로만 게이팅돼 있어 실제 Dev 환경(STT/TTS)에서는 항상 false였다).
-  const isThinkingTurn = !isAuto && (isLiveMode ? turnPhaseUi !== "idle" : isProcessingAnswer);
+  // 수동 버튼 전용 — 답변 판정/다음 질문 생성 중이거나 케이가 말하는 중엔 canStartRecording
+  // 가드가 탭을 무시하므로, 버튼을 회색 비활성 모양으로 바꿔 침묵 무시와 진짜 먹통을 아이가
+  // 구분할 수 있게 한다(대표님 추가 요구 — 하단 메인 버튼 3단계: 대기/녹음중/K말하는중).
+  // Live 모드는 turnPhaseUi로 판단(child_finalizing/waiting_k/k_speaking 전부 포함).
+  // STT/TTS 모드는 isProcessingAnswer(판정+다음 질문 생성 중) OR sttTts.isSpeaking(TTS 재생
+  // 중)로 판단한다 — 이 값이 예전엔 Live 전용으로만 게이팅돼 있어 실제 Dev 환경(STT/TTS)에서는
+  // 항상 false였고(011 "문제 A"), isProcessingAnswer만 봤을 때도 TTS 재생 구간(케이가 실제로
+  // 말하는 중)이 빠져 있어 그 사이엔 버튼이 다시 "대기" 모양으로 되돌아가는 문제가 있었다.
+  const isThinkingTurn = !isAuto && (isLiveMode ? turnPhaseUi !== "idle" : (isProcessingAnswer || sttTts.isSpeaking));
+  // 회색 비활성 버튼의 문구를 "케이가 말하는 중"과 "케이가 생각하는 중"으로 구분(같은 회색
+  // 비활성 모양, 문구만 다름) — 아이가 실제로 케이 목소리가 나오는 순간인지 구분할 수 있게 한다.
+  const isKSpeakingNow = isLiveMode ? turnPhaseUi === "k_speaking" : sttTts.isSpeaking;
 
   // 011 2차: "복구 불가능한 경우에만" 뜨는 재시도 UI — 케이 말풍선도, 상단 배너도 아니다.
   // 화면 중앙에 짧은 문구 + 다시 시도/미션 나가기 버튼만 보여준다(011 §"복구 불가능 오류 UI").
@@ -1945,12 +1952,23 @@ function MissionInner() {
                 ) : (
                   <button
                     onClick={handleCentralButtonClick}
-                    className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-                    style={{ background: isRecording ? "#e05a3f" : "#e8845a" }}
-                    aria-label={isRecording ? "말하기 완료" : isThinkingTurn ? "케이가 생각하고 있어요" : "말하기 시작"}
+                    disabled={isThinkingTurn}
+                    className={`w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-all ${
+                      isThinkingTurn ? "cursor-not-allowed" : "cursor-pointer active:scale-95"
+                    }`}
+                    style={{ background: isRecording ? "#e05a3f" : isThinkingTurn ? "#9ca3af" : "#e8845a" }}
+                    aria-label={
+                      isRecording
+                        ? "말하기 완료"
+                        : isThinkingTurn
+                          ? (isKSpeakingNow ? "케이가 말하고 있어요" : "케이가 생각하고 있어요")
+                          : "말하기 시작"
+                    }
                   >
                     {isRecording ? (
                       <div className="w-5 h-5 rounded-sm bg-white" />
+                    ) : isThinkingTurn ? (
+                      <div className="w-5 h-5 border-2 border-white/60 border-t-white rounded-full animate-spin" />
                     ) : (
                       <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
                         <circle cx="12" cy="12" r="8" />
@@ -2230,20 +2248,29 @@ function MissionInner() {
                     모양이라 "눌러도 반응이 없다"로 보였다(진짜 원인: 시각 피드백 부재). */}
                 {!isRecording && isThinkingTurn && (
                   <div className="absolute -top-8 text-[11px] font-extrabold text-gray-500 whitespace-nowrap bg-gray-100 px-2.5 py-0.5 rounded-full border border-gray-200">
-                    케이가 생각하고 있어요…
+                    {isKSpeakingNow ? "케이가 말하고 있어요" : "케이가 생각하고 있어요…"}
                   </div>
                 )}
                 <button
                   ref={buttonRef}
                   onClick={handleCentralButtonClick}
-                  className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md active:scale-95 cursor-pointer transition-all duration-75 ${
+                  disabled={isThinkingTurn}
+                  className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-all duration-75 ${
+                    isThinkingTurn ? "cursor-not-allowed" : "active:scale-95 cursor-pointer"
+                  } ${
                     isRecording
                       ? "bg-gradient-to-br from-orange-400 to-orange-500"
                       : isThinkingTurn
                         ? "bg-gray-300"
                         : "bg-[#e8845a]"
                   }`}
-                  aria-label={isRecording ? "말하기 완료" : isThinkingTurn ? "케이가 생각하고 있어요" : "말하기 시작"}
+                  aria-label={
+                    isRecording
+                      ? "말하기 완료"
+                      : isThinkingTurn
+                        ? (isKSpeakingNow ? "케이가 말하고 있어요" : "케이가 생각하고 있어요")
+                        : "말하기 시작"
+                  }
                 >
                   {isRecording ? (
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
