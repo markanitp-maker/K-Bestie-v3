@@ -1453,11 +1453,20 @@ function MissionInner() {
              const isDay = round === "round1_day";
              const givenName = typeof data.givenName === "string" ? data.givenName : null;
              const greetingIntro = givenName ? `안녕~ ${appendVocative(givenName)}.` : "안녕~";
-             const greetingText = isDay
-               ? (Math.random() > 0.5
-                  ? `${greetingIntro} 어제는 잘 잤니?`
-                  : `${greetingIntro} 학교는 잘 다녀왔니?`)
-               : `${greetingIntro} 오늘 하루 어땠니?`;
+             // 011 A안(2026-07-26): 서버(app/api/mission/start)가 최근 기억과의 연결성이
+             // 높다고 판단했을 때만 memoryGreeting을 내려준다 - 있으면 그걸 그대로 쓰고,
+             // 없으면(대부분의 경우) 기존 day/night 템플릿 인사말로 그대로 폴백한다.
+             const memoryGreeting =
+               typeof data.memoryGreeting === "string" && data.memoryGreeting.trim()
+                 ? data.memoryGreeting.trim()
+                 : null;
+             const greetingText =
+               memoryGreeting ??
+               (isDay
+                 ? (Math.random() > 0.5
+                    ? `${greetingIntro} 어제는 잘 잤니?`
+                    : `${greetingIntro} 학교는 잘 다녀왔니?`)
+                 : `${greetingIntro} 오늘 하루 어땠니?`);
 
              qs.unshift({
                id: "greeting_turn_0",

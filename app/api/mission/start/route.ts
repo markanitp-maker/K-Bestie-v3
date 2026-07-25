@@ -7,6 +7,8 @@ import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
 import { isChildAlphaAllowedForQuestions } from "@/lib/questions/alphaAllowlist";
 import { selectAlphaQuestions, selectFixedMissionQuestions, selectAdditionalReserveQuestions, RESERVE_TARGET_COUNT } from "@/lib/mission/selectQuestions";
 import { ChildConversationContext } from "@/lib/mission/ChildConversationContext";
+import { buildMemoryGreeting } from "@/lib/mission/memoryGreeting";
+import { appendVocative } from "@/lib/utils/koreanParticle";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
@@ -465,6 +467,15 @@ export async function POST(req: NextRequest) {
     .map((qid) => (questions ?? []).find((q) => q.id === qid))
     .filter(Boolean);
 
+  // requests/011 A안(2026-07-26 확정): 새 세션(비-이어하기) 인사말에 한해 최근 기억을
+  // 조회해 연결성이 높을 때만 개인화된 인사말을 시도한다. 실패/무관련이면 null을 반환해
+  // 클라이언트(app/child/missions/page.tsx)의 기존 템플릿 인사말로 자연스럽게 폴백된다.
+  const memoryGreeting = await buildMemoryGreeting(
+    service,
+    childId,
+    givenName ? appendVocative(givenName) : null
+  );
+
   return NextResponse.json({
     resumed: false,
     sessionId: session.id,
@@ -480,5 +491,6 @@ export async function POST(req: NextRequest) {
     liveVoiceName,
     givenName,
     childContext,
+    memoryGreeting,
   });
 }
