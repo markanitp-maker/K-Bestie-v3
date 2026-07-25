@@ -8,28 +8,55 @@ import { RealChildNav } from "@/components/RealChildNav";
 
 type ChildInfo = { id: string; name: string; grade: string };
 
-const HOME_CARDS = [
+// 대표님 지시(2026-07-25): 아이 홈 주요 액션 카드는 화면 하나의 하드코딩이 아니라
+// "child action card" variant 체계로 관리한다 — 카드마다 기능적 의미가 다르므로
+// (미션=가장 강한 CTA, 대화=더 부드럽고 따뜻한 톤, 놀이=차분한 정보색) 색을 구분한다.
+// 새 CSS 변수/디자인 스킬 파일은 건드리지 않고, 이미 globals.css에 존재하는
+// v2.0 토큰(--color-k-orange/--color-k-mascot-orange/--color-k-sky-blue)만 참조한다.
+// hover/pressed는 새 색상 토큰을 추가하는 대신 brightness 필터(다크모드·터치 모두 안전)로
+// 표현해 이번 변경이 globals.css/스킬 파일 확장 없이 프로젝트 코드만으로 완결되게 했다.
+type ChildActionCardVariant = "primary" | "warm" | "info";
+
+const CHILD_ACTION_CARD_VARIANTS: Record<
+  ChildActionCardVariant,
+  { bg: string; badgeBg: string }
+> = {
+  // 미션 진행 — 가장 강한 CTA. K-Orange 그대로 유지.
+  primary: { bg: "var(--color-k-orange)", badgeBg: "rgba(255,255,255,0.25)" },
+  // 대화하기 — 미션과 같은 주황을 쓰지 않고 K-Mascot-Orange 기반의 더 부드럽고
+  // 따뜻한 톤으로 분리(미션 카드와 한눈에 다른 성격으로 인지되도록).
+  warm: { bg: "var(--color-k-mascot-orange)", badgeBg: "rgba(255,255,255,0.28)" },
+  // 케이와 놀이 — K-Sky-Blue 유지.
+  info: { bg: "var(--color-k-sky-blue)", badgeBg: "rgba(255,255,255,0.25)" },
+};
+
+const HOME_CARDS: Array<{
+  icon: string;
+  title: string;
+  desc: string;
+  href: string;
+  variant: ChildActionCardVariant;
+}> = [
   {
     icon: "🎯",
     title: "미션 진행",
     desc: "오늘의 미션을 시작해요",
     href: "/child/missions",
-    // 014: 기존 #22c55e(원색 그린)는 스킬 팔레트에 없는 색이라 브랜드 딥그린(primary)으로 교체
-    bg: "var(--color-k-orange)",
+    variant: "primary",
   },
   {
     icon: "💬",
     title: "대화하기",
     desc: "케이랑 이야기 나눠요",
     href: "/chat",
-    bg: "var(--color-k-orange)",
+    variant: "warm",
   },
   {
     icon: "🎮",
     title: "케이와 놀이",
     desc: "재미있는 놀이를 해봐요",
     href: "/child/play",
-    bg: "var(--color-k-sky-blue)",
+    variant: "info",
   },
 ];
 
@@ -192,16 +219,18 @@ export default function ChildHomePage() {
           </div>
 
           <div className="flex flex-col gap-4">
-            {HOME_CARDS.map((card) => (
+            {HOME_CARDS.map((card) => {
+              const variantStyle = CHILD_ACTION_CARD_VARIANTS[card.variant];
+              return (
               <Link
                 key={card.title}
                 href={card.href}
-                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98]"
-                style={{ background: card.bg }}
+                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-all active:scale-[0.98] hover:brightness-95 active:brightness-90"
+                style={{ background: variantStyle.bg }}
               >
                 <div
                   className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0"
-                  style={{ background: "rgba(255,255,255,0.25)" }}
+                  style={{ background: variantStyle.badgeBg }}
                 >
                   {card.icon}
                 </div>
@@ -216,7 +245,8 @@ export default function ChildHomePage() {
                 </div>
                 <span className="text-white text-lg">→</span>
               </Link>
-            ))}
+              );
+            })}
 
             {isTestAccount && (
               <Link
