@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
 import { writeMbtiSessionHandoff } from "@/lib/play/mbtiSessionHandoff";
+import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 
 const GAMES = [
   { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", keys: 2 },
@@ -147,9 +148,10 @@ export default function ChildPlayPage() {
           setShowInsufficientModal(true);
           return;
         } else if (res.ok) {
-          const { redirectUrl } = await res.json();
+          const { token } = await res.json();
           setShowActionModal(false);
-          window.location.href = redirectUrl;
+          writeQuizSessionHandoff({ token, childId });
+          router.push("/play/quiz");
         } else {
           alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
         }
@@ -231,9 +233,10 @@ export default function ChildPlayPage() {
           setShowInsufficientModal(true);
           return;
         } else if (res.ok) {
-          const { redirectUrl } = await res.json();
+          const { token } = await res.json();
           setShowActionModal(false);
-          window.location.href = redirectUrl;
+          writeQuizSessionHandoff({ token, childId });
+          router.push("/play/quiz");
         } else {
           alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
         }
