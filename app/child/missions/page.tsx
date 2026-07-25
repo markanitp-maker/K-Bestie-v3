@@ -1968,8 +1968,16 @@ function MissionInner() {
              말하는 순간) 여부와 무관하게 이 슬롯 전체가 항상 렌더되도록
              MissionConversationLayout.tsx도 함께 수정했다. */
           mascotSlot={
-            <div className="flex items-center justify-center gap-3">
-              <VoiceConversationStateBadge state={voiceState} />
+            // 020: 좌(상태배지)/중(케이)/우(토글) 3열 grid로 고정 - flex+justify-center는
+            // 그룹 전체 폭이 상태 텍스트 길이("듣는 중"↔"생각하는 중"↔"말하는 중")에 따라
+            // 바뀔 때마다 가운데 정렬 기준이 이동해 케이가 좌우로 움직이는 것처럼 보였다.
+            // grid-cols-[1fr_auto_1fr]는 가운데 열(케이) 폭이 콘텐츠에 의해서만 정해지고
+            // 좌/우 열은 남는 공간을 균등히 나눠 가지므로, 배지 텍스트 길이가 바뀌어도
+            // 케이의 그리드 상 중앙 위치 자체는 전혀 이동하지 않는다.
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 w-full">
+              <div className="justify-self-end">
+                <VoiceConversationStateBadge state={voiceState} />
+              </div>
               <div className="relative inline-flex items-center justify-center">
                 <KBestieMascotAnimation
                   state={(isLiveMode ? turnPhaseUi === "k_speaking" : sttTts.isSpeaking) ? "talking" : "idle"}
@@ -1984,9 +1992,11 @@ function MissionInner() {
                   {kVoiceEnabled ? "🔊" : "🔇"}
                 </button>
               </div>
-              {!missionDoneNow && (
-                <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
-              )}
+              <div className="justify-self-start">
+                {!missionDoneNow && (
+                  <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
+                )}
+              </div>
             </div>
           }
           isListening={isRecording}
@@ -2226,9 +2236,15 @@ function MissionInner() {
           </div>
         </div>
 
-        {/* 012: 상태배지(좌) - 케이 캐릭터(중앙) - 자동/수동 토글(우), 항상 노출 */}
-        <div className="flex justify-center items-center gap-3 mb-2 max-w-sm mx-auto">
-          <VoiceConversationStateBadge state={voiceState} />
+        {/* 012: 상태배지(좌) - 케이 캐릭터(중앙) - 자동/수동 토글(우), 항상 노출
+            020: grid-cols-[1fr_auto_1fr]로 고정 - flex+justify-center는 상태 텍스트
+            길이가 바뀔 때마다 그룹 전체 폭이 변해 케이가 좌우로 움직여 보이는 문제가
+            있었다. 가운데 열(케이)은 콘텐츠 폭만큼만 차지하고 좌우 열이 남는 공간을
+            나눠 가지므로 배지 내용이 바뀌어도 케이의 그리드 상 위치는 이동하지 않는다. */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mb-2 max-w-sm mx-auto">
+          <div className="justify-self-end">
+            <VoiceConversationStateBadge state={voiceState} />
+          </div>
           <div className="relative inline-flex items-center justify-center">
             <KBestieMascotAnimation state="idle" size={96} />
             {/* 012 claude-review 지적: 이 블록은 이미 Live 전용 분기(if (!isLiveMode) 블록
@@ -2244,9 +2260,11 @@ function MissionInner() {
               {kVoiceEnabled ? "🔊" : "🔇"}
             </button>
           </div>
-          {!isDone && (
-            <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
-          )}
+          <div className="justify-self-start">
+            {!isDone && (
+              <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
+            )}
+          </div>
         </div>
       </div>
 
