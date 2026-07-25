@@ -82,7 +82,12 @@ export function MissionConversationLayout({
             "하단 고정 영역: 현재 케이 말풍선/마스코트/상태배지" 요구사항과 불일치). overflow는
             auto가 아니라 hidden — 3개로 자른 이상 스크롤이 필요할 일이 없고, 011은 별도
             스크롤바 표시 자체를 금지한다. */}
-        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "20px 14px" }}>
+        {/* minHeight:0은 필수다 — flex:1 자식은 기본값이 min-height:auto라 콘텐츠가 조금만
+            많아도(실기기 Safari의 100dvh는 툴바 상태에 따라 데스크톱 시뮬레이션보다 실제로
+            더 작을 수 있음) 이 영역이 필요한 만큼 줄어들지 않고 전체 flex 컬럼(100dvh,
+            overflow:hidden)을 넘쳐서, 바깥 overflow:hidden이 하단 고정 영역 일부(마스코트)를
+            잘라내는 원인이 됐다(2026-07-25 대표님 실기기 확인 - "마스코트가 반쯤 잘림"). */}
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "20px 14px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {history.slice(-3).map((turn, index, arr) => {
               // 역순 인덱스 (끝에서 멀수록 0에 가까움)
@@ -118,10 +123,22 @@ export function MissionConversationLayout({
 
         {/* 하단 고정 영역 — 011 "현재 케이 말풍선 / 케이 마스코트 / 상태 배지 / 음성 ON/OFF /
             대화·종료 메뉴". activeTurn(현재 발화 중인 말풍선)과 mascotSlot(마스코트+상태배지)을
-            여기로 옮겨 스크롤 영역과 완전히 분리했다 — 히스토리가 몇 개든 이 영역은 항상 보인다. */}
-        <div style={{ flexShrink: 0, borderTop: "1px solid #e5e7eb", background: "#fff", padding: "16px 14px calc(16px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", alignItems: "center", minHeight: 90 }}>
+            여기로 옮겨 스크롤 영역과 완전히 분리했다 — 히스토리가 몇 개든 이 영역은 항상 보인다.
+            2026-07-25 대표님 실기기 확인: 마스코트가 반쯤 잘리는 문제 수정 —
+            (1) overflow:visible로 명시(내부에서 잘라내지 않음, 실제 클리핑 원인은 바깥
+                히스토리 영역의 minHeight:0 누락이었지만 방어적으로 여기도 visible 명시),
+            (2) 실제 조작 버튼(app/child/missions/page.tsx가 이 컴포넌트 위에
+                absolute bottom-0으로 겹쳐 그리는 마이크/텍스트/종료 버튼 행,
+                약 20px+64px+20px+safe-area ≈ 104px+safe-area)과 마스코트가 겹치지
+                않도록 하단 여백을 120px+safe-area로 늘림(기존 16px+safe-area는
+                실제 버튼 행 높이보다 훨씬 작아서 마스코트 아랫부분이 그 버튼 행에
+                가려질 수 있었음),
+            (3) 예전에 있던 자체 "듣고 있어요/파형" 장식 영역은 어차피 실제 버튼 행에
+                완전히 가려지도록 설계돼 있었던 죽은 UI라(주석 그대로: 이 컴포넌트 위에
+                "겹쳐서 표시") 제거해 마스코트가 쓸 수 있는 세로 공간을 늘림. */}
+        <div style={{ flexShrink: 0, borderTop: "1px solid #e5e7eb", background: "#fff", padding: "16px 14px calc(120px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", alignItems: "center", overflow: "visible" }}>
           {activeTurn && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", marginBottom: 12 }}>
+            <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
               {activeTurn.role === "k" ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
                   <div style={{
@@ -191,38 +208,16 @@ export function MissionConversationLayout({
               )}
             </div>
           )}
-          {isListening ? (
-            <>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#1a6b5a", marginBottom: 12 }}>
-                듣고 있어요
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 4, height: 24 }}>
-                {[...Array(5)].map((_, i) => {
-                  // 간단한 파형 생성: micLevel (0~1)과 인덱스를 조합해 높이를 다르게
-                  const centerDist = Math.abs(i - 2);
-                  const baseHeight = 4 + (2 - centerDist) * 4;
-                  const dynamicHeight = Math.max(4, baseHeight + micLevel * 16 * (3 - centerDist));
-                  
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        width: 4,
-                        borderRadius: 2,
-                        background: "#1a6b5a",
-                        height: `${dynamicHeight}px`,
-                        transition: "height 0.1s ease",
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 600, color: "#9ca3af" }}>
-              대기 중...
-            </div>
-          )}
+          {/* 2026-07-25 대표님 실기기 확인 후 제거: 이 자리에 있던 자체 "듣고 있어요/파형"
+              장식 영역은 app/child/missions/page.tsx가 이 컴포넌트 바로 위에 absolute로
+              겹쳐 그리는 실제 마이크/텍스트/종료 버튼 행에 항상 완전히 가려지도록 설계돼
+              있었다(이 파일 상단 주석 "장식용 마이크 파형 존 위에 겹쳐서 표시" 참고) — 즉
+              애초에 사용자에게 보인 적이 없는 죽은 UI였다. 상태 표시는 mascotSlot에 이미
+              포함된 VoiceConversationStateBadge(듣는 중/생각하는 중/말하는 중)가 activeTurn과
+              함께 보여준다. 이 죽은 UI를 제거해 마스코트가 쓸 수 있는 세로 공간을 넓혔다
+              (마스코트가 반쯤 잘리던 원인 중 하나 — 나머지 원인은 위 히스토리 영역의
+              minHeight:0 누락). isListening/micLevel prop은 호출부 호환을 위해 인터페이스에
+              남겨두되 더 이상 이 안에서 렌더링하지 않는다. */}
         </div>
       </div>
     </div>
