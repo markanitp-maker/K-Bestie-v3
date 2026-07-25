@@ -1,33 +1,24 @@
 /**
  * POST /api/mbti/progress — MBTI 문항 진행 상태 저장 (네이티브 /play/mbti 전용)
+ * (2026-07-25 200문항뱅크/세션당 20문항 개편, schemaVersion 2)
  *
  * 인증 구조: 별도 mbti 저장소(commit c6080b3)에서 확정된 playSessionId 기반 세션
- * 검증 패턴을 그대로 재사용한다 — 이 라우트는 Supabase Auth 쿠키(auth.getUser())를
- * 전혀 확인하지 않는다. /play/mbti는 이제 같은 오리진이라 쿠키 인증이 기술적으로는
- * 가능하지만, 대표님 지시(2026-07-25)에 따라 세션 존재/play_type/status/
- * resume_expires_at을 매 요청마다 서버 DB에서 직접 재확인하는 방식을 그대로 유지한다
- * (단순 UUID 신뢰가 아니라 실제 세션 행 상태 검증).
+ * 검증 패턴을 그대로 재사용한다 — 이 라우트는 Supabase Auth 쿠키를 확인하지 않는다.
  *
- * k_play_sessions.progress_state는 4종 놀이가 공유하는 애플리케이션 정의 JSONB
- * 컬럼이다. MBTI의 상세 진행 상태(questionIndex/answers/progressVersion/savedAt)는
- * progress_state.mbti 네임스페이스 아래에만 쓴다 — 루트의 progressPercent(범용 놀이
- * 대시보드/자동환불 판단용, app/api/play/progress/route.ts가 다른 놀이 타입에도
- * 동일하게 쓰는 필드)와 충돌하지 않도록 병합 저장한다.
- *
- * 세션 검증(lib/play/sessionAuth)·네임스페이스 조립·버전 CAS 저장
- * (lib/play/progressState)은 놀이 공통 인프라(2026-07-25 리팩터링)로 추출됐다 —
- * 신규 놀이 타입도 이 두 모듈만 재사용하면 동일한 진행 저장 라우트를 만들 수 있다.
+ * 이 라우트는 questionOrder/optionOrder/selectedQuestionIds를 절대 재계산하지 않는다
+ * (그건 `GET /api/mbti/session`이 최초 진입 시 단 한 번만 고정한다). 여기서는 기존에
+ * 저장된 그 값들을 그대로 보존한 채 questionIndex/answers/progressVersion만 갱신한다.
+ * 아직 초기화(GET 최초 호출)가 되지 않은 세션에 저장을 시도하면(이론상 클라이언트가
+ * GET을 건너뛰지 않는 한 발생하지 않음) 명확한 오류로 거부한다 — questionOrder 없이
+ * progress_state를 저장하면 이후 조회에서 파싱 실패(구버전 취급)로 조용히 무시되는
+ * 데이터 손상을 막기 위한 방어선이다.
  */
 
 import { NextResponse } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { loadPlaySession } from "@/lib/play/sessionAuth";
-import {
-  buildProgressState,
-  readNamespace,
-  saveProgressWithVersionCas,
-} from "@/lib/play/progressState";
+import { buildProgressState, readNamespace, saveProgressWithVersionCas } from "@/lib/play/progressState";
 import {
   parseMbtiAnswers,
   parseMbtiProgressState,
@@ -39,7 +30,7 @@ import {
 export const runtime = "nodejs";
 
 const PLAY_TYPE = "mbti";
-const MBTI_TOTAL_QUESTIONS = 16;
+const MBTI_TOTAL_QUESTIONS = 20;
 
 interface RawSaveProgressRequestBody {
   sessionId?: unknown;
@@ -72,7 +63,8 @@ export async function POST(request: Request): Promise<NextResponse> {
     !sessionId ||
     !Number.isFinite(questionIndex) ||
     !Number.isFinite(progressVersion) ||
-    answers === null
+    answers === null ||
+    answers.length > MBTI_TOTAL_QUESTIONS
   ) {
     return errorResponse(400, {
       reason: "invalid_input",
@@ -116,17 +108,26 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const sessionRow = validity.session;
   const storedProgress = parseMbtiProgressState(readNamespace(sessionRow.progress_state, PLAY_TYPE));
-  const storedVersion = storedProgress?.progressVersion ?? null;
+
+  if (!storedProgress) {
+    // GET /api/mbti/session이 먼저 20문항을 선정·고정해야만 이 라우트가 안전하게 병합 저장할
+    // 수 있다 — questionOrder 없이 저장하면 다음 조회에서 구버전으로 오인되어 진행이 사라진다.
+    return errorResponse(409, {
+      reason: "session_not_initialized",
+      message: "문항이 아직 선정되지 않은 세션입니다. 세션 조회를 먼저 호출해야 합니다.",
+    });
+  }
+
+  const storedVersion = storedProgress.progressVersion;
 
   const nextMbtiState: MbtiProgressState = {
+    ...storedProgress,
     questionIndex,
     answers,
     progressVersion,
     savedAt: new Date().toISOString(),
   };
-  const nextProgressState = buildProgressState(sessionRow.progress_state, PLAY_TYPE, { ...nextMbtiState }, {
-    progressPercent: Math.round((answers.length / MBTI_TOTAL_QUESTIONS) * 100),
-  });
+  const nextProgressState = buildProgressState(sessionRow.progress_state, PLAY_TYPE, { ...nextMbtiState });
 
   const result = await saveProgressWithVersionCas(
     service,

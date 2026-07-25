@@ -2,13 +2,10 @@
  * 케이 놀이: MBTI — 공용 타입 정의
  *
  * 이 파일은 questionBank.ts / typeProfiles.ts가 공통으로 사용하는
- * 축(Axis)·극(Pole)·유형(MbtiType) 타입과 동점 처리 기본극 상수를 담는다.
+ * 축(Axis)·극(Pole)·유형(MbtiType) 타입을 담는다.
  *
- * 통합 지점 안내(오케스트레이터용):
- * 스캐폴딩 단계에서 `lib/play-protocol.ts`가 별도로 생성되면, 그 모듈이
- * 정의하는 공용 놀이 프로토콜 타입(PlaySessionId 등)과 이 파일의 MBTI 전용
- * 타입은 서로 독립적으로 유지하면 된다. 판정 로직(§3.1 구현 시)에서
- * `MbtiType`과 `TIE_BREAK_POLE`을 그대로 가져다 쓰면 된다.
+ * 200문항뱅크 전환(2026-07-25, 축당 5문항 다수결)으로 동점이 구조적으로 불가능해져
+ * (5표는 절대 2.5:2.5로 나뉠 수 없음) 기존 TIE_BREAK_POLE 기본극 상수는 제거했다.
  */
 
 /** 4개 진단 축. SPEC.md §3.1 기준 표기 순서(E/I · N/S · F/T · P/J)를 따른다. */
@@ -54,24 +51,3 @@ export const ALL_MBTI_TYPES: readonly MbtiType[] = [
   "ESTP",
   "ESTJ",
 ];
-
-/**
- * 축별 동점 처리 기본극(SPEC.md §3.1 "동점 시 기본 극(사전 정의) 채택" 대응).
- *
- * 근거(초안 — 대표 검토 시 변경 가능): 상황형 이지선다 특성상 "바로 뛰어나간다/
- * 미리 정해둔다"처럼 능동적·결정적으로 들리는 선택지(E·S·T·J)가 사회적으로 더
- * 매력적으로 읽혀 과대 선택될 수 있다는 우려가 있어, 균형을 맞추기 위해 반대쪽
- * 극(I·N·F·P)을 기본값으로 채택했다. 두 극 모두 우열이 없다는 서비스 톤과도
- * 부합한다.
- */
-export const TIE_BREAK_POLE: {
-  EI: EIPole;
-  SN: SNPole;
-  TF: TFPole;
-  JP: JPPole;
-} = {
-  EI: "I",
-  SN: "N",
-  TF: "F",
-  JP: "P",
-};

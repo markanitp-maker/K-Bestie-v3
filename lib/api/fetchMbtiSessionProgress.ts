@@ -16,10 +16,14 @@
 
 import type { MbtiProgressState } from "@/lib/api/mbtiProgress";
 
-/** `GET /api/mbti/session` 성공 응답 shape. */
+/** `GET /api/mbti/session` 성공 응답 shape.
+ *
+ * 2026-07-25 200문항뱅크 개편으로 이 조회는 더 이상 "진행 있음/없음"만 보고하지 않는다 —
+ * 저장된 진행이 없으면(첫 진입) 서버가 이 호출 안에서 20문항을 즉시 선정·고정해 반환하므로,
+ * 성공 응답의 `progressState`는 항상 값이 있다(문항이 아직 0개 답변된 상태일 뿐).
+ */
 export interface FetchMbtiSessionProgressResponse {
-  /** 저장된 진행 상태. 한 문항도 답하지 않았거나 저장 전이면 null. */
-  progressState: MbtiProgressState | null;
+  progressState: MbtiProgressState;
 }
 
 /** `GET /api/mbti/session` 실패 응답 바디. */

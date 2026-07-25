@@ -104,6 +104,10 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
         <div className="flex flex-col items-center gap-1">
           <p className="text-sm font-semibold text-amber-600">{mbtiType}</p>
           <h1 className="text-2xl font-bold text-gray-900">{profile.animalName}</h1>
+          {/* 결과는 진단이나 고정된 성격이 아니라 이번 놀이 회차에서 나타난 경향임을
+           * 분명히 한다(2026-07-25 200문항뱅크 개편 요구사항) — 다음에 다시 하면 문항
+           * 구성이 달라 다른 결과가 나올 수 있다는 점도 함께 안내한다. */}
+          <p className="text-xs text-gray-400">오늘 답변에서 나온 경향이에요. 다음에 또 해보면 달라질 수도 있어요!</p>
         </div>
 
         <p className="text-base leading-relaxed text-gray-700">{profile.childDescription}</p>
