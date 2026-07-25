@@ -80,27 +80,37 @@ export async function runContextCorrectionPipeline(targetDate: string, specificS
         });
       }
 
-      if (newRawRecords.length === 0) continue;
-
-      const { data: insertedRaw, error: rawInsertErr } = await db
-        .from("raw_daily_conversations")
-        .insert(newRawRecords)
-        .select("*");
-      
-      if (rawInsertErr) throw new Error(`Raw 데이터 삽입 실패: ${rawInsertErr.message}`);
-      result.collected += insertedRaw.length;
+      // newRawRecords가 0건이어도(이미 전부 수집된 세션) 곧장 건너뛰지 않는다 - 이전 실행에서
+      // raw는 수집됐지만 correction이 실패/타임아웃으로 완료되지 못한 채 남아있을 수 있고,
+      // 그 경우 여기서 continue하면 그 세션은 영원히 재시도되지 않는다.
+      if (newRawRecords.length > 0) {
+        const { error: rawInsertErr } = await db
+          .from("raw_daily_conversations")
+          .insert(newRawRecords);
+        if (rawInsertErr) throw new Error(`Raw 데이터 삽입 실패: ${rawInsertErr.message}`);
+        result.collected += newRawRecords.length;
+      }
 
       // "케이 직전 질문"/"이전 1~3턴"은 이번 실행에서 새로 넣은 것뿐 아니라 같은 세션이 이전
-      // 수집 배치(예: 18:00분)에서 이미 저장해 둔 턴까지 포함해야 한다 - insertedRaw만 보면
-      // 하루 두 번째 배치(23:59:59)에서 첫 배치가 저장한 이전 턴을 전혀 못 보고 컨텍스트가
-      // 끊긴다. 세션 전체 raw 이력을 turn_order 순으로 다시 조회해 사용한다.
+      // 수집 배치(예: 18:00분)에서 이미 저장해 둔 턴까지 포함해야 한다 - 세션 전체 raw 이력을
+      // turn_order 순으로 다시 조회해 사용한다(신규/기존 구분 없이 항상 전체 재조회).
       const { data: allSessionRaw, error: allRawErr } = await db
         .from("raw_daily_conversations")
-        .select("id, speaker, raw_text")
+        .select("id, speaker, raw_text, child_id, session_id, business_date")
         .eq("session_id", session.id)
         .order("turn_order", { ascending: true });
       if (allRawErr) throw new Error(`세션 전체 raw 조회 실패: ${allRawErr.message}`);
-      const sessionRawHistory = allSessionRaw ?? insertedRaw;
+      if (!allSessionRaw?.length) continue;
+      const sessionRawHistory = allSessionRaw;
+
+      // 이미 보정된(corrected_daily_conversations에 행이 있는) raw는 다시 보정하지 않는다 -
+      // 신규 수집분뿐 아니라 이전 실행에서 raw만 남고 보정이 안 끝난 것까지 여기서 함께 잡는다.
+      const { data: alreadyCorrected, error: correctedCheckErr } = await db
+        .from("corrected_daily_conversations")
+        .select("raw_conversation_id")
+        .eq("session_id", session.id);
+      if (correctedCheckErr) throw new Error(`보정 완료 여부 조회 실패: ${correctedCheckErr.message}`);
+      const correctedRawIds = new Set((alreadyCorrected ?? []).map((r: any) => r.raw_conversation_id));
 
       // 아이별 확정 정보(이름/친구/관심사/자주 쓰는 표현) — 보정 프롬프트의 컨텍스트로 사용.
       // 이미 mission 리포트/memoryRecallResponder가 쓰는 것과 동일한 조회 패턴(long_term 위주).
@@ -120,7 +130,9 @@ export async function runContextCorrectionPipeline(targetDate: string, specificS
         console.error("[contextCorrection] child_memory 조회 실패(계속 진행):", memErr);
       }
 
-      const childRaws = insertedRaw.filter((r: any) => r.speaker === "child");
+      const childRaws = sessionRawHistory.filter(
+        (r: any) => r.speaker === "child" && !correctedRawIds.has(r.id)
+      );
       for (const raw of childRaws) {
         const rawIdx = sessionRawHistory.findIndex((r: any) => r.id === raw.id);
         const previousTurns = sessionRawHistory.slice(Math.max(0, rawIdx - 3), rawIdx);
