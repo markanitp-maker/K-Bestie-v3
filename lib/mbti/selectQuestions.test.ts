@@ -77,6 +77,19 @@ test("selectMbtiQuestions: 최근 세션에서 나온 문항은 신선한 후보
   assert.equal(overlap.length, 0, `최근 사용 문항이 재출제됨: ${overlap.join(", ")}`);
 });
 
+test("selectMbtiQuestions: 같은 이미지가 연속으로 배치되지 않음(다른 축 문항끼리도)", () => {
+  for (let seed = 1; seed <= 300; seed++) {
+    const selection = selectMbtiQuestions({ recentSessionsQuestionIds: [], random: seededRandom(seed) });
+    for (let i = 1; i < selection.questionOrder.length; i++) {
+      const prevImage = QUESTION_BY_ID.get(selection.questionOrder[i - 1]!)!.imagePath;
+      const currImage = QUESTION_BY_ID.get(selection.questionOrder[i]!)!.imagePath;
+      if (prevImage && currImage) {
+        assert.notEqual(currImage, prevImage, `seed=${seed} index=${i}에서 같은 이미지(${currImage})가 연속됨`);
+      }
+    }
+  }
+});
+
 test("selectMbtiQuestions: 후보가 부족하면(전 문항 최근 사용) 가장 오래된 세션부터 다시 허용해 5문항을 채움", () => {
   // 극단 케이스: 3개 최근 세션이 축당 50문항 전부를 나눠 "사용"한 것으로 시뮬레이션하면
   // 신선한 후보가 0개가 되지만, 그래도 각 축 5문항은 반드시 채워져야 한다(가장 오래된

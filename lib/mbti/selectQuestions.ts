@@ -115,6 +115,13 @@ function pickAxisQuestions(
  * 몰릴 수 있다(실제로 발견됨 — 테스트로 재현). "가장 많이 남은 축 우선"은 남은 문항이
  * 한쪽 축에 쏠리지 않게 계속 소진시켜, 각 축이 정확히 5개씩(최댓값 5 ≤ ⌈20/4⌉=5)인 이
  * 조건에서 항상 끝까지 인접 중복 없이 완주 가능함이 보장된다.
+ *
+ * 같은 이미지 연속 방지: 200문항이 20장의 일러스트를 다대일로 공유하므로, 서로 다른
+ * 축의 두 문항이 우연히 같은 imagePath를 가리키면 축 연속 회피만으로는 같은 이미지가
+ * 화면에 바로 이어서 나올 수 있다(실제로 5세션 라이브 검증에서 재현됨). 축을 고른 뒤
+ * 그 축의 남은 후보 중 직전에 놓인 문항과 이미지가 다른 것을 우선 선택하고, 그런
+ * 후보가 없을 때만(같은 축 내 남은 문항 전부가 직전과 같은 이미지인 극단적 경우)
+ * 어쩔 수 없이 맨 앞 문항을 그대로 쓴다.
  */
 function interleaveWithoutConsecutiveAxis(
   axisPicks: Readonly<Record<Axis, readonly Question[]>>,
@@ -125,6 +132,7 @@ function interleaveWithoutConsecutiveAxis(
   );
   const result: Question[] = [];
   let lastAxis: Axis | null = null;
+  let lastImage: string | undefined;
   const total = AXES.length * QUESTIONS_PER_AXIS;
 
   for (let i = 0; i < total; i++) {
@@ -139,9 +147,67 @@ function interleaveWithoutConsecutiveAxis(
     }
 
     const pool = remaining.get(axis)!;
-    const next = pool.shift()!;
-    result.push(next);
+    const differentImageIndex = pool.findIndex((q) => q.imagePath !== lastImage);
+    const pickIndex = differentImageIndex === -1 ? 0 : differentImageIndex;
+    const [next] = pool.splice(pickIndex, 1);
+    result.push(next!);
     lastAxis = axis;
+    lastImage = next!.imagePath;
+  }
+
+  return repairConsecutiveImages(result);
+}
+
+/**
+ * 위 그리디 배치는 "같은 축 안"에서만 다른 이미지 대안을 찾으므로, 특정 이미지가 한
+ * 축에 유독 몰려 있으면(실제로 200문항 매핑에서 발생 — 예: JP 축에 특정 이미지가
+ * 여러 개 배정된 경우) 축은 다르지만 이미지가 같은 두 문항이 여전히 연속될 수 있다
+ * (300 시드 스트레스 테스트로 실제 재현됨). 이 함수는 완성된 20문항 순서 전체를
+ * 훑으며 남은 위반을 찾아, 뒤쪽에서 축·이미지 제약을 모두 지키면서 자리를 바꿀 수
+ * 있는 문항을 찾아 스왑한다(전역 탐색이라 국소 수정보다 해결 가능성이 훨씬 높다).
+ */
+function repairConsecutiveImages(order: Question[]): Question[] {
+  const result = [...order];
+
+  const violatesAt = (arr: Question[], i: number): boolean =>
+    i > 0 && !!arr[i]!.imagePath && arr[i]!.imagePath === arr[i - 1]!.imagePath;
+
+  const canSwap = (arr: Question[], i: number, j: number): boolean => {
+    const swapped = [...arr];
+    [swapped[i], swapped[j]] = [swapped[j]!, swapped[i]!];
+    for (const idx of [i - 1, i, i + 1, j - 1, j, j + 1]) {
+      if (idx <= 0 || idx >= swapped.length) continue;
+      if (swapped[idx]!.axis === swapped[idx - 1]!.axis) return false;
+      if (swapped[idx]!.imagePath && swapped[idx]!.imagePath === swapped[idx - 1]!.imagePath) return false;
+    }
+    return true;
+  };
+
+  for (let i = 1; i < result.length; i++) {
+    if (!violatesAt(result, i)) continue;
+
+    let fixed = false;
+    // 전략 1: 위반 지점의 뒤쪽 문항(i)을 더 뒤(j)에 있는 문항과 바꾼다.
+    for (let j = i + 1; j < result.length && !fixed; j++) {
+      if (canSwap(result, i, j)) {
+        const tmp = result[i]!;
+        result[i] = result[j]!;
+        result[j] = tmp;
+        fixed = true;
+      }
+    }
+    // 전략 2(전략 1 실패 시): 위반 지점의 앞쪽 문항(i-1)을 더 앞쪽(k)에 있는 문항과
+    // 바꿔 위반 자체를 다른 조합으로 해소한다 — 전략 1이 막다른 경우를 보완한다.
+    for (let k = 0; k < i - 1 && !fixed; k++) {
+      if (canSwap(result, i - 1, k)) {
+        const tmp = result[i - 1]!;
+        result[i - 1] = result[k]!;
+        result[k] = tmp;
+        fixed = true;
+      }
+    }
+    // 두 전략 모두 실패하면(구조적으로 극히 드문 경우) 이 한 자리의 반복만 그대로
+    // 남긴다 — 억지 스왑으로 다른 자리의 축/이미지 제약을 깨뜨리지 않는다.
   }
 
   return result;

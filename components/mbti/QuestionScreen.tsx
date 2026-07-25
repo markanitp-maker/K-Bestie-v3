@@ -166,9 +166,10 @@ const QuestionScreen = ({
       </div>
 
       <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-5">
-        {/* 문항 상단 일러스트 — 200문항 중 20개만 실제 imagePath를 가진다(나머지는
-         * 처음부터 이미지 없이 정상 표시). 로드 실패 시에도 같은 크기의 플레이스홀더로
-         * 대체해 레이아웃이 깨지지 않는다. */}
+        {/* 문항 상단 일러스트 — 정상 출제에서는 모든 활성 문항이 imagePath를 가지므로
+         * 아래 플레이스홀더 분기는 실제로 노출되지 않는다. 이미지 로드 실패 같은 예외
+         * 상황에서만 같은 크기의 🐾 플레이스홀더로 대체해 레이아웃이 깨지지 않게 하는
+         * 방어적 fallback이다(questionBank.ts의 Question.imagePath 주석 참고). */}
         {currentQuestion.imagePath && failedImageQuestionId !== currentQuestion.id ? (
           <img
             key={currentQuestion.id}
