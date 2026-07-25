@@ -47,7 +47,16 @@ export function MissionConversationLayout({
   const progressPercent = progressTotal > 0 ? (progressCurrent / progressTotal) * 100 : 0;
 
   return (
-    <div style={{ height: "100dvh", width: "100%", overflow: "hidden", display: "flex", justifyContent: "center", background: "#fafaf8" }}>
+    // height는 100dvh가 아니라 100%여야 한다 — 이 컴포넌트는 PC/PWA(desktop)에서
+    // app/child/missions/page.tsx가 DemoFrame(태블릿/스마트폰 기기 목업 프레임)으로
+    // 감싼 상태로 렌더된다. DemoFrame의 목업 화면 영역은 실제 브라우저 뷰포트보다 훨씬
+    // 작은 고정 픽셀 높이(예: 1920x1080 PC에서 약 700px)를 갖는데, 100dvh는 그 부모
+    // 크기와 무관하게 항상 "실제 기기 전체 뷰포트" 높이로 계산되어(2026-07-25 대표님
+    // PC PWA 재현 — 하단 마스코트 미노출) 목업 프레임보다 훨씬 큰 콘텐츠가 렌더되고
+    // 그 초과분(하단 고정 마스코트 영역)이 화면 밖으로 밀려나 보이지 않았다. 100%는
+    // 실제 부모 컨테이너 크기를 그대로 물려받으므로 DemoFrame 안(PC)과 DemoFrame의
+    // h-dvh 래퍼 안(실기기, 값은 100dvh와 동일)에서 모두 정확히 맞아떨어진다.
+    <div style={{ height: "100%", width: "100%", overflow: "hidden", display: "flex", justifyContent: "center", background: "#fafaf8" }}>
       <div style={{ width: "100%", maxWidth: 560, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         
         {/* 상단 고정 헤더 */}
