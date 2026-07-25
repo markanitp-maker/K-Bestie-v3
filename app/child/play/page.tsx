@@ -9,7 +9,7 @@ import { writeMbtiSessionHandoff } from "@/lib/play/mbtiSessionHandoff";
 
 const GAMES = [
   { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "#e8845a", keys: 2 },
-  { id: "quiz", icon: "🧠", title: "퀴즈 게임", bg: "#3b82f6", keys: 2 },
+  { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "#3b82f6", keys: 1 },
   { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "#22c55e", keys: 3 },
   { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "#2d9f8f", keys: 3 },
 ];
@@ -134,6 +134,25 @@ export default function ChildPlayPage() {
         } else {
           alert("놀이 예약에 실패했습니다.");
         }
+      } else if (selectedGame.id === "quizmaster") {
+        const res = await fetch("/api/quiz/start-handoff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId })
+        });
+        
+        if (res.status === 402) {
+          setIsStarting(false);
+          setShowActionModal(false);
+          setShowInsufficientModal(true);
+          return;
+        } else if (res.ok) {
+          const { redirectUrl } = await res.json();
+          setShowActionModal(false);
+          window.location.href = redirectUrl;
+        } else {
+          alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+        }
       } else {
         const res = await fetch("/api/play/reserve", {
           method: "POST",
@@ -191,6 +210,32 @@ export default function ChildPlayPage() {
           router.push("/play/mbti");
         } else {
           alert("이어하기 처리에 실패했습니다.");
+        }
+      } catch (e) {
+        alert("오류가 발생했습니다.");
+      } finally {
+        setIsStarting(false);
+      }
+    } else if (selectedGame.id === "quizmaster") {
+      setIsStarting(true);
+      try {
+        const res = await fetch("/api/quiz/start-handoff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId })
+        });
+        
+        if (res.status === 402) {
+          setIsStarting(false);
+          setShowActionModal(false);
+          setShowInsufficientModal(true);
+          return;
+        } else if (res.ok) {
+          const { redirectUrl } = await res.json();
+          setShowActionModal(false);
+          window.location.href = redirectUrl;
+        } else {
+          alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
         }
       } catch (e) {
         alert("오류가 발생했습니다.");
