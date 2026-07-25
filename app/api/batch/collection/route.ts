@@ -13,7 +13,8 @@ export const maxDuration = 300;
  *
  * POST /api/batch/collection
  * Headers: Authorization: Bearer <BATCH_SECRET>
- * Body (선택): { "date": "YYYY-MM-DD" } — 생략 시 오늘 KST 날짜.
+ * Body (선택): { "date": "YYYY-MM-DD", "sessionIds": ["..."] } — date 생략 시 오늘 KST 날짜.
+ *   sessionIds는 좁은 범위 재실행/디버깅용(생략 시 해당 날짜 전체 세션 대상).
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.BATCH_SECRET;
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { date?: string } = {};
+  let body: { date?: string; sessionIds?: string[] } = {};
   try {
     body = await req.json();
   } catch {
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await runContextCorrectionPipeline(targetDate);
+    const result = await runContextCorrectionPipeline(targetDate, body.sessionIds);
     return NextResponse.json({ ok: true, result });
   } catch (e) {
     console.error("[batch/collection] 실패:", e);
