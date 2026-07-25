@@ -145,6 +145,42 @@ QA테스트(5학년) 계정(tier 1로 일시 전환, 검증 후 3으로 원복) 
 - 복구 불가능 시에만 짧은 재시도 버튼(케이 말풍선/상단 배너 아님) — **PASS**(무음 2회차로 확인)
 - timeout/API 실패 경로의 동일 동작 실측 — **NOT TESTED**(코드는 동일 함수 재사용, 별도 라이브 확인 남음)
 
+## 21. 대표님 실기기 추가 이슈 — PC PWA 마스코트 미노출 (2026-07-25, 4차)
+
+### 원인
+`components/MissionConversationLayout.tsx`의 최상위 컨테이너가 `height:"100dvh"`를
+사용해, PC(`pointer:fine && width>=900px`)에서 `DemoFrame`(태블릿/스마트폰 기기
+목업 프레임)이 실제 뷰포트보다 훨씬 작은 고정 픽셀 높이(1920x1080에서 약 700px,
+실제 뷰포트의 약 65%)를 부모로 제공해도 `100dvh`는 그 부모 크기와 무관하게 항상
+"실제 전체 뷰포트" 높이(1080px)로 계산돼, 하단 고정 마스코트 영역이 목업 프레임
+밖으로 밀려 보이지 않았다. 상세 원인 분석은 requests/011 §20 참고.
+
+### 수정
+`height:"100dvh"` → `height:"100%"` (1줄, `components/MissionConversationLayout.tsx`).
+커밋 `bb530f4`. GitHub 자동배포가 `CANCELED`로 실패(이전 라운드와 동일 증상,
+원인 미확정)해 격리 워크트리 `vercel deploy --prod`로 재배포
+(`dpl_J9VDNUqYBXvNEti22dJW5t4V4PSV`, `k-bestie-v3-dev.vercel.app` 정상 alias 확인).
+
+### 검증 결과 (실배포 URL, QA테스트(5학년) 계정, Playwright 헤드리스)
+
+| 환경 | 뷰포트/설정 | 마스코트 노출 | 상태배지·하단메뉴 겹침 | 비고 |
+|---|---|---|---|---|
+| PC PWA(데스크톱, 마우스) | 1920x1080 | **PASS** — `top:659,bottom:731`, `windowInnerHeight:1080` 내 완전 포함 | 겹침 없음 | 최초 재현 뷰포트, 수정 전 `top:1119`(뷰포트 밖)였던 것과 대조 확인 |
+| PC PWA(데스크톱, 마우스) | 1280x720 | **PASS** — 완전 노출 | 겹침 없음 | |
+| PC PWA(데스크톱, 마우스) | 1024x600(가장 작은 PC) | **PASS** — DOM 위치·크기·`canvas.toDataURL()` 실제 픽셀 내용까지 확인(마스코트 실루엣 46.6% 비투명 픽셀) | 겹침 없음 | `page.screenshot()`/`locator.screenshot()` 캡처 자체가 이 케이스에서만 빈 화면을 반환하는 Playwright 자체 아티팩트를 발견해, DOM rect + computed style + 실제 canvas 픽셀 데이터(toDataURL)까지 교차 확인 후 실제로는 정상 렌더 중임을 확정(스크린샷 도구 결함이지 앱 버그 아님) |
+| 태블릿(iPad 크기, PC 취급 임계값 미만) | 768x1024 | **PASS** — 완전 노출(DemoFrame 프레임 미적용, `!isPc` 경로) | 겹침 없음 | |
+| Android Chrome(터치, `pointer:coarse`) | Pixel 7 에뮬레이션 | **PASS** — 회귀 없음, 프레임 미적용 확인 | 겹침 없음 | 기존(1~3차) 수정 대비 회귀 없음 재확인 |
+| 스마트폰 Safari/PWA(터치) | iPhone SE(375x667) | **PASS** — 회귀 없음 | 겹침 없음 | |
+| 스마트폰 Safari/PWA(터치) | iPhone 13(390x844) | **PASS** — 회귀 없음 | 겹침 없음 | |
+
+### 최종 완료조건 확인 (20번)
+- 스마트폰(Safari/PWA), Android Chrome, PC PWA 각각에서 마스코트 전체 노출 — **PASS**(7개 환경/뷰포트 전부)
+- 하단 고정 레이아웃·최근 3개 말풍선 구조 유지(회귀 없음) — **PASS**(코드 변경이 height 값 1곳뿐, 구조 변경 없음)
+- 상태 배지·하단 메뉴와 마스코트 비겹침(3개 환경 전부) — **PASS**
+- `/k-bestie-voice-mission-qa` 스킬에 PC PWA 시나리오 추가 재검증 — **PASS**(이번 라운드에서 PC PWA 3개 뷰포트 + Android Chrome 시나리오로 실행)
+
+### 참고 — 실기기(진짜 iPhone/Android 기기, 진짜 PC 브라우저) 최종 확인은 대표님 몫으로 남아 있음(헤드리스 에뮬레이션 기반 검증만 완료).
+
 ## 사용자 행동 기반 E2E
 
 | 시나리오 | 기대 결과 | 실제 결과 | 판정 | 증거 |
@@ -196,8 +232,12 @@ QA테스트(5학년) 계정(tier 1로 일시 전환, 검증 후 3으로 원복) 
 
 ## 독립 리뷰 결과
 - claude-review 인스턴스 1회 실행. 6개 검토 중점 전부 [통과], [단순] 1건 발견: 케이 마스코트 애니메이션(`KBestieMascotAnimation`)이 여전히 `turnPhaseUi === "k_speaking"`(Live 전용)로만 "말하는 중" 판정하고 있어, 비Live 모드에서는 상태 배지("말하는 중")와 마스코트 동작(정지 상태)이 서로 불일치하는 문제 — voiceState는 고쳤지만 바로 옆 마스코트 코드는 같은 수정이 누락됐던 것. 지적받은 그대로(`isLiveMode ? turnPhaseUi==="k_speaking" : sttTts.isSpeaking`) 즉시 수정, tsc/build/test(95/95) 재확인 후 재배포 완료. 이 1줄 수정은 리뷰가 제시한 정확한 해법을 그대로 적용한 기계적 수정이라 2회 루프 상한에 따라 3차 리뷰는 돌리지 않고 자체 재검증으로 대체했다.
+- (4차/PC PWA 마스코트 미노출) 별도 claude-review 인스턴스 미실행 — `height:"100dvh"→"100%"` CSS 값 1곳 변경으로, 2차(마스코트 잘림) 라운드에 적용한 동일 기준("1줄 수준 CSS 수정은 tsc/build/실배포 라이브 검증으로 대체")을 그대로 따름. 대신 근본원인을 추측으로 넘기지 않고 DOM ancestor-chain 실측(각 단계 높이·overflow·class), 수정 전/후 mascot `getBoundingClientRect()` 좌표 대조(수정 전 `top:1119`(뷰포트 밖) → 수정 후 `top:659`(뷰포트 안)), `canvas.toDataURL()` 실제 픽셀 데이터까지 3중으로 실측 검증했다. tsc(`npx tsc --noEmit`) 클린 재확인.
 
 ## 데이터 원상복구 결과
+- (4차) QA테스트(5학년) `child_profiles.tier`: 1(3차부터 이어진 테스트용 임시 값) → 3(원래 값)으로 재원복 확인
+- (4차) 4차 테스트로 생성된 오늘자 미션 세션 2건(`ad8c685f-...`, `818f608b-...`)의 `chat_messages`/`mission_question_history`/`mission_progress`/`chat_sessions` 전부 삭제 확인
+- (4차) 이번 라운드에 사용한 임시 스크립트(`qa-011-pc*.mjs`, `qa-011-set-temp-pw.mjs`, `qa-011-mobile-regress.mjs`) 및 스크린샷(`/tmp/qa-011-*.png`) 전부 삭제 확인
 - QA테스트(5학년) `child_profiles.tier`: 1(테스트용 임시 변경) → 3(원래 값)으로 원복 확인
 - 테스트로 생성한 오늘자 미션 세션 3건(합성 COMPLETED 2건 + 라이브 테스트로 생성된 신규 세션 1건)의 `mission_question_history`/`chat_messages`/`mission_progress`/`chat_sessions` 전부 삭제 확인(remaining count: 0)
 - 임시 비밀번호를 설정했던 QA테스트(5학년) 계정은 자동화 전용 계정 정책상 비밀번호 재설정 자체가 허용 범위이며, 하드코딩된 값은 어떤 파일에도 커밋하지 않음(스크립트 자체도 테스트 종료 후 삭제)
