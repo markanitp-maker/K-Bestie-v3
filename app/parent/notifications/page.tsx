@@ -28,7 +28,7 @@ export default function ParentNotificationsPage() {
   if (!mounted) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
+        <div className="h-full flex items-center justify-center" style={{ background: "var(--color-k-surface)" }}>
           <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
         </div>
       </DemoFrame>
@@ -41,7 +41,7 @@ export default function ParentNotificationsPage() {
         {/* 헤더 */}
         <div
           className="shrink-0 flex items-center justify-between px-4 py-4"
-          style={{ background: "#fafaf8" }}
+          style={{ background: "var(--color-k-surface)" }}
         >
           <Link href="/parent/home" className="text-lg cursor-pointer" aria-label="뒤로가기">
             ←

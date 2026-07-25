@@ -276,7 +276,7 @@ export default function ChildPlayPage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "var(--color-k-surface)" }}>
         
         {/* 헤더 */}
         <div className="shrink-0 relative flex items-center justify-center px-4 pt-4 pb-2 z-10">
@@ -432,7 +432,7 @@ export default function ChildPlayPage() {
 
         {/* 3. 실제 게임 진행 화면 (comic_book/quiz/hairstyle — MBTI는 /play/mbti 네이티브 페이지로 이동) */}
         {showGameScreen && selectedGame && (
-          <div className="absolute inset-0 bg-[#fafaf8] z-[60] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-k-surface z-[60] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
             <div className="w-24 h-24 bg-white rounded-[32px] shadow-sm flex items-center justify-center text-5xl mb-6">
               🚀
             </div>

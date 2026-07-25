@@ -110,7 +110,7 @@ export default function ChildSettingsPage() {
       <div className="relative h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         <div
           className="shrink-0 flex items-center justify-center px-4 py-4"
-          style={{ background: "#fafaf8" }}
+          style={{ background: "var(--color-k-surface)" }}
         >
           <Link href="/child/home" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             설정

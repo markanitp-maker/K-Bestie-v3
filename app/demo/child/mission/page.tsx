@@ -23,9 +23,9 @@ export default function DemoChildMissionPage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
         {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
-        <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
+        <div className="shrink-0 sticky top-0 z-10" style={{ background: "var(--color-k-surface)" }}>
           <div className="flex items-center justify-center px-4 pt-4 pb-2">
             <Link
               href="/demo"

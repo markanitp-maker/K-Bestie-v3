@@ -1720,8 +1720,8 @@ function MissionInner() {
 
   if (phase === "loading") {
     return (
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
-        <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
+        <div className="shrink-0 sticky top-0 z-10" style={{ background: "var(--color-k-surface)" }}>
           <div className="flex items-center justify-center px-4 pt-4 pb-2">
             <SkeletonBox className="w-20 h-6" />
           </div>
@@ -1745,7 +1745,7 @@ function MissionInner() {
 
   if (phase === "closed") {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
         <p className="text-5xl">⏰</p>
         <p className="text-base font-bold text-gray-800">지금은 미션 시간이 아니에요</p>
         <p className="text-xs text-gray-500 leading-relaxed">
@@ -1759,7 +1759,7 @@ function MissionInner() {
             router.replace("/child/home");
           }}
           className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
-          style={{ background: "var(--color-k-navy)" }}
+          style={{ background: "var(--color-k-orange)" }}
         >
           홈으로 돌아가기
         </button>
@@ -1769,7 +1769,7 @@ function MissionInner() {
 
   if (phase === "error") {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
         <p className="text-5xl text-red-500">⚠️</p>
         <p className="text-base font-bold text-red-500">미션을 시작하지 못했어요</p>
         <p className="text-xs text-gray-500">{errorMsg}</p>
@@ -1779,7 +1779,7 @@ function MissionInner() {
             router.replace("/child/home");
           }}
           className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
-          style={{ background: "var(--color-k-navy)" }}
+          style={{ background: "var(--color-k-orange)" }}
         >
           홈으로 돌아가기
         </button>
@@ -1791,7 +1791,7 @@ function MissionInner() {
   // voice.error에 담긴 아이용 안내 문구만 보여준다(Plan7 §2, fallback 없음).
   if (voice.status === "error" && !autoStartFailed) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
         <p className="text-5xl">🌙</p>
         <p className="text-sm font-bold text-gray-700 whitespace-pre-line leading-relaxed">
           {voice.error || "지금은 케이와 대화를 시작하기 어려워요.\n잠시 후 다시 만나자."}
@@ -1802,7 +1802,7 @@ function MissionInner() {
             router.replace("/child/home");
           }}
           className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
-          style={{ background: "var(--color-k-navy)" }}
+          style={{ background: "var(--color-k-orange)" }}
         >
           홈으로 돌아가기
         </button>
@@ -1889,7 +1889,7 @@ function MissionInner() {
               }
             }}
             className="flex-1 py-2 rounded-xl text-sm font-bold text-white cursor-pointer"
-            style={{ background: "var(--color-k-navy)" }}
+            style={{ background: "var(--color-k-orange)" }}
           >
             다시 시도
           </button>
@@ -1915,7 +1915,7 @@ function MissionInner() {
     const missionDoneNow = missionStateRef.current !== "active" || completed;
 
     return (
-      <div className="h-full relative overflow-hidden" style={{ background: "#fafaf8" }}>
+      <div className="h-full relative overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
         {wakeLockWarning && (
           <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
@@ -1978,7 +1978,7 @@ function MissionInner() {
                 <button
                   onClick={toggleKVoice}
                   className="absolute bottom-0 left-0 w-7 h-7 rounded-full flex items-center justify-center shadow-sm text-xs cursor-pointer transition-transform active:scale-95"
-                  style={{ background: kVoiceEnabled ? "var(--color-k-navy)" : "#e5e7eb", color: kVoiceEnabled ? "#fff" : "#9ca3af" }}
+                  style={{ background: kVoiceEnabled ? "var(--color-k-orange)" : "#e5e7eb", color: kVoiceEnabled ? "#fff" : "#9ca3af" }}
                   aria-label={kVoiceEnabled ? "케이 음성 끄기" : "케이 음성 켜기"}
                 >
                   {kVoiceEnabled ? "🔊" : "🔇"}
@@ -2078,7 +2078,7 @@ function MissionInner() {
                     router.replace("/child/home");
                   }}
                   className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-                  style={{ background: "var(--color-k-navy)" }}
+                  style={{ background: "var(--color-k-orange)" }}
                   aria-label="홈으로 이동"
                 >
                   ✕
@@ -2137,7 +2137,7 @@ function MissionInner() {
   }
 
   return (
-    <div className="h-full relative flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+    <div className="h-full relative flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
       {wakeLockWarning && (
         <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
@@ -2147,7 +2147,7 @@ function MissionInner() {
       )}
       {retryOverlay}
       {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
-      <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
+      <div className="shrink-0 sticky top-0 z-10" style={{ background: "var(--color-k-surface)" }}>
         <div className="relative flex items-center justify-center px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1">
           {/* 좌상단 뒤로가기 버튼 */}
           <button
@@ -2193,7 +2193,7 @@ function MissionInner() {
         <div className="px-6 mt-1.5 mb-2">
           {/* 012 "0/10을 스텝 인디케이터로": 좌측 미션 라벨, 우측 n/10, 완료 시 축하 색상 */}
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold" style={{ color: gauge >= requiredCount ? "#b8860b" : "var(--color-k-navy)" }}>
+            <span className="text-xs font-bold" style={{ color: gauge >= requiredCount ? "#b8860b" : "var(--color-k-orange)" }}>
               {missionLabel}
             </span>
             <div className="flex items-center gap-2">
@@ -2219,7 +2219,7 @@ function MissionInner() {
                 key={i}
                 className={`flex-1 h-full rounded-full transition-colors duration-300 ${!(gauge >= requiredCount) && i === gauge ? "animate-pulse" : ""}`}
                 style={{
-                  background: gauge >= requiredCount ? "#f0a020" : i < gauge ? "var(--color-k-navy)" : "#eef2f1",
+                  background: gauge >= requiredCount ? "#f0a020" : i < gauge ? "var(--color-k-orange)" : "#eef2f1",
                 }}
               />
             ))}
@@ -2238,7 +2238,7 @@ function MissionInner() {
             <button
               onClick={toggleKVoice}
               className="absolute bottom-0 left-0 w-8 h-8 rounded-full flex items-center justify-center shadow-sm text-sm cursor-pointer transition-transform active:scale-95"
-              style={{ background: kVoiceEnabled ? "var(--color-k-navy)" : "#e5e7eb", color: kVoiceEnabled ? "#fff" : "#9ca3af" }}
+              style={{ background: kVoiceEnabled ? "var(--color-k-orange)" : "#e5e7eb", color: kVoiceEnabled ? "#fff" : "#9ca3af" }}
               aria-label={kVoiceEnabled ? "케이 음성 끄기" : "케이 음성 켜기"}
             >
               {kVoiceEnabled ? "🔊" : "🔇"}
@@ -2422,7 +2422,7 @@ function MissionInner() {
                 router.replace("/child/home");
               }}
               className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-              style={{ background: "var(--color-k-navy)" }}
+              style={{ background: "var(--color-k-orange)" }}
               aria-label="홈으로 이동"
             >
               ✕
@@ -2511,8 +2511,8 @@ function MissionRouteGate() {
 
   if (decision === "loading") {
     return (
-      <div className="flex items-center justify-center" style={{ height: "100dvh", background: "#fafaf8" }}>
-        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
+      <div className="flex items-center justify-center" style={{ height: "100dvh", background: "var(--color-k-surface)" }}>
+        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-orange) var(--color-k-orange) transparent transparent" }} />
       </div>
     );
   }

@@ -105,7 +105,7 @@ export function MissionConversationLayout({
     // 그 초과분(하단 고정 마스코트 영역)이 화면 밖으로 밀려나 보이지 않았다. 100%는
     // 실제 부모 컨테이너 크기를 그대로 물려받으므로 DemoFrame 안(PC)과 DemoFrame의
     // h-dvh 래퍼 안(실기기, 값은 100dvh와 동일)에서 모두 정확히 맞아떨어진다.
-    <div style={{ height: "100%", width: "100%", overflow: "hidden", display: "flex", justifyContent: "center", background: "#fafaf8" }}>
+    <div style={{ height: "100%", width: "100%", overflow: "hidden", display: "flex", justifyContent: "center", background: "var(--color-k-surface)" }}>
       <div style={{ width: "100%", maxWidth: 560, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         
         {/* 상단 고정 헤더 */}

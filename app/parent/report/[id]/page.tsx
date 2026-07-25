@@ -94,7 +94,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   if (error || !report) {
     return (
       <DemoFrame>
-        <div className="h-full flex flex-col items-center justify-center px-6 text-center" style={{ background: "#fafaf8" }}>
+        <div className="h-full flex flex-col items-center justify-center px-6 text-center" style={{ background: "var(--color-k-surface)" }}>
           <p className="text-sm font-semibold mb-4 text-red-500">{error ?? "리포트를 불러올 수 없어요"}</p>
           <Link href="/parent/report" className="text-xs underline font-bold" style={{ color: "var(--color-k-navy)" }}>
             목록으로 돌아가기

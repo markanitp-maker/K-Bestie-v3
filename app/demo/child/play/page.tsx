@@ -14,7 +14,7 @@ const GAMES = [
 export default function DemoChildPlayPage() {
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
         <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
           <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             케이와 놀이

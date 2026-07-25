@@ -5,7 +5,7 @@ export const demoColors = {
   charcoal: "var(--color-k-text-primary)",
   darkGray: "var(--color-k-text-primary)",
   medGray: "#6b7280",
-  warmWhite: "#fafaf8",
+  warmWhite: "var(--color-k-surface)",
   lightGray: "#f3f4f6",
   success: "#22c55e",
   info: "#3b82f6",

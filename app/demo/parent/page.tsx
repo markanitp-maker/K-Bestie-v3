@@ -16,7 +16,7 @@ export default function DemoParentDashboardPage() {
         {/* 헤더 */}
         <div
           className="shrink-0 flex items-center justify-between px-4 py-4"
-          style={{ background: "#fafaf8" }}
+          style={{ background: "var(--color-k-surface)" }}
         >
           <span className="w-5" />
           <Link

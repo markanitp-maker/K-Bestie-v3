@@ -61,7 +61,7 @@ export function DemoFrame({ children }: { children: ReactNode }) {
 
   if (!isPc) {
     return (
-      <div className="h-dvh w-full overflow-y-auto" style={{ background: "#fafaf8" }}>
+      <div className="h-dvh w-full overflow-y-auto" style={{ background: "var(--color-k-surface)" }}>
         {children}
       </div>
     );
@@ -136,7 +136,7 @@ export function DemoFrame({ children }: { children: ReactNode }) {
           <div
             className="w-full h-full relative overflow-hidden select-text"
             style={{
-              background: "#fafaf8",
+              background: "var(--color-k-surface)",
               borderRadius: innerRadius,
               boxShadow: "0 0 6px rgba(0, 0, 0, 0.6) inset",
             }}

@@ -6,7 +6,7 @@ import { SkeletonBox } from "@/components/Skeleton";
 export function ReportDetailSkeleton() {
   return (
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-      <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "#fafaf8" }}>
+      <div className="shrink-0 flex items-center justify-between px-4 py-4" style={{ background: "var(--color-k-surface)" }}>
         <span className="w-5" />
         <SkeletonBox className="w-20 h-6" />
         <span className="w-5" />

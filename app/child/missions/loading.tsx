@@ -2,7 +2,7 @@ import { SkeletonBox } from "@/components/Skeleton";
 
 export default function Loading() {
   return (
-    <div className="h-dvh flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+    <div className="h-dvh flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
       <div className="shrink-0">
         <div className="flex items-center justify-center px-4 pt-4 pb-2">
           <SkeletonBox className="w-20 h-6" />

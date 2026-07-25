@@ -465,7 +465,7 @@ export default function ChatPage() {
   if (!mounted) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
+        <div className="h-full flex items-center justify-center" style={{ background: "var(--color-k-surface)" }}>
           <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
         </div>
       </DemoFrame>
@@ -474,7 +474,7 @@ export default function ChatPage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
         {wakeLockWarning && (
           <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
@@ -483,7 +483,7 @@ export default function ChatPage() {
           </div>
         )}
         {/* 상단 고정 영역: 헤더 + 마스코트 (스크롤되지 않음) */}
-        <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
+        <div className="shrink-0 sticky top-0 z-10" style={{ background: "var(--color-k-surface)" }}>
           <div className="relative flex items-center justify-center px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1">
             {/* 좌상단 뒤로가기 버튼 */}
             <button
@@ -611,11 +611,14 @@ export default function ChatPage() {
                 )}
                 <button
                   onClick={handleCentralButtonClick}
-                  className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer ${
-                    isRecording ? "bg-gradient-to-br from-orange-400 to-orange-500" : ""
+                  // 014 추가요청: 미션 화면과 동일하게 대기(원형, 마이크)/녹음중(둥근
+                  // 사각형, 정지) 버튼 형태를 분리해 자유대화·미션 화면 전체에서
+                  // 메인 음성 버튼 디자인을 통일한다.
+                  className={`relative w-16 h-16 flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer ${
+                    isRecording ? "rounded-2xl bg-gradient-to-br from-orange-400 to-orange-500" : "rounded-full"
                   }`}
                   style={!isRecording ? { background: "var(--color-k-orange)" } : undefined}
-                  aria-label={isRecording ? "말하기 완료" : "말하기 시작"}
+                  aria-label={isRecording ? "녹음 종료" : "마이크 입력 시작"}
                 >
                   {isRecording ? (
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="white">

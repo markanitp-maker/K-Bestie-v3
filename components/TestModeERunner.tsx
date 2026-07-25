@@ -571,7 +571,7 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
   }
 
   return (
-    <div style={{ height: "100dvh", width: "100%", overflow: "hidden", display: "flex", justifyContent: "center", background: "#fafaf8" }}>
+    <div style={{ height: "100dvh", width: "100%", overflow: "hidden", display: "flex", justifyContent: "center", background: "var(--color-k-surface)" }}>
       <div style={{ width: "100%", maxWidth: 560, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* ── 고정 헤더: 방식 · 현재 단계 · 진행률 ── */}
@@ -701,5 +701,5 @@ export function TestModeERunner({ selectedMode }: { selectedMode: "E" | "F" }) {
   );
 }
 
-const fullCenter: React.CSSProperties = { height: "100dvh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#fafaf8" };
+const fullCenter: React.CSSProperties = { height: "100dvh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-k-surface)" };
 const btnBase: React.CSSProperties = { padding: "0 14px", borderRadius: 12, border: "none", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 14 };

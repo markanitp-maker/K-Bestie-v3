@@ -53,18 +53,37 @@ v1 스킬(`.claude/skills/naechingu-k-design-legacy-v1-green-coral/`)은 Tailwin
 `--color-primary`에서 `--color-k-orange`로 전환했고, 인라인 style 버튼 전역 호버
 선택자도 `--hb-primary` 패턴에서 `--color-k-navy` 패턴으로 갱신했다.
 
+### 2차 후속 정리 (완료)
+
+토큰 이름 기반 스크립트가 못 잡은 항목들 — 대표 회귀 확인(2개 대표 화면, 회귀
+없음) 이후 마저 처리했다.
+
+- **`#fafaf8` 하드코딩 리터럴**: v1 warm-white 배경색이 CSS 변수 이름이 아니라
+  raw hex 문자열(`style={{ background: "#fafaf8" }}`, `bg-[#fafaf8]`)로 33개
+  파일에 남아있었다 — 마이그레이션 스크립트의 `HEX_TO_VAR` 매핑이 실제 코드베이스
+  값(`#fafaf8`)이 아니라 다른 추정값(`#fff8e7`)을 기준으로 작성돼 있었던 게
+  원인. 이미 `var(--color-k-surface, #fafaf8)` 형태로 fallback까지 정확히 처리된
+  8곳(admin/retention 계열)은 그대로 두고, 나머지 29개 파일의 단독 리터럴만
+  `var(--color-k-surface)`(관리자 화면 배경색 매핑과 동일 원칙)로 치환했다.
+- **`app/child/missions/page.tsx`의 `--hb-*` → `k-navy` 매핑 오류**: 재확인
+  결과 이 파일은 아이용 실시간 미션 대화 화면(`useVoiceChat`/`useGeminiLive`
+  기반 실제 프로덕션 화면)이 맞았고, 문제의 11곳 전부 홈으로 돌아가기/다시 시도
+  버튼, 케이 음성 on/off 토글, 진행률 게이지, 로딩 스피너 등 아이용 상호작용
+  요소였다 — 부모 승인 배지 같은 예외는 없었다. 다른 아이 화면들과 일관되게
+  `k-navy` → `k-orange`로 재수정.
+- **파비콘 실제 참조 버그 발견 및 수정**: SKILL.md §2 조사 당시 발견 못 했던
+  더 근본적인 문제 — `app/layout.tsx`의 `metadata.icons.icon`이
+  `/favicon.ico`를 가리키는데 `public/favicon.ico` 자체가 존재하지 않아
+  **파비콘이 아예 깨져 있었다**. 반면 실제 존재하는 `public/icons/favicon-16.png`
+  /`favicon-32.png`는 메타데이터 어디에도 연결이 안 돼 있었음. `icons.icon`을
+  이 두 파일(16x16/32x32 PNG)로 교체해 연결. `public/Images/logo/favicon.png`는
+  여전히 미사용 상태로 남아있으나 임의 삭제하지 않고 보존(대표 확인 후 정리).
+
 ### 남은 작업
 
-- **회귀 검증 미실시**: 이번 라운드 일괄 전환은 문자열 치환 스크립트 기반이라, 부모
-  화면 다수 + 관리자 화면 전체에 대해 실제 브라우저 육안 검증이 아직 없다. 색상
-  대비, hover 상태, 카드/버튼 radius가 의도대로 렌더링되는지 화면별로 확인 필요.
-- **`app/child/missions/page.tsx`의 `--hb-*` 1건**: 아이 화면인데 `--hb-*`(부모
-  네임스페이스) 참조가 있었던 항목 — 안전하게 `k-navy`로 매핑해뒀으나, 실제 그
-  요소가 부모 성격 UI(예: 부모 승인 배지)인지 재확인 필요.
-- **파비콘 경로 통합**: SKILL.md §2에 기록된 대로 `/public/icons/favicon-*.png`와
-  `/public/Images/logo/favicon.png`가 중복 존재 — 실사용 위치 확인 후 정리 필요
-  (임의 삭제 금지).
+- **파비콘 중복 정리**: `public/Images/logo/favicon.png`(미사용 확인됨)를
+  삭제할지 보존할지 대표 결정 필요.
 - **폰트 확정**: `design-system.md`의 Gaegu 유지 여부 미확정 — 대표 화면 재검증
   단계에서 결정.
-- **v1 토큰 삭제 시점**: 위 회귀 검증이 끝나고 대표 승인 이후에만
-  `app/globals.css`에서 v1 `--color-*`/`--hb-*` 블록을 제거한다.
+- **v1 토큰 삭제 시점**: 전체 화면 회귀 검증(이번 2차 정리분 포함) + 대표
+  승인 이후에만 `app/globals.css`에서 v1 `--color-*`/`--hb-*` 블록을 제거한다.

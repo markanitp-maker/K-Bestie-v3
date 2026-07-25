@@ -28,7 +28,7 @@ export function ParentHeader() {
     <>
       <div
         className="shrink-0 flex items-center justify-between px-4 py-4"
-        style={{ background: "#fafaf8" }}
+        style={{ background: "var(--color-k-surface)" }}
       >
         <Link href="/parent/home" className="cursor-pointer">
           <Image
