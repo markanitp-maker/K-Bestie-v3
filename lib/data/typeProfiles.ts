@@ -46,7 +46,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ISTJ: {
     type: "ISTJ",
     animalName: "성실한 비버",
-    imagePath: "/images/characters/istj-beaver.jpg",
+    imagePath: "/Images/characters/istj-beaver.jpg",
     imagePrompt:
       "차분하고 야무진 비버 캐릭터. 작은 나뭇가지로 튼튼한 집을 짓고 있는 모습, " +
       "만족스러운 표정. 파스텔톤 배경, 동그랗고 사랑스러운 아동 그림책 스타일, " +
@@ -71,7 +71,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ISFJ: {
     type: "ISFJ",
     animalName: "포근한 알파카",
-    imagePath: "/images/characters/isfj-alpaca.jpg",
+    imagePath: "/Images/characters/isfj-alpaca.jpg",
     imagePrompt:
       "포근하고 다정한 알파카 캐릭터. 친구 동물을 살포시 안아주며 미소짓는 모습, " +
       "따뜻한 색감. 파스텔톤 배경, 둥글둥글한 아동 그림책 스타일, 텍스트 없음.",
@@ -95,7 +95,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ISTP: {
     type: "ISTP",
     animalName: "손재주 좋은 너구리",
-    imagePath: "/images/characters/istp-raccoon.jpg",
+    imagePath: "/Images/characters/istp-raccoon.jpg",
     imagePrompt:
       "호기심 가득한 너구리 캐릭터. 작은 도구를 손에 들고 무언가를 뚝딱 " +
       "고치거나 만드는 모습, 집중한 표정. 파스텔톤 배경, 아동 그림책 스타일, " +
@@ -120,7 +120,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ISFP: {
     type: "ISFP",
     animalName: "예술가 수달",
-    imagePath: "/images/characters/isfp-otter.jpg",
+    imagePath: "/Images/characters/isfp-otter.jpg",
     imagePrompt:
       "감성 가득한 수달 캐릭터. 물감이나 꽃잎으로 자유롭게 그림을 그리는 모습, " +
       "부드러운 미소. 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -144,7 +144,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   INFJ: {
     type: "INFJ",
     animalName: "지혜로운 부엉이",
-    imagePath: "/images/characters/infj-owl.jpg",
+    imagePath: "/Images/characters/infj-owl.jpg",
     imagePrompt:
       "차분하고 지혜로운 부엉이 캐릭터. 큰 눈으로 밤하늘 별을 올려다보며 골똘히 " +
       "생각하는 모습. 파스텔 보라·남색 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -168,7 +168,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   INTJ: {
     type: "INTJ",
     animalName: "똑똑한 여우",
-    imagePath: "/images/characters/intj-fox.jpg",
+    imagePath: "/Images/characters/intj-fox.jpg",
     imagePrompt:
       "똑똑하고 차분한 여우 캐릭터. 나뭇가지로 그린 지도나 계획표 앞에서 골똘히 " +
       "생각하는 모습. 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -192,7 +192,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   INFP: {
     type: "INFP",
     animalName: "몽글몽글한 판다",
-    imagePath: "/images/characters/infp-panda.jpg",
+    imagePath: "/Images/characters/infp-panda.jpg",
     imagePrompt:
       "포근하고 몽글몽글한 판다 캐릭터. 꽃밭에 누워 구름을 보며 상상에 잠긴 모습, " +
       "따뜻하고 순수한 표정. 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -216,7 +216,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   INTP: {
     type: "INTP",
     animalName: "호기심 많은 고양이",
-    imagePath: "/images/characters/intp-cat.jpg",
+    imagePath: "/Images/characters/intp-cat.jpg",
     imagePrompt:
       "호기심 가득한 고양이 캐릭터. 신비한 상자나 톱니바퀴 장난감을 이리저리 " +
       "관찰하는 모습, 반짝이는 눈. 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -240,7 +240,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ENFP: {
     type: "ENFP",
     animalName: "반짝이는 다람쥐",
-    imagePath: "/images/characters/enfp-squirrel.jpg",
+    imagePath: "/Images/characters/enfp-squirrel.jpg",
     imagePrompt:
       "밝고 톡톡 튀는 다람쥐 캐릭터. 도토리 대신 반짝이는 아이디어 전구를 들고 " +
       "신나게 폴짝 뛰는 모습. 화사한 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -264,7 +264,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ENFJ: {
     type: "ENFJ",
     animalName: "다정한 골든리트리버",
-    imagePath: "/images/characters/enfj-retriever.jpg",
+    imagePath: "/Images/characters/enfj-retriever.jpg",
     imagePrompt:
       "따뜻한 골든리트리버 캐릭터. 다른 동물 친구들을 둘러보며 앞장서 이끄는 모습, " +
       "환한 미소. 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -288,7 +288,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ENTP: {
     type: "ENTP",
     animalName: "재기발랄한 앵무새",
-    imagePath: "/images/characters/entp-parrot.jpg",
+    imagePath: "/Images/characters/entp-parrot.jpg",
     imagePrompt:
       "재치있고 알록달록한 앵무새 캐릭터. 말풍선 대신 반짝이는 아이디어 별들을 " +
       "여러 개 띄우며 신나게 이야기하는 모습. 화사한 파스텔톤, 아동 그림책 스타일, " +
@@ -313,7 +313,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ENTJ: {
     type: "ENTJ",
     animalName: "씩씩한 사자",
-    imagePath: "/images/characters/entj-lion.jpg",
+    imagePath: "/Images/characters/entj-lion.jpg",
     imagePrompt:
       "씩씩하고 자신감 넘치는 아기 사자 캐릭터. 깃발을 들고 친구들 앞에서 씩씩하게 " +
       "앞장서는 모습. 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -337,7 +337,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ESFP: {
     type: "ESFP",
     animalName: "신나는 돌고래",
-    imagePath: "/images/characters/esfp-dolphin.jpg",
+    imagePath: "/Images/characters/esfp-dolphin.jpg",
     imagePrompt:
       "신나게 점프하는 돌고래 캐릭터. 물방울을 튀기며 환하게 웃는 모습, 생동감 " +
       "넘치는 동작. 화사한 파스텔 하늘색 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -360,7 +360,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ESFJ: {
     type: "ESFJ",
     animalName: "따뜻한 토끼",
-    imagePath: "/images/characters/esfj-rabbit.jpg",
+    imagePath: "/Images/characters/esfj-rabbit.jpg",
     imagePrompt:
       "다정한 토끼 캐릭터. 여러 동물 친구들과 손을 맞잡고 둥글게 모여 웃는 모습. " +
       "따뜻한 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
@@ -384,7 +384,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ESTP: {
     type: "ESTP",
     animalName: "모험심 가득한 치타",
-    imagePath: "/images/characters/estp-cheetah.jpg",
+    imagePath: "/Images/characters/estp-cheetah.jpg",
     imagePrompt:
       "역동적으로 달리는 치타 캐릭터. 신나는 표정으로 새로운 곳을 향해 힘차게 " +
       "뛰어가는 모습, 속도감 있는 구도. 파스텔톤 배경, 아동 그림책 스타일, " +
@@ -408,7 +408,7 @@ export const TYPE_PROFILES: Readonly<Record<MbtiType, MbtiTypeProfile>> = {
   ESTJ: {
     type: "ESTJ",
     animalName: "든든한 코끼리",
-    imagePath: "/images/characters/estj-elephant.jpg",
+    imagePath: "/Images/characters/estj-elephant.jpg",
     imagePrompt:
       "든든하고 씩씩한 아기 코끼리 캐릭터. 친구들을 줄 세워 안내하듯 앞장서 걷는 " +
       "모습, 믿음직한 표정. 파스텔톤 배경, 아동 그림책 스타일, 텍스트 없음.",
