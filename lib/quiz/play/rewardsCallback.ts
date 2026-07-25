@@ -39,8 +39,16 @@ export interface CompletionNotifyPayload {
   completed_at: string;
 }
 
+/**
+ * 자기 자신(K-Bestie) 호출용 base URL. NEXT_PUBLIC_APP_URL이 설정돼 있으면 그걸 쓰고,
+ * 없으면 Vercel이 배포마다 자동 주입하는 VERCEL_URL(프로토콜 없이 호스트만)을 쓴다 -
+ * 수동 env 설정 여부와 무관하게 배포 환경에서 항상 실제 도달 가능한 주소가 되도록
+ * 이중 폴백을 둔다(로컬 개발에서만 최종적으로 localhost 사용).
+ */
 function getSelfBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
 }
 
 async function callSelfRewardsApi(
