@@ -18,14 +18,14 @@ const HOME_CARDS = [
     title: "대화하기",
     desc: "케이랑 이야기 나눠요",
     href: "/demo/child/chat",
-    bg: "#e8845a",
+    bg: "var(--color-k-orange)",
   },
   {
     icon: "🎮",
     title: "케이와 놀이",
     desc: "재미있는 놀이를 해봐요",
     href: "/demo/child/play",
-    bg: "#2d9f8f",
+    bg: "var(--color-k-sky-blue)",
   },
 ];
 
@@ -37,7 +37,7 @@ export default function DemoChildHomePage() {
           <Link
             href="/demo"
             className="font-bold text-sm cursor-pointer"
-            style={{ color: "#1a6b5a" }}
+            style={{ color: "var(--color-k-navy)" }}
           >
             내친구 케이
           </Link>
@@ -52,7 +52,7 @@ export default function DemoChildHomePage() {
               height={96}
               className="object-contain mb-2"
             />
-            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+            <h1 className="text-lg font-bold" style={{ color: "var(--color-k-text-primary)" }}>
               안녕! 오늘은 뭐 하고 놀까?
             </h1>
             <p className="text-xs mt-1" style={{ color: "#6b7280" }}>

@@ -15,21 +15,21 @@ const HOME_CARDS = [
     desc: "오늘의 미션을 시작해요",
     href: "/child/missions",
     // 014: 기존 #22c55e(원색 그린)는 스킬 팔레트에 없는 색이라 브랜드 딥그린(primary)으로 교체
-    bg: "var(--color-primary)",
+    bg: "var(--color-k-orange)",
   },
   {
     icon: "💬",
     title: "대화하기",
     desc: "케이랑 이야기 나눠요",
     href: "/chat",
-    bg: "var(--color-coral)",
+    bg: "var(--color-k-orange)",
   },
   {
     icon: "🎮",
     title: "케이와 놀이",
     desc: "재미있는 놀이를 해봐요",
     href: "/child/play",
-    bg: "var(--color-secondary)",
+    bg: "var(--color-k-sky-blue)",
   },
 ];
 
@@ -125,8 +125,8 @@ export default function ChildHomePage() {
   if (loading) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center bg-warm-white">
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-primary) var(--color-primary) transparent transparent" }} />
+        <div className="h-full flex items-center justify-center bg-k-background">
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-orange) var(--color-k-orange) transparent transparent" }} />
         </div>
       </DemoFrame>
     );
@@ -135,11 +135,11 @@ export default function ChildHomePage() {
   if (noChild) {
     return (
       <DemoFrame>
-        <div className="h-full flex flex-col items-center justify-center px-6 py-8 text-center bg-warm-white">
-          <div className="max-w-md w-full bg-surface rounded-3xl p-8 shadow-md border border-primary/10">
+        <div className="h-full flex flex-col items-center justify-center px-6 py-8 text-center bg-k-background">
+          <div className="max-w-md w-full bg-k-surface rounded-3xl p-8 shadow-md border border-k-orange/10">
             <p className="text-5xl mb-4">🌱</p>
-            <p className="text-lg font-bold text-charcoal">가족 연결이 필요해요</p>
-            <p className="text-xs mt-3 leading-relaxed text-muted">
+            <p className="text-lg font-bold text-k-text-k-orange">가족 연결이 필요해요</p>
+            <p className="text-xs mt-3 leading-relaxed text-k-text-k-sky-blue">
               현재 로그인한 구글 계정이 가족에 등록되어 있지 않습니다.
               <br />
               부모님 앱에서 아이 추가 화면을 통해 이메일을 예약 등록했는지 확인해 주세요.
@@ -147,7 +147,7 @@ export default function ChildHomePage() {
 
             <button
               onClick={handleLogout}
-              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform mt-6 cursor-pointer bg-primary"
+              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform mt-6 cursor-pointer bg-k-orange"
             >
               로그아웃 후 다시 로그인하기
             </button>
@@ -159,7 +159,7 @@ export default function ChildHomePage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden bg-warm-white">
+      <div className="h-full flex flex-col overflow-hidden bg-k-background">
         <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
           <Link href="/child/home" className="cursor-pointer">
             <Image
@@ -183,10 +183,10 @@ export default function ChildHomePage() {
               className="object-contain mb-2"
               priority
             />
-            <h1 className="text-lg font-bold text-charcoal">
+            <h1 className="text-lg font-bold text-k-text-k-orange">
               {child ? `안녕, ${getFriendlyName(child.name)}! 오늘은 뭐 하고 놀까?` : "안녕! 오늘은 뭐 하고 놀까?"}
             </h1>
-            <p className="text-xs mt-1 text-muted">
+            <p className="text-xs mt-1 text-k-text-k-sky-blue">
               케이랑 같이 재미있게 보내봐요
             </p>
           </div>
@@ -221,16 +221,16 @@ export default function ChildHomePage() {
             {isTestAccount && (
               <Link
                 href="/child/test-modes"
-                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98] border-2 border-dashed bg-surface border-primary"
+                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98] border-2 border-dashed bg-k-surface border-k-orange"
               >
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 bg-tint">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 bg-k-orange-tint">
                   🧪
                 </div>
                 <div className="flex-1 text-left">
-                  <p className="font-bold text-base text-primary">대화 방식 테스트</p>
-                  <p className="text-xs mt-0.5 text-muted">A~F 방식 선택 (테스트 계정 전용)</p>
+                  <p className="font-bold text-base text-k-orange">대화 방식 테스트</p>
+                  <p className="text-xs mt-0.5 text-k-text-k-sky-blue">A~F 방식 선택 (테스트 계정 전용)</p>
                 </div>
-                <span className="text-lg text-primary">→</span>
+                <span className="text-lg text-k-orange">→</span>
               </Link>
             )}
           </div>

@@ -124,7 +124,7 @@ export function PwaServiceWorker() {
       </div>
       <button
         onClick={handleUpdate}
-        className="px-3 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-lg active:scale-95 transition-transform"
+        className="px-3 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-lg active:scale-95 transition-transform"
       >
         즉시 업데이트
       </button>

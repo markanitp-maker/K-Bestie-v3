@@ -22,7 +22,7 @@ export default function DemoParentDashboardPage() {
           <Link
             href="/demo"
             className="font-bold text-sm cursor-pointer"
-            style={{ color: "#1a6b5a" }}
+            style={{ color: "var(--color-k-navy)" }}
           >
             내친구 케이
           </Link>
@@ -42,7 +42,7 @@ export default function DemoParentDashboardPage() {
                 🧒
               </div>
               <div>
-                <p className="font-bold text-sm" style={{ color: "#1e1e2d" }}>
+                <p className="font-bold text-sm" style={{ color: "var(--color-k-text-primary)" }}>
                   {demoProfile.name}
                 </p>
                 <p className="text-xs" style={{ color: "#6b7280" }}>
@@ -54,13 +54,13 @@ export default function DemoParentDashboardPage() {
               <p className="text-[10px]" style={{ color: "#6b7280" }}>
                 최근 대화일
               </p>
-              <p className="text-xs font-bold" style={{ color: "#1e1e2d" }}>
+              <p className="text-xs font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                 {demoProfile.lastChatDate}
               </p>
             </div>
           </div>
 
-          <h2 className="text-base font-bold mb-3" style={{ color: "#1e1e2d" }}>
+          <h2 className="text-base font-bold mb-3" style={{ color: "var(--color-k-text-primary)" }}>
             아이 현황 보기
           </h2>
 
@@ -71,7 +71,7 @@ export default function DemoParentDashboardPage() {
                 <p className="text-[11px] mb-1" style={{ color: "#6b7280" }}>
                   {card.title}
                 </p>
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>
+                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                   {card.value}
                 </p>
               </div>

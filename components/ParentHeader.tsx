@@ -46,7 +46,7 @@ export function ParentHeader() {
               <button
                 onClick={() => { if (children.length > 1) setShowPicker((v) => !v); }}
                 className={`flex items-center gap-1 text-xs font-bold ${children.length > 1 ? "cursor-pointer" : ""}`}
-                style={{ color: "#1e1e2d" }}
+                style={{ color: "var(--color-k-text-primary)" }}
               >
                 {activeChild.name}
                 {children.length > 1 && <span className="text-[9px]" style={{ color: "#6b7280" }}>▾</span>}
@@ -64,7 +64,7 @@ export function ParentHeader() {
                           key={c.id}
                           onClick={() => handleSelect(c.id)}
                           className={`w-full flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap ${
-                            isSelected ? "bg-[#fdf1ec] text-[#e8845a]" : "text-gray-700 hover:bg-gray-50"
+                            isSelected ? "bg-[#fdf1ec] text-[var(--color-k-orange)]" : "text-gray-700 hover:bg-gray-50"
                           }`}
                         >
                           <span>🧒 {c.name}</span>

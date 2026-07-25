@@ -83,15 +83,15 @@ export default function ParentExpertPage() {
   return (
     <div
       className="min-h-dvh pb-[72px] lg:pb-12 lg:pl-[240px] w-full transition-all"
-      style={{ background: "var(--hb-bg)" }}
+      style={{ background: "var(--color-k-surface)" }}
     >
       {/* 헤더 */}
       <div className="bg-white px-5 pt-12 pb-4 flex items-center gap-3">
-        <Link href="/parent/home" style={{ color: "var(--hb-primary)" }}>
+        <Link href="/parent/home" style={{ color: "var(--color-k-navy)" }}>
           <BackArrow />
         </Link>
         <div>
-          <p className="text-xs font-medium" style={{ color: "var(--hb-muted)" }}>
+          <p className="text-xs font-medium" style={{ color: "var(--color-k-text-secondary)" }}>
             전문가 연결
           </p>
           <h1 className="text-[17px] font-bold text-gray-900">전문가와 연결하기 🔗</h1>
@@ -102,9 +102,9 @@ export default function ParentExpertPage() {
         {/* 안내 배너 */}
         <div
           className="rounded-2xl p-4"
-          style={{ background: "var(--hb-primary-light)", boxShadow: "var(--hb-shadow)" }}
+          style={{ background: "var(--color-k-navy-tint)", boxShadow: "var(--shadow-k-card)" }}
         >
-          <p className="text-sm font-semibold" style={{ color: "var(--hb-primary)" }}>
+          <p className="text-sm font-semibold" style={{ color: "var(--color-k-navy)" }}>
             💜 아이의 마음이 걱정될 때
           </p>
           <p className="text-xs mt-1 leading-relaxed" style={{ color: "#7C7CCC" }}>
@@ -118,7 +118,7 @@ export default function ParentExpertPage() {
           <div
             key={expert.id}
             className="bg-white rounded-2xl p-4"
-            style={{ boxShadow: "var(--hb-shadow)" }}
+            style={{ boxShadow: "var(--shadow-k-card)" }}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -134,12 +134,12 @@ export default function ParentExpertPage() {
                     </span>
                   </div>
                   {expert.hours && (
-                    <p className="text-xs mt-0.5" style={{ color: "var(--hb-muted)" }}>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--color-k-text-secondary)" }}>
                       🕐 {expert.hours}
                     </p>
                   )}
                   {expert.url && (
-                    <p className="text-xs mt-0.5" style={{ color: "var(--hb-muted)" }}>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--color-k-text-secondary)" }}>
                       🌐 {expert.url}
                     </p>
                   )}
@@ -161,7 +161,7 @@ export default function ParentExpertPage() {
         ))}
 
         {/* 하단 안내 */}
-        <p className="text-xs text-center pb-2" style={{ color: "var(--hb-muted)" }}>
+        <p className="text-xs text-center pb-2" style={{ color: "var(--color-k-text-secondary)" }}>
           위 기관은 공공 상담 서비스로 무료 이용 가능합니다.
         </p>
       </div>

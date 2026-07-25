@@ -29,14 +29,14 @@ export default function DemoChildChatPage() {
             <Link
               href="/demo"
               className="font-bold text-sm cursor-pointer"
-              style={{ color: "#1a6b5a" }}
+              style={{ color: "var(--color-k-navy)" }}
             >
               내친구 케이
             </Link>
           </div>
 
           <div className="text-center pt-2 pb-4">
-            <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+            <h1 className="text-lg font-bold" style={{ color: "var(--color-k-text-primary)" }}>
               {isDone ? "오늘도 이야기해줘서 고마워요" : "케이가 듣고 있어요…"}
             </h1>
             <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
@@ -67,7 +67,7 @@ export default function DemoChildChatPage() {
               }`}
               style={{
                 background: turn.speaker === "kay" ? "#f3f4f6" : "#3b82f6",
-                color: turn.speaker === "kay" ? "#1e1e2d" : "#ffffff",
+                color: turn.speaker === "kay" ? "var(--color-k-text-primary)" : "#ffffff",
               }}
             >
               {turn.text}
@@ -88,7 +88,7 @@ export default function DemoChildChatPage() {
             onClick={handleMic}
             disabled={isDone}
             className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 disabled:opacity-40 cursor-pointer"
-            style={{ background: "#e8845a" }}
+            style={{ background: "var(--color-k-orange)" }}
             aria-label="마이크로 대화하기"
           >
             🎤

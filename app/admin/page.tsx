@@ -50,20 +50,20 @@ const thStyle: React.CSSProperties = {
   textAlign: "left",
   padding: "8px 12px",
   fontSize: 12,
-  color: "var(--hb-muted)",
-  borderBottom: "1px solid var(--hb-border)",
+  color: "var(--color-k-text-secondary)",
+  borderBottom: "1px solid var(--color-k-border)",
 };
 const tdStyle: React.CSSProperties = {
   padding: "8px 12px",
   fontSize: 13,
-  color: "#1e1e2d",
-  borderBottom: "1px solid var(--hb-border)",
+  color: "var(--color-k-text-primary)",
+  borderBottom: "1px solid var(--color-k-border)",
   verticalAlign: "top",
 };
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div style={{ padding: "32px 0", textAlign: "center", color: "var(--hb-muted)", fontSize: 13 }}>
+    <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-k-text-secondary)", fontSize: 13 }}>
       {text}
     </div>
   );
@@ -90,22 +90,22 @@ function ConversationsTab({ childId }: { childId: string }) {
       {sessions.map((s) => (
         <div
           key={s.id}
-          style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: 16 }}
+          style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}
         >
-          <div style={{ fontSize: 12, color: "var(--hb-muted)", marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginBottom: 8 }}>
             {formatDateTime(s.started_at)} · {s.session_type === "mission" ? "미션" : "자유대화"} · {s.turn_count}턴
             {!s.ended_at && " · 진행중"}
           </div>
           {s.messages.length === 0 ? (
-            <div style={{ fontSize: 13, color: "var(--hb-muted)" }}>메시지 없음</div>
+            <div style={{ fontSize: 13, color: "var(--color-k-text-secondary)" }}>메시지 없음</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {s.messages.map((m, i) => (
                 <div key={i} style={{ fontSize: 13 }}>
-                  <span style={{ fontWeight: 600, color: m.role === "k" ? "var(--hb-primary)" : "#1e1e2d" }}>
+                  <span style={{ fontWeight: 600, color: m.role === "k" ? "var(--color-k-navy)" : "var(--color-k-text-primary)" }}>
                     {m.role === "k" ? "케이" : "아이"}
                   </span>
-                  <span style={{ color: "#1e1e2d" }}>: {m.content}</span>
+                  <span style={{ color: "var(--color-k-text-primary)" }}>: {m.content}</span>
                 </div>
               ))}
             </div>
@@ -225,9 +225,9 @@ function usageLabel(usage: number, unit: CostBreakdownItem["usageUnit"]): string
 }
 
 function formatChangeRate(rate: number | null): { text: string; color: string } {
-  if (rate == null) return { text: "직전 기간 데이터 없음", color: "var(--hb-muted)" };
+  if (rate == null) return { text: "직전 기간 데이터 없음", color: "var(--color-k-text-secondary)" };
   const sign = rate > 0 ? "+" : "";
-  const color = rate >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)";
+  const color = rate >= 0 ? "var(--color-k-success, #1a9c5c)" : "var(--color-k-danger)";
   return { text: `${sign}${rate.toFixed(1)}% (전기 대비)`, color };
 }
 
@@ -260,28 +260,28 @@ function BigNumberCard({
     <div
       onClick={onClick}
       style={{
-        background: "var(--hb-card)",
+        background: "var(--color-k-background)",
         borderRadius: 14,
-        boxShadow: "var(--hb-shadow)",
+        boxShadow: "var(--shadow-k-card)",
         padding: "18px 22px",
         minWidth: 0,
         cursor: onClick ? "pointer" : undefined,
-        border: borderColor ? `2px solid ${borderColor}` : active ? "2px solid var(--hb-primary)" : "2px solid transparent",
+        border: borderColor ? `2px solid ${borderColor}` : active ? "2px solid var(--color-k-navy)" : "2px solid transparent",
       }}
     >
-      <div style={{ fontSize: 13, color: "var(--hb-muted)", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
+      <div style={{ fontSize: 13, color: "var(--color-k-text-secondary)", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
         <span>{label}</span>
-        {onClick && <span style={{ color: "var(--hb-primary)", fontWeight: 700 }}>{active ? "▲ 상세 닫기" : "▼ 클릭해서 자세히"}</span>}
+        {onClick && <span style={{ color: "var(--color-k-navy)", fontWeight: 700 }}>{active ? "▲ 상세 닫기" : "▼ 클릭해서 자세히"}</span>}
       </div>
-      <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 800, color: color ?? "#1e1e2d" }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: "var(--hb-muted)", marginTop: 4 }}>{sub}</div>}
+      <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 800, color: color ?? "var(--color-k-text-primary)" }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginTop: 4 }}>{sub}</div>}
       {change && <div style={{ fontSize: 12, color: change.color, marginTop: 4, fontWeight: 600 }}>{change.text}</div>}
     </div>
   );
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 14, fontWeight: 700, color: "#1e1e2d", margin: "24px 0 10px" }}>{children}</div>;
+  return <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", margin: "24px 0 10px" }}>{children}</div>;
 }
 
 // TOP10 유저 드릴다운이 있는 서비스 — costBreakdown 항목 중 이 키들만 클릭 가능(인프라 고정비는 제외).
@@ -294,7 +294,7 @@ function AccordionExpand({ children }: { children: React.ReactNode }) {
     <div
       style={{
         padding: 16,
-        background: "var(--hb-primary-light)",
+        background: "var(--color-k-navy-tint)",
         borderRadius: 12,
         margin: "0 0 12px",
         animation: "hbAccordionIn 0.18s ease",
@@ -346,12 +346,12 @@ function ChildUsageDetail({ period, childId }: { period: Period; childId: string
   return (
     <div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-        <div style={{ background: "var(--hb-card)", borderRadius: 10, padding: "10px 14px", fontSize: 12, minWidth: 100 }}>
-          <div style={{ color: "var(--hb-muted)" }}>대화 세션 수</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#1e1e2d" }}>{detail.traffic.sessionCount}건</div>
+        <div style={{ background: "var(--color-k-background)", borderRadius: 10, padding: "10px 14px", fontSize: 12, minWidth: 100 }}>
+          <div style={{ color: "var(--color-k-text-secondary)" }}>대화 세션 수</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-k-text-primary)" }}>{detail.traffic.sessionCount}건</div>
         </div>
       </div>
-      <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12 }}>
+      <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12 }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
@@ -371,13 +371,13 @@ function ChildUsageDetail({ period, childId }: { period: Period; childId: string
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 12, background: "var(--hb-card)", borderRadius: 12, padding: 12, height: 180 }}>
+      <div style={{ marginTop: 12, background: "var(--color-k-background)", borderRadius: 12, padding: 12, height: 180 }}>
         {detail.dailyTrend.length === 0 ? (
           <EmptyState text="기간 내 원가 추이가 없어요." />
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={detail.dailyTrend.map((d) => ({ day: d.day, 원가: Math.round(d.costKrw) }))} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--hb-border)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-k-border)" />
               <XAxis dataKey="day" fontSize={11} />
               <YAxis fontSize={11} width={60} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
               <Tooltip formatter={(v) => won(typeof v === "number" ? v : Number(v))} />
@@ -394,8 +394,8 @@ function ChildDetailPanel({ period, childId, childName }: { period: Period; chil
   const [subTab, setSubTab] = useState<ChildDetailSubTab>("usage");
 
   return (
-    <div style={{ padding: 16, background: "var(--hb-primary-light)", borderRadius: 12, marginTop: -4, marginBottom: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--hb-primary)", marginBottom: 10 }}>
+    <div style={{ padding: 16, background: "var(--color-k-navy-tint)", borderRadius: 12, marginTop: -4, marginBottom: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-k-navy)", marginBottom: 10 }}>
         {childName} 상세 ({PERIOD_LABEL[period]})
       </div>
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
@@ -408,9 +408,9 @@ function ChildDetailPanel({ period, childId, childName }: { period: Period; chil
               borderRadius: 999,
               fontSize: 12,
               fontWeight: subTab === t.id ? 700 : 400,
-              border: subTab === t.id ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
-              background: subTab === t.id ? "var(--hb-card)" : "transparent",
-              color: subTab === t.id ? "var(--hb-primary)" : "var(--hb-muted)",
+              border: subTab === t.id ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
+              background: subTab === t.id ? "var(--color-k-background)" : "transparent",
+              color: subTab === t.id ? "var(--color-k-navy)" : "var(--color-k-text-secondary)",
               cursor: "pointer",
             }}
           >
@@ -457,7 +457,7 @@ function ChildRightPanel({
           position: "relative",
           width: "min(440px, 92vw)",
           height: "100%",
-          background: "var(--hb-bg, #fafaf8)",
+          background: "var(--color-k-surface, #fafaf8)",
           boxShadow: "-6px 0 24px rgba(0,0,0,0.18)",
           overflowY: "auto",
           padding: 20,
@@ -475,7 +475,7 @@ function ChildRightPanel({
               fontSize: 20,
               lineHeight: 1,
               cursor: "pointer",
-              color: "var(--hb-muted)",
+              color: "var(--color-k-text-secondary)",
               padding: 4,
             }}
           >
@@ -580,17 +580,17 @@ function ProviderSwitchTab() {
   return (
     <div>
       <SectionTitle>AI 프로바이더 스위치 (Vertex 전용)</SectionTitle>
-      <div style={{ fontSize: 11, color: "var(--hb-muted)", marginBottom: 12 }}>
+      <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginBottom: 12 }}>
         변경은 다음 호출부터 즉시 반영돼요. 단, 그룹C(라이브 음성)는 이미 연결된 세션이 끝날 때까지 기존 설정이 유지돼요.
       </div>
-      {errorMsg && <div style={{ fontSize: 12, color: "var(--hb-danger)", marginBottom: 10 }}>{errorMsg}</div>}
+      {errorMsg && <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginBottom: 10 }}>{errorMsg}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {(["A", "B", "C"] as ModelGroup[]).map((group) => {
           const row = rows.find((r) => r.group === group);
           const current = row ? `${row.provider}::${row.model_id}` : "";
           return (
-            <div key={group} style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#1e1e2d", marginBottom: 8 }}>{GROUP_LABEL[group]}</div>
+            <div key={group} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 8 }}>{GROUP_LABEL[group]}</div>
               <select
                 value={current}
                 disabled={savingGroup === group}
@@ -602,10 +602,10 @@ function ProviderSwitchTab() {
                   width: "100%",
                   padding: "8px 10px",
                   borderRadius: 8,
-                  border: "1px solid var(--hb-border)",
+                  border: "1px solid var(--color-k-border)",
                   fontSize: 13,
-                  color: "#1e1e2d",
-                  background: "var(--hb-card)",
+                  color: "var(--color-k-text-primary)",
+                  background: "var(--color-k-background)",
                 }}
               >
                 {MODEL_OPTIONS[group].map((opt) => (
@@ -615,7 +615,7 @@ function ProviderSwitchTab() {
                 ))}
               </select>
               {row?.updated_by && (
-                <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 6 }}>
                   마지막 변경: {row.updated_by} · {formatDateTime(row.updated_at)}
                 </div>
               )}
@@ -724,8 +724,8 @@ function GCAIProfileSection() {
   return (
     <div style={{ marginTop: 24 }}>
       <SectionTitle>GCAI A/B 프로필 설정</SectionTitle>
-      {errorMsg && <div style={{ fontSize: 12, color: "var(--hb-danger)", marginBottom: 10 }}>{errorMsg}</div>}
-      {actionMsg && <div style={{ fontSize: 12, color: "var(--hb-primary)", marginBottom: 10, background: "var(--hb-primary-light)", padding: "8px 12px", borderRadius: 8 }}>{actionMsg}</div>}
+      {errorMsg && <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginBottom: 10 }}>{errorMsg}</div>}
+      {actionMsg && <div style={{ fontSize: 12, color: "var(--color-k-navy)", marginBottom: 10, background: "var(--color-k-navy-tint)", padding: "8px 12px", borderRadius: 8 }}>{actionMsg}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {profiles.map(p => {
           const isUnconfigured = !p.last_health_check_result || Object.keys(p.last_health_check_result).length === 0 || p.last_health_check_result._status === "미설정";
@@ -737,14 +737,14 @@ function GCAIProfileSection() {
           }
 
           return (
-            <div key={p.profile} style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: 16, border: p.is_active ? "2px solid var(--hb-primary)" : "1px solid transparent" }}>
+            <div key={p.profile} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16, border: p.is_active ? "2px solid var(--color-k-navy)" : "1px solid transparent" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#1e1e2d", display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
                     프로필 {p.profile}
-                    {p.is_active && <span style={{ fontSize: 11, background: "var(--hb-primary)", color: "white", padding: "2px 6px", borderRadius: 4 }}>활성</span>}
+                    {p.is_active && <span style={{ fontSize: 11, background: "var(--color-k-navy)", color: "white", padding: "2px 6px", borderRadius: 4 }}>활성</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--hb-muted)", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginTop: 4 }}>
                     Project: {maskProject(p.google_cloud_project)}
                   </div>
                 </div>
@@ -753,8 +753,8 @@ function GCAIProfileSection() {
                     onClick={() => runHealthCheck(p.profile)}
                     disabled={healthChecking === p.profile}
                     style={{
-                      padding: "6px 12px", borderRadius: 8, border: "1px solid var(--hb-border)",
-                      background: "white", color: "#1e1e2d", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                      padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-k-border)",
+                      background: "white", color: "var(--color-k-text-primary)", fontSize: 12, fontWeight: 700, cursor: "pointer"
                     }}
                   >
                     {healthChecking === p.profile ? "실행 중..." : "헬스체크 실행"}
@@ -765,8 +765,8 @@ function GCAIProfileSection() {
                     title={!allPassed ? (isUnconfigured ? `${p.profile} 자격증명 미설정` : "헬스체크가 모두 성공해야 전환 가능합니다.") : undefined}
                     style={{
                       padding: "6px 12px", borderRadius: 8, border: "none",
-                      background: (!allPassed || switching === p.profile) ? "var(--hb-border)" : "var(--hb-primary)",
-                      color: (!allPassed || switching === p.profile) ? "var(--hb-muted)" : "white",
+                      background: (!allPassed || switching === p.profile) ? "var(--color-k-border)" : "var(--color-k-navy)",
+                      color: (!allPassed || switching === p.profile) ? "var(--color-k-text-secondary)" : "white",
                       fontSize: 12, fontWeight: 700, cursor: (!allPassed || switching === p.profile) ? "not-allowed" : "pointer"
                     }}
                   >
@@ -777,11 +777,11 @@ function GCAIProfileSection() {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {["groupA", "groupB", "groupC", "stt", "tts"].map(svc => {
                   const check = p.last_health_check_result?.[svc];
-                  let color = "var(--hb-muted)";
+                  let color = "var(--color-k-text-secondary)";
                   let label = svc.toUpperCase();
                   if (check) {
-                    if (check.status === "ok") color = "var(--hb-success, #1a9c5c)";
-                    else if (check.status === "fail") color = "var(--hb-danger)";
+                    if (check.status === "ok") color = "var(--color-k-success, #1a9c5c)";
+                    else if (check.status === "fail") color = "var(--color-k-danger)";
                   }
                   return (
                     <div key={svc} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: "white", border: `1px solid ${color}`, color }}>
@@ -858,13 +858,13 @@ function AccountRestoreTab() {
         {requests.map(req => {
           const familyList = req.memberships.map((m: any) => `${m.families?.name || "알 수 없는 가족"} (${m.role})`).join(", ");
           return (
-            <div key={req.id} style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: 16 }}>
+            <div key={req.id} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "#1e1e2d", marginBottom: 4 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 4 }}>
                     {req.name} ({req.email})
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--hb-muted)" }}>
+                  <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>
                     탈퇴일: {formatDateTime(req.withdrawn_at)}<br />
                     삭제예정일: {formatDateTime(req.purge_scheduled_at)}<br />
                     신청일: {formatDateTime(req.restore_requested_at)}<br />
@@ -881,8 +881,8 @@ function AccountRestoreTab() {
                     onClick={() => handleAction(req.id, "reject")}
                     disabled={actionLoading === req.id}
                     style={{
-                      padding: "6px 12px", borderRadius: 8, border: "1px solid var(--hb-danger)",
-                      background: "white", color: "var(--hb-danger)", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                      padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-k-danger)",
+                      background: "white", color: "var(--color-k-danger)", fontSize: 12, fontWeight: 700, cursor: "pointer"
                     }}
                   >
                     거절
@@ -892,7 +892,7 @@ function AccountRestoreTab() {
                     disabled={actionLoading === req.id}
                     style={{
                       padding: "6px 12px", borderRadius: 8, border: "none",
-                      background: "var(--hb-primary)", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                      background: "var(--color-k-navy)", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer"
                     }}
                   >
                     승인
@@ -966,8 +966,8 @@ function AdminDashboard() {
               fontSize: 13,
               fontWeight: page === item.id ? 700 : 400,
               border: "none",
-              background: page === item.id ? "var(--hb-primary-light)" : "transparent",
-              color: page === item.id ? "var(--hb-primary)" : "var(--hb-muted)",
+              background: page === item.id ? "var(--color-k-navy-tint)" : "transparent",
+              color: page === item.id ? "var(--color-k-navy)" : "var(--color-k-text-secondary)",
               cursor: "pointer",
             }}
           >
@@ -997,9 +997,9 @@ function AdminDashboard() {
                 borderRadius: 999,
                 fontSize: 13,
                 fontWeight: period === p ? 700 : 400,
-                border: period === p ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
-                background: period === p ? "var(--hb-primary-light)" : "var(--hb-card)",
-                color: period === p ? "var(--hb-primary)" : "var(--hb-muted)",
+                border: period === p ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
+                background: period === p ? "var(--color-k-navy-tint)" : "var(--color-k-background)",
+                color: period === p ? "var(--color-k-navy)" : "var(--color-k-text-secondary)",
                 cursor: "pointer",
               }}
             >
@@ -1010,7 +1010,7 @@ function AdminDashboard() {
 
         {/* A~F 대화방식 필터 + 익명 내보내기 — 사용량/비용 탭 공통 */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: 12, color: "var(--hb-muted)", marginRight: 2 }}>대화방식</span>
+          <span style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginRight: 2 }}>대화방식</span>
           {(["", ...ALL_MODE_BUCKETS] as (ModeBucket | "")[]).map((m) => {
             const label = m === "" ? "전체" : m === "unclassified" ? "미분류" : m;
             const activeM = mode === m;
@@ -1024,9 +1024,9 @@ function AdminDashboard() {
                   borderRadius: 999,
                   fontSize: 12,
                   fontWeight: activeM ? 700 : 400,
-                  border: activeM ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
-                  background: activeM ? "var(--hb-primary-light)" : "var(--hb-card)",
-                  color: activeM ? "var(--hb-primary)" : "var(--hb-muted)",
+                  border: activeM ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
+                  background: activeM ? "var(--color-k-navy-tint)" : "var(--color-k-background)",
+                  color: activeM ? "var(--color-k-navy)" : "var(--color-k-text-secondary)",
                   cursor: "pointer",
                 }}
               >
@@ -1037,13 +1037,13 @@ function AdminDashboard() {
           <div style={{ flex: 1 }} />
           <a
             href={exportHref("csv")}
-            style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid var(--hb-border)", background: "var(--hb-card)", color: "#1e1e2d", textDecoration: "none" }}
+            style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid var(--color-k-border)", background: "var(--color-k-background)", color: "var(--color-k-text-primary)", textDecoration: "none" }}
           >
             ⬇ CSV
           </a>
           <a
             href={exportHref("xlsx")}
-            style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid var(--hb-border)", background: "var(--hb-card)", color: "#1e1e2d", textDecoration: "none" }}
+            style={{ padding: "5px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, border: "1px solid var(--color-k-border)", background: "var(--color-k-background)", color: "var(--color-k-text-primary)", textDecoration: "none" }}
           >
             ⬇ XLSX
           </a>
@@ -1083,8 +1083,8 @@ function AdminDashboard() {
                   <BigNumberCard
                     label={`남는 돈 (순이익) · ${data.profitSummary.netProfitKrw >= 0 ? "흑자" : "적자"}`}
                     value={won(data.profitSummary.netProfitKrw)}
-                    color={data.profitSummary.netProfitKrw >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)"}
-                    borderColor={data.profitSummary.netProfitKrw >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)"}
+                    color={data.profitSummary.netProfitKrw >= 0 ? "var(--color-k-success, #1a9c5c)" : "var(--color-k-danger)"}
+                    borderColor={data.profitSummary.netProfitKrw >= 0 ? "var(--color-k-success, #1a9c5c)" : "var(--color-k-danger)"}
                     sub={
                       `들어올 돈 − 나갈 돈` +
                       (data.profitSummary.revenueMode === "projected" ? " · 현재 전원 무료 제공 기간, 유료 전환 가정한 예상치" : "")
@@ -1095,69 +1095,69 @@ function AdminDashboard() {
 
                 {/* 실제 vs 예상 손익 — 무료 제공 기간 명확 구분(Plan01 §23 결정3) */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                  <div style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: "14px 18px", borderLeft: "4px solid var(--hb-danger)" }}>
-                    <div style={{ fontSize: 12, color: "var(--hb-muted)", marginBottom: 6, fontWeight: 700 }}>
-                      실제 손익 {data.profitSummary.isFreePeriod && <span style={{ color: "var(--hb-danger)" }}>· 무료 제공 기간</span>}
+                  <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: "14px 18px", borderLeft: "4px solid var(--color-k-danger)" }}>
+                    <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginBottom: 6, fontWeight: 700 }}>
+                      실제 손익 {data.profitSummary.isFreePeriod && <span style={{ color: "var(--color-k-danger)" }}>· 무료 제공 기간</span>}
                     </div>
-                    <div style={{ fontSize: 13, color: "#1e1e2d" }}>
+                    <div style={{ fontSize: 13, color: "var(--color-k-text-primary)" }}>
                       실매출 <b>{won(data.profitSummary.actual.revenueKrw)}</b> − 실비용 <b>{won(data.profitSummary.actual.costKrw)}</b>
                     </div>
-                    <div style={{ fontSize: "clamp(15px,1.6vw,20px)", fontWeight: 800, marginTop: 4, color: data.profitSummary.actual.netProfitKrw >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)" }}>
+                    <div style={{ fontSize: "clamp(15px,1.6vw,20px)", fontWeight: 800, marginTop: 4, color: data.profitSummary.actual.netProfitKrw >= 0 ? "var(--color-k-success, #1a9c5c)" : "var(--color-k-danger)" }}>
                       = {won(data.profitSummary.actual.netProfitKrw)}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 4 }}>
                       비용 근거: {data.profitSummary.actual.costBasis === "bigquery_actual" ? "BigQuery 실청구(회사 전체)" : "추정치"} · 환율 {data.fx.usdToKrw.toLocaleString("ko-KR")}원({data.fx.asOf})
                     </div>
                   </div>
-                  <div style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: "14px 18px", borderLeft: "4px solid var(--hb-primary)" }}>
-                    <div style={{ fontSize: 12, color: "var(--hb-muted)", marginBottom: 6, fontWeight: 700 }}>예상 손익 · 전원 유료 가정</div>
-                    <div style={{ fontSize: 13, color: "#1e1e2d" }}>
+                  <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: "14px 18px", borderLeft: "4px solid var(--color-k-navy)" }}>
+                    <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginBottom: 6, fontWeight: 700 }}>예상 손익 · 전원 유료 가정</div>
+                    <div style={{ fontSize: 13, color: "var(--color-k-text-primary)" }}>
                       예상매출 <b>{won(data.profitSummary.projected.revenueKrw)}</b> − 비용 <b>{won(data.profitSummary.projected.costKrw)}</b>
                     </div>
-                    <div style={{ fontSize: "clamp(15px,1.6vw,20px)", fontWeight: 800, marginTop: 4, color: data.profitSummary.projected.netProfitKrw >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)" }}>
+                    <div style={{ fontSize: "clamp(15px,1.6vw,20px)", fontWeight: 800, marginTop: 4, color: data.profitSummary.projected.netProfitKrw >= 0 ? "var(--color-k-success, #1a9c5c)" : "var(--color-k-danger)" }}>
                       = {won(data.profitSummary.projected.netProfitKrw)}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 4 }}>{data.profitSummary.note}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 4 }}>{data.profitSummary.note}</div>
                   </div>
                 </div>
 
                 {/* 보조 요약 — 한 줄 카드 */}
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-                  <div style={{ background: "var(--hb-card)", borderRadius: 10, boxShadow: "var(--hb-shadow)", padding: "10px 14px", fontSize: 12, minWidth: 110 }}>
-                    <div style={{ color: "var(--hb-muted)" }}>총 가입 고객(아이)</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: "#1e1e2d" }}>{data.subSummary.totalChildren}명</div>
+                  <div style={{ background: "var(--color-k-background)", borderRadius: 10, boxShadow: "var(--shadow-k-card)", padding: "10px 14px", fontSize: 12, minWidth: 110 }}>
+                    <div style={{ color: "var(--color-k-text-secondary)" }}>총 가입 고객(아이)</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-k-text-primary)" }}>{data.subSummary.totalChildren}명</div>
                   </div>
                   {data.subSummary.byTier.map((t) => (
-                    <div key={t.tier} style={{ background: "var(--hb-card)", borderRadius: 10, boxShadow: "var(--hb-shadow)", padding: "10px 14px", fontSize: 12, minWidth: 110 }}>
-                      <div style={{ color: "var(--hb-muted)" }}>{t.name}</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: "#1e1e2d" }}>{t.count}명</div>
-                      <div style={{ fontSize: 11, color: "var(--hb-muted)" }}>{won(t.priceKrw)}/월</div>
+                    <div key={t.tier} style={{ background: "var(--color-k-background)", borderRadius: 10, boxShadow: "var(--shadow-k-card)", padding: "10px 14px", fontSize: 12, minWidth: 110 }}>
+                      <div style={{ color: "var(--color-k-text-secondary)" }}>{t.name}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-k-text-primary)" }}>{t.count}명</div>
+                      <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{won(t.priceKrw)}/월</div>
                     </div>
                   ))}
-                  <div style={{ background: "var(--hb-card)", borderRadius: 10, boxShadow: "var(--hb-shadow)", padding: "10px 14px", fontSize: 12, minWidth: 110 }}>
-                    <div style={{ color: "var(--hb-muted)" }}>대화 세션 수</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: "#1e1e2d" }}>{data.traffic.sessionCount}건</div>
+                  <div style={{ background: "var(--color-k-background)", borderRadius: 10, boxShadow: "var(--shadow-k-card)", padding: "10px 14px", fontSize: 12, minWidth: 110 }}>
+                    <div style={{ color: "var(--color-k-text-secondary)" }}>대화 세션 수</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-k-text-primary)" }}>{data.traffic.sessionCount}건</div>
                   </div>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: -8, marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: -8, marginBottom: 16 }}>
                   계산 근거: 각 요금제 금액 × 가입 인원 = 매출(현재 무료 베타 기간이라 전원 유료 전환 가정)
                 </div>
 
                 {/* 일별 손익 추이 그래프 */}
                 <SectionTitle>일별 손익 추이</SectionTitle>
-                <div style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: 16, height: 260 }}>
+                <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16, height: 260 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       data={data.dailyTrend.map((d) => ({ day: d.day, 매출: Math.round(d.revenueKrw), 비용: Math.round(d.costKrw) }))}
                       margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--hb-border)" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-k-border)" />
                       <XAxis dataKey="day" fontSize={11} />
                       <YAxis fontSize={11} width={70} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                       <Tooltip formatter={(v) => won(typeof v === "number" ? v : Number(v))} />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Line type="monotone" dataKey="매출" stroke="var(--hb-success, #1a9c5c)" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="비용" stroke="var(--hb-danger)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="매출" stroke="var(--color-k-success, #1a9c5c)" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="비용" stroke="var(--color-k-danger)" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -1167,7 +1167,7 @@ function AdminDashboard() {
             {page === "cost" && (
               <div>
                 <SectionTitle>나갈 돈 — 비용 항목별 분해 ({PERIOD_LABEL[period]}, 비용 큰 순)</SectionTitle>
-                <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)" }}>
+                <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
@@ -1187,11 +1187,11 @@ function AdminDashboard() {
                           <Fragment key={item.key}>
                             <tr
                               onClick={isTopUserService ? () => toggleService(item.key) : undefined}
-                              style={{ cursor: isTopUserService ? "pointer" : undefined, background: isOpen ? "var(--hb-primary-light)" : undefined }}
+                              style={{ cursor: isTopUserService ? "pointer" : undefined, background: isOpen ? "var(--color-k-navy-tint)" : undefined }}
                             >
                               <td style={tdStyle}>
                                 {item.label}
-                                {isTopUserService && <span style={{ fontSize: 11, color: "var(--hb-primary)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} TOP10</span>}
+                                {isTopUserService && <span style={{ fontSize: 11, color: "var(--color-k-navy)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} TOP10</span>}
                               </td>
                               <td style={tdStyle}>{usageLabel(item.usage, item.usageUnit)}</td>
                               <td style={tdStyle}>{won(item.ourEstimateKrw)}</td>
@@ -1202,15 +1202,15 @@ function AdminDashboard() {
                             </tr>
                             {isOpen && (
                               <tr>
-                                <td colSpan={5} style={{ padding: 0, borderBottom: "1px solid var(--hb-border)" }}>
+                                <td colSpan={5} style={{ padding: 0, borderBottom: "1px solid var(--color-k-border)" }}>
                                   <AccordionExpand>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--hb-primary)", marginBottom: 10 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-k-navy)", marginBottom: 10 }}>
                                       {item.label} 사용량 TOP10
                                     </div>
                                     {topUsers.length === 0 ? (
                                       <EmptyState text="이 서비스를 사용한 아이가 없어요." />
                                     ) : (
-                                      <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12 }}>
+                                      <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12 }}>
                                         <table style={{ width: "100%", borderCollapse: "collapse" }}>
                                           <thead>
                                             <tr>
@@ -1227,7 +1227,7 @@ function AdminDashboard() {
                                                 <tr
                                                   key={u.childId}
                                                   onClick={() => openChildPanel(u.childId, u.name)}
-                                                  style={{ cursor: "pointer", background: userSelected ? "var(--hb-primary-light)" : undefined }}
+                                                  style={{ cursor: "pointer", background: userSelected ? "var(--color-k-navy-tint)" : undefined }}
                                                 >
                                                   <td style={tdStyle}>{idx + 1}</td>
                                                   <td style={tdStyle}>{u.name}</td>
@@ -1251,15 +1251,15 @@ function AdminDashboard() {
                   </table>
                 </div>
                 {data.gcpBillingError && (
-                  <div style={{ fontSize: 12, color: "var(--hb-danger)", marginTop: 6 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginTop: 6 }}>
                     GCP billing 조회 오류: {data.gcpBillingError}
                   </div>
                 )}
-                <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 6 }}>AI 서비스 항목을 클릭하면 바로 아래에 TOP10 유저가 펼쳐집니다.</div>
+                <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 6 }}>AI 서비스 항목을 클릭하면 바로 아래에 TOP10 유저가 펼쳐집니다.</div>
 
                 {/* A~F 대화방식별 원가 배분 (Plan01 §23 결정1) */}
                 <SectionTitle>A~F 대화방식별 원가 배분 ({PERIOD_LABEL[period]})</SectionTitle>
-                <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)" }}>
+                <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
@@ -1277,7 +1277,7 @@ function AdminDashboard() {
                         <tr><td colSpan={7} style={tdStyle}><EmptyState text="기간 내 대화방식별 원가 데이터가 없어요." /></td></tr>
                       ) : (
                         data.modeBreakdown.filter((r) => r.eventCount > 0).map((r) => (
-                          <tr key={r.mode} style={r.mode === "unclassified" ? { background: "var(--hb-primary-light)" } : undefined}>
+                          <tr key={r.mode} style={r.mode === "unclassified" ? { background: "var(--color-k-navy-tint)" } : undefined}>
                             <td style={tdStyle}>{MODE_LABELS[r.mode]}</td>
                             <td style={tdStyle}>{r.eventCount.toLocaleString("ko-KR")}</td>
                             <td style={tdStyle}>{won(r.stt)}</td>
@@ -1291,7 +1291,7 @@ function AdminDashboard() {
                     </tbody>
                   </table>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 6 }}>
                   A~F 태깅 이전/미지정 이벤트는 <b>미분류</b>로 집계됩니다. 위 값은 usage_events 추정 원가 기준이며, 회사 전체 실청구(BigQuery)는 아이/모드 단위로 직접 쪼갤 수 없어 사용량 비중 기반 배분 추정입니다.
                 </div>
               </div>
@@ -1300,7 +1300,7 @@ function AdminDashboard() {
             {page === "revenue" && (
               <div>
                 <SectionTitle>들어올 돈 — 요금제별 인원 분포 ({PERIOD_LABEL[period]})</SectionTitle>
-                <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)" }}>
+                <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
@@ -1317,26 +1317,26 @@ function AdminDashboard() {
                           <Fragment key={t.tier}>
                             <tr
                               onClick={() => toggleTier(t.tier)}
-                              style={{ cursor: "pointer", background: isOpen ? "var(--hb-primary-light)" : undefined }}
+                              style={{ cursor: "pointer", background: isOpen ? "var(--color-k-navy-tint)" : undefined }}
                             >
                               <td style={tdStyle}>
                                 {t.name}
-                                <span style={{ fontSize: 11, color: "var(--hb-primary)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} 유저 목록</span>
+                                <span style={{ fontSize: 11, color: "var(--color-k-navy)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} 유저 목록</span>
                               </td>
                               <td style={tdStyle}>{t.count}명</td>
                               <td style={tdStyle}>{won(t.priceKrw)}/월</td>
                             </tr>
                             {isOpen && (
                               <tr>
-                                <td colSpan={3} style={{ padding: 0, borderBottom: "1px solid var(--hb-border)" }}>
+                                <td colSpan={3} style={{ padding: 0, borderBottom: "1px solid var(--color-k-border)" }}>
                                   <AccordionExpand>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--hb-primary)", marginBottom: 10 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-k-navy)", marginBottom: 10 }}>
                                       {t.name} 소속 유저 목록
                                     </div>
                                     {tierUsers.length === 0 ? (
                                       <EmptyState text="이 요금제에 가입한 아이가 없어요." />
                                     ) : (
-                                      <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12 }}>
+                                      <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12 }}>
                                         <table style={{ width: "100%", borderCollapse: "collapse" }}>
                                           <thead>
                                             <tr>
@@ -1355,16 +1355,16 @@ function AdminDashboard() {
                                                 <tr
                                                   key={c.childId}
                                                   onClick={() => openChildPanel(c.childId, c.name)}
-                                                  style={{ cursor: "pointer", background: userSelected ? "var(--hb-primary-light)" : undefined }}
+                                                  style={{ cursor: "pointer", background: userSelected ? "var(--color-k-navy-tint)" : undefined }}
                                                 >
                                                   <td style={tdStyle}>{c.name}</td>
                                                   <td style={tdStyle}>{c.createdAt ? formatDateTime(c.createdAt).slice(0, 10) : "-"}</td>
                                                   <td style={tdStyle}>{won(c.priceKrw)}</td>
                                                   <td style={tdStyle}>{won(c.costKrw)}</td>
-                                                  <td style={{ ...tdStyle, color: c.marginKrw >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)", fontWeight: 600 }}>
+                                                  <td style={{ ...tdStyle, color: c.marginKrw >= 0 ? "var(--color-k-success, #1a9c5c)" : "var(--color-k-danger)", fontWeight: 600 }}>
                                                     {won(c.marginKrw)}
                                                   </td>
-                                                  <td style={{ ...tdStyle, color: c.marginRate >= 0 ? "var(--hb-success, #1a9c5c)" : "var(--hb-danger)" }}>
+                                                  <td style={{ ...tdStyle, color: c.marginRate >= 0 ? "var(--color-k-success, #1a9c5c)" : "var(--color-k-danger)" }}>
                                                     {c.marginRate.toFixed(1)}%
                                                   </td>
                                                 </tr>
@@ -1384,7 +1384,7 @@ function AdminDashboard() {
                     </tbody>
                   </table>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 6 }}>요금제 행을 클릭하면 바로 아래에 소속 유저 목록이 펼쳐집니다.</div>
+                <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 6 }}>요금제 행을 클릭하면 바로 아래에 소속 유저 목록이 펼쳐집니다.</div>
               </div>
             )}
           </>
@@ -1444,17 +1444,17 @@ function SafetyTab({ childId }: { childId: string }) {
       {/* 필터 UI */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", marginBottom: 4 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13, color: "var(--hb-muted)", fontWeight: 500 }}>분류</span>
+          <span style={{ fontSize: 13, color: "var(--color-k-text-secondary)", fontWeight: 500 }}>분류</span>
           <select
             value={selectedSubcategory}
             onChange={(e) => setSelectedSubcategory(e.target.value)}
             style={{
               padding: "6px 10px",
               borderRadius: 8,
-              border: "1px solid var(--hb-border)",
+              border: "1px solid var(--color-k-border)",
               fontSize: 13,
-              color: "#1e1e2d",
-              background: "var(--hb-card)",
+              color: "var(--color-k-text-primary)",
+              background: "var(--color-k-background)",
               outline: "none",
             }}
           >
@@ -1468,7 +1468,7 @@ function SafetyTab({ childId }: { childId: string }) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13, color: "var(--hb-muted)", fontWeight: 500 }}>기간</span>
+          <span style={{ fontSize: 13, color: "var(--color-k-text-secondary)", fontWeight: 500 }}>기간</span>
           <input
             type="date"
             value={startDate}
@@ -1476,14 +1476,14 @@ function SafetyTab({ childId }: { childId: string }) {
             style={{
               padding: "6px 10px",
               borderRadius: 8,
-              border: "1px solid var(--hb-border)",
+              border: "1px solid var(--color-k-border)",
               fontSize: 13,
-              color: "#1e1e2d",
-              background: "var(--hb-card)",
+              color: "var(--color-k-text-primary)",
+              background: "var(--color-k-background)",
               outline: "none",
             }}
           />
-          <span style={{ fontSize: 13, color: "var(--hb-muted)" }}>~</span>
+          <span style={{ fontSize: 13, color: "var(--color-k-text-secondary)" }}>~</span>
           <input
             type="date"
             value={endDate}
@@ -1491,10 +1491,10 @@ function SafetyTab({ childId }: { childId: string }) {
             style={{
               padding: "6px 10px",
               borderRadius: 8,
-              border: "1px solid var(--hb-border)",
+              border: "1px solid var(--color-k-border)",
               fontSize: 13,
-              color: "#1e1e2d",
-              background: "var(--hb-card)",
+              color: "var(--color-k-text-primary)",
+              background: "var(--color-k-background)",
               outline: "none",
             }}
           />
@@ -1510,7 +1510,7 @@ function SafetyTab({ childId }: { childId: string }) {
             style={{
               background: "none",
               border: "none",
-              color: "var(--hb-primary)",
+              color: "var(--color-k-navy)",
               fontSize: 13,
               cursor: "pointer",
               padding: "4px 8px",
@@ -1523,11 +1523,11 @@ function SafetyTab({ childId }: { childId: string }) {
       </div>
 
       {filteredEvents.length === 0 ? (
-        <div style={{ background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)", padding: "16px 0" }}>
+        <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: "16px 0" }}>
           <EmptyState text="조건에 맞는 이벤트가 없어요." />
         </div>
       ) : (
-        <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12, boxShadow: "var(--hb-shadow)" }}>
+        <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
@@ -1541,7 +1541,7 @@ function SafetyTab({ childId }: { childId: string }) {
               {filteredEvents.map((e) => (
                 <tr key={e.id}>
                   <td style={tdStyle}>{formatDateTime(e.created_at)}</td>
-                  <td style={{ ...tdStyle, color: "var(--hb-danger)", fontWeight: 600 }}>
+                  <td style={{ ...tdStyle, color: "var(--color-k-danger)", fontWeight: 600 }}>
                     {SUBCATEGORY_LABEL[e.subcategory] ?? e.subcategory}
                   </td>
                   <td style={tdStyle}>{e.child_text}</td>
@@ -1559,8 +1559,8 @@ function SafetyTab({ childId }: { childId: string }) {
 export default function AdminPage() {
   return (
     <div>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#1e1e2d", marginBottom: 4 }}>회사 전체 현황</div>
-      <div style={{ fontSize: 12, color: "var(--hb-muted)", marginBottom: 20 }}>
+      <div style={{ fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)", marginBottom: 4 }}>회사 전체 현황</div>
+      <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginBottom: 20 }}>
         아이를 선택하지 않아도 항상 전체 기준으로 보여요. 왼쪽 탭에서 매출·비용 상세로 바로 이동할 수 있어요.
       </div>
       <AdminDashboard />

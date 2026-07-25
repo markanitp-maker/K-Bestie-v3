@@ -61,6 +61,48 @@
   --color-warning-bg: #FBF0DD;
   --color-danger: #D9534F;
   --color-danger-bg: #FBE9E8;
+
+  /* ══════════════════════════════════════════════════════════════════
+     naechingu-k-design v2.0 (Navy/Orange) 디자인 토큰 — 위 014(v1, 딥그린/코랄)
+     블록을 대체하는 신규 브랜드 방향. 대표님 지시로 v1 → v2 전환 진행 중이며,
+     아직 /child/home·/parent/home·공용 내비게이션 2개만 검증 완료 상태라 위 v1
+     토큰은 나머지 화면이 계속 참조하므로 지금 삭제하지 않는다(전체 전환 완료 후
+     별도 작업으로 제거). 신규 화면/컴포넌트는 이 v2 토큰만 사용한다.
+     자세한 내용은 .claude/skills/naechingu-k-design/(v2.0) 참고.
+     ══════════════════════════════════════════════════════════════════ */
+  --color-k-navy: #10315B;
+  --color-k-orange: #E25B12;
+  --color-k-mascot-orange: #F19122;
+  --color-k-sky-blue: #4298D3;
+
+  --color-k-background: #FFFFFF;
+  --color-k-surface: #F8FAFC;
+  --color-k-border: #E5E7EB;
+
+  --color-k-text-primary: #10315B;
+  --color-k-text-secondary: #64748B;
+  --color-k-disabled: #94A3B8;
+
+  --radius-k-sm: 8px;
+  --radius-k-md: 16px;
+  --radius-k-lg: 24px;
+  --radius-k-xl: 32px;
+
+  --shadow-k-card: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-k-floating: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  --color-k-success: #16A34A;
+  --color-k-success-bg: #F0FDF4;
+  --color-k-warning: #D97706;
+  --color-k-warning-bg: #FFFBEB;
+  --color-k-danger: #DC2626;
+  --color-k-danger-bg: #FEF2F2;
+  --color-k-info: #4298D3;
+  --color-k-info-bg: #EFF6FF;
+  --color-k-navy-tint: #EAF0F7;
+  --color-k-orange-tint: #FDECE1;
+  --color-k-orange-hover: #C94E0F;
+  --color-k-navy-hover: #0C2444;
 }
 
 /* ── 글로벌 기본값 ── */
@@ -160,14 +202,17 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: var(--color-k-orange);
   animation: kDot 1.3s ease-in-out infinite;
 }
 
 .k-typing span:nth-child(2) { animation-delay: 0.18s; }
 .k-typing span:nth-child(3) { animation-delay: 0.36s; }
 
-/* ── HeartBloom 부모 신규 디자인 변수 ── */
+/* ── HeartBloom 부모 디자인 변수(--hb-*) — v2.0 마이그레이션으로 더 이상 사용되지 않음.
+   이 변수를 참조하던 17개 파일은 모두 --color-k-* 토큰으로 교체됐다(v1 --color-* 블록과
+   같은 이유로 즉시 삭제하지 않고 되돌리기 대비용으로 남겨둔다). 아래 호버 선택자도
+   더 이상 어떤 인라인 style과도 매치되지 않는 죽은 규칙이라, 새 패턴으로 갱신했다. ── */
 :root {
   --hb-primary: #1A6B5A;
   --hb-primary-light: #E8F5F2;
@@ -182,15 +227,15 @@ body {
   --hb-success: #22C55E;
 }
 
-/* ── 인라인 style 버튼 전역 호버 스타일 적용 ── */
-button[style*="var(--hb-primary)"]:not(:disabled):hover,
-button[style*="background:var(--hb-primary)"]:not(:disabled):hover,
-button[style*="backgroundColor:var(--hb-primary)"]:not(:disabled):hover,
-button[style*="background-color: var(--hb-primary)"]:not(:disabled):hover,
-button[style*="background-color:var(--hb-primary)"]:not(:disabled):hover,
-button[style*="background: var(--hb-primary)"]:not(:disabled):hover {
-  background: var(--hb-primary-hover) !important;
-  background-color: var(--hb-primary-hover) !important;
+/* ── 인라인 style 버튼 전역 호버 스타일 적용(v2.0: --color-k-navy 패턴으로 갱신) ── */
+button[style*="var(--color-k-navy)"]:not(:disabled):hover,
+button[style*="background:var(--color-k-navy)"]:not(:disabled):hover,
+button[style*="backgroundColor:var(--color-k-navy)"]:not(:disabled):hover,
+button[style*="background-color: var(--color-k-navy)"]:not(:disabled):hover,
+button[style*="background-color:var(--color-k-navy)"]:not(:disabled):hover,
+button[style*="background: var(--color-k-navy)"]:not(:disabled):hover {
+  background: var(--color-k-navy-hover) !important;
+  background-color: var(--color-k-navy-hover) !important;
 }
 
 /* ── 부모 탭바 고정 (모바일/태블릿) ── */

@@ -67,7 +67,7 @@ export default function ParentWeeklyReportPage() {
           <Link href="/parent/report" className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white text-gray-500">
             일간
           </Link>
-          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "#1a6b5a" }}>
+          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "var(--color-k-navy)" }}>
             주간
           </span>
         </div>
@@ -93,14 +93,14 @@ export default function ParentWeeklyReportPage() {
                     <span
                       key={tag}
                       className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{ background: "#fdf1ec", color: "#e8845a" }}
+                      style={{ background: "#fdf1ec", color: "var(--color-k-orange)" }}
                     >
                       {tag}
                     </span>
                   ))}
                 </div>
                 {w.weekend_activity_recommendation && (
-                  <p className="text-xs leading-relaxed" style={{ color: "#1a6b5a" }}>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-navy)" }}>
                     🎈 {w.weekend_activity_recommendation}
                   </p>
                 )}

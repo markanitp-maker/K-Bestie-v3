@@ -41,17 +41,17 @@ function formatDuration(sec: number): string {
 
 function MetricCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div style={{ background: "var(--hb-card)", borderRadius: 14, boxShadow: "var(--hb-shadow)", padding: "18px 22px" }}>
-      <div style={{ fontSize: 13, color: "var(--hb-muted)", marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 800, color: "#1e1e2d" }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: "var(--hb-muted)", marginTop: 4 }}>{sub}</div>}
+    <div style={{ background: "var(--color-k-background)", borderRadius: 14, boxShadow: "var(--shadow-k-card)", padding: "18px 22px" }}>
+      <div style={{ fontSize: 13, color: "var(--color-k-text-secondary)", marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: "clamp(18px, 2vw, 28px)", fontWeight: 800, color: "var(--color-k-text-primary)" }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
 
-const thStyle = { padding: "12px 16px", fontSize: 13, color: "var(--hb-muted)", borderBottom: "1px solid var(--hb-border)" };
-const tdStyle = { padding: "12px 16px", fontSize: 14, color: "#1e1e2d" };
-const linkStyle = { color: "var(--hb-primary)", textDecoration: "none", fontWeight: 600 };
+const thStyle = { padding: "12px 16px", fontSize: 13, color: "var(--color-k-text-secondary)", borderBottom: "1px solid var(--color-k-border)" };
+const tdStyle = { padding: "12px 16px", fontSize: 14, color: "var(--color-k-text-primary)" };
+const linkStyle = { color: "var(--color-k-navy)", textDecoration: "none", fontWeight: 600 };
 
 function DrillDownSection() {
   const [activeTab, setActiveTab] = useState<"families" | "children" | "parents">("families");
@@ -76,7 +76,7 @@ function DrillDownSection() {
 
   return (
     <div style={{ marginTop: 40 }}>
-      <div style={{ fontSize: 16, fontWeight: 700, color: "#1e1e2d", marginBottom: 16 }}>드릴다운 상세 보기</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 16 }}>드릴다운 상세 보기</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         {(["families", "children", "parents"] as const).map(tab => (
           <button
@@ -85,9 +85,9 @@ function DrillDownSection() {
             style={{
               padding: "8px 16px",
               borderRadius: 999,
-              border: activeTab === tab ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
-              background: activeTab === tab ? "var(--hb-primary)" : "white",
-              color: activeTab === tab ? "white" : "var(--hb-muted)",
+              border: activeTab === tab ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
+              background: activeTab === tab ? "var(--color-k-navy)" : "white",
+              color: activeTab === tab ? "white" : "var(--color-k-text-secondary)",
               fontSize: 14,
               fontWeight: activeTab === tab ? 700 : 400,
               cursor: "pointer",
@@ -98,15 +98,15 @@ function DrillDownSection() {
         ))}
       </div>
 
-      <div style={{ background: "var(--hb-card)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--hb-shadow)" }}>
+      <div style={{ background: "var(--color-k-background)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--shadow-k-card)" }}>
         {loading ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--hb-muted)" }}>불러오는 중...</div>
+          <div style={{ padding: 24, textAlign: "center", color: "var(--color-k-text-secondary)" }}>불러오는 중...</div>
         ) : !listData || listData.length === 0 ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--hb-muted)" }}>데이터가 없습니다.</div>
+          <div style={{ padding: 24, textAlign: "center", color: "var(--color-k-text-secondary)" }}>데이터가 없습니다.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", whiteSpace: "nowrap" }}>
-              <thead style={{ background: "var(--hb-primary-light)" }}>
+              <thead style={{ background: "var(--color-k-navy-tint)" }}>
                 <tr>
                   {activeTab === "families" && (
                     <>
@@ -138,7 +138,7 @@ function DrillDownSection() {
               </thead>
               <tbody>
                 {listData.map((item: any, i: number) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--hb-border)" }}>
+                  <tr key={i} style={{ borderBottom: "1px solid var(--color-k-border)" }}>
                     {activeTab === "families" && (
                       <>
                         <td style={tdStyle}><Link href={`/admin/retention/families/${item.familyId}`} style={linkStyle}>{item.familyId}</Link></td>
@@ -207,11 +207,11 @@ export default function AdminRetentionPage() {
   }, [period]);
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--hb-bg, #fafaf8)", paddingBottom: 64 }}>
-      <header style={{ background: "var(--hb-card)", padding: "16px 20px", borderBottom: "1px solid var(--hb-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <div style={{ minHeight: "100vh", background: "var(--color-k-surface, #fafaf8)", paddingBottom: 64 }}>
+      <header style={{ background: "var(--color-k-background)", padding: "16px 20px", borderBottom: "1px solid var(--color-k-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#1e1e2d" }}>케이 리텐션 지표 (베타)</h1>
-          <Link href="/admin" style={{ fontSize: 13, color: "var(--hb-primary)", textDecoration: "none" }}>← 전체 현황으로 돌아가기</Link>
+          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)" }}>케이 리텐션 지표 (베타)</h1>
+          <Link href="/admin" style={{ fontSize: 13, color: "var(--color-k-navy)", textDecoration: "none" }}>← 전체 현황으로 돌아가기</Link>
         </div>
       </header>
 
@@ -225,9 +225,9 @@ export default function AdminRetentionPage() {
                 style={{
                   padding: "8px 16px",
                   borderRadius: 999,
-                  border: period === p ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
-                  background: period === p ? "var(--hb-primary)" : "white",
-                  color: period === p ? "white" : "var(--hb-muted)",
+                  border: period === p ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
+                  background: period === p ? "var(--color-k-navy)" : "white",
+                  color: period === p ? "white" : "var(--color-k-text-secondary)",
                   fontSize: 14,
                   fontWeight: period === p ? 700 : 400,
                   cursor: "pointer",
@@ -243,7 +243,7 @@ export default function AdminRetentionPage() {
             style={{
               padding: "8px 16px",
               borderRadius: 999,
-              background: "#1e1e2d",
+              background: "var(--color-k-text-primary)",
               color: "white",
               fontSize: 14,
               fontWeight: 700,
@@ -258,13 +258,13 @@ export default function AdminRetentionPage() {
         </div>
 
         {error && (
-          <div style={{ color: "var(--hb-danger)", background: "#ffeef0", padding: "16px", borderRadius: 8 }}>
+          <div style={{ color: "var(--color-k-danger)", background: "#ffeef0", padding: "16px", borderRadius: 8 }}>
             {error}
           </div>
         )}
 
         {loading ? (
-          <div style={{ padding: "40px", textAlign: "center", color: "var(--hb-muted)" }}>불러오는 중...</div>
+          <div style={{ padding: "40px", textAlign: "center", color: "var(--color-k-text-secondary)" }}>불러오는 중...</div>
         ) : data ? (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 32 }}>
@@ -280,30 +280,30 @@ export default function AdminRetentionPage() {
               <MetricCard label="D30 재방문율" value={pct(data.d30RetentionRate)} sub="30일 전 접속자 중 오늘 재접속한 비율" />
             </div>
 
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#1e1e2d", marginBottom: 12 }}>아이별 접속 요약</div>
-            <div style={{ background: "var(--hb-card)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--hb-shadow)" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 12 }}>아이별 접속 요약</div>
+            <div style={{ background: "var(--color-k-background)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--shadow-k-card)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                 <thead>
-                  <tr style={{ background: "var(--hb-primary-light)" }}>
-                    <th style={{ padding: "12px 16px", fontSize: 13, color: "var(--hb-muted)", borderBottom: "1px solid var(--hb-border)" }}>아이 이름</th>
-                    <th style={{ padding: "12px 16px", fontSize: 13, color: "var(--hb-muted)", borderBottom: "1px solid var(--hb-border)" }}>현재 연속 접속 일수</th>
-                    <th style={{ padding: "12px 16px", fontSize: 13, color: "var(--hb-muted)", borderBottom: "1px solid var(--hb-border)" }}>기간 내 총 세션 수</th>
-                    <th style={{ padding: "12px 16px", fontSize: 13, color: "var(--hb-muted)", borderBottom: "1px solid var(--hb-border)" }}>접속일 평균 세션 수</th>
+                  <tr style={{ background: "var(--color-k-navy-tint)" }}>
+                    <th style={{ padding: "12px 16px", fontSize: 13, color: "var(--color-k-text-secondary)", borderBottom: "1px solid var(--color-k-border)" }}>아이 이름</th>
+                    <th style={{ padding: "12px 16px", fontSize: 13, color: "var(--color-k-text-secondary)", borderBottom: "1px solid var(--color-k-border)" }}>현재 연속 접속 일수</th>
+                    <th style={{ padding: "12px 16px", fontSize: 13, color: "var(--color-k-text-secondary)", borderBottom: "1px solid var(--color-k-border)" }}>기간 내 총 세션 수</th>
+                    <th style={{ padding: "12px 16px", fontSize: 13, color: "var(--color-k-text-secondary)", borderBottom: "1px solid var(--color-k-border)" }}>접속일 평균 세션 수</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.perChildDaily.length === 0 ? (
-                    <tr><td colSpan={4} style={{ padding: 24, textAlign: "center", color: "var(--hb-muted)", fontSize: 13 }}>데이터가 없습니다.</td></tr>
+                    <tr><td colSpan={4} style={{ padding: 24, textAlign: "center", color: "var(--color-k-text-secondary)", fontSize: 13 }}>데이터가 없습니다.</td></tr>
                   ) : (
                     data.perChildDaily.map((child) => (
                       <tr key={child.childId}>
-                        <td style={{ padding: "12px 16px", fontSize: 14, color: "#1e1e2d", borderBottom: "1px solid var(--hb-border)" }}>
+                        <td style={{ padding: "12px 16px", fontSize: 14, color: "var(--color-k-text-primary)", borderBottom: "1px solid var(--color-k-border)" }}>
                           {child.name}
-                          <div style={{ fontSize: 11, color: "var(--hb-muted)" }}>{child.childId.split("-")[0]}...</div>
+                          <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{child.childId.split("-")[0]}...</div>
                         </td>
-                        <td style={{ padding: "12px 16px", fontSize: 14, color: "#1e1e2d", borderBottom: "1px solid var(--hb-border)" }}>{child.consecutiveDays}일째</td>
-                        <td style={{ padding: "12px 16px", fontSize: 14, color: "#1e1e2d", borderBottom: "1px solid var(--hb-border)" }}>{child.totalSessionsInPeriod}회</td>
-                        <td style={{ padding: "12px 16px", fontSize: 14, color: "#1e1e2d", borderBottom: "1px solid var(--hb-border)" }}>일 {child.avgSessionsPerActiveDay}회</td>
+                        <td style={{ padding: "12px 16px", fontSize: 14, color: "var(--color-k-text-primary)", borderBottom: "1px solid var(--color-k-border)" }}>{child.consecutiveDays}일째</td>
+                        <td style={{ padding: "12px 16px", fontSize: 14, color: "var(--color-k-text-primary)", borderBottom: "1px solid var(--color-k-border)" }}>{child.totalSessionsInPeriod}회</td>
+                        <td style={{ padding: "12px 16px", fontSize: 14, color: "var(--color-k-text-primary)", borderBottom: "1px solid var(--color-k-border)" }}>일 {child.avgSessionsPerActiveDay}회</td>
                       </tr>
                     ))
                   )}

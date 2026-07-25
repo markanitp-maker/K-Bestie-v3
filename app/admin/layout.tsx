@@ -1,14 +1,14 @@
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: "100vh", background: "var(--hb-bg)" }}>
+    <div style={{ minHeight: "100vh", background: "var(--color-k-surface)" }}>
       <header
         style={{
-          background: "var(--hb-card)",
-          borderBottom: "1px solid var(--hb-border)",
+          background: "var(--color-k-background)",
+          borderBottom: "1px solid var(--color-k-border)",
           padding: "16px 24px",
         }}
       >
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: "#1e1e2d", margin: 0 }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--color-k-text-primary)", margin: 0 }}>
           내친구 케이 — 관리자
         </h1>
       </header>

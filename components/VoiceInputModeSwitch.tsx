@@ -17,7 +17,7 @@ export function VoiceInputModeSwitch({ isAuto, onChange, className }: VoiceInput
         aria-label="자동으로 말하기"
         className={`px-3 py-1.5 flex items-center justify-center rounded-full text-[12px] font-bold transition-all duration-300 ease-out cursor-pointer ${
           isAuto 
-            ? "bg-[#1a6b5a] text-white shadow-sm" 
+            ? "bg-[var(--color-k-navy)] text-white shadow-sm" 
             : "bg-transparent text-gray-500 hover:text-gray-700"
         }`}
       >
@@ -29,7 +29,7 @@ export function VoiceInputModeSwitch({ isAuto, onChange, className }: VoiceInput
         aria-label="버튼 눌러 말하기"
         className={`px-3 py-1.5 flex items-center justify-center rounded-full text-[12px] font-bold transition-all duration-300 ease-out cursor-pointer ${
           !isAuto 
-            ? "bg-[#1a6b5a] text-white shadow-sm" 
+            ? "bg-[var(--color-k-navy)] text-white shadow-sm" 
             : "bg-transparent text-gray-500 hover:text-gray-700"
         }`}
       >

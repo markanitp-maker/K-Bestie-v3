@@ -667,7 +667,7 @@ export default function ParentSettingsPage() {
                 ➕
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>아이 추가</p>
+                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>아이 추가</p>
                 <p className="text-[11px]" style={{ color: "#6b7280" }}>새로운 아이 계정을 추가해요</p>
               </div>
               <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "add_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
@@ -716,7 +716,7 @@ export default function ParentSettingsPage() {
                             type="button"
                             onClick={() => setAddChildGrade(g)}
                             className={`py-1.5 text-[10px] font-bold rounded-xl border ${
-                              addChildGrade === g ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-600"
+                              addChildGrade === g ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-600"
                             }`}
                           >
                             {g}
@@ -736,7 +736,7 @@ export default function ParentSettingsPage() {
                               type="button"
                               onClick={() => toggleInterest(interest, false)}
                               className={`px-3 py-1 text-[10px] font-bold rounded-full border ${
-                                has ? "bg-[#e8845a] text-white border-transparent" : "bg-white border-gray-200 text-gray-600"
+                                has ? "bg-[var(--color-k-orange)] text-white border-transparent" : "bg-white border-gray-200 text-gray-600"
                               }`}
                             >
                               {interest}
@@ -756,7 +756,7 @@ export default function ParentSettingsPage() {
                         type="checkbox"
                         checked={addChildConsent}
                         onChange={(e) => setAddChildConsent(e.target.checked)}
-                        className="w-4 h-4 rounded text-[#1a6b5a]"
+                        className="w-4 h-4 rounded text-[var(--color-k-navy)]"
                       />
                       <span className="text-[10px] font-bold text-gray-500">위 내용을 확인했으며, 법정대리인으로서 개인정보 수집·이용에 동의합니다</span>
                     </label>
@@ -766,7 +766,7 @@ export default function ParentSettingsPage() {
                       type="submit"
                       disabled={addLoading}
                       className="w-full py-2.5 rounded-xl text-white text-xs font-bold active:scale-95 transition-transform md:scroll-mb-[calc(7rem+env(safe-area-inset-bottom,0px))]"
-                      style={{ background: "#1a6b5a" }}
+                      style={{ background: "var(--color-k-navy)" }}
                     >
                       {addLoading ? "아이 추가 중..." : "자녀 등록 완료"}
                     </button>
@@ -788,7 +788,7 @@ export default function ParentSettingsPage() {
                 📝
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>아이 정보 관리</p>
+                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>아이 정보 관리</p>
                 <p className="text-[11px]" style={{ color: "#6b7280" }}>이름, 학년, 관심사, 요금제를 관리해요</p>
               </div>
               <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "edit_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
@@ -900,7 +900,7 @@ export default function ParentSettingsPage() {
                 👨‍👩‍👧
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>보호자 설정</p>
+                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>보호자 설정</p>
                 <p className="text-[11px]" style={{ color: "#6b7280" }}>내 이름, 알림, 보호자 구성원을 관리해요</p>
               </div>
               <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "family_members" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
@@ -922,7 +922,7 @@ export default function ParentSettingsPage() {
                     <button
                       onClick={handleSaveNickname}
                       disabled={savingNickname || !nicknameInput.trim()}
-                      className="px-4 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer active:scale-95 transition-transform"
+                      className="px-4 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer active:scale-95 transition-transform"
                     >
                       {savingNickname ? "저장중" : "변경"}
                     </button>
@@ -944,7 +944,7 @@ export default function ParentSettingsPage() {
                         type="checkbox"
                         checked={reportAlert}
                         onChange={(e) => setNotifSetting("reportAlert", e.target.checked)}
-                        className="w-4 h-4 rounded text-[#1a6b5a]"
+                        className="w-4 h-4 rounded text-[var(--color-k-navy)]"
                       />
                     </label>
                     <label className="flex items-center justify-between text-xs cursor-pointer">
@@ -956,7 +956,7 @@ export default function ParentSettingsPage() {
                         type="checkbox"
                         checked={weeklySummary}
                         onChange={(e) => setNotifSetting("weeklySummary", e.target.checked)}
-                        className="w-4 h-4 rounded text-[#1a6b5a]"
+                        className="w-4 h-4 rounded text-[var(--color-k-navy)]"
                       />
                     </label>
                   </div>
@@ -1019,7 +1019,7 @@ export default function ParentSettingsPage() {
                           />
                           <button
                             type="submit"
-                            className="px-4 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
+                            className="px-4 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
                           >
                             초대
                           </button>
@@ -1040,13 +1040,13 @@ export default function ParentSettingsPage() {
               </div>
               {isStandalone ? (
                 <div className="flex-1">
-                  <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>설치됨</p>
+                  <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>설치됨</p>
                   <p className="text-[11px]" style={{ color: "#6b7280" }}>이미 앱으로 이용 중이에요</p>
                 </div>
               ) : (
                 <>
                   <div className="flex-1">
-                    <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>앱 설치하기</p>
+                    <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>앱 설치하기</p>
                     <p className="text-[11px]" style={{ color: "#6b7280" }}>
                       {isIOS ? "공유 버튼 → '홈 화면에 추가'를 눌러주세요" : "홈 화면에 추가하여 더 편리하게 이용하세요"}
                     </p>
@@ -1054,7 +1054,7 @@ export default function ParentSettingsPage() {
                   {!isIOS && installPrompt && (
                     <button
                       onClick={handleInstall}
-                      className="px-3 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-lg shrink-0 active:scale-95 transition-transform"
+                      className="px-3 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-lg shrink-0 active:scale-95 transition-transform"
                     >
                       설치
                     </button>
@@ -1221,7 +1221,7 @@ export default function ParentSettingsPage() {
               className="w-full max-w-xs bg-white rounded-2xl p-4 shadow-lg flex flex-col gap-3 max-h-[85vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <p className="text-sm font-bold text-center py-1" style={{ color: "#1e1e2d" }}>
+              <p className="text-sm font-bold text-center py-1" style={{ color: "var(--color-k-text-primary)" }}>
                 자녀 프로필 수정
               </p>
 
@@ -1250,7 +1250,7 @@ export default function ParentSettingsPage() {
                       key={g}
                       onClick={() => setEditGrade(g)}
                       className={`py-1.5 text-[9px] font-bold border rounded-lg cursor-pointer ${
-                        editGrade === g ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                        editGrade === g ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
                       }`}
                     >
                       {g}
@@ -1269,7 +1269,7 @@ export default function ParentSettingsPage() {
                         key={interest}
                         onClick={() => toggleInterest(interest, true)}
                         className={`px-2.5 py-1 text-[9px] font-bold border rounded-full cursor-pointer ${
-                          has ? "bg-[#e8845a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                          has ? "bg-[var(--color-k-orange)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
                         }`}
                       >
                         {interest}
@@ -1287,7 +1287,7 @@ export default function ParentSettingsPage() {
                       key={p.tier}
                       onClick={() => setEditTier(p.tier)}
                       className={`py-1.5 text-[9px] font-bold border rounded-lg cursor-pointer ${
-                        editTier === p.tier ? "bg-[#1a6b5a] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                        editTier === p.tier ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
                       }`}
                     >
                       {p.label}
@@ -1304,13 +1304,13 @@ export default function ParentSettingsPage() {
                       type="button"
                       onClick={() => setShowExtensionModal(true)}
                       disabled={extensionYears >= 9}
-                      className="px-2 py-1 bg-[#1a6b5a] text-white text-[9px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-2 py-1 bg-[var(--color-k-navy)] text-white text-[9px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       1년 연장
                     </button>
                   </div>
                   <p className="text-[10px] text-gray-500">
-                    현재 확장: <span className="font-bold text-[#1a6b5a]">+{extensionYears}년</span> (기본 3년)
+                    현재 확장: <span className="font-bold text-[var(--color-k-navy)]">+{extensionYears}년</span> (기본 3년)
                   </p>
                   {finalDeletionDate && (
                     <p className="text-[10px] text-gray-500 mt-1">
@@ -1400,7 +1400,7 @@ export default function ParentSettingsPage() {
                                 name="reset_mode"
                                 checked={resetPasswordMode === "auto"}
                                 onChange={() => setResetPasswordMode("auto")}
-                                className="w-3.5 h-3.5 text-[#1a6b5a]"
+                                className="w-3.5 h-3.5 text-[var(--color-k-navy)]"
                               />
                               <span>자동 생성</span>
                             </label>
@@ -1410,7 +1410,7 @@ export default function ParentSettingsPage() {
                                 name="reset_mode"
                                 checked={resetPasswordMode === "direct"}
                                 onChange={() => setResetPasswordMode("direct")}
-                                className="w-3.5 h-3.5 text-[#1a6b5a]"
+                                className="w-3.5 h-3.5 text-[var(--color-k-navy)]"
                               />
                               <span>직접 입력</span>
                             </label>
@@ -1470,7 +1470,7 @@ export default function ParentSettingsPage() {
                                 if (editChildIdRef.current === requestedChildId) setResettingChildPassword(false);
                               }
                             }}
-                            className="w-full py-1.5 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                            className="w-full py-1.5 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
                           >
                             {resettingChildPassword
                               ? "처리 중..."
@@ -1481,8 +1481,8 @@ export default function ParentSettingsPage() {
                         </>
                       ) : (
                         /* 초기화 성공 결과 화면 */
-                        <div className="bg-white border border-[#e8845a]/30 rounded-xl p-3 flex flex-col gap-2">
-                          <p className="text-[10px] font-bold text-center text-[#e8845a]">
+                        <div className="bg-white border border-[var(--color-k-orange)]/30 rounded-xl p-3 flex flex-col gap-2">
+                          <p className="text-[10px] font-bold text-center text-[var(--color-k-orange)]">
                             비밀번호 초기화 완료
                           </p>
                           <div className="bg-gray-50 rounded-lg p-2 flex flex-col gap-1 text-[10px]">
@@ -1492,7 +1492,7 @@ export default function ParentSettingsPage() {
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-gray-500 font-medium">비밀번호</span>
-                              <span className="font-bold text-[#e8845a]">{childResetResult.password}</span>
+                              <span className="font-bold text-[var(--color-k-orange)]">{childResetResult.password}</span>
                             </div>
                           </div>
                           <button
@@ -1503,7 +1503,7 @@ export default function ParentSettingsPage() {
                               setCopiedChildCreds(true);
                               setTimeout(() => setCopiedChildCreds(false), 2000);
                             }}
-                            className="w-full py-1.5 bg-[#e8845a] text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98] transition-transform"
+                            className="w-full py-1.5 bg-[var(--color-k-orange)] text-white text-[10px] font-bold rounded-lg cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98] transition-transform"
                           >
                             {copiedChildCreds ? "✓ 복사됨" : "📋 계정 정보 복사"}
                           </button>
@@ -1530,7 +1530,7 @@ export default function ParentSettingsPage() {
                     await commitChildSave();
                   }}
                   disabled={savingTier}
-                  className="flex-1 py-2 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
                 >
                   {savingTier ? "저장중" : "저장"}
                 </button>
@@ -1548,11 +1548,11 @@ export default function ParentSettingsPage() {
         {showExtensionModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
             <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
-              <p className="text-sm font-bold mb-2 text-[#1e1e2d]">
+              <p className="text-sm font-bold mb-2 text-[var(--color-k-text-primary)]">
                 Care Insight 1년 연장
               </p>
               <p className="text-xs leading-relaxed text-gray-500 mb-4">
-                <span className="font-bold text-[#1a6b5a]">결제 연동 준비 중입니다. 정식 오픈 후 이용하실 수 있어요.</span><br/><br/>
+                <span className="font-bold text-[var(--color-k-navy)]">결제 연동 준비 중입니다. 정식 오픈 후 이용하실 수 있어요.</span><br/><br/>
                 현재 선택된 가족의 Care Insight 데이터 보존 기간을 1년 연장하시겠습니까?
               </p>
               <div className="flex gap-2">
@@ -1561,7 +1561,7 @@ export default function ParentSettingsPage() {
                     alert("결제 연동 준비 중입니다. 정식 오픈 후 이용 가능합니다");
                     setShowExtensionModal(false);
                   }}
-                  className="flex-1 py-2 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
                 >
                   연장하기
                 </button>
@@ -1580,7 +1580,7 @@ export default function ParentSettingsPage() {
         {showDowngradeConfirm && editChild && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
             <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
-              <p className="text-sm font-bold mb-2" style={{ color: "#1e1e2d" }}>
+              <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
                 요금제를 낮추시겠어요?
               </p>
               <p className="text-xs leading-relaxed text-gray-500 mb-4">
@@ -1594,7 +1594,7 @@ export default function ParentSettingsPage() {
                     await commitChildSave();
                   }}
                   disabled={savingTier}
-                  className="flex-1 py-2 bg-[#1a6b5a] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
                 >
                   확인
                 </button>
@@ -1615,7 +1615,7 @@ export default function ParentSettingsPage() {
             onClick={() => !withdrawLoading && setWithdrawTarget(null)}
           >
             <div className="bg-white rounded-2xl p-5 max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
-              <p className="text-sm font-bold mb-2" style={{ color: "#1e1e2d" }}>
+              <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
                 {withdrawTarget.displayName}의 동의를 철회하시겠어요?
               </p>
               <p className="text-xs leading-relaxed text-gray-500 mb-4">

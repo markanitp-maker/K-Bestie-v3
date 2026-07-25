@@ -180,7 +180,7 @@ export default function ParentHomePage() {
                     }}
                     disabled={inviteActionLoading}
                     className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
-                    style={{ background: "var(--color-primary)" }}
+                    style={{ background: "var(--color-k-navy)" }}
                   >
                     수락
                   </button>
@@ -226,7 +226,7 @@ export default function ParentHomePage() {
                         type="checkbox"
                         checked={agreeTransition}
                         onChange={(e) => setAgreeTransition(e.target.checked)}
-                        className="mt-1 cursor-pointer w-4 h-4 accent-primary"
+                        className="mt-1 cursor-pointer w-4 h-4 accent-k-navy"
                       />
                       <span className="text-[11px] text-gray-600 leading-tight">
                         기존 가족이 삭제되고 초대한 가족으로 전환되는 것에 동의합니다.
@@ -245,7 +245,7 @@ export default function ParentHomePage() {
                   onClick={handleConfirmAcceptInvite}
                   disabled={inviteActionLoading || (currentFamily !== null && !agreeTransition)}
                   className="w-full py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 cursor-pointer active:scale-[0.98] transition-transform"
-                  style={{ background: "var(--color-primary)" }}
+                  style={{ background: "var(--color-k-navy)" }}
                 >
                   {inviteActionLoading ? "처리 중..." : (currentFamily === null ? "참여하기" : "초대 수락 및 가족 전환")}
                 </button>
@@ -454,7 +454,7 @@ export default function ParentHomePage() {
   if (!mounted || syncingFamily) {
     return (
       <DemoFrame>
-        <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-warm-white)" }}>
+        <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
           <ParentHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
             <SkeletonBox className="w-28 h-5 mb-3" />
@@ -464,7 +464,7 @@ export default function ParentHomePage() {
               ))}
             </div>
           </div>
-          <div className="h-16 shrink-0 border-t border-hairline" />
+          <div className="h-16 shrink-0 border-t border-k-border" />
         </div>
       </DemoFrame>
     );
@@ -475,8 +475,8 @@ export default function ParentHomePage() {
     if (joinRequestStatus === "loading") {
       return (
         <DemoFrame>
-          <div className="h-full flex items-center justify-center" style={{ background: "var(--color-warm-white)" }}>
-            <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-primary) var(--color-primary) transparent transparent" }} />
+          <div className="h-full flex items-center justify-center" style={{ background: "var(--color-k-background)" }}>
+            <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
           </div>
           {renderInvitePopup()}
         </DemoFrame>
@@ -486,7 +486,7 @@ export default function ParentHomePage() {
     if (joinRequestStatus === "pending") {
       return (
         <DemoFrame>
-          <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-warm-white)" }}>
+          <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
             <ParentHeader />
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
               <p className="text-5xl">⏳</p>
@@ -503,7 +503,7 @@ export default function ParentHomePage() {
                   await checkJoinRequest();
                 }}
                 className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
-                style={{ background: "var(--color-primary)" }}
+                style={{ background: "var(--color-k-navy)" }}
               >
                 새로고침
               </button>
@@ -516,7 +516,7 @@ export default function ParentHomePage() {
 
     return (
       <DemoFrame>
-        <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-warm-white)" }}>
+        <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
           <ParentHeader />
 
           {viewState === "select" && (
@@ -547,7 +547,7 @@ export default function ParentHomePage() {
                         <div className="flex gap-1">
                           <button
                             onClick={() => handleAcceptInvite(req.id)}
-                            className="px-2 py-1 bg-primary text-white rounded-lg text-[11px] font-bold cursor-pointer active:scale-95"
+                            className="px-2 py-1 bg-k-navy text-white rounded-lg text-[11px] font-bold cursor-pointer active:scale-95"
                           >
                             수락
                           </button>
@@ -568,7 +568,7 @@ export default function ParentHomePage() {
                 <button
                   onClick={() => setViewState("create_family")}
                   className="w-full py-4 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform text-center cursor-pointer"
-                  style={{ background: "var(--color-primary)" }}
+                  style={{ background: "var(--color-k-navy)" }}
                 >
                   가족 만들기
                 </button>
@@ -624,7 +624,7 @@ export default function ParentHomePage() {
                   type="submit"
                   disabled={creatingFam || !famName.trim()}
                   className="w-full py-3.5 rounded-2xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
-                  style={{ background: "var(--color-primary)" }}
+                  style={{ background: "var(--color-k-navy)" }}
                 >
                   {creatingFam ? "가족 만드는 중..." : "가족 만들기 →"}
                 </button>
@@ -664,7 +664,7 @@ export default function ParentHomePage() {
                   type="submit"
                   disabled={joining || !ownerEmail.trim()}
                   className="w-full py-3.5 rounded-2xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
-                  style={{ background: "var(--color-primary)" }}
+                  style={{ background: "var(--color-k-navy)" }}
                 >
                   {joining ? "신청하는 중..." : "신청하기 →"}
                 </button>
@@ -688,7 +688,7 @@ export default function ParentHomePage() {
   if (children.length === 0) {
     return (
       <DemoFrame>
-        <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-warm-white)" }}>
+        <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
           <ParentHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
             <p className="text-5xl">🧒</p>
@@ -701,7 +701,7 @@ export default function ParentHomePage() {
             <Link
               href="/onboarding"
               className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm text-center active:scale-[0.98] transition-transform cursor-pointer"
-              style={{ background: "var(--color-primary)" }}
+              style={{ background: "var(--color-k-navy)" }}
             >
               아이 등록 온보딩 가기
             </Link>
@@ -734,11 +734,11 @@ export default function ParentHomePage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-warm-white)" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
         <ParentHeader />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
-          <h2 className="text-base font-bold mb-3" style={{ color: "var(--color-charcoal)" }}>
+          <h2 className="text-base font-bold mb-3" style={{ color: "var(--color-k-text-k-navy)" }}>
             아이 현황 보기
           </h2>
 
@@ -754,13 +754,13 @@ export default function ParentHomePage() {
                 <div key={i} className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col justify-between">
                   <div>
                     <div className="text-xl mb-2 select-none">{card.icon}</div>
-                    <p className="text-[11px] mb-1 leading-tight" style={{ color: "var(--color-muted)" }}>
+                    <p className="text-[11px] mb-1 leading-tight" style={{ color: "var(--color-k-text-k-sky-blue)" }}>
                       {card.title}
                     </p>
                   </div>
                   <p
                     className="text-xs font-bold leading-normal mt-1 break-words"
-                    style={{ color: card.value === "기록 없음" ? "var(--color-muted)" : "var(--color-charcoal)" }}
+                    style={{ color: card.value === "기록 없음" ? "var(--color-k-text-k-sky-blue)" : "var(--color-k-text-k-navy)" }}
                   >
                     {card.value}
                   </p>

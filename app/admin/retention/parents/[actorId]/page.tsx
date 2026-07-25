@@ -41,7 +41,7 @@ export default function ParentDetailPage({ params }: { params: Promise<{ actorId
   if (!data) return null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--hb-bg, #fafaf8)", paddingBottom: 64 }}>
+    <div style={{ minHeight: "100vh", background: "var(--color-k-surface, #fafaf8)", paddingBottom: 64 }}>
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -49,10 +49,10 @@ export default function ParentDetailPage({ params }: { params: Promise<{ actorId
         }
       `}</style>
       
-      <header className="no-print" style={{ background: "var(--hb-card)", padding: "16px 20px", borderBottom: "1px solid var(--hb-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <header className="no-print" style={{ background: "var(--color-k-background)", padding: "16px 20px", borderBottom: "1px solid var(--color-k-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <Link href="/admin/retention" style={{ fontSize: 13, color: "var(--hb-primary)", textDecoration: "none" }}>← 리텐션 개요로 돌아가기</Link>
-          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#1e1e2d" }}>부모 상세 내역</h1>
+          <Link href="/admin/retention" style={{ fontSize: 13, color: "var(--color-k-navy)", textDecoration: "none" }}>← 리텐션 개요로 돌아가기</Link>
+          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)" }}>부모 상세 내역</h1>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => window.print()} style={btnStyle}>PDF로 내보내기</button>
@@ -60,10 +60,10 @@ export default function ParentDetailPage({ params }: { params: Promise<{ actorId
         </div>
       </header>
 
-      <main id="export-area" style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 20px", background: "var(--hb-bg, #fafaf8)" }}>
-        <div style={{ background: "var(--hb-card)", padding: 24, borderRadius: 16, boxShadow: "var(--hb-shadow)", marginBottom: 24 }}>
-          <h2 style={{ fontSize: 20, margin: "0 0 16px 0", color: "#1e1e2d" }}>부모 정보 ({actorId})</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, fontSize: 14, color: "#1e1e2d" }}>
+      <main id="export-area" style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 20px", background: "var(--color-k-surface, #fafaf8)" }}>
+        <div style={{ background: "var(--color-k-background)", padding: 24, borderRadius: 16, boxShadow: "var(--shadow-k-card)", marginBottom: 24 }}>
+          <h2 style={{ fontSize: 20, margin: "0 0 16px 0", color: "var(--color-k-text-primary)" }}>부모 정보 ({actorId})</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, fontSize: 14, color: "var(--color-k-text-primary)" }}>
             <div><strong>소속 가족 ID:</strong> <Link href={`/admin/retention/families/${data.familyId}`} className="no-print" style={linkStyle}>{data.familyId}</Link></div>
             <div><strong>연결된 아이 수:</strong> {data.connectedChildren.length}명</div>
             <div><strong>가입일:</strong> {data.joinedAt ? new Date(data.joinedAt).toLocaleString() : "알 수 없음"}</div>
@@ -76,34 +76,34 @@ export default function ParentDetailPage({ params }: { params: Promise<{ actorId
           </div>
         </div>
 
-        <div style={{ background: "var(--hb-card)", padding: 24, borderRadius: 16, boxShadow: "var(--hb-shadow)", marginBottom: 24 }}>
-          <h3 style={{ fontSize: 16, margin: "0 0 12px 0", color: "#1e1e2d" }}>기능 사용 통계</h3>
-          <div style={{ display: "flex", gap: 24, fontSize: 14, color: "var(--hb-muted)" }}>
+        <div style={{ background: "var(--color-k-background)", padding: 24, borderRadius: 16, boxShadow: "var(--shadow-k-card)", marginBottom: 24 }}>
+          <h3 style={{ fontSize: 16, margin: "0 0 12px 0", color: "var(--color-k-text-primary)" }}>기능 사용 통계</h3>
+          <div style={{ display: "flex", gap: 24, fontSize: 14, color: "var(--color-k-text-secondary)" }}>
             {Object.entries(data.featureUsage).map(([k, v]) => (
               <div key={k}><strong>{k}:</strong> {v as number}회</div>
             ))}
           </div>
         </div>
 
-        <div style={{ background: "var(--hb-card)", padding: 24, borderRadius: 16, boxShadow: "var(--hb-shadow)" }}>
-          <h3 style={{ fontSize: 16, margin: "0 0 16px 0", color: "#1e1e2d" }}>타임라인 (최근 200건)</h3>
+        <div style={{ background: "var(--color-k-background)", padding: 24, borderRadius: 16, boxShadow: "var(--shadow-k-card)" }}>
+          <h3 style={{ fontSize: 16, margin: "0 0 16px 0", color: "var(--color-k-text-primary)" }}>타임라인 (최근 200건)</h3>
           <div style={{ maxHeight: 400, overflowY: "auto", fontSize: 13 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-              <thead style={{ position: "sticky", top: 0, background: "var(--hb-primary-light)" }}>
+              <thead style={{ position: "sticky", top: 0, background: "var(--color-k-navy-tint)" }}>
                 <tr>
-                  <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--hb-border)", color: "var(--hb-muted)" }}>시간</th>
-                  <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--hb-border)", color: "var(--hb-muted)" }}>이벤트</th>
-                  <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--hb-border)", color: "var(--hb-muted)" }}>기능</th>
-                  <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--hb-border)", color: "var(--hb-muted)" }}>대상 아이 ID</th>
+                  <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-k-border)", color: "var(--color-k-text-secondary)" }}>시간</th>
+                  <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-k-border)", color: "var(--color-k-text-secondary)" }}>이벤트</th>
+                  <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-k-border)", color: "var(--color-k-text-secondary)" }}>기능</th>
+                  <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-k-border)", color: "var(--color-k-text-secondary)" }}>대상 아이 ID</th>
                 </tr>
               </thead>
               <tbody>
                 {data.timeline.map((e: any, i: number) => (
-                  <tr key={i} style={{ borderBottom: "1px solid var(--hb-border)" }}>
-                    <td style={{ padding: "8px 12px", color: "#1e1e2d" }}>{new Date(e.occurredAt).toLocaleString()}</td>
-                    <td style={{ padding: "8px 12px", color: "#1e1e2d" }}>{e.eventName}</td>
-                    <td style={{ padding: "8px 12px", color: "var(--hb-muted)" }}>{e.feature}</td>
-                    <td style={{ padding: "8px 12px", color: "var(--hb-muted)" }}>{e.childId ? (e.childId.split("-")[0] + "...") : "-"}</td>
+                  <tr key={i} style={{ borderBottom: "1px solid var(--color-k-border)" }}>
+                    <td style={{ padding: "8px 12px", color: "var(--color-k-text-primary)" }}>{new Date(e.occurredAt).toLocaleString()}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--color-k-text-primary)" }}>{e.eventName}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--color-k-text-secondary)" }}>{e.feature}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--color-k-text-secondary)" }}>{e.childId ? (e.childId.split("-")[0] + "...") : "-"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -115,5 +115,5 @@ export default function ParentDetailPage({ params }: { params: Promise<{ actorId
   );
 }
 
-const btnStyle = { padding: "8px 16px", borderRadius: 8, background: "#1e1e2d", color: "white", fontSize: 14, fontWeight: 600, border: "none", cursor: "pointer" };
-const linkStyle = { color: "var(--hb-primary)", textDecoration: "none", fontWeight: 600 };
+const btnStyle = { padding: "8px 16px", borderRadius: 8, background: "var(--color-k-text-primary)", color: "white", fontSize: 14, fontWeight: 600, border: "none", cursor: "pointer" };
+const linkStyle = { color: "var(--color-k-navy)", textDecoration: "none", fontWeight: 600 };

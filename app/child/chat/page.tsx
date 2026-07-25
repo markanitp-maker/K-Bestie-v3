@@ -19,7 +19,7 @@ export default function ChildChatPage() {
     >
       <div
         className="w-8 h-8 rounded-full animate-pulse"
-        style={{ background: "var(--color-primary)" }}
+        style={{ background: "var(--color-k-orange)" }}
       />
     </div>
   );

@@ -8,10 +8,10 @@ import { RealChildNav } from "@/components/RealChildNav";
 import { writeMbtiSessionHandoff } from "@/lib/play/mbtiSessionHandoff";
 
 const GAMES = [
-  { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "#e8845a", keys: 2 },
+  { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", keys: 2 },
   { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "#3b82f6", keys: 1 },
   { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "#22c55e", keys: 3 },
-  { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "#2d9f8f", keys: 3 },
+  { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-sky-blue)", keys: 3 },
 ];
 
 export default function ChildPlayPage() {
@@ -280,12 +280,12 @@ export default function ChildPlayPage() {
         
         {/* 헤더 */}
         <div className="shrink-0 relative flex items-center justify-center px-4 pt-4 pb-2 z-10">
-          <Link href="/child/home" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
+          <Link href="/child/home" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             케이와 놀이
           </Link>
           <div
             className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white shadow-sm rounded-full px-3 py-1 text-xs font-bold"
-            style={{ color: "#1a6b5a" }}
+            style={{ color: "var(--color-k-navy)" }}
           >
             🔑 {goldKeyBalance ?? "-"}개 보유
           </div>

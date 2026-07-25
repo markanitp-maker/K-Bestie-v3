@@ -1,68 +1,60 @@
-/* 내친구 케이 디자인 토큰 — CSS 변수
- * 사용법: 전역 스타일(예: src/index.css)에서 import 하거나 붙여넣기.
- *   import "./naechingu-k-tokens.css";
- * 폰트 Pretendard / Gaegu 는 프로젝트에 설치 또는 CDN 로드 필요.
+/**
+ * naechingu-k-design v2.0 — Tailwind v4 @theme 토큰
+ *
+ * app/globals.css의 기존 @theme 블록 안에 이 변수들을 추가한다(교체 아님 — 아직
+ * 두 화면만 마이그레이션됐으므로 v1 토큰 --color-primary 등은 나머지 화면이 계속
+ * 참조 중이라 남겨둔다. 전체 전환 후에만 v1 토큰을 제거한다).
+ *
+ * @theme에 등록된 --color-* 변수는 Tailwind가 자동으로 대응 유틸리티 클래스를
+ * 생성한다(예: --color-k-navy → bg-k-navy, text-k-navy, border-k-navy).
  */
 
-/* Pretendard (가변 폰트, CDN) */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css");
-/* Gaegu (Google Fonts) */
-@import url("https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap");
+@theme {
+  /* ── Brand Color (v2.0) ── */
+  --color-k-navy: #10315B;          /* 부모 화면 기본, Header, Navigation, 공식 영역, Primary Text */
+  --color-k-orange: #E25B12;        /* CTA, Button, Highlight, Reward */
+  --color-k-mascot-orange: #F19122; /* 캐릭터, 아이 경험, 감성 요소 */
+  --color-k-sky-blue: #4298D3;      /* Secondary Accent, Progress, Information */
 
-:root {
-  /* ---- Brand colors ---- */
-  --nk-deep-green:   #1A6B5A;  /* primary  */
-  --nk-light-green:  #2D9F8F;  /* secondary */
-  --nk-coral:        #E8845A;  /* accent   */
+  /* ── Background / Surface (v2.0) ── */
+  --color-k-background: #FFFFFF;
+  --color-k-surface: #F8FAFC;
+  --color-k-border: #E5E7EB;
 
-  /* ---- Surfaces & background ---- */
-  --nk-warm-white:   #FAFAF8;  /* page background */
-  --nk-surface:      #FFFFFF;  /* card surface   */
+  /* ── Text (v2.0) ── */
+  --color-k-text-primary: #10315B;
+  --color-k-text-secondary: #64748B;
+  --color-k-disabled: #94A3B8;
 
-  /* ---- Text ---- */
-  --nk-charcoal:     #1E1E2D;  /* titles */
-  --nk-dark-gray:    #3A3A4A;  /* body   */
-  --nk-muted:        #8A8A97;  /* caption */
+  /* ── Radius (v2.0) ── */
+  --radius-k-sm: 8px;
+  --radius-k-md: 16px;
+  --radius-k-lg: 24px;
+  --radius-k-xl: 32px;
 
-  /* ---- Tints & lines ---- */
-  --nk-tint:         #ECF5F2;  /* green tint bg */
-  --nk-coral-tint:   #FBECE3;  /* coral tint bg */
-  --nk-hairline:     #E7ECEA;  /* faint border  */
+  /* ── Shadow (v2.0) ── */
+  --shadow-k-card: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-k-floating: 0 8px 24px rgba(0, 0, 0, 0.12);
 
-  /* ---- Semantic states ---- */
-  --nk-success:      #1A6B5A;  --nk-success-bg: #ECF5F2;
-  --nk-info:         #2D9F8F;  --nk-info-bg:    #E4F2EF;
-  --nk-warning:      #E8A54A;  --nk-warning-bg: #FBF0DD;
-  --nk-danger:       #D9534F;  --nk-danger-bg:  #FBE9E8;
+  /* ── Semantic status color (v2.0 신규 — 원본 001-DesignSkill.md 초안에 없던 항목,
+   * 검토 과정에서 실제 UI(알림 뱃지 등)에 필요해 Navy/Orange와 충돌하지 않는 값으로
+   * 추가함) ── */
+  --color-k-success: #16A34A;
+  --color-k-success-bg: #F0FDF4;
+  --color-k-warning: #D97706;
+  --color-k-warning-bg: #FFFBEB;
+  --color-k-danger: #DC2626;
+  --color-k-danger-bg: #FEF2F2;
+  --color-k-info: #4298D3; /* K-Sky-Blue 재사용 — SKILL.md에 이미 Information 역할로 지정됨 */
+  --color-k-info-bg: #EFF6FF;
 
-  /* ---- Radius ---- */
-  --nk-radius-sm:  8px;
-  --nk-radius-md:  12px;  /* buttons */
-  --nk-radius-lg:  16px;  /* cards   */
-  --nk-radius-xl:  24px;  /* panels  */
-  --nk-radius-full: 999px;
+  /* ── Tint 배경(v2.0 신규 — v1의 tint/coral-tint에 대응하는 옅은 배경) ── */
+  --color-k-navy-tint: #EAF0F7;
+  --color-k-orange-tint: #FDECE1;
+  --color-k-orange-hover: #C94E0F;
+  --color-k-navy-hover: #0C2444;
 
-  /* ---- Shadows (deep-green tinted, soft) ---- */
-  --nk-shadow-soft: 0 6px 24px rgba(26, 107, 90, 0.12);
-  --nk-shadow-pop:  0 10px 32px rgba(26, 107, 90, 0.18);
-
-  /* ---- Fonts ---- */
-  --nk-font-sans:  "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
-                   "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
-  --nk-font-brand: "Gaegu", var(--nk-font-sans);
-
-  /* ---- Spacing scale (4px base) ---- */
-  --nk-space-1: 4px;  --nk-space-2: 8px;  --nk-space-3: 12px;
-  --nk-space-4: 16px; --nk-space-5: 20px; --nk-space-6: 24px;
-  --nk-space-8: 32px; --nk-space-10: 40px; --nk-space-12: 48px;
+  /* ── Spacing (v2.0, 4px 기반) ──
+   * Tailwind 기본 spacing 스케일(p-1=4px, p-2=8px 등)과 이미 호환되므로 별도 토큰
+   * 없이 기본 유틸리티(xs=1, sm=2, md=4, lg=6, xl=8, xxl=12)를 그대로 쓴다. */
 }
-
-/* Sensible defaults */
-body {
-  background: var(--nk-warm-white);
-  color: var(--nk-dark-gray);
-  font-family: var(--nk-font-sans);
-  -webkit-font-smoothing: antialiased;
-}
-h1, h2, h3, h4 { color: var(--nk-charcoal); font-family: var(--nk-font-sans); font-weight: 700; }
-.nk-brand { font-family: var(--nk-font-brand); } /* 브랜드/포인트 문구용 */

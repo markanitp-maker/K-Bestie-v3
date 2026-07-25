@@ -23,7 +23,7 @@ export default function DemoParentGuidePage() {
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
         <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
-          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
+          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             케이와 대화
           </Link>
         </div>
@@ -42,7 +42,7 @@ export default function DemoParentGuidePage() {
               }`}
               style={{
                 background: turn.speaker === "kay" ? "#f3f4f6" : "#3b82f6",
-                color: turn.speaker === "kay" ? "#1e1e2d" : "#ffffff",
+                color: turn.speaker === "kay" ? "var(--color-k-text-primary)" : "#ffffff",
               }}
             >
               {turn.text}
@@ -63,7 +63,7 @@ export default function DemoParentGuidePage() {
             onClick={handleNext}
             disabled={isDone}
             className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 disabled:opacity-40 cursor-pointer"
-            style={{ background: "#e8845a" }}
+            style={{ background: "var(--color-k-orange)" }}
             aria-label="마이크로 대화하기"
           >
             🎤

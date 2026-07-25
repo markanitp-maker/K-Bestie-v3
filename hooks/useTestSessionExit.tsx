@@ -29,7 +29,7 @@ function ExitConfirmSheet({
         boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
         animation: "slideUp 0.3s ease-out forwards"
       }}>
-        <h3 style={{ margin: "0 0 12px 0", fontSize: 18, fontWeight: 700, color: "#1e1e2d", textAlign: "center" }}>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: 18, fontWeight: 700, color: "var(--color-k-text-primary)", textAlign: "center" }}>
           테스트를 종료할까요?
         </h3>
         <p style={{ margin: "0 0 16px 0", fontSize: 14, color: "#6b7280", textAlign: "center" }}>
@@ -37,19 +37,19 @@ function ExitConfirmSheet({
         </p>
         <button
           onClick={onGoToModes}
-          style={{ width: "100%", padding: 16, borderRadius: 16, border: "none", background: "#f3f4f6", color: "#1e1e2d", fontSize: 15, fontWeight: 600, cursor: "pointer" }}
+          style={{ width: "100%", padding: 16, borderRadius: 16, border: "none", background: "#f3f4f6", color: "var(--color-k-text-primary)", fontSize: 15, fontWeight: 600, cursor: "pointer" }}
         >
           대화 방식 선택으로
         </button>
         <button
           onClick={onGoToHome}
-          style={{ width: "100%", padding: 16, borderRadius: 16, border: "none", background: "#f3f4f6", color: "#1e1e2d", fontSize: 15, fontWeight: 600, cursor: "pointer" }}
+          style={{ width: "100%", padding: 16, borderRadius: 16, border: "none", background: "#f3f4f6", color: "var(--color-k-text-primary)", fontSize: 15, fontWeight: 600, cursor: "pointer" }}
         >
           아이 홈으로
         </button>
         <button
           onClick={onContinue}
-          style={{ width: "100%", padding: 16, borderRadius: 16, border: "none", background: "#1a6b5a", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", marginTop: 8 }}
+          style={{ width: "100%", padding: 16, borderRadius: 16, border: "none", background: "var(--color-k-navy)", color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", marginTop: 8 }}
         >
           계속 테스트하기
         </button>

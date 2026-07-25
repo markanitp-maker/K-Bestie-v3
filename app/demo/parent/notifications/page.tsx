@@ -18,7 +18,7 @@ export default function DemoParentNotificationsPage() {
           className="shrink-0 flex items-center justify-center px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
-          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
+          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             알림
           </Link>
         </div>
@@ -36,7 +36,7 @@ export default function DemoParentNotificationsPage() {
                 {n.icon}
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>
+                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                   {n.text}
                 </p>
                 <p className="text-[11px] mt-1" style={{ color: "#6b7280" }}>

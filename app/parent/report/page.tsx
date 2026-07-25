@@ -86,7 +86,7 @@ export default function ParentReportPage() {
         <ParentHeader />
 
         <div className="flex items-center gap-2 px-4 pt-3">
-          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "#1a6b5a" }}>
+          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "var(--color-k-navy)" }}>
             일간
           </span>
           <Link href="/parent/report/weekly" className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white text-gray-500">

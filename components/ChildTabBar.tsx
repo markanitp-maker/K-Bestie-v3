@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 function HomeIcon({ active }: { active: boolean }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? "#1A6B5A" : "none"} stroke={active ? "#1A6B5A" : "#9CA3AF"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? "var(--color-k-navy)" : "none"} stroke={active ? "var(--color-k-navy)" : "#9CA3AF"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       <polyline points="9 22 9 12 15 12 15 22" />
     </svg>
@@ -14,7 +14,7 @@ function HomeIcon({ active }: { active: boolean }) {
 
 function ChatIcon({ active }: { active: boolean }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? "#1A6B5A" : "#9CA3AF"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? "var(--color-k-navy)" : "#9CA3AF"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -22,7 +22,7 @@ function ChatIcon({ active }: { active: boolean }) {
 
 function MissionIcon({ active }: { active: boolean }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? "#1A6B5A" : "#9CA3AF"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? "var(--color-k-navy)" : "#9CA3AF"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="9 11 12 14 22 4" />
       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
     </svg>
@@ -61,7 +61,7 @@ export default function ChildTabBar() {
               <tab.Icon active={active} />
               <span
                 className="text-[11px] font-semibold"
-                style={{ color: active ? "#1A6B5A" : "#9CA3AF" }}
+                style={{ color: active ? "var(--color-k-navy)" : "#9CA3AF" }}
               >
                 {tab.label}
               </span>

@@ -18,7 +18,7 @@ export function ViewToggle({
       <button
         onClick={() => setView("tablet")}
         className={`px-3 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-          view === "tablet" ? "bg-[#1a6b5a] text-white" : "text-[#6b7280]"
+          view === "tablet" ? "bg-[var(--color-k-navy)] text-white" : "text-[#6b7280]"
         }`}
       >
         태블릿
@@ -26,7 +26,7 @@ export function ViewToggle({
       <button
         onClick={() => setView("mobile")}
         className={`px-3 py-2 rounded-full text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-          view === "mobile" ? "bg-[#1a6b5a] text-white" : "text-[#6b7280]"
+          view === "mobile" ? "bg-[var(--color-k-navy)] text-white" : "text-[#6b7280]"
         }`}
       >
         스마트폰

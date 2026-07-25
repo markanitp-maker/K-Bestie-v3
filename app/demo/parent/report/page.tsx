@@ -27,13 +27,13 @@ function QuoteCard() {
       className="rounded-2xl px-5 py-5 mb-5"
       style={{ background: "#fdf1ec" }}
     >
-      <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+      <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
         오늘의 한 줄
       </h3>
-      <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+      <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
         {oneLineSummary}
       </p>
-      <p className="text-[11px] mt-3" style={{ color: "#e8845a" }}>
+      <p className="text-[11px] mt-3" style={{ color: "var(--color-k-orange)" }}>
         AI Insight by 내친구 케이
       </p>
     </div>
@@ -45,10 +45,10 @@ function Tab1() {
     <div>
       <QuoteCard />
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-        <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+        <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           📊 1분 요약 리포트
         </h3>
-        <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
           {oneMinuteSummary}
         </p>
       </div>
@@ -69,15 +69,15 @@ function Tab2() {
   return (
     <div>
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-5">
-        <h3 className="font-bold text-base -mb-2" style={{ color: "#1e1e2d" }}>
+        <h3 className="font-bold text-base -mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           📄 상세 리포트
         </h3>
         {sections.map((section) => (
           <div key={section.title}>
-            <h4 className="font-bold text-sm mb-1.5" style={{ color: "#1e1e2d" }}>
+            <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
               {section.title}
             </h4>
-            <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
               {section.body}
             </p>
           </div>
@@ -91,21 +91,21 @@ function Tab3() {
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-        <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+        <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           💬 부모 대화 실마리
         </h3>
-        <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
           {conversationClue}
         </p>
       </div>
 
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-        <h3 className="font-bold text-base mb-3" style={{ color: "#1e1e2d" }}>
+        <h3 className="font-bold text-base mb-3" style={{ color: "var(--color-k-text-primary)" }}>
           ❓ 부모용 추천 질문
         </h3>
         <ul className="flex flex-col gap-2.5">
           {recommendedQuestions.map((q, i) => (
-            <li key={i} className="flex gap-2 text-sm" style={{ color: "#3a3a4a" }}>
+            <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--color-k-text-primary)" }}>
               <span style={{ color: "#22c55e" }}>✓</span>
               <span>{q}</span>
             </li>
@@ -117,16 +117,16 @@ function Tab3() {
         <h3 className="font-bold text-base mb-2" style={{ color: "#3b82f6" }}>
           👁️ 부모가 주의 깊게 볼 변화
         </h3>
-        <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
           {watchOutChange}
         </p>
       </div>
 
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-        <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+        <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           ✨ 오늘의 케이 코멘트
         </h3>
-        <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
           {kayComment}
         </p>
       </div>
@@ -151,7 +151,7 @@ export default function DemoReportPage() {
           className="shrink-0 flex items-center justify-center px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
-          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
+          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             내친구 케이
           </Link>
         </div>
@@ -174,8 +174,8 @@ export default function DemoReportPage() {
                   activeTab === tab.id ? "text-white" : "bg-white"
                 }`}
                 style={{
-                  background: activeTab === tab.id ? "#1a6b5a" : "#ffffff",
-                  color: activeTab === tab.id ? "#ffffff" : "#3a3a4a",
+                  background: activeTab === tab.id ? "var(--color-k-navy)" : "#ffffff",
+                  color: activeTab === tab.id ? "#ffffff" : "var(--color-k-text-primary)",
                 }}
               >
                 {tab.label}

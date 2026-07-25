@@ -112,7 +112,7 @@ export default function ChildSettingsPage() {
           className="shrink-0 flex items-center justify-center px-4 py-4"
           style={{ background: "#fafaf8" }}
         >
-          <Link href="/child/home" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
+          <Link href="/child/home" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             설정
           </Link>
         </div>
@@ -128,7 +128,7 @@ export default function ChildSettingsPage() {
                   🔊
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>
+                  <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                     케이 목소리
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>
@@ -151,8 +151,8 @@ export default function ChildSettingsPage() {
                         className="px-3 py-2 rounded-xl text-xs font-bold cursor-pointer disabled:opacity-50 transition-colors"
                         style={
                           selectedVoice === v.name
-                            ? { background: "#1a6b5a", color: "#ffffff" }
-                            : { background: "#f3f4f6", color: "#1e1e2d" }
+                            ? { background: "var(--color-k-navy)", color: "#ffffff" }
+                            : { background: "#f3f4f6", color: "var(--color-k-text-primary)" }
                         }
                       >
                         {v.name} ({v.label})
@@ -166,7 +166,7 @@ export default function ChildSettingsPage() {
                 onClick={() => { setVoiceFeedback(null); setShowConfirm(true); }}
                 disabled={!canSave || savingVoice}
                 className="mt-1 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-                style={{ background: "#1a6b5a", color: "#ffffff" }}
+                style={{ background: "var(--color-k-navy)", color: "#ffffff" }}
               >
                 선택한 목소리 저장하기
               </button>
@@ -174,7 +174,7 @@ export default function ChildSettingsPage() {
               {voiceFeedback && (
                 <p
                   className="text-[12px] font-bold text-center"
-                  style={{ color: voiceFeedback.type === "success" ? "#1a6b5a" : "#dc2626" }}
+                  style={{ color: voiceFeedback.type === "success" ? "var(--color-k-navy)" : "#dc2626" }}
                 >
                   {voiceFeedback.text}
                 </p>
@@ -192,7 +192,7 @@ export default function ChildSettingsPage() {
             </div>
             {isStandalone || installState === "accepted" ? (
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>
+                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                   설치됐어요!
                 </p>
                 <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>
@@ -201,7 +201,7 @@ export default function ChildSettingsPage() {
               </div>
             ) : isIOS ? (
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>
+                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                   내친구 케이 설치하기
                 </p>
                 <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>
@@ -211,7 +211,7 @@ export default function ChildSettingsPage() {
             ) : (
               <>
                 <div className="flex-1">
-                  <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>
+                  <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                     내친구 케이 설치하기
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>
@@ -223,7 +223,7 @@ export default function ChildSettingsPage() {
                 {installPrompt && (
                   <button
                     onClick={onInstallClick}
-                    className="px-3 py-1.5 bg-[#1a6b5a] text-white text-xs font-bold rounded-lg shrink-0 active:scale-95 transition-transform cursor-pointer"
+                    className="px-3 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-lg shrink-0 active:scale-95 transition-transform cursor-pointer"
                   >
                     설치하기
                   </button>
@@ -243,7 +243,7 @@ export default function ChildSettingsPage() {
               🚪
             </div>
             <div className="flex-1">
-              <p className="text-sm font-bold" style={{ color: "#1e1e2d" }}>
+              <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                 로그아웃
               </p>
               <p className="text-[11px] mt-0.5" style={{ color: "#6b7280" }}>
@@ -266,7 +266,7 @@ export default function ChildSettingsPage() {
               className="bg-white rounded-2xl px-5 py-5 w-full max-w-xs flex flex-col gap-4 shadow-lg"
               onClick={(e) => e.stopPropagation()}
             >
-              <p className="text-sm font-bold text-center" style={{ color: "#1e1e2d" }}>
+              <p className="text-sm font-bold text-center" style={{ color: "var(--color-k-text-primary)" }}>
                 {draftVoice} 목소리로 저장하시겠습니까?
               </p>
               <div className="flex gap-2">
@@ -274,7 +274,7 @@ export default function ChildSettingsPage() {
                   onClick={() => setShowConfirm(false)}
                   disabled={savingVoice}
                   className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-50 transition-opacity"
-                  style={{ background: "#f3f4f6", color: "#1e1e2d" }}
+                  style={{ background: "#f3f4f6", color: "var(--color-k-text-primary)" }}
                 >
                   취소
                 </button>
@@ -282,7 +282,7 @@ export default function ChildSettingsPage() {
                   onClick={handleSaveVoice}
                   disabled={savingVoice}
                   className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-50 transition-opacity"
-                  style={{ background: "#1a6b5a", color: "#ffffff" }}
+                  style={{ background: "var(--color-k-navy)", color: "#ffffff" }}
                 >
                   {savingVoice ? "저장 중…" : "저장"}
                 </button>

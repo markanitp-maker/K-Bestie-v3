@@ -6,15 +6,15 @@ const thStyle: React.CSSProperties = {
   textAlign: "left",
   padding: "8px 12px",
   fontSize: 12,
-  color: "var(--hb-muted)",
-  borderBottom: "1px solid var(--hb-border)",
+  color: "var(--color-k-text-secondary)",
+  borderBottom: "1px solid var(--color-k-border)",
 };
 
 const tdStyle: React.CSSProperties = {
   padding: "8px 12px",
   fontSize: 13,
-  color: "#1e1e2d",
-  borderBottom: "1px solid var(--hb-border)",
+  color: "var(--color-k-text-primary)",
+  borderBottom: "1px solid var(--color-k-border)",
   verticalAlign: "top",
 };
 
@@ -124,9 +124,9 @@ export default function AdminPlaysPage() {
             style={{
               padding: "8px 16px",
               borderRadius: 8,
-              border: tab === t ? "1px solid var(--hb-primary)" : "1px solid var(--hb-border)",
-              background: tab === t ? "var(--hb-primary)" : "transparent",
-              color: tab === t ? "white" : "var(--hb-muted)",
+              border: tab === t ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
+              background: tab === t ? "var(--color-k-navy)" : "transparent",
+              color: tab === t ? "white" : "var(--color-k-text-secondary)",
               fontWeight: 700,
               cursor: "pointer"
             }}
@@ -136,40 +136,40 @@ export default function AdminPlaysPage() {
         ))}
       </div>
 
-      <div style={{ background: "var(--hb-card)", padding: 16, borderRadius: 12, marginBottom: 24, display: "flex", gap: 12, flexWrap: "wrap", border: "1px solid var(--hb-border)" }}>
+      <div style={{ background: "var(--color-k-background)", padding: 16, borderRadius: 12, marginBottom: 24, display: "flex", gap: 12, flexWrap: "wrap", border: "1px solid var(--color-k-border)" }}>
         <input 
           placeholder="Play Type" 
           value={playType} 
           onChange={e => setPlayType(e.target.value)} 
-          style={{ padding: "6px 12px", border: "1px solid var(--hb-border)", borderRadius: 6 }} 
+          style={{ padding: "6px 12px", border: "1px solid var(--color-k-border)", borderRadius: 6 }} 
         />
         <input 
           placeholder="Status" 
           value={status} 
           onChange={e => setStatus(e.target.value)} 
-          style={{ padding: "6px 12px", border: "1px solid var(--hb-border)", borderRadius: 6 }} 
+          style={{ padding: "6px 12px", border: "1px solid var(--color-k-border)", borderRadius: 6 }} 
         />
         <input 
           placeholder="Child ID" 
           value={childId} 
           onChange={e => setChildId(e.target.value)} 
-          style={{ padding: "6px 12px", border: "1px solid var(--hb-border)", borderRadius: 6 }} 
+          style={{ padding: "6px 12px", border: "1px solid var(--color-k-border)", borderRadius: 6 }} 
         />
         <input 
           placeholder="Session ID" 
           value={sessionId} 
           onChange={e => setSessionId(e.target.value)} 
-          style={{ padding: "6px 12px", border: "1px solid var(--hb-border)", borderRadius: 6 }} 
+          style={{ padding: "6px 12px", border: "1px solid var(--color-k-border)", borderRadius: 6 }} 
         />
         <button 
           onClick={loadData}
-          style={{ padding: "6px 16px", background: "var(--hb-primary)", color: "white", borderRadius: 6, fontWeight: 700, border: "none", cursor: "pointer" }}
+          style={{ padding: "6px 16px", background: "var(--color-k-navy)", color: "white", borderRadius: 6, fontWeight: 700, border: "none", cursor: "pointer" }}
         >
           검색
         </button>
       </div>
 
-      <div style={{ overflowX: "auto", background: "var(--hb-card)", borderRadius: 12, border: "1px solid var(--hb-border)" }}>
+      <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, border: "1px solid var(--color-k-border)" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             {tab === "sessions" && (
@@ -216,9 +216,9 @@ export default function AdminPlaysPage() {
                     <td style={tdStyle}>{row.child_id}</td>
                     <td style={tdStyle}>{row.play_type}</td>
                     <td style={tdStyle}>{row.status}</td>
-                    <td style={tdStyle}>{formatDateTime(row.created_at)}<br/><span style={{ color: "var(--hb-muted)", fontSize: 11 }}>{formatDateTime(row.expires_at)}</span></td>
+                    <td style={tdStyle}>{formatDateTime(row.created_at)}<br/><span style={{ color: "var(--color-k-text-secondary)", fontSize: 11 }}>{formatDateTime(row.expires_at)}</span></td>
                     <td style={tdStyle}>
-                      <button onClick={() => handleRefund(row.id)} style={{ padding: "4px 8px", fontSize: 11, background: "var(--hb-danger)", color: "white", borderRadius: 4, border: "none", cursor: "pointer" }}>
+                      <button onClick={() => handleRefund(row.id)} style={{ padding: "4px 8px", fontSize: 11, background: "var(--color-k-danger)", color: "white", borderRadius: 4, border: "none", cursor: "pointer" }}>
                         수동 환불
                       </button>
                     </td>
@@ -230,7 +230,7 @@ export default function AdminPlaysPage() {
                     <td style={tdStyle}><span style={{ fontSize: 11 }}>{row.play_session_id}</span></td>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 700 }}>{row.stage}</div>
-                      <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 2 }}>{row.error_message}</div>
+                      <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>{row.error_message}</div>
                     </td>
                     <td style={tdStyle}>
                       <select 
@@ -243,12 +243,12 @@ export default function AdminPlaysPage() {
                         <option value="resolved">Resolved</option>
                         <option value="closed">Closed</option>
                       </select>
-                      {row.manual_refund_done && <div style={{ fontSize: 10, color: "var(--hb-success)", marginTop: 4 }}>환불됨</div>}
+                      {row.manual_refund_done && <div style={{ fontSize: 10, color: "var(--color-k-success)", marginTop: 4 }}>환불됨</div>}
                     </td>
                     <td style={tdStyle}>{formatDateTime(row.created_at)}</td>
                     <td style={tdStyle}>
                       {row.play_session_id && !row.manual_refund_done && (
-                        <button onClick={() => handleRefund(row.play_session_id, row.id)} style={{ padding: "4px 8px", fontSize: 11, background: "var(--hb-primary)", color: "white", borderRadius: 4, border: "none", cursor: "pointer" }}>
+                        <button onClick={() => handleRefund(row.play_session_id, row.id)} style={{ padding: "4px 8px", fontSize: 11, background: "var(--color-k-navy)", color: "white", borderRadius: 4, border: "none", cursor: "pointer" }}>
                           수동 환불 연동
                         </button>
                       )}
@@ -261,7 +261,7 @@ export default function AdminPlaysPage() {
                     <td style={tdStyle}>{row.category}</td>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: 700 }}>{row.subject}</div>
-                      <div style={{ fontSize: 11, color: "var(--hb-muted)", marginTop: 2 }}>{row.body}</div>
+                      <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>{row.body}</div>
                     </td>
                     <td style={tdStyle}>{row.status}</td>
                     <td style={tdStyle}>{formatDateTime(row.created_at)}</td>

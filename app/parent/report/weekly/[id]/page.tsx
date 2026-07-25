@@ -67,7 +67,7 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
       <DemoFrame>
         <div className="h-full flex flex-col items-center justify-center px-6 text-center" style={{ background: "#fafaf8" }}>
           <p className="text-sm font-semibold mb-4 text-red-500">{error ?? "주간 리포트를 불러올 수 없어요"}</p>
-          <Link href="/parent/report/weekly" className="text-xs underline font-bold" style={{ color: "#1a6b5a" }}>
+          <Link href="/parent/report/weekly" className="text-xs underline font-bold" style={{ color: "var(--color-k-navy)" }}>
             목록으로 돌아가기
           </Link>
         </div>
@@ -97,20 +97,20 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
           <p className="text-xs font-bold text-gray-500">{formatWeekRange(weekly.week_start, weekly.week_end)}</p>
 
           <div className="rounded-2xl px-5 py-5" style={{ background: "#fdf1ec" }}>
-            <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+            <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
               이번 주 요약
             </h3>
-            <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
               {weekly.summary_text}
             </p>
           </div>
 
           {weekly.weekend_activity_recommendation && (
             <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-              <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+              <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
                 🎈 주말 활동 추천
               </h3>
-              <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
                 {weekly.weekend_activity_recommendation}
               </p>
             </div>
@@ -119,7 +119,7 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
           {restricted ? (
             <div className="bg-white rounded-2xl px-5 py-10 shadow-sm flex flex-col items-center text-center">
               <p className="text-4xl mb-3">🔒</p>
-              <p className="text-sm font-bold mb-2" style={{ color: "#1e1e2d" }}>
+              <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
                 주간 상세는 Care Insight로 업그레이드하세요
               </p>
               <p className="text-xs text-gray-400 mb-5">
@@ -128,7 +128,7 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
               <Link
                 href="/parent/settings"
                 className="px-5 py-2.5 rounded-full text-xs font-bold text-white"
-                style={{ background: "#1a6b5a" }}
+                style={{ background: "var(--color-k-navy)" }}
               >
                 요금제 업그레이드
               </Link>
@@ -136,10 +136,10 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
           ) : (
             <>
               <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
-                <h3 className="font-bold text-base -mb-1" style={{ color: "#1e1e2d" }}>
+                <h3 className="font-bold text-base -mb-1" style={{ color: "var(--color-k-text-primary)" }}>
                   📄 이번 주 상세 분석
                 </h3>
-                <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "#3a3a4a" }}>
+                <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
                   {weekly.detail_text || "상세 분석이 준비 중입니다."}
                 </p>
               </div>
@@ -148,7 +148,7 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
                 <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
                   {cardEntries.map(([title, body]) => (
                     <div key={title} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
-                      <h4 className="font-bold text-sm mb-1.5" style={{ color: "#1e1e2d" }}>
+                      <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
                         {title}
                       </h4>
                       <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
@@ -161,10 +161,10 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
 
               {weekly.parent_guide && (
                 <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-                  <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+                  <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
                     💬 부모님께 드리는 이번 주 가이드
                   </h3>
-                  <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+                  <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
                     {weekly.parent_guide}
                   </p>
                 </div>

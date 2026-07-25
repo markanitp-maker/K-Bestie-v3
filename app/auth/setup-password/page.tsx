@@ -81,7 +81,7 @@ function SetupPasswordForm() {
       className="min-h-dvh flex flex-col items-center justify-center px-5 py-8 w-full"
       style={{ background: "linear-gradient(160deg, #EEF2FF 0%, #F0FDF4 100%)" }}
     >
-      <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-sm border border-gray-100/50" style={{ boxShadow: "var(--hb-shadow)" }}>
+      <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-sm border border-gray-100/50" style={{ boxShadow: "var(--shadow-k-card)" }}>
         <div className="text-center mb-6">
           <p className="text-5xl mb-3">🔐</p>
           <h1 className="text-2xl font-bold text-gray-900">비밀번호를 변경하시겠어요?</h1>
@@ -134,7 +134,7 @@ function SetupPasswordForm() {
                     disabled={loading}
                     className="w-full rounded-xl px-4 py-3 text-sm border-2 border-transparent outline-none transition-colors"
                     style={{ background: "#F9FAF6", border: "1px solid rgba(26,107,90,0.12)" }}
-                    onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
+                    onFocus={(e) => (e.target.style.borderColor = "var(--color-k-navy)")}
                     onBlur={(e) => (e.target.style.borderColor = "transparent")}
                   />
                 </div>
@@ -150,7 +150,7 @@ function SetupPasswordForm() {
                     disabled={loading}
                     className="w-full rounded-xl px-4 py-3 text-sm border-2 border-transparent outline-none transition-colors"
                     style={{ background: "#F9FAF6", border: "1px solid rgba(26,107,90,0.12)" }}
-                    onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
+                    onFocus={(e) => (e.target.style.borderColor = "var(--color-k-navy)")}
                     onBlur={(e) => (e.target.style.borderColor = "transparent")}
                   />
                 </div>
@@ -185,7 +185,7 @@ export default function SetupPasswordPage() {
   return (
     <Suspense fallback={
       <div className="min-h-dvh flex flex-col items-center justify-center bg-gray-50">
-        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--hb-primary) var(--hb-primary) transparent transparent" }} />
+        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
       </div>
     }>
       <SetupPasswordForm />

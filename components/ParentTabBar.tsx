@@ -127,8 +127,8 @@ export default function ParentTabBar() {
                 href={tab.href}
                 className="flex items-center gap-3.5 px-4 py-3 rounded-2xl transition-all duration-200"
                 style={{
-                  background: active ? "var(--hb-primary-light)" : "transparent",
-                  color: active ? "var(--hb-primary)" : "#4B5563",
+                  background: active ? "var(--color-k-navy-tint)" : "transparent",
+                  color: active ? "var(--color-k-navy)" : "#4B5563",
                 }}
               >
                 <div className="relative shrink-0 flex items-center">

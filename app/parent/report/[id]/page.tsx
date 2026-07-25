@@ -96,7 +96,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
       <DemoFrame>
         <div className="h-full flex flex-col items-center justify-center px-6 text-center" style={{ background: "#fafaf8" }}>
           <p className="text-sm font-semibold mb-4 text-red-500">{error ?? "리포트를 불러올 수 없어요"}</p>
-          <Link href="/parent/report" className="text-xs underline font-bold" style={{ color: "#1a6b5a" }}>
+          <Link href="/parent/report" className="text-xs underline font-bold" style={{ color: "var(--color-k-navy)" }}>
             목록으로 돌아가기
           </Link>
         </div>
@@ -108,22 +108,22 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   const Tab1 = () => (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl px-5 py-5" style={{ background: "#fdf1ec" }}>
-        <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+        <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           오늘의 한 줄
         </h3>
-        <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
           {report.summary_line || "대화 요약이 준비 중입니다."}
         </p>
-        <p className="text-[11px] mt-3" style={{ color: "#e8845a" }}>
+        <p className="text-[11px] mt-3" style={{ color: "var(--color-k-orange)" }}>
           AI Insight by 내친구 케이
         </p>
       </div>
 
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-        <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+        <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           📊 1분 요약 리포트
         </h3>
-        <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
           {report.parent_guide || "아이가 보낸 하루 대화에 대한 가이드 조언이 생성되지 않았습니다."}
         </p>
       </div>
@@ -145,12 +145,12 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
 
     return (
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-5">
-        <h3 className="font-bold text-base -mb-2" style={{ color: "#1e1e2d" }}>
+        <h3 className="font-bold text-base -mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           📄 상세 리포트
         </h3>
         {sections.map((section) => (
           <div key={section.title} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
-            <h4 className="font-bold text-sm mb-1.5" style={{ color: "#1e1e2d" }}>
+            <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
               {section.title}
             </h4>
             <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
@@ -178,22 +178,22 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     return (
       <div className="flex flex-col gap-4">
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
             💬 부모 대화 실마리
           </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
             {report.parent_guide || "대화 실마리가 준비 중입니다."}
           </p>
         </div>
 
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-3" style={{ color: "#1e1e2d" }}>
+          <h3 className="font-bold text-base mb-3" style={{ color: "var(--color-k-text-primary)" }}>
             ❓ 부모용 추천 질문
           </h3>
           {candidateSentences.length > 0 ? (
             <ul className="flex flex-col gap-2.5">
               {candidateSentences.slice(0, 5).map((q, i) => (
-                <li key={i} className="flex gap-2 text-sm" style={{ color: "#3a3a4a" }}>
+                <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--color-k-text-primary)" }}>
                   <span style={{ color: "#22c55e" }}>✓</span>
                   <span>{q}</span>
                 </li>
@@ -208,16 +208,16 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <h3 className="font-bold text-base mb-2" style={{ color: "#3b82f6" }}>
             👁️ 부모가 주의 깊게 볼 변화
           </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
             {watchOut}
           </p>
         </div>
 
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "#1e1e2d" }}>
+          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
             ✨ 오늘의 케이 코멘트
           </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "#3a3a4a" }}>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
             {comment}
           </p>
         </div>
@@ -228,7 +228,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   const LockedTabNotice = () => (
     <div className="bg-white rounded-2xl px-5 py-10 shadow-sm flex flex-col items-center text-center">
       <p className="text-4xl mb-3">🔒</p>
-      <p className="text-sm font-bold mb-2" style={{ color: "#1e1e2d" }}>
+      <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
         상세 리포트는 Care Insight로 업그레이드하세요
       </p>
       <p className="text-xs text-gray-400 mb-5">
@@ -237,7 +237,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
       <Link
         href="/parent/settings"
         className="px-5 py-2.5 rounded-full text-xs font-bold text-white"
-        style={{ background: "#1a6b5a" }}
+        style={{ background: "var(--color-k-navy)" }}
       >
         요금제 업그레이드
       </Link>
@@ -275,8 +275,8 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                   activeTab === tab.id ? "text-white" : "bg-white"
                 }`}
                 style={{
-                  background: activeTab === tab.id ? "#1a6b5a" : "#ffffff",
-                  color: activeTab === tab.id ? "#ffffff" : "#3a3a4a",
+                  background: activeTab === tab.id ? "var(--color-k-navy)" : "#ffffff",
+                  color: activeTab === tab.id ? "#ffffff" : "var(--color-k-text-primary)",
                 }}
               >
                 {tab.id !== 1 && restricted ? `🔒 ${tab.label}` : tab.label}

@@ -1,0 +1,68 @@
+/* 내친구 케이 디자인 토큰 — CSS 변수
+ * 사용법: 전역 스타일(예: src/index.css)에서 import 하거나 붙여넣기.
+ *   import "./naechingu-k-tokens.css";
+ * 폰트 Pretendard / Gaegu 는 프로젝트에 설치 또는 CDN 로드 필요.
+ */
+
+/* Pretendard (가변 폰트, CDN) */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css");
+/* Gaegu (Google Fonts) */
+@import url("https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap");
+
+:root {
+  /* ---- Brand colors ---- */
+  --nk-deep-green:   #1A6B5A;  /* primary  */
+  --nk-light-green:  #2D9F8F;  /* secondary */
+  --nk-coral:        #E8845A;  /* accent   */
+
+  /* ---- Surfaces & background ---- */
+  --nk-warm-white:   #FAFAF8;  /* page background */
+  --nk-surface:      #FFFFFF;  /* card surface   */
+
+  /* ---- Text ---- */
+  --nk-charcoal:     #1E1E2D;  /* titles */
+  --nk-dark-gray:    #3A3A4A;  /* body   */
+  --nk-muted:        #8A8A97;  /* caption */
+
+  /* ---- Tints & lines ---- */
+  --nk-tint:         #ECF5F2;  /* green tint bg */
+  --nk-coral-tint:   #FBECE3;  /* coral tint bg */
+  --nk-hairline:     #E7ECEA;  /* faint border  */
+
+  /* ---- Semantic states ---- */
+  --nk-success:      #1A6B5A;  --nk-success-bg: #ECF5F2;
+  --nk-info:         #2D9F8F;  --nk-info-bg:    #E4F2EF;
+  --nk-warning:      #E8A54A;  --nk-warning-bg: #FBF0DD;
+  --nk-danger:       #D9534F;  --nk-danger-bg:  #FBE9E8;
+
+  /* ---- Radius ---- */
+  --nk-radius-sm:  8px;
+  --nk-radius-md:  12px;  /* buttons */
+  --nk-radius-lg:  16px;  /* cards   */
+  --nk-radius-xl:  24px;  /* panels  */
+  --nk-radius-full: 999px;
+
+  /* ---- Shadows (deep-green tinted, soft) ---- */
+  --nk-shadow-soft: 0 6px 24px rgba(26, 107, 90, 0.12);
+  --nk-shadow-pop:  0 10px 32px rgba(26, 107, 90, 0.18);
+
+  /* ---- Fonts ---- */
+  --nk-font-sans:  "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+                   "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif;
+  --nk-font-brand: "Gaegu", var(--nk-font-sans);
+
+  /* ---- Spacing scale (4px base) ---- */
+  --nk-space-1: 4px;  --nk-space-2: 8px;  --nk-space-3: 12px;
+  --nk-space-4: 16px; --nk-space-5: 20px; --nk-space-6: 24px;
+  --nk-space-8: 32px; --nk-space-10: 40px; --nk-space-12: 48px;
+}
+
+/* Sensible defaults */
+body {
+  background: var(--nk-warm-white);
+  color: var(--nk-dark-gray);
+  font-family: var(--nk-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 { color: var(--nk-charcoal); font-family: var(--nk-font-sans); font-weight: 700; }
+.nk-brand { font-family: var(--nk-font-brand); } /* 브랜드/포인트 문구용 */

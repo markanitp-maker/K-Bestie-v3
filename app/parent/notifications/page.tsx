@@ -29,7 +29,7 @@ export default function ParentNotificationsPage() {
     return (
       <DemoFrame>
         <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
         </div>
       </DemoFrame>
     );
@@ -59,7 +59,7 @@ export default function ParentNotificationsPage() {
               <button
                 onClick={markAllNotifsRead}
                 className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white cursor-pointer active:scale-95 transition-transform"
-                style={{ background: "#e8845a" }}
+                style={{ background: "var(--color-k-orange)" }}
               >
                 모두 읽음 ({unread})
               </button>
@@ -114,7 +114,7 @@ export default function ParentNotificationsPage() {
                         href="/parent/expert"
                         onClick={(e) => e.stopPropagation()}
                         className="mt-2.5 inline-block px-3.5 py-1.5 rounded-full text-[10px] font-bold text-white shadow-sm transition-transform active:scale-95"
-                        style={{ background: "#e8845a" }}
+                        style={{ background: "var(--color-k-orange)" }}
                       >
                         전문가와 연결하기 →
                       </Link>

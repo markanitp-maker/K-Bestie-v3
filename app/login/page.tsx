@@ -90,12 +90,12 @@ function LoginContent() {
   return (
     <div
       className="min-h-dvh flex flex-col items-center justify-center px-5 md:max-w-[420px] md:mx-auto w-full py-8"
-      style={{ background: "var(--hb-bg)" }}
+      style={{ background: "var(--color-k-surface)" }}
     >
       <div className="text-center mb-8">
         <p className="text-4xl mb-3">🌿</p>
         <h1 className="text-xl font-bold text-gray-900">내친구 케이</h1>
-        <p className="text-sm mt-1" style={{ color: "var(--hb-muted)" }}>
+        <p className="text-sm mt-1" style={{ color: "var(--color-k-text-secondary)" }}>
           아이의 마음을 함께 돌봐요
         </p>
       </div>
@@ -104,14 +104,14 @@ function LoginContent() {
         <Link
           href="/demo"
           className="flex-1 text-center py-3 rounded-xl font-bold text-sm text-white transition-transform active:scale-[0.98]"
-          style={{ background: "#e8845a" }}
+          style={{ background: "var(--color-k-orange)" }}
         >
           데모 체험하기
         </Link>
         <a
           href="#real-login"
           className="flex-1 text-center py-3 rounded-xl font-bold text-sm transition-transform active:scale-[0.98] border"
-          style={{ background: "white", color: "#1a6b5a", borderColor: "#1a6b5a" }}
+          style={{ background: "white", color: "var(--color-k-navy)", borderColor: "var(--color-k-navy)" }}
         >
           실제 사용하기
         </a>
@@ -152,7 +152,7 @@ function LoginContent() {
             className="w-full py-3.5 rounded-xl font-bold text-gray-700 text-sm flex items-center justify-center gap-2 border border-gray-200 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
             style={{
               background: "white",
-              boxShadow: "var(--hb-shadow)",
+              boxShadow: "var(--shadow-k-card)",
             }}
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -197,7 +197,7 @@ function LoginContent() {
               disabled={isLoading}
               className="w-full rounded-xl px-4 py-3 text-sm border-2 border-transparent outline-none transition-colors"
               style={{ background: "#F9FAF6", border: "1px solid rgba(26,107,90,0.12)" }}
-              onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
+              onFocus={(e) => (e.target.style.borderColor = "var(--color-k-navy)")}
               onBlur={(e) => (e.target.style.borderColor = "transparent")}
             />
           </div>
@@ -211,7 +211,7 @@ function LoginContent() {
               disabled={isLoading}
               className="w-full rounded-xl px-4 py-3 text-sm border-2 border-transparent outline-none transition-colors"
               style={{ background: "#F9FAF6", border: "1px solid rgba(26,107,90,0.12)" }}
-              onFocus={(e) => (e.target.style.borderColor = "var(--hb-primary)")}
+              onFocus={(e) => (e.target.style.borderColor = "var(--color-k-navy)")}
               onBlur={(e) => (e.target.style.borderColor = "transparent")}
             />
           </div>
@@ -220,7 +220,7 @@ function LoginContent() {
             type="submit"
             disabled={isLoading || !username.trim() || !password}
             className="w-full py-3.5 rounded-xl font-bold text-white text-sm disabled:opacity-50 transition-opacity active:opacity-80 cursor-pointer mt-1"
-            style={{ background: "var(--hb-primary)" }}
+            style={{ background: "var(--color-k-navy)" }}
           >
             {loadingMember ? "로그인 중..." : "로그인"}
           </button>
@@ -241,7 +241,7 @@ export default function LoginPage() {
     <Suspense
       fallback = {
         <div className="min-h-dvh flex flex-col items-center justify-center bg-gray-50" >
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--hb-primary) var(--hb-primary) transparent transparent" }} />
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
           <p className="text-xs text-gray-500 mt-3">로그인 화면을 불러오는 중...</p>
         </div>
       }

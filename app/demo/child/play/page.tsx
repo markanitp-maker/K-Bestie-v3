@@ -5,9 +5,9 @@ import { DemoFrame } from "../../components/DemoFrame";
 import { ChildNav } from "../../components/ChildNav";
 
 const GAMES = [
-  { icon: "📚", title: "만화책 읽기", bg: "#e8845a" },
+  { icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)" },
   { icon: "🧠", title: "퀴즈 게임", bg: "#3b82f6" },
-  { icon: "💇", title: "헤어스타일", bg: "#2d9f8f" },
+  { icon: "💇", title: "헤어스타일", bg: "var(--color-k-sky-blue)" },
   { icon: "🔮", title: "MBTI 성격 유형", bg: "#22c55e" },
 ];
 
@@ -16,7 +16,7 @@ export default function DemoChildPlayPage() {
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
         <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
-          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "#1a6b5a" }}>
+          <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             케이와 놀이
           </Link>
         </div>

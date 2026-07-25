@@ -62,11 +62,11 @@ export default function TestModesPage() {
     return (
       <div style={{ padding: 40, textAlign: "center" }}>
         <p style={{ fontSize: 40, marginBottom: 12 }}>🔒</p>
-        <p style={{ fontWeight: 700, color: "#1e1e2d" }}>접근 권한이 없어요</p>
+        <p style={{ fontWeight: 700, color: "var(--color-k-text-primary)" }}>접근 권한이 없어요</p>
         <p style={{ fontSize: 13, color: "#6b7280", marginTop: 6 }}>이 화면은 테스트 계정에서만 사용할 수 있어요.</p>
         <button
           onClick={() => router.replace("/child/home")}
-          style={{ marginTop: 20, padding: "10px 18px", borderRadius: 12, border: "none", background: "#1a6b5a", color: "white", fontWeight: 700, cursor: "pointer" }}
+          style={{ marginTop: 20, padding: "10px 18px", borderRadius: 12, border: "none", background: "var(--color-k-navy)", color: "white", fontWeight: 700, cursor: "pointer" }}
         >
           홈으로
         </button>
@@ -76,11 +76,11 @@ export default function TestModesPage() {
 
   return (
     <div style={{ maxWidth: 480, margin: "0 auto", padding: "24px 20px" }}>
-      <h1 style={{ fontSize: 18, fontWeight: 800, color: "#1e1e2d", marginBottom: 4 }}>대화 방식 테스트 (A~F)</h1>
+      <h1 style={{ fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)", marginBottom: 4 }}>대화 방식 테스트 (A~F)</h1>
       <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
         테스트 계정 전용 · 선택한 방식은 요금제(tier)를 바꾸지 않는 테스트 세션 설정으로만 저장돼요.
       </p>
-      <p style={{ fontSize: 12, color: "#1a6b5a", fontWeight: 700, marginBottom: 16 }}>
+      <p style={{ fontSize: 12, color: "var(--color-k-navy)", fontWeight: 700, marginBottom: 16 }}>
         현재 선택: {selected ? `${selected}안 — ${MODE_LABELS[selected]}` : "없음"}
       </p>
 
@@ -96,14 +96,14 @@ export default function TestModesPage() {
                 textAlign: "left",
                 padding: "14px 16px",
                 borderRadius: 14,
-                border: active ? "2px solid #1a6b5a" : "1px solid #e5e7eb",
+                border: active ? "2px solid var(--color-k-navy)" : "1px solid #e5e7eb",
                 background: active ? "rgba(26,107,90,0.08)" : "white",
                 cursor: saving ? "wait" : "pointer",
               }}
             >
-              <span style={{ fontWeight: 800, color: "#1a6b5a", marginRight: 8 }}>{m}안</span>
-              <span style={{ fontSize: 13, color: "#1e1e2d" }}>{MODE_LABELS[m]}</span>
-              {active && <span style={{ float: "right", color: "#1a6b5a", fontWeight: 700 }}>✓ 선택됨</span>}
+              <span style={{ fontWeight: 800, color: "var(--color-k-navy)", marginRight: 8 }}>{m}안</span>
+              <span style={{ fontSize: 13, color: "var(--color-k-text-primary)" }}>{MODE_LABELS[m]}</span>
+              {active && <span style={{ float: "right", color: "var(--color-k-navy)", fontWeight: 700 }}>✓ 선택됨</span>}
             </button>
           );
         })}
@@ -112,7 +112,7 @@ export default function TestModesPage() {
       {(selected === "A" || selected === "B" || selected === "C" || selected === "D" || selected === "E" || selected === "F") && (
         <button
           onClick={() => router.push("/child/missions")}
-          style={{ marginTop: 16, width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "#1a6b5a", color: "white", fontWeight: 800, cursor: "pointer" }}
+          style={{ marginTop: 16, width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "var(--color-k-navy)", color: "white", fontWeight: 800, cursor: "pointer" }}
         >
           {selected}안으로 미션 시작 →
         </button>

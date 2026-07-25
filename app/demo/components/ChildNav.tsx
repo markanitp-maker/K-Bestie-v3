@@ -29,7 +29,7 @@ export function ChildNav({ active }: { active: string }) {
             </span>
             <span
               className="text-[10px] font-bold"
-              style={{ color: isActive ? "#1a6b5a" : "#6b7280" }}
+              style={{ color: isActive ? "var(--color-k-navy)" : "#6b7280" }}
             >
               {item.label}
             </span>

@@ -128,7 +128,7 @@ export function MissionConversationLayout({
               인디케이터 영역 전체가 축하 색상으로 바뀌고 완료 배지 표시. */}
           {missionLabel && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: isMissionComplete ? "#b8860b" : "#1a6b5a" }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: isMissionComplete ? "#b8860b" : "var(--color-k-navy)" }}>
                 {missionLabel}
               </span>
               {isMissionComplete && (
@@ -161,7 +161,7 @@ export function MissionConversationLayout({
                     flex: 1,
                     height: "100%",
                     borderRadius: 999,
-                    background: isMissionComplete ? "#f0a020" : i < progressCurrent ? "#1a6b5a" : "#eef2f1",
+                    background: isMissionComplete ? "#f0a020" : i < progressCurrent ? "var(--color-k-navy)" : "#eef2f1",
                     transition: "background-color 0.25s ease-in-out",
                   }}
                   className={!isMissionComplete && i === progressCurrent ? "animate-pulse" : ""}
@@ -212,8 +212,8 @@ export function MissionConversationLayout({
                     maxWidth: "80%",
                     padding: "10px 14px",
                     borderRadius: 16,
-                    background: isChild ? "#1a6b5a" : "#fff",
-                    color: isChild ? "#fff" : "#1e1e2d",
+                    background: isChild ? "var(--color-k-navy)" : "#fff",
+                    color: isChild ? "#fff" : "var(--color-k-text-primary)",
                     border: isChild ? "none" : "1px solid #e5e7eb",
                     fontSize: 14,
                     lineHeight: 1.45,
@@ -238,7 +238,7 @@ export function MissionConversationLayout({
               bottom: 8,
               left: "50%",
               transform: "translateX(-50%)",
-              background: "#1a6b5a",
+              background: "var(--color-k-navy)",
               color: "#fff",
               fontSize: 12,
               fontWeight: 700,
@@ -278,10 +278,10 @@ export function MissionConversationLayout({
                   <div style={{
                     position: "relative",
                     background: "#fff",
-                    border: "2px solid #1a6b5a",
+                    border: "2px solid var(--color-k-navy)",
                     borderRadius: 20,
                     padding: "16px 20px",
-                    color: "#1e1e2d",
+                    color: "var(--color-k-text-primary)",
                     fontSize: 18,
                     fontWeight: 700,
                     lineHeight: 1.4,
@@ -302,7 +302,7 @@ export function MissionConversationLayout({
                       height: 0,
                       borderLeft: "10px solid transparent",
                       borderRight: "10px solid transparent",
-                      borderTop: "10px solid #1a6b5a",
+                      borderTop: "10px solid var(--color-k-navy)",
                     }} />
                     <div style={{
                       position: "absolute",
@@ -319,7 +319,7 @@ export function MissionConversationLayout({
                 </div>
               ) : (
                 <div style={{
-                  background: "#1a6b5a",
+                  background: "var(--color-k-navy)",
                   color: "#fff",
                   borderRadius: 20,
                   padding: "16px 20px",

@@ -31,7 +31,7 @@ export function ParentNav() {
             </span>
             <span
               className="text-[10px] font-bold"
-              style={{ color: active ? "#1a6b5a" : "#6b7280" }}
+              style={{ color: active ? "var(--color-k-navy)" : "#6b7280" }}
             >
               {item.label}
             </span>

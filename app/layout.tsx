@@ -24,7 +24,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#1A6B5A",
+  themeColor: "var(--color-k-navy)",
 };
 
 import { PwaServiceWorker } from "@/components/PwaServiceWorker";

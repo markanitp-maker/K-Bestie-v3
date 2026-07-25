@@ -31,7 +31,7 @@ export default function DemoStartPage() {
           />
         </div>
 
-        <h1 className="text-xl font-bold mb-2" style={{ color: "#1e1e2d" }}>
+        <h1 className="text-xl font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           누구로 체험해 볼까요?
         </h1>
         <p className="text-sm mb-10" style={{ color: "#6b7280" }}>
@@ -42,14 +42,14 @@ export default function DemoStartPage() {
           <Link
             href="/demo/child"
             className="w-full py-4 rounded-2xl font-bold text-white text-base shadow-sm transition-transform active:scale-[0.98]"
-            style={{ background: "#e8845a" }}
+            style={{ background: "var(--color-k-orange)" }}
           >
             아이 모드로 체험하기
           </Link>
           <Link
             href="/demo/parent"
             className="w-full py-4 rounded-2xl font-bold text-white text-base shadow-sm transition-transform active:scale-[0.98]"
-            style={{ background: "#1a6b5a" }}
+            style={{ background: "var(--color-k-navy)" }}
           >
             부모 모드로 체험하기
           </Link>

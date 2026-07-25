@@ -628,7 +628,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
   if (status === "loading") {
     return (
       <div style={fullCenter}>
-        <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid #1a6b5a", borderTopColor: "transparent", animation: "hbspin 0.8s linear infinite" }} />
+        <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid var(--color-k-navy)", borderTopColor: "transparent", animation: "hbspin 0.8s linear infinite" }} />
         <style>{`@keyframes hbspin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );
@@ -637,8 +637,8 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
     return (
       <div style={{ ...fullCenter, flexDirection: "column", padding: 24, textAlign: "center" }}>
         <p style={{ fontSize: 40, margin: 0 }}>🔒</p>
-        <p style={{ fontWeight: 700, color: "#1e1e2d", marginTop: 8 }}>{notice ?? "접근 권한이 없어요"}</p>
-        <button onClick={() => { safeCleanup(); router.replace("/child/test-modes"); }} style={{ ...btnBase, background: "#1a6b5a", marginTop: 16, padding: "12px 20px" }}>대화 방식으로</button>
+        <p style={{ fontWeight: 700, color: "var(--color-k-text-primary)", marginTop: 8 }}>{notice ?? "접근 권한이 없어요"}</p>
+        <button onClick={() => { safeCleanup(); router.replace("/child/test-modes"); }} style={{ ...btnBase, background: "var(--color-k-navy)", marginTop: 16, padding: "12px 20px" }}>대화 방식으로</button>
       </div>
     );
   }
@@ -655,11 +655,11 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
             >
               ← 테스트 종료
             </button>
-            <span style={{ fontSize: 13, fontWeight: 800, color: "#1a6b5a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>대화 방식 테스트 · {selectedMode}안</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--color-k-navy)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>대화 방식 테스트 · {selectedMode}안</span>
             <button
               data-testid="new-test"
               onClick={() => { void loadSession(true); }}
-              style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 999, border: "1px solid #1a6b5a", background: "#fff", color: "#1a6b5a", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", cursor: "pointer", minHeight: 30 }}
+              style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 999, border: "1px solid var(--color-k-navy)", background: "#fff", color: "var(--color-k-navy)", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", cursor: "pointer", minHeight: 30 }}
             >
               🔄 새 테스트
             </button>
@@ -672,7 +672,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
               {completed ? "완료" : `질문 ${currentStep}/10`} · {progress}%
             </span>
             <div style={{ flex: 1, height: 7, background: "#eef2f1", borderRadius: 999, overflow: "hidden" }}>
-              <div data-testid="progress-bar" style={{ width: `${progress}%`, height: "100%", background: "#1a6b5a", transition: "width .3s" }} />
+              <div data-testid="progress-bar" style={{ width: `${progress}%`, height: "100%", background: "var(--color-k-navy)", transition: "width .3s" }} />
             </div>
           </div>
         </div>
@@ -694,8 +694,8 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
                   maxWidth: "82%",
                   padding: "10px 14px",
                   borderRadius: 16,
-                  background: b.role === "child" ? "#1a6b5a" : "#fff",
-                  color: b.role === "child" ? "#fff" : "#1e1e2d",
+                  background: b.role === "child" ? "var(--color-k-navy)" : "#fff",
+                  color: b.role === "child" ? "#fff" : "var(--color-k-text-primary)",
                   border: b.role === "k" ? "1px solid #e5e7eb" : "none",
                   fontSize: 14,
                   lineHeight: 1.45,
@@ -718,7 +718,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
             <div data-testid="completed" style={{ textAlign: "center", padding: "10px 8px", background: "#f0fdf4", borderRadius: 12, color: "#166534", fontWeight: 700, fontSize: 14 }}>
               🎉 미션 완료 · 황금열쇠 지급됨
               <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                <button data-testid="retry" onClick={() => { void loadSession(true); }} style={{ ...btnBase, background: "#1a6b5a", flex: 1, minHeight: 44, padding: "0 8px", fontSize: 13 }}>🔄 다시 테스트</button>
+                <button data-testid="retry" onClick={() => { void loadSession(true); }} style={{ ...btnBase, background: "var(--color-k-navy)", flex: 1, minHeight: 44, padding: "0 8px", fontSize: 13 }}>🔄 다시 테스트</button>
                 <button onClick={() => { safeCleanup(); router.replace("/child/test-modes"); }} style={{ ...btnBase, background: "#374151", flex: 1, minHeight: 44, padding: "0 8px", fontSize: 13 }}>대화 방식으로</button>
                 <button onClick={() => { safeCleanup(); router.replace("/child/home"); }} style={{ ...btnBase, background: "#374151", flex: 1, minHeight: 44, padding: "0 8px", fontSize: 13 }}>아이 홈으로</button>
               </div>
@@ -728,7 +728,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
               {isAuto ? (
                 <button
                   disabled={true}
-                  style={{ ...btnBase, background: autoPhase === "error" ? "#dc2626" : "#1a6b5a", minWidth: 92, minHeight: 44, whiteSpace: "nowrap", flexShrink: 0, opacity: 0.7 }}
+                  style={{ ...btnBase, background: autoPhase === "error" ? "#dc2626" : "var(--color-k-navy)", minWidth: 92, minHeight: 44, whiteSpace: "nowrap", flexShrink: 0, opacity: 0.7 }}
                 >
                   {autoPhase === "listening" ? "🎧 듣고 있어요" : 
                    autoPhase === "speaking" ? "🗣️ 말하는 중" :
@@ -740,7 +740,7 @@ export function TestModeABRunner({ selectedMode }: { selectedMode: "A" | "B" }) 
                   data-testid="mic"
                   onClick={toggleVoice}
                   disabled={busy}
-                  style={{ ...btnBase, background: listening ? "#dc2626" : "#1a6b5a", minWidth: 92, minHeight: 44, whiteSpace: "nowrap", flexShrink: 0, opacity: busy ? 0.5 : 1 }}
+                  style={{ ...btnBase, background: listening ? "#dc2626" : "var(--color-k-navy)", minWidth: 92, minHeight: 44, whiteSpace: "nowrap", flexShrink: 0, opacity: busy ? 0.5 : 1 }}
                 >
                   {listening ? "⏹ 완료" : "🎤 말하기"}
                 </button>

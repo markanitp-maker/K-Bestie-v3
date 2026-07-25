@@ -466,7 +466,7 @@ export default function ChatPage() {
     return (
       <DemoFrame>
         <div className="h-full flex items-center justify-center" style={{ background: "#fafaf8" }}>
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#1a6b5a #1a6b5a transparent transparent" }} />
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
         </div>
       </DemoFrame>
     );
@@ -515,7 +515,7 @@ export default function ChatPage() {
               마스코트가 곧바로 보이도록 해 상단 여백을 줄인다. */}
           {isEnded && (
             <div className="text-center pt-1 pb-2">
-              <h1 className="text-lg font-bold" style={{ color: "#1e1e2d" }}>
+              <h1 className="text-lg font-bold" style={{ color: "var(--color-k-text-primary)" }}>
                 {reportDone ? "오늘도 이야기해줘서 고마워요" : "대화가 끝났어요"}
               </h1>
               <p className="text-xs mt-1" style={{ color: "#6b7280" }}>
@@ -567,7 +567,7 @@ export default function ChatPage() {
                 }`}
                 style={{
                   background: turn.role === "k" ? "#f3f4f6" : "#3b82f6",
-                  color: turn.role === "k" ? "#1e1e2d" : "#ffffff",
+                  color: turn.role === "k" ? "var(--color-k-text-primary)" : "#ffffff",
                   borderRadius: turn.role === "k" ? "16px 16px 16px 2px" : "16px 16px 2px 16px",
                 }}
               >
@@ -614,7 +614,7 @@ export default function ChatPage() {
                   className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer ${
                     isRecording ? "bg-gradient-to-br from-orange-400 to-orange-500" : ""
                   }`}
-                  style={!isRecording ? { background: "#e8845a" } : undefined}
+                  style={!isRecording ? { background: "var(--color-k-orange)" } : undefined}
                   aria-label={isRecording ? "말하기 완료" : "말하기 시작"}
                 >
                   {isRecording ? (
@@ -632,7 +632,7 @@ export default function ChatPage() {
               <button
                 onClick={handleMicToggle}
                 className="w-16 h-16 rounded-full flex items-center justify-center text-2xl text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-                style={{ background: "#e8845a" }}
+                style={{ background: "var(--color-k-orange)" }}
                 aria-label="마이크 켜기"
               >
                 🎤
@@ -661,14 +661,14 @@ export default function ChatPage() {
                   </button>
                 </div>
               ) : micPermission === "checking" ? (
-                <button disabled className="px-6 py-3 rounded-full text-white font-bold shadow-md opacity-50 text-sm" style={{ background: "#e8845a" }}>
+                <button disabled className="px-6 py-3 rounded-full text-white font-bold shadow-md opacity-50 text-sm" style={{ background: "var(--color-k-orange)" }}>
                   확인 중...
                 </button>
               ) : (
                 <button
                   onClick={handleStart}
                   className="px-6 py-3 rounded-full text-white font-bold shadow-md transition-transform active:scale-95 cursor-pointer text-sm"
-                  style={{ background: "#e8845a" }}
+                  style={{ background: "var(--color-k-orange)" }}
                   aria-label="대화 시작하기"
                 >
                   대화 시작하기
@@ -712,7 +712,7 @@ export default function ChatPage() {
               onClick={handleSendText}
               disabled={isEnded || isConnecting || !textInput.trim()}
               className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
-              style={{ background: "#e8845a" }}
+              style={{ background: "var(--color-k-orange)" }}
               aria-label="전송"
             >
               ➤

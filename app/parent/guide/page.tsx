@@ -88,7 +88,7 @@ export default function ParentGuidePage() {
           {/* 오늘의 한마디 */}
           <div
             className="rounded-2xl p-5"
-            style={{ background: "#1a6b5a", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
+            style={{ background: "var(--color-k-navy)", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}
           >
             <p className="text-xs font-bold mb-2.5 text-white/80">오늘의 한마디</p>
             <p className="text-sm font-semibold text-white leading-relaxed">
@@ -107,7 +107,7 @@ export default function ParentGuidePage() {
                   <span
                     key={tag}
                     className="px-3.5 py-1.5 rounded-full text-xs font-semibold"
-                    style={{ background: "#e8f2f0", color: "#1a6b5a" }}
+                    style={{ background: "#e8f2f0", color: "var(--color-k-navy)" }}
                   >
                     #{tag}
                   </span>
@@ -146,14 +146,14 @@ export default function ParentGuidePage() {
                 maxLength={100}
                 className="flex-1 min-w-0 px-3.5 py-3 rounded-xl text-sm outline-none border-2 border-transparent transition-colors"
                 style={{ background: "#F9FAFB" }}
-                onFocus={(e) => (e.target.style.borderColor = "#1a6b5a")}
+                onFocus={(e) => (e.target.style.borderColor = "var(--color-k-navy)")}
                 onBlur={(e) => (e.target.style.borderColor = "transparent")}
               />
               <button
                 type="submit"
                 disabled={qLoading || !qInput.trim() || !childId}
                 className="px-4 py-3 rounded-xl text-white text-sm font-bold disabled:opacity-50 shrink-0 transition-opacity"
-                style={{ background: "#1a6b5a" }}
+                style={{ background: "var(--color-k-navy)" }}
               >
                 등록
               </button>
