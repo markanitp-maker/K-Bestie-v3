@@ -2023,16 +2023,20 @@ function MissionInner() {
                   <button
                     onClick={handleCentralButtonClick}
                     disabled={isButtonBlocked}
-                    className={`w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-all ${
-                      isButtonBlocked ? "cursor-not-allowed" : "cursor-pointer active:scale-95"
-                    }`}
-                    style={{ background: isRecording ? "#e05a3f" : isThinkingTurn ? "#9ca3af" : "#e8845a" }}
+                    // 014 추가요청: "말하기 버튼"이 정지 버튼과 색상·형태가 비슷해 구분이
+                    // 어렵다는 대표님 실기기 피드백 — 대기 상태는 원형(마이크), 녹음 중엔
+                    // 버튼 자체 모양도 둥근 사각형(정지)으로 바꿔 아이콘뿐 아니라 컨테이너
+                    // 형태까지 분리한다.
+                    className={`w-16 h-16 flex items-center justify-center text-white shadow-md transition-all ${
+                      isRecording ? "rounded-2xl" : "rounded-full"
+                    } ${isButtonBlocked ? "cursor-not-allowed" : "cursor-pointer active:scale-95"}`}
+                    style={{ background: isRecording ? "#e05a3f" : isThinkingTurn ? "#9ca3af" : "var(--color-k-orange)" }}
                     aria-label={
                       isRecording
-                        ? "말하기 완료"
+                        ? "녹음 종료"
                         : isThinkingTurn
                           ? (isKSpeakingNow ? "케이가 말하고 있어요" : "케이가 생각하고 있어요")
-                          : "말하기 시작"
+                          : "마이크 입력 시작"
                     }
                   >
                     {isRecording ? (
@@ -2040,8 +2044,11 @@ function MissionInner() {
                     ) : isThinkingTurn ? (
                       <div className="w-5 h-5 border-2 border-white/60 border-t-white rounded-full animate-spin" />
                     ) : (
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
-                        <circle cx="12" cy="12" r="8" />
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="2" width="6" height="11" rx="3" />
+                        <path d="M5 10a7 7 0 0 0 14 0" />
+                        <line x1="12" y1="17" x2="12" y2="21" />
+                        <line x1="8" y1="21" x2="16" y2="21" />
                       </svg>
                     )}
                   </button>
@@ -2353,21 +2360,25 @@ function MissionInner() {
                   ref={buttonRef}
                   onClick={handleCentralButtonClick}
                   disabled={isButtonBlocked}
-                  className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-all duration-75 ${
+                  // 014 추가요청: 대기(원형, 마이크)와 녹음중(둥근 사각형, 정지) 컨테이너
+                  // 형태를 분리해 아이콘뿐 아니라 버튼 모양으로도 구분되게 한다.
+                  className={`relative w-16 h-16 flex items-center justify-center text-white shadow-md transition-all duration-75 ${
+                    isRecording ? "rounded-2xl" : "rounded-full"
+                  } ${
                     isButtonBlocked ? "cursor-not-allowed" : "active:scale-95 cursor-pointer"
                   } ${
                     isRecording
                       ? "bg-gradient-to-br from-orange-400 to-orange-500"
                       : isThinkingTurn
                         ? "bg-gray-300"
-                        : "bg-[#e8845a]"
+                        : "bg-[var(--color-k-orange)]"
                   }`}
                   aria-label={
                     isRecording
-                      ? "말하기 완료"
+                      ? "녹음 종료"
                       : isThinkingTurn
                         ? (isKSpeakingNow ? "케이가 말하고 있어요" : "케이가 생각하고 있어요")
-                        : "말하기 시작"
+                        : "마이크 입력 시작"
                   }
                 >
                   {isRecording ? (
