@@ -19,6 +19,19 @@
  *
  * 동시 캡처 방지: `inFlightRef`로 캡처 진행 중 재호출을 무시한다(호출부의 버튼
  * disabled와 별개로 훅 레벨에서도 중복 트리거를 막기 위한 이중 안전장치).
+ *
+ * ## iOS Safari 전용 버그: 동물 이미지 누락 (2026-07-25 수정)
+ * PC Chrome은 정상인데 iPhone Safari에서만 저장된 PNG에 동물 이미지가 빠지는 문제가
+ * 재현됐다. `html-to-image`는 DOM을 SVG `<foreignObject>`로 직렬화해 캔버스에 그리는데,
+ * WebKit(iOS Safari)은 이 과정에서 외부 URL(src)을 그대로 참조하는 `<img>`를 안정적으로
+ * 페인트하지 못하는 알려진 한계가 있다 — 라이브러리 자체의 내장 이미지 임베딩
+ * (fetch→data: URL 변환)이 iOS Safari의 fetch/CORS 처리 차이로 실패하거나 누락되는
+ * 사례가 실제로 보고돼 있다. `inlineImagesForCapture`로 캡처 직전에 캡처 대상 내부의
+ * 모든 `<img>` src를 직접 fetch해 `data:` URL로 선(先)치환하면, html-to-image 쪽 자체
+ * 임베딩 로직에 기대지 않고 항상 캡처 결과에 픽셀이 포함된다. 화면에 보이는 실제
+ * `<img>` 요소의 src를 캡처 순간에만 바꿨다가 캡처 직후(성공/실패 무관) 원래 src로
+ * 되돌리므로, 화면 표시용 DOM 구조·사용자 경험은 전혀 바뀌지 않는다(같은 이미지라
+ * 시각적으로도 깜빡임이 없다).
  */
 
 import { useCallback, useRef, useState } from "react";
@@ -91,6 +104,59 @@ async function waitForImagesReady(node: HTMLElement): Promise<void> {
   );
 }
 
+/** 이미지 URL을 fetch해 `data:` URL로 변환한다. 실패하면 null(호출부가 원본 src를 유지). */
+async function toDataUrl(src: string): Promise<string | null> {
+  try {
+    const response = await fetch(src, { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    const blob = await response.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error ?? new Error("FileReader 실패"));
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error("[useResultScreenshot] 이미지 dataURL 변환 실패:", src, error);
+    return null;
+  }
+}
+
+/**
+ * 캡처 대상(`node`) 내부 `<img>`의 src를 `data:` URL로 선치환하고, 원래 src로 되돌리는
+ * 함수를 반환한다. 이미 `data:` URL이거나 변환에 실패한 이미지는 원본 src를 그대로 둔다
+ * (변환 실패가 캡처 자체를 막지 않게 하기 위함 — html-to-image 자체 임베딩으로 폴백됨).
+ */
+async function inlineImagesForCapture(node: HTMLElement): Promise<() => void> {
+  const images = Array.from(node.querySelectorAll("img"));
+  const restores: Array<() => void> = [];
+
+  await Promise.all(
+    images.map(async (img) => {
+      const originalSrc = img.src;
+      if (!originalSrc || originalSrc.startsWith("data:")) {
+        return;
+      }
+      const dataUrl = await toDataUrl(originalSrc);
+      if (!dataUrl) {
+        return;
+      }
+      img.src = dataUrl;
+      restores.push(() => {
+        img.src = originalSrc;
+      });
+    }),
+  );
+
+  return () => {
+    for (const restore of restores) {
+      restore();
+    }
+  };
+}
+
 function downloadBlob(blob: Blob): void {
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -128,11 +194,29 @@ export function useResultScreenshot(): UseResultScreenshotResult {
     try {
       await waitForImagesReady(node);
 
-      const blob = await toBlob(node, {
-        pixelRatio: 2,
-        cacheBust: true,
-        backgroundColor: "#ffffff",
-      });
+      // iOS Safari 우회: 캡처 순간에만 <img> src를 data: URL로 바꾸고, 캡처 직후(성공/
+      // 실패 무관) 반드시 원래 src로 되돌린다 — 화면 표시 구조는 그대로 유지된다.
+      const restoreImages = await inlineImagesForCapture(node);
+      let blob: Blob | null;
+      try {
+        // src가 data: URL로 바뀌면 새 로드 사이클이 시작되므로 다시 한번 로드/디코딩
+        // 완료를 기다린다.
+        await waitForImagesReady(node);
+
+        blob = await toBlob(node, {
+          pixelRatio: 2,
+          cacheBust: true,
+          backgroundColor: "#ffffff",
+          // 외부 CDN(@import) 폰트 재임베딩 과정에서 iOS Safari가 겪는 fetch/CORS
+          // 불안정성을 캡처 실패 경로에서 제외한다 — 텍스트는 이미 브라우저가 실제
+          // 폰트로 렌더링한 상태이므로, 이 옵션은 캡처 결과물의 폰트 임베딩(재현
+          // 정확도)에만 영향이 있고 이번 버그(동물 이미지 누락)와는 무관한 폴백 폭을
+          // 넓히는 안전장치다.
+          skipFonts: true,
+        });
+      } finally {
+        restoreImages();
+      }
       if (!blob) {
         throw new Error("html-to-image toBlob returned null");
       }
