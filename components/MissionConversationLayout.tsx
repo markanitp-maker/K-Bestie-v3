@@ -74,14 +74,19 @@ export function MissionConversationLayout({
           </div>
         </div>
 
-        {/* 대화 내용 영역 (히스토리 + 액티브 존) */}
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", padding: "20px 14px" }}>
-          
-          {/* 히스토리 존 */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
-            {history.map((turn, index) => {
+        {/* 중앙 히스토리 존 — 011 "최근 대화 말풍선 최대 3개만 표시, 나머지는 쌓지 않음":
+            여기서 최근 3개로 자른다(호출부가 더 많이 넘기더라도 이 컴포넌트가 최종 방어).
+            현재 활성 발화(activeTurn)는 더 이상 이 스크롤 영역에 두지 않고 하단 고정
+            영역으로 옮겼다 — 예전엔 activeTurn(케이 말풍선+마스코트+상태배지)이 이 스크롤
+            가능한 영역 안에 있어서, 히스토리가 쌓이면 화면 밖으로 밀려날 수 있었다(011
+            "하단 고정 영역: 현재 케이 말풍선/마스코트/상태배지" 요구사항과 불일치). overflow는
+            auto가 아니라 hidden — 3개로 자른 이상 스크롤이 필요할 일이 없고, 011은 별도
+            스크롤바 표시 자체를 금지한다. */}
+        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "20px 14px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {history.slice(-3).map((turn, index, arr) => {
               // 역순 인덱스 (끝에서 멀수록 0에 가까움)
-              const distanceFromEnd = history.length - 1 - index;
+              const distanceFromEnd = arr.length - 1 - index;
               // 오래된 것일수록 투명도를 낮춤 (최대 1, 최소 0.4)
               const baseOpacity = Math.max(0.4, 1 - distanceFromEnd * 0.15);
 
@@ -109,17 +114,21 @@ export function MissionConversationLayout({
               );
             })}
           </div>
+        </div>
 
-          {/* 중앙 액티브 존 */}
+        {/* 하단 고정 영역 — 011 "현재 케이 말풍선 / 케이 마스코트 / 상태 배지 / 음성 ON/OFF /
+            대화·종료 메뉴". activeTurn(현재 발화 중인 말풍선)과 mascotSlot(마스코트+상태배지)을
+            여기로 옮겨 스크롤 영역과 완전히 분리했다 — 히스토리가 몇 개든 이 영역은 항상 보인다. */}
+        <div style={{ flexShrink: 0, borderTop: "1px solid #e5e7eb", background: "#fff", padding: "16px 14px calc(16px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", alignItems: "center", minHeight: 90 }}>
           {activeTurn && (
-            <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", marginBottom: 12 }}>
               {activeTurn.role === "k" ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
-                  <div style={{ 
+                  <div style={{
                     position: "relative",
-                    background: "#fff", 
-                    border: "2px solid #1a6b5a", 
-                    borderRadius: 20, 
+                    background: "#fff",
+                    border: "2px solid #1a6b5a",
+                    borderRadius: 20,
                     padding: "16px 20px",
                     color: "#1e1e2d",
                     fontSize: 18,
@@ -163,10 +172,10 @@ export function MissionConversationLayout({
                   )}
                 </div>
               ) : (
-                <div style={{ 
-                  background: "#1a6b5a", 
+                <div style={{
+                  background: "#1a6b5a",
                   color: "#fff",
-                  borderRadius: 20, 
+                  borderRadius: 20,
                   padding: "16px 20px",
                   fontSize: 18,
                   fontWeight: 700,
@@ -182,10 +191,6 @@ export function MissionConversationLayout({
               )}
             </div>
           )}
-        </div>
-
-        {/* 하단 마이크 존 */}
-        <div style={{ flexShrink: 0, borderTop: "1px solid #e5e7eb", background: "#fff", padding: "16px 14px calc(16px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", alignItems: "center", minHeight: 90 }}>
           {isListening ? (
             <>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#1a6b5a", marginBottom: 12 }}>

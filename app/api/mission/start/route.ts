@@ -78,9 +78,18 @@ export async function POST(req: NextRequest) {
   const startOfDayKst = new Date(`${businessDate}T00:00:00+09:00`).toISOString();
   const endOfDayKst = new Date(`${businessDate}T23:59:59.999+09:00`).toISOString();
 
-  // ── 이어하기: KST 기준 오늘(business_date) 생성된, 같은 라운드(window_id)의 활성(ended_at NULL) 미션 세션 찾기
-  // (과거의 닫히지 않은 다른 라운드 세션이 잡히지 않도록 멱등성 보장)
-  let { data: existingSessionRow, error: existingSessionErr } = await service
+  // ── 이어하기: KST 기준 오늘(business_date) 생성된, 같은 라운드(window_id)의 가장 최근 세션 조회.
+  //
+  // 주의(2026-07-25 확인): chat_sessions.ended_at은 미션 완료 시 이 코드베이스 어디에서도 갱신되지
+  // 않는다(완료 처리는 mission_progress.status='COMPLETED'만 찍고 chat_sessions는 건드리지 않음 —
+  // grep으로 전체 저장소 확인 완료, 유일하게 ended_at을 쓰는 곳은 test-mission 전용 라우트와
+  // free 세션 배치뿐). 그래서 과거 "ended_at IS NULL = 활성"이라는 전제 자체가 항상 참이 돼(완료된
+  // 미션 세션도 ended_at이 계속 NULL로 남아 있으므로) 완료 세션이 매번 "활성 세션"으로 오인되어
+  // 재사용됐다 — 011의 "완료 후 재시작해도 이전 완료 세션을 이어한다" 버그의 실제 원인.
+  // ended_at 대신 mission_progress.status로 직접 판정한다: COMPLETED만 "재사용 안 함"(항상 새
+  // 세션 시작, 011 임시 정책)으로 취급하고, 그 외(IN_PROGRESS/SAFETY_PAUSED/V1의 null 등)는
+  // 기존과 동일하게 이어하기 대상으로 남긴다.
+  const { data: todaySessionRow, error: todaySessionErr } = await service
     .from("chat_sessions")
     .select("id, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version)")
     .eq("child_id", childId)
@@ -88,37 +97,23 @@ export async function POST(req: NextRequest) {
     .gte("started_at", startOfDayKst)
     .lte("started_at", endOfDayKst)
     .eq("mission_progress.round_type", roundType)
-    .is("ended_at", null) // 활성 세션 명시적 확인
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (existingSessionErr) {
-    console.error("[start/route] activeSession query error:", existingSessionErr);
+  if (todaySessionErr) {
+    console.error("[start/route] todaySession query error:", todaySessionErr);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
-  // 만약 활성 세션이 없다면, 오늘 날짜로 이미 종료된(완료된) 세션이 있는지 확인 (중복 생성 방지)
-  if (!existingSessionRow) {
-    const { data: completedSessionRow, error: completedSessionErr } = await service
-      .from("chat_sessions")
-      .select("id, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version)")
-      .eq("child_id", childId)
-      .eq("session_type", "mission")
-      .gte("started_at", startOfDayKst)
-      .lte("started_at", endOfDayKst)
-      .not("ended_at", "is", null) // 종료된 세션 확인
-      .eq("mission_progress.round_type", roundType)
-      .eq("mission_progress.status", "COMPLETED") // 명시적 완료 확인
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (completedSessionErr) {
-      console.error("[start/route] completedSession query error:", completedSessionErr);
-      return NextResponse.json({ error: "Database error" }, { status: 500 });
+  let existingSessionRow: typeof todaySessionRow | null = null;
+  if (todaySessionRow) {
+    const todayProgress = Array.isArray(todaySessionRow.mission_progress)
+      ? todaySessionRow.mission_progress[0]
+      : todaySessionRow.mission_progress;
+    if (todayProgress?.status !== "COMPLETED") {
+      existingSessionRow = todaySessionRow;
     }
-    existingSessionRow = completedSessionRow;
   }
 
   if (existingSessionRow) {

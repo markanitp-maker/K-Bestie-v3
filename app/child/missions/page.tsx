@@ -470,7 +470,12 @@ function MissionInner() {
             resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
           }
         } else {
-          resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
+          // 011 "끊김 안내 문구 제거": 이 else 분기는 liveRef.current?.status !== "live"이면
+          // 전부 타는데, 실제 Dev 환경은 STT/TTS(비Live) 구조라 이 조건이 항상 참이다 —
+          // 즉 진짜 연결 장애 여부와 무관하게 "서버 연결이 끊겼어요" 문구가 매번 나오고
+          // 있었다(원인을 네트워크로 단정하는 문구이기도 함). 네트워크를 단정하지 않는
+          // 중립적 문구로 교체한다(아래 6곳 전부 동일).
+          resetToIdle("다시 한번 말해줄래?");
         }
       }, 8000);
     }
@@ -542,7 +547,7 @@ function MissionInner() {
                 resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
               }
             } else {
-              resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
+              resetToIdle("다시 한번 말해줄래?");
             }
           } else {
             resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
@@ -674,7 +679,7 @@ function MissionInner() {
                 resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
               }
             } else {
-              resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
+              resetToIdle("다시 한번 말해줄래?");
             }
           } else {
             resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
@@ -713,7 +718,7 @@ function MissionInner() {
                 resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
               }
             } else {
-              resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
+              resetToIdle("다시 한번 말해줄래?");
             }
           } else {
             resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
@@ -762,7 +767,7 @@ function MissionInner() {
                   resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
                 }
               } else {
-                resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
+                resetToIdle("다시 한번 말해줄래?");
               }
               return;
             }
@@ -783,7 +788,7 @@ function MissionInner() {
                 resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
               }
             } else {
-              resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
+              resetToIdle("다시 한번 말해줄래?");
             }
             return;
           }
@@ -814,7 +819,7 @@ function MissionInner() {
               resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
             }
           } else {
-            resetToIdle("서버 연결이 끊겼어요. 다시 말해줄래?");
+            resetToIdle("다시 한번 말해줄래?");
           }
         }
       } finally {
@@ -908,7 +913,8 @@ function MissionInner() {
       setTurnPhase("recovering");
       if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
       if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
-      setRecoveryNotice("연결이 불안정해요, 다시 시도할게요");
+      // 011 "끊김 안내 문구 제거": "연결이 불안정" 계열 문구 제거, 재시도 중임만 알린다.
+      setRecoveryNotice("다시 이어갈게");
     },
     displaySequenceCounterRef,
     onServerTurnComplete: () => {
@@ -940,7 +946,12 @@ function MissionInner() {
         setTurnPhase("child_listening");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
-        liveRef.current?.appendTurn({ role: "k", text: "통신이 고르지 않아요. 조금 전 대답을 다시 한번 말해줄래요?" });
+        // 011 "끊김 안내 문구 제거" + "오류 메시지가 케이 대화 말풍선으로 저장되지 않도록
+        // 처리": "통신이 고르지 않아요"(네트워크 단정) 문구를 케이 대화 말풍선(appendTurn,
+        // 채팅 기록에 영구 저장됨)으로 남기던 것을 제거하고, 다른 타임아웃 경로와 동일하게
+        // 일시적 배너(inputErrorNotice)로 대체한다.
+        setInputErrorNotice("다시 한번 말해줄래?");
+        setTimeout(() => setInputErrorNotice(null), 3000);
       }
     },
     onAudioQueueDrained: () => {
@@ -972,7 +983,10 @@ function MissionInner() {
       if (turnPhaseRef.current === "k_speaking") return; // 이미 재질문 재생 중 — 중복 방지
       setTurnPhase("k_speaking");
       if (live.setKSpeechAllowed) live.setKSpeechAllowed(true);
-      live.speakAsK("지금 대화가 잠시 끊겼나봐. 다시 한번 말해줄래?");
+      // 011 "끊김 안내 문구 제거": 이 콜백의 실제 원인은 연결 장애가 아니라 STT 전사가
+      // 외국 문자로 판정돼 채택 불가한 경우다(위 주석 참고) — "끊겼나봐"는 원인을 네트워크로
+      // 잘못 단정하는 문구라 실제 원인(못 들음)에 맞는 문구로 교체한다.
+      live.speakAsK("케이가 잘 못 들었어. 다시 한번 말해줄래?");
     },
     onAudioLevelChange: (level) => {
       if (!buttonRef.current) return;
@@ -1732,23 +1746,42 @@ function MissionInner() {
   let voiceState: VoiceConversationState = "idle";
   if (isConnecting) {
     voiceState = "connecting";
-  } else if (turnPhaseUi === "child_listening" || turnPhaseUi === "child_finalizing") {
-    voiceState = "listening";
-  } else if (turnPhaseUi === "waiting_k") {
-    voiceState = "thinking";
-  } else if (turnPhaseUi === "k_speaking") {
-    voiceState = "speaking";
-  } else if (turnPhaseUi === "recovering") {
-    voiceState = "idle";
+  } else if (isLiveMode) {
+    if (turnPhaseUi === "child_listening" || turnPhaseUi === "child_finalizing") {
+      voiceState = "listening";
+    } else if (turnPhaseUi === "waiting_k") {
+      voiceState = "thinking";
+    } else if (turnPhaseUi === "k_speaking") {
+      voiceState = "speaking";
+    } else if (turnPhaseUi === "recovering") {
+      voiceState = "idle";
+    }
+  } else {
+    // 011 "문제 A": turnPhaseUi(child_listening/waiting_k/k_speaking)는 Live 파이프라인
+    // 전용 상태값이라(handleTurnComplete 내부에서 isLive일 때만 setTurnPhase를 호출) 실제
+    // Dev 환경의 STT→LLM→TTS 경로에서는 이 값이 절대 갱신되지 않았다 — isThinkingTurn도
+    // `isLiveMode && ...`로 게이팅돼 있어 "생각하는 중" 표시 자체가 코드상 도달 불가능한
+    // 상태였다(2026-07-25 코드 대조 확인). 대신 STT/TTS 경로에서 이미 실시간으로 갱신되고
+    // 있는 실제 신호를 그대로 쓴다: isRecording(마이크 입력 중) → isProcessingAnswer(발화
+    // 종료 후 답변 판정+다음 질문 생성 중, STT~TTS 요청 구간) → sttTts.isSpeaking(TTS
+    // 요청~실제 오디오 재생 종료까지, useVoiceChat.speak()가 그대로 관리).
+    if (isRecording) {
+      voiceState = "listening";
+    } else if (isProcessingAnswer) {
+      voiceState = "thinking";
+    } else if (sttTts.isSpeaking) {
+      voiceState = "speaking";
+    }
   }
   if (isDone) {
     voiceState = "idle";
   }
   const missionPercent = progressPercent;
-  // Live 모드 수동 버튼 전용 — 답변 판정/다음 질문 생성 중(turnPhaseUi !== "idle")엔
-  // canStartRecording 가드가 탭을 무시하므로, 버튼을 "생각 중" 모양으로 바꿔 침묵 무시와
-  // 진짜 먹통을 아이가 구분할 수 있게 한다.
-  const isThinkingTurn = isLiveMode && !isAuto && turnPhaseUi !== "idle";
+  // 수동 버튼 전용 — 답변 판정/다음 질문 생성 중엔 canStartRecording 가드가 탭을 무시하므로,
+  // 버튼을 "생각 중" 모양으로 바꿔 침묵 무시와 진짜 먹통을 아이가 구분할 수 있게 한다.
+  // Live 모드는 turnPhaseUi로, STT/TTS 모드는 isProcessingAnswer로 판단한다(011 "문제 A" —
+  // 이 값이 예전엔 Live 전용으로만 게이팅돼 있어 실제 Dev 환경(STT/TTS)에서는 항상 false였다).
+  const isThinkingTurn = !isAuto && (isLiveMode ? turnPhaseUi !== "idle" : isProcessingAnswer);
 
   if (!isLiveMode) {
     const visibleTurns = voice.transcript.filter((t) => t.role !== "child");
@@ -1811,7 +1844,10 @@ function MissionInner() {
           }
           mascotSlot={
             <div className="relative inline-flex items-center justify-center">
-              <KBestieMascotAnimation state={turnPhaseUi === "k_speaking" ? "talking" : "idle"} size={72} />
+              <KBestieMascotAnimation
+                state={(isLiveMode ? turnPhaseUi === "k_speaking" : sttTts.isSpeaking) ? "talking" : "idle"}
+                size={72}
+              />
               <VoiceConversationStateBadge state={voiceState} />
             </div>
           }
