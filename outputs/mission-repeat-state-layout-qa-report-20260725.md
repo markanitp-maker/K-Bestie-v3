@@ -2,7 +2,7 @@
 
 ## 테스트 대상
 - Dev URL: https://k-bestie-v3-dev.vercel.app
-- Commit SHA: 작업 중(이 QA 시점 기준 아직 미커밋 — 커밋 후 `_log.md`/최종 보고에 실제 SHA 기록)
+- Commit SHA: a1a789a431032123b5d263f728292bec962fac42
 - 테스트 계정: `QA테스트(5학년)` (child_id `cde1b847-b1d2-4378-b337-b8cf4d532b00`), 이번 QA를 위해 `tier`를 3(live)→1(stt_tts)로 일시 변경 후 검증 완료 시 3으로 원복
 - 기기·브라우저: 헤드리스 Chromium(Playwright), 뷰포트 390x844 — **실기기(iPhone Safari/PWA, Android Chrome)는 검증하지 못함**
 - 테스트 시간: 2026-07-25 (KST 오전, 정확한 타임스탬프는 아래 이벤트 타임라인 참고)

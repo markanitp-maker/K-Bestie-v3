@@ -2,7 +2,7 @@
 
 ## 테스트 환경
 - Dev URL: https://k-bestie-v3-dev.vercel.app
-- 커밋 SHA: 작업 중(이 보고서 작성 시점 기준 아직 미커밋 — 최종 커밋 SHA는 QA 보고서/최종 보고에 갱신 기록)
+- 커밋 SHA: a1a789a431032123b5d263f728292bec962fac42
 - 기기: 헤드리스 Chromium(Playwright), 뷰포트 390x844(iPhone 세로 시뮬레이션), `--use-fake-device-for-media-stream`
 - 브라우저/PWA: 일반 브라우저 탭(PWA standalone 아님) — 실기기 Safari/PWA 검증은 이 세션에서 수행하지 못함(아래 "확인되지 않은 사항" 참고)
 - 음성 경로: QA테스트(5학년) 계정은 `child_profiles.tier=3` → `plans.voice_mode='live'`(Gemini Live)로 확인됨. 011이 명시한 "현재 Dev 테스트 유저는 STT→LLM→TTS"와 달리 이 계정 자체는 Live 모드였다 — 이번 세션에서 `tier`를 일시적으로 1(`voice_mode='stt_tts'`)로 바꿔 STT/TTS 경로를 직접 검증했고, 검증 후 3으로 원복했다(테스트 계정 정책상 QA테스트는 자동화 조작 허용 대상).
