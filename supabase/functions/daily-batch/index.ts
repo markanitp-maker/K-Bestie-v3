@@ -13,6 +13,7 @@ import {
   kstToday,
   checkAuth,
   deleteExpiredChatMessages,
+  deleteExpiredConversationPipelineData,
 } from "../_shared/batch.ts";
 
 Deno.serve(async (req: Request) => {
@@ -41,15 +42,20 @@ Deno.serve(async (req: Request) => {
     const isDeleteEnabled = Deno.env.get("CHAT_RETENTION_DELETE_ENABLED") === "true";
     const step3 = await deleteExpiredChatMessages(db, !isDeleteEnabled);
 
+    // Step 4: requests/018 — raw_daily_conversations/corrected_daily_conversations 7일 경과 자동 파기
+    // (리포트 생성 완료 + 7일 기준, 같은 CHAT_RETENTION_DELETE_ENABLED 플래그 재사용)
+    const step4 = await deleteExpiredConversationPipelineData(db, !isDeleteEnabled);
+
     return new Response(
       JSON.stringify({
         ok: true,
-        result: { 
-          date: targetDate, 
-          step1_close: step1, 
+        result: {
+          date: targetDate,
+          step1_close: step1,
           step2_reports: step2,
           step3_retentionDelete: step3,
-          durationMs: Date.now() - start 
+          step4_conversationPipelineRetentionDelete: step4,
+          durationMs: Date.now() - start
         },
       }),
       { headers: { "Content-Type": "application/json" } },

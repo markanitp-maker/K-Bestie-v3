@@ -58,59 +58,54 @@ export async function generateDailyReports(targetDate: string): Promise<DailyRep
 
   for (const session of sessions) {
     try {
-      // 미션 완료 여부 확인 (게이지 100% = COMPLETED)
-      const { data: progress, error: progErr } = await db
-        .from("mission_progress")
-        .select("status")
+      // requests/018 — chat_messages 원문 대신 보정 파이프라인 결과를 사용한다.
+      // 미션 완료 여부만으로 세션 전체를 버리지 않는다: report_eligible=true인 아이 발화가
+      // 하나라도 있으면 정상 리포트를 생성한다(Edge Function _shared/batch.ts와 동일 로직 — 동기화 유지).
+      const { data: conversations, error: convErr } = await db
+        .from("raw_daily_conversations")
+        .select(
+          `
+          id,
+          speaker,
+          raw_text,
+          turn_order,
+          corrected_daily_conversations (
+            corrected_text,
+            report_eligible
+          )
+        `
+        )
         .eq("session_id", session.id)
-        .maybeSingle();
+        .order("turn_order", { ascending: true });
 
-      if (progErr) throw new Error(progErr.message);
+      if (convErr) throw new Error(`보정 대화 조회 실패: ${convErr.message}`);
 
-      if (progress?.status !== "COMPLETED") {
-        // 미완료 처리 (0~99% 또는 자유대화)
-        const { data: inserted, error: insertErr } = await db
-          .from("daily_reports")
-          .insert({
-            session_id: session.id,
-            summary_line: "아이가 미션을 완료하지 않아 업데이트가 없습니다",
-            mood_score: 5,
-            emotion_tags: [],
-            parent_guide: "",
-            emotion_level: "safe",
-            school_academy_life: null,
-            peer_friendship: null,
-            emotion_hint: null,
-            interests_preferences: null,
-            study_concerns: null,
-            digital_content_interests: null,
-            future_dreams: null,
-            recurring_stories: null,
-          })
-          .select("id")
-          .single();
+      const validConversations = (conversations || []).filter((c: any) => {
+        if (c.speaker === "k") return true;
+        const corr = Array.isArray(c.corrected_daily_conversations)
+          ? c.corrected_daily_conversations[0]
+          : c.corrected_daily_conversations;
+        return corr?.report_eligible === true;
+      });
 
-        if (insertErr) throw new Error(insertErr.message);
-        result.created.push(inserted.id);
-        continue;
-      }
-
-      // 메시지 가져오기
-      const { data: messages, error: msgErr } = await db
-        .from("chat_messages")
-        .select("role, content")
-        .eq("session_id", session.id)
-        .order("created_at", { ascending: true });
-
-      if (msgErr) throw new Error(msgErr.message);
-      if (!messages?.length) {
+      if (!validConversations.length || !validConversations.some((c: any) => c.speaker === "child")) {
         result.skipped.push(session.id);
         continue;
       }
 
-      const transcriptText = messages
-        .map((m) => `${m.role === "child" ? "아이" : "케이"}: ${m.content}`)
+      const transcriptText = validConversations
+        .map((c: any) => {
+          if (c.speaker === "child") {
+            const corr = Array.isArray(c.corrected_daily_conversations)
+              ? c.corrected_daily_conversations[0]
+              : c.corrected_daily_conversations;
+            return `아이: ${corr.corrected_text}`;
+          }
+          return `케이: ${c.raw_text}`;
+        })
         .join("\n");
+
+      const rawIds = validConversations.map((c: any) => c.id);
       const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
 
       const genResult = await ai.models.generateContent({
@@ -172,6 +167,14 @@ export async function generateDailyReports(targetDate: string): Promise<DailyRep
 
       if (insertErr) throw new Error(insertErr.message);
       result.created.push(inserted.id);
+
+      // 리포트가 실제로 성공적으로 만들어진 뒤에만 소비 시각을 찍는다(LLM/삽입 실패 시
+      // report_generated_at이 찍히면 리포트 없이 원본만 7일 뒤 삭제되는 사고로 이어진다).
+      if (rawIds.length > 0) {
+        const now = new Date().toISOString();
+        await db.from("raw_daily_conversations").update({ report_generated_at: now }).in("id", rawIds);
+        await db.from("corrected_daily_conversations").update({ report_generated_at: now }).in("raw_conversation_id", rawIds);
+      }
     } catch (e) {
       result.errors.push({ sessionId: session.id, error: String(e) });
     }

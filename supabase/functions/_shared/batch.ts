@@ -234,58 +234,50 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
 
   for (const session of sessions) {
     try {
-      // 1. 미션 완료 여부 확인 (게이지 100% = COMPLETED)
-      const { data: progress, error: progErr } = await db
-        .from("mission_progress")
-        .select("status")
+      // 1. 보정된 대화 내역 조회 (미션 완료 여부 무관, 아이 발화 존재 시 생성)
+      const { data: conversations, error: convErr } = await db
+        .from("raw_daily_conversations")
+        .select(`
+          id,
+          speaker,
+          raw_text,
+          turn_order,
+          corrected_daily_conversations (
+            corrected_text,
+            report_eligible
+          )
+        `)
         .eq("session_id", session.id)
-        .maybeSingle();
+        .order("turn_order", { ascending: true });
 
-      if (progErr) throw new Error(progErr.message);
+      if (convErr) throw new Error(`보정 대화 조회 실패: ${convErr.message}`);
+      
+      const validConversations = (conversations || []).filter((c: any) => {
+        if (c.speaker === "k") return true;
+        const corr = Array.isArray(c.corrected_daily_conversations) 
+          ? c.corrected_daily_conversations[0] 
+          : c.corrected_daily_conversations;
+        return corr?.report_eligible === true;
+      });
 
-      if (progress?.status !== "COMPLETED") {
-        // 미완료 처리 (0~99% 또는 자유대화)
-        const { data: inserted, error: insertErr } = await db
-          .from("daily_reports")
-          .insert({
-            session_id: session.id,
-            summary_line: "아이가 미션을 완료하지 않아 업데이트가 없습니다",
-            mood_score: 5,
-            emotion_tags: [],
-            parent_guide: "",
-            emotion_level: "safe",
-            school_academy_life: null,
-            peer_friendship: null,
-            emotion_hint: null,
-            interests_preferences: null,
-            study_concerns: null,
-            digital_content_interests: null,
-            future_dreams: null,
-            recurring_stories: null,
-          })
-          .select("id")
-          .single();
-
-        if (insertErr) throw new Error(insertErr.message);
-        result.created.push(inserted.id);
-        continue;
-      }
-
-      const { data: messages, error: msgErr } = await db
-        .from("chat_messages")
-        .select("role, content")
-        .eq("session_id", session.id)
-        .order("created_at", { ascending: true });
-
-      if (msgErr) throw new Error(msgErr.message);
-      if (!messages?.length) {
+      if (!validConversations.length || !validConversations.some((c: any) => c.speaker === "child")) {
         result.skipped.push(session.id);
         continue;
       }
 
-      const transcriptText = messages
-        .map((m: { role: string; content: string }) => `${m.role === "child" ? "아이" : "케이"}: ${m.content}`)
+      const transcriptText = validConversations
+        .map((c: any) => {
+          if (c.speaker === "child") {
+            const corr = Array.isArray(c.corrected_daily_conversations) 
+              ? c.corrected_daily_conversations[0] 
+              : c.corrected_daily_conversations;
+            return `아이: ${corr.corrected_text}`;
+          }
+          return `케이: ${c.raw_text}`;
+        })
         .join("\n");
+
+      const rawIds = validConversations.map((c: any) => c.id);
 
       let memoryContext = "(이전 기억 없음)";
       try {
@@ -377,6 +369,14 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
 
       if (insertErr) throw new Error(insertErr.message);
       result.created.push(inserted.id);
+
+      // 리포트가 실제로 성공적으로 만들어진 뒤에만 소비 시각을 찍는다(LLM/삽입 실패 시
+      // report_generated_at이 찍히면 리포트 없이 원본만 7일 뒤 삭제되는 사고로 이어진다).
+      if (rawIds.length > 0) {
+        const now = new Date().toISOString();
+        await db.from("raw_daily_conversations").update({ report_generated_at: now }).in("id", rawIds);
+        await db.from("corrected_daily_conversations").update({ report_generated_at: now }).in("raw_conversation_id", rawIds);
+      }
     } catch (e) {
       result.errors.push({ sessionId: session.id, error: String(e) });
     }
@@ -809,6 +809,71 @@ export async function deleteExpiredChatMessages(db: SupabaseClient, dryRun: bool
   }
 
   result.deletedMessageCount = totalMessagesCount;
+
+  return result;
+}
+
+export interface ConversationPipelineRetentionResult {
+  rawDeleted: number;
+  correctedDeleted: number;
+  dryRun: boolean;
+}
+
+/**
+ * requests/018 §11 — raw_daily_conversations / corrected_daily_conversations 7일 보관정책.
+ *
+ * 삭제 시점: "일일 리포트 생성 완료 시점(report_generated_at) + 7일" — generateDailyReports가
+ * 리포트를 실제로 생성한 세션에 한해 report_generated_at을 찍으므로, 그 시점 기준으로만 판단한다.
+ *
+ * 보완 규칙: 세션에 아이 발화가 없었거나 report_eligible 데이터가 하나도 없어 애초에 리포트가
+ * 생성되지 않는(=result.skipped) 세션은 report_generated_at이 영원히 NULL로 남아 위 규칙만으로는
+ * 삭제되지 않는다. 이런 데이터가 무한 누적되지 않도록, business_date가 14일(7일의 2배 — 아직
+ * 처리 중일 가능성을 감안한 여유 기간) 이상 지났는데도 report_generated_at이 NULL이면 "리포트로
+ * 이어지지 않을 데이터"로 보고 함께 삭제한다.
+ */
+export async function deleteExpiredConversationPipelineData(
+  db: SupabaseClient,
+  dryRun: boolean,
+): Promise<ConversationPipelineRetentionResult> {
+  const result: ConversationPipelineRetentionResult = { rawDeleted: 0, correctedDeleted: 0, dryRun };
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const fourteenDaysAgoDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const orFilter = `report_generated_at.lt.${sevenDaysAgo},and(report_generated_at.is.null,business_date.lt.${fourteenDaysAgoDate})`;
+
+  // corrected는 raw_conversation_id로 raw를 참조하므로 먼저 삭제한다(FK 순서).
+  if (dryRun) {
+    const { count: correctedCount, error: correctedErr } = await db
+      .from("corrected_daily_conversations")
+      .select("id", { count: "exact", head: true })
+      .or(orFilter);
+    if (correctedErr) throw new Error(`deleteExpiredConversationPipelineData: corrected 조회 실패 — ${correctedErr.message}`);
+    result.correctedDeleted = correctedCount ?? 0;
+
+    const { count: rawCount, error: rawErr } = await db
+      .from("raw_daily_conversations")
+      .select("id", { count: "exact", head: true })
+      .or(orFilter);
+    if (rawErr) throw new Error(`deleteExpiredConversationPipelineData: raw 조회 실패 — ${rawErr.message}`);
+    result.rawDeleted = rawCount ?? 0;
+    return result;
+  }
+
+  const { data: correctedDeleted, error: correctedDelErr } = await db
+    .from("corrected_daily_conversations")
+    .delete()
+    .or(orFilter)
+    .select("id");
+  if (correctedDelErr) throw new Error(`deleteExpiredConversationPipelineData: corrected 삭제 실패 — ${correctedDelErr.message}`);
+  result.correctedDeleted = correctedDeleted?.length ?? 0;
+
+  const { data: rawDeleted, error: rawDelErr } = await db
+    .from("raw_daily_conversations")
+    .delete()
+    .or(orFilter)
+    .select("id");
+  if (rawDelErr) throw new Error(`deleteExpiredConversationPipelineData: raw 삭제 실패 — ${rawDelErr.message}`);
+  result.rawDeleted = rawDeleted?.length ?? 0;
 
   return result;
 }
