@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 export interface MissionTranscriptTurn {
   id: string;
@@ -13,14 +14,16 @@ export interface MissionConversationLayoutProps {
   onBack: () => void;
   progressCurrent: number; // 예: 3
   progressTotal: number;   // 예: 10
+  /** 012: 좌측에 표시할 현재 미션 라벨(예: "하교 후 미션"/"취침 전 미션"). 없으면 라벨 생략. */
+  missionLabel?: string;
 
   /** 히스토리 존 — 최신이 아닌 지난 대화들(오래될수록 흐리게 표시) */
   history: MissionTranscriptTurn[];
 
   /** 중앙 액티브 존 — 현재 진행 중인 발화 1개(케이 또는 아이) */
   activeTurn: MissionTranscriptTurn | null;
-  /** activeTurn.role==="k"일 때 옆에 표시할 마스코트 애니메이션 요소(다른 팀이 만든
-   *  KBestieMascotAnimation 컴포넌트를 여기 슬롯으로 그대로 끼워 넣을 수 있게 ReactNode로
+  /** 012: 마스코트/상태배지/자동-수동 토글 — activeTurn 여부와 무관하게 항상 노출한다
+   *  (다른 팀이 만든 KBestieMascotAnimation 등을 그대로 끼워 넣을 수 있게 ReactNode로
    *  받는다 — 이 컴포넌트 자신은 마스코트를 모른다). */
   mascotSlot?: React.ReactNode;
 
@@ -28,8 +31,8 @@ export interface MissionConversationLayoutProps {
   isListening: boolean;
   micLevel: number; // 0~1, 실제 RMS 등 정규화된 값
 
-  /** 우측 상단 등에 표시할 부가 슬롯(음성 켜기/끄기 버튼, 연결 품질 표시 등을 다른
-   *  담당자가 여기 끼워 넣을 수 있게 ReactNode로 받는다). */
+  /** 우측 상단 등에 표시할 부가 슬롯(연결 품질 표시 등을 다른 담당자가 여기 끼워 넣을 수
+   *  있게 ReactNode로 받는다). */
   headerExtraSlot?: React.ReactNode;
 }
 
@@ -37,6 +40,7 @@ export function MissionConversationLayout({
   onBack,
   progressCurrent,
   progressTotal,
+  missionLabel,
   history,
   activeTurn,
   mascotSlot,
@@ -45,6 +49,51 @@ export function MissionConversationLayout({
   headerExtraSlot,
 }: MissionConversationLayoutProps) {
   const progressPercent = progressTotal > 0 ? (progressCurrent / progressTotal) * 100 : 0;
+  const isMissionComplete = progressTotal > 0 && progressCurrent >= progressTotal;
+
+  // 012 "새 말풍선 추가 시 자동 최하단 스크롤 + 사용자가 위로 스크롤 중이면 자동 스크롤을
+  // 멈추고 '새 메시지' 플로팅 버튼 노출". history/activeTurn이 바뀔 때마다(새 말풍선 추가)
+  // 사용자가 바닥 근처에 있으면(shouldAutoScroll) 부드럽게 최하단으로 스크롤하고, 위로
+  // 스크롤해 올라가 있는 중이면 스크롤을 건드리지 않고 플로팅 버튼만 띄운다.
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const [showNewMessageButton, setShowNewMessageButton] = useState(false);
+
+  // claude-review 지적: history는 호출부(missions/page.tsx)가 매 렌더마다
+  // historyTurns.map(...)으로 새 배열을 만들어 넘기므로, [history, activeTurn]을 그대로
+  // 의존성으로 쓰면 메시지 내용과 무관한 부모 리렌더(turnPhase 변화 등)마다 이 effect가
+  // 재실행돼 사용자가 위로 스크롤 중이어도 스크롤이 하단으로 튕길 수 있다. 실제 "내용이
+  // 바뀌었는가"만 반영하는 안정적인 값(길이 + 마지막 히스토리 항목 id + activeTurn의
+  // id/text)만 의존성으로 쓴다.
+  const lastHistoryTurn = history[history.length - 1];
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    if (shouldAutoScroll) {
+      el.scrollTop = el.scrollHeight;
+      setShowNewMessageButton(false);
+    } else {
+      setShowNewMessageButton(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history.length, lastHistoryTurn?.id, activeTurn?.id, activeTurn?.text]);
+
+  const handleHistoryScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distanceFromBottom < 24;
+    setShouldAutoScroll(nearBottom);
+    if (nearBottom) setShowNewMessageButton(false);
+  };
+
+  const scrollToBottomNow = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    setShouldAutoScroll(true);
+    setShowNewMessageButton(false);
+  };
 
   return (
     // height는 100dvh가 아니라 100%여야 한다 — 이 컴포넌트는 PC/PWA(desktop)에서
@@ -68,17 +117,56 @@ export function MissionConversationLayout({
             >
               ← 뒤로가기
             </button>
-            <span style={{ fontSize: 15, fontWeight: 800, color: "#1e1e2d", whiteSpace: "nowrap" }}>내친구 케이</span>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Image src="/Images/logo/Logo.png" alt="내친구 케이" width={98} height={28} className="object-contain" priority />
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 40, justifyContent: "flex-end" }}>
               {headerExtraSlot}
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-            <span style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap", fontWeight: 600 }}>
+          {/* 012 "0/10을 스텝 인디케이터로": 좌측 미션 라벨, 우측 n/10 카운터, 완료 시
+              인디케이터 영역 전체가 축하 색상으로 바뀌고 완료 배지 표시. */}
+          {missionLabel && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: isMissionComplete ? "#b8860b" : "#1a6b5a" }}>
+                {missionLabel}
+              </span>
+              {isMissionComplete && (
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: "#f0a020", borderRadius: 999, padding: "2px 8px" }}>
+                  🎉 완료!
+                </span>
+              )}
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+            <span style={{ fontSize: 12, color: isMissionComplete ? "#b8860b" : "#6b7280", whiteSpace: "nowrap", fontWeight: 600 }}>
               {progressCurrent}/{progressTotal}
             </span>
-            <div style={{ flex: 1, height: 6, background: "#eef2f1", borderRadius: 999, overflow: "hidden" }}>
-              <div style={{ width: `${progressPercent}%`, height: "100%", background: "#1a6b5a", transition: "width .3s" }} />
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                gap: 4,
+                height: 6,
+                padding: isMissionComplete ? 3 : 0,
+                borderRadius: 999,
+                background: isMissionComplete ? "#fff3d6" : "transparent",
+                transition: "background-color 0.3s ease-in-out",
+              }}
+            >
+              {Array.from({ length: progressTotal }).map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    flex: 1,
+                    height: "100%",
+                    borderRadius: 999,
+                    background: isMissionComplete ? "#f0a020" : i < progressCurrent ? "#1a6b5a" : "#eef2f1",
+                    transition: "background-color 0.25s ease-in-out",
+                  }}
+                  className={!isMissionComplete && i === progressCurrent ? "animate-pulse" : ""}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -91,14 +179,25 @@ export function MissionConversationLayout({
             "하단 고정 영역: 현재 케이 말풍선/마스코트/상태배지" 요구사항과 불일치). overflow는
             auto가 아니라 hidden — 3개로 자른 이상 스크롤이 필요할 일이 없고, 011은 별도
             스크롤바 표시 자체를 금지한다. */}
-        {/* minHeight:0은 필수다 — flex:1 자식은 기본값이 min-height:auto라 콘텐츠가 조금만
-            많아도(실기기 Safari의 100dvh는 툴바 상태에 따라 데스크톱 시뮬레이션보다 실제로
-            더 작을 수 있음) 이 영역이 필요한 만큼 줄어들지 않고 전체 flex 컬럼(100dvh,
-            overflow:hidden)을 넘쳐서, 바깥 overflow:hidden이 하단 고정 영역 일부(마스코트)를
-            잘라내는 원인이 됐다(2026-07-25 대표님 실기기 확인 - "마스코트가 반쯤 잘림"). */}
-        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "20px 14px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {history.slice(-3).map((turn, index, arr) => {
+        {/* 중앙 히스토리 존 — 전체 히스토리를 렌더하되 최대 3개 높이 정도로 스크롤 적용 */}
+        <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleHistoryScroll}
+          className="mission-history-scroll-container"
+          style={{ height: "100%", maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", padding: "20px 14px", scrollBehavior: "smooth" }}
+        >
+          <style>{`
+            .mission-history-scroll-container::-webkit-scrollbar {
+              width: 4px;
+            }
+            .mission-history-scroll-container::-webkit-scrollbar-thumb {
+              background: rgba(156, 163, 175, 0.5);
+              border-radius: 4px;
+            }
+          `}</style>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: "auto" }}>
+            {history.map((turn, index, arr) => {
               // 역순 인덱스 (끝에서 멀수록 0에 가까움)
               const distanceFromEnd = arr.length - 1 - index;
               // 오래된 것일수록 투명도를 낮춤 (최대 1, 최소 0.4)
@@ -128,6 +227,32 @@ export function MissionConversationLayout({
               );
             })}
           </div>
+        </div>
+        {/* 012 "새 말풍선 추가 시 자동 최하단 스크롤, 사용자가 위로 스크롤 중이면 자동 스크롤을
+            멈추고 새 메시지 플로팅 버튼 노출" */}
+        {showNewMessageButton && (
+          <button
+            onClick={scrollToBottomNow}
+            style={{
+              position: "absolute",
+              bottom: 8,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "#1a6b5a",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "6px 14px",
+              borderRadius: 999,
+              border: "none",
+              boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+              cursor: "pointer",
+              zIndex: 5,
+            }}
+          >
+            ↓ 새 메시지
+          </button>
+        )}
         </div>
 
         {/* 하단 고정 영역 — 011 "현재 케이 말풍선 / 케이 마스코트 / 상태 배지 / 음성 ON/OFF /
@@ -191,11 +316,6 @@ export function MissionConversationLayout({
                       borderTop: "8px solid #fff",
                     }} />
                   </div>
-                  {mascotSlot && (
-                    <div style={{ marginTop: 8 }}>
-                      {mascotSlot}
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div style={{
@@ -215,6 +335,16 @@ export function MissionConversationLayout({
                   {activeTurn.text}
                 </div>
               )}
+            </div>
+          )}
+          {/* 012: 마스코트/상태배지/자동-수동 토글은 activeTurn(케이가 실제 말하는 순간)
+              여부와 무관하게 항상 노출한다 — 이전엔 K 말풍선이 뜬 순간에만 mascotSlot이
+              함께 렌더돼, 그 슬롯 안에 자동/수동 토글을 옮기면 아이 차례·침묵 구간엔 토글
+              자체가 사라져 모드를 바꿀 수 없는 문제가 있었다(대표님께 직접 확인해 "항상
+              표시"로 확정). */}
+          {mascotSlot && (
+            <div style={{ marginTop: activeTurn ? 8 : 0 }}>
+              {mascotSlot}
             </div>
           )}
           {/* 2026-07-25 대표님 실기기 확인 후 제거: 이 자리에 있던 자체 "듣고 있어요/파형"
