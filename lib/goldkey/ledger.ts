@@ -115,7 +115,7 @@ export async function getBalance(childId: string): Promise<number> {
 }
 
 export type ConsumeResult =
-  | { ok: true; consumed: number; balance: number }
+  | { ok: true; consumed: number; balance: number; headerId: string }
   | { ok: false; reason: "insufficient" | "invalid_count"; balance: number };
 
 /**
@@ -153,5 +153,5 @@ export async function consumeKeys(childId: string, count: number): Promise<Consu
     return { ok: false, reason: result.reason === "insufficient_balance" ? "insufficient" : "invalid_count", balance: result.balance };
   }
 
-  return { ok: true, consumed: result.consumed_count, balance: result.balance };
+  return { ok: true, consumed: result.consumed_count, balance: result.balance, headerId: result.header_id };
 }
