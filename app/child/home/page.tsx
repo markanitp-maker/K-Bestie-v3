@@ -201,6 +201,10 @@ export default function ChildHomePage() {
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+          {/* 태블릿/PC에서 카드가 화면 전체 폭으로 늘어나지 않도록 스마트폰과 동일한 콘텐츠 폭으로
+              제한한다. max-w-md(448px)는 실제 스마트폰 뷰포트보다 넓은 값이라 스마트폰에서는
+              항상 무효(디자인 변경 없음) — 태블릿/PC처럼 448px보다 넓은 화면에서만 작동한다. */}
+          <div className="max-w-md mx-auto w-full">
           <div className="flex flex-col items-center text-center mb-6">
             <Image
               src="/Images/mascot/mascot-standing.png"
@@ -264,9 +268,14 @@ export default function ChildHomePage() {
               </Link>
             )}
           </div>
+          </div>
         </div>
 
-        <RealChildNav active="홈" />
+        {/* 하단 네비게이션도 스마트폰과 동일한 폭을 유지 — RealChildNav 자체(다른 화면에서도
+            공유됨)는 건드리지 않고 이 화면에서만 로컬로 폭을 제한한다. */}
+        <div className="max-w-md mx-auto w-full">
+          <RealChildNav active="홈" />
+        </div>
       </div>
     </DemoFrame>
   );
