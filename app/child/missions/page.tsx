@@ -1809,6 +1809,12 @@ function MissionInner() {
   // 회색 비활성 버튼의 문구를 "케이가 말하는 중"과 "케이가 생각하는 중"으로 구분(같은 회색
   // 비활성 모양, 문구만 다름) — 아이가 실제로 케이 목소리가 나오는 순간인지 구분할 수 있게 한다.
   const isKSpeakingNow = isLiveMode ? turnPhaseUi === "k_speaking" : sttTts.isSpeaking;
+  // 버튼 클릭 가능 여부는 isThinkingTurn을 그대로 쓰면 안 된다 — Live 모드의 turnPhaseUi는
+  // 녹음 시작 즉시 "child_listening"(≠idle)으로 바뀌어 isThinkingTurn이 true가 되므로,
+  // isRecording으로 override하지 않으면 방금 녹음을 시작한 버튼이 그 순간 disabled로
+  // 잠겨 "눌러서 녹음을 끝낼 수 있어야 함" 요구사항을 만족하지 못한다(QA 중 실제 재현·발견).
+  // 녹음 중에는 항상 클릭 가능해야 한다 — 회색 비활성은 "K가 말하는 중/생각하는 중"에만.
+  const isButtonBlocked = isThinkingTurn && !isRecording;
 
   // 011 2차: "복구 불가능한 경우에만" 뜨는 재시도 UI — 케이 말풍선도, 상단 배너도 아니다.
   // 화면 중앙에 짧은 문구 + 다시 시도/미션 나가기 버튼만 보여준다(011 §"복구 불가능 오류 UI").
@@ -1952,9 +1958,9 @@ function MissionInner() {
                 ) : (
                   <button
                     onClick={handleCentralButtonClick}
-                    disabled={isThinkingTurn}
+                    disabled={isButtonBlocked}
                     className={`w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-all ${
-                      isThinkingTurn ? "cursor-not-allowed" : "cursor-pointer active:scale-95"
+                      isButtonBlocked ? "cursor-not-allowed" : "cursor-pointer active:scale-95"
                     }`}
                     style={{ background: isRecording ? "#e05a3f" : isThinkingTurn ? "#9ca3af" : "#e8845a" }}
                     aria-label={
@@ -2254,9 +2260,9 @@ function MissionInner() {
                 <button
                   ref={buttonRef}
                   onClick={handleCentralButtonClick}
-                  disabled={isThinkingTurn}
+                  disabled={isButtonBlocked}
                   className={`relative w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-all duration-75 ${
-                    isThinkingTurn ? "cursor-not-allowed" : "active:scale-95 cursor-pointer"
+                    isButtonBlocked ? "cursor-not-allowed" : "active:scale-95 cursor-pointer"
                   } ${
                     isRecording
                       ? "bg-gradient-to-br from-orange-400 to-orange-500"
