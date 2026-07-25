@@ -64,6 +64,33 @@ function canShareFile(file: File): boolean {
   }
 }
 
+/**
+ * 캡처 대상(`node`) 내부 모든 `<img>`가 실제로 화면에 그려질 준비(로드 완료 + 디코딩
+ * 완료)가 될 때까지 기다린다. `html-to-image`는 DOM을 그대로 직렬화하므로, 이미지
+ * 요소가 아직 로드 중이면(특히 결과 화면 진입 직후 캐릭터 이미지가 막 렌더링된 시점에
+ * 바로 저장 버튼을 누르는 경우) 빈 칸으로 캡처된다 — 실제로 재현된 버그. 개별 이미지가
+ * 실패해도(예: onError 폴백으로 이미 사라진 img) 전체 캡처를 막지 않고 로그만 남긴다.
+ */
+async function waitForImagesReady(node: HTMLElement): Promise<void> {
+  const images = Array.from(node.querySelectorAll("img"));
+
+  await Promise.all(
+    images.map(async (img) => {
+      if (!img.complete) {
+        await new Promise<void>((resolve) => {
+          img.addEventListener("load", () => resolve(), { once: true });
+          img.addEventListener("error", () => resolve(), { once: true });
+        });
+      }
+      try {
+        await img.decode();
+      } catch (decodeError) {
+        console.error("[useResultScreenshot] 캡처 대상 이미지 디코딩 실패:", img.src, decodeError);
+      }
+    }),
+  );
+}
+
 function downloadBlob(blob: Blob): void {
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -99,7 +126,13 @@ export function useResultScreenshot(): UseResultScreenshotResult {
     setErrorMessage(null);
 
     try {
-      const blob = await toBlob(node, { pixelRatio: 2, cacheBust: true });
+      await waitForImagesReady(node);
+
+      const blob = await toBlob(node, {
+        pixelRatio: 2,
+        cacheBust: true,
+        backgroundColor: "#ffffff",
+      });
       if (!blob) {
         throw new Error("html-to-image toBlob returned null");
       }

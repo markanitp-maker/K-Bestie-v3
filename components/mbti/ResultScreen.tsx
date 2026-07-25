@@ -96,6 +96,13 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
           <img
             src={profile.imagePath}
             alt={`${profile.animalName} 캐릭터`}
+            width={160}
+            height={160}
+            // 스크린샷 저장(useResultScreenshot)이 캡처 시점에 이 이미지가 아직 로드 중이면
+            // 빈 칸으로 캡처되는 문제가 있었다 — lazy loading(브라우저 기본값 "auto"가
+            // 상황에 따라 지연 로드로 동작할 수 있음)을 명시적으로 끄고, width/height를
+            // 고정해 로드 전후 레이아웃 이동(CLS)도 함께 막는다.
+            loading="eager"
             className="h-40 w-40 rounded-full object-cover"
             onError={() => setImageLoadFailed(true)}
           />

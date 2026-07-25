@@ -72,6 +72,9 @@ const QuestionScreen = ({
   showSaveErrorBanner = false,
 }: QuestionScreenProps): ReactElement => {
   const [answers, setAnswers] = useState<readonly MbtiAnswer[]>(initialAnswers);
+  // 이미지 로드 실패 상태 — 문항 ID별로 추적해야 문항이 바뀌었는데 이전 문항의 실패
+  // 상태가 남아 새 문항의 정상 이미지까지 플레이스홀더로 가려버리는 버그를 막는다.
+  const [failedImageQuestionId, setFailedImageQuestionId] = useState<string | null>(null);
   const progressVersionRef = useRef(initialProgressVersion);
   // 문항 단위 중복 탭 잠금 — 마지막으로 "처리 시작"한 문항 ID. 클릭 즉시(동기) 갱신되므로
   // 같은 렌더 프레임 안에서 같은 문항에 대한 두 번째 클릭은 이 값과 비교해 무시된다.
@@ -163,6 +166,29 @@ const QuestionScreen = ({
       </div>
 
       <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-5">
+        {/* 문항 상단 일러스트 — 200문항 중 20개만 실제 imagePath를 가진다(나머지는
+         * 처음부터 이미지 없이 정상 표시). 로드 실패 시에도 같은 크기의 플레이스홀더로
+         * 대체해 레이아웃이 깨지지 않는다. */}
+        {currentQuestion.imagePath && failedImageQuestionId !== currentQuestion.id ? (
+          <img
+            key={currentQuestion.id}
+            src={currentQuestion.imagePath}
+            alt=""
+            width={800}
+            height={450}
+            loading="eager"
+            className="aspect-[16/9] w-full max-w-sm rounded-3xl border border-amber-100 bg-amber-50/60 object-contain shadow-sm"
+            onError={() => setFailedImageQuestionId(currentQuestion.id)}
+          />
+        ) : (
+          <div
+            className="flex aspect-[16/9] w-full max-w-sm items-center justify-center rounded-3xl border border-amber-100 bg-amber-50/60 shadow-sm"
+            aria-hidden="true"
+          >
+            <span className="text-5xl">🐾</span>
+          </div>
+        )}
+
         <h1 className="text-lg font-bold leading-snug text-gray-900 sm:text-xl">
           {currentQuestion.prompt}
         </h1>

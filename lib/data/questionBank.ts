@@ -38,6 +38,11 @@ export interface Question {
   prompt: string;
   /** 두 선택지. 각각 해당 축의 서로 다른 극에 배점된다. */
   choices: readonly [QuestionChoice, QuestionChoice];
+  /** 문항 화면 상단에 표시할 일러스트 경로(`/public/Images/questions/`). 200문항 중
+   * 실제 일러스트가 있는 20개만 이 필드를 갖는다(원본 일러스트 20장 한정 제작분을
+   * 내용이 가장 잘 맞는 문항에 1:1로 매칭 — 나머지 180개는 이 필드가 없고, 화면은
+   * 이미지 없이/플레이스홀더로 정상 표시된다). */
+  imagePath?: string;
 }
 
 /**
@@ -64,6 +69,7 @@ const EXISTING_QUESTIONS: readonly Question[] = [
       { id: "A", text: "내가 먼저 말을 걸고 이것저것 물어본다", pole: "E" },
       { id: "B", text: "친구가 먼저 말을 걸어주면 그때 이야기한다", pole: "I" },
     ],
+    imagePath: "/Images/questions/q03_new_friend_first.png",
   },
   {
     id: "EI-03",
@@ -93,6 +99,7 @@ const EXISTING_QUESTIONS: readonly Question[] = [
       { id: "A", text: "오늘 실제로 있었던 일을 그대로 그린다", pole: "S" },
       { id: "B", text: "오늘 있었던 일에 상상을 더해서 그린다", pole: "N" },
     ],
+    imagePath: "/Images/questions/q15_science_fact_vs_idea.png",
   },
   {
     id: "SN-02",
@@ -131,6 +138,7 @@ const EXISTING_QUESTIONS: readonly Question[] = [
       { id: "A", text: '"속상하겠다, 내가 옆에 있어줄게"라고 말해준다', pole: "F" },
       { id: "B", text: '"다음엔 이 부분을 더 연습하면 될 것 같아"라고 방법을 알려준다', pole: "T" },
     ],
+    imagePath: "/Images/questions/q08_help_friend_feel_vs_solution.png",
   },
   {
     id: "TF-02",
@@ -169,6 +177,7 @@ const EXISTING_QUESTIONS: readonly Question[] = [
       { id: "A", text: "미리 시간표를 딱 정해놓아야 마음이 편하다", pole: "J" },
       { id: "B", text: "그때그때 하고 싶은 걸 정하는 게 더 좋다", pole: "P" },
     ],
+    imagePath: "/Images/questions/q19_make_schedule_vs_spontaneous.png",
   },
   {
     id: "JP-02",
@@ -348,6 +357,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "편한 친구 몇 명이랑 한곳에서 논다", pole: "I" },
       { id: "B", text: "여기저기 다니며 많은 친구랑 논다", pole: "E" },
     ],
+    imagePath: "/Images/questions/q13_party_center_vs_quiet_corner.png",
   },
   {
     id: "EI-21",
@@ -402,6 +412,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "바로 손들고 큰 소리로 말한다", pole: "E" },
       { id: "B", text: "머릿속으로 정리한 뒤 조심스레 말한다", pole: "I" },
     ],
+    imagePath: "/Images/questions/q04_group_talk_vs_listen.png",
   },
   {
     id: "EI-27",
@@ -429,6 +440,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "많은 사람 앞에 서는 게 신난다", pole: "E" },
       { id: "B", text: "무대보다 뒤에서 돕는 게 마음 편하다", pole: "I" },
     ],
+    imagePath: "/Images/questions/q20_show_talent_vs_prepare_first.png",
   },
   {
     id: "EI-30",
@@ -519,6 +531,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "먼저 온 아이들 사이에 끼어 논다", pole: "E" },
       { id: "B", text: "혼자 이것저것 타보며 논다", pole: "I" },
     ],
+    imagePath: "/Images/questions/q02_playground_join_vs_watch.png",
   },
   {
     id: "EI-40",
@@ -555,6 +568,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "대사 많은 주인공 역할을 하고 싶다", pole: "E" },
       { id: "B", text: "무대 뒤 소품이나 음악을 맡고 싶다", pole: "I" },
     ],
+    imagePath: "/Images/questions/q16_team_lead_vs_support.png",
   },
   {
     id: "EI-44",
@@ -618,6 +632,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "친구한테 연락해서 같이 놀 거리를 찾는다", pole: "E" },
       { id: "B", text: "혼자 책 읽거나 그림 그리며 논다", pole: "I" },
     ],
+    imagePath: "/Images/questions/q17_free_time_many_friends_vs_alone_hobby.png",
   },
 
   // ── S/N 축 신규 46문항 ──────────────────────────────────────────
@@ -629,6 +644,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "떠오르는 대로 새로운 걸 만든다", pole: "N" },
       { id: "B", text: "설명서를 보고 그대로 만든다", pole: "S" },
     ],
+    imagePath: "/Images/questions/q01_blocks_plan_vs_change.png",
   },
   {
     id: "SN-06",
@@ -710,6 +726,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "사실과 정보를 정확히 담는다", pole: "S" },
       { id: "B", text: "재미난 상상과 아이디어를 담는다", pole: "N" },
     ],
+    imagePath: "/Images/questions/q09_school_task_detail_vs_big_picture.png",
   },
   {
     id: "SN-15",
@@ -746,6 +763,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "눈앞에 있는 걸 자세히 보고 그린다", pole: "S" },
       { id: "B", text: "머릿속 상상을 자유롭게 그린다", pole: "N" },
     ],
+    imagePath: "/Images/questions/q05_draw_follow_vs_improvise.png",
   },
   {
     id: "SN-19",
@@ -755,6 +773,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "현실에 없는 신비한 세계를 만든다", pole: "N" },
       { id: "B", text: "내가 겪은 일을 바탕으로 만든다", pole: "S" },
     ],
+    imagePath: "/Images/questions/q10_story_real_vs_imagine.png",
   },
   {
     id: "SN-20",
@@ -827,6 +846,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "테두리부터 순서대로 맞춰간다", pole: "S" },
       { id: "B", text: "완성 그림을 떠올리며 여기저기 맞춰본다", pole: "N" },
     ],
+    imagePath: "/Images/questions/q07_puzzle_fast_try_vs_slow_check.png",
   },
   {
     id: "SN-28",
@@ -1108,6 +1128,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "규칙은 규칙이니 지켜야 한다고 말한다", pole: "T" },
       { id: "B", text: "사정이 있었는지 먼저 들어본다", pole: "F" },
     ],
+    imagePath: "/Images/questions/q18_problem_rule_vs_empathy.png",
   },
   {
     id: "TF-13",
@@ -1270,6 +1291,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "똑같이 반으로 나누자고 한다", pole: "T" },
       { id: "B", text: "먹고 싶어 하는 친구에게 양보한다", pole: "F" },
     ],
+    imagePath: "/Images/questions/q14_gift_choose_practical_vs_heart.png",
   },
   {
     id: "TF-31",
@@ -1497,6 +1519,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "목록을 만들어 하나씩 챙긴다", pole: "J" },
       { id: "B", text: "필요한 것만 대충 챙겨 떠난다", pole: "P" },
     ],
+    imagePath: "/Images/questions/q06_trip_plan_vs_go_with_flow.png",
   },
   {
     id: "JP-10",
@@ -1560,6 +1583,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "일단 시작하고 규칙은 하면서 안다", pole: "P" },
       { id: "B", text: "규칙을 다 익히고 시작한다", pole: "J" },
     ],
+    imagePath: "/Images/questions/q12_game_rule_exact_vs_flexible.png",
   },
   {
     id: "JP-17",
@@ -1839,6 +1863,7 @@ const NEW_QUESTIONS: readonly Question[] = [
       { id: "A", text: "쓰다가 나중에 한 번에 치운다", pole: "P" },
       { id: "B", text: "바로 깔끔하게 정리한다", pole: "J" },
     ],
+    imagePath: "/Images/questions/q11_room_tidy_now_vs_later.png",
   },
   {
     id: "JP-48",
