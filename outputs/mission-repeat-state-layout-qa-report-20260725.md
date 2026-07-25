@@ -71,6 +71,80 @@
   스크립트에서 확인 못함 — NOT TESTED, 스크린샷상으로는 겹침 정황 없음)
 - 실기기(iPhone Safari/PWA) 최종 확인 — **대표님 확인 필요(여전히 남음)**
 
+---
+
+## 19. 대표님 실기기 추가 이슈 — "케이가 잘 못 들었어" 문구 제거 (2026-07-25, 3차)
+
+### 증상 및 검색 결과
+2차 배포 후 대표님이 실기기에서 "케이가 잘 못 들었어. 다시 한번 말해줄래?" 노출을
+추가로 발견. `app/child/missions/page.tsx` 전체에서 STT 실패/무음/timeout/fallback
+경로를 전수 검색한 결과 **27곳의 `resetToIdle("...")` 호출 + `onKTurnTimeout`(케이
+말풍선 저장) + `onTranscriptRejected`(Live, 케이 말풍선 저장) + `onRecoveryNeeded`(배너)**
+에서 유사 문구가 사용자 화면(상단 배너 2곳 또는 케이 대화 말풍선)에 노출되고
+있었음을 확인. `lib/freechat/reactionEngine.ts`와 `components/TestMode{AB,CD,E}Runner.tsx`
+에도 유사 문구가 있으나, 011의 범위(미션 화면)와 CLAUDE.md의 "A·B·C·E 중단 트랙
+수정 금지"에 따라 **의도적으로 건드리지 않았다**(발견만 기록).
+
+### 수정 내용
+- 새 공용 정책 도입: `recoveryAttemptedRef`(턴마다 리셋) + `attemptSilentRecoveryOrShowRetry()`
+  — 처음 실패는 문구·배너 없이 조용히 재시도(마이크 재오픈 등), 같은 턴에서 반복되면
+  그때만 재시도 버튼을 띄운다.
+- `resetToIdle`의 시그니처를 `fallbackMessage?: string` → `showRetryButtonNow?: boolean`로
+  변경 — 문자열 메시지를 완전히 제거하고 배너 표시 로직(`setInputErrorNotice`)과 Live
+  말풍선 폴백(`askQuestionRef` 경유 speakAsK) 둘 다 삭제.
+- 기존 `recoveryNotice`/`inputErrorNotice` state와 그 배너 렌더링 2곳(비Live 대화 영역,
+  Live 헤더 영역)을 전부 제거.
+- 새 `showRetryButton` state + 화면 중앙 카드 오버레이(`retryOverlay`) 추가 — 오류
+  문구 없이 "다시 시도"/"미션 나가기" 버튼만 표시, 상단 배너도 케이 말풍선도 아니다.
+- `onEmptyAudio`/`onSttFailed`(기존에 이미 1회 조용한 재시도 로직 보유)의 2번째 실패
+  시점은 바로 `resetToIdle(true)`로 연결(중복 재시도 방지 — 이미 한 번 시도했으므로).
+- `onKTurnTimeout`: 케이 말풍선(appendTurn) 저장을 완전히 제거, `attemptSilentRecoveryOrShowRetry()`로 대체.
+- `onTranscriptRejected`(Live, GCP STT 외국문자 오판): `speakAsK` 말풍선 저장 제거,
+  동일한 조용한 재시도→버튼 패턴으로 대체.
+- `onRecoveryNeeded`(Live 재연결 시도): 텍스트 자체를 없애 "재연결 성공 시 사용자
+  메시지 없이 대화 계속"을 그대로 만족.
+- Live 전용 "시간이 좀 걸리네. 다시 말해줄래?" 필러(7곳)도 "다시 말해줄래" 패턴이라
+  아이에게 반복을 요구하지 않는 "음... 잠깐만 기다려줄래?"로 교체.
+
+### 검증 결과 (라이브, 커밋 0b2d257 배포 후)
+QA테스트(5학년) 계정(tier 1로 일시 전환, 검증 후 3으로 원복) + 실제 배포본
+(`https://k-bestie-v3-dev.vercel.app`)에서 확인:
+
+| 시나리오 | 기대 결과 | 실제 결과 | 판정 |
+|---|---|---|---|
+| 정상 대화 진입 | 금지 문구 0건 | 전수 검색 결과 0건 | **PASS** |
+| 무음 1회차(가짜 무음 오디오로 마이크 녹음) | 문구·버튼 없이 조용히 재시도 | 금지 문구 0건, 재시도 버튼 미노출 확인 | **PASS** |
+| 무음 2회 연속 | 그제서야 재시도 버튼만 노출(문구 없음) | 금지 문구 0건, 재시도 버튼 노출 확인 | **PASS** |
+| 재시도 버튼 클릭 | 버튼이 사라지고 정상 재개 | 클릭 후 버튼 사라짐 확인 | **PASS** |
+| 최종 화면 상태 | 금지 문구 0건 | 0건 확인 | **PASS** |
+
+검색한 금지 문구(모두 0건 확인): "케이가 잘 못 들었어", "다시 한번 말해줄래",
+"다시 말해줄래", "서버 연결이 끊겼어요", "연결이 불안정해요", "통신이 고르지
+않아요", "마이크 상태가 이상해요", "서버 응답이 늦어지고 있어요".
+
+**참고(문제 아님)**: 최종 화면 텍스트에 "연결 불안정"이라는 문구가 있었는데, 이는
+이번에 손댄 배너/말풍선이 아니라 기존 `ConnectionQualityIndicator`(연결 품질 막대
++ 라벨, 011 이전부터 있던 별개 기능)가 2회 연속 실제 STT 실패를 정확히 반영해
+표시한 것이다 — 항상 떠 있는 작은 상태 아이콘이지 모달/배너/말풍선이 아니고, 이번
+경우엔 실제로 파이프라인이 2번 실패한 게 맞아 오탐도 아니다. 대표님이 지목한
+"문구 노출" 범주와는 다른 기능이라 판단해 손대지 않았다.
+
+### 확인되지 않은 사항
+- **timeout/API 실패 경로**(15초/8초/10초 워치독, `/api/mission/answer` 등)는 코드
+  수정은 했지만 실제로 네트워크를 인위적으로 지연시켜 재현하지는 못했다(Playwright
+  route 가로채기를 준비했으나 이번 세션에서 시간 관계상 무음 경로 검증에 집중했다).
+  로직은 무음 경로와 완전히 같은 공용 함수(`attemptSilentRecoveryOrShowRetry`)를
+  쓰므로 동작은 같을 것으로 판단하나, 실측 확인은 남아 있다 — NOT TESTED.
+- `lib/freechat/reactionEngine.ts`/`components/TestMode{AB,CD,E}Runner.tsx`의 유사
+  문구는 011 범위 밖(자유대화, A/B/C/E 트랙)이라 확인만 하고 손대지 않았다.
+- 실기기(iPhone Safari/PWA) 최종 확인은 여전히 대표님 몫으로 남아 있다.
+
+### 최종 완료조건 확인 (19번)
+- "케이가 잘 못 들었어" 및 유사 표현 사용자 화면 노출 0건 — **PASS**(라이브 확인)
+- 1회 내부 재시도 후 복구되면 무음(안내 없음) — **PASS**(무음 1회차로 확인)
+- 복구 불가능 시에만 짧은 재시도 버튼(케이 말풍선/상단 배너 아님) — **PASS**(무음 2회차로 확인)
+- timeout/API 실패 경로의 동일 동작 실측 — **NOT TESTED**(코드는 동일 함수 재사용, 별도 라이브 확인 남음)
+
 ## 사용자 행동 기반 E2E
 
 | 시나리오 | 기대 결과 | 실제 결과 | 판정 | 증거 |
