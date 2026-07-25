@@ -115,8 +115,10 @@ function MissionInner() {
   const [requiredCount, setRequiredCount] = useState(5);
   const [completed, setCompleted] = useState(false);
   const [engineVersion, setEngineVersion] = useState("v1");
-  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
-  const [inputErrorNotice, setInputErrorNotice] = useState<string | null>(null);
+  // 011 2차(2026-07-25): "케이가 잘 못 들었어" 등 오류/끊김 계열 문구를 케이 말풍선이나
+  // 상단 배너로 노출하던 것 전부 제거 — 일시적 인식 실패/timeout/fallback은 조용히 1회
+  // 재시도하고, 그래도 안 되면 이 재시도 버튼만 표시한다(문구 없음, 배너 아님, 말풍선 아님).
+  const [showRetryButton, setShowRetryButton] = useState(false);
   // active → completing → completed (자세한 전이 규칙은 lib/mission/missionCompletionFlow.ts 참고).
   // completing부터 이미 100% 취급(마이크·입력 비활성화) — completed와의 차이는 "종료 발화가
   // 아직 재생 중인지"뿐이다.
@@ -213,8 +215,12 @@ function MissionInner() {
   // 사용자에게 안내하고 상태를 정리한다. 실제 답변이 성공하면(onSttResult success) 0으로
   // 리셋된다.
   const emptySttStreakRef = useRef(0);
+  // 011 2차: timeout/API 실패/응답 오류 등 "케이가 잘 못 들었어" 계열 상황 전반에 쓰는
+  // 공용 1회 재시도 플래그. 새 턴이 시작되거나(답변 제출 시작) 실제로 성공(STT 성공 등)하면
+  // false로 리셋된다 — 매 턴/시도마다 "조용한 재시도 1회"를 새로 허용한다.
+  const recoveryAttemptedRef = useRef(false);
 
-  const resetToIdle = useCallback((fallbackMessage?: string) => {
+  const resetToIdle = useCallback((showRetryButtonNow?: boolean) => {
     answerEpochRef.current += 1;
     if (manualTimeoutRef.current) { clearTimeout(manualTimeoutRef.current); manualTimeoutRef.current = null; }
     if (manualAbortControllerRef.current) { manualAbortControllerRef.current.abort(); manualAbortControllerRef.current = null; }
@@ -249,16 +255,23 @@ function MissionInner() {
     if (!isLiveModeRef.current && isAutoRef.current && missionStateRef.current === "active") {
       sttSetMicEnabledRef.current?.(true);
     }
-    
-    if (fallbackMessage) {
-      if (isLiveModeRef.current) {
-        askQuestionRef.current?.(currentIndexRef.current, fallbackMessage);
-      } else {
-        setInputErrorNotice(fallbackMessage);
-        setTimeout(() => setInputErrorNotice(null), 3000);
-      }
-    }
+
+    // 011 2차: 문구를 케이 말풍선(askQuestion 경유 speakAsK)이나 배너로 노출하지 않는다.
+    // 복구 불가능한 경우에만 재시도 버튼을 띄운다 — 텍스트도, 채팅 기록 저장도 없다.
+    setShowRetryButton(!!showRetryButtonNow);
   }, [setTurnPhase]);
+
+  // 011 2차: 일시적 인식 실패/timeout/fallback 공용 처리 — 이 턴에서 아직 조용한 재시도를
+  // 안 써봤으면(recoveryAttemptedRef=false) 문구·배너 없이 한 번 더 기회를 준다(마이크를
+  // 다시 열고 조용히 대기). 이미 한 번 써봤는데 또 실패했으면 그때만 재시도 버튼을 띄운다.
+  const attemptSilentRecoveryOrShowRetry = useCallback(() => {
+    if (!recoveryAttemptedRef.current) {
+      recoveryAttemptedRef.current = true;
+      resetToIdle(false);
+    } else {
+      resetToIdle(true);
+    }
+  }, [resetToIdle]);
 
   const isAutoRef = useRef(true);
   // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
@@ -437,6 +450,9 @@ function MissionInner() {
 
     answerInFlightRef.current = true;
     setIsProcessingAnswer(true);
+    // 011 2차: 새 턴을 시작하니 이전 턴에서 이미 조용한 재시도를 썼더라도 이번 턴은
+    // 다시 1회 재시도를 허용한다(문제가 매번 새로 판단되도록).
+    recoveryAttemptedRef.current = false;
     console.error(`[Timing] (b) 서버 전송 (answer API 호출) - ${Date.now()}`);
     // 답변 처리 시작 — STT/TTS 자동 모드는 마이크가 계속 켜져 있으므로(케이 TTS 재생 중에만
     // speakingRef가 막아줌), classifyAnswer 대기 중(최대 10~32초) 아이가 다시 말하면 RMS
@@ -448,7 +464,7 @@ function MissionInner() {
       const capturedTurnId = childTurnId; // from above: const childTurnId = `${sid}:${question.id}:${++childTurnSeqRef.current}`;
       apiTimeoutRef.current = setTimeout(() => {
         if (answerEpochRef.current !== currentEpoch) return;
-        resetToIdle("서버 응답이 늦어지고 있어요. 다시 말해줄래?");
+        attemptSilentRecoveryOrShowRetry();
       }, 15000);
     } else {
       manualAbortControllerRef.current = new AbortController();
@@ -465,9 +481,9 @@ function MissionInner() {
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
         if (liveRef.current?.status === "live") {
           if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
           if (!success) {
-            resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
+            resetToIdle(true);
           }
         } else {
           // 011 "끊김 안내 문구 제거": 이 else 분기는 liveRef.current?.status !== "live"이면
@@ -475,7 +491,7 @@ function MissionInner() {
           // 즉 진짜 연결 장애 여부와 무관하게 "서버 연결이 끊겼어요" 문구가 매번 나오고
           // 있었다(원인을 네트워크로 단정하는 문구이기도 함). 네트워크를 단정하지 않는
           // 중립적 문구로 교체한다(아래 6곳 전부 동일).
-          resetToIdle("다시 한번 말해줄래?");
+          attemptSilentRecoveryOrShowRetry();
         }
       }, 8000);
     }
@@ -542,15 +558,15 @@ function MissionInner() {
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
               if (!success) {
-                resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
+                resetToIdle(true);
               }
             } else {
-              resetToIdle("다시 한번 말해줄래?");
+              attemptSilentRecoveryOrShowRetry();
             }
           } else {
-            resetToIdle("서버 연결이 불안정해요. 다시 말해줄래?");
+            attemptSilentRecoveryOrShowRetry();
           }
           return;
         }
@@ -653,13 +669,13 @@ function MissionInner() {
                 if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
                 const success = liveRef.current.speakAsK("다음 질문을 준비하지 못했어요. 나중에 다시 해보자.");
                 if (!success) {
-                  resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
+                  resetToIdle(true);
                 }
               } else {
-                resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
+                resetToIdle(true);
               }
             } else {
-              resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
+              resetToIdle(true);
             }
             return;
           }
@@ -674,15 +690,15 @@ function MissionInner() {
             if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
               if (!success) {
-                resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
+                resetToIdle(true);
               }
             } else {
-              resetToIdle("다시 한번 말해줄래?");
+              attemptSilentRecoveryOrShowRetry();
             }
           } else {
-            resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
+            resetToIdle(true);
           }
           return;
         }
@@ -696,7 +712,7 @@ function MissionInner() {
           apiAbortControllerRef.current = new AbortController();
           apiTimeoutRef.current = setTimeout(() => {
             if (answerEpochRef.current !== currentEpoch) return;
-            resetToIdle("서버 응답이 늦어지고 있어요. 다시 말해줄래?");
+            attemptSilentRecoveryOrShowRetry();
           }, 15000);
         }
 
@@ -713,15 +729,15 @@ function MissionInner() {
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
               if (!success) {
-                resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
+                resetToIdle(true);
               }
             } else {
-              resetToIdle("다시 한번 말해줄래?");
+              attemptSilentRecoveryOrShowRetry();
             }
           } else {
-            resetToIdle("다음 질문을 준비하지 못했어요. 잠시 후 다시 해볼게요.");
+            attemptSilentRecoveryOrShowRetry();
           }
           return;
         }
@@ -762,12 +778,12 @@ function MissionInner() {
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
               if (liveRef.current?.status === "live") {
                 if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
                 if (!success) {
-                  resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
+                  resetToIdle(true);
                 }
               } else {
-                resetToIdle("다시 한번 말해줄래?");
+                attemptSilentRecoveryOrShowRetry();
               }
               return;
             }
@@ -783,12 +799,12 @@ function MissionInner() {
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
             if (liveRef.current?.status === "live") {
               if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
               if (!success) {
-                resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
+                resetToIdle(true);
               }
             } else {
-              resetToIdle("다시 한번 말해줄래?");
+              attemptSilentRecoveryOrShowRetry();
             }
             return;
           }
@@ -814,12 +830,12 @@ function MissionInner() {
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
           if (liveRef.current?.status === "live") {
             if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-              const success = liveRef.current.speakAsK("시간이 좀 걸리네. 다시 말해줄래?");
+              const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
             if (!success) {
-              resetToIdle("마이크 상태가 이상해요. 다시 말해줄래?");
+              resetToIdle(true);
             }
           } else {
-            resetToIdle("다시 한번 말해줄래?");
+            attemptSilentRecoveryOrShowRetry();
           }
         }
       } finally {
@@ -875,7 +891,7 @@ function MissionInner() {
         }
         return;
       }
-      resetToIdle("케이가 잘 못 들었어. 다시 한번 말해줄래?");
+      resetToIdle(true);
     },
     onSttFailed: (reason) => {
       if (isLiveModeRef.current) return;
@@ -888,7 +904,7 @@ function MissionInner() {
         }
         return;
       }
-      resetToIdle("케이가 잘 못 들었어. 다시 한번 말해줄래?");
+      resetToIdle(true);
     },
     onSttResult: (success, latencyMs) => {
       if (success) emptySttStreakRef.current = 0;
@@ -913,8 +929,9 @@ function MissionInner() {
       setTurnPhase("recovering");
       if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
       if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
-      // 011 "끊김 안내 문구 제거": "연결이 불안정" 계열 문구 제거, 재시도 중임만 알린다.
-      setRecoveryNotice("다시 이어갈게");
+      // 011 2차: "재연결 성공 시 사용자 메시지 없이 대화 계속" — 텍스트 배너를 아예 없앤다.
+      // 내부적으로만 재연결을 시도하고, 실패가 반복되면(handleTurnComplete/onKTurnTimeout
+      // 등 다른 경로에서) attemptSilentRecoveryOrShowRetry가 재시도 버튼을 띄운다.
     },
     displaySequenceCounterRef,
     onServerTurnComplete: () => {
@@ -943,15 +960,11 @@ function MissionInner() {
     // K 턴의 첫 출력이 8초 동안 없어서 generation이 취소되었을 때 호출
     onKTurnTimeout: () => {
       if (missionStateRef.current === "active" && turnPhaseRef.current !== "idle") {
-        setTurnPhase("child_listening");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
-        // 011 "끊김 안내 문구 제거" + "오류 메시지가 케이 대화 말풍선으로 저장되지 않도록
-        // 처리": "통신이 고르지 않아요"(네트워크 단정) 문구를 케이 대화 말풍선(appendTurn,
-        // 채팅 기록에 영구 저장됨)으로 남기던 것을 제거하고, 다른 타임아웃 경로와 동일하게
-        // 일시적 배너(inputErrorNotice)로 대체한다.
-        setInputErrorNotice("다시 한번 말해줄래?");
-        setTimeout(() => setInputErrorNotice(null), 3000);
+        // 011 2차: "통신이 고르지 않아요"를 케이 말풍선(appendTurn)이나 배너로 남기던 것을
+        // 완전히 제거 — 공용 1회 조용한 재시도 후에도 반복되면 그때만 재시도 버튼을 띄운다.
+        attemptSilentRecoveryOrShowRetry();
       }
     },
     onAudioQueueDrained: () => {
@@ -980,13 +993,21 @@ function MissionInner() {
     // 1회만 재생한다. askedIndex/currentIndex를 건드리지 않으므로 같은 질문에 대한
     // awaiting_child 상태로 복귀한다(onAudioQueueDrained가 재생 종료 시 되돌림).
     onTranscriptRejected: () => {
-      if (turnPhaseRef.current === "k_speaking") return; // 이미 재질문 재생 중 — 중복 방지
-      setTurnPhase("k_speaking");
-      if (live.setKSpeechAllowed) live.setKSpeechAllowed(true);
-      // 011 "끊김 안내 문구 제거": 이 콜백의 실제 원인은 연결 장애가 아니라 STT 전사가
-      // 외국 문자로 판정돼 채택 불가한 경우다(위 주석 참고) — "끊겼나봐"는 원인을 네트워크로
-      // 잘못 단정하는 문구라 실제 원인(못 들음)에 맞는 문구로 교체한다.
-      live.speakAsK("케이가 잘 못 들었어. 다시 한번 말해줄래?");
+      if (turnPhaseRef.current === "k_speaking") return; // 이미 처리 중 — 중복 방지
+      // 011 2차: "케이가 잘 못 들었어" 등 문구를 케이 말풍선(speakAsK, 채팅 기록에 영구
+      // 저장됨)으로 노출하던 것을 완전히 제거한다. 이 콜백의 실제 원인은 연결 장애가
+      // 아니라 STT 전사가 외국 문자로 판정돼 채택 불가한 경우다 — 첫 실패는 아무 말 없이
+      // 조용히 다시 듣기 상태로 돌아가 아이가 자연스럽게 다시 말할 기회를 준다. 같은
+      // 턴에서 반복되면(공용 재시도 플래그) 그때만 재시도 버튼을 띄운다.
+      if (!recoveryAttemptedRef.current) {
+        recoveryAttemptedRef.current = true;
+        setTurnPhase("child_listening");
+        if (live.setKSpeechAllowed) live.setKSpeechAllowed(false);
+      } else {
+        setTurnPhase("child_listening");
+        if (live.setKSpeechAllowed) live.setKSpeechAllowed(false);
+        setShowRetryButton(true);
+      }
     },
     onAudioLevelChange: (level) => {
       if (!buttonRef.current) return;
@@ -1114,7 +1135,6 @@ function MissionInner() {
   useEffect(() => {
     if (voice.status === "live" && turnPhaseRef.current === "recovering") {
       setTurnPhase("child_listening");
-      setRecoveryNotice(null);
     }
   }, [voice.status, setTurnPhase]);
 
@@ -1246,7 +1266,7 @@ function MissionInner() {
           const capturedId = activeChildTurnIdRef.current;
           sttTimeoutRef.current = setTimeout(() => {
             if (activeChildTurnIdRef.current !== capturedId) return;
-            resetToIdle("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+            attemptSilentRecoveryOrShowRetry();
           }, 10000);
           // child_listening 유지 (turnComplete에서 대기)
           sttTts.manualFinalize(sttAbortControllerRef.current.signal);
@@ -1467,7 +1487,7 @@ function MissionInner() {
           const capturedId = activeChildTurnIdRef.current;
           sttTimeoutRef.current = setTimeout(() => {
             if (activeChildTurnIdRef.current !== capturedId) return;
-            resetToIdle("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+            attemptSilentRecoveryOrShowRetry();
           }, 10000);
           // child_listening 유지 (turnComplete에서 대기)
           sttTts.manualFinalize(sttAbortControllerRef.current.signal);
@@ -1554,7 +1574,7 @@ function MissionInner() {
           const capturedId = activeChildTurnIdRef.current;
           sttTimeoutRef.current = setTimeout(() => {
             if (activeChildTurnIdRef.current !== capturedId) return;
-            resetToIdle("서버 연결이 불안정해요. 다시 한 번 말해줄래?");
+            attemptSilentRecoveryOrShowRetry();
           }, 10000);
           // child_listening 유지 (turnComplete에서 대기)
           sttTts.manualFinalize(sttAbortControllerRef.current.signal);
@@ -1783,6 +1803,41 @@ function MissionInner() {
   // 이 값이 예전엔 Live 전용으로만 게이팅돼 있어 실제 Dev 환경(STT/TTS)에서는 항상 false였다).
   const isThinkingTurn = !isAuto && (isLiveMode ? turnPhaseUi !== "idle" : isProcessingAnswer);
 
+  // 011 2차: "복구 불가능한 경우에만" 뜨는 재시도 UI — 케이 말풍선도, 상단 배너도 아니다.
+  // 화면 중앙에 짧은 문구 + 다시 시도/미션 나가기 버튼만 보여준다(011 §"복구 불가능 오류 UI").
+  const retryOverlay = showRetryButton && (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/10 px-6">
+      <div className="bg-white rounded-2xl shadow-lg p-5 flex flex-col items-center gap-3 max-w-xs">
+        <p className="text-sm font-bold text-gray-700 text-center">다시 한번 해볼까?</p>
+        <div className="flex gap-2 w-full">
+          <button
+            onClick={() => {
+              recoveryAttemptedRef.current = false;
+              setShowRetryButton(false);
+              if (!isLiveMode && isAuto && missionStateRef.current === "active") {
+                sttSetMicEnabledRef.current?.(true);
+              }
+            }}
+            className="flex-1 py-2 rounded-xl text-sm font-bold text-white cursor-pointer"
+            style={{ background: "#1a6b5a" }}
+          >
+            다시 시도
+          </button>
+          <button
+            onClick={() => {
+              voice.stopSession();
+              setSessionActive(false);
+              router.push("/child/home");
+            }}
+            className="flex-1 py-2 rounded-xl text-sm font-bold text-gray-600 bg-gray-100 cursor-pointer"
+          >
+            미션 나가기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (!isLiveMode) {
     const visibleTurns = voice.transcript.filter((t) => t.role !== "child");
     const activeVisibleTurn = visibleTurns.length > 0 ? visibleTurns[visibleTurns.length - 1] : null;
@@ -1812,13 +1867,7 @@ function MissionInner() {
           </div>
         )}
 
-        {(recoveryNotice || inputErrorNotice) && (
-          <div className="absolute top-[64px] left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
-            <div className="text-center text-xs font-bold text-orange-600 bg-orange-50 py-1 px-3 rounded-full border border-orange-200 animate-in fade-in">
-              {recoveryNotice || inputErrorNotice}
-            </div>
-          </div>
-        )}
+        {retryOverlay}
 
         <MissionConversationLayout
           onBack={() => {
@@ -1993,7 +2042,7 @@ function MissionInner() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
+    <div className="h-full relative flex flex-col overflow-hidden" style={{ background: "#fafaf8" }}>
       {wakeLockWarning && (
         <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
@@ -2001,6 +2050,7 @@ function MissionInner() {
           </div>
         </div>
       )}
+      {retryOverlay}
       {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
       <div className="shrink-0 sticky top-0 z-10" style={{ background: "#fafaf8" }}>
         <div className="relative flex items-center justify-center px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1">
@@ -2058,16 +2108,6 @@ function MissionInner() {
               }}
             />
           </div>
-          {recoveryNotice && (
-            <div className="mt-2 text-center text-xs font-bold text-orange-600 bg-orange-50 py-1 rounded-full border border-orange-200">
-              {recoveryNotice}
-            </div>
-          )}
-          {inputErrorNotice && (
-            <div className="mt-2 text-center text-xs font-bold text-orange-600 bg-orange-50 py-1 rounded-full border border-orange-200 animate-in fade-in">
-              {inputErrorNotice}
-            </div>
-          )}
         </div>
 
         <div className="flex justify-center items-center gap-4 mb-2 max-w-sm mx-auto">
