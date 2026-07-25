@@ -90,6 +90,18 @@ export async function runContextCorrectionPipeline(targetDate: string, specificS
       if (rawInsertErr) throw new Error(`Raw 데이터 삽입 실패: ${rawInsertErr.message}`);
       result.collected += insertedRaw.length;
 
+      // "케이 직전 질문"/"이전 1~3턴"은 이번 실행에서 새로 넣은 것뿐 아니라 같은 세션이 이전
+      // 수집 배치(예: 18:00분)에서 이미 저장해 둔 턴까지 포함해야 한다 - insertedRaw만 보면
+      // 하루 두 번째 배치(23:59:59)에서 첫 배치가 저장한 이전 턴을 전혀 못 보고 컨텍스트가
+      // 끊긴다. 세션 전체 raw 이력을 turn_order 순으로 다시 조회해 사용한다.
+      const { data: allSessionRaw, error: allRawErr } = await db
+        .from("raw_daily_conversations")
+        .select("id, speaker, raw_text")
+        .eq("session_id", session.id)
+        .order("turn_order", { ascending: true });
+      if (allRawErr) throw new Error(`세션 전체 raw 조회 실패: ${allRawErr.message}`);
+      const sessionRawHistory = allSessionRaw ?? insertedRaw;
+
       // 아이별 확정 정보(이름/친구/관심사/자주 쓰는 표현) — 보정 프롬프트의 컨텍스트로 사용.
       // 이미 mission 리포트/memoryRecallResponder가 쓰는 것과 동일한 조회 패턴(long_term 위주).
       let childMemoryContext = "없음";
@@ -110,8 +122,8 @@ export async function runContextCorrectionPipeline(targetDate: string, specificS
 
       const childRaws = insertedRaw.filter((r: any) => r.speaker === "child");
       for (const raw of childRaws) {
-        const rawIdx = insertedRaw.findIndex((r: any) => r.id === raw.id);
-        const previousTurns = insertedRaw.slice(Math.max(0, rawIdx - 3), rawIdx);
+        const rawIdx = sessionRawHistory.findIndex((r: any) => r.id === raw.id);
+        const previousTurns = sessionRawHistory.slice(Math.max(0, rawIdx - 3), rawIdx);
         let kLastQuestion = "없음";
         if (previousTurns.length > 0) {
           const lastTurn = previousTurns[previousTurns.length - 1];

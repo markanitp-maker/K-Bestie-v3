@@ -10,7 +10,10 @@ SELECT cron.schedule(
   $$
   select net.http_post(
     url     := 'https://k-bestie-v3-dev.vercel.app/api/batch/collection',
-    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer 29b2722d6b3c793414c248f1db75b5266273422fec5db1700d66a773c9b06583'),
+    -- 실제 적용 시 <BATCH_SECRET>을 기존 kbestie-dev-daily-batch/memory-batch 잡과 동일한
+    -- 값으로 치환해서 실행한다(git에 평문 시크릿을 남기지 않기 위한 플레이스홀더 — 기존
+    -- 20260725500000_batch_schedule_kst_adjust.sql draft와 동일 관례).
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer <BATCH_SECRET>'),
     body    := jsonb_build_object()
   );
   $$
@@ -22,7 +25,10 @@ SELECT cron.schedule(
   $$
   select net.http_post(
     url     := 'https://k-bestie-v3-dev.vercel.app/api/batch/collection',
-    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer 29b2722d6b3c793414c248f1db75b5266273422fec5db1700d66a773c9b06583'),
+    -- 실제 적용 시 <BATCH_SECRET>을 기존 kbestie-dev-daily-batch/memory-batch 잡과 동일한
+    -- 값으로 치환해서 실행한다(git에 평문 시크릿을 남기지 않기 위한 플레이스홀더 — 기존
+    -- 20260725500000_batch_schedule_kst_adjust.sql draft와 동일 관례).
+    headers := jsonb_build_object('Content-Type','application/json','Authorization','Bearer <BATCH_SECRET>'),
     body    := jsonb_build_object()
   );
   $$
