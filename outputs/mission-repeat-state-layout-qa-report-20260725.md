@@ -181,6 +181,55 @@ QA테스트(5학년) 계정(tier 1로 일시 전환, 검증 후 3으로 원복) 
 
 ### 참고 — 실기기(진짜 iPhone/Android 기기, 진짜 PC 브라우저) 최종 확인은 대표님 몫으로 남아 있음(헤드리스 에뮬레이션 기반 검증만 완료).
 
+## 23. 대표님 추가 요구 — 하단 메인 음성 버튼 상태 기반 3종 전환 (2026-07-26, 5차)
+
+### 적용 범위
+AskUserQuestion으로 대표님께 직접 확인 — "자동/수동 공통 적용" vs "수동 모드에만
+적용" 중 **"수동 모드에만 적용"** 으로 확정. 자동 모드의 기존 hands-free 버튼숨김
+동작은 변경하지 않았다.
+
+### 수정 내용
+- STT/TTS(Tier1) 트리: `isThinkingTurn`에 `sttTts.isSpeaking`을 추가(기존엔
+  `isProcessingAnswer`만 봐서 TTS 재생 중엔 버튼이 다시 "대기"로 되돌아가는 버그가
+  있었음) + 회색+스피너 비주얼 신설(기존엔 이 상태 자체가 없었음).
+- Live(Tier3) 트리: 기존에 이미 3단계에 가까운 비주얼이 있었으나 `disabled` 속성이
+  없어 내부 가드(`canStartRecording`)가 탭을 조용히 무시하는 방식이었던 것을 실제
+  HTML `disabled`로 교체.
+- 새 `isKSpeakingNow`로 같은 회색 비활성 모양 안에서 "케이가 말하고 있어요"/"생각
+  하고 있어요" 문구만 구분.
+
+### QA 중 발견·수정한 회귀
+Live 트리에 `disabled={isThinkingTurn}`을 그대로 적용하자, 녹음을 시작하는 즉시
+`turnPhaseUi`가 `"child_listening"`(≠idle)으로 바뀌어 `isThinkingTurn`이 true가 되며
+버튼이 잠겨 "녹음중 눌러서 종료" 자체가 불가능해지는 회귀를 실제 클릭으로 재현·발견했다.
+`isButtonBlocked = isThinkingTurn && !isRecording`로 교체해 수정(커밋 20cf045).
+
+### 검증 결과 (실배포 URL, QA테스트(5학년) 계정, Playwright, `/api/mission/stt` 가로채기로
+가짜 유효 답변을 반환시켜 판정→다음질문생성→TTS 전체 파이프라인을 강제로 태워 검증)
+
+| 환경 | ①대기 | ②녹음중(클릭가능) | ③생각중(회색·비활성·클릭불가) | ③말하는중(회색·비활성·클릭불가) | ④대기복귀 |
+|---|---|---|---|---|---|
+| STT/TTS 모바일(390x844) | PASS | PASS | PASS | PASS | PASS |
+| STT/TTS PC PWA(1280x800) | PASS | PASS | PASS | PASS | PASS |
+| Live 모바일(390x844) | PASS | PASS(회귀 수정 확인) | PASS | PASS | NOT TESTED(20초 내 미복귀, 대화 콘텐츠 자체는 진행 확인됨) |
+| Live PC PWA(1280x800) | NOT TESTED | NOT TESTED | - | - | - |
+
+비활성 상태에서 클릭 시도 시 아무 상태 변화 없음(진짜 `disabled`로 클릭 자체가 막힘)을
+모든 PASS 항목에서 확인.
+
+**Live PC PWA NOT TESTED 사유**: 새 세션에서 아이 조작 없이도 "케이가 생각하고 있어요"
+회색 비활성 상태로 60초 넘게 멈추는 현상을 관측 — 코드 대조 결과 이번 버튼 수정과
+무관하게 Live(Gemini 네이티브 오디오)가 Playwright의 완전 무음 fake-media에서 초기
+응답을 못 받는 것으로 보인다(STT/TTS는 단순 REST라 무음에도 정상, Live는 실제 양방향
+오디오 스트리밍 필요). 버튼 JSX/상태 로직 자체엔 뷰포트·DemoFrame 조건부 분기가 없음을
+코드로 확인했으므로 모바일에서 확인된 동작이 PC PWA에도 동일 적용될 것으로 판단하나,
+실기기 확인 필요.
+
+### 최종 완료조건 확인 (22번)
+- 하나의 메인 버튼이 3가지 모습으로 전환 — **PASS**
+- 하단 고정 레이아웃·마스코트 노출 구조 유지 — **PASS**(버튼 내부 스타일만 변경)
+- 스마트폰/PC PWA 자연스러운 전환 — **PASS**(STT/TTS 양쪽), Live PC PWA **NOT TESTED**
+
 ## 사용자 행동 기반 E2E
 
 | 시나리오 | 기대 결과 | 실제 결과 | 판정 | 증거 |
@@ -235,6 +284,9 @@ QA테스트(5학년) 계정(tier 1로 일시 전환, 검증 후 3으로 원복) 
 - (4차/PC PWA 마스코트 미노출) 별도 claude-review 인스턴스 미실행 — `height:"100dvh"→"100%"` CSS 값 1곳 변경으로, 2차(마스코트 잘림) 라운드에 적용한 동일 기준("1줄 수준 CSS 수정은 tsc/build/실배포 라이브 검증으로 대체")을 그대로 따름. 대신 근본원인을 추측으로 넘기지 않고 DOM ancestor-chain 실측(각 단계 높이·overflow·class), 수정 전/후 mascot `getBoundingClientRect()` 좌표 대조(수정 전 `top:1119`(뷰포트 밖) → 수정 후 `top:659`(뷰포트 안)), `canvas.toDataURL()` 실제 픽셀 데이터까지 3중으로 실측 검증했다. tsc(`npx tsc --noEmit`) 클린 재확인.
 
 ## 데이터 원상복구 결과
+- (5차) QA테스트(5학년) `child_profiles.tier`: 1(테스트용) → 3(원래 값)으로 재원복 확인(Live 검증 후 최종 3 확인)
+- (5차) 5차 테스트로 생성된 미션 세션 2건(`f979c9aa-...`, `4801d4a2-...`)의 `chat_messages`/`mission_question_history`/`mission_progress`/`chat_sessions` 전부 삭제 확인
+- (5차) 이번 라운드에 사용한 임시 스크립트(`qa-011-button-states.mjs`, `qa-011-netlog.mjs`, `qa-011-set-temp-pw.mjs`, `qa-011-pc-live-quick.mjs`, `qa-011-pc-live-wait.mjs`) 및 스크린샷(`/tmp/qa-011-btn-*.png`, `/tmp/qa-011-pc-live-*.png`) 전부 삭제 확인
 - (4차) QA테스트(5학년) `child_profiles.tier`: 1(3차부터 이어진 테스트용 임시 값) → 3(원래 값)으로 재원복 확인
 - (4차) 4차 테스트로 생성된 오늘자 미션 세션 2건(`ad8c685f-...`, `818f608b-...`)의 `chat_messages`/`mission_question_history`/`mission_progress`/`chat_sessions` 전부 삭제 확인
 - (4차) 이번 라운드에 사용한 임시 스크립트(`qa-011-pc*.mjs`, `qa-011-set-temp-pw.mjs`, `qa-011-mobile-regress.mjs`) 및 스크린샷(`/tmp/qa-011-*.png`) 전부 삭제 확인

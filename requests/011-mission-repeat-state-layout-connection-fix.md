@@ -1091,4 +1091,44 @@ QA 검증 결과는 §21(QA 보고서 21번 절, `_log.md`)에 기록. 완료조
 변경 파일: `app/child/missions/page.tsx`(`isThinkingTurn` 정의 확장, `isKSpeakingNow`
 신설, 두 트리의 메인 버튼 JSX).
 
-검증 결과는 §23(QA 보고서 신규 절, `_log.md`)에 기록 예정.
+### QA 중 발견·수정한 회귀 (커밋 20cf045)
+
+Playwright로 실제 클릭 사이클을 검증하던 중, Live(Tier3) 트리에서 **녹음을 시작하는
+즉시 버튼이 disabled로 잠기는 회귀**를 발견했다 — Live의 `turnPhaseUi`는 녹음 시작과
+동시에 `"child_listening"`(≠idle)으로 바뀌어 `isThinkingTurn`이 true가 되므로,
+`disabled={isThinkingTurn}`을 그대로 쓰면 "녹음 중"과 "생각하는 중"이 겹쳐 아이가
+방금 시작한 녹음을 끝낼 수 없었다. `isButtonBlocked = isThinkingTurn && !isRecording`로
+교체해 녹음 중에는 항상 클릭 가능하도록 수정(회색 비활성은 "K가 말하는 중/생각하는
+중"에만 적용). STT/TTS(Tier1/2) 트리는 애초에 `canStartRecording`의 `!kaySpeaking`
+가드 때문에 이 겹침이 발생하지 않아 영향 없었다.
+
+### 검증 결과 (실배포 URL, QA테스트(5학년) 계정, Playwright)
+
+`/api/mission/stt`를 가로채 가짜 유효 답변("네 좋아요 그냥 그랬어요")을 반환하도록
+해 실제 판정→다음질문생성→TTS 재생까지 전체 파이프라인을 강제로 태워 검증했다
+(fake-media 헤드리스는 완전 무음이라 가로채지 않으면 실제 답변 제출 자체가
+발생하지 않음).
+
+| 환경 | ① 대기 | ② 녹음중(클릭 가능) | ③ 생각하는 중(회색·비활성) | ③ 말하는 중(회색·비활성) | 비활성 중 클릭 무반응 | ④ 최종 대기 복귀 |
+|---|---|---|---|---|---|---|
+| STT/TTS(Tier1) 모바일(390x844) | PASS | PASS | PASS(`disabled:true`, "케이가 생각하고 있어요") | PASS(`disabled:true`, "케이가 말하고 있어요") | PASS | PASS |
+| STT/TTS(Tier1) PC PWA(1280x800, DemoFrame) | PASS | PASS | PASS | PASS | PASS | PASS |
+| Live(Tier3) 모바일(390x844) | PASS | PASS(회귀 수정 후 `disabled:false` 확인) | PASS | PASS | PASS | NOT TESTED(20초 시점까지 미복귀 — 아래 참고) |
+| Live(Tier3) PC PWA(1280x800, DemoFrame) | NOT TESTED | NOT TESTED | - | - | - | - |
+
+**Live PC PWA가 NOT TESTED인 이유**: 완전히 새로운 세션에서 아이 버튼 조작 없이도
+"케이가 생각하고 있어요" 회색 비활성 상태로 60초 넘게 멈춰 있는 현상을 관측했다 —
+코드 대조 결과 이는 이번 버튼 수정과 무관하게 Live(Gemini 네이티브 오디오) 파이프라인이
+Playwright의 fake-media(완전 무음 가짜 오디오 장치)에서 초기 연결/응답 자체를 완료하지
+못하는 것으로 보인다(STT/TTS 경로는 단순 REST 호출이라 무음에도 정상 동작하지만, Live는
+실제 양방향 오디오 스트리밍이 필요함). 버튼의 JSX/상태 로직 자체는 뷰포트나 DemoFrame과
+무관하게 완전히 동일하므로(코드상 조건부 분기 없음 확인), 모바일에서 이미 확인된 3단계
+전환과 회귀 수정이 PC PWA에서도 동일하게 적용될 것으로 판단하나, 실기기 확인이 필요하다.
+타임아웃/API 실패 경로 실측(기존 011 3차부터 이어진 NOT TESTED 항목)과 함께 대표님
+실기기 확인 대상으로 남긴다.
+
+### 최종 완료조건 확인 (22번)
+- 하나의 메인 버튼이 3가지 모습으로 전환 — **PASS**(STT/TTS 양쪽 뷰포트 + Live 모바일)
+- 하단 고정 레이아웃·마스코트 노출 구조 유지 — **PASS**(버튼 내부 스타일만 변경, 레이아웃 구조 무변경)
+- 스마트폰/PC PWA 자연스러운 전환 — **PASS**(STT/TTS), Live PC PWA는 **NOT TESTED**(위 참고)
+- QA 결과 로그·보고서 기록 — 본 절 + QA 보고서 §23 + `_log.md`
