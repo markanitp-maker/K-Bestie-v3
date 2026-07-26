@@ -39,9 +39,11 @@ import { attachAttemptIdToQuizSessionHandoff } from "@/lib/play/quizSessionHando
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const AUTO_ADVANCE_FEEDBACK_MS = 500;
 const SUBJECTS: readonly QuizSubject[] = ["국어", "영어", "수학", "과학", "사회", "창의", "상식"];
+const GRADES: readonly QuizGrade[] = [1, 2, 3, 4, 5, 6];
 
 type Phase =
   | "redeeming"
+  | "grade_select"
   | "subject_select"
   | "starting"
   | "playing"
@@ -166,7 +168,7 @@ export default function QuizPlayScreen({
       const data = (await res.json()) as QuizRedeemResponse;
       if (ignore) return;
       setGrade(data.grade);
-      setPhase("subject_select");
+      setPhase("grade_select");
     }
 
     void redeem();
@@ -175,6 +177,12 @@ export default function QuizPlayScreen({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ---- 1-1) 학년 확인: handoff에서 이미 확정된 학년을 아이에게 보여주고 확인받는다
+  // (실질적 선택지는 없음 - 본인 학년만 활성, 나머지는 비활성 표시). ----
+  function handleConfirmGrade() {
+    setPhase("subject_select");
+  }
 
   // ---- 2) 과목 선택 → 시작 ----
   async function handleSelectSubject(subject: QuizSubject) {
@@ -403,6 +411,48 @@ export default function QuizPlayScreen({
       {phase === "redeeming" && (
         <div className="flex flex-1 items-center justify-center p-8">
           <p className="text-k-text-secondary">준비하는 중...</p>
+        </div>
+      )}
+
+      {phase === "grade_select" && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 p-8">
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-k-text-primary">학년을 확인하세요</h1>
+            <p className="mt-2 text-sm text-k-text-secondary">
+              {grade}학년으로 문제가 출제돼요
+            </p>
+          </div>
+          <div role="list" className="grid w-full max-w-md grid-cols-3 gap-3">
+            {GRADES.map((g) => {
+              const active = g === grade;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  role="listitem"
+                  disabled={!active}
+                  aria-pressed={active}
+                  aria-disabled={!active}
+                  className="flex items-center justify-center rounded-2xl border-2 py-5 text-lg font-semibold transition-colors disabled:cursor-not-allowed"
+                  style={
+                    active
+                      ? { borderColor: "var(--color-k-orange)", background: "var(--color-k-orange-tint)", color: "var(--color-k-orange)" }
+                      : { borderColor: "var(--color-k-border)", background: "var(--color-k-surface)", color: "var(--color-k-disabled)" }
+                  }
+                >
+                  {g}학년
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={handleConfirmGrade}
+            className="w-full max-w-xs rounded-2xl py-3.5 font-bold text-white active:scale-95 transition-transform"
+            style={{ background: "var(--color-k-orange)" }}
+          >
+            확인
+          </button>
         </div>
       )}
 
