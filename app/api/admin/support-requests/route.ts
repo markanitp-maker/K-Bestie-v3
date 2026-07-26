@@ -21,11 +21,15 @@ export async function GET(req: NextRequest) {
   if (status) query = query.eq("status", status);
   if (role) query = query.eq("submitter_role", role);
   if (search) {
-    // PostgREST의 .or() 필터 문법에서 쉼표/괄호는 예약문자라 사용자 입력에 그대로
-    // 들어가면 의도치 않은 필터 조합이 주입될 수 있다(SQL Injection이 아니라 PostgREST
-    // 필터 파서 injection) - 백슬래시로 이스케이프해서 리터럴로만 취급되게 한다.
-    const escaped = search.replace(/[\\,()]/g, (c) => `\\${c}`);
-    query = query.or(`request_number.ilike.%${escaped}%,subject.ilike.%${escaped}%,body.ilike.%${escaped}%`);
+    // PostgREST의 .or() 필터 문법에서 쉼표/괄호/공백은 예약문자다(SQL Injection이
+    // 아니라 PostgREST 필터 파서 injection). Codex 지적: 백슬래시만 앞에 붙이는
+    // 방식은 PostgREST 공식 문법이 아니다 - 공식 방식은 값 전체를 큰따옴표로 감싸고
+    // 그 안의 큰따옴표(")와 백슬래시(\)만 이스케이프하는 quoted-value 문법이다
+    // (https://docs.postgrest.org/en/v13/references/api/url_grammar.html).
+    // 백슬래시를 먼저 이스케이프해야 그 다음에 이스케이프하는 큰따옴표의 백슬래시와
+    // 겹치지 않는다.
+    const escaped = search.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    query = query.or(`request_number.ilike."%${escaped}%",subject.ilike."%${escaped}%",body.ilike."%${escaped}%"`);
   }
 
   const { data, error } = await query;

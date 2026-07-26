@@ -40,8 +40,26 @@ export async function POST(request: Request) {
     }
 
     const serviceClient = createServiceClient();
+    const idempotencyKey = typeof idempotency_key === "string" && idempotency_key ? idempotency_key : null;
 
-    // Rate limit check: max 1 per 10 seconds per user
+    // codex 지적: 이 검사가 idempotency_key 확인보다 먼저 실행되면, 이미 성공한 제출을
+    // 네트워크 문제로 재시도하는 정상 케이스가 (원래 접수번호를 돌려받는 대신) 429로
+    // 막혀버린다 - 진짜 idempotent 응답이 아니게 된다. 그래서 같은 idempotency_key의
+    // 기존 접수가 있는지부터 먼저 확인하고, 있으면 그 접수번호를 그대로 반환하고 끝낸다
+    // (이 요청은 "새 제출 시도"가 아니라 "이미 처리된 시도의 재확인"이므로 rate limit
+    // 대상이 아니다). 새 시도(다른/없는 키)에 대해서만 이후 10초 rate limit을 적용한다.
+    if (idempotencyKey) {
+      const { data: existingByKey } = await serviceClient
+        .from("support_requests")
+        .select("request_number")
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+      if (existingByKey?.request_number) {
+        return NextResponse.json({ ok: true, request_number: existingByKey.request_number });
+      }
+    }
+
+    // Rate limit check: max 1 new submission per 10 seconds per user
     const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
     const { count } = await serviceClient
       .from("support_requests")
@@ -109,7 +127,7 @@ export async function POST(request: Request) {
       app_version,
       environment,
       device_info,
-      idempotency_key: typeof idempotency_key === "string" && idempotency_key ? idempotency_key : null,
+      idempotency_key: idempotencyKey,
       status: "open"
     };
 
