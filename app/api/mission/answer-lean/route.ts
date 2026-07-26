@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { validateAnswer } from "@/lib/mission/validateAnswer";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { classifyAnswer } from "@/lib/questions/answer-classifier";
 import { pickReaction } from "@/lib/freeChatReactions";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
@@ -95,10 +96,10 @@ export async function POST(req: NextRequest) {
   }
 
   const consentBlocked = await checkConsentForChild(session.child_id);
-  if (consentBlocked) {
-    console.error("[mission/answer-lean] Consent blocked", { sessionId });
-    return consentBlocked;
-  }
+  if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForChild(session.child_id);
+  if (approvalBlocked) return approvalBlocked;
 
   const { data: statusRow, error: statusErr } = await service
     .from("mission_progress")

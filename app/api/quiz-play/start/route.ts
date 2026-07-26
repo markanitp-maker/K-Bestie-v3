@@ -13,6 +13,7 @@ import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { createClient } from "@/lib/supabase/server";
 import { buildDisplayQuestion, generateOptionOrder } from "@/lib/quiz/play/questions";
 import {
@@ -57,6 +58,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const access = await requireChildAccess(authClient, user.id, body.childId);
   if (!access.allowed) return apiError("FORBIDDEN");
+
+  const approvalBlocked = await checkApprovalForChild(body.childId);
+  if (approvalBlocked) return NextResponse.json({ error: "FORBIDDEN", message: "베타 승인 대기 중" }, { status: 403 });
 
   const grade = body.grade as QuizGrade;
   const subject = body.subject as QuizSubject;

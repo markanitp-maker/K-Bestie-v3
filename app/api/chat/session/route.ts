@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 export const runtime = "nodejs";
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
   if (!authCheck.allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const approvalBlocked = await checkApprovalForChild(childId);
+  if (approvalBlocked) return approvalBlocked;
 
   const now = new Date();
   const kstOffset = 9 * 60 * 60 * 1000;

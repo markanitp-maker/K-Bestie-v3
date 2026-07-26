@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { validateAnswer } from "@/lib/mission/validateAnswer";
 import { earnMissionCompleteKey } from "@/lib/goldkey/ledger";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
 import { classifyAnswer } from "@/lib/questions/answer-classifier";
 import { pickReaction } from "@/lib/freeChatReactions";
@@ -109,10 +110,10 @@ export async function POST(req: NextRequest) {
   }
 
   const consentBlocked = await checkConsentForChild(session.child_id);
-  if (consentBlocked) {
-    console.error("[mission/answer] Consent blocked", { sessionId });
-    return consentBlocked;
-  }
+  if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForChild(session.child_id);
+  if (approvalBlocked) return approvalBlocked;
 
   // 기능 플래그 및 코호트 체크 (진행상태 로드 전으로 당김)
   const isV2Flag = isQuestionEngineV2Enabled(session.child_id);

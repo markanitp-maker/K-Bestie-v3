@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { pickReaction } from "@/lib/freeChatReactions";
 import { generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
+import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
 import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
@@ -64,6 +65,9 @@ export async function POST(req: NextRequest) {
 
   const consentBlocked = await checkConsentForSession(sessionId);
   if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForSession(sessionId);
+  if (approvalBlocked) return approvalBlocked;
 
   const lastChild = [...history].reverse().find((t) => t.role === "child" && t.text?.trim());
   if (!lastChild) {

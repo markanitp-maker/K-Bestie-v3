@@ -25,6 +25,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { loadPlaySession } from "@/lib/play/sessionAuth";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { readNamespace, buildProgressState } from "@/lib/play/progressState";
 import { parseMbtiProgressState, type MbtiProgressState } from "@/lib/api/mbtiProgress";
 import { selectMbtiQuestions } from "@/lib/mbti/selectQuestions";
@@ -188,6 +189,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         });
     }
   }
+
+  const approvalBlocked = await checkApprovalForChild(childId);
+  if (approvalBlocked) return approvalBlocked;
 
   const sessionRow = validity.session;
 

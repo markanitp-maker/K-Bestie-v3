@@ -6,6 +6,7 @@ import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { normalizeConversationMode } from "@/lib/plan/conversationMode";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
+import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
@@ -111,6 +112,9 @@ export async function POST(req: NextRequest) {
     console.error("[mission/respond] consent blocked", { sessionId: body.sessionId, childTurnId });
     return consentBlocked;
   }
+
+  const approvalBlocked = await checkApprovalForSession(body.sessionId);
+  if (approvalBlocked) return approvalBlocked;
 
   const authService = createServiceClient();
   const { data: session } = await authService

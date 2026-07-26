@@ -4,6 +4,7 @@ import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { normalizeConversationMode } from "@/lib/plan/conversationMode";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
+import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
@@ -72,6 +73,9 @@ export async function POST(req: NextRequest) {
 
   const consentBlocked = await checkConsentForSession(body.sessionId);
   if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForSession(body.sessionId);
+  if (approvalBlocked) return approvalBlocked;
 
   // 비용에 영향을 주는 child_id/tier/voice_mode는 클라이언트에서 직접 받지 않고
   // sessionId로만 서버가 해석한다(server-trust).

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,9 @@ export async function POST(req: Request) {
     if (!allowed) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    const approvalBlocked = await checkApprovalForChild(child_id);
+    if (approvalBlocked) return approvalBlocked;
 
     const serviceClient = createServiceClient();
     const { data, error } = await serviceClient.rpc("consume_play_access", {

@@ -5,6 +5,7 @@ import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { checkAndDeductQuota } from "@/lib/plan/parentQuestionQuota";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 function extractJSON(text: string) {
@@ -41,6 +42,9 @@ export async function GET(req: NextRequest) {
   if (!authCheck.allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const approvalBlocked = await checkApprovalForChild(childId);
+  if (approvalBlocked) return approvalBlocked;
   const { data: questions, error } = await supabase
     .from("parent_questions")
     .select("id, question_text, status, created_at, delivered_count")
@@ -94,6 +98,9 @@ export async function POST(req: NextRequest) {
   if (!authCheck.allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const approvalBlocked = await checkApprovalForChild(childId);
+  if (approvalBlocked) return approvalBlocked;
 
   const filterResult = filterParentQuestion(questionText.trim());
   if (filterResult.verdict === "block") {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 
 export const runtime = "nodejs";
@@ -27,6 +28,9 @@ export async function POST(req: NextRequest) {
   if (!authCheck.allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const approvalBlocked = await checkApprovalForChild(child_id);
+  if (approvalBlocked) return approvalBlocked;
 
   // 1. 예약 성공시 start_new_play_session 호출
   const { data: startData, error: startErr } = await service.rpc("start_new_play_session", {

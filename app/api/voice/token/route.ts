@@ -3,6 +3,7 @@ import { getModelForGroup, VERTEX_LIVE_VOICE_MODEL_ID } from "@/app/api/_lib/ai"
 import { K_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
 import { createClient } from "@/lib/supabase/server";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { mintVertexLiveTicket } from "@/lib/plan/vertexLiveTicket";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
@@ -32,6 +33,9 @@ export async function POST(req: NextRequest) {
 
   const consentBlocked = await checkConsentForChild(body.childId);
   if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForChild(body.childId);
+  if (approvalBlocked) return approvalBlocked;
 
   // 그룹C(라이브) 스위치 조회 — 연결 시작 시점에 1회 스냅샷되어 세션 수명 동안 고정된다
   // (클라이언트 useGeminiLive.startSession()이 매 연결마다 이 라우트를 새로 호출하므로,

@@ -499,7 +499,7 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback";
+type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback" | "beta-applications";
 
 const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
@@ -508,6 +508,7 @@ const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "ai-config", label: "AI 설정" },
   { id: "account-restore", label: "계정 복구 승인" },
   { id: "feedback", label: "문의·건의·버그 접수" },
+  { id: "beta-applications", label: "베타 신청 관리" },
 ];
 
 interface ProviderSwitchRow {
@@ -800,6 +801,125 @@ function GCAIProfileSection() {
   );
 }
 
+function BetaApplicationsTab() {
+  const [requests, setRequests] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch("/api/admin/beta-applications")
+      .then(r => r.json())
+      .then(d => {
+        setRequests(Array.isArray(d) ? d : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleAction = async (userId: string, action: "approve" | "reject") => {
+    let reason = "";
+    let tier: number | null = null;
+    if (action === "reject") {
+      const input = window.prompt("거절 사유를 입력하세요 (선택):");
+      if (input === null) return;
+      reason = input;
+    } else {
+      const planLabel = window.prompt(
+        "승인할 플랜을 입력하세요.\n1 = Care Start\n2 = Care Insight\n3 = Care Premium"
+      );
+      if (planLabel === null) return;
+      const parsed = Number(planLabel.trim());
+      if (![1, 2, 3].includes(parsed)) {
+        alert("1, 2, 3 중 하나를 입력해 주세요.");
+        return;
+      }
+      tier = parsed;
+      if (!window.confirm(`베타 신청을 승인하시겠습니까? (플랜: ${["", "Care Start", "Care Insight", "Care Premium"][tier]})`)) return;
+    }
+
+    setActionLoading(userId);
+    try {
+      const url = `/api/admin/beta-applications/${userId}/${action}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action === "reject" ? { reason } : { tier })
+      });
+      if (res.ok) {
+        alert("처리되었습니다.");
+        load();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || "처리 실패");
+      }
+    } catch (err) {
+      alert("오류 발생");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  if (loading && !requests) return <EmptyState text="불러오는 중..." />;
+  if (!requests || requests.length === 0) return <EmptyState text="베타 신청 내역이 없습니다." />;
+
+  return (
+    <div>
+      <SectionTitle>베타 신청 관리</SectionTitle>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {requests.map(req => {
+          return (
+            <div key={req.user_id} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 4 }}>
+                    이름: {req.name || "미상"}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>
+                    신청일: {formatDateTime(req.created_at)}<br />
+                    전화번호: {req.phone || "없음"}<br />
+                    연령대: {req.age_group || "미상"}<br />
+                    알게 된 경로: {req.referral_source || "미상"}<br />
+                  </div>
+                  {req.motivation && (
+                    <div style={{ fontSize: 12, color: "var(--color-k-text-primary)", marginTop: 8, background: "var(--color-k-surface)", padding: "6px 10px", borderRadius: 6 }}>
+                      신청 동기: {req.motivation}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => handleAction(req.user_id, "reject")}
+                    disabled={actionLoading === req.user_id}
+                    style={{
+                      padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-k-danger)",
+                      background: "white", color: "var(--color-k-danger)", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                    }}
+                  >
+                    거절
+                  </button>
+                  <button
+                    onClick={() => handleAction(req.user_id, "approve")}
+                    disabled={actionLoading === req.user_id}
+                    style={{
+                      padding: "6px 12px", borderRadius: 8, border: "none",
+                      background: "var(--color-k-navy)", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                    }}
+                  >
+                    승인
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AccountRestoreTab() {
   const [requests, setRequests] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -988,6 +1108,8 @@ function AdminDashboard() {
           <AccountRestoreTab />
         ) : page === "feedback" ? (
           <FeedbackTab />
+        ) : page === "beta-applications" ? (
+          <BetaApplicationsTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}

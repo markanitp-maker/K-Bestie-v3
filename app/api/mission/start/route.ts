@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { selectQuestions, selectQuestionsV2, parseGrade, countApprovedV2Candidates, REQUIRED_COUNT_V2, TOTAL_COUNT_V2, type RoundType } from "@/lib/mission/selectQuestions";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
 import { isChildAlphaAllowedForQuestions } from "@/lib/questions/alphaAllowlist";
 import { selectAlphaQuestions, selectFixedMissionQuestions, selectAdditionalReserveQuestions, RESERVE_TARGET_COUNT } from "@/lib/mission/selectQuestions";
@@ -44,6 +45,9 @@ export async function POST(req: NextRequest) {
 
   const consentBlocked = await checkConsentForChild(childId);
   if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForChild(childId);
+  if (approvalBlocked) return approvalBlocked;
 
   let isV2 = isQuestionEngineV2Enabled(childId);
   const isAlphaQuestionChild = await isChildAlphaAllowedForQuestions(childId);

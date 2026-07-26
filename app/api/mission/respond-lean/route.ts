@@ -12,6 +12,7 @@ import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { normalizeConversationMode } from "@/lib/plan/conversationMode";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
+import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
@@ -225,10 +226,10 @@ export async function POST(req: NextRequest) {
   console.log("[mission/respond-lean] start", { sessionId, childTurnId, mode: "lean_stt_text" });
 
   const consentBlocked = await checkConsentForSession(sessionId);
-  if (consentBlocked) {
-    console.error("[mission/respond-lean] consent blocked", { sessionId, childTurnId });
-    return consentBlocked;
-  }
+  if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForSession(sessionId);
+  if (approvalBlocked) return approvalBlocked;
 
   const authService = createServiceClient();
   const { data: session } = await authService

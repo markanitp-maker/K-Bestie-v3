@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 
 export const runtime = "nodejs";
 
@@ -51,6 +52,9 @@ export async function GET(req: NextRequest) {
 
   const consentBlocked = await checkConsentForChild(session.child_id);
   if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForChild(session.child_id);
+  if (approvalBlocked) return approvalBlocked;
 
   const { data: messages, error } = await service
     .from("chat_messages")

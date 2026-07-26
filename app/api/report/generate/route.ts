@@ -6,6 +6,7 @@ import { sanitizeReportJson } from "@/app/api/_lib/reportSafetyGuard";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
+import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import type { Turn } from "@/hooks/useGeminiLive";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
@@ -51,6 +52,9 @@ export async function POST(req: NextRequest) {
 
   const consentBlocked = await checkConsentForChild(session.child_id);
   if (consentBlocked) return consentBlocked;
+
+  const approvalBlocked = await checkApprovalForChild(session.child_id);
+  if (approvalBlocked) return approvalBlocked;
 
   const supabase = createServiceClient();
   const reportModel = await getModelForGroup("A");
