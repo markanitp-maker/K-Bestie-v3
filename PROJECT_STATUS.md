@@ -69,8 +69,19 @@
 - 자동 검증: `tsc`, `build`, `npm test`, Playwright 실배포 검증 완료
 - 다음 행동: 대표님 실기기에서 자유대화 화면 시각/조작감 최종 확인
 
-### 010 + 013 + 016 퀴즈마스터 연동 묶음
-- 상태: 대표님 확인 대기
+### ⚠️ 놀이 앱 아키텍처 방향 전환 확정 (2026-07-27)
+- 상태: 확정, 단계적 실행 대기
+- 근거 문서: `outputs/play-app-rollback-plan-20260727.md`
+- 확정 방향:
+  - MBTI·퀴즈마스터는 각자 **독립 프로젝트·독립 Vercel 배포**로 되돌린다(각각 별도 Claude Code 세션에서 복원·재작성·배포 진행 중)
+  - K-Bestie-v3에는 최종적으로 **놀이 카드 / 공통 황금열쇠 차감·환불 / handoff token 발급 / completion·refund callback 수신 / 독립 놀이 앱 URL을 불러오는 공통 전체화면 인앱 iframe PlayModal**만 남긴다
+  - 현재 K-Bestie-v3 안에 있는 네이티브 MBTI·퀴즈 코드(`components/mbti`, `lib/mbti`, `app/api/mbti`, `components/quiz`, `lib/quiz/play`, `app/api/quiz-play` 등, 약 8,703줄)는 **삭제하지 않고 임시 안전망으로 보존** — 각 독립 앱의 Dev 배포 + E2E 검증이 끝난 뒤 연동 계약이 전달되면 연결·검증 후 단계적으로 제거
+  - 안전 스냅샷: 브랜치/태그 `pre-play-rollback-snapshot-20260726`(커밋 `72ace57`)
+- 중단된 것: K-Bestie-v3 안에서 놀이 UI·문항·채점·진행상태·이어하기·결과·리더보드를 추가 이식·확장하는 모든 작업(병렬 세션 포함, 단 병렬 세션은 각 세션 소유자가 직접 중단해야 함)
+- 다음 행동: MBTI·퀴즈마스터 Dev URL과 연동 계약(handoff/completion/refund) 전달 대기 → 연결·검증 → 중복 네이티브 코드 단계적 제거(계획 문서의 Phase 1~5)
+
+### 010 + 013 + 016 퀴즈마스터 연동 묶음 (구 방향 — 아키텍처 전환으로 재검토 대상)
+- 상태: 대표님 확인 대기 → 위 아키텍처 전환에 따라 최종 형태 변경 예정(handoff/callback 부분은 유지, 네이티브 플레이 화면 부분은 iframe으로 대체 예정)
 - 근거 요청서:
   - `requests/010-quizmaster-main-app-integration.md`
   - `requests/_done/013-Quiz-add.md`
@@ -130,14 +141,14 @@
   - 상태배지 길이 변화에도 케이/토글이 흔들리지 않도록 그리드 구조로 수정 완료
 - Dev 배포: 됨
 
-### 021 퀴즈 내부 모듈화
-- 상태: 개발 완료·Dev 배포
+### 021 퀴즈 내부 모듈화 (아키텍처 전환으로 되돌아갈 예정)
+- 상태: 개발 완료·Dev 배포 → **아키텍처 방향 전환에 따라 iframe PlayModal로 대체 예정**(위 "놀이 앱 아키텍처 방향 전환 확정" 참고)
 - 근거 요청서: `requests/_done/021-Quiz-add.md`
 - 관련 커밋: `f191b5b`, `8c9ab6c`
 - 현재 상태:
-  - 외부 퀴즈마스터 리다이렉트 의존을 줄이고 K-Bestie 내부 플레이 모듈로 전환 완료
-  - 기존 콜백 계약 유지
-- Dev 배포: 됨
+  - 외부 퀴즈마스터 리다이렉트 의존을 줄이고 K-Bestie 내부 플레이 모듈로 전환 완료(당시 지시에 따름)
+  - 이후 대표님이 아키텍처를 독립 앱+iframe 방식으로 재확정(2026-07-27) — 이 커밋들은 삭제하지 않고 임시 보존, 완료/환불 콜백 계약(`8c9ab6c` 포함)은 계속 유효
+- Dev 배포: 됨(제거는 `outputs/play-app-rollback-plan-20260727.md` 단계 계획에 따라 나중에 진행)
 
 ### 014 추가요청 + 아이 홈 카드 색상 체계
 - 상태: 개발 완료·Dev 배포
@@ -179,13 +190,10 @@
   - 코드/마이그레이션 생성은 아직 하지 않음
 - 다음 행동: 대표님 결정 사항 확정 후 구현 라운드 시작
 
-### 공통 Resume Session 기능
-- 상태: 미착수
-- 근거 요청서: `requests/feature-play-resume-session.md`
-- 현재 상태:
-  - 요구사항 문서만 존재
-  - 착수/분석/구현 기록 없음
-- 다음 행동: 현재 놀이별 세션 구조 조사부터 별도 시작 필요
+### 공통 Resume Session 기능 (아키텍처 전환으로 재검토 필요)
+- 상태: 병렬 세션에서 처리·`_done/` 이관됨(`requests/_done/feature-play-resume-session.md`) → **놀이 앱 아키텍처가 독립 앱+iframe으로 재확정되며 이어하기 로직 소유권 재검토 필요**
+- 이유: 퀴즈/MBTI 이어하기 로직이 K-Bestie 내부(`k_play_sessions`/`quiz_attempts` 직접 참조)에 있었으나, 놀이 실행이 독립 앱으로 넘어가면 이어하기 상태 관리도 각 독립 앱 책임으로 이동할 가능성이 큼
+- 다음 행동: `outputs/play-app-rollback-plan-20260727.md`의 단계 계획과 함께 재검토
 
 ## 5. 외부 의존·차단
 
