@@ -2601,9 +2601,15 @@ function MissionRouteGate() {
     <DemoFrame>
       <MissionInner />
     
-        {/* 이 화면 하단에 이미 마이크/텍스트전환/종료 절대위치 버튼 바(음성모드 기준
-            약 104px)가 있어 기본 오프셋(16px)으로는 겹친다 - 그 위로 띄운다. */}
-        <KChatbotWidget appSurface="child" bottomOffsetPx={120} />
+        {/* 022: 이 화면 헤더는 뒤로가기/로고/연결상태(headerExtraSlot) 한 줄 + 미션
+            라벨/진행률 바 두 줄이 추가로 붙어 기본 헤더보다 훨씬 높다(약 90px대) - 기존
+            headerExtraSlot의 ConnectionQualityIndicator와 같은 우측 상단 자리에 겹쳐
+            뜨지 않도록, 진행률 바까지 전부 지나간 지점 아래로 오프셋을 크게 준다.
+            MissionConversationLayout 내부가 maxWidth:560으로 중앙 정렬되어(태블릿/PC
+            폭에서 그 컬럼 밖은 회색 여백) containerMaxWidthPx로 그 컬럼 우측 끝에
+            맞춰 정렬한다 - 지정 안 하면 뷰포트 우측 끝(회색 여백 안)에 떠 헤더와
+            분리돼 보인다. */}
+        <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={560} />
       </DemoFrame>
   );
 }

@@ -796,9 +796,9 @@ export default function ChatPage() {
         )}
       </div>
     
-        {/* 이 화면 하단에 이미 마이크/텍스트전환/종료 절대위치 버튼 바(음성모드 기준
-            약 104px)가 있어 기본 오프셋(16px)으로는 겹친다 - 그 위로 띄운다. */}
-        <KChatbotWidget appSurface="child" bottomOffsetPx={120} />
+        {/* 022: 이 화면 헤더(뒤로가기+로고, pt 0.75rem+safe-area, pb 1)는 약 64px -
+            기본값(56px)보다 살짝 더 내려 헤더 바로 아래 여백에 오도록 오프셋을 지정한다. */}
+        <KChatbotWidget appSurface="child" topOffsetPx={70} />
       </DemoFrame>
   );
 }

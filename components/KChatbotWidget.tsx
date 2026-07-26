@@ -3,18 +3,26 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { useDemoView } from "@/app/demo/components/DemoViewContext";
 
 export interface KChatbotWidgetProps {
   appSurface: "child" | "parent";
-  /** 이 화면 하단에 이미 절대/고정 위치 컨트롤(마이크·음성 버튼 바 등)이 있어 기본
-   *  위치(하단 16px)와 겹치는 경우, 그 컨트롤 높이만큼 더 띄우기 위한 오프셋(px).
-   *  지정하지 않으면 기본값(16px + safe-area)을 그대로 쓴다. */
-  bottomOffsetPx?: number;
+  /** 022: 좌측 하단 플로팅에서 상단 헤더 우측 영역으로 이동 - 이 화면 헤더가 기본
+   *  높이보다 더 높거나(예: 진행률 바가 두 줄인 미션 화면) 헤더 우측에 이미 다른
+   *  요소(연결상태 표시 등)가 있어 겹치는 경우, 그 아래로 내려 배치하기 위한
+   *  세로 오프셋(px). 지정하지 않으면 기본 헤더 높이(약 56px)+safe-area 아래에 온다. */
+  topOffsetPx?: number;
+  /** 022: 이 위젯은 화면 뷰포트 기준 fixed로 떠 있어, 헤더 콘텐츠 자체가 뷰포트
+   *  전체 폭을 쓰지 않고 중앙 정렬된 고정 폭 컬럼인 화면(예: MissionConversationLayout의
+   *  maxWidth:560 - 태블릿/PC 폭에서 그 컬럼 바깥에 회색 여백이 생김)에서는 지정한다.
+   *  지정하면 뷰포트가 이 값+24px보다 넓을 때 그 중앙 컬럼의 우측 끝에 맞춰 정렬되고,
+   *  더 좁을 때(모바일)는 자동으로 기본 뷰포트 우측 정렬로 되돌아간다. */
+  containerMaxWidthPx?: number;
 }
 
 type Category = "voc" | "feature" | "bug";
 
-export default function KChatbotWidget({ appSurface, bottomOffsetPx = 16 }: KChatbotWidgetProps) {
+export default function KChatbotWidget({ appSurface, topOffsetPx = 56, containerMaxWidthPx }: KChatbotWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [category, setCategory] = useState<Category>("voc");
   const [subject, setSubject] = useState("");
@@ -29,6 +37,25 @@ export default function KChatbotWidget({ appSurface, bottomOffsetPx = 16 }: KCha
   // 재시도) 동안은 같은 값을 재사용한다 - 서버가 이 값에 유니크 제약을 걸어 중복 저장을
   // DB 레벨에서 막는다(app/api/support/route.ts 참고).
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
+
+  // 022: DemoFrame(app/demo/components/DemoFrame.tsx)은 PC(포인터 fine + 폭 900px
+  // 이상)에서 기기 목업을 그리며, 그 목업 안의 실제 페이지 콘텐츠에는
+  // innerPaddingTop(태블릿 목업 pt-8=32px, 스마트폰 목업 pt-10=40px, 상단 상태바
+  // 높이만큼)을 얹는다. 이 위젯의 버튼은 position:fixed라 그 padding의 영향을
+  // 받지 않고 DemoFrame의 이너 디스플레이 영역(y=0) 기준으로 뜨는데, 각 페이지의
+  // 실제 헤더는 그 padding 때문에 y=0이 아니라 y=32~40에서 시작한다 - PC 목업에서만
+  // topOffsetPx가 실제 헤더보다 32~40px 높게(위로) 계산되어 헤더 아이콘과 겹치는
+  // 버그가 있었다(Codex 리뷰 지적, Playwright bounding box로 재현 확인). DemoFrame과
+  // 동일한 매체 쿼리로 PC 목업 여부를 판별해 그만큼 보정한다.
+  const { view } = useDemoView();
+  const [pcMockupPaddingTopPx, setPcMockupPaddingTopPx] = useState(0);
+  useEffect(() => {
+    const pcMq = window.matchMedia("(pointer: fine) and (min-width: 900px)");
+    const update = () => setPcMockupPaddingTopPx(pcMq.matches ? (view === "mobile" ? 40 : 32) : 0);
+    update();
+    pcMq.addEventListener("change", update);
+    return () => pcMq.removeEventListener("change", update);
+  }, [view]);
 
   // Focus trap & Escape key
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -165,15 +192,31 @@ export default function KChatbotWidget({ appSurface, bottomOffsetPx = 16 }: KCha
 
   return (
     <>
+      {/* 022: 좌측 하단 플로팅 → 상단 헤더 우측 영역으로 이동, 라벨 "케이 챗봇"→"문의".
+          헤더 자체의 DOM 안에 넣지 않고(13개 페이지마다 헤더 구조가 달라 공용 컴포넌트가
+          그 내부구조를 알 수 없음) fixed로 화면 우측 상단에 고정 배치해 모든 페이지에서
+          동일하게 동작하게 한다. topOffsetPx로 페이지별 헤더 높이/기존 우측 요소(연결상태
+          표시 등)와의 겹침을 피한다. */}
       <button
         ref={triggerRef}
         onClick={() => setIsOpen(true)}
-        className="fixed left-4 z-50 flex items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white transition-colors"
-        style={{ background: "var(--color-k-navy)", bottom: `calc(${bottomOffsetPx}px + env(safe-area-inset-bottom))` }}
-        aria-label="케이 챗봇 피드백 접수 열기"
+        className={containerMaxWidthPx ? "fixed z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors" : "fixed right-3 z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors"}
+        style={{
+          background: "var(--color-k-navy)",
+          top: `calc(${topOffsetPx + pcMockupPaddingTopPx}px + env(safe-area-inset-top))`,
+          // vw는 실제 브라우저 뷰포트 기준으로만 계산돼(이 fixed 버튼의 containing
+          // block인 DemoFrame의 transform 요소를 무시함) PC 기기 목업(DemoFrame이 실제
+          // 뷰포트보다 좁은 목업 박스를 그리는 경우) 안에서 잘못된 위치로 계산된다.
+          // %는 position:fixed에서도 containing block(=DemoFrame의 transform 요소,
+          // 없으면 실제 뷰포트)의 폭 기준으로 해석되므로 두 경우 모두 올바르게 맞는다.
+          ...(containerMaxWidthPx
+            ? { right: `max(0.75rem, calc(50% - ${containerMaxWidthPx / 2}px + 0.75rem))` }
+            : {}),
+        }}
+        aria-label="문의하기 열기"
       >
-        <span className="text-xl leading-none">💬</span>
-        <span className="font-bold whitespace-nowrap">케이 챗봇</span>
+        <span className="text-base leading-none">💬</span>
+        <span className="font-bold text-sm whitespace-nowrap">문의</span>
       </button>
 
       {isOpen && (
