@@ -246,6 +246,7 @@ function MissionInner() {
     }
     answerInFlightRef.current = false;
     setIsProcessingAnswer(false);
+    setIsAutoListening(false);
     setTurnPhase("child_listening");
         if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
@@ -910,12 +911,31 @@ function MissionInner() {
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
   const recordingStartedAtRef = useRef<number>(0);
+  // STT/TTS 재현 테스트(2026-07-27): AUTO 모드는 isRecording을 전혀 쓰지 않아(수동 녹음
+  // 버튼 전용 상태) voiceState의 "listening" 판정이 AUTO 모드에서는 코드상 도달 불가능했다
+  // (Playwright 실측 - 인사 발화 종료 후 아이 답변을 기다리는 13초 이상 동안 배지가 계속
+  // idle이었고 "듣는 중"은 한 번도 뜨지 않음). useVoiceChat이 이미 갖고 있던
+  // onSpeechBegin/onSpeechEnd(실제 RMS 음성 감지 이벤트, 지금까지 아무도 연결 안 함)를
+  // AUTO 모드 전용으로 연결해 실제 음성 입력이 감지되는 구간만 "듣는 중"으로 표시한다.
+  // 수동 모드의 isRecording/canStartRecording 등 기존 로직은 전혀 건드리지 않는다.
+  const [isAutoListening, setIsAutoListening] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const pingRef = useRef<HTMLDivElement | null>(null);
 
-  const sttTts = useVoiceChat({ 
-    onTurnComplete: handleTurnComplete, 
+  const sttTts = useVoiceChat({
+    onTurnComplete: handleTurnComplete,
     getSessionId: () => sessionIdRef.current,
+    // STT/TTS 재현 테스트(2026-07-27) 수정 — AUTO 모드 전용 "듣는 중" 신호. 실제 RMS
+    // 음성 감지 시점(onSpeechBegin)~무음 확정으로 finalize가 트리거되는 시점(onSpeechEnd)
+    // 사이만 true로 유지한다. 수동 모드는 isAutoRef.current가 false라 전혀 영향받지 않는다.
+    onSpeechBegin: () => {
+      if (isLiveModeRef.current || !isAutoRef.current) return;
+      setIsAutoListening(true);
+    },
+    onSpeechEnd: () => {
+      if (isLiveModeRef.current) return;
+      setIsAutoListening(false);
+    },
     onEmptyAudio: () => {
       if (isLiveModeRef.current) return;
       emptySttStreakRef.current += 1;
@@ -1847,7 +1867,11 @@ function MissionInner() {
     // 있는 실제 신호를 그대로 쓴다: isRecording(마이크 입력 중) → isProcessingAnswer(발화
     // 종료 후 답변 판정+다음 질문 생성 중, STT~TTS 요청 구간) → sttTts.isSpeaking(TTS
     // 요청~실제 오디오 재생 종료까지, useVoiceChat.speak()가 그대로 관리).
-    if (isRecording) {
+    if (isRecording || isAutoListening) {
+      // 2026-07-27 재현 테스트 수정: isRecording은 수동 녹음 버튼 전용 상태라 AUTO 모드
+      // (기본값)에서는 절대 true가 안 돼 "듣는 중"이 코드상 도달 불가능했다(Playwright
+      // 실측 확인). isAutoListening(위 onSpeechBegin/onSpeechEnd)이 AUTO 모드의 실제
+      // 음성 감지 구간을 보강한다.
       voiceState = "listening";
     } else if (isProcessingAnswer) {
       voiceState = "thinking";
