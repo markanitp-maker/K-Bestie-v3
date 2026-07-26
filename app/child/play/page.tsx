@@ -1,13 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
-import { writeMbtiSessionHandoff } from "@/lib/play/mbtiSessionHandoff";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
-import { quizAttemptClaimPath } from "@/lib/quiz/play/api-contracts";
 import KChatbotWidget from "@/components/KChatbotWidget";
 
 const GAMES = [
@@ -17,8 +14,78 @@ const GAMES = [
   { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-sky-blue)", keys: 3 },
 ];
 
+/**
+ * 티켓 기반(1회용 실행 티켓 발급 → 독립 배포로 하드 내비게이션) 놀이 시작 공통 처리.
+ * 현재는 MBTI만 이 흐름을 쓰지만, 향후 다른 독립 놀이가 같은 방식을 쓸 수 있어
+ * playId를 파라미터로 받는다(놀이별 분기 없이 재사용 가능).
+ *
+ * 실측 버그(2026-07-27): reserve_gold_keys_for_play가 resume_expires_at 만료를 몰라
+ * /api/play/session(canResume=false, "시작하기" 노출)과 어긋나는 already_in_progress
+ * (409)를 반환한 적이 있다 — RPC는 수정했지만(20260762000000 마이그레이션), 서버가
+ * 막 만료 정리를 하는 경쟁 상태에서 여전히 409가 한 번 더 뜰 가능성에 대비해 클라이언트도
+ * 방어한다: 409를 받으면 (1) 실제 이어하기 가능 여부를 재조회해 가능하면 그 세션으로
+ * 진입하고, (2) 불가능하면 "시작하기"를 한 번만 더 안전하게 재시도하며, (3) 그래도
+ * 실패하면 사유가 보이는 안내를 띄운다 — "놀이 예약에 실패했습니다" 같은 범용 문구로
+ * 원인을 감추지 않는다.
+ */
+async function startTicketBasedPlay(
+  childId: string,
+  playId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const issueTicket = (mode: "start" | "resume") =>
+    fetch("/api/play/execution-ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ childId, playId, mode }),
+    });
+
+  const readErrorReason = async (res: Response, fallback: string): Promise<string> => {
+    try {
+      const body = await res.json();
+      return typeof body?.error === "string" ? body.error : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const firstRes = await issueTicket("start");
+
+  if (firstRes.status === 402) {
+    return { ok: false, reason: "insufficient_balance" };
+  }
+  if (firstRes.ok) {
+    return { ok: true };
+  }
+  if (firstRes.status !== 409) {
+    return { ok: false, reason: await readErrorReason(firstRes, `http_${firstRes.status}`) };
+  }
+
+  // 409: 서버가 "이미 진행중"이라고 판단 — 실제 이어하기 가능 여부를 재확인한다.
+  const sessionRes = await fetch(`/api/play/session?child_id=${childId}&play_type=${playId}`);
+  const sessionData = sessionRes.ok ? await sessionRes.json().catch(() => null) : null;
+
+  if (sessionData?.canResume) {
+    const resumeRes = await issueTicket("resume");
+    if (resumeRes.ok) {
+      return { ok: true };
+    }
+  }
+
+  // 이어하기가 불가능한데도 409 — 만료 정리와 신규 예약 사이의 경쟁 상태일 수 있으니
+  // "시작하기"를 한 번만 더 안전하게 재시도한다(직전 시도는 예약 자체가 거부됐으므로
+  // 아무 것도 차감되지 않았다 — 중복 차감 아님).
+  const retryRes = await issueTicket("start");
+  if (retryRes.status === 402) {
+    return { ok: false, reason: "insufficient_balance" };
+  }
+  if (retryRes.ok) {
+    return { ok: true };
+  }
+
+  return { ok: false, reason: await readErrorReason(retryRes, `retry_failed_${retryRes.status}`) };
+}
+
 export default function ChildPlayPage() {
-  const router = useRouter();
   const [childId, setChildId] = useState<string | null>(null);
   const [goldKeyBalance, setGoldKeyBalance] = useState<number | null>(null);
 
@@ -48,9 +115,6 @@ export default function ChildPlayPage() {
   const [showInsufficientModal, setShowInsufficientModal] = useState(false);
 
   const [showGameScreen, setShowGameScreen] = useState(false);
-
-  // mbti specific
-  const mbtiIdemKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -93,11 +157,6 @@ export default function ChildPlayPage() {
       return;
     }
     setSelectedGame(game);
-    if (game.id === "mbti") {
-      if (!mbtiIdemKeyRef.current) {
-        mbtiIdemKeyRef.current = crypto.randomUUID();
-      }
-    }
     setResumeCheckLoading(true);
     setShowActionModal(true);
     try {
@@ -123,25 +182,22 @@ export default function ChildPlayPage() {
     setIsStarting(true);
     try {
       if (selectedGame.id === "mbti") {
-        const res = await fetch("/api/play/consume", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ child_id: childId, play_type: "mbti", idempotency_key: mbtiIdemKeyRef.current })
-        });
-        
-        if (res.status === 402) {
+        // 딥 인터뷰 확정(.omc/specs/deep-interview-mbti-platform-connection.md ①②③):
+        // MBTI는 독립 Vercel 프로젝트로 프록시되는 별도 전체화면 경로다. router.push
+        // (소프트 내비게이션)가 아니라 하드 내비게이션을 쓴다 — Multi-Zones 경계를
+        // 넘어가는 이동이라 Next.js 클라이언트 라우터가 이어서 처리할 수 없다.
+        const result = await startTicketBasedPlay(childId, "mbti");
+
+        if (result.ok) {
+          setShowActionModal(false);
+          window.location.assign("/play/mbti");
+        } else if (result.reason === "insufficient_balance") {
           setIsStarting(false);
           setShowActionModal(false);
           setShowInsufficientModal(true);
           return;
-        } else if (res.ok) {
-          const data = await res.json();
-          mbtiIdemKeyRef.current = null;
-          setShowActionModal(false);
-          writeMbtiSessionHandoff({ sessionId: data.session_id, childId });
-          router.push("/play/mbti");
         } else {
-          alert("놀이 예약에 실패했습니다.");
+          alert(`놀이를 시작할 수 없어요. (사유: ${result.reason})\n잠시 후 다시 시도하거나 앱을 새로고침해주세요.`);
         }
       } else if (selectedGame.id === "quizmaster") {
         const res = await fetch("/api/quiz/start-handoff", {
@@ -159,7 +215,11 @@ export default function ChildPlayPage() {
           const { token } = await res.json();
           setShowActionModal(false);
           writeQuizSessionHandoff({ token, childId });
-          router.push("/play/quiz");
+          // MBTI와 동일한 이유로 하드 내비게이션이다(계획 Phase 5.4): quiz_proxy
+          // 게이트가 켜지면 /play/quiz는 인앱 Next.js 라우트가 아니라 독립 Quiz
+          // 배포로 리버스 프록시되는 경로가 되므로, router.push는 존재하지 않는
+          // RSC 페이로드를 기대하다 실패한다.
+          window.location.assign("/play/quiz");
         } else {
           alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
         }
@@ -207,17 +267,14 @@ export default function ChildPlayPage() {
     if (selectedGame.id === "mbti") {
       setIsStarting(true);
       try {
-        const res = await fetch("/api/play/consume", {
+        const res = await fetch("/api/play/execution-ticket", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ child_id: childId, play_type: "mbti", idempotency_key: mbtiIdemKeyRef.current })
+          body: JSON.stringify({ childId, playId: "mbti", mode: "resume" })
         });
         if (res.ok) {
-          const data = await res.json();
-          mbtiIdemKeyRef.current = null;
           setShowActionModal(false);
-          writeMbtiSessionHandoff({ sessionId: data.session_id, childId });
-          router.push("/play/mbti");
+          window.location.assign("/play/mbti");
         } else {
           alert("이어하기 처리에 실패했습니다.");
         }
@@ -227,25 +284,19 @@ export default function ChildPlayPage() {
         setIsStarting(false);
       }
     } else if (selectedGame.id === "quizmaster") {
-      // 재차감 없는 이어하기: start-handoff(황금열쇠 차감)를 호출하지 않고, 이미 알고
-      // 있는 기존 attempt를 claim(순수 재인증, 황금열쇠 무관)해서 그대로 재접속한다.
-      // docs/quiz-inapp-integration.md §5 참고.
+      // 재차감 없는 이어하기(계획 Phase 5.1): start-handoff(황금열쇠 차감)를 호출하지
+      // 않는다. claim(순수 재인증) 호출도 여기서 하지 않는다 — Quiz 앱이 자기 세션으로
+      // 소유권을 확인한 뒤 자기 쪽 claim 엔드포인트를 호출하는 것이 주경로다.
+      // K-Bestie는 attemptId만 넘기고(쿼리 + sessionStorage) 하드 내비게이션한다.
       setIsStarting(true);
       try {
         if (!resumeAttemptId) {
           alert("이어서 진행할 놀이를 찾지 못했어요. 다시 시도해주세요.");
           return;
         }
-        const res = await fetch(quizAttemptClaimPath(resumeAttemptId), { method: "POST" });
-        if (res.ok) {
-          setShowActionModal(false);
-          writeQuizSessionHandoff({ token: "", childId, attemptId: resumeAttemptId });
-          router.push("/play/quiz");
-        } else {
-          alert("이어하기에 실패했어요. 잠시 후 다시 시도해주세요.");
-        }
-      } catch (e) {
-        alert("오류가 발생했습니다.");
+        setShowActionModal(false);
+        writeQuizSessionHandoff({ token: "", childId, attemptId: resumeAttemptId });
+        window.location.assign(`/play/quiz?resume=${encodeURIComponent(resumeAttemptId)}`);
       } finally {
         setIsStarting(false);
       }
