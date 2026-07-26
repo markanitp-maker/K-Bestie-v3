@@ -119,26 +119,40 @@ export interface UseGeminiLiveOptions {
    *  동안 실제 오디오 청크가 한 번도 relay로 전송되지 않았을 때 true로, 그 뒤 실제 전송이
    *  재개되면 false로 호출된다. WebSocket/Vertex 세션은 전혀 건드리지 않는 순수 UI 신호다. */
   onNoAudioInput?: (active: boolean) => void;
+  /** 위 onNoAudioInput 감지 자체를 켤지 여부. 기본값 false(하위 호환) — 이 훅을 쓰는 다른
+   *  호출부(자유대화 Live 경로, TestModeABRunner 등)는 옵션을 넘기지 않으므로 자동으로
+   *  기존 그대로(무입력 감지 없음, RMS_THRESHOLD 환경변수 오버라이드도 미적용) 유지된다.
+   *  Care Premium 미션 화면(app/child/missions/page.tsx)만 명시적으로 true를 넘긴다. */
+  enableNoAudioInputDetection?: boolean;
   onRecoveryNeeded?: () => void;
   displaySequenceCounterRef?: React.MutableRefObject<number>;
   /** A~E 대화방식 모드 — usage_events.conversation_mode 태깅용 */
   conversationMode?: string;
 }
 
+const DEFAULT_RMS_THRESHOLD = 0.015;
+// RMS는 이론상 0~1 사이 값이고, 사람 목소리가 이 임계값을 못 넘기게 될 만큼 관대한 상한을
+// 0.5로 잡는다 — 이보다 큰 값은 사실상 VAD를 영구 차단하는 잘못된 설정으로 간주하고 폴백한다.
+const MAX_RMS_THRESHOLD = 0.5;
+
 // RMS_THRESHOLD는 기기별 마이크 감도 차이(특히 실기기에서 소리를 잘 못 잡는 경우)에 대응할
 // 수 있도록 NEXT_PUBLIC_VAD_RMS_THRESHOLD로 오버라이드 가능하게 한다 — 민감정보가 아니므로
-// NEXT_PUBLIC_ 접두사 사용에 문제 없다. 값이 없거나 숫자로 파싱되지 않으면 기존 기본값(0.015)
-// 으로 안전하게 폴백한다.
-function resolveVadRmsThreshold(): number {
+// NEXT_PUBLIC_ 접두사 사용에 문제 없다. 값이 없거나 숫자로 파싱되지 않거나 범위(0, 0.5] 밖이면
+// 기존 기본값(0.015)으로 안전하게 폴백한다. Care Premium 미션(enableNoAudioInputDetection=true)
+// 에서만 호출한다 — 다른 호출부는 이 함수 자체를 부르지 않고 DEFAULT_RMS_THRESHOLD를 그대로 쓴다.
+function resolveVadRmsThresholdOverride(): number {
   const raw = process.env.NEXT_PUBLIC_VAD_RMS_THRESHOLD;
-  if (!raw) return 0.015;
+  if (!raw) return DEFAULT_RMS_THRESHOLD;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0.015;
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > MAX_RMS_THRESHOLD) return DEFAULT_RMS_THRESHOLD;
+  return parsed;
 }
 
 // ── 클라이언트 VAD (자동 발화 감지) 설정 상수 ──────────────────
+// RMS_THRESHOLD는 더 이상 이 객체에 없다 — enableNoAudioInputDetection 옵션에 따라 인스턴스별로
+// rmsThresholdRef(훅 내부)에서 계산한다(전역 모듈 상수로 두면 이 훅을 쓰는 모든 호출부에 영향을
+// 준다 — Codex 리뷰 지적, 자유대화 Live 경로/TestModeABRunner는 항상 DEFAULT_RMS_THRESHOLD).
 const VAD_CONFIG = {
-  RMS_THRESHOLD: resolveVadRmsThreshold(),
   MIN_SPEECH_DURATION_MS: 150,     // 발화 확인 시간
   MAX_CANDIDATE_BUFFER_MS: 200,    // 후보 버퍼 최대 길이
   SILENCE_TIMEOUT_MS: 1200,        // 발화 종료 무음 시간
@@ -279,6 +293,23 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const noAudioInputRef = useRef(false);
   const [noAudioInput, setNoAudioInput] = useState(false);
   const lastVadSampleLogAtRef = useRef(0);
+  // claude-review 지적 반영 — 아이 발화가 끝나 activityEnd를 보낸 뒤 K가 응답을 준비하는
+  // 구간("생각하는 중")에도 마이크는 계속 켜져 있고 kSpeakingRef는 아직 false라
+  // isNoAudioInputEligible이 계속 true로 남는 문제가 있었다(activityEnd로부터 약 5.8초 뒤
+  // 오발동 — 기존 8초 응답 타임아웃보다 먼저 발동해 "다시 말해줄래?"가 정상 대기 중에 뜸).
+  // 이 ref가 true인 동안은 무입력 감지 대상에서 완전히 제외한다. activityEnd 전송 시 true,
+  // K가 실제로 말하기 시작하거나(kSpeakingRef=true) generation이 취소되거나 아이가 다시
+  // 말하기 시작하면(activityStart) false로 리셋한다.
+  const awaitingKResponseRef = useRef(false);
+  // Codex 리뷰 지적 반영 — RMS_THRESHOLD와 무입력 감지 자체를 이 훅의 모든 호출부(자유대화
+  // Live 경로, TestModeABRunner 등)에 전역 적용하지 않고 enableNoAudioInputDetection 옵션을
+  // 넘긴 호출부(현재는 Care Premium 미션 화면)에만 한정한다.
+  const enableNoAudioInputDetectionRef = useRef(false);
+  const rmsThresholdRef = useRef(DEFAULT_RMS_THRESHOLD);
+  // 저수준 캡처 진단 — 세션당 onaudioprocess 콜백이 최초로 1번이라도 호출됐는지, 그리고
+  // sendRealtimeInput(audio) 시도 시 세션이 없어서 무시된 경우를 감지하기 위한 상태.
+  const audioProcessFiredRef = useRef(false);
+  const lastSendAttemptedNoSessionLogAtRef = useRef(0);
 
   // GCP STT 비동기 확정(finalizing) 상태 추적을 위한 Ref
   const manualFinalizingRef = useRef<boolean>(false);
@@ -429,6 +460,10 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   onRecoveryNeededRef.current = options?.onRecoveryNeeded;
   const onNoAudioInputRef = useRef<((active: boolean) => void) | undefined>(undefined);
   onNoAudioInputRef.current = options?.onNoAudioInput;
+  enableNoAudioInputDetectionRef.current = options?.enableNoAudioInputDetection ?? false;
+  rmsThresholdRef.current = enableNoAudioInputDetectionRef.current
+    ? resolveVadRmsThresholdOverride()
+    : DEFAULT_RMS_THRESHOLD;
   const kTurnHasAudioRef = useRef(false);
   const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
   // 현재 armed 된 no-response watchdog 이 "어느 K generation 의 완료를 기다리는지" 저장한다.
@@ -603,7 +638,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       micEnabled: micEnabledRef.current,
       extra: {
         rms: params.rms,
-        threshold: VAD_CONFIG.RMS_THRESHOLD,
+        threshold: rmsThresholdRef.current,
         kSpeaking: kSpeakingRef.current,
         chunkSent: params.chunkSent,
         vadState: vadStateRef.current,
@@ -779,6 +814,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     clearWatchdogTimer();
     cutActiveKTurnForBargeIn();
     logTelemetryEvent("generationCancelled");
+    // K 응답 생성이 취소됐으니 "K 응답 대기 중" 예외 상태를 풀어 정상 무입력 감지로 복귀한다.
+    awaitingKResponseRef.current = false;
   }, []);
 
   // 실제 사용자 제스처(탭) 호출 스택 안에서 불러야 효과가 있다(Android Chrome 자동재생
@@ -843,6 +880,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
       if (!kSpeakingRef.current) {
         kSpeakingRef.current = true; // 재생 시작 — 마이크 무음 유지
+        // K가 실제로 응답하기 시작했으니 "K 응답 대기 중" 예외 상태를 해제한다.
+        awaitingKResponseRef.current = false;
         // 브라우저 STT 엔진 자체를 정지시킨다 — onresult 콜백에서 결과를 걸러내는 것만으로는
         // 부족하다(isFinal 결과가 실제 발화보다 수백ms~1초 늦게 도착해, K가 말을 끝내고
         // kSpeakingRef가 false로 풀린 뒤에야 에코 인식 결과가 도착해 가드를 통과하는 경우가 있었음).
@@ -1060,6 +1099,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     clearVadTimersAndBuffers();
     // 세션이 끊기는 시점에 "마이크 입력 없음" 표시가 다음 세션까지 이어지지 않도록 정리한다.
     silenceEligibleSinceRef.current = null;
+    awaitingKResponseRef.current = false;
     if (noAudioInputRef.current) updateNoAudioInput(false);
     clearGenerationTimeout();
     clearWatchdogTimer();
@@ -1226,13 +1266,36 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       console.log("[K] 🔑 token received, mode:", tokenData.mode, "model:", tokenData.model);
 
       if (!navigator.mediaDevices?.getUserMedia) {
+        logVoiceEvent({ ts: Date.now(), eventType: "micStreamFailed", extra: { reason: "no_getUserMedia_api" } });
         throw new Error("마이크를 사용하려면 HTTPS로 접속하세요.");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        });
+      } catch (mediaErr) {
+        logVoiceEvent({ ts: Date.now(), eventType: "micStreamFailed", extra: { reason: (mediaErr as Error)?.name ?? "unknown", message: (mediaErr as Error)?.message } });
+        throw mediaErr;
+      }
       micStreamRef.current = stream;
+      audioProcessFiredRef.current = false;
       console.log("[K] 🎙️ mic:", stream.getAudioTracks()[0]?.label);
+      logVoiceEvent({
+        ts: Date.now(),
+        eventType: "micStreamAcquired",
+        extra: { trackCount: stream.getAudioTracks().length, label: stream.getAudioTracks()[0]?.label ?? "" },
+      });
+      // 저수준 진단 — mic stream은 잡혔는데 AudioContext의 onaudioprocess 콜백 자체가 한 번도
+      // 안 불리면(캡처 파이프라인이 VAD 판정 이전 단계에서 이미 끊긴 것) 3초 뒤 1회만 기록한다.
+      // rms 값과 무관하게 "콜백이 오는가" 자체만 본다 — VAD_CONFIG.RMS_THRESHOLD와 완전히 독립적.
+      const audioProcessWatchdogGeneration = connectionGenerationRef.current;
+      setTimeout(() => {
+        if (audioProcessWatchdogGeneration !== connectionGenerationRef.current) return;
+        if (!audioProcessFiredRef.current) {
+          logVoiceEvent({ ts: Date.now(), eventType: "audioProcessNeverFired" });
+        }
+      }, 3000);
 
       // 출력 AudioContext: Gemini는 24kHz PCM16을 보냄
       const outputCtx = new AudioContext({ sampleRate: 24000 });
@@ -1820,7 +1883,23 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       processorRef.current = processor;
 
       let chunkCount = 0;
+      // 저수준 진단 — sendRealtimeInput(audio)를 시도했는데 sessionRef.current가 null이라
+      // optional chaining으로 조용히 무시된 경우를 감지한다. chunkSentThisFrame과는 별개 레이어
+      // (여기는 "전송 시도 자체가 세션 부재로 실패"만 본다, VAD 판정과 무관).
+      function trySendAudioChunk(pcm: string): boolean {
+        if (!sessionRef.current) {
+          const now = Date.now();
+          if (now - lastSendAttemptedNoSessionLogAtRef.current >= VAD_SAMPLE_LOG_THROTTLE_MS) {
+            lastSendAttemptedNoSessionLogAtRef.current = now;
+            logVoiceEvent({ ts: now, eventType: "sendAttemptedNoSession", extra: { status: statusRef.current } });
+          }
+          return false;
+        }
+        sessionRef.current.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
+        return true;
+      }
       processor.onaudioprocess = (ev) => {
+        audioProcessFiredRef.current = true;
         const float32 = ev.inputBuffer.getChannelData(0);
 
         // 1. RMS (음량) 계산
@@ -1841,7 +1920,11 @@ const incomingGenerationId = currentKGenerationIdRef.current;
         // 녹음이 시작되므로 이 문제 자체가 발생하지 않는다). 대상 조건(라이브 접속 + 마이크 켜짐
         // + K가 말하는 중 아님 + 자동 모드)을 벗어나면 즉시 타이머를 리셋해 오검출을 막는다
         // (요구사항 1의 "세션 연결 중이거나 K가 말하는 중이면 타이머를 멈추거나 리셋" 그대로).
-        const isNoAudioInputEligible = isLiveActive && interactionModeRef.current !== "manual";
+        const isNoAudioInputEligible =
+          enableNoAudioInputDetectionRef.current &&
+          isLiveActive &&
+          interactionModeRef.current !== "manual" &&
+          !awaitingKResponseRef.current;
         if (!isNoAudioInputEligible) {
           silenceEligibleSinceRef.current = null;
           if (noAudioInputRef.current) updateNoAudioInput(false);
@@ -1864,8 +1947,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           if (interactionModeRef.current === "manual") {
             if (isChildSpeakingRef.current) {
               const pcm = encodePCM16(float32);
-              sessionRef.current?.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
-              chunkSentThisFrame = true;
+              chunkSentThisFrame = trySendAudioChunk(pcm);
 
               if (sttModeRef.current === "gcp") {
                 const buf = new Int16Array(float32.length);
@@ -1878,7 +1960,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           }
           // B. 자동 모드인 경우 (3단계 VAD 상태머신 + 200ms 후보 버퍼)
           else {
-            const isAboveThreshold = rms >= VAD_CONFIG.RMS_THRESHOLD;
+            const isAboveThreshold = rms >= rmsThresholdRef.current;
 
             if (vadStateRef.current === "idle") {
               if (isAboveThreshold) {
@@ -1899,6 +1981,8 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                     // 1. activityStart 전송 (정확히 1회)
                     console.log(`${getLogPrefix()} [VAD] Auto Speech Start -> send activityStart`);
                     isChildSpeakingRef.current = true;
+                    // 아이가 다시 말하기 시작했으니 "K 응답 대기 중" 예외 상태를 해제한다.
+                    awaitingKResponseRef.current = false;
                     // sendActivityStart(수동 모드)와 동일하게, 새 아이 발화 턴이 시작되는 시점에
                     // 곧바로 초기화한다 — 이전엔 K-A(억제 전)의 turnComplete가 이 리셋을 대신
                     // 해줬지만, gcp 모드에서 K-A를 null로 억제한 뒤로는 그 turnComplete 자체가
@@ -1917,12 +2001,15 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                     const buffered = candidateBufferRef.current;
                     if (buffered.length > 0) {
                       const pcm = encodePCM16(buffered);
-                      sessionRef.current?.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
+                      const sent = trySendAudioChunk(pcm);
                       // setTimeout 콜백이라 onaudioprocess 프레임 로컬 변수(chunkSentThisFrame)와
                       // 별도로, 이 실제 전송 시점에 직접 무입력 타이머를 리셋하고 즉시 로그를 남긴다.
-                      silenceEligibleSinceRef.current = Date.now();
-                      if (noAudioInputRef.current) updateNoAudioInput(false);
-                      logVadSample({ rms: lastRmsRef.current, chunkSent: true, force: true });
+                      // 전송이 실제로 성공했을 때만(세션이 있었을 때만) 리셋한다.
+                      if (sent) {
+                        silenceEligibleSinceRef.current = Date.now();
+                        if (noAudioInputRef.current) updateNoAudioInput(false);
+                      }
+                      logVadSample({ rms: lastRmsRef.current, chunkSent: sent, force: true });
 
                       if (sttModeRef.current === "gcp") {
                         const buf = new Int16Array(buffered.length);
@@ -1954,10 +2041,11 @@ const incomingGenerationId = currentKGenerationIdRef.current;
             else if (vadStateRef.current === "active") {
               // active 상태: 들어오는 PCM 실시간 전송
               const pcm = encodePCM16(float32);
-              sessionRef.current?.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
-              chunkSentThisFrame = true;
-              silenceEligibleSinceRef.current = Date.now();
-              if (noAudioInputRef.current) updateNoAudioInput(false);
+              chunkSentThisFrame = trySendAudioChunk(pcm);
+              if (chunkSentThisFrame) {
+                silenceEligibleSinceRef.current = Date.now();
+                if (noAudioInputRef.current) updateNoAudioInput(false);
+              }
 
               if (sttModeRef.current === "gcp") {
                 const buf = new Int16Array(float32.length);
@@ -2005,6 +2093,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                         startGenerationTimeout();
                       }
                       hasFiredFirstOutputRef.current = false;
+                      awaitingKResponseRef.current = true;
                       sessionRef.current?.sendRealtimeInput({ activityEnd: {} });
                       logVoiceEvent({ ts: Date.now(), eventType: "activityEnd", mode: "live" });
                       if (sttModeRef.current === "gcp") {
@@ -2298,6 +2387,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       console.log("[VAD] Mode transition during active speech -> send activityEnd");
       if (sessionRef.current && statusRef.current === "live") {
         try {
+          awaitingKResponseRef.current = true;
           sessionRef.current.sendRealtimeInput({ activityEnd: {} });
           logVoiceEvent({ ts: Date.now(), eventType: "activityEnd", mode: "live" });
         } catch (e) {
@@ -2344,6 +2434,8 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     childAudioChunksRef.current = [];
     childTurnFlushedRef.current = false;
     isChildSpeakingRef.current = true;
+    // 아이가 다시(또는 barge-in으로) 말하기 시작했으니 "K 응답 대기 중" 예외 상태를 해제한다.
+    awaitingKResponseRef.current = false;
     activeChildTurnIdRef.current = nextTurnId();
     activeChildTurnDisplaySequenceRef.current = nextDisplaySequence();
     sessionRef.current.sendRealtimeInput({ activityStart: {} });
@@ -2383,7 +2475,8 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       waitingForLiveReceiveRef.current = true;
     }
     hasFiredFirstOutputRef.current = false;
-    
+    awaitingKResponseRef.current = true;
+
     sessionRef.current.sendRealtimeInput({ activityEnd: {} });
           logVoiceEvent({ ts: Date.now(), eventType: "activityEnd", mode: "live" });
     sessionRef.current.sendClientContent({

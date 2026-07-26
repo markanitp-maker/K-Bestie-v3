@@ -396,7 +396,7 @@ export default function QuizPlayScreen({
   const progressPercent = questions.length > 0 ? ((position + 1) / questions.length) * 100 : 0;
 
   return (
-    <main className="flex min-h-dvh flex-col bg-k-background">
+    <main className="flex h-dvh flex-col overflow-hidden bg-k-background">
       <div className="shrink-0 flex items-center px-4 pt-4 pb-2">
         <button
           type="button"
@@ -589,64 +589,69 @@ export default function QuizPlayScreen({
       )}
 
       {phase === "playing" && currentQuestion && (
-        <div className="flex flex-1 flex-col gap-6 p-6">
-          <div className="flex flex-col items-center gap-2 pb-2">
-            <Image
-              src="/Images/logo/Logo.png"
-              alt="내친구 케이"
-              width={84}
-              height={24}
-              className="object-contain"
-              priority
-            />
-            <Image
-              src="/Images/mascot/mascot-standing.png"
-              alt="케이 마스코트"
-              width={80}
-              height={80}
-              className="object-contain"
-              priority
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between text-sm font-medium" style={{ color: "var(--color-k-sky-blue)" }}>
-              <span>{position + 1} / {questions.length}</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-k-surface">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{ width: `${progressPercent}%`, background: "var(--color-k-sky-blue)" }}
+        <div className="flex flex-1 min-h-0 flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 px-6 pt-1 pb-4">
+            <div className="flex flex-col items-center gap-0.5">
+              <Image
+                src="/Images/logo/Logo.png"
+                alt="내친구 케이"
+                width={72}
+                height={20}
+                className="object-contain"
+                priority
+              />
+              <Image
+                src="/Images/mascot/mascot-standing.png"
+                alt="케이 마스코트"
+                width={52}
+                height={52}
+                className="object-contain"
+                priority
               />
             </div>
+
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between text-sm font-medium" style={{ color: "var(--color-k-sky-blue)" }}>
+                <span>{position + 1} / {questions.length}</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-k-surface">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${progressPercent}%`, background: "var(--color-k-sky-blue)" }}
+                />
+              </div>
+            </div>
+
+            <h1 className="text-lg font-semibold leading-snug text-k-text-primary">{currentQuestion.question_text}</h1>
+
+            <div className="flex flex-col gap-2">
+              {orderedOptions.map((optionText, displaySlotIndex) => {
+                const selected = answers[currentQuestion.id] === displaySlotIndex;
+                return (
+                  <button
+                    key={displaySlotIndex}
+                    type="button"
+                    onClick={() => void handleSelectOption(displaySlotIndex)}
+                    disabled={isAdvancing}
+                    aria-pressed={selected}
+                    className="rounded-2xl border-2 px-4 py-2.5 text-left text-k-text-primary transition-colors disabled:cursor-not-allowed"
+                    style={
+                      selected
+                        ? { borderColor: "var(--color-k-orange)", background: "var(--color-k-orange-tint)" }
+                        : { borderColor: "var(--color-k-border)", background: "white" }
+                    }
+                  >
+                    {optionText}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <h1 className="text-xl font-semibold text-k-text-primary">{currentQuestion.question_text}</h1>
-
-          <div className="flex flex-col gap-3">
-            {orderedOptions.map((optionText, displaySlotIndex) => {
-              const selected = answers[currentQuestion.id] === displaySlotIndex;
-              return (
-                <button
-                  key={displaySlotIndex}
-                  type="button"
-                  onClick={() => void handleSelectOption(displaySlotIndex)}
-                  disabled={isAdvancing}
-                  aria-pressed={selected}
-                  className="rounded-2xl border-2 px-4 py-3 text-left text-k-text-primary transition-colors disabled:cursor-not-allowed"
-                  style={
-                    selected
-                      ? { borderColor: "var(--color-k-orange)", background: "var(--color-k-orange-tint)" }
-                      : { borderColor: "var(--color-k-border)", background: "white" }
-                  }
-                >
-                  {optionText}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-auto flex items-center justify-between gap-3">
+          <div
+            className="shrink-0 flex items-center justify-between gap-3 border-t px-6 py-3"
+            style={{ borderColor: "var(--color-k-border)", background: "var(--color-k-background)", paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+          >
             <button
               type="button"
               onClick={() => goTo(position - 1)}

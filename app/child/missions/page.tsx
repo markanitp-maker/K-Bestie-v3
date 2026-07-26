@@ -988,6 +988,9 @@ function MissionInner() {
     onTurnComplete: handleTurnComplete,
     voiceName: liveVoiceName,
     sttMode: "gcp",
+    // Care Premium 미션 화면에만 무입력 감지(+RMS threshold 오버라이드)를 켠다 — 자유대화의
+    // Live 경로나 TestModeABRunner는 이 옵션을 넘기지 않으므로 기존 그대로 유지된다.
+    enableNoAudioInputDetection: true,
     getSessionId: () => sessionIdRef.current,
     getChildId: () => childIdRef.current,
     onRecoveryNeeded: () => {
