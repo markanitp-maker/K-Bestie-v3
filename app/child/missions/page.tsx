@@ -1854,7 +1854,17 @@ function MissionInner() {
   if (isConnecting) {
     voiceState = "connecting";
   } else if (isLiveMode) {
-    if (turnPhaseUi === "child_listening" || turnPhaseUi === "child_finalizing") {
+    // 실장애 재현(2026-07-26): Live 세션이 정상 오픈된 채로 클라이언트가 AUTO 모드에서
+    // 실제 오디오를 relay로 한 번도 못 보내는 구간이 있었다(VAD RMS_THRESHOLD 미도달 등) —
+    // 실측 결과 이 구간에서 turnPhaseUi는 "child_listening"으로 전환되지 않고 세션 시작
+    // 시점의 "idle" 그대로 남아있는 경우가 있었다(새 세션의 첫 턴 등) — turnPhaseUi 값에
+    // 의존하지 않고 live.noAudioInput 하나만으로 최우선 판정한다. hooks/useGeminiLive.ts가
+    // 마이크 활성+K 비발화 상태에서만 이 신호를 켜므로(K가 말하는 중이면 절대 true가 될 수
+    // 없음), turnPhaseUi가 무엇이든 이 값이 true면 항상 "no_input"을 보여줘도 안전하다.
+    // 세션/WebSocket은 전혀 건드리지 않으며, 다시 소리가 감지되면 자동으로 꺼진다.
+    if (live.noAudioInput) {
+      voiceState = "no_input";
+    } else if (turnPhaseUi === "child_listening" || turnPhaseUi === "child_finalizing") {
       voiceState = "listening";
     } else if (turnPhaseUi === "waiting_k") {
       voiceState = "thinking";

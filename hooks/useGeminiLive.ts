@@ -115,19 +115,45 @@ export interface UseGeminiLiveOptions {
   onKTurnFirstOutput?: () => void;
   /** K 턴의 첫 출력이 8초 동안 도착하지 않아 generation이 취소되었을 때 호출. */
   onKTurnTimeout?: () => void;
+  /** AUTO 모드에서 마이크가 켜져 있고(K가 말하는 중이 아닌) 상태로 NO_AUDIO_INPUT_TIMEOUT_MS
+   *  동안 실제 오디오 청크가 한 번도 relay로 전송되지 않았을 때 true로, 그 뒤 실제 전송이
+   *  재개되면 false로 호출된다. WebSocket/Vertex 세션은 전혀 건드리지 않는 순수 UI 신호다. */
+  onNoAudioInput?: (active: boolean) => void;
   onRecoveryNeeded?: () => void;
   displaySequenceCounterRef?: React.MutableRefObject<number>;
   /** A~E 대화방식 모드 — usage_events.conversation_mode 태깅용 */
   conversationMode?: string;
 }
 
+// RMS_THRESHOLD는 기기별 마이크 감도 차이(특히 실기기에서 소리를 잘 못 잡는 경우)에 대응할
+// 수 있도록 NEXT_PUBLIC_VAD_RMS_THRESHOLD로 오버라이드 가능하게 한다 — 민감정보가 아니므로
+// NEXT_PUBLIC_ 접두사 사용에 문제 없다. 값이 없거나 숫자로 파싱되지 않으면 기존 기본값(0.015)
+// 으로 안전하게 폴백한다.
+function resolveVadRmsThreshold(): number {
+  const raw = process.env.NEXT_PUBLIC_VAD_RMS_THRESHOLD;
+  if (!raw) return 0.015;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0.015;
+}
+
 // ── 클라이언트 VAD (자동 발화 감지) 설정 상수 ──────────────────
 const VAD_CONFIG = {
-  RMS_THRESHOLD: 0.015,
+  RMS_THRESHOLD: resolveVadRmsThreshold(),
   MIN_SPEECH_DURATION_MS: 150,     // 발화 확인 시간
   MAX_CANDIDATE_BUFFER_MS: 200,    // 후보 버퍼 최대 길이
   SILENCE_TIMEOUT_MS: 1200,        // 발화 종료 무음 시간
 };
+
+// 실장애 재현(2026-07-26, Cloud Run relay 로그 확인): Live 세션이 정상 오픈됐는데도 클라이언트가
+// 오디오를 relay로 60초간 한 번도 안 보내(input_audio_chunk 0건) relay의 heartbeat_timeout으로
+// 세션이 강제 종료된 사례 — VAD RMS_THRESHOLD를 못 넘겨(마이크 감도/권한/threshold 미스매치)
+// 발생. 이 타임아웃보다 훨씬 짧게(7초) 클라이언트가 먼저 "마이크 입력 없음"을 감지해 사용자에게
+// 알린다 — 세션 자체는 끊지 않는다(요구사항 4: 재발화 시 재연결 없이 자동 복구).
+const NO_AUDIO_INPUT_TIMEOUT_MS = 7000;
+// VAD 상태/게이트 디버그 로그(logVoiceEvent, NEXT_PUBLIC_DEBUG_VOICE_TIMELINE로 게이팅)를
+// 매 오디오 프레임(~128ms)마다 남기면 너무 시끄러우므로 최소 이 간격(1초)마다만 남긴다.
+// 단, VAD 상태 전환 시점은 이 스로틀과 무관하게 즉시 남긴다.
+const VAD_SAMPLE_LOG_THROTTLE_MS = 1000;
 
 // ── PCM 인코딩/디코딩 ────────────────────────────────────────
 function encodePCM16(float32: Float32Array): string {
@@ -243,6 +269,16 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // (useVoiceChat.ts의 speakingRef와 동일한 목적, echoCancellation 브라우저 제약만으로는
   //  WebAudio API로 재생하는 오디오를 AEC 기준 신호로 못 잡는 경우가 있어 반드시 필요).
   const kSpeakingRef = useRef(false);
+
+  // 실장애 재현 대응 — AUTO 모드에서 마이크가 켜져 있는데(K는 말하는 중 아님) 실제 오디오
+  // 청크가 relay로 전송되지 않는 구간을 추적한다. silenceEligibleSinceRef는 "이 구간이
+  // 시작된 시각"(마지막 실제 전송 또는 마지막으로 감지 대상 조건에 진입한 시각) — 대상
+  // 조건을 벗어나면(K가 말하기 시작, 마이크 꺼짐, 수동 모드, 세션 미접속) null로 리셋해
+  // 오검출을 막는다.
+  const silenceEligibleSinceRef = useRef<number | null>(null);
+  const noAudioInputRef = useRef(false);
+  const [noAudioInput, setNoAudioInput] = useState(false);
+  const lastVadSampleLogAtRef = useRef(0);
 
   // GCP STT 비동기 확정(finalizing) 상태 추적을 위한 Ref
   const manualFinalizingRef = useRef<boolean>(false);
@@ -391,6 +427,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   onKTurnTimeoutRef.current = options?.onKTurnTimeout;
   const onRecoveryNeededRef = useRef<(() => void) | undefined>(undefined);
   onRecoveryNeededRef.current = options?.onRecoveryNeeded;
+  const onNoAudioInputRef = useRef<((active: boolean) => void) | undefined>(undefined);
+  onNoAudioInputRef.current = options?.onNoAudioInput;
   const kTurnHasAudioRef = useRef(false);
   const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
   // 현재 armed 된 no-response watchdog 이 "어느 K generation 의 완료를 기다리는지" 저장한다.
@@ -540,6 +578,37 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       turnId: tid,
       generationId: gid
     }));
+  }
+
+  // "마이크 입력 없음" UI 신호 전환 — WebSocket/Vertex 세션은 전혀 건드리지 않는다(요구사항 4).
+  function updateNoAudioInput(next: boolean) {
+    if (noAudioInputRef.current === next) return;
+    noAudioInputRef.current = next;
+    setNoAudioInput(next);
+    onNoAudioInputRef.current?.(next);
+    logVoiceEvent({ ts: Date.now(), eventType: "noAudioInput", extra: { active: next } });
+  }
+
+  // VAD 게이트 동작(rms/threshold/micEnabled/kSpeaking/실제 전송 여부)을 debug timeline에 남긴다
+  // — NEXT_PUBLIC_DEBUG_VOICE_TIMELINE이 꺼져 있으면 logVoiceEvent 자체가 no-op이라 프로덕션에는
+  // 영향이 없다. force=true(상태 전환 시점)가 아니면 VAD_SAMPLE_LOG_THROTTLE_MS로 스로틀링한다.
+  function logVadSample(params: { rms: number; chunkSent: boolean; force?: boolean }) {
+    const now = Date.now();
+    if (!params.force && now - lastVadSampleLogAtRef.current < VAD_SAMPLE_LOG_THROTTLE_MS) return;
+    lastVadSampleLogAtRef.current = now;
+    logVoiceEvent({
+      ts: now,
+      eventType: "vadSample",
+      mode: "live",
+      micEnabled: micEnabledRef.current,
+      extra: {
+        rms: params.rms,
+        threshold: VAD_CONFIG.RMS_THRESHOLD,
+        kSpeaking: kSpeakingRef.current,
+        chunkSent: params.chunkSent,
+        vadState: vadStateRef.current,
+      },
+    });
   }
 
   function clearGenerationTimeout() {
@@ -989,6 +1058,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   function teardown(reason: string = "unknown") {
     console.log(getLogPrefix(), "🧹 teardown called, reason:", reason);
     clearVadTimersAndBuffers();
+    // 세션이 끊기는 시점에 "마이크 입력 없음" 표시가 다음 세션까지 이어지지 않도록 정리한다.
+    silenceEligibleSinceRef.current = null;
+    if (noAudioInputRef.current) updateNoAudioInput(false);
     clearGenerationTimeout();
     clearWatchdogTimer();
     if (turnCompleteFallbackTimerRef.current) {
@@ -1765,12 +1837,35 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           onAudioLevelChangeRef.current(isLiveActive ? rms : 0);
         }
 
+        // "마이크 입력 없음" 감지 — AUTO 모드에서만 적용한다(수동 모드는 아이가 버튼을 눌러야
+        // 녹음이 시작되므로 이 문제 자체가 발생하지 않는다). 대상 조건(라이브 접속 + 마이크 켜짐
+        // + K가 말하는 중 아님 + 자동 모드)을 벗어나면 즉시 타이머를 리셋해 오검출을 막는다
+        // (요구사항 1의 "세션 연결 중이거나 K가 말하는 중이면 타이머를 멈추거나 리셋" 그대로).
+        const isNoAudioInputEligible = isLiveActive && interactionModeRef.current !== "manual";
+        if (!isNoAudioInputEligible) {
+          silenceEligibleSinceRef.current = null;
+          if (noAudioInputRef.current) updateNoAudioInput(false);
+        } else {
+          if (silenceEligibleSinceRef.current === null) {
+            silenceEligibleSinceRef.current = Date.now();
+          } else if (
+            !noAudioInputRef.current &&
+            Date.now() - silenceEligibleSinceRef.current >= NO_AUDIO_INPUT_TIMEOUT_MS
+          ) {
+            updateNoAudioInput(true);
+          }
+        }
+        // 이 프레임에서 실제로 sendRealtimeInput({ audio }) 호출이 일어났는지 — 아래 각 분기의
+        // 실제 전송 지점에서 true로 세팅하고, 핸들러 마지막에 한 번만 로그로 남긴다(요구사항 2).
+        let chunkSentThisFrame = false;
+
         if (isLiveActive) {
           // A. 수동 모드인 경우 (기존 동작 고수 - 후보 버퍼 배제)
           if (interactionModeRef.current === "manual") {
             if (isChildSpeakingRef.current) {
               const pcm = encodePCM16(float32);
               sessionRef.current?.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
+              chunkSentThisFrame = true;
 
               if (sttModeRef.current === "gcp") {
                 const buf = new Int16Array(float32.length);
@@ -1823,6 +1918,11 @@ const incomingGenerationId = currentKGenerationIdRef.current;
                     if (buffered.length > 0) {
                       const pcm = encodePCM16(buffered);
                       sessionRef.current?.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
+                      // setTimeout 콜백이라 onaudioprocess 프레임 로컬 변수(chunkSentThisFrame)와
+                      // 별도로, 이 실제 전송 시점에 직접 무입력 타이머를 리셋하고 즉시 로그를 남긴다.
+                      silenceEligibleSinceRef.current = Date.now();
+                      if (noAudioInputRef.current) updateNoAudioInput(false);
+                      logVadSample({ rms: lastRmsRef.current, chunkSent: true, force: true });
 
                       if (sttModeRef.current === "gcp") {
                         const buf = new Int16Array(buffered.length);
@@ -1855,6 +1955,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
               // active 상태: 들어오는 PCM 실시간 전송
               const pcm = encodePCM16(float32);
               sessionRef.current?.sendRealtimeInput({ audio: { data: pcm, mimeType: "audio/pcm;rate=16000" } });
+              chunkSentThisFrame = true;
+              silenceEligibleSinceRef.current = Date.now();
+              if (noAudioInputRef.current) updateNoAudioInput(false);
 
               if (sttModeRef.current === "gcp") {
                 const buf = new Int16Array(float32.length);
@@ -1940,6 +2043,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           if (++chunkCount % 40 === 1) {
             console.log(`[K] 📡 PCM #${chunkCount} (State: ${vadStateRef.current}, RMS: ${rms.toFixed(4)})`);
           }
+          logVadSample({ rms, chunkSent: chunkSentThisFrame });
         } else {
           // 비활성 세션 시 임시 버퍼 및 VAD 타이머 리셋
           clearVadTimersAndBuffers();
@@ -2357,6 +2461,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
 
   return {
     status, error, transcript, interimChildText, audioLocked,
+    // AUTO 모드에서 마이크가 켜져 있는데 실제 오디오가 relay로 전송되지 않는 상태(요구사항 1) —
+    // onNoAudioInput 콜백과 별개로 폴링 없이 직접 상태를 읽고 싶은 호출부를 위해 함께 노출한다.
+    noAudioInput,
     startSession, stopSession, pauseSession, getTranscript, reset,
     sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn, seedTranscript, setKSpeechAllowed,
     lockNow, speakClosingLine, unlockAudio,

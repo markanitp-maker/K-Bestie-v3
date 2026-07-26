@@ -2,7 +2,7 @@
 
 import React from "react";
 
-export type VoiceConversationState = "connecting" | "listening" | "thinking" | "speaking" | "idle";
+export type VoiceConversationState = "connecting" | "listening" | "thinking" | "speaking" | "idle" | "no_input";
 
 interface VoiceConversationStateBadgeProps {
   state: VoiceConversationState;
@@ -16,6 +16,9 @@ export function VoiceConversationStateBadge({ state }: VoiceConversationStateBad
     listening: { text: "듣는 중", bg: "#f0fdf4", color: "#16a34a", icon: "👂", border: "#bbf7d0" },
     thinking: { text: "생각하는 중...", bg: "#eff6ff", color: "#2563eb", icon: "💭", border: "#bfdbfe" },
     speaking: { text: "말하는 중", bg: "#fdf4ff", color: "#c026d3", icon: "💬", border: "#fbcfe8" },
+    // Care Premium(Live API) 전용 — AUTO 모드에서 마이크가 켜져 있는데도 일정 시간 소리가
+    // 감지되지 않을 때 표시. 아이가 겁먹지 않도록 "고장" 느낌 대신 다시 말해보라는 톤으로.
+    no_input: { text: "다시 말해줄래?", bg: "#fffbeb", color: "#b45309", icon: "🎤", border: "#fde68a" },
   };
 
   const current = config[state];
@@ -44,7 +47,7 @@ export function VoiceConversationStateBadge({ state }: VoiceConversationStateBad
         transition: "background-color 0.3s ease-in-out, color 0.3s ease-in-out, border-color 0.3s ease-in-out",
       }}
       className={
-        state === "connecting" || state === "thinking"
+        state === "connecting" || state === "thinking" || state === "no_input"
           ? "animate-pulse"
           : "animate-in fade-in zoom-in-95 duration-200"
       }
