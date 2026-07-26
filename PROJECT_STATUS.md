@@ -1,205 +1,248 @@
-# K-Bestie-v3 전체 작업 장부 (2026-07-24 15:10 KST 전수 감사)
+# K-Bestie-v3 프로젝트 상태 장부 (2026-07-26~27 반영본)
 
-상태 구분: ①대표님테스트대기 ②개발완료·Dev배포 ③개발진행중 ④검증·빌드·배포진행중
-⑤작업예정·미착수 ⑥차단·오류 ⑦보류·중단
+기준 문서:
+- `requests/_log.md`
+- `requests/_blocked.md`
+- `requests/098-project-status-refresh.md`
+- 최근 git 커밋 30개
+- 현재 작업 브랜치/워킹트리 상태
+
+현재 기준:
+- 브랜치: `feat/family-backend`
+- 원격 추적: `legacy-origin/feat/family-backend`
+- 현재 상태: 로컬 변경 남아 있음(예: `components/mbti/*`, `hooks/useResultScreenshot.ts`, `supabase/.temp/*`, 일부 신규 request 문서)
+- Dev 기준 URL: `https://k-bestie-v3-dev.vercel.app`
+- 주의: 이 문서는 "코드 존재"가 아니라 `_log/_blocked`, 실제 커밋, Dev 반영 기록, 대표님 확인 필요 여부를 분리해 적는다.
 
 ## 요약
-- 전체 트랙: 14개
-- ①대표님테스트대기: 8  ②개발완료·Dev배포: 0(모두 ①에 포함되어 대기중)
-  ③개발진행중: 1  ④검증진행중: 0  ⑤미착수: 3  ⑥차단: 0(외부의존 2건은 ⑦로 분류)
-  ⑦보류/외부의존: 2
+- 대표님 확인 대기: 4건
+- 개발 완료·Dev 배포: 6건
+- 개발 문서 완료: 1건
+- 미착수: 3건
+- 외부 의존·차단: 1건
+- 중단·보존: 1건
+- 의도적 보류: 2건
 
-## 지금 바로 테스트 가능한 항목 (Dev: https://k-bestie-v3-dev.vercel.app)
-1. **실서비스 미션 개인화+음성토글+이름호칭+마스코트**: 계정 ksh160202(김서현, 비번 기존 그대로)
-   또는 ksa160202(김서아, 임시비번은 [보안] 평문 노출 금지로 이 문서에서 제거됨 — 필요 시
-   대표님이 별도 안전 채널로 확인) → /child/missions 진입 → "서아야/서현아" 이름으로 인사하는지 →
-   답변에 구체적 내용 반영되는지("그렇구나!" 단독 안 나오는지) → 🔊 버튼으로 음성 껐다 켜기
-2. **MBTI 통합**: testi02(비번 기존 QA 계정)로 /child/play → MBTI 카드 → 무료체험/차감/이어하기/완료
-3. **리텐션 관리자**: /admin/retention → D1/D3/D7/D14/D30 확인 → CSV 다운로드 버튼
+## 1. 대표님 확인 대기
 
----
+### 011 미션 반복/상태/레이아웃/연결 관련 연속 수정
+- 상태: 대표님 확인 대기
+- 근거 요청서: `requests/011-mission-repeat-state-layout-connection-fix.md`
+- 관련 커밋 예시:
+  - `bb530f4` PC/PWA 마스코트 미노출 수정
+  - `20cf045` Live 모드 버튼 잠김 회귀 수정
+  - `00084ea` 하단 메인 음성 버튼 3상태 전환
+- 현재 반영된 범위:
+  - PC/PWA/모바일에서 마스코트 노출 수정
+  - 하단 메인 버튼 대기/녹음중/K말하는중 3상태 분리
+  - "케이가 잘 못 들었어" 문구 제거
+  - 비Live 상태배지/레이아웃/연결 관련 다수 수정
+- Dev 배포: 됨
+- 자동 검증: `tsc`, `build`, `npm test`, Playwright/QA 계정 라이브 검증 기록 있음
+- 대표님 확인이 남은 이유:
+  - 실기기 기준 최종 사용감 확인이 아직 남음
+  - 일부 NOT TESTED 시나리오(B/G/H 등) 기록이 `_log.md`에 남아 있음
+- 다음 행동: 대표님 실기기에서 미션 화면 최종 확인 후 완료 판정
 
-## 트랙별 상세
+### 012 미션 대화 화면 UI 개편 7항목
+- 상태: 대표님 확인 대기
+- 근거 요청서: `requests/_done/012-add-request.md`
+- 관련 커밋: `1e6bd36`
+- 반영 범위:
+  - 세션 시작 인사 턴
+  - 상태배지/토글/스피커 재배치
+  - 로고 교체
+  - 히스토리 스크롤/플로팅 버튼
+  - 스텝 인디케이터 개선
+- Dev 배포: 됨
+- 자동 검증: `tsc`, `build`, `npm test`, QA 계정 실배포 검증 완료
+- 다음 행동: 대표님이 실제 미션 대화 화면 흐름과 인사턴 체감 확인
 
-### ① 김서아·김서현 실서비스 미션 개인화+질문중복 제거 [P0]
-- 상태: **①대표님테스트대기**
-- 세부범위: `/api/mission/respond`(15자 제한→항상 "그렇구나!" 폴백) 제거, D/F 검증된
-  reaction-lean+2200ms타임아웃+content-echo폴백 이식(!isLive만, tier1/2). 재마운트 시
-  질문 중복 발화 버그 수정(askedIndexRef 가드).
-- 담당: Claude 직접(설계)+agy(구현) — tmux `agy-mission-personalize`(종료, 정상완료)
-- branch: feat/family-backend(메인, 단독소유)
-- 마지막 커밋: `3551e9c`
-- Dev: https://k-bestie-v3-dev.vercel.app
-- Codex: 사용량제한으로 Claude 직접 diff검토 대체(isLive분기 미변경 확인)
-- tsc/build: 통과
-- DB migration: 없음(코드만)
-- 대표님 테스트: 미실시(방금 배포) — Claude가 김서아 계정으로 3턴 자동 스모크: 내용반영 100%,
-  "그렇구나!" 단독 0회, 질문 중복 0회 확인. 단 3턴 모두 reaction-lean 개인화 응답이 2200ms
-  타임아웃되어 content-echo 폴백("OO 얘기 잘 들었어, 들려줘서 고마워!")만 사용됨 — 폴백
-  자체는 내용 반영되지만 더 자연스러운 LLM 리액션은 아직 실사용 조건에서 못 봄(타임아웃 여유
-  재조정 필요 가능성, 후속 관찰 대상).
-- 차단원인: 없음(폴백 품질 관찰만 필요)
-- 다음 실행: 대표님 실기기 재검증, 필요시 타임아웃 값 재조정
-- 완료조건: 대표님 확인
+### 019 자유대화 화면 음성 UI 레이아웃 통합
+- 상태: 대표님 확인 대기
+- 근거 요청서: `requests/_done/019-unify-voice-conversation-layout.md`
+- 관련 커밋: `d1b150d`
+- 반영 범위:
+  - 자유대화 화면을 미션 화면과 유사한 최신 Voice Conversation Layout으로 통합
+  - 하단 상태배지/케이/토글 고정, 히스토리 양쪽 화자 유지
+- Dev 배포: 됨 (`dpl_CBTAq1PJTRo29eh3bqjv7FYg8x4q` 기록)
+- 자동 검증: `tsc`, `build`, `npm test`, Playwright 실배포 검증 완료
+- 다음 행동: 대표님 실기기에서 자유대화 화면 시각/조작감 최종 확인
 
-### ② 케이 음성 켜기/끄기 통합 [P0]
-- 상태: **①대표님테스트대기**
-- 세부범위: 별도 화면/세션 없이 한 세션에서 TTS on/off, 끄면 즉시 정지+텍스트 진행,
-  진행률/기록/보상 공유. tier1/2만 적용, tier3(김서둥)/Live 미적용.
-- 마지막 커밋: `058bdbc`
-- Dev: https://k-bestie-v3-dev.vercel.app
-- Codex: Claude 직접 검증
-- tsc/build: 통과
-- DB migration: 없음
-- 대표님 테스트: 실기기에서 토글 동작 확인됨(이전 보고) — 단 이 시점엔 ①의 개인화 버그가
-  아직 안 고쳐진 상태였음. 지금은 ①까지 합쳐진 상태로 재확인 필요.
-- 차단원인: 없음
-- 다음 실행: ①과 함께 재검증
-- 완료조건: 대표님 확인
+### 010 + 013 + 016 퀴즈마스터 연동 묶음
+- 상태: 대표님 확인 대기
+- 근거 요청서:
+  - `requests/010-quizmaster-main-app-integration.md`
+  - `requests/_done/013-Quiz-add.md`
+  - `requests/_done/016-quiz-add.md`
+- 관련 커밋 예시:
+  - `32d7ba0` 퀴즈마스터 카드/시작 연동
+  - `f191b5b` 퀴즈마스터를 K-Bestie 내부 Full Screen Modal로 전환
+  - `8c9ab6c` completion/refund 콜백 자기호출 URL 버그 수정
+- 현재 상태:
+  - 시작/이어하기 프론트 연결 완료
+  - 내부 풀스크린 퀴즈 플레이 전환 완료
+  - completion/refund 콜백 포함 백엔드 반영 완료
+  - `_log.md` 기준 Dev/QA 계정 검증 완료
+- Dev 배포: 됨
+- 대표님 확인이 남은 이유:
+  - 대표님 실사용 관점 최종 체감 확인이 남음
+  - 실계정 직접 E2E는 정책상 자동 수행하지 않음
+- 다음 행동: 대표님이 놀이 홈 → 퀴즈마스터 진입/이어하기/결과 흐름 확인
 
-### ③ 확정 미션 레이아웃(고정헤더·히스토리페이드·액티브존·마이크파형) [P1]
-- 상태: **③개발진행중** (컴포넌트 완성, 미션 화면에 미연결)
-- 세부범위: `MissionConversationLayout` 프레젠테이션 컴포넌트(헤더/진행률, 히스토리 opacity
-  페이드, 중앙 액티브 발화존+마스코트 슬롯, 하단 마이크 파형) — 순수 UI, 비즈니스로직 없음.
-- 담당: agy — tmux `agy-layout`(종료, 정상완료)
-- branch/worktree: `.claude/worktrees/track-layout` (branch track-layout)
-- 마지막 커밋(worktree): `3937d20`
-- Dev: 미배포(아직 MissionInner에 연결 안 됨)
-- Codex: Claude 직접 검증(tsc 클린 확인)
-- tsc/build: worktree 내 tsc 통과, 메인 통합 후 재빌드 필요
-- DB migration: 없음
-- 대표님 테스트: 불가(미연결)
-- 차단원인: 없음 — Claude가 MissionInner에 실제 연결하는 통합 작업 필요(다음 단계)
-- 다음 실행: MissionInner에 이 컴포넌트를 실제로 배치하는 통합 작업(신중한 별도 라운드 필요 —
-  기존 동작 회귀 위험 있어 세심한 통합 요구)
-- 완료조건: MissionInner 통합 + tsc/build + Dev배포 + 대표님 확인
+## 2. 개발 완료·Dev 배포
 
-### ④ 케이 마스코트 스프라이트 애니메이션 [P1]
-- 상태: **①대표님테스트대기**
-- 세부범위: pet.json/spritesheet.webp/validation.json 기반, canvas 렌더링, 10fps idle루프,
-  프리로드+실패시 정적폴백, 탭hidden 일시정지, prefers-reduced-motion 정적프레임.
-- 마지막 커밋: `ae827a3`
-- Dev: https://k-bestie-v3-dev.vercel.app (MissionInner에 이미 연결됨)
-- Codex: Claude 직접 검증
-- tsc/build: 통과
-- DB migration: 없음
-- 대표님 테스트: 미실시
-- 차단원인: 없음
-- 완료조건: 대표님 확인
+### 018 대화 맥락 보정 파이프라인
+- 상태: 개발 완료·Dev 배포
+- 근거 요청서: `requests/_done/018-conversation-context-correction-pipeline.md`
+- 관련 커밋 예시:
+  - `cf8f429` Raw 수집 → Gemini 보정 → corrected 저장 → 리포트 생성
+  - `ed75a00` pg_cron 스케줄 등록
+  - `0e8efd9`, `461fb08`, `4b5bbc1` 후속 결함 수정
+- 현재 상태:
+  - 수집/보정/리포트 생성/보관삭제 파이프라인까지 구현 및 Dev 반영됨
+  - `_log.md`에 실제 배포/DB 적용/결함 수정 이력까지 남아 있음
+- 남은 것: 별도 운영 승인 없이 Production 반영은 하지 않음
 
-### ⑤ 마이크→STT→LLM→TTS 연결품질 안테나 + 아이탓 문구 제거 [P1]
-- 상태: 아이탓 문구 제거는 **①대표님테스트대기**, 연결품질 안테나는 **③개발진행중**(훅 완성,
-  미연결)
-- 세부범위: "잘 안 들렸어/잘 못 들었어" 3곳 중립화(완료, 058bdbc에 포함) / STT·LLM·TTS
-  성공·실패·지연 기반 0~5 품질 계산 훅(`usePipelineConnectionQuality`) 신규.
-- 담당: agy — tmux `agy-connquality`(종료, 정상완료)
-- branch/worktree: `.claude/worktrees/track-connquality` (branch track-connquality)
-- 마지막 커밋(worktree): `0be9aa0`
-- Dev: 훅 자체는 미배포(MissionInner 미연결), 문구 제거는 058bdbc로 이미 배포됨
-- Codex: Claude 직접 검증(tsc 클린)
-- DB migration: 없음
-- 대표님 테스트: 문구 제거는 미확인, 안테나는 불가(미연결)
-- 차단원인: 없음 — MissionInner의 실제 fetch 호출부에 훅을 연결하는 통합 작업 필요
-- 다음 실행: MissionInner 통합(③ 레이아웃과 같은 라운드에 함께 처리 권장)
-- 완료조건: MissionInner 통합 + Dev배포 + 대표님 확인
+### 011-memory A안
+- 상태: 개발 완료·Dev 배포
+- 근거 요청서: `requests/_done/011-memory-context-and-proactive-friend.md`
+- 관련 커밋: `9363079`
+- 현재 상태:
+  - 대화 종료 후 생성된 요약 기억을 다음 세션 인사 컨텍스트에 주입하는 A안 구현 완료
+  - 자유대화 규칙기반 구조는 유지
+- Dev 배포: 됨
 
-### ⑥ 성·이름 분리·호칭·이름질문 제거 [P0]
-- 상태: **①대표님테스트대기**
-- 세부범위: family_name/given_name 비파괴적 컬럼 추가+안전백필, 부모설정 성/이름 분리 입력,
-  toKoreanVocative(서아→서아야, 서현→서현아 확인됨), "너 이름이 뭐니?" 하드코딩 질문을
-  given_name 있으면 인사로 대체.
-- 마지막 커밋: `ae827a3`(분리), `4a1f9f0`(이름질문 제거)
-- Dev: https://k-bestie-v3-dev.vercel.app
-- Codex: Claude 직접 검증
-- tsc/build: 통과
-- DB migration: `20260740000000_child_profiles_name_split.sql` (Dev DB 적용 확인 완료)
-- 대표님 테스트: 미실시
-- 차단원인: 없음
-- 완료조건: 대표님 확인
+### 018-pad-home-change
+- 상태: 개발 완료·Dev 배포
+- 근거 요청서: `requests/_done/018-pad-home-change.md`
+- 관련 커밋: `4f6e304`
+- 현재 상태:
+  - 태블릿/PC 홈 화면을 스마트폰과 동일한 좁은 세로 레이아웃으로 교정 완료
+  - 이전 오판정은 `_log.md`에 정정 이력 남음
+- Dev 배포: 됨
 
-### ⑦ MBTI 통합 [P0]
-- 상태: **①대표님테스트대기** (핵심 기능), **⑦보류/외부의존** (실제 앱 URL)
-- 세부범위: 무료체험/골든키3개 원자적차감/idempotency/6시간이어하기/15초INIT타임아웃자동환불/
-  완료콜백/PLAY_BUG_REPORT/관리자조회 — 전부 구현+Claude가 testi02로 직접 클릭 검증.
-- 마지막 커밋: `e6f1dff`, `468bd77`
-- Dev: https://k-bestie-v3-dev.vercel.app (mock-mbti로 폴백 동작 중)
-- Codex: 이전 라운드에서 실제 Codex 통과(2라운드) + 이후 Claude 직접 검증
-- tsc/build: 통과
-- DB migration: `20260739000000_play_iframe_bug_refund_support.sql`(Dev 적용 완료,
-  테이블 사전 존재 확인)
-- 대표님 테스트: 미실시(testi02로 Claude가 대신 자동검증만 완료)
-- 차단원인: MBTI 독립 앱의 실제 Dev URL 미확정(NEXT_PUBLIC_MBTI_APP_URL 미설정) — 대표님/
-  MBTI팀에게서 받아야 함, Claude가 임의 생성 불가. frame-ancestors CSP도 MBTI 앱 쪽 소관.
-- 다음 실행: 실제 MBTI URL 수신 대기, 김서아·김서현·김서둥 실계정 검증
-- 완료조건: 실제 URL 연결 + 실계정 검증 + 대표님 확인
+### 020-K-position
+- 상태: 개발 완료·Dev 배포
+- 근거 요청서: `requests/_done/020-K-position.md`
+- 관련 커밋: `58022da`
+- 현재 상태:
+  - 상태배지 길이 변화에도 케이/토글이 흔들리지 않도록 그리드 구조로 수정 완료
+- Dev 배포: 됨
 
-### ⑧ 리텐션 관리자 (D1~D30+CSV) [P1]
-- 상태: **①대표님테스트대기**
-- 세부범위: 기존 D1/D7에 D3/D14/D30 동일 코호트 정의로 추가, CSV 내보내기(관리자 인증 확인).
-  PDF/PNG는 미구현.
-- 담당: agy — tmux `agy-retention`(종료, 정상완료) → Claude가 메인 병합
-- 마지막 커밋: `7ee96e5`(worktree) → 메인 병합 커밋(직후 배포)
-- Dev: https://k-bestie-v3-dev.vercel.app
-- Codex: Claude 직접 검증(D1/D7과 동일 로직 확장 확인)
-- tsc/build: 통과
-- DB migration: 없음(기존 behavior_events 재사용)
-- 대표님 테스트: 미실시
-- 차단원인: 없음(PDF/PNG만 미구현 — 시간우선순위상 후순위 처리)
-- 완료조건: 대표님 확인 (+ 필요시 PDF/PNG 추가 착수)
+### 021 퀴즈 내부 모듈화
+- 상태: 개발 완료·Dev 배포
+- 근거 요청서: `requests/_done/021-Quiz-add.md`
+- 관련 커밋: `f191b5b`, `8c9ab6c`
+- 현재 상태:
+  - 외부 퀴즈마스터 리다이렉트 의존을 줄이고 K-Bestie 내부 플레이 모듈로 전환 완료
+  - 기존 콜백 계약 유지
+- Dev 배포: 됨
 
-### ⑨ 퀴즈왕 마스터 통합 [P2]
-- 상태: **⑤작업예정·미착수**
-- 차단원인: 이 저장소·접근 가능한 서버 어디에도 관련 저장소·스펙이 없음(재확인 완료,
-  grep 전체 검색 결과 없음). MBTI처럼 별도 외부 앱 연동으로 추정되나 확정 불가.
-- 다음 실행: 대표님이 위치(저장소/스펙 문서/외부 앱 URL)를 알려주셔야 착수 가능.
+### 014 추가요청 + 아이 홈 카드 색상 체계
+- 상태: 개발 완료·Dev 배포
+- 근거 요청서 / 직접 지시:
+  - `requests/_done/014-addrequest.md`
+  - 채팅 직접 지시(아이 홈 액션 카드 색상 variant)
+- 관련 커밋: `94c6eba`, `b106927`
+- 현재 상태:
+  - 마이크 버튼 형태 명확화 완료
+  - 아이 홈 액션 카드 색상 variant 체계 적용 완료
+- Dev 배포: 됨
 
-### ⑩ 공통 놀이 인프라(차감·idempotency·이어하기·환불·버그신고) [P0]
-- 상태: **①대표님테스트대기** (⑦MBTI와 동일 커밋, 실질적으로 완료+검증됨)
-- 세부범위: ⑦과 동일 — MBTI 트랙에서 함께 완료.
-- 완료조건: ⑦과 동일
+## 3. 개발 문서 완료
 
-### ⑪ 김서아=케어스타트·김서현=케어인사이트 요금제 검증 [P0]
-- 상태: **①대표님테스트대기**
-- 세부범위: Dev DB tier 직접 수정 완료(김서아=1, 김서현=2), voiceMode 매핑 확인(둘 다
-  stt_tts 파이프라인 — ①②의 음성토글/개인화 대상 맞음).
-- DB 변경: child_profiles.tier 직접 UPDATE(마이그레이션 아님, 1회성 데이터 수정) — Dev만.
-- 대표님 테스트: 미실시
-- 완료조건: 대표님 확인
+### 098 PROJECT_STATUS 최신화
+- 상태: 문서 갱신 완료
+- 근거 요청서: `requests/098-project-status-refresh.md`
+- 현재 상태:
+  - 이 문서가 바로 해당 요청의 산출물
+  - `_log/_blocked`, 최근 커밋, 현재 브랜치 상태를 기준으로 상태를 재분류함
+- 후속 연계:
+  - 요청서 099 체크리스트 문서 작성 시 이 문서를 기준 소스로 사용
 
-### ⑫ testi01/testi02 및 A~F 테스트 화면 보존 상태 [P0 - 무결성]
-- 상태: **①대표님테스트대기**(보존 확인 완료, 별도 조치 불필요)
-- 확인: `components/TestModeABRunner.tsx`/`TestModeCDRunner.tsx`/`TestModeERunner.tsx`,
-  `app/child/test-modes/page.tsx` 전부 파일 존재 확인, 삭제/변경 없음. A~F 관련 최근 커밋은
-  이번 세션에서 발생하지 않음(마지막 관련 커밋은 aa7fb63 등 이전 라운드).
-- 완료조건: 이미 충족(계속 보존만 하면 됨)
+## 4. 미착수
 
-### ⑬ A/B/C/E 신규개발 중단 + 보존 브랜치 [P0 - 무결성]
-- 상태: **⑦보류/중단** (의도된 상태)
-- 확인: `paused/voice-session-resumption-ab` 브랜치에 A/B 음성 session resumption 작업
-  보존됨(커밋 2dc99c7). 이후 A/B/C/E 관련 신규 커밋 없음(전부 D/F·MissionInner·MBTI·
-  이름·마스코트·리텐션 트랙만 진행). 김서둥(tier3, Live/A·B 계열 voice_mode)도 요금제
-  변경 없이 그대로 유지.
-- 완료조건: 유지만 하면 됨(사용자 재개 지시 시까지)
+### 020 Care Start / Care Insight / Care Premium 음성 UI 레이아웃 통합
+- 상태: 미착수
+- 근거 요청서: `requests/020-unify-care-plan-voice-layout.md`
+- 이유:
+  - 019에서 자유대화 화면 통합은 진행됐지만, 이 요청서가 요구하는 "Care Premium까지 동일 UI 구조 통합"을 완료로 선언한 기록은 아직 없음
+  - 특히 Premium Live 전용 UI를 최신 공통 레이아웃으로 완전히 통합했다는 `_log.md` 완료 기록이 아직 없다
+- 다음 행동: Premium Live 트리까지 포함한 통합 범위와 회귀 검증 계획을 별도 라운드로 진행
 
-### ⑭ retention/admin/family-backend 기존 미커밋 변경 보존 [P0 - 무결성]
-- 상태: **①대표님테스트대기**(보존 확인, 정리 불필요)
-- 확인: 세션 시작 시점부터 있던 미커밋 파일들(`app/admin/page.tsx`, `app/api/admin/
-  usage-overview/route.ts`, `Plan01/02/03.md`, `outputs/*`, 각종 `repro-*.mjs` 등)을
-  이번 세션 내내 건드리지 않고 그대로 보존함(git status로 계속 확인 중). 삭제/덮어쓰기 없음.
-- 완료조건: 유지만 하면 됨(대표님이 별도로 커밋/정리 지시 시까지 대기)
+### 베타 사용자 승인 및 서비스 플랜 관리 시스템
+- 상태: 미착수(분석만 완료)
+- 근거 요청서: `requests/beta-user-approval-and-production-control.md`
+- 현재 상태:
+  - `outputs/beta-approval-analysis-20260726.md` 구조 분석 보고서 작성됨
+  - 코드/마이그레이션 생성은 아직 하지 않음
+- 다음 행동: 대표님 결정 사항 확정 후 구현 라운드 시작
 
----
+### 공통 Resume Session 기능
+- 상태: 미착수
+- 근거 요청서: `requests/feature-play-resume-session.md`
+- 현재 상태:
+  - 요구사항 문서만 존재
+  - 착수/분석/구현 기록 없음
+- 다음 행동: 현재 놀이별 세션 구조 조사부터 별도 시작 필요
 
-## 살아있는 tmux 세션
-없음 (agy-mission-personalize/agy-layout/agy-connquality/agy-retention 4개 모두
-정상 종료 후 검증·커밋·병합 완료 또는 대기 상태로 전환됨)
+## 5. 외부 의존·차단
 
-## 오늘 남은 완료 목표 순서 (우선순위 순)
-1. ③⑤(레이아웃·연결품질) MissionInner 실제 통합 — Claude 직접, 신중한 회귀 검증 필요
-2. ⑦ MBTI 실제 앱 URL 수신 대기 → 연결 → 김서아/서현/서둥 실계정 검증
-3. ⑨ 퀴즈왕 마스터 — 대표님 위치 확인 대기
-4. ⑧ 리텐션 PDF/PNG 내보내기(선택)
+### 베타 승인 시스템 구현의 선결정 항목
+- 상태: 외부 의존·차단
+- 근거 문서:
+  - `requests/beta-user-approval-and-production-control.md`
+  - `outputs/beta-approval-analysis-20260726.md`
+- 막힘 이유:
+  - `approval_status` 기본값 정책
+  - 기존 사용자 처리 방식
+  - Care Start / Insight / Premium 명칭과 DB `plans.name` 정합성
+  - 베타 신청 문항/폼 구조
+  - 승인 시 플랜을 부모/아이 tier에 어떻게 반영할지
+- 다음 행동: 대표님 결정 후에만 구현 시작
 
----
-마지막 갱신: 2026-07-24 15:10 KST (Claude, 전수 감사 기준). Codex 사용량 제한으로
-검증은 Claude가 직접 diff 검토로 대체 중.
+## 6. 중단·보존
+
+### A/B/C/E 트랙 보존
+- 상태: 중단·보존
+- 근거 문서:
+  - `requests/_log.md`
+  - `requests/_blocked.md`
+- 현재 상태:
+  - `paused/voice-session-resumption-ab` 등 보존 브랜치 유지
+  - A/B/C/E 신규 개발은 중단 상태 유지
+  - 관련 테스트/화면 보존 요구는 계속 유효
+- 다음 행동: 대표님 재개 지시 전까지 그대로 유지
+
+## 7. 의도적 보류
+
+### 015 디자인 스킬 기반 앱 테마·톤앤매너 개편
+- 상태: 의도적 보류
+- 근거 요청서: `requests/015-Design-upadte.md`
+- 근거 로그: `requests/_done/019-answer-QA.md`에 "017/015는 계속 보류 확인" 기록
+- 다음 행동: 우선순위 재지시 전까지 보류 유지
+
+### 017 리포팅 모듈 오픈 전 수정·배포·검증
+- 상태: 의도적 보류
+- 근거 요청서: `requests/017-reporting-module-preopen-fix.md`
+- 근거 로그: `requests/_done/019-answer-QA.md`에 "017/015는 계속 보류 확인" 기록
+- 현재 상태:
+  - 요구사항은 크고 명확하지만, 현재 라운드에서 진행 재개 지시 없음
+- 다음 행동: 우선순위 재지시 시 재개
+
+## 8. 다음 우선순위 제안
+1. `099-dev-acceptance-checklist.md` 작성
+   - 이유: 지금 Dev에 쌓인 대표님 확인 대기 항목을 실제 검수 순서로 바꿔야 함
+2. `020-unify-care-plan-voice-layout.md` 착수 여부 결정
+   - 이유: Premium Live UI 통합은 아직 열린 요청으로 남아 있음
+3. 베타 승인 시스템 결정사항 확정
+   - 이유: 분석은 끝났고, 구현 시작 전 사람 결정이 먼저 필요함
+
+## 이번 갱신에서 정정한 핵심
+- 2026-07-24 기준 오래된 `PROJECT_STATUS.md`를 2026-07-26~27 작업까지 반영해 재분류했다.
+- 퀴즈/미션/자유대화/보정 파이프라인 관련 최근 완료 항목을 Dev 배포 기준으로 분리했다.
+- 015/017은 "미완료 누락"이 아니라 대표 지시로 멈춘 의도적 보류임을 명확히 했다.
+- 베타 승인 시스템은 "이미 구현 중"이 아니라 "분석만 완료, 결정 대기" 상태로 정리했다.
+
+마지막 갱신: 2026-07-26~27 작업 반영본
