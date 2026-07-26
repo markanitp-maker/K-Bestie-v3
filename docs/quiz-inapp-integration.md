@@ -1,27 +1,28 @@
 # 퀴즈마스터 인앱(QuizPlayScreen) 기능 이식 — API 계약 매핑 및 완료 현황
 
-작성일: 2026-07-26 (최초) / 갱신: 2026-07-26 (전체 기능 이관 완료, 대표 최종 결정 반영)
+작성일: 2026-07-26 (최초) / 갱신: 2026-07-26 (독립 저장소 폐기 완료)
 
-## 0. 최종 방향 (2026-07-26 대표 결정)
+## 0. 최종 방향 — 독립 저장소 폐기 완료 (2026-07-26)
 
-독립 퀴즈마스터 저장소(Quiz repo)는 더 이상 실사용자 진입점이 아니다. 실제 아이가
-보는 화면은 K-Bestie-v3 내장 화면(`components/quiz/QuizPlayScreen.tsx`,
-`/api/quiz-play/*`, requests/021)이며, **이 내장 화면이 지금부터 유일한 정본이다.**
+독립 퀴즈마스터 저장소(Quiz repo)는 더 이상 실사용자 진입점이 아니었고, 실사용자
+테스트 검증까지 완료되어 **독립 저장소는 폐기됐다.** 실제 아이가 보는 화면인
+K-Bestie-v3 내장 화면(`components/quiz/QuizPlayScreen.tsx`, `/api/quiz-play/*`,
+requests/021)이 유일한 정본이다. **앞으로 퀴즈마스터 신규 개발은 K-Bestie-v3
+기준으로만 진행한다.**
 
-- 독립 Quiz repo: **즉시 삭제하지 않고 임시 원본(참조용)으로 유지**. 신규 기능 개발은
-  하지 않는다. DB(`quiz_attempts`/`quiz_question_bank`/`quiz_leaderboard` 등)는 두
-  저장소가 공유하므로 그대로 둔다 — 삭제/초기화 대상 아님.
-- **삭제 조건**(아래 6가지가 K-Bestie-v3 메인 앱에서 실사용자 테스트로 검증 완료된
-  이후에만 archive 후 삭제):
-  - [x] 자동 다음 문제 이동 — §2-A, 구현 완료
-  - [x] 이어하기(재접속) — §2-C, 구현 완료
-  - [x] 리더보드 — §2-B, 구현 완료
-  - [x] 결과 화면 — 기존 존재 + 리더보드 병합 완료
-  - [x] 진행 상태 복원 — `initialAttemptId` hydrate 경로, 기존 구현이 이어하기 연결로
-        실제로 도달 가능해짐(§2-C 덕분)
-  - [x] 황금열쇠 중복 차감 방지 — §2-C, 구현 완료
-  - [ ] **실사용자 테스트 검증** — 코드 구현은 완료됐으나 실제 기기로 아직 검증 전.
-        이 항목이 통과해야 삭제 조건이 완전히 충족된다.
+- 폐기 전 삭제 조건 6가지(자동 다음 문제 이동/이어하기/리더보드/결과 화면/진행 상태
+  복원/황금열쇠 중복 차감 방지 + 실사용자 테스트 검증) 전부 통과 확인 완료.
+- 폐기 전 의존성 확인 완료: K-Bestie-v3 코드/운영 앱(app.k-bestie.com) 어디에도
+  독립 저장소·`quizmaster-dev.vercel.app`를 호출하는 코드/rewrite/환경변수가 없음을
+  확인. 완료/환불 콜백은 K-Bestie-v3가 자기 자신을 호출하는 구조로 이미 완전히
+  내재화되어 있어 외부 의존 없음.
+- 폐기 조치: 독립 저장소는 원격이 전혀 없어(로컬 유일 사본) 삭제 전
+  `github.com/markanitp-maker/quizmaster-legacy-archive`(private)로 전체 히스토리
+  백업 후, 로컬 폴더 삭제 + `quizmaster-dev` Vercel 프로젝트 삭제 + 이제 쓰지 않는
+  `QUIZMASTER_BASE_URL` 환경변수(K-Bestie-v3-dev, production/preview 전부) 제거
+  완료. DB(`quiz_attempts`/`quiz_question_bank`/`quiz_leaderboard` 등)는 K-Bestie-v3와
+  공유 자원이라 그대로 유지 — 삭제/초기화하지 않음. `MAIN_APP_REWARDS_API_KEY`는
+  K-Bestie-v3 자체 콜백 인증에 계속 쓰이므로 유지.
 
 ## 1. API 계약 비교
 
