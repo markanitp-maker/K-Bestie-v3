@@ -72,15 +72,15 @@ const ProgressErrorOverlay = ({
               <span className="text-6xl" aria-hidden="true">
                 ✅
               </span>
-              <h1 className="text-xl font-bold text-gray-900">신고가 접수되었어요</h1>
-              <p className="text-base leading-relaxed text-gray-600">
+              <h1 className="text-xl font-bold text-k-text-primary">신고가 접수되었어요</h1>
+              <p className="text-base leading-relaxed text-k-text-secondary">
                 알려줘서 고마워! 보호자에게 문제를 전달했어요. 이제 창을 닫아도 돼요.
               </p>
             </div>
             <button
               type="button"
               onClick={onCloseAfterReport}
-              className="w-full rounded-full bg-amber-500 px-8 py-4 text-lg font-bold text-white shadow-md transition active:scale-95"
+              className="w-full rounded-full bg-k-orange px-8 py-4 text-lg font-bold text-white shadow-md transition active:scale-95"
             >
               닫기
             </button>
@@ -91,8 +91,8 @@ const ProgressErrorOverlay = ({
               <span className="text-6xl" aria-hidden="true">
                 😵
               </span>
-              <h1 className="text-xl font-bold text-gray-900">문제가 생겼어요</h1>
-              <p className="text-base leading-relaxed text-gray-600">
+              <h1 className="text-xl font-bold text-k-text-primary">문제가 생겼어요</h1>
+              <p className="text-base leading-relaxed text-k-text-secondary">
                 놀이를 하다가 문제가 생겼어요. 어떻게 할까?
               </p>
             </div>
@@ -101,7 +101,7 @@ const ProgressErrorOverlay = ({
               <button
                 type="button"
                 onClick={onContinue}
-                className="w-full rounded-full bg-amber-500 px-8 py-4 text-lg font-bold text-white shadow-md transition active:scale-95"
+                className="w-full rounded-full bg-k-orange px-8 py-4 text-lg font-bold text-white shadow-md transition active:scale-95"
               >
                 이어가기
               </button>
@@ -109,7 +109,7 @@ const ProgressErrorOverlay = ({
                 type="button"
                 onClick={onRestart}
                 className={cn(
-                  "w-full rounded-full border-2 border-amber-300 bg-white px-8 py-4 text-lg font-bold text-amber-600 transition active:scale-95",
+                  "w-full rounded-full border-2 border-k-orange bg-white px-8 py-4 text-lg font-bold text-k-orange transition active:scale-95",
                 )}
               >
                 다시 시작하기
@@ -117,7 +117,7 @@ const ProgressErrorOverlay = ({
               <button
                 type="button"
                 onClick={handleReportBugClick}
-                className="w-full rounded-full border-2 border-gray-200 bg-white px-8 py-4 text-lg font-bold text-gray-500 transition active:scale-95"
+                className="w-full rounded-full border-2 border-k-border bg-white px-8 py-4 text-lg font-bold text-k-text-secondary transition active:scale-95"
               >
                 버그 신고하기
               </button>

@@ -284,7 +284,7 @@ const MbtiPlayScreen = ({
       <span className="text-4xl" aria-hidden="true">
         🐾
       </span>
-      <p className="text-sm text-gray-500">놀이를 준비하고 있어요...</p>
+      <p className="text-sm text-k-text-secondary">놀이를 준비하고 있어요...</p>
     </main>
   );
 };

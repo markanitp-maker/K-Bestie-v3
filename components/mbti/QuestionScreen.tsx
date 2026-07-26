@@ -23,7 +23,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
-import { QUESTION_BANK, type QuestionChoice } from "@/lib/data/questionBank";
+import { QUESTION_BANK, type Question, type QuestionChoice } from "@/lib/data/questionBank";
 import type { MbtiType } from "@/lib/data/mbtiTypes";
 import { MBTI_ERROR_CONTENT } from "@/lib/mbti/errorKinds";
 import { scoreMbtiAnswers, type MbtiAnswer } from "@/lib/mbti/scoreResult";
@@ -32,6 +32,15 @@ import { cn } from "@/lib/cn";
 
 const QUESTION_BY_ID = new Map(QUESTION_BANK.map((question) => [question.id, question]));
 const TOTAL_QUESTIONS = 20;
+
+/** 문항 축(axis)별 상황 이미지 로드 실패 시 플레이스홀더 이모지(2026-07-26, 자매
+ * 프로젝트 mbti의 동일 매핑을 이식). 정상 출제에서는 노출되지 않는 예외 경로용. */
+const AXIS_PLACEHOLDER_EMOJI: Record<Question["axis"], string> = {
+  EI: "🎈",
+  SN: "🎨",
+  TF: "💛",
+  JP: "🗓️",
+};
 
 /**
  * 진행 상태 저장 지점 — 매 답변 직후 한 번씩 호출된다.
@@ -131,7 +140,7 @@ const QuestionScreen = ({
         <span className="text-4xl" aria-hidden="true">
           ✨
         </span>
-        <p className="text-sm text-gray-500">결과를 계산하고 있어요...</p>
+        <p className="text-sm text-k-text-secondary">결과를 계산하고 있어요...</p>
       </main>
     );
   }
@@ -146,7 +155,7 @@ const QuestionScreen = ({
   const progressPercent = Math.round(progressRatio * 100);
 
   return (
-    <main className="flex min-h-dvh flex-col items-center gap-6 bg-gradient-to-b from-amber-50 to-white px-6 py-8">
+    <main className="flex min-h-dvh flex-col items-center gap-4 bg-gradient-to-b from-k-orange-tint to-white px-5 pb-6 pt-4">
       <div className="w-full max-w-sm">
         <div
           role="progressbar"
@@ -154,14 +163,14 @@ const QuestionScreen = ({
           aria-valuemax={TOTAL_QUESTIONS}
           aria-valuenow={answers.length}
           aria-label={`진행 상태: ${answers.length} / ${TOTAL_QUESTIONS}문항`}
-          className="h-3 w-full overflow-hidden rounded-full bg-amber-100"
+          className="h-3 w-full overflow-hidden rounded-full bg-k-orange-tint"
         >
           <div
-            className="h-full rounded-full bg-amber-500 transition-all duration-300 ease-out"
+            className="h-full rounded-full bg-k-orange transition-all duration-300 ease-out"
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        <p className="mt-2 text-center text-sm font-medium text-gray-500">
+        <p className="mt-1.5 text-center text-sm font-medium text-k-text-secondary">
           {answers.length} / {TOTAL_QUESTIONS}
         </p>
       </div>
@@ -172,10 +181,10 @@ const QuestionScreen = ({
        * 바로 사용한다. */}
       <KBestieMascotAnimation state="idle" size={72} />
 
-      <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-5">
+      <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-4">
         {/* 문항 상단 일러스트 — 정상 출제에서는 모든 활성 문항이 imagePath를 가지므로
          * 아래 플레이스홀더 분기는 실제로 노출되지 않는다. 이미지 로드 실패 같은 예외
-         * 상황에서만 같은 크기의 🐾 플레이스홀더로 대체해 레이아웃이 깨지지 않게 하는
+         * 상황에서만 문항의 축(axis)에 맞는 이모지로 대체해 레이아웃이 깨지지 않게 하는
          * 방어적 fallback이다(questionBank.ts의 Question.imagePath 주석 참고). */}
         {currentQuestion.imagePath && failedImageQuestionId !== currentQuestion.id ? (
           <img
@@ -185,19 +194,19 @@ const QuestionScreen = ({
             width={800}
             height={450}
             loading="eager"
-            className="aspect-[16/9] w-full max-w-sm rounded-3xl border border-amber-100 bg-amber-50/60 object-contain shadow-sm"
+            className="aspect-[16/9] w-full max-w-sm rounded-3xl border border-k-border bg-k-orange-tint object-contain shadow-sm"
             onError={() => setFailedImageQuestionId(currentQuestion.id)}
           />
         ) : (
           <div
-            className="flex aspect-[16/9] w-full max-w-sm items-center justify-center rounded-3xl border border-amber-100 bg-amber-50/60 shadow-sm"
+            className="flex aspect-[16/9] w-full max-w-sm items-center justify-center rounded-3xl border border-k-border bg-k-orange-tint shadow-sm"
             aria-hidden="true"
           >
-            <span className="text-5xl">🐾</span>
+            <span className="text-5xl">{AXIS_PLACEHOLDER_EMOJI[currentQuestion.axis]}</span>
           </div>
         )}
 
-        <h1 className="text-lg font-bold leading-snug text-gray-900 sm:text-xl">
+        <h1 className="text-lg font-bold leading-snug text-k-text-primary sm:text-xl">
           {currentQuestion.prompt}
         </h1>
 
@@ -210,13 +219,16 @@ const QuestionScreen = ({
               type="button"
               onClick={() => handleChoose(choice)}
               className={cn(
-                "flex items-center gap-3 rounded-3xl border-2 border-amber-200 bg-white px-5 py-4",
-                "text-left text-base font-semibold leading-snug text-gray-800 shadow-sm transition",
-                "active:scale-95 active:border-amber-500 active:bg-amber-50",
+                "flex items-center gap-3 rounded-k-lg border-2 border-k-border bg-white px-5 py-4",
+                "text-left text-base font-semibold leading-snug text-k-text-primary shadow-k-card transition",
+                "active:scale-95 active:border-k-orange active:bg-k-orange-tint",
               )}
             >
-              <span className="text-2xl shrink-0" aria-hidden="true">
-                {choice.id === "A" ? "🅰️" : "🅱️"}
+              <span
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-k-orange-tint text-sm font-bold text-k-orange"
+                aria-hidden="true"
+              >
+                {choice.id}
               </span>
               <span>{choice.text}</span>
             </button>
@@ -229,7 +241,7 @@ const QuestionScreen = ({
           role="status"
           className="fixed inset-x-0 bottom-4 z-10 mx-auto w-full max-w-sm px-4"
         >
-          <div className="flex items-center gap-2 rounded-2xl bg-white/95 px-4 py-3 text-sm text-gray-700 shadow-lg ring-1 ring-amber-200">
+          <div className="flex items-center gap-2 rounded-2xl bg-white/95 px-4 py-3 text-sm text-k-text-secondary shadow-lg ring-1 ring-k-border">
             <span aria-hidden="true">{MBTI_ERROR_CONTENT.progress_save_failed.emoji}</span>
             <span>{MBTI_ERROR_CONTENT.progress_save_failed.description}</span>
           </div>

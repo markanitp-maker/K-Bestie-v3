@@ -80,7 +80,7 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
   };
 
   return (
-    <main className="flex min-h-dvh flex-col items-center gap-5 bg-gradient-to-b from-amber-50 to-white px-6 py-10 text-center">
+    <main className="flex min-h-dvh flex-col items-center gap-5 bg-gradient-to-b from-k-orange-tint to-white px-6 py-10 text-center">
       {/* 캡처 대상 밖 브랜드 헤더 — 로고가 저장 이미지에 함께 찍히지 않게 한다 */}
       <Image
         src="/Images/logo/Logo.png"
@@ -98,7 +98,7 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
       >
         {imageLoadFailed ? (
           <div
-            className="flex h-40 w-40 items-center justify-center rounded-full bg-amber-100 text-6xl"
+            className="flex h-40 w-40 items-center justify-center rounded-full bg-k-orange-tint text-6xl"
             role="img"
             aria-label={`${profile.animalName} ${MBTI_ERROR_CONTENT.character_image_failed.title}`}
           >
@@ -122,21 +122,21 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
         )}
 
         <div className="flex flex-col items-center gap-1">
-          <p className="text-sm font-semibold text-amber-600">{mbtiType}</p>
-          <h1 className="text-2xl font-bold text-gray-900">{profile.animalName}</h1>
+          <p className="text-sm font-semibold text-k-orange">{mbtiType}</p>
+          <h1 className="text-2xl font-bold text-k-text-primary">{profile.animalName}</h1>
           {/* 결과는 진단이나 고정된 성격이 아니라 이번 놀이 회차에서 나타난 경향임을
            * 분명히 한다(2026-07-25 200문항뱅크 개편 요구사항) — 다음에 다시 하면 문항
            * 구성이 달라 다른 결과가 나올 수 있다는 점도 함께 안내한다. */}
-          <p className="text-xs text-gray-400">오늘 답변에서 나온 경향이에요. 다음에 또 해보면 달라질 수도 있어요!</p>
+          <p className="text-xs text-k-text-secondary">오늘 답변에서 나온 경향이에요. 다음에 또 해보면 달라질 수도 있어요!</p>
         </div>
 
-        <p className="text-base leading-relaxed text-gray-700">{profile.childDescription}</p>
+        <p className="text-base leading-relaxed text-k-text-secondary">{profile.childDescription}</p>
 
         <div className="w-full text-left">
-          <h2 className="text-sm font-bold text-gray-500">나의 강점</h2>
+          <h2 className="text-sm font-bold text-k-text-secondary">나의 강점</h2>
           <ul className="mt-2 flex flex-col gap-1">
             {profile.strengths.map((strength) => (
-              <li key={strength} className="text-sm text-gray-700">
+              <li key={strength} className="text-sm text-k-text-secondary">
                 ✨ {strength}
               </li>
             ))}
@@ -144,8 +144,8 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
         </div>
 
         <div className="w-full text-left">
-          <h2 className="text-sm font-bold text-gray-500">어울리는 친구</h2>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">{profile.compatibleFriends}</p>
+          <h2 className="text-sm font-bold text-k-text-secondary">어울리는 친구</h2>
+          <p className="mt-2 text-sm leading-relaxed text-k-text-secondary">{profile.compatibleFriends}</p>
         </div>
       </div>
 
@@ -155,7 +155,7 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
         disabled={isCapturing}
         aria-busy={isCapturing}
         className={cn(
-          "w-full max-w-sm rounded-full bg-amber-500 px-8 py-4 text-lg font-bold text-white shadow-md transition active:scale-95",
+          "w-full max-w-sm rounded-full bg-k-orange px-8 py-4 text-lg font-bold text-white shadow-md transition active:scale-95",
           isCapturing && "cursor-not-allowed opacity-70 active:scale-100",
         )}
       >
@@ -176,7 +176,7 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
         type="button"
         onClick={onClose}
         className={cn(
-          "w-full max-w-sm rounded-full border-2 border-amber-300 bg-white px-8 py-4 text-lg font-bold text-amber-600 transition active:scale-95",
+          "w-full max-w-sm rounded-full border-2 border-k-orange bg-white px-8 py-4 text-lg font-bold text-k-orange transition active:scale-95",
         )}
       >
         닫기

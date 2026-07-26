@@ -49,8 +49,8 @@ const ErrorScreen = ({
         <span className="text-6xl" aria-hidden="true">
           {content.emoji}
         </span>
-        <h1 className="text-2xl font-bold text-gray-900">{content.title}</h1>
-        <p className="max-w-sm text-base leading-relaxed text-gray-600">{content.description}</p>
+        <h1 className="text-2xl font-bold text-k-text-primary">{content.title}</h1>
+        <p className="max-w-sm text-base leading-relaxed text-k-text-secondary">{content.description}</p>
       </div>
 
       <div className="flex w-full max-w-xs flex-col gap-3">
@@ -60,8 +60,8 @@ const ErrorScreen = ({
             onClick={onRetry}
             disabled={retrying}
             className={cn(
-              "w-full rounded-full bg-amber-500 px-8 py-4 text-lg font-bold text-white shadow-md transition active:scale-95",
-              "disabled:cursor-not-allowed disabled:bg-gray-300 disabled:active:scale-100",
+              "w-full rounded-full bg-k-orange px-8 py-4 text-lg font-bold text-white shadow-md transition active:scale-95",
+              "disabled:cursor-not-allowed disabled:bg-k-disabled disabled:active:scale-100",
             )}
           >
             {retrying ? "다시 시도하는 중..." : content.retryLabel}
@@ -75,8 +75,8 @@ const ErrorScreen = ({
           className={cn(
             "w-full rounded-full border-2 px-8 py-4 text-lg font-bold transition active:scale-95",
             showRetry
-              ? "border-gray-200 bg-white text-gray-500"
-              : "border-amber-300 bg-white text-amber-600",
+              ? "border-k-border bg-white text-k-text-secondary"
+              : "border-k-orange bg-white text-k-orange",
           )}
         >
           메인으로 돌아가기

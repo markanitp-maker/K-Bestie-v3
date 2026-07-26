@@ -37,24 +37,24 @@ const ResultLoadingScreen = ({
   }, [durationMs, onLoadingComplete]);
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-gradient-to-b from-amber-50 to-white px-6 py-10 text-center">
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-gradient-to-b from-k-orange-tint to-white px-6 py-10 text-center">
       <span
         className="mbti-loading-character text-7xl"
         aria-hidden="true"
       >
         🐾
       </span>
-      <p className="text-lg font-bold text-gray-900">어떤 동물 친구일까...?</p>
+      <p className="text-lg font-bold text-k-text-primary">어떤 동물 친구일까...?</p>
       <div className="flex items-center gap-2" role="status" aria-live="polite">
         <span className="sr-only">결과를 계산하는 중입니다</span>
-        <span className="mbti-loading-dot h-2.5 w-2.5 rounded-full bg-amber-400" aria-hidden="true" />
+        <span className="mbti-loading-dot h-2.5 w-2.5 rounded-full bg-k-orange" aria-hidden="true" />
         <span
-          className="mbti-loading-dot h-2.5 w-2.5 rounded-full bg-amber-400"
+          className="mbti-loading-dot h-2.5 w-2.5 rounded-full bg-k-orange"
           style={{ animationDelay: "0.15s" }}
           aria-hidden="true"
         />
         <span
-          className="mbti-loading-dot h-2.5 w-2.5 rounded-full bg-amber-400"
+          className="mbti-loading-dot h-2.5 w-2.5 rounded-full bg-k-orange"
           style={{ animationDelay: "0.3s" }}
           aria-hidden="true"
         />
