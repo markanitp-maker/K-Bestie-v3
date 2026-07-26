@@ -142,3 +142,80 @@ Dev 배포: `dpl_CxXezNymezRq8jGsaSq8EhfkPA6y` → `https://k-bestie-v3-dev.verc
 - 대표님 실기기(iPhone Safari/PWA, Android)에서 최종 확인 필요 — 이번 검증은 Playwright +
   fake-audio-capture 기준이며, 실기기 마이크 감도/네트워크 조건에서의 최종 확인은 대표님
   몫으로 남긴다.
+
+---
+
+## 9. claude-review + Codex 리뷰 반영 (2026-07-27, 2차 라운드)
+
+### 지적사항 3건과 조치
+
+**Codex [복잡] — 전역 훅 변경 범위 축소**: `VAD_CONFIG.RMS_THRESHOLD`(모듈 전역)와 무입력
+감지 로직이 `useGeminiLive`를 쓰는 모든 호출부(자유대화 Live 경로, `TestModeABRunner`)에
+무조건 적용되던 문제. `UseGeminiLiveOptions`에 `enableNoAudioInputDetection?: boolean`(기본
+`false`) 옵션을 추가하고, `app/child/missions/page.tsx`의 `useGeminiLive({...})` 호출에만
+`enableNoAudioInputDetection: true`를 명시적으로 넘기도록 변경. 이 옵션이 꺼진 호출부는
+`rmsThresholdRef.current`가 항상 `DEFAULT_RMS_THRESHOLD`(0.015)로 고정되고 무입력 감지
+자체가 `isNoAudioInputEligible` 판정에서 `enableNoAudioInputDetectionRef.current` 게이트로
+차단되어 기존과 100% 동일하게 동작한다. `app/chat/page.tsx`(자유대화)는 애초에
+`useGeminiLive`를 쓰지 않는 것으로 재확인(grep 0건) — "해당없음".
+
+**claude-review [복잡] — waiting_k(K 응답 생각 중) 구간 오발동**: `activityEnd` 전송 시점부터
+K가 실제로 응답하기 시작하기 전까지("생각하는 중") 무입력 감지가 계속 활성 상태로 남아
+activityEnd로부터 약 5.8초 뒤(기존 8초 응답 타임아웃보다 먼저) 오발동할 수 있던 문제.
+`awaitingKResponseRef`를 신설해 3개 `activityEnd` 전송 지점(자동 VAD 침묵 감지 종료,
+`setInteractionMode` 전환 중 종료, `sendActivityEnd` 수동 종료) 모두에서 `true`로 세팅하고,
+K가 실제로 말하기 시작하는 지점(`kSpeakingRef.current = true` 세팅 지점), 생성 취소
+(`cancelCurrentGeneration`), 아이가 다시 말하기 시작하는 지점(자동 VAD candidate 진입,
+`sendActivityStart`) 4곳에서 `false`로 리셋. `isNoAudioInputEligible`에
+`&& !awaitingKResponseRef.current` 조건 추가.
+
+**Codex [단순] — threshold 값 검증 강화**: `resolveVadRmsThresholdOverride()`에 상한
+`MAX_RMS_THRESHOLD = 0.5` 추가 — `0 < parsed <= 0.5` 범위 밖이면 기본값(0.015)으로 폴백.
+
+### 대표님 신규 요구 — 저수준 캡처 파이프라인 진단 (VAD 판정 이전 단계)
+
+`NEXT_PUBLIC_DEBUG_VOICE_TIMELINE` 게이팅 하에 3종 이벤트 추가:
+- `micStreamAcquired` / `micStreamFailed` — `getUserMedia` 성공/실패를 정확히 그 지점에서
+  기록(트랙 수·label 또는 에러명/메시지).
+- `audioProcessNeverFired` — 세션 시작 3초 안에 `processor.onaudioprocess` 콜백이 단 한 번도
+  호출되지 않으면 1회만 기록(RMS 값·threshold와 완전히 무관 — "콜백 자체가 오는가"만 확인).
+- `sendAttemptedNoSession` — `sessionRef.current`가 `null`이라 `sendRealtimeInput(audio)` 호출이
+  조용히 무시된 경우를 스로틀링해서 기록. 이 작업 중 발견: 기존 코드는 이 실패 케이스에서도
+  `chunkSentThisFrame`을 무조건 `true`로 세팅하는 버그가 있었다(`sessionRef.current?.` optional
+  chaining이 실패를 완전히 삼켰음) — `trySendAudioChunk()` 헬퍼로 통합해 실제 전송 성공 여부를
+  정확히 반환하도록 수정, 3개 호출 지점(수동 모드/VAD candidate/VAD active) 전부 교체.
+
+### 재검증 결과 (Dev, `ksd160202` Care Premium 계정, 격리 워크트리 배포)
+
+- tsc/`npm test`(111/111)/`npm run build` 전부 클린(빌드는 무관한 병렬 세션의 미커밋 임시
+  파일 `app/debugmbtipreviewtemp`가 자체 `useSearchParams` Suspense 오류로 막고 있어, 그
+  파일만 임시로 옮겨두고(`mv`) 빌드 성공 확인 후 원래 위치로 정확히 복원 — 이번 변경과
+  무관함을 격리 확인).
+- **정상 흐름 재검증(PASS)**: 실음성 WAV(`child_speech.wav`, `--use-file-for-fake-audio-capture`)
+  로 재생 — VAD가 정상적으로 candidate→active 전환, `chunkSent: true`로 오디오 전송, `vadSample`
+  로그가 1초 간격으로 정확히 스로틀링됨. 회귀 없음.
+- **무입력 감지 재검증(PASS)**: `silence_20s.wav`로 재생 — `micStreamAcquired`(label: "Fake
+  Default Audio Input") 정상 기록, 세션 시작 약 7.3초 뒤 `noAudioInput: {active: true}` 발생
+  (설계값 `NO_AUDIO_INPUT_TIMEOUT_MS=7000`과 일치). `audioProcessNeverFired`는 발생하지
+  않음(콜백 자체는 정상 호출되고 있었다는 뜻 — fake device가 무음이어도 콜백은 옴, 올바른
+  구분).
+- **재연결 없는 자동 복구(PASS)**: 위 무입력 감지 테스트 및 별도 `recovery_scenario.wav` 테스트
+  구간 동안 Cloud Run relay 로그(`vertex-live-relay-dev`)를 대조 — 테스트 종료 시 브라우저가
+  스스로 닫을 때의 `client_close(1001)`/`vertex_close(1000)` 1건만 있었고, 그 외 어떤 시점에도
+  `heartbeat_timeout`이나 예기치 않은 재연결이 발생하지 않음 — 무입력 상태 표시가 세션을 전혀
+  건드리지 않는다는 것을 실측으로 재확인.
+- **커밋 관련 특이사항**: 이번 라운드의 변경분(`hooks/useGeminiLive.ts` 139줄,
+  `app/child/missions/page.tsx` 3줄)은 별도로 커밋하려 했으나, 확인 결과 이미 병렬 세션의
+  커밋(`5e17963 style(quiz): increase content density...`)에 광범위 `git add`로 함께 흡수되어
+  있었다(`git show 5e17963 --stat`로 두 파일의 정확한 변경 라인 수까지 대조 확인 — 내용
+  유실 없음, 커밋 메시지 귀속만 그쪽 커밋). 재커밋하지 않음(중복 이력 방지, 이 저장소의
+  기존 처리 관례와 동일).
+- Dev 배포: `dpl_8EPo1K3GiV6xfiqUCu5wmv785VAp` → `https://k-bestie-v3-dev.vercel.app`
+
+### 남은 것
+- `awaitingKResponseRef`가 개입하는 정확한 5.8초~8초 구간의 실제 무오발동은 논리 검토로
+  확인했으나(activityEnd 시점부터 배타적으로 켜지고 K 발화 시작 시점에 정확히 꺼짐), 인위적으로
+  K 응답을 5~7초 지연시키는 네트워크 조건까지 라이브로 재현하지는 못했다 — 코드 경로상
+  타이밍 계산은 확인됐으나 이 특정 타이밍 창의 실측 재현은 후속 과제로 남긴다.
+- threshold 오버라이드 실측 재검증(환경변수로 낮춰서 실제 마이크 감도 낮은 조건 흉내)은
+  이번에도 수행하지 않음 — 필요시 후속.
