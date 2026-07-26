@@ -20,22 +20,40 @@
  * 동시 캡처 방지: `inFlightRef`로 캡처 진행 중 재호출을 무시한다(호출부의 버튼
  * disabled와 별개로 훅 레벨에서도 중복 트리거를 막기 위한 이중 안전장치).
  *
- * ## iOS Safari 전용 버그: 동물 이미지 누락 (2026-07-25 수정)
- * PC Chrome은 정상인데 iPhone Safari에서만 저장된 PNG에 동물 이미지가 빠지는 문제가
- * 재현됐다. `html-to-image`는 DOM을 SVG `<foreignObject>`로 직렬화해 캔버스에 그리는데,
- * WebKit(iOS Safari)은 이 과정에서 외부 URL(src)을 그대로 참조하는 `<img>`를 안정적으로
- * 페인트하지 못하는 알려진 한계가 있다 — 라이브러리 자체의 내장 이미지 임베딩
- * (fetch→data: URL 변환)이 iOS Safari의 fetch/CORS 처리 차이로 실패하거나 누락되는
- * 사례가 실제로 보고돼 있다. `inlineImagesForCapture`로 캡처 직전에 캡처 대상 내부의
- * 모든 `<img>` src를 직접 fetch해 `data:` URL로 선(先)치환하면, html-to-image 쪽 자체
- * 임베딩 로직에 기대지 않고 항상 캡처 결과에 픽셀이 포함된다. 화면에 보이는 실제
- * `<img>` 요소의 src를 캡처 순간에만 바꿨다가 캡처 직후(성공/실패 무관) 원래 src로
- * 되돌리므로, 화면 표시용 DOM 구조·사용자 경험은 전혀 바뀌지 않는다(같은 이미지라
- * 시각적으로도 깜빡임이 없다).
+ * ## iOS Safari 전용 버그: 동물 이미지 누락 (2026-07-26, 이식)
+ *
+ * 이전 구현은 캡처 직전 `<img>` src를 fetch→dataURL로 수동 치환하는 방식이었는데,
+ * 자매 프로젝트(`/mnt/e/VibeCoding/mbti`)에서 동일 버그를 실기기로 재현해 근본 원인을
+ * 추적한 결과 그 방식은 효과가 없었다 — `html-to-image`는 애초에 모든 `<img>`를
+ * 자동으로 dataURL로 임베딩하므로(`embed-images.js`) 수동 치환은 라이브러리가 이미
+ * 하던 일의 중복일 뿐이었다.
+ *
+ * 진짜 파이프라인(`html-to-image`의 `toCanvas`, `es/index.js`):
+ * 1. DOM을 `<foreignObject>`로 감싼 SVG 문자열로 직렬화(내부 이미지는 이미 dataURL로
+ *    임베딩됨, `foreignObject`에는 `externalResourcesRequired="true"` 지정).
+ * 2. 그 SVG 문자열을 **다시 하나의 `<img>`로 로드**한다(`createImage`) —
+ *    `onload` → `img.decode()` → `requestAnimationFrame` **딱 1번**만 기다리고
+ *    "준비됨"으로 판정한다.
+ * 3. 그 이미지를 캔버스에 `drawImage`.
+ *
+ * WebKit(iOS Safari)은 `foreignObject`의 `externalResourcesRequired`를 Chrome만큼
+ * 엄격히 지키지 않는 것으로 알려져 있다 — 바깥쪽 SVG-as-image의 `onload`가, 그 안의
+ * 이미지가 실제로 래스터화(픽셀로 그려짐)되기 **전에** 먼저 발생할 수 있다. 라이브러리가
+ * 넣어둔 rAF 1번만으로는 이 차이를 못 따라잡아, 아직 다 그려지지 않은 프레임을 캔버스가
+ * 캡처해버린다(동물 이미지가 통째로 빈 칸). PC Chrome(Blink)은 이 시점 차이가 없어 항상
+ * 정상이었다 — CORS도, 이미지 로딩 자체도 문제가 아니라 **캔버스에 그리기 직전 찰나의
+ * 렌더링 유예 시간 부족**이 원인이었다.
+ *
+ * ### 수정
+ * 라이브러리의 고수준 `toBlob()`(내부적으로 `createImage` + 즉시 `drawImage`를 실행) 대신
+ * export된 저수준 `toSvg()`만 가져다 쓰고, "SVG를 이미지로 로드 → 캔버스에 그리기" 사이
+ * 구간을 직접 구현해 `requestAnimationFrame` 2번 + 짧은 `setTimeout`으로 여유 시간을
+ * 추가로 확보한 뒤에만 `drawImage`한다. DOM 구조·원본 화면의 이미지 렌더링은 전혀
+ * 건드리지 않는다(html-to-image의 `toSvg` 자체가 내부적으로 노드를 복제해서 처리한다).
  */
 
 import { useCallback, useRef, useState } from "react";
-import { toBlob } from "html-to-image";
+import { toSvg } from "html-to-image";
 
 export type ResultScreenshotStatus = "idle" | "capturing" | "error";
 
@@ -51,6 +69,10 @@ export interface UseResultScreenshotResult {
 const SCREENSHOT_FILE_NAME = "mbti-result.png";
 const CAPTURE_FAILURE_MESSAGE = "스크린샷 저장에 실패했어요. 다시 시도해줘.";
 const ELEMENT_NOT_FOUND_MESSAGE = "저장할 결과 화면을 찾을 수 없어요. 다시 시도해줘.";
+const PIXEL_RATIO = 2;
+/** rAF 2번 이후 추가로 기다리는 시간(ms) — iOS Safari의 foreignObject 래스터화 지연 대응.
+ * PC Chrome에서는 사실상 즉시 통과하므로 체감 지연이 없다. */
+const SAFARI_SETTLE_DELAY_MS = 120;
 
 function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException) {
@@ -77,84 +99,70 @@ function canShareFile(file: File): boolean {
   }
 }
 
-/**
- * 캡처 대상(`node`) 내부 모든 `<img>`가 실제로 화면에 그려질 준비(로드 완료 + 디코딩
- * 완료)가 될 때까지 기다린다. `html-to-image`는 DOM을 그대로 직렬화하므로, 이미지
- * 요소가 아직 로드 중이면(특히 결과 화면 진입 직후 캐릭터 이미지가 막 렌더링된 시점에
- * 바로 저장 버튼을 누르는 경우) 빈 칸으로 캡처된다 — 실제로 재현된 버그. 개별 이미지가
- * 실패해도(예: onError 폴백으로 이미 사라진 img) 전체 캡처를 막지 않고 로그만 남긴다.
- */
-async function waitForImagesReady(node: HTMLElement): Promise<void> {
-  const images = Array.from(node.querySelectorAll("img"));
-
-  await Promise.all(
-    images.map(async (img) => {
-      if (!img.complete) {
-        await new Promise<void>((resolve) => {
-          img.addEventListener("load", () => resolve(), { once: true });
-          img.addEventListener("error", () => resolve(), { once: true });
-        });
-      }
-      try {
-        await img.decode();
-      } catch (decodeError) {
-        console.error("[useResultScreenshot] 캡처 대상 이미지 디코딩 실패:", img.src, decodeError);
-      }
-    }),
-  );
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`SVG 이미지 로드 실패: ${src.slice(0, 64)}...`));
+    img.src = src;
+  });
 }
 
-/** 이미지 URL을 fetch해 `data:` URL로 변환한다. 실패하면 null(호출부가 원본 src를 유지). */
-async function toDataUrl(src: string): Promise<string | null> {
-  try {
-    const response = await fetch(src, { cache: "no-store" });
-    if (!response.ok) {
-      return null;
+/**
+ * `img`가 실제로 픽셀까지 그려졌다고 신뢰할 수 있을 때까지 기다린다. `decode()`가
+ * 있으면 우선 사용하고, 그 뒤 rAF 2번 + 짧은 setTimeout으로 iOS Safari의 foreignObject
+ * 래스터화 지연에 대한 여유 시간을 추가로 확보한다(단일 rAF만으로는 재현되는 문제였음
+ * — 위 파일 상단 설명 참고).
+ */
+async function waitUntilPaintSettled(img: HTMLImageElement): Promise<void> {
+  if (typeof img.decode === "function") {
+    try {
+      await img.decode();
+    } catch (decodeError) {
+      console.error("[useResultScreenshot] SVG 이미지 디코딩 실패, 계속 진행:", decodeError);
     }
-    const blob = await response.blob();
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error ?? new Error("FileReader 실패"));
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error("[useResultScreenshot] 이미지 dataURL 변환 실패:", src, error);
+  }
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+  await new Promise<void>((resolve) => {
+    window.setTimeout(resolve, SAFARI_SETTLE_DELAY_MS);
+  });
+}
+
+/** `node`를 PNG Blob으로 캡처한다. 원본 DOM은 전혀 수정하지 않는다(`toSvg`가 내부적으로
+ * 노드를 복제해 처리함). */
+async function captureNodeAsBlob(node: HTMLElement): Promise<Blob | null> {
+  const svgDataUrl = await toSvg(node, {
+    cacheBust: true,
+    backgroundColor: "#ffffff",
+    // 외부 CDN 폰트 재임베딩 과정의 iOS Safari fetch/CORS 불안정성을 캡처 실패 경로에서
+    // 제외하는 방어적 안전장치(이번 버그와는 별개, 폰트 임베딩 정확도에만 영향).
+    skipFonts: true,
+  });
+
+  const img = await loadImage(svgDataUrl);
+  await waitUntilPaintSettled(img);
+
+  const width = node.offsetWidth || img.naturalWidth;
+  const height = node.offsetHeight || img.naturalHeight;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width * PIXEL_RATIO;
+  canvas.height = height * PIXEL_RATIO;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
     return null;
   }
-}
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-/**
- * 캡처 대상(`node`) 내부 `<img>`의 src를 `data:` URL로 선치환하고, 원래 src로 되돌리는
- * 함수를 반환한다. 이미 `data:` URL이거나 변환에 실패한 이미지는 원본 src를 그대로 둔다
- * (변환 실패가 캡처 자체를 막지 않게 하기 위함 — html-to-image 자체 임베딩으로 폴백됨).
- */
-async function inlineImagesForCapture(node: HTMLElement): Promise<() => void> {
-  const images = Array.from(node.querySelectorAll("img"));
-  const restores: Array<() => void> = [];
-
-  await Promise.all(
-    images.map(async (img) => {
-      const originalSrc = img.src;
-      if (!originalSrc || originalSrc.startsWith("data:")) {
-        return;
-      }
-      const dataUrl = await toDataUrl(originalSrc);
-      if (!dataUrl) {
-        return;
-      }
-      img.src = dataUrl;
-      restores.push(() => {
-        img.src = originalSrc;
-      });
-    }),
-  );
-
-  return () => {
-    for (const restore of restores) {
-      restore();
-    }
-  };
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), "image/png", 1);
+  });
 }
 
 function downloadBlob(blob: Blob): void {
@@ -192,33 +200,9 @@ export function useResultScreenshot(): UseResultScreenshotResult {
     setErrorMessage(null);
 
     try {
-      await waitForImagesReady(node);
-
-      // iOS Safari 우회: 캡처 순간에만 <img> src를 data: URL로 바꾸고, 캡처 직후(성공/
-      // 실패 무관) 반드시 원래 src로 되돌린다 — 화면 표시 구조는 그대로 유지된다.
-      const restoreImages = await inlineImagesForCapture(node);
-      let blob: Blob | null;
-      try {
-        // src가 data: URL로 바뀌면 새 로드 사이클이 시작되므로 다시 한번 로드/디코딩
-        // 완료를 기다린다.
-        await waitForImagesReady(node);
-
-        blob = await toBlob(node, {
-          pixelRatio: 2,
-          cacheBust: true,
-          backgroundColor: "#ffffff",
-          // 외부 CDN(@import) 폰트 재임베딩 과정에서 iOS Safari가 겪는 fetch/CORS
-          // 불안정성을 캡처 실패 경로에서 제외한다 — 텍스트는 이미 브라우저가 실제
-          // 폰트로 렌더링한 상태이므로, 이 옵션은 캡처 결과물의 폰트 임베딩(재현
-          // 정확도)에만 영향이 있고 이번 버그(동물 이미지 누락)와는 무관한 폴백 폭을
-          // 넓히는 안전장치다.
-          skipFonts: true,
-        });
-      } finally {
-        restoreImages();
-      }
+      const blob = await captureNodeAsBlob(node);
       if (!blob) {
-        throw new Error("html-to-image toBlob returned null");
+        throw new Error("결과 카드 캡처 실패 — blob 생성 안 됨");
       }
 
       const file = new File([blob], SCREENSHOT_FILE_NAME, { type: "image/png" });

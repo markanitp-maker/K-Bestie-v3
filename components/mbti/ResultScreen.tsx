@@ -25,6 +25,8 @@
  *     바꾸고 싶다면 이 컴포넌트의 버튼 위치만 옮기면 된다.)
  *   - "⚠️ 꼭 저장해! 다음에 오면 사라져" 안내 배너
  *   - [닫기] 버튼
+ *   - 상단 "내친구 케이" 로고 헤더(2026-07-26 이식 — 캡처 대상 밖에 둬 브랜드 크롬이
+ *     저장 이미지 안에 함께 찍히지 않게 한다. 자매 프로젝트 mbti의 동일 설계를 따름)
  * US-009는 `document.getElementById("mbti-result-card")`(또는 동등한 ref)를
  * 캡처 라이브러리에 넘기면 된다.
  *
@@ -37,6 +39,7 @@
  */
 
 import { useState, type ReactElement } from "react";
+import Image from "next/image";
 
 import { useResultScreenshot } from "@/hooks/useResultScreenshot";
 import { TYPE_PROFILES } from "@/lib/data/typeProfiles";
@@ -78,6 +81,16 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
 
   return (
     <main className="flex min-h-dvh flex-col items-center gap-5 bg-gradient-to-b from-amber-50 to-white px-6 py-10 text-center">
+      {/* 캡처 대상 밖 브랜드 헤더 — 로고가 저장 이미지에 함께 찍히지 않게 한다 */}
+      <Image
+        src="/Images/logo/Logo.png"
+        alt="내친구 케이"
+        width={84}
+        height={24}
+        className="object-contain"
+        priority
+      />
+
       {/* 캡처 대상(US-009): 캐릭터/유형명/설명/강점/어울리는 친구만 포함 */}
       <div
         id={RESULT_CARD_ELEMENT_ID}
@@ -98,10 +111,10 @@ const ResultScreen = ({ mbtiType, onScreenshotRequest, onClose }: ResultScreenPr
             alt={`${profile.animalName} 캐릭터`}
             width={160}
             height={160}
-            // 스크린샷 저장(useResultScreenshot)이 캡처 시점에 이 이미지가 아직 로드 중이면
-            // 빈 칸으로 캡처되는 문제가 있었다 — lazy loading(브라우저 기본값 "auto"가
-            // 상황에 따라 지연 로드로 동작할 수 있음)을 명시적으로 끄고, width/height를
-            // 고정해 로드 전후 레이아웃 이동(CLS)도 함께 막는다.
+            // lazy loading(브라우저 기본값 "auto"가 상황에 따라 지연 로드로 동작할 수 있음)을
+            // 명시적으로 끄고, width/height를 고정해 로드 전후 레이아웃 이동(CLS)을 막는다.
+            // (2026-07-26: 스크린샷 캡처 자체는 html-to-image가 URL로 재요청해 임베딩하므로
+            // 이 img 요소의 로드 상태와 무관해졌다 — 자세한 내용은 useResultScreenshot.ts 참고.)
             loading="eager"
             className="h-40 w-40 rounded-full object-cover"
             onError={() => setImageLoadFailed(true)}

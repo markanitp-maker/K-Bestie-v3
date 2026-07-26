@@ -22,6 +22,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
+import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import { QUESTION_BANK, type QuestionChoice } from "@/lib/data/questionBank";
 import type { MbtiType } from "@/lib/data/mbtiTypes";
 import { MBTI_ERROR_CONTENT } from "@/lib/mbti/errorKinds";
@@ -164,6 +165,12 @@ const QuestionScreen = ({
           {answers.length} / {TOTAL_QUESTIONS}
         </p>
       </div>
+
+      {/* 케이 마스코트 — 진행률과 상황 이미지 사이(2026-07-26 이식, 자매 프로젝트 mbti의
+       * 동일 배치를 따름). 이 앱은 정지 이미지가 아니라 실제 스프라이트 애니메이션
+       * 컴포넌트(KBestieMascotAnimation)를 이미 보유하고 있어 정지 이미지 대체 없이
+       * 바로 사용한다. */}
+      <KBestieMascotAnimation state="idle" size={72} />
 
       <div className="flex w-full max-w-sm flex-1 flex-col items-center justify-center gap-5">
         {/* 문항 상단 일러스트 — 정상 출제에서는 모든 활성 문항이 imagePath를 가지므로
