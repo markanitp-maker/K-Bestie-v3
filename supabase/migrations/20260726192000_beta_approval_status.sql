@@ -104,6 +104,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Codex 지적(치명): SECURITY DEFINER 함수는 기본적으로 PUBLIC이 직접 rpc() 호출 가능하다 -
+-- API 라우트의 requireAdmin() 검증을 완전히 우회해 클라이언트가 임의의 p_admin_user_id/
+-- tier로 자기 자신을 승인할 수 있었다. 이 저장소의 다른 admin RPC(admin_approve_account_restore
+-- 등)와 동일하게 service_role 전용으로 제한한다.
+REVOKE EXECUTE ON FUNCTION public.admin_approve_beta_application(UUID, TEXT, UUID, INT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_approve_beta_application(UUID, TEXT, UUID, INT) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.admin_reject_beta_application(
   p_admin_user_id UUID,
   p_admin_email TEXT,
@@ -140,3 +147,6 @@ BEGIN
   RETURN QUERY SELECT true, NULL::TEXT;
 END;
 $$ LANGUAGE plpgsql;
+
+REVOKE EXECUTE ON FUNCTION public.admin_reject_beta_application(UUID, TEXT, UUID, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_reject_beta_application(UUID, TEXT, UUID, TEXT) TO service_role;
