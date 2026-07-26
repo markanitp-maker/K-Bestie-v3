@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import {
   QUIZ_REDEEM_PATH,
   QUIZ_START_PATH,
@@ -388,7 +389,7 @@ export default function QuizPlayScreen({
 
   return (
     <main className="flex min-h-dvh flex-col bg-k-background">
-      <div className="shrink-0 flex items-center justify-between px-4 pt-4 pb-2">
+      <div className="shrink-0 flex items-center px-4 pt-4 pb-2">
         <button
           type="button"
           onClick={onClose}
@@ -397,8 +398,6 @@ export default function QuizPlayScreen({
         >
           ✕
         </button>
-        <p className="text-sm font-bold text-k-text-primary">퀴즈마스터</p>
-        <div className="w-9 h-9" />
       </div>
 
       {phase === "redeeming" && (
@@ -541,6 +540,25 @@ export default function QuizPlayScreen({
 
       {phase === "playing" && currentQuestion && (
         <div className="flex flex-1 flex-col gap-6 p-6">
+          <div className="flex flex-col items-center gap-2 pb-2">
+            <Image
+              src="/Images/logo/Logo.png"
+              alt="내친구 케이"
+              width={84}
+              height={24}
+              className="object-contain"
+              priority
+            />
+            <Image
+              src="/Images/mascot/mascot-standing.png"
+              alt="케이 마스코트"
+              width={80}
+              height={80}
+              className="object-contain"
+              priority
+            />
+          </div>
+
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between text-sm font-medium" style={{ color: "var(--color-k-sky-blue)" }}>
               <span>{position + 1} / {questions.length}</span>
