@@ -1,8 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { ATTEMPT_MAX_AGE_MS } from "@/lib/quiz/play/route-helpers";
 
 export const runtime = "nodejs";
+
+/**
+ * quizmaster는 k_play_sessions를 쓰지 않는다(황금열쇠 소비가 이 인프라를 의도적으로
+ * 우회함 - lib/quiz/handoffToken.ts 참고). 진행 상태의 진짜 출처는 quiz_attempts이므로
+ * 이 놀이 타입만 별도로 조회한다. docs/quiz-inapp-integration.md §5 참고.
+ */
+async function checkQuizmasterResume(
+  service: ReturnType<typeof createServiceClient>,
+  userId: string
+): Promise<{ canResume: boolean; progressState: null; sessionId: string | null }> {
+  const cutoff = new Date(Date.now() - ATTEMPT_MAX_AGE_MS).toISOString();
+  const { data, error } = await service
+    .from("quiz_attempts")
+    .select("id")
+    .eq("user_id", userId)
+    .in("status", ["in_progress", "background"])
+    .gt("started_at", cutoff)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[play/session] quizmaster attempt lookup failed:", error);
+    return { canResume: false, progressState: null, sessionId: null };
+  }
+
+  const attemptId = (data as { id: string } | null)?.id ?? null;
+  return { canResume: attemptId !== null, progressState: null, sessionId: attemptId };
+}
 
 export async function GET(req: NextRequest) {
   const authClient = await createClient();
@@ -21,6 +51,10 @@ export async function GET(req: NextRequest) {
   const authCheck = await requireChildAccess(service, user.id, child_id);
   if (!authCheck.allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (play_type === "quizmaster") {
+    return NextResponse.json(await checkQuizmasterResume(service, user.id));
   }
 
   const { data: sessionData, error: sessionErr } = await service

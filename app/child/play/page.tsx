@@ -7,6 +7,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
 import { writeMbtiSessionHandoff } from "@/lib/play/mbtiSessionHandoff";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
+import { quizAttemptClaimPath } from "@/lib/quiz/play/api-contracts";
 
 const GAMES = [
   { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", keys: 2 },
@@ -35,6 +36,9 @@ export default function ChildPlayPage() {
   const [showActionModal, setShowActionModal] = useState(false);
   const [resumeCheckLoading, setResumeCheckLoading] = useState(false);
   const [canResume, setCanResume] = useState(false);
+  // quizmaster 전용: /api/play/session이 돌려주는 quiz_attempts.id — 재차감 없는
+  // 이어하기(claim)에 필요하다. 다른 놀이 타입은 이 값을 쓰지 않는다.
+  const [resumeAttemptId, setResumeAttemptId] = useState<string | null>(null);
   
   const [isStarting, setIsStarting] = useState(false);
   
@@ -100,11 +104,14 @@ export default function ChildPlayPage() {
       if (res.ok) {
         const data = await res.json();
         setCanResume(data.canResume);
+        setResumeAttemptId(game.id === "quizmaster" ? (data.sessionId ?? null) : null);
       } else {
         setCanResume(false);
+        setResumeAttemptId(null);
       }
     } catch (e) {
       setCanResume(false);
+      setResumeAttemptId(null);
     } finally {
       setResumeCheckLoading(false);
     }
@@ -219,26 +226,22 @@ export default function ChildPlayPage() {
         setIsStarting(false);
       }
     } else if (selectedGame.id === "quizmaster") {
+      // 재차감 없는 이어하기: start-handoff(황금열쇠 차감)를 호출하지 않고, 이미 알고
+      // 있는 기존 attempt를 claim(순수 재인증, 황금열쇠 무관)해서 그대로 재접속한다.
+      // docs/quiz-inapp-integration.md §5 참고.
       setIsStarting(true);
       try {
-        const res = await fetch("/api/quiz/start-handoff", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ childId })
-        });
-        
-        if (res.status === 402) {
-          setIsStarting(false);
-          setShowActionModal(false);
-          setShowInsufficientModal(true);
+        if (!resumeAttemptId) {
+          alert("이어서 진행할 놀이를 찾지 못했어요. 다시 시도해주세요.");
           return;
-        } else if (res.ok) {
-          const { token } = await res.json();
+        }
+        const res = await fetch(quizAttemptClaimPath(resumeAttemptId), { method: "POST" });
+        if (res.ok) {
           setShowActionModal(false);
-          writeQuizSessionHandoff({ token, childId });
+          writeQuizSessionHandoff({ token: "", childId, attemptId: resumeAttemptId });
           router.push("/play/quiz");
         } else {
-          alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+          alert("이어하기에 실패했어요. 잠시 후 다시 시도해주세요.");
         }
       } catch (e) {
         alert("오류가 발생했습니다.");

@@ -3,7 +3,7 @@
 // 재배열돼 내려오므로 클라이언트는 그대로 렌더링하고 탭한 배열 인덱스(0-3)를 그대로 제출한다.
 // correct_option_index는 어떤 응답에도 포함되지 않는다.
 
-import type { QuizGrade, QuizSubject, QuizAttemptStatus } from "./types";
+import type { QuizGrade, QuizSubject, QuizAttemptStatus, QuizLeaderboardPublicEntry } from "./types";
 
 export const QUIZ_REDEEM_PATH = "/api/quiz-play/redeem";
 export const QUIZ_START_PATH = "/api/quiz-play/start";
@@ -12,10 +12,17 @@ export const QUIZ_SUBMIT_PATH = "/api/quiz-play/submit";
 export const QUIZ_HEARTBEAT_PATH = "/api/quiz-play/heartbeat";
 export const QUIZ_BACKGROUND_PATH = "/api/quiz-play/background";
 export const QUIZ_BUG_REPORT_PATH = "/api/quiz-play/bug-report";
+export const QUIZ_LEADERBOARD_PATH = "/api/quiz-play/leaderboard";
 
 export function quizAttemptHydratePath(attemptId: string): string {
   return `/api/quiz-play/attempt/${attemptId}`;
 }
+
+export function quizAttemptClaimPath(attemptId: string): string {
+  return `/api/quiz-play/attempt/${attemptId}/claim`;
+}
+
+export const QUIZ_ATTEMPT_ACTIVE_PATH = "/api/quiz-play/attempt/active";
 
 export interface QuizPlayQuestion {
   id: string;
@@ -113,6 +120,16 @@ export interface QuizBackgroundRequest {
 export interface QuizBackgroundResponse {
   status: "background";
   accumulated_time_seconds: number;
+}
+
+/** GET /api/quiz-play/leaderboard — 독립 퀴즈마스터 프로젝트 /api/quiz/leaderboard에서 포팅. */
+export interface QuizLeaderboardResponse {
+  entries: QuizLeaderboardPublicEntry[];
+}
+
+/** GET /api/quiz-play/attempt/active — 독립 퀴즈마스터 프로젝트에서 포팅. */
+export interface QuizAttemptActiveResponse {
+  attemptId: string | null;
 }
 
 export type QuizApiErrorCode =

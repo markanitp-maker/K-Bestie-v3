@@ -18,11 +18,13 @@ import {
   QUIZ_HEARTBEAT_PATH,
   QUIZ_BACKGROUND_PATH,
   QUIZ_BUG_REPORT_PATH,
+  QUIZ_LEADERBOARD_PATH,
   quizAttemptHydratePath,
   type QuizRedeemResponse,
   type QuizStartResponse,
   type QuizSubmitResponse,
   type QuizAttemptHydrateResponse,
+  type QuizLeaderboardResponse,
 } from "@/lib/quiz/play/api-contracts";
 import {
   mapQuizApiError,
@@ -30,10 +32,11 @@ import {
   extractErrorDetail,
   type QuizUiError,
 } from "@/lib/quiz/play/error-mapping";
-import type { QuizGrade, QuizSubject } from "@/lib/quiz/play/types";
+import type { QuizGrade, QuizSubject, QuizLeaderboardPublicEntry } from "@/lib/quiz/play/types";
 import { attachAttemptIdToQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const AUTO_ADVANCE_FEEDBACK_MS = 500;
 const SUBJECTS: readonly QuizSubject[] = ["국어", "영어", "수학", "과학", "사회", "창의", "상식"];
 
 type Phase =
@@ -73,6 +76,8 @@ export default function QuizPlayScreen({
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [result, setResult] = useState<QuizSubmitResponse | null>(null);
   const [bugReportState, setBugReportState] = useState<BugReportState>("idle");
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<QuizLeaderboardPublicEntry[] | null>(null);
 
   // ---- 0) 이어하기: 이미 시작된 attempt가 있으면 redeem/과목선택을 건너뛰고 서버
   // 상태를 그대로 재확인해 복원한다("이어하기"는 절대 초기화·재출제하지 않는다). ----
@@ -269,11 +274,49 @@ export default function QuizPlayScreen({
     [attemptId]
   );
 
+  // ---- 제출 후 리더보드(결과 화면 하단) ----
+  useEffect(() => {
+    if (phase !== "submitted") return;
+    let ignore = false;
+
+    async function loadLeaderboard() {
+      try {
+        const res = await fetch(QUIZ_LEADERBOARD_PATH);
+        if (!res.ok || ignore) return;
+        const data = (await res.json()) as QuizLeaderboardResponse;
+        if (!ignore) setLeaderboard(data.entries);
+      } catch {
+        // leave leaderboard as null — section renders empty, nothing else affected
+      }
+    }
+
+    void loadLeaderboard();
+    return () => {
+      ignore = true;
+    };
+  }, [phase]);
+
   const currentQuestion = questions[position];
 
-  function handleSelectOption(displaySlotIndex: number) {
-    if (!currentQuestion) return;
-    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: displaySlotIndex }));
+  async function handleSelectOption(displaySlotIndex: number) {
+    if (!currentQuestion || isAdvancing) return;
+
+    const nextAnswers = { ...answers, [currentQuestion.id]: displaySlotIndex };
+    setAnswers(nextAnswers);
+    setIsAdvancing(true);
+
+    await new Promise((resolve) => setTimeout(resolve, AUTO_ADVANCE_FEEDBACK_MS));
+
+    const isLastQuestion = position === questions.length - 1;
+    if (isLastQuestion) {
+      await handleSubmit(nextAnswers);
+      return;
+    }
+
+    const nextPosition = position + 1;
+    setPosition(nextPosition);
+    void saveProgress(nextPosition, nextAnswers);
+    setIsAdvancing(false);
   }
 
   function goTo(nextPosition: number) {
@@ -282,12 +325,13 @@ export default function QuizPlayScreen({
     void saveProgress(nextPosition, answers);
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(answersOverride?: Record<string, number>) {
     if (!attemptId) return;
+    const answersToSubmit = answersOverride ?? answers;
     setShowSubmitConfirm(false);
     setPhase("submitting");
 
-    const saved = await saveProgress(position, answers);
+    const saved = await saveProgress(position, answersToSubmit);
     if (!saved) return;
 
     let res: Response;
@@ -295,7 +339,7 @@ export default function QuizPlayScreen({
       res = await fetch(QUIZ_SUBMIT_PATH, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attemptId, answers }),
+        body: JSON.stringify({ attemptId, answers: answersToSubmit }),
       });
     } catch (err) {
       setUiError(mapThrownError(err, "submit"));
@@ -444,7 +488,7 @@ export default function QuizPlayScreen({
       )}
 
       {phase === "submitted" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
+        <div className="flex flex-1 flex-col items-center gap-6 overflow-y-auto p-8 text-center">
           <div className="w-full max-w-sm rounded-3xl p-8 shadow-md" style={{ background: "var(--color-k-surface)" }}>
             <h1 className="text-2xl font-bold text-k-text-primary mb-2">결과</h1>
             <p className="text-5xl font-bold" style={{ color: "var(--color-k-orange)" }}>
@@ -454,10 +498,34 @@ export default function QuizPlayScreen({
               {result?.rank != null ? `현재 순위: ${result.rank}위` : "잘했어요!"}
             </p>
           </div>
+
+          <div className="w-full max-w-sm rounded-3xl p-6 text-left shadow-md" style={{ background: "var(--color-k-surface)" }}>
+            <h2 className="mb-3 text-lg font-semibold text-k-text-primary">리더보드</h2>
+            {leaderboard === null ? (
+              <p className="text-sm text-k-text-secondary">불러오는 중...</p>
+            ) : leaderboard.length === 0 ? (
+              <p className="text-sm text-k-text-secondary">아직 리더보드 정보가 없어요.</p>
+            ) : (
+              <ol className="flex flex-col gap-2">
+                {leaderboard.map((entry, index) => (
+                  <li
+                    key={entry.user_id}
+                    className="flex items-center justify-between rounded-2xl bg-white px-3 py-2 text-sm"
+                  >
+                    <span className="font-medium text-k-text-primary">
+                      {index + 1}. {entry.name} ({entry.masked_id})
+                    </span>
+                    <span style={{ color: "var(--color-k-sky-blue)" }}>{entry.cumulative_score}점</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="w-full max-w-xs rounded-2xl py-3.5 font-bold text-white active:scale-95 transition-transform"
+            className="w-full max-w-xs shrink-0 rounded-2xl py-3.5 font-bold text-white active:scale-95 transition-transform"
             style={{ background: "var(--color-k-orange)" }}
           >
             놀이 화면으로
@@ -494,9 +562,10 @@ export default function QuizPlayScreen({
                 <button
                   key={displaySlotIndex}
                   type="button"
-                  onClick={() => handleSelectOption(displaySlotIndex)}
+                  onClick={() => void handleSelectOption(displaySlotIndex)}
+                  disabled={isAdvancing}
                   aria-pressed={selected}
-                  className="rounded-2xl border-2 px-4 py-3 text-left text-k-text-primary transition-colors"
+                  className="rounded-2xl border-2 px-4 py-3 text-left text-k-text-primary transition-colors disabled:cursor-not-allowed"
                   style={
                     selected
                       ? { borderColor: "var(--color-k-orange)", background: "var(--color-k-orange-tint)" }
@@ -513,7 +582,7 @@ export default function QuizPlayScreen({
             <button
               type="button"
               onClick={() => goTo(position - 1)}
-              disabled={position === 0}
+              disabled={position === 0 || isAdvancing}
               className="rounded-2xl px-4 py-2 font-medium text-k-text-secondary transition-colors disabled:opacity-40"
             >
               이전
@@ -521,7 +590,8 @@ export default function QuizPlayScreen({
             <button
               type="button"
               onClick={() => setShowSubmitConfirm(true)}
-              className="rounded-2xl px-6 py-3 font-bold text-white active:scale-95 transition-transform"
+              disabled={isAdvancing}
+              className="rounded-2xl px-6 py-3 font-bold text-white active:scale-95 transition-transform disabled:opacity-60"
               style={{ background: "var(--color-k-navy)" }}
             >
               제출하기
@@ -529,7 +599,7 @@ export default function QuizPlayScreen({
             <button
               type="button"
               onClick={() => goTo(position + 1)}
-              disabled={position === questions.length - 1}
+              disabled={position === questions.length - 1 || isAdvancing}
               className="rounded-2xl px-4 py-2 font-medium text-k-text-secondary transition-colors disabled:opacity-40"
             >
               다음
@@ -551,7 +621,7 @@ export default function QuizPlayScreen({
                   </button>
                   <button
                     type="button"
-                    onClick={handleSubmit}
+                    onClick={() => void handleSubmit()}
                     className="rounded-2xl px-5 py-3 font-bold text-white active:scale-95 transition-transform"
                     style={{ background: "var(--color-k-orange)" }}
                   >
