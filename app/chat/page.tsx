@@ -9,6 +9,7 @@ import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
+import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 
@@ -103,6 +104,7 @@ export default function ChatPage() {
     setInputMode,
     manualFinalize,
     isResponding,
+    isSpeaking,
     seedTranscript,
   } = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
   respondTextRef.current = respondText;
@@ -453,6 +455,26 @@ export default function ChatPage() {
   const isLive = status === "live";
   const isEnded = status === "ended";
 
+  // requests/019 — 미션 대화 화면과 동일한 상태배지 표시(듣는 중/생각하는 중/말하는 중).
+  // useVoiceChat이 이미 isSpeaking(케이 TTS 재생 중)/isResponding(아이 발화 종료~케이
+  // 응답 사이 대기)을 제공하므로 새 신호를 추가하지 않고 기존 값만 매핑한다.
+  const voiceState: VoiceConversationState = isSpeaking
+    ? "speaking"
+    : isResponding
+      ? "thinking"
+      : isRecording
+        ? "listening"
+        : isConnecting
+          ? "connecting"
+          : "idle";
+
+  // requests/019 — 미션 대화와 동일하게 "최근 히스토리(흐리게, 스크롤)" + "현재 활성
+  // 발화(마스코트 옆 큰 말풍선)"로 분리한다. 미션(비-Live 트리)은 케이 발화만 history에
+  // 남기지만, 자유대화는 "아이 메시지/케이 메시지 스타일 유지"가 명시 요구사항이라
+  // 양쪽 화자를 모두 그대로 유지한다(필터링하지 않음).
+  const chatHistoryTurns = transcript.slice(0, -1);
+  const chatActiveTurn = transcript.length > 0 ? transcript[transcript.length - 1] : null;
+
   const handleMicToggle = useCallback(async () => {
     if (isLive) {
       stopSession();
@@ -524,65 +546,103 @@ export default function ChatPage() {
             </div>
           )}
 
-          <div className="flex justify-center items-center gap-4 mb-4 mt-2 max-w-sm mx-auto">
+        </div>
+
+        {/* requests/019 — 미션 대화와 동일한 구조: 최근 히스토리(흐리게, 내부 스크롤)만
+            이 영역에 두고, 현재 활성 발화(마스코트 옆 큰 말풍선)는 하단 고정 영역으로
+            옮긴다. 미션 화면과 달리 자유대화는 아이/케이 메시지를 모두 그대로 유지한다
+            (미션 비-Live 트리는 케이 발화만 남기지만, 이 요구사항은 "아이 메시지/케이
+            메시지 스타일 유지"를 명시). */}
+        {transcript.length === 0 ? (
+          <div className="flex-1 min-h-0 flex items-center justify-center text-center p-4">
+            <p className="text-xs" style={{ color: "#9ca3af" }}>
+              {isAuto
+                ? isLive
+                  ? "케이가 듣고 있어요. 자유롭게 이야기해 보세요."
+                  : micPermission === "checking"
+                  ? "잠시만 기다려주세요..."
+                  : micPermission === "denied"
+                  ? "마이크 권한을 허용해주세요."
+                  : "대화 시작하기 버튼을 눌러주세요!"
+                : "마이크 버튼을 눌러 자유롭게 대화를 시작해 보세요! 🌿"}
+            </p>
+          </div>
+        ) : (
+          <div
+            ref={voiceBubbleRef}
+            className="flex-1 min-h-0 px-4 py-3 flex flex-col gap-3 overflow-y-auto"
+          >
+            <div className="flex flex-col gap-3 mt-auto">
+              {chatHistoryTurns.map((turn, index, arr) => {
+                const distanceFromEnd = arr.length - 1 - index;
+                const baseOpacity = Math.max(0.4, 1 - distanceFromEnd * 0.15);
+                const isChild = turn.role === "child";
+                return (
+                  <div
+                    key={turn.id ?? index}
+                    className="max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed"
+                    style={{
+                      alignSelf: isChild ? "flex-end" : "flex-start",
+                      background: isChild ? "var(--color-k-navy)" : "#fff",
+                      color: isChild ? "#fff" : "var(--color-k-text-primary)",
+                      border: isChild ? "none" : "1px solid #e5e7eb",
+                      opacity: baseOpacity,
+                      wordBreak: "break-word",
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {turn.text}
+                  </div>
+                );
+              })}
+              {interimChildText && (
+                <div
+                  className="max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed self-end opacity-60"
+                  style={{ background: "var(--color-k-navy)", color: "#fff" }}
+                >
+                  {interimChildText}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* requests/019 — 하단 고정 영역: 현재 활성 발화 말풍선 + 상태배지/케이/자동-수동
+            토글(미션 화면과 동일한 grid-cols-[1fr_auto_1fr] 구조 - 020에서 미션에 적용한
+            "상태 텍스트 길이 변화로 케이가 흔들리는 문제" 수정을 자유대화에도 동일 적용). */}
+        <div className="shrink-0 px-4 pt-2 pb-1 flex flex-col items-center">
+          {chatActiveTurn && !interimChildText && (
+            <div className="w-full flex flex-col items-center mb-2">
+              <div
+                className="max-w-[90%] px-5 py-3 rounded-2xl text-base font-bold leading-snug text-center"
+                style={
+                  chatActiveTurn.role === "k"
+                    ? { background: "#fff", border: "2px solid var(--color-k-navy)", color: "var(--color-k-text-primary)" }
+                    : { background: "var(--color-k-navy)", color: "#fff" }
+                }
+              >
+                {chatActiveTurn.text}
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 w-full max-w-sm">
+            <div className="justify-self-end">
+              <VoiceConversationStateBadge state={voiceState} />
+            </div>
             <Image
               src="/Images/mascot/mascot-standing.png"
               alt="케이 마스코트"
-              width={96}
-              height={96}
+              width={72}
+              height={72}
               className="object-contain shrink-0"
               priority
             />
-            {mode === "voice" && (
-              <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
-            )}
+            <div className="justify-self-start">
+              {mode === "voice" && (
+                <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
+              )}
+            </div>
           </div>
-        </div>
-
-        {/* 대화 말풍선: 이 영역만 스크롤 */}
-        <div
-          ref={voiceBubbleRef}
-          className="flex-1 min-h-0 px-4 flex flex-col gap-3 overflow-y-auto pb-4"
-        >
-          {transcript.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-center p-4">
-              <p className="text-xs" style={{ color: "#9ca3af" }}>
-                {isAuto
-                  ? isLive
-                    ? "케이가 듣고 있어요. 자유롭게 이야기해 보세요."
-                    : micPermission === "checking"
-                    ? "잠시만 기다려주세요..."
-                    : micPermission === "denied"
-                    ? "마이크 권한을 허용해주세요."
-                    : "대화 시작하기 버튼을 눌러주세요!"
-                  : "마이크 버튼을 눌러 자유롭게 대화를 시작해 보세요! 🌿"}
-              </p>
-            </div>
-          ) : (
-            transcript.map((turn, i) => (
-              <div
-                key={turn.id ?? i}
-                className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                  turn.role === "k" ? "self-start" : "self-end"
-                }`}
-                style={{
-                  background: turn.role === "k" ? "#f3f4f6" : "#3b82f6",
-                  color: turn.role === "k" ? "var(--color-k-text-primary)" : "#ffffff",
-                  borderRadius: turn.role === "k" ? "16px 16px 16px 2px" : "16px 16px 2px 16px",
-                }}
-              >
-                {turn.text}
-              </div>
-            ))
-          )}
-          {interimChildText && (
-            <div
-              className="max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed self-end opacity-60"
-              style={{ background: "#3b82f6", color: "#ffffff", borderRadius: "16px 16px 2px 16px" }}
-            >
-              {interimChildText}
-            </div>
-          )}
         </div>
 
         {/* 하단 버튼 바 */}

@@ -124,51 +124,54 @@ export function MissionConversationLayout({
               {headerExtraSlot}
             </div>
           </div>
-          {/* 012 "0/10을 스텝 인디케이터로": 좌측 미션 라벨, 우측 n/10 카운터, 완료 시
-              인디케이터 영역 전체가 축하 색상으로 바뀌고 완료 배지 표시. */}
+          {/* requests/019 — MissionProgress는 미션 화면에서만 표시한다(자유대화는 진행률
+              개념 자체가 없음). missionLabel이 없으면(자유대화 호출부) 라벨+진행률 바
+              전체를 렌더하지 않는다 - 012의 "0/10을 스텝 인디케이터로" 표시는 그대로 유지. */}
           {missionLabel && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: isMissionComplete ? "#b8860b" : "var(--color-k-navy)" }}>
-                {missionLabel}
-              </span>
-              {isMissionComplete && (
-                <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: "#f0a020", borderRadius: 999, padding: "2px 8px" }}>
-                  🎉 완료!
+            <>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: isMissionComplete ? "#b8860b" : "var(--color-k-navy)" }}>
+                  {missionLabel}
                 </span>
-              )}
-            </div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-            <span style={{ fontSize: 12, color: isMissionComplete ? "#b8860b" : "#6b7280", whiteSpace: "nowrap", fontWeight: 600 }}>
-              {progressCurrent}/{progressTotal}
-            </span>
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                gap: 4,
-                height: 6,
-                padding: isMissionComplete ? 3 : 0,
-                borderRadius: 999,
-                background: isMissionComplete ? "#fff3d6" : "transparent",
-                transition: "background-color 0.3s ease-in-out",
-              }}
-            >
-              {Array.from({ length: progressTotal }).map((_, i) => (
+                {isMissionComplete && (
+                  <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: "#f0a020", borderRadius: 999, padding: "2px 8px" }}>
+                    🎉 완료!
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <span style={{ fontSize: 12, color: isMissionComplete ? "#b8860b" : "#6b7280", whiteSpace: "nowrap", fontWeight: 600 }}>
+                  {progressCurrent}/{progressTotal}
+                </span>
                 <div
-                  key={i}
                   style={{
                     flex: 1,
-                    height: "100%",
+                    display: "flex",
+                    gap: 4,
+                    height: 6,
+                    padding: isMissionComplete ? 3 : 0,
                     borderRadius: 999,
-                    background: isMissionComplete ? "#f0a020" : i < progressCurrent ? "var(--color-k-navy)" : "#eef2f1",
-                    transition: "background-color 0.25s ease-in-out",
+                    background: isMissionComplete ? "#fff3d6" : "transparent",
+                    transition: "background-color 0.3s ease-in-out",
                   }}
-                  className={!isMissionComplete && i === progressCurrent ? "animate-pulse" : ""}
-                />
-              ))}
-            </div>
-          </div>
+                >
+                  {Array.from({ length: progressTotal }).map((_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        flex: 1,
+                        height: "100%",
+                        borderRadius: 999,
+                        background: isMissionComplete ? "#f0a020" : i < progressCurrent ? "var(--color-k-navy)" : "#eef2f1",
+                        transition: "background-color 0.25s ease-in-out",
+                      }}
+                      className={!isMissionComplete && i === progressCurrent ? "animate-pulse" : ""}
+                    />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* 중앙 히스토리 존 — 011 "최근 대화 말풍선 최대 3개만 표시, 나머지는 쌓지 않음":
