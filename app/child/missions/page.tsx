@@ -485,6 +485,11 @@ function MissionInner() {
 
     answerInFlightRef.current = true;
     setIsProcessingAnswer(true);
+    // onSpeechEnd가 항상 깔끔하게 먼저 오지 않을 수 있으므로(예: 텍스트 입력 제출,
+    // 무음 판정 없이 답변이 접수되는 경로) 답변 처리가 시작되는 이 시점에 확정적으로
+    // isAutoListening을 꺼서, 남아있는 "듣는 중" 상태가 이어지는 생각하는 중/말하는 중
+    // 단계를 가리지 않도록 한다.
+    setIsAutoListening(false);
     // 011 2차: 새 턴을 시작하니 이전 턴에서 이미 조용한 재시도를 썼더라도 이번 턴은
     // 다시 1회 재시도를 허용한다(문제가 매번 새로 판단되도록).
     recoveryAttemptedRef.current = false;
