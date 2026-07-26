@@ -9,6 +9,7 @@ import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
 import { SkeletonBox } from "@/components/Skeleton";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
@@ -773,6 +774,8 @@ export default function ParentHomePage() {
         <RealParentNav active="홈" />
       </div>
       {renderInvitePopup()}
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="parent" />
+      </DemoFrame>
   );
 }

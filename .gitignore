@@ -64,3 +64,4 @@ requests/_blocked.md
 
 
 .vercel
+.env*

@@ -25,6 +25,7 @@ import { appendVocative } from "@/lib/utils/koreanParticle";
 import { usePipelineConnectionQuality } from "@/hooks/usePipelineConnectionQuality";
 import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndicator";
 import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -2599,7 +2600,11 @@ function MissionRouteGate() {
   return (
     <DemoFrame>
       <MissionInner />
-    </DemoFrame>
+    
+        {/* 이 화면 하단에 이미 마이크/텍스트전환/종료 절대위치 버튼 바(음성모드 기준
+            약 104px)가 있어 기본 오프셋(16px)으로는 겹친다 - 그 위로 띄운다. */}
+        <KChatbotWidget appSurface="child" bottomOffsetPx={120} />
+      </DemoFrame>
   );
 }
 

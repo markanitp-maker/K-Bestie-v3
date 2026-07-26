@@ -7,6 +7,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { useStore } from "@/hooks/useStore";
 import { markNotifRead, markAllNotifsRead } from "@/lib/store";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 function getNotifIcon(title: string): string {
   if (title.includes("미션")) return "🎯";
@@ -128,6 +129,8 @@ export default function ParentNotificationsPage() {
 
         <RealParentNav />
       </div>
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="parent" />
+      </DemoFrame>
   );
 }

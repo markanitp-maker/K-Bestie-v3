@@ -7,6 +7,7 @@ import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
 import { ReportDetailSkeleton } from "./ReportDetailSkeleton";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
@@ -289,6 +290,8 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
 
         <RealParentNav />
       </div>
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="parent" />
+      </DemoFrame>
   );
 }

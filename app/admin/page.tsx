@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
+import FeedbackTab from "./FeedbackTab";
 import {
   ResponsiveContainer,
   LineChart,
@@ -498,7 +499,7 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore";
+type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback";
 
 const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
@@ -506,6 +507,7 @@ const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "cost", label: "나갈 돈 · 비용 상세" },
   { id: "ai-config", label: "AI 설정" },
   { id: "account-restore", label: "계정 복구 승인" },
+  { id: "feedback", label: "문의·건의·버그 접수" },
 ];
 
 interface ProviderSwitchRow {
@@ -984,6 +986,8 @@ function AdminDashboard() {
           </>
         ) : page === "account-restore" ? (
           <AccountRestoreTab />
+        ) : page === "feedback" ? (
+          <FeedbackTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}

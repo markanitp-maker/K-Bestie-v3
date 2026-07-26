@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealChildNav } from "@/components/RealChildNav";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 type ChildInfo = { id: string; name: string; grade: string };
 
@@ -277,6 +278,8 @@ export default function ChildHomePage() {
           <RealChildNav active="홈" />
         </div>
       </div>
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="child" />
+      </DemoFrame>
   );
 }

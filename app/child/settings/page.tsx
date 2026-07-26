@@ -9,6 +9,7 @@ import { RealChildNav } from "@/components/RealChildNav";
 import { LIVE_VOICE_OPTIONS } from "@/lib/plan/liveVoices";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { clearStore } from "@/lib/store";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 export default function ChildSettingsPage() {
   const router = useRouter();
@@ -293,6 +294,8 @@ export default function ChildSettingsPage() {
 
         <RealChildNav active="설정" />
       </div>
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="child" />
+      </DemoFrame>
   );
 }

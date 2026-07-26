@@ -12,6 +12,7 @@ import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -794,6 +795,10 @@ export default function ChatPage() {
           </div>
         )}
       </div>
-    </DemoFrame>
+    
+        {/* 이 화면 하단에 이미 마이크/텍스트전환/종료 절대위치 버튼 바(음성모드 기준
+            약 104px)가 있어 기본 오프셋(16px)으로는 겹친다 - 그 위로 띄운다. */}
+        <KChatbotWidget appSurface="child" bottomOffsetPx={120} />
+      </DemoFrame>
   );
 }

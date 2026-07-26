@@ -8,6 +8,7 @@ import { RealChildNav } from "@/components/RealChildNav";
 import { writeMbtiSessionHandoff } from "@/lib/play/mbtiSessionHandoff";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 import { quizAttemptClaimPath } from "@/lib/quiz/play/api-contracts";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 const GAMES = [
   { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", keys: 2 },
@@ -457,6 +458,8 @@ export default function ChildPlayPage() {
         )}
 
       </div>
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="child" />
+      </DemoFrame>
   );
 }

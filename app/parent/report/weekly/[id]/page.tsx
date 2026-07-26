@@ -6,6 +6,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
 import { SkeletonBox } from "@/components/Skeleton";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 interface WeeklySummary {
   id: string;
@@ -175,6 +176,8 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
 
         <RealParentNav active="리포트" />
       </div>
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="parent" />
+      </DemoFrame>
   );
 }

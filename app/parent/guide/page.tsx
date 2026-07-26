@@ -6,6 +6,7 @@ import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
 
 import { RegisteredQuestionsList, type Question } from "@/components/RegisteredQuestionsList";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 export default function ParentGuidePage() {
   const [childName, setChildName] = useState("");
@@ -172,6 +173,8 @@ export default function ParentGuidePage() {
         {/* 하단 탭바 통일 */}
         <RealParentNav active="케이와 대화" />
       </div>
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="parent" />
+      </DemoFrame>
   );
 }

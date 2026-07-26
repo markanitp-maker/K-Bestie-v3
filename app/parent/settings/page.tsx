@@ -20,6 +20,7 @@ import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
 import { calculateFinalDeletionDate, purchaseExtension } from "@/lib/plan/insightExtension";
 import { CONSENT_DOCUMENT_TEXT } from "@/lib/plan/consentDocument";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 function formatRetentionLabel(tier: Tier): string {
   const retention = getEffectiveRetention(tier, 0);
@@ -1687,6 +1688,8 @@ export default function ParentSettingsPage() {
           </div>
         )}
       </div>
-    </DemoFrame>
+    
+        <KChatbotWidget appSurface="parent" />
+      </DemoFrame>
   );
 }

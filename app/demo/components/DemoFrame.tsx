@@ -139,6 +139,12 @@ export function DemoFrame({ children }: { children: ReactNode }) {
               background: "var(--color-k-surface)",
               borderRadius: innerRadius,
               boxShadow: "0 0 6px rgba(0, 0, 0, 0.6) inset",
+              // transform은 시각적으로 아무것도 바꾸지 않지만(translateZ(0)), CSS 스펙상
+              // transform이 있는 조상은 position:fixed 자손의 containing block이 된다.
+              // 이게 없으면 이 안에 렌더되는 fixed 요소(예: 케이 챗봇 플로팅 버튼)가 이
+              // 목업 프레임을 무시하고 실제 브라우저 뷰포트 모서리에 붙어버린다(PC 전용
+              // 버그 - 실기기는 이 분기 자체를 안 타므로 영향 없음).
+              transform: "translateZ(0)",
             }}
           >
             {/* ==================== 1. 상단 상태바 (Status Bar) ==================== */}
