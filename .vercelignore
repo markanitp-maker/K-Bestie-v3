@@ -8,7 +8,12 @@ vercel_env_*.txt
 db_diff_*.txt
 .vercel_prod_tmp/
 .supabase_prod_tmp/
-reports/
+# 반드시 루트 앵커(/)를 붙인다 - 앞에 슬래시가 없으면 gitignore 문법상 모든 하위
+# 경로에서 매칭돼(예: app/api/parent/reports/) 같은 이름의 앱 라우트 디렉터리까지
+# 통째로 배포에서 빠진다. 실제로 이 버그로 /api/parent/reports/* 전체가 배포
+# 빌드에서 누락되어 404가 나던 것을 발견해 수정함(017-report-check.md 작업 중
+# 실배포 검증에서 재현).
+/reports/
 
 # Vercel CLI never parses .gitignore — it only reads .vercelignore plus a small
 # hardcoded default list (.git, node_modules, .next, .env.local, .env.*.local, …).
@@ -21,7 +26,7 @@ supabase/.env.secrets
 k-bestie3-*.json
 *service-account*.json
 *sa-key*.json
-scratch/
+/scratch/
 .omc/
 # Agent tooling state. .claude/worktrees/ holds six FULL copies of this repo —
 # uploading them bloats every deployment and drags in each copy's scratch files.
