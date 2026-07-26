@@ -470,11 +470,14 @@ export default function ChatPage() {
           : "idle";
 
   // requests/019 — 미션 대화와 동일하게 "최근 히스토리(흐리게, 스크롤)" + "현재 활성
-  // 발화(마스코트 옆 큰 말풍선)"로 분리한다. 미션(비-Live 트리)은 케이 발화만 history에
-  // 남기지만, 자유대화는 "아이 메시지/케이 메시지 스타일 유지"가 명시 요구사항이라
-  // 양쪽 화자를 모두 그대로 유지한다(필터링하지 않음).
-  const chatHistoryTurns = transcript.slice(0, -1);
-  const chatActiveTurn = transcript.length > 0 ? transcript[transcript.length - 1] : null;
+  // 발화(마스코트 옆 큰 말풍선)"로 분리한다.
+  // 020 후속 정책 변경: 자유대화 화면에서는 아이 발화의 STT 결과를 화면 말풍선으로
+  // 노출하지 않는다(케이가 이해하는 데 쓰는 STT 처리 자체는 useVoiceChat 내부에서
+  // 그대로 유지 - 여기서 하는 건 순수 렌더링 필터링). 미션 화면(MissionConversationLayout)
+  // 정책은 이 변경과 무관하게 그대로 유지.
+  const chatHistoryTurns = transcript.slice(0, -1).filter((t) => t.role !== "child");
+  const rawChatActiveTurn = transcript.length > 0 ? transcript[transcript.length - 1] : null;
+  const chatActiveTurn = rawChatActiveTurn && rawChatActiveTurn.role !== "child" ? rawChatActiveTurn : null;
 
   const handleMicToggle = useCallback(async () => {
     if (isLive) {
@@ -551,9 +554,9 @@ export default function ChatPage() {
 
         {/* requests/019 — 미션 대화와 동일한 구조: 최근 히스토리(흐리게, 내부 스크롤)만
             이 영역에 두고, 현재 활성 발화(마스코트 옆 큰 말풍선)는 하단 고정 영역으로
-            옮긴다. 미션 화면과 달리 자유대화는 아이/케이 메시지를 모두 그대로 유지한다
-            (미션 비-Live 트리는 케이 발화만 남기지만, 이 요구사항은 "아이 메시지/케이
-            메시지 스타일 유지"를 명시). */}
+            옮긴다. 020 후속 정책 변경: 자유대화도 이제 케이 발화만 표시한다(아이 발화
+            텍스트 버블은 렌더링하지 않음 - chatHistoryTurns/chatActiveTurn 계산부의
+            role!=="child" 필터링 참고). */}
         {transcript.length === 0 ? (
           <div className="flex-1 min-h-0 flex items-center justify-center text-center p-4">
             <p className="text-xs" style={{ color: "#9ca3af" }}>
@@ -596,14 +599,10 @@ export default function ChatPage() {
                   </div>
                 );
               })}
-              {interimChildText && (
-                <div
-                  className="max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed self-end opacity-60"
-                  style={{ background: "var(--color-k-navy)", color: "#fff" }}
-                >
-                  {interimChildText}
-                </div>
-              )}
+              {/* 020 후속 정책 변경: 아이 발화 실시간 STT 중간결과(interimChildText)도
+                  화면 말풍선으로 노출하지 않는다 - STT 자체는 useVoiceChat 내부에서
+                  계속 처리되고 케이 응답 생성에 그대로 쓰이지만, 여기서는 렌더링만
+                  제거한다. */}
             </div>
           </div>
         )}
@@ -612,15 +611,15 @@ export default function ChatPage() {
             토글(미션 화면과 동일한 grid-cols-[1fr_auto_1fr] 구조 - 020에서 미션에 적용한
             "상태 텍스트 길이 변화로 케이가 흔들리는 문제" 수정을 자유대화에도 동일 적용). */}
         <div className="shrink-0 px-4 pt-2 pb-1 flex flex-col items-center">
-          {chatActiveTurn && !interimChildText && (
+          {/* 020 후속 정책 변경: chatActiveTurn은 이제 role!=="child"로 미리 걸러진
+              값만 들어오므로(위 chatActiveTurn 계산부 참고) 항상 케이 발화만 해당 -
+              interimChildText(아이 실시간 STT 중간결과) 유무와 무관하게 케이의 마지막
+              말풍선은 계속 보여준다. */}
+          {chatActiveTurn && (
             <div className="w-full flex flex-col items-center mb-2">
               <div
                 className="max-w-[90%] px-5 py-3 rounded-2xl text-base font-bold leading-snug text-center"
-                style={
-                  chatActiveTurn.role === "k"
-                    ? { background: "#fff", border: "2px solid var(--color-k-navy)", color: "var(--color-k-text-primary)" }
-                    : { background: "var(--color-k-navy)", color: "#fff" }
-                }
+                style={{ background: "#fff", border: "2px solid var(--color-k-navy)", color: "var(--color-k-text-primary)" }}
               >
                 {chatActiveTurn.text}
               </div>
