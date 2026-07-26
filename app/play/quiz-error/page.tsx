@@ -20,15 +20,22 @@ import type { ReactElement } from "react";
  *    처리하고, 사용자에게는 `/child/play`의 기존 환불 알림 폴링이 알려준다. 이 화면이
  *    환불을 트리거하면 공격자가 URL만으로 환불을 유발할 수 있게 된다.
  *  - 자유 텍스트를 그대로 렌더링하지 않는다(코드 표기는 `^[A-Z_]{1,40}$`로 제한).
+ *    Quiz는 `quiz_error_detail`(자유 텍스트)도 함께 보내지만 **의도적으로 렌더링하지
+ *    않는다** — 업스트림이 통제하는 임의 문자열이고, 아이 사용자에게 보여줄 가치가 없다.
+ *    디버깅이 필요하면 Quiz 쪽 서버 로그를 본다.
  */
 
+/** Quiz 앱(worker-1)이 실제로 내보내는 코드 목록에 맞춘다. */
 const ERROR_MESSAGES: Record<string, string> = {
-  SESSION_EXPIRED: "놀이 시간이 너무 오래 지나서 연결이 끊어졌어요.",
-  HANDOFF_INVALID: "놀이를 시작하는 정보가 올바르지 않아요.",
-  HANDOFF_EXPIRED: "놀이를 시작하는 정보가 만료됐어요.",
-  ATTEMPT_NOT_FOUND: "이어서 할 놀이를 찾지 못했어요.",
-  ATTEMPT_FORBIDDEN: "이 놀이에 접근할 수 없어요.",
-  INTERNAL_ERROR: "놀이를 불러오는 중 문제가 생겼어요.",
+  AUTH_SESSION_MISSING: "놀이 로그인 정보가 없어요.",
+  AUTH_SESSION_EXPIRED: "놀이 시간이 오래 지나서 연결이 끊어졌어요.",
+  HANDOFF_TOKEN_INVALID: "놀이를 시작하는 정보가 올바르지 않아요.",
+  HANDOFF_TOKEN_EXPIRED: "놀이를 시작하는 정보가 만료됐어요.",
+  GRADE_LOOKUP_FAILED: "학년 정보를 불러오지 못했어요.",
+  SUBJECT_LOAD_FAILED: "과목 정보를 불러오지 못했어요.",
+  QUIZ_START_FAILED: "퀴즈를 시작하지 못했어요.",
+  QUESTION_BANK_UNAVAILABLE: "지금은 문제를 불러올 수 없어요.",
+  UNKNOWN_LOADING_ERROR: "놀이를 불러오는 중 문제가 생겼어요.",
 };
 
 const FALLBACK_MESSAGE = "놀이를 계속할 수 없어서 돌아왔어요.";
