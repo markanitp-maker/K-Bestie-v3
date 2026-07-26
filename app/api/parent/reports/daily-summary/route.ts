@@ -22,22 +22,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: sessions } = await supabase
-    .from("chat_sessions")
-    .select("id")
-    .eq("child_id", childId);
-
-  const sessionIds = (sessions ?? []).map((s) => s.id);
-  if (sessionIds.length === 0) {
-    return NextResponse.json({ summaries: [] });
-  }
-
+  // requests/017-report-check.md — child_id로 직접 조회(세션 경유 join 제거, 이유는
+  // app/api/parent/reports/[id]/route.ts와 동일: session_id는 신규 생성분에서 NULL일 수 있음).
   // 필드 화이트리스트 — summary_line/mood_score/created_at만(상세 필드 제외).
   const { data: reports, error } = await supabase
     .from("daily_reports")
-    .select("id, summary_line, mood_score, created_at")
-    .in("session_id", sessionIds)
-    .order("created_at", { ascending: false });
+    .select("id, summary_line, mood_score, created_at, business_date")
+    .eq("child_id", childId)
+    .is("deleted_at", null)
+    .order("business_date", { ascending: false });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

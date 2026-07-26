@@ -18,12 +18,15 @@ export async function GET(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // 리포트+세션을 한 번의 쿼리로 조회 — 예전엔 두 번 순차 조회(리포트 → 세션)해서
-  // 왕복이 하나 더 걸렸음(상세 화면 진입 시 스켈레톤이 길게 보이던 원인 중 하나).
+  // requests/017-report-check.md — daily_reports.child_id를 직접 인증/등급 판정에
+  // 쓴다. 과거에는 session_id로 chat_sessions를 조인해 child_id를 얻었는데(그 값이
+  // 없으면 인증 체크 자체가 통째로 스킵되는 구조였다), 신규 생성 리포트는 session_id가
+  // NULL일 수 있어(child_id+business_date로 여러 세션을 합쳐 생성) 그 경로로는 인증이
+  // 아예 뚫릴 위험이 있었다. 반드시 daily_reports.child_id로만 판정한다.
   const { data: report, error } = await supabase
     .from("daily_reports")
     .select(
-      "id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, recurring_stories, created_at, session_id, chat_sessions(started_at, turn_count, ended_at, child_id)"
+      "id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, recurring_stories, created_at, business_date, child_id"
     )
     .eq("id", id)
     .single();
@@ -32,29 +35,24 @@ export async function GET(
     return NextResponse.json({ error: "Report not found" }, { status: 404 });
   }
 
-  const { chat_sessions, ...rest } = report as typeof report & {
-    chat_sessions: { started_at: string; turn_count: number; ended_at: string | null; child_id: string } | null;
-  };
-
-  if (chat_sessions?.child_id) {
-    const authCheck = await requireChildAccess(supabase, user.id, chat_sessions.child_id);
-    if (!authCheck.allowed) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  if (!report.child_id) {
+    return NextResponse.json({ error: "Report not found" }, { status: 404 });
   }
 
-  let restricted = false;
-  if (chat_sessions?.child_id) {
-    const tier = await getTierForChild(chat_sessions.child_id);
-    restricted = !isDetailAllowed(tier);
+  const authCheck = await requireChildAccess(supabase, user.id, report.child_id);
+  if (!authCheck.allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { child_id: _childId, ...sessionRest } = chat_sessions ?? { child_id: undefined };
+  const tier = await getTierForChild(report.child_id);
+  const restricted = !isDetailAllowed(tier);
+
+  const { child_id: _childId, ...rest } = report;
   const safeRest = restricted
-    ? { 
-        ...rest, 
-        parent_guide: "", 
-        dashboard_cards: {}, 
+    ? {
+        ...rest,
+        parent_guide: "",
+        dashboard_cards: {},
         emotion_level: null,
         school_academy_life: null,
         peer_friendship: null,
@@ -67,5 +65,5 @@ export async function GET(
       }
     : rest;
 
-  return NextResponse.json({ report: { ...safeRest, session: chat_sessions ? sessionRest : null }, restricted });
+  return NextResponse.json({ report: safeRest, restricted });
 }

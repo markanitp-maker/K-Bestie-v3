@@ -39,7 +39,23 @@ export async function stampRetention(childId: string, newTier: Tier, activePackC
   if (overSessionIds.length > 0) {
     await service.from("chat_sessions").update({ deleted_at: nowIso }).in("id", overSessionIds);
     await service.from("chat_messages").update({ deleted_at: nowIso }).in("session_id", overSessionIds);
-    await service.from("daily_reports").update({ deleted_at: nowIso }).in("session_id", overSessionIds);
+  }
+
+  // ── daily_reports: requests/017-report-check.md 이후 child_id+business_date로 여러
+  // 세션을 합쳐 생성되므로(session_id는 더 이상 신뢰 가능한 앵커가 아니고 신규 생성분은
+  // NULL일 수 있음), 리포트 자신의 business_date를 앵커로 독립 판정한다.
+  const { data: reports } = await service
+    .from("daily_reports")
+    .select("id, business_date")
+    .eq("child_id", childId)
+    .is("deleted_at", null);
+
+  const overReportIds = (reports ?? [])
+    .filter((r) => r.business_date && isPurgeCandidate({ anchorTs: new Date(`${r.business_date}T00:00:00+09:00`) }, now, retention))
+    .map((r) => r.id);
+
+  if (overReportIds.length > 0) {
+    await service.from("daily_reports").update({ deleted_at: nowIso }).in("id", overReportIds);
   }
 
   // ── weekly_summaries: child_id 스코프 + 자기 week_start 앵커로 독립 판정/스탬프 ──
@@ -85,7 +101,26 @@ export async function restoreRetention(childId: string, newTier: Tier, activePac
   if (restoreSessionIds.length > 0) {
     await service.from("chat_sessions").update({ deleted_at: null }).in("id", restoreSessionIds);
     await service.from("chat_messages").update({ deleted_at: null }).in("session_id", restoreSessionIds);
-    await service.from("daily_reports").update({ deleted_at: null }).in("session_id", restoreSessionIds);
+  }
+
+  // ── daily_reports: business_date 앵커로 독립 판정(stampRetention과 동일한 이유).
+  const { data: deletedReports } = await service
+    .from("daily_reports")
+    .select("id, business_date, deleted_at")
+    .eq("child_id", childId)
+    .not("deleted_at", "is", null);
+
+  const restoreReportIds = (deletedReports ?? [])
+    .filter((r) => {
+      const deletedAt = new Date(r.deleted_at as string);
+      if (deletedAt < graceThreshold) return false;
+      if (!r.business_date) return false;
+      return !isPurgeCandidate({ anchorTs: new Date(`${r.business_date}T00:00:00+09:00`) }, now, retention);
+    })
+    .map((r) => r.id);
+
+  if (restoreReportIds.length > 0) {
+    await service.from("daily_reports").update({ deleted_at: null }).in("id", restoreReportIds);
   }
 
   // ── weekly_summaries: week_start 앵커로 재판정, child_id 스코프 ──

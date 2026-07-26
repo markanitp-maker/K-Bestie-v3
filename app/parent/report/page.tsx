@@ -15,8 +15,8 @@ interface Report {
   mood_score: number;
   emotion_tags: string[];
   created_at: string;
+  business_date: string;
   viewed_at: string | null;
-  session: { started_at: string; turn_count: number } | null;
 }
 
 function moodEmoji(score: number) {
@@ -120,7 +120,11 @@ export default function ParentReportPage() {
                   <div>
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs font-bold text-gray-500">
-                        {formatDate(r.created_at)}
+                        {/* requests/017-report-check.md — 리포트가 세션이 아니라
+                            child_id+business_date로 통합 생성되므로, 실제 대화가
+                            있었던 날짜(business_date)를 표시한다. created_at은 배치가
+                            돈 시각(다음날 새벽 03시)이라 대화일과 하루 어긋난다. */}
+                        {formatDate(`${r.business_date}T12:00:00+09:00`)}
                       </p>
                       {!r.viewed_at && (
                         <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-50 text-red-500">
@@ -129,8 +133,7 @@ export default function ParentReportPage() {
                       )}
                     </div>
                     <p className="text-[10px] text-gray-400 mt-0.5">
-                      {formatRelative(r.created_at)}
-                      {r.session?.turn_count ? ` · 대화 ${r.session.turn_count}회` : ""}
+                      {formatRelative(`${r.business_date}T12:00:00+09:00`)}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

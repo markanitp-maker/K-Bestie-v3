@@ -201,40 +201,54 @@ export async function closeFreeSessions(db: SupabaseClient, targetDate: string):
   return result;
 }
 
-/** Step 2: 일일 리포트 생성 (emotion_level + dashboard_cards 포함) */
+/**
+ * Step 2: 일일 리포트 생성 (emotion_level + dashboard_cards + 8개 항목 포함)
+ *
+ * requests/017-report-check.md — child_id+business_date를 리포트 식별자로 통합한다.
+ * 과거에는 chat_sessions.ended_at 기준으로 세션 하나당 리포트 하나를 만들었는데,
+ * (a) 미션 세션은 ended_at을 절대 채우지 않아(app/api/mission/start/route.ts 주석
+ * 참고) 미션 대화가 이 조회에 영원히 걸리지 않았고, (b) 같은 날 같은 아이가 여러
+ * 세션(미션+자유대화, 또는 자유대화 여러 번)을 하면 리포트가 세션 수만큼 쪼개졌다
+ * (§4.2 "child_id+business_date=1개" 위반). raw_daily_conversations는 이미
+ * child_id+business_date+session_type을 직접 갖고 있으므로(018 파이프라인), 세션이
+ * 아니라 이 테이블에서 곧바로 "그날 대화가 있었던 아이" 목록을 뽑아 하루 1아이 1건으로
+ * 통합 생성한다.
+ */
 export async function generateDailyReports(db: SupabaseClient, targetDate: string): Promise<DailyReportResult> {
   const result: DailyReportResult = { created: [], skipped: [], errors: [] };
 
-  const { data: existingReports, error: existingErr } = await db
-    .from("daily_reports")
-    .select("session_id");
+  // 그날 원본 대화가 하나라도 수집된 아이 목록(미션/자유대화 구분 없이 통합).
+  const { data: rawRows, error: rawListErr } = await db
+    .from("raw_daily_conversations")
+    .select("child_id")
+    .eq("business_date", targetDate);
 
-  if (existingErr) throw new Error(`generateDailyReports: 기존 리포트 조회 실패 — ${existingErr.message}`);
+  if (rawListErr) throw new Error(`generateDailyReports: 대상 아이 조회 실패 — ${rawListErr.message}`);
+  if (!rawRows?.length) return result;
 
-  const existingSessionIds = Array.from(
-    new Set((existingReports || []).map((r: { session_id: string }) => r.session_id))
+  const candidateChildIds = Array.from(new Set(rawRows.map((r: { child_id: string }) => r.child_id)));
+
+  // 동의 철회된 아이는 신규 리포트 생성 대상에서 제외(lib/batch/generateDailyReports.ts와 동기화).
+  const { data: consentRows, error: consentErr } = await db
+    .from("child_profiles")
+    .select("id, guardian_consent_withdrawn_at")
+    .in("id", candidateChildIds);
+  if (consentErr) throw new Error(`generateDailyReports: 동의 상태 조회 실패 — ${consentErr.message}`);
+
+  const withdrawnIds = new Set(
+    (consentRows || [])
+      .filter((c: { guardian_consent_withdrawn_at: string | null }) => c.guardian_consent_withdrawn_at !== null)
+      .map((c: { id: string }) => c.id)
   );
-
-  let query = db
-    .from("chat_sessions")
-    .select("id, child_id")
-    .gte("ended_at", `${targetDate}T00:00:00+09:00`)
-    .lte("ended_at", `${targetDate}T23:59:59+09:00`);
-
-  if (existingSessionIds.length > 0) {
-    query = query.not("id", "in", `(${existingSessionIds.join(",")})`);
-  }
-
-  const { data: sessions, error: fetchErr } = await query;
-
-  if (fetchErr) throw new Error(`generateDailyReports: 세션 조회 실패 — ${fetchErr.message}`);
-  if (!sessions?.length) return result;
+  const childIds = candidateChildIds.filter((id) => !withdrawnIds.has(id));
+  if (!childIds.length) return result;
 
   const reportModel = await resolveGroupAModel(db);
 
-  for (const session of sessions) {
+  for (const childId of childIds) {
     try {
-      // 1. 보정된 대화 내역 조회 (미션 완료 여부 무관, 아이 발화 존재 시 생성)
+      // 1. 보정된 대화 내역 조회 — 그날 이 아이의 모든 세션(미션+자유대화)을 합쳐서
+      //    본다. 미션 완료 여부는 조건에 없다(진행중/중단 세션도 그대로 포함).
       const { data: conversations, error: convErr } = await db
         .from("raw_daily_conversations")
         .select(`
@@ -247,29 +261,30 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
             report_eligible
           )
         `)
-        .eq("session_id", session.id)
+        .eq("child_id", childId)
+        .eq("business_date", targetDate)
         .order("turn_order", { ascending: true });
 
       if (convErr) throw new Error(`보정 대화 조회 실패: ${convErr.message}`);
-      
+
       const validConversations = (conversations || []).filter((c: any) => {
         if (c.speaker === "k") return true;
-        const corr = Array.isArray(c.corrected_daily_conversations) 
-          ? c.corrected_daily_conversations[0] 
+        const corr = Array.isArray(c.corrected_daily_conversations)
+          ? c.corrected_daily_conversations[0]
           : c.corrected_daily_conversations;
         return corr?.report_eligible === true;
       });
 
       if (!validConversations.length || !validConversations.some((c: any) => c.speaker === "child")) {
-        result.skipped.push(session.id);
+        result.skipped.push(childId);
         continue;
       }
 
       const transcriptText = validConversations
         .map((c: any) => {
           if (c.speaker === "child") {
-            const corr = Array.isArray(c.corrected_daily_conversations) 
-              ? c.corrected_daily_conversations[0] 
+            const corr = Array.isArray(c.corrected_daily_conversations)
+              ? c.corrected_daily_conversations[0]
               : c.corrected_daily_conversations;
             return `아이: ${corr.corrected_text}`;
           }
@@ -284,26 +299,26 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
         const { data: ltData, error: ltErr } = await db
           .from("child_memory")
           .select("memory_type, business_date, category, content")
-          .eq("child_id", session.child_id)
+          .eq("child_id", childId)
           .eq("memory_type", "long_term")
           .order("business_date", { ascending: false })
           .limit(15);
-        
+
         const { data: stData, error: stErr } = await db
           .from("child_memory")
           .select("memory_type, business_date, category, content, expires_at")
-          .eq("child_id", session.child_id)
+          .eq("child_id", childId)
           .eq("memory_type", "short_term")
           .neq("business_date", targetDate)
           .order("business_date", { ascending: false });
-        
+
         if (ltErr || stErr) {
           console.error("child_memory 조회 실패(daily report):", ltErr || stErr);
         } else {
           const validSt = (stData || [])
             .filter((m: { expires_at: string | null }) => !m.expires_at || new Date(m.expires_at) > new Date())
             .slice(0, 3);
-          
+
           const combined = [...(ltData || []), ...validSt];
           if (combined.length > 0) {
             memoryContext = combined.map((m: { business_date: string; memory_type: string; content: string }) => `[${m.business_date}] (${m.memory_type}): ${m.content}`).join("\n");
@@ -346,29 +361,57 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
           ? report.emotion_level
           : "safe";
 
-      const { data: inserted, error: insertErr } = await db
-        .from("daily_reports")
-        .insert({
-          session_id: session.id,
-          summary_line: report.summary_line ?? "",
-          mood_score: moodScore,
-          emotion_tags: report.emotion_tags ?? [],
-          parent_guide: report.parent_guide ?? "",
-          emotion_level: emotionLevel,
-          school_academy_life: report.school_academy_life ?? "",
-          peer_friendship: report.peer_friendship ?? "",
-          emotion_hint: report.emotion_hint ?? "",
-          interests_preferences: report.interests_preferences ?? "",
-          study_concerns: report.study_concerns ?? "",
-          digital_content_interests: report.digital_content_interests ?? "",
-          future_dreams: report.future_dreams ?? "",
-          recurring_stories: report.recurring_stories ?? "",
-        })
-        .select("id")
-        .single();
+      const reportFields = {
+        child_id: childId,
+        business_date: targetDate,
+        summary_line: report.summary_line ?? "",
+        mood_score: moodScore,
+        emotion_tags: report.emotion_tags ?? [],
+        parent_guide: report.parent_guide ?? "",
+        emotion_level: emotionLevel,
+        school_academy_life: report.school_academy_life ?? "",
+        peer_friendship: report.peer_friendship ?? "",
+        emotion_hint: report.emotion_hint ?? "",
+        interests_preferences: report.interests_preferences ?? "",
+        study_concerns: report.study_concerns ?? "",
+        digital_content_interests: report.digital_content_interests ?? "",
+        future_dreams: report.future_dreams ?? "",
+        recurring_stories: report.recurring_stories ?? "",
+      };
 
-      if (insertErr) throw new Error(insertErr.message);
-      result.created.push(inserted.id);
+      // 같은 child_id+business_date 리포트가 이미 있으면(재실행/관리자 수동 재생성)
+      // 새로 INSERT하지 않고 그 행을 갱신한다 — 하드 UNIQUE 제약이 없어 애플리케이션
+      // 레벨에서 먼저 조회 후 분기한다. 과거(이 마이그레이션 이전) 세션당 리포트를
+      // 만들던 구조 때문에 같은 child_id+business_date에 이미 여러 행이 남아있는
+      // 경우가 있어(.single()/.maybeSingle()이면 그런 행에서 에러가 남) 가장 최근
+      // 행 하나만 골라 갱신한다 — 남은 과거 중복 행은 그대로 두되(삭제하지 않음)
+      // 앞으로는 더 늘지 않는다.
+      const { data: existingRows, error: existingOneErr } = await db
+        .from("daily_reports")
+        .select("id")
+        .eq("child_id", childId)
+        .eq("business_date", targetDate)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (existingOneErr) throw new Error(existingOneErr.message);
+      const existing = existingRows?.[0] ?? null;
+
+      let reportId: string;
+      if (existing) {
+        const { error: updErr } = await db.from("daily_reports").update(reportFields).eq("id", existing.id);
+        if (updErr) throw new Error(updErr.message);
+        reportId = existing.id;
+      } else {
+        const { data: inserted, error: insertErr } = await db
+          .from("daily_reports")
+          .insert(reportFields)
+          .select("id")
+          .single();
+        if (insertErr) throw new Error(insertErr.message);
+        reportId = inserted.id;
+      }
+      result.created.push(reportId);
 
       // 리포트가 실제로 성공적으로 만들어진 뒤에만 소비 시각을 찍는다(LLM/삽입 실패 시
       // report_generated_at이 찍히면 리포트 없이 원본만 7일 뒤 삭제되는 사고로 이어진다).
@@ -378,7 +421,7 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
         await db.from("corrected_daily_conversations").update({ report_generated_at: now }).in("raw_conversation_id", rawIds);
       }
     } catch (e) {
-      result.errors.push({ sessionId: session.id, error: String(e) });
+      result.errors.push({ sessionId: childId, error: String(e) });
     }
   }
   return result;

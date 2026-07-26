@@ -152,14 +152,21 @@ export async function GET(
   }
   const sessionIds = sessionsData.map(s => s.id);
 
-  // Need daily_reports for these sessions
+  // requests/017-report-check.md — daily_reports는 child_id+business_date로 통합
+  // 생성되며 session_id는 신규 생성분에서 NULL일 수 있으므로, session_id 경유 대신
+  // child_id + business_date(KST 기준 30일 전 날짜) 직접 조회로 바꾼다.
+  const thirtyDaysAgoBusinessDate = new Date(Date.now() - 30 * 24 * 3600 * 1000 + 9 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
   let reportsData: any[] = [];
-  if (sessionIds.length > 0) {
+  if (childIds.length > 0) {
     let rOffset = 0;
     while (true) {
       const { data, error } = await service.from("daily_reports")
-        .select("id, session_id, created_at")
-        .in("session_id", sessionIds)
+        .select("id, child_id, created_at, business_date")
+        .in("child_id", childIds)
+        .gte("business_date", thirtyDaysAgoBusinessDate)
         .range(rOffset, rOffset + 999);
       if (error) return NextResponse.json({ error: `daily_reports 조회 실패: ${error.message}` }, { status: 500 });
       if (!data || data.length === 0) break;
@@ -191,7 +198,6 @@ export async function GET(
 
   const connectionFunnel = children.map(c => {
     let missionCompletedAt: string | null = null;
-    let missionSessionId: string | null = null;
     let maxMissionMs = 0;
 
     // Find most recent mission_complete in last 30 days
@@ -201,18 +207,20 @@ export async function GET(
       if (ms > maxMissionMs) {
         maxMissionMs = ms;
         missionCompletedAt = e.occurred_at;
-        missionSessionId = e.session_id ?? null;
       }
     }
 
     let reportGeneratedAt: string | null = null;
     let reportId: string | null = null;
 
-    // 완료 이벤트 자체의 session_id로 daily_reports.session_id를 직접 매칭한다 — 이 아이의
-    // "가장 가까운" 다른 세션 리포트를 잘못 연결하지 않도록(codex 지적: 같은 아이의 다른
-    // 미션/자유대화 세션 리포트가 섞여 들어갈 위험이 있었다).
-    if (missionCompletedAt && missionSessionId) {
-      const cReports = reportsData.filter(r => r.session_id === missionSessionId);
+    // requests/017-report-check.md 이후 daily_reports는 session_id가 아니라
+    // child_id+business_date로 통합 생성된다(같은 아이의 그날 모든 세션이 리포트
+    // 하나로 합쳐짐) — 완료 이벤트가 발생한 날짜(KST business_date)로 그 아이의
+    // 리포트를 매칭한다. session_id 매칭은 더 이상 유효한 개념이 아니다(신규
+    // 생성분은 session_id 자체가 NULL).
+    if (missionCompletedAt) {
+      const missionBusinessDate = new Date(toMs(missionCompletedAt) + 9 * 3600 * 1000).toISOString().slice(0, 10);
+      const cReports = reportsData.filter(r => r.child_id === c.id && r.business_date === missionBusinessDate);
       let minRepMs = Infinity;
       for (const r of cReports) {
         const rMs = toMs(r.created_at);

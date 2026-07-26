@@ -128,12 +128,15 @@ async function fallbackFromDailyReports(
   weekRange: string,
 ): Promise<WeeklyReportJson> {
   console.error(`[generateWeeklySummary] 원문 재분석 실패 — child ${childId}는 daily_reports 요약 이어붙이기로 폴백`);
+  // requests/017-report-check.md 이후 daily_reports는 child_id+business_date로 직접
+  // 조회한다(session_id 경유 join은 신규 생성분에서 NULL이라 항상 빈 결과가 됨).
   const { data: reports } = await db
     .from("daily_reports")
-    .select("summary_line, mood_score, emotion_tags, chat_sessions!inner(child_id)")
-    .eq("chat_sessions.child_id", childId)
-    .gte("created_at", `${weekStart}T00:00:00Z`)
-    .lte("created_at", `${weekEnd}T23:59:59Z`);
+    .select("summary_line, mood_score, emotion_tags")
+    .eq("child_id", childId)
+    .gte("business_date", weekStart)
+    .lte("business_date", weekEnd)
+    .is("deleted_at", null);
 
   const dailySummaries = (reports ?? [])
     .map((r: { summary_line: string; mood_score: number; emotion_tags: string[] }, i: number) =>
