@@ -30,6 +30,17 @@ export const QUIZ_PROXY_PATH_PREFIX = "/play/quiz";
  */
 export const QUIZ_PROXY_INTERNAL_PREFIX = "/api/quiz-proxy";
 
+/**
+ * Quiz 앱이 치명적 오류(세션 만료 등)로 놀이를 계속할 수 없을 때 사용자를 되돌려보내는
+ * K-Bestie 쪽 수신 경로.
+ *
+ * **반드시 `/play/quiz`의 하위가 아니어야 한다.** 하위였다면 middleware가 이 경로까지
+ * 업스트림으로 프록시해버려서 K-Bestie가 화면을 그릴 수 없다. 반대로 형제 경로라서
+ * 프록시 Route Handler의 Location 검사(basePath 안쪽만 허용)에는 자동으로 통과하지
+ * 못하므로, 그쪽에서 이 경로만 명시적으로 예외 허용한다.
+ */
+export const QUIZ_ERROR_PATH = "/play/quiz-error";
+
 /** `/play/quiz` 및 그 하위(정적 자산·API 포함) 경로인지. */
 export function isQuizProxyPath(pathname: string): boolean {
   return (

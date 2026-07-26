@@ -26,6 +26,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import {
+  QUIZ_ERROR_PATH,
   QUIZ_PROXY_COOKIE,
   QUIZ_PROXY_INTERNAL_PREFIX,
   QUIZ_PROXY_PATH_PREFIX,
@@ -279,11 +280,16 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
     } catch {
       target = null;
     }
+    // basePath 안쪽이거나, K-Bestie의 오류 수신 경로(정확히 일치할 때만) 허용한다.
+    // 오류 수신 경로는 `/play/quiz`의 **형제**라 basePath 규칙에 자동으로 걸리지 않으므로
+    // 이렇게 딱 하나만 명시적으로 예외 처리한다(접두사 매칭 금지 — `/play/quiz-error-evil`
+    // 같은 경로가 함께 열리면 안 된다).
     const isSafeRedirect =
       target !== null &&
       target.origin === upstreamBase.origin &&
       (target.pathname === QUIZ_PROXY_PATH_PREFIX ||
-        target.pathname.startsWith(`${QUIZ_PROXY_PATH_PREFIX}/`));
+        target.pathname.startsWith(`${QUIZ_PROXY_PATH_PREFIX}/`) ||
+        target.pathname === QUIZ_ERROR_PATH);
     if (!isSafeRedirect || target === null) {
       console.error(`[quiz-proxy] 안전하지 않은 업스트림 Location 차단: ${rawLocation}`);
       responseHeaders.delete("location");
