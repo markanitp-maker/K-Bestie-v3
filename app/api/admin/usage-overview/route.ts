@@ -1,9 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { fetchGcpBilling, type BillingService } from "@/lib/billing/gcpBilling";
+import { fetchGcpBilling, KNOWN_BILLING_CATEGORIES, type BillingCategory, type GcpBillingResult, type GeminiUsageDimension } from "@/lib/billing/gcpBilling";
 import { REVENUE_MODE, VERCEL_FIXED_KRW_PER_MONTH, SUPABASE_FIXED_KRW_PER_MONTH, USD_TO_KRW, FX_AS_OF } from "@/lib/plan/pricing";
 import { ALL_MODE_BUCKETS, toModeBucket, normalizeConversationMode, UNCLASSIFIED_MODE, type ModeBucket } from "@/lib/plan/conversationMode";
+
+// 실제 GCP 청구 원가 조회 실패/미설정 시 폴백용 빈 결과.
+function emptyGcpBillingResult(dataCutoffDate: string): GcpBillingResult {
+  const emptyTriplet = () => ({ grossCostKrw: 0, creditKrw: 0, netCostKrw: 0 });
+  return {
+    configured: false,
+    total: emptyTriplet(),
+    totalsByCategory: {
+      stt: emptyTriplet(),
+      tts: emptyTriplet(),
+      gemini_agent_platform: emptyTriplet(),
+      agent_platform_model_garden: emptyTriplet(),
+      cloud_run: emptyTriplet(),
+      cloud_storage: emptyTriplet(),
+      other: emptyTriplet(),
+    },
+    skuRows: [],
+    unclassified: { count: 0, services: [], cost: emptyTriplet(), ratePct: 0 },
+    dataCutoffDate,
+  };
+}
 
 export const runtime = "nodejs";
 
@@ -203,14 +224,13 @@ export async function GET(req: NextRequest) {
   const vercelCost = proratedInfraCost(VERCEL_FIXED_KRW_PER_MONTH, period, days);
   const supabaseCost = proratedInfraCost(SUPABASE_FIXED_KRW_PER_MONTH, period, days);
 
-  // ── GCP 실제 청구액(STT/TTS/Live/LLM/Cloud Run) — 회사 전체 청구서라 아이 단위로는 못 쪼갠다.
-  // childId 상세 드릴다운에서는 조회하지 않는다(그 아이만의 실제 청구액이 따로 없음).
-  const gcpBilling = filterChildId
-    ? { configured: false as boolean, rows: [] as { day: string; service: BillingService; costKrw: number }[], totalsByService: { stt: 0, tts: 0, live_audio: 0, llm: 0, cloud_run: 0 } as Record<BillingService, number>, dataCutoffDate: now.toISOString().slice(0, 10), error: undefined as string | undefined }
-    : await fetchGcpBilling({ from, to });
+  // ── GCP 실제 청구액(STT/TTS/Gemini Agent Platform/Model Garden/Cloud Run/Cloud Storage) —
+  // 회사 전체 청구서라 아이 단위로는 못 쪼갠다. childId 상세 드릴다운에서는 조회하지 않는다
+  // (그 아이만의 실제 청구액이 따로 없음).
+  const gcpBilling: GcpBillingResult = filterChildId ? emptyGcpBillingResult(now.toISOString().slice(0, 10)) : await fetchGcpBilling({ from, to });
 
-  // Cloud Run(라이브 음성 릴레이) 실청구 — 추정치가 없는 인프라라 실청구만 사용(미설정/실패 시 0).
-  const cloudRunActual = gcpBilling.configured ? gcpBilling.totalsByService.cloud_run : 0;
+  // Cloud Run(라이브 음성 릴레이) 실청구(크레딧 반영 순액) — 추정치가 없는 인프라라 실청구만 사용(미설정/실패 시 0).
+  const cloudRunActual = gcpBilling.configured ? gcpBilling.totalsByCategory.cloud_run.netCostKrw : 0;
   // 총비용 = AI 추정 + 인프라 고정비 + Cloud Run 실청구.
   const totalCost = aiCostTotal + vercelCost + supabaseCost + cloudRunActual;
 
@@ -237,11 +257,14 @@ export async function GET(req: NextRequest) {
   //   무료 제공 기간(실결제 미도입 = REVENUE_MODE 'projected')에는 실매출 ₩0, 실손익 = 0 − 실비용.
   //   실비용은 가능하면 BigQuery 실청구(회사 전체) 기반, 미설정/드릴다운 시 추정치로 폴백.
   const isFreePeriod = REVENUE_MODE === "projected";
-  const AI_KINDS: AiKind[] = ["stt", "tts", "live_audio", "llm"];
-  const confirmedAiCost = AI_KINDS.reduce(
-    (s, k) => s + (gcpBilling.configured ? gcpBilling.totalsByService[k] : (totalsByKind[k] ?? 0)),
-    0
-  );
+  // 실제 AI 비용(크레딧 반영 순액) — Vertex AI가 Gemini Agent Platform/Model Garden 두 카테고리로
+  // 나뉘므로(대표님 지시: 제품 단위 Live/LLM에 임의 배분 금지) 여기서는 그대로 합산한다.
+  const confirmedAiCost = gcpBilling.configured
+    ? gcpBilling.totalsByCategory.stt.netCostKrw +
+      gcpBilling.totalsByCategory.tts.netCostKrw +
+      gcpBilling.totalsByCategory.gemini_agent_platform.netCostKrw +
+      gcpBilling.totalsByCategory.agent_platform_model_garden.netCostKrw
+    : aiCostTotal;
   const actualTotalCost = confirmedAiCost + vercelCost + supabaseCost + cloudRunActual;
   const actualRevenue = isFreePeriod ? 0 : projectedRevenue;
   const actualNetProfit = actualRevenue - actualTotalCost;
@@ -285,60 +308,113 @@ export async function GET(req: NextRequest) {
       return { day, revenueKrw: dailyRevenuePerDay, costKrw: c.stt + c.tts + c.live_audio + c.llm + dailyInfraPerDay };
     });
 
-  // ── 비용 항목별 분해 — AI 4종 + 인프라 고정비, 비용 큰 순 정렬 + 전체 대비 비중% ──
+  // ── 비용 항목별 분해 — 실제 GCP 청구 6종 + 인프라 고정비, 비용 큰 순 정렬 + 전체 대비 비중% ──
+  // 2026-07-27 개편(대표님 지시): 로컬 usage_events 추정치를 "실제 비용"으로 취급하지 않는다.
+  // Google Cloud Billing 실제값(gcpBilling)을 정본으로 하고, 로컬 추정치는 "내부 배분 원가"로
+  // 별도 컬럼에만 병기한다. Gemini는 제품 단위(Live/LLM)로 임의 배분하지 않고 SKU 기준
+  // gemini_agent_platform/agent_platform_model_garden 그대로 노출한다(estimateKrw는 참고용
+  // 근사치로만 붙인다 — 정확한 1:1 매칭이 아님을 note로 명시).
   type CostBreakdownItem = {
-    key: "stt" | "tts" | "live_audio" | "llm" | "vercel" | "supabase" | "cloud_run";
+    key: BillingCategory | "vercel" | "supabase";
     label: string;
     category: "ai" | "infra";
     usage: number;
     usageUnit: string;
-    ourEstimateKrw: number;
-    gcpActualKrw: number | null;
+    grossKrw: number;
+    creditKrw: number;
+    netKrw: number;
+    monthEndProjectionKrw: number;
+    estimateKrw: number | null; // 내부 사용량 기반 배분 원가(참고용) — 없으면 null
+    varianceKrw: number | null; // netKrw - estimateKrw (추정 오차, estimateKrw 없으면 null)
+    /** @deprecated 하위호환 — confirmedCostKrw와 동일(=netKrw 또는 고정비) */
     confirmedCostKrw: number;
+    /** @deprecated 하위호환 — ourEstimateKrw와 동일 */
+    ourEstimateKrw: number;
+    /** @deprecated 하위호환 — gcpActualKrw와 동일(=grossKrw, GCP 미설정 시 null) */
+    gcpActualKrw: number | null;
     note?: string;
   };
+
+  // 월말 예상 원가 — period=month이고 아직 월이 끝나지 않았으면 현재까지의 순청구액을
+  // 경과일수 비례로 월 전체에 투영한다. 그 외 기간(today/7d)이거나 이미 지난 기간이면 net 그대로.
+  const daysInCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysElapsedInMonth = now.getDate();
+  function projectToMonthEnd(netKrw: number): number {
+    if (period !== "month" || daysElapsedInMonth <= 0) return netKrw;
+    return (netKrw / daysElapsedInMonth) * daysInCurrentMonth;
+  }
+
+  const gcpConfigured = gcpBilling.configured;
+  function actualTriplet(cat: BillingCategory) {
+    return gcpConfigured ? gcpBilling.totalsByCategory[cat] : { grossCostKrw: 0, creditKrw: 0, netCostKrw: 0 };
+  }
+
   const rawBreakdown: CostBreakdownItem[] = [
     {
       key: "stt",
-      label: "STT",
+      label: "STT (Speech-to-Text)",
       category: "ai",
       usage: usageAmountByKind.sttSec,
       usageUnit: "sec",
+      grossKrw: actualTriplet("stt").grossCostKrw,
+      creditKrw: actualTriplet("stt").creditKrw,
+      netKrw: actualTriplet("stt").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("stt").netCostKrw),
+      estimateKrw: totalsByKind.stt,
+      varianceKrw: gcpConfigured ? actualTriplet("stt").grossCostKrw - totalsByKind.stt : null,
+      confirmedCostKrw: gcpConfigured ? actualTriplet("stt").netCostKrw : totalsByKind.stt,
       ourEstimateKrw: totalsByKind.stt,
-      gcpActualKrw: gcpBilling.configured ? gcpBilling.totalsByService.stt : null,
-      confirmedCostKrw: gcpBilling.configured ? gcpBilling.totalsByService.stt : totalsByKind.stt,
+      gcpActualKrw: gcpConfigured ? actualTriplet("stt").grossCostKrw : null,
     },
     {
       key: "tts",
-      label: "TTS",
+      label: "TTS (Text-to-Speech)",
       category: "ai",
       usage: usageAmountByKind.ttsChars,
       usageUnit: "chars",
+      grossKrw: actualTriplet("tts").grossCostKrw,
+      creditKrw: actualTriplet("tts").creditKrw,
+      netKrw: actualTriplet("tts").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("tts").netCostKrw),
+      estimateKrw: totalsByKind.tts,
+      varianceKrw: gcpConfigured ? actualTriplet("tts").grossCostKrw - totalsByKind.tts : null,
+      confirmedCostKrw: gcpConfigured ? actualTriplet("tts").netCostKrw : totalsByKind.tts,
       ourEstimateKrw: totalsByKind.tts,
-      gcpActualKrw: gcpBilling.configured ? gcpBilling.totalsByService.tts : null,
-      confirmedCostKrw: gcpBilling.configured ? gcpBilling.totalsByService.tts : totalsByKind.tts,
+      gcpActualKrw: gcpConfigured ? actualTriplet("tts").grossCostKrw : null,
     },
     {
-      key: "live_audio",
-      label: "Gemini 라이브",
+      key: "gemini_agent_platform",
+      label: "Gemini on Agent Platform",
       category: "ai",
-      usage: usageAmountByKind.liveSec,
-      usageUnit: "sec",
-      ourEstimateKrw: totalsByKind.live_audio,
-      gcpActualKrw: gcpBilling.configured ? gcpBilling.totalsByService.live_audio : null,
-      confirmedCostKrw: gcpBilling.configured ? gcpBilling.totalsByService.live_audio : totalsByKind.live_audio,
-      note: gcpBilling.configured ? "BigQuery 실청구(회사 전체) — 아이/모드 단위는 배분 추정" : undefined,
+      usage: usageAmountByKind.liveSec + usageAmountByKind.llmTokenIn + usageAmountByKind.llmTokenOut,
+      usageUnit: "mixed",
+      grossKrw: actualTriplet("gemini_agent_platform").grossCostKrw,
+      creditKrw: actualTriplet("gemini_agent_platform").creditKrw,
+      netKrw: actualTriplet("gemini_agent_platform").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("gemini_agent_platform").netCostKrw),
+      estimateKrw: null, // 제품 단위(Live/LLM)로 임의 배분하지 않음 — 아래 estimateCost 섹션에서 별도 참고치로만 제공
+      varianceKrw: null,
+      confirmedCostKrw: gcpConfigured ? actualTriplet("gemini_agent_platform").netCostKrw : 0,
+      ourEstimateKrw: totalsByKind.live_audio + totalsByKind.llm,
+      gcpActualKrw: gcpConfigured ? actualTriplet("gemini_agent_platform").grossCostKrw : null,
+      note: "SKU 기준 실제값(모델별 입력/출력 오디오·텍스트 세부는 geminiUsageDimensions 참고) — Live/LLM 제품 단위로 임의 배분하지 않음",
     },
     {
-      key: "llm",
-      label: "LLM(텍스트)",
+      key: "agent_platform_model_garden",
+      label: "Agent Platform Model Garden",
       category: "ai",
-      usage: usageAmountByKind.llmTokenIn + usageAmountByKind.llmTokenOut,
-      usageUnit: "tokens",
-      ourEstimateKrw: totalsByKind.llm,
-      gcpActualKrw: gcpBilling.configured ? gcpBilling.totalsByService.llm : null,
-      confirmedCostKrw: gcpBilling.configured ? gcpBilling.totalsByService.llm : totalsByKind.llm,
-      note: gcpBilling.configured ? "BigQuery 실청구(회사 전체) — 아이/모드 단위는 배분 추정" : undefined,
+      usage: 0,
+      usageUnit: "mixed",
+      grossKrw: actualTriplet("agent_platform_model_garden").grossCostKrw,
+      creditKrw: actualTriplet("agent_platform_model_garden").creditKrw,
+      netKrw: actualTriplet("agent_platform_model_garden").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("agent_platform_model_garden").netCostKrw),
+      estimateKrw: null,
+      varianceKrw: null,
+      confirmedCostKrw: gcpConfigured ? actualTriplet("agent_platform_model_garden").netCostKrw : 0,
+      ourEstimateKrw: 0,
+      gcpActualKrw: gcpConfigured ? actualTriplet("agent_platform_model_garden").grossCostKrw : null,
+      note: "Gemini 3.1 계열(Model Garden) SKU — 내부 추정 모델 없음",
     },
     {
       key: "vercel",
@@ -346,10 +422,16 @@ export async function GET(req: NextRequest) {
       category: "infra",
       usage: days,
       usageUnit: "days",
+      grossKrw: vercelCost,
+      creditKrw: 0,
+      netKrw: vercelCost,
+      monthEndProjectionKrw: projectToMonthEnd(vercelCost),
+      estimateKrw: vercelCost,
+      varianceKrw: 0,
+      confirmedCostKrw: vercelCost,
       ourEstimateKrw: vercelCost,
       gcpActualKrw: null,
-      confirmedCostKrw: vercelCost,
-      note: "실제 청구서 확인 전 근사치",
+      note: "실제 청구서 연동 전 추정 고정비",
     },
     {
       key: "supabase",
@@ -357,10 +439,16 @@ export async function GET(req: NextRequest) {
       category: "infra",
       usage: days,
       usageUnit: "days",
+      grossKrw: supabaseCost,
+      creditKrw: 0,
+      netKrw: supabaseCost,
+      monthEndProjectionKrw: projectToMonthEnd(supabaseCost),
+      estimateKrw: supabaseCost,
+      varianceKrw: 0,
+      confirmedCostKrw: supabaseCost,
       ourEstimateKrw: supabaseCost,
       gcpActualKrw: null,
-      confirmedCostKrw: supabaseCost,
-      note: "실제 청구서 확인 전 근사치",
+      note: "실제 청구서 연동 전 추정 고정비",
     },
     {
       key: "cloud_run",
@@ -368,16 +456,118 @@ export async function GET(req: NextRequest) {
       category: "infra",
       usage: days,
       usageUnit: "days",
-      ourEstimateKrw: 0,
-      gcpActualKrw: gcpBilling.configured ? gcpBilling.totalsByService.cloud_run : null,
+      grossKrw: actualTriplet("cloud_run").grossCostKrw,
+      creditKrw: actualTriplet("cloud_run").creditKrw,
+      netKrw: actualTriplet("cloud_run").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("cloud_run").netCostKrw),
+      estimateKrw: 0,
+      varianceKrw: gcpConfigured ? actualTriplet("cloud_run").grossCostKrw - 0 : null,
       confirmedCostKrw: cloudRunActual,
-      note: gcpBilling.configured ? "BigQuery 실청구(크레딧 반영)" : "BigQuery 미설정",
+      ourEstimateKrw: 0,
+      gcpActualKrw: gcpConfigured ? actualTriplet("cloud_run").grossCostKrw : null,
+      note: gcpConfigured ? "BigQuery 실청구(크레딧 반영)" : "BigQuery 미설정",
+    },
+    {
+      key: "cloud_storage",
+      label: "Cloud Storage",
+      category: "infra",
+      usage: days,
+      usageUnit: "days",
+      grossKrw: actualTriplet("cloud_storage").grossCostKrw,
+      creditKrw: actualTriplet("cloud_storage").creditKrw,
+      netKrw: actualTriplet("cloud_storage").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("cloud_storage").netCostKrw),
+      estimateKrw: null,
+      varianceKrw: null,
+      confirmedCostKrw: gcpConfigured ? actualTriplet("cloud_storage").netCostKrw : 0,
+      ourEstimateKrw: 0,
+      gcpActualKrw: gcpConfigured ? actualTriplet("cloud_storage").grossCostKrw : null,
+      note: gcpConfigured ? "BigQuery 실청구(크레딧 반영)" : "BigQuery 미설정",
     },
   ];
   const breakdownTotal = rawBreakdown.reduce((s, i) => s + i.confirmedCostKrw, 0);
   const costBreakdown = rawBreakdown
     .map((i) => ({ ...i, sharePct: breakdownTotal > 0 ? (i.confirmedCostKrw / breakdownTotal) * 100 : 0 }))
     .sort((a, b) => b.confirmedCostKrw - a.confirmedCostKrw);
+
+  // ── Gemini 사용형태별(모델·입력 오디오·출력 오디오·텍스트 입력·텍스트 출력) SKU 실제 원가 매핑 ──
+  // gemini_agent_platform + agent_platform_model_garden 두 카테고리를 합쳐 오디오/텍스트
+  // 입출력 차원으로 재집계한다(제품 단위 Live/LLM 임의 배분이 아니라 SKU 문자열 기준).
+  const geminiDimensions: Record<GeminiUsageDimension, { grossKrw: number; creditKrw: number; netKrw: number }> = {
+    input_audio: { grossKrw: 0, creditKrw: 0, netKrw: 0 },
+    output_audio: { grossKrw: 0, creditKrw: 0, netKrw: 0 },
+    text_input: { grossKrw: 0, creditKrw: 0, netKrw: 0 },
+    text_output: { grossKrw: 0, creditKrw: 0, netKrw: 0 },
+    other: { grossKrw: 0, creditKrw: 0, netKrw: 0 },
+  };
+  if (gcpConfigured) {
+    for (const row of gcpBilling.skuRows) {
+      if (row.category !== "gemini_agent_platform" && row.category !== "agent_platform_model_garden") continue;
+      const dim = row.geminiDimension ?? "other";
+      geminiDimensions[dim].grossKrw += row.cost.grossCostKrw;
+      geminiDimensions[dim].creditKrw += row.cost.creditKrw;
+      geminiDimensions[dim].netKrw += row.cost.netCostKrw;
+    }
+  }
+
+  // ── 실제 원가 정본(actualCost) — Google Cloud Billing 기준, 회사 전체(아이 단위 분해 불가) ──
+  const actualCost = {
+    configured: gcpConfigured,
+    error: gcpBilling.error ?? null,
+    dataCutoffDate: gcpBilling.dataCutoffDate,
+    grossKrw: gcpBilling.total.grossCostKrw,
+    creditKrw: gcpBilling.total.creditKrw,
+    netKrw: gcpBilling.total.netCostKrw,
+    byCategory: gcpBilling.totalsByCategory,
+    geminiUsageDimensions: geminiDimensions,
+    unclassified: {
+      count: gcpBilling.unclassified.count,
+      services: gcpBilling.unclassified.services,
+      grossKrw: gcpBilling.unclassified.cost.grossCostKrw,
+      ratePct: gcpBilling.unclassified.ratePct,
+      warning: gcpBilling.unclassified.ratePct > 1,
+    },
+  };
+
+  // ── 내부 추정치(estimateCost) — usage_events 기반 "우리 추정", 실제 비용이 아님을 명시 ──
+  const estimateCost = {
+    stt: totalsByKind.stt,
+    tts: totalsByKind.tts,
+    live_audio: totalsByKind.live_audio,
+    llm: totalsByKind.llm,
+    cloud_run: 0,
+    totalKrw: aiCostTotal,
+    note: "로컬 usage_events 기반 제품 단위 추정치 — 실제 청구액이 아님(actualCost 참고).",
+  };
+
+  // ── 실제 vs 추정 오차 검증(대표님 검증치: 차이 20,023원 / 과소추정률 79.6% / 배수 4.91배) ──
+  // claude-review 지적: actualGrandGross는 GCP 전체(AI 4종 + Cloud Run + Cloud Storage
+  // 실제값 gross) 합계이고 aiCostTotal은 usage_events 기반 "AI만"의 로컬 추정치라 두
+  // 스코프가 다르다 — 하지만 이는 의도된 설계다(단순 스코프 버그 아님). 대표님이 직접
+  // 검증한 20,023원/79.6%/4.91배는 정확히 "GCP 전체 실제 gross(25,142원)" 대
+  // "관리자 자체 추정 총액(5,119원, Cloud Run 추정 0원 포함)"을 비교한 결과이며, AI만
+  // 놓고 비교하면 이 정확한 검증치와 어긋난다(Cloud Run+Storage分 777원, 약 3.9%p
+  // 차이). 즉 이 필드는 "AI 원가 오차"가 아니라 "회사 전체 GCP 비용을 로컬 추정이
+  // 얼마나 과소평가했는가"를 보여주는 지표로 의도했다.
+  const actualGrandGross = gcpConfigured ? gcpBilling.total.grossCostKrw : null;
+  const reconciliation = actualGrandGross == null
+    ? null
+    : {
+        actualGrossKrw: actualGrandGross,
+        estimateKrw: aiCostTotal,
+        differenceKrw: actualGrandGross - aiCostTotal,
+        underestimationRatePct: actualGrandGross > 0 ? ((actualGrandGross - aiCostTotal) / actualGrandGross) * 100 : 0,
+        multiplier: aiCostTotal > 0 ? actualGrandGross / aiCostTotal : null,
+        warning: actualGrandGross > 0 && Math.abs(actualGrandGross - aiCostTotal) / actualGrandGross > 0.1,
+      };
+
+  // ── 회사 전체 원가(companyWideCost) — 고정비(Vercel+Supabase) + GCP 실제값 ──
+  const fixedInfraKrw = vercelCost + supabaseCost;
+  const companyWideCost = {
+    fixedInfraKrw,
+    totalIncurredKrw: fixedInfraKrw + (gcpConfigured ? gcpBilling.total.grossCostKrw : 0), // 크레딧 적용 전 총발생원가
+    expectedCashOutlayKrw: fixedInfraKrw + (gcpConfigured ? gcpBilling.total.netCostKrw : 0), // 크레딧 적용 후 예상 현금지출
+  };
 
   // ── 서비스별 TOP10 유저 — AI 4종 각각 사용량 기준 상위 10명(이름/사용량/비용) ──
   const topUsersByService: Record<string, { childId: string; name: string; usage: number; costKrw: number }[]> = {
@@ -470,6 +660,10 @@ export async function GET(req: NextRequest) {
     },
     dailyTrend,
     costBreakdown,
+    actualCost,
+    estimateCost,
+    reconciliation,
+    companyWideCost,
     topUsersByService,
     traffic: {
       sessionCount: sessionCount ?? 0,

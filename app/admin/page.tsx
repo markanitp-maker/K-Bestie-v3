@@ -148,7 +148,7 @@ interface TierHeadcount {
 }
 
 interface CostBreakdownItem {
-  key: "stt" | "tts" | "live_audio" | "llm" | "vercel" | "supabase" | "cloud_run";
+  key: "stt" | "tts" | "gemini_agent_platform" | "agent_platform_model_garden" | "cloud_run" | "cloud_storage" | "vercel" | "supabase";
   label: string;
   category: "ai" | "infra";
   usage: number;
@@ -157,6 +157,12 @@ interface CostBreakdownItem {
   gcpActualKrw: number | null;
   confirmedCostKrw: number;
   sharePct: number;
+  grossKrw: number;
+  creditKrw: number;
+  netKrw: number;
+  monthEndProjectionKrw: number;
+  estimateKrw: number | null;
+  varianceKrw: number | null;
   note?: string;
 }
 
@@ -209,6 +215,36 @@ interface UsageOverview {
   traffic: { sessionCount: number; sttCount: number; ttsCount: number; liveCount: number; llmCount: number };
   perChildProfitability: PerChildProfitability[];
   gcpBillingError: string | null;
+
+  actualCost: {
+    configured: boolean;
+    error: string | null;
+    dataCutoffDate: string;
+    grossKrw: number;
+    creditKrw: number;
+    netKrw: number;
+    byCategory: Record<"stt"|"tts"|"gemini_agent_platform"|"agent_platform_model_garden"|"cloud_run"|"cloud_storage"|"other", { grossCostKrw: number; creditKrw: number; netCostKrw: number }>;
+    geminiUsageDimensions: Record<"input_audio"|"output_audio"|"text_input"|"text_output"|"other", { grossKrw: number; creditKrw: number; netKrw: number }>;
+    unclassified: { count: number; services: string[]; grossKrw: number; ratePct: number; warning: boolean };
+  };
+  estimateCost: {
+    stt: number; tts: number; live_audio: number; llm: number; cloud_run: number;
+    totalKrw: number;
+    note: string;
+  };
+  reconciliation: null | {
+    actualGrossKrw: number;
+    estimateKrw: number;
+    differenceKrw: number;
+    underestimationRatePct: number;
+    multiplier: number | null;
+    warning: boolean;
+  };
+  companyWideCost: {
+    fixedInfraKrw: number;
+    totalIncurredKrw: number;
+    expectedCashOutlayKrw: number;
+  };
 }
 
 function usageLabel(usage: number, unit: CostBreakdownItem["usageUnit"]): string {
@@ -287,7 +323,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 // TOP10 유저 드릴다운이 있는 서비스 — costBreakdown 항목 중 이 키들만 클릭 가능(인프라 고정비는 제외).
-const topUsersByServiceKeys = ["stt", "tts", "live_audio", "llm"];
+const topUsersByServiceKeys = ["stt", "tts"];
 
 // 인라인 아코디언 펼침 공용 래퍼 — table row 아래(colSpan)에 넣어서 부드럽게 나타나게 한다.
 // 스크롤 폭주 방지 규칙은 호출부에서 "같은 레벨엔 단일 선택 state"로 강제한다(새로 열면 이전 건 자동 접힘).
@@ -1299,6 +1335,42 @@ function AdminDashboard() {
 
             {page === "cost" && (
               <div>
+                {data.reconciliation ? (
+                  <div style={{
+                    display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 14,
+                    ...(data.reconciliation.warning ? { border: "2px solid var(--color-k-danger)", padding: 12, borderRadius: 16 } : {})
+                  }}>
+                    {data.reconciliation.warning && (
+                      <div style={{ gridColumn: "1 / -1", color: "var(--color-k-danger)", fontWeight: 700, marginBottom: -4 }}>
+                        ⚠️ 실제 비용이 내부 추정보다 10% 이상 큽니다
+                      </div>
+                    )}
+                    <BigNumberCard label="실제 원가" value={won(data.reconciliation.actualGrossKrw)} />
+                    <BigNumberCard label="내부 추정 원가" value={won(data.reconciliation.estimateKrw)} />
+                    <BigNumberCard 
+                      label="차이·배수" 
+                      value={won(data.reconciliation.differenceKrw)} 
+                      sub={`과소추정률 ${data.reconciliation.underestimationRatePct.toFixed(1)}% · ${data.reconciliation.multiplier?.toFixed(2) ?? "-"}배`}
+                      color={data.reconciliation.differenceKrw > 0 ? "var(--color-k-danger)" : "var(--color-k-success, #1a9c5c)"}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 14, padding: "16px 20px", background: "var(--color-k-background)", borderRadius: 14, boxShadow: "var(--shadow-k-card)", color: "var(--color-k-text-secondary)", fontSize: 14 }}>
+                    BigQuery 미설정
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                  <BigNumberCard label="총발생원가" value={won(data.companyWideCost.totalIncurredKrw)} sub="고정비+GCP 실사용원가, 크레딧 적용 전" />
+                  <BigNumberCard label="예상 현금지출" value={won(data.companyWideCost.expectedCashOutlayKrw)} sub="고정비+GCP 순청구액, 크레딧 적용 후" />
+                </div>
+
+                {data.actualCost.unclassified.warning && (
+                  <div style={{ background: "var(--color-k-navy-tint)", color: "var(--color-k-danger)", padding: "10px 14px", borderRadius: 10, fontSize: 13, marginBottom: 14, fontWeight: 600 }}>
+                    ⚠️ 미분류 비용 {data.actualCost.unclassified.count}건, 전체의 {data.actualCost.unclassified.ratePct.toFixed(2)}% ({won(data.actualCost.unclassified.grossKrw)}) — {data.actualCost.unclassified.services.join(', ')}
+                  </div>
+                )}
+
                 <SectionTitle>나갈 돈 — 비용 항목별 분해 ({PERIOD_LABEL[period]}, 비용 큰 순)</SectionTitle>
                 <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1306,36 +1378,85 @@ function AdminDashboard() {
                       <tr>
                         <th style={thStyle}>항목</th>
                         <th style={thStyle}>사용량</th>
-                        <th style={thStyle}>우리 추정</th>
-                        <th style={thStyle}>실제 청구액</th>
+                        <th style={thStyle}>실제 사용 원가(gross)</th>
+                        <th style={thStyle}>크레딧 및 할인(credit)</th>
+                        <th style={thStyle}>실제 청구 예정액(net)</th>
+                        <th style={thStyle}>내부 배분 추정(estimate)</th>
+                        <th style={thStyle}>추정 오차(variance)</th>
                         <th style={thStyle}>전체 비중</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.costBreakdown.map((item) => {
                         const isTopUserService = item.category === "ai" && topUsersByServiceKeys.includes(item.key);
+                        const isGeminiDetail = item.key === "gemini_agent_platform";
+                        const isExpandable = isTopUserService || isGeminiDetail;
                         const isOpen = expandedServiceKey === item.key;
                         const topUsers = data.topUsersByService[item.key] ?? [];
                         return (
                           <Fragment key={item.key}>
                             <tr
-                              onClick={isTopUserService ? () => toggleService(item.key) : undefined}
-                              style={{ cursor: isTopUserService ? "pointer" : undefined, background: isOpen ? "var(--color-k-navy-tint)" : undefined }}
+                              onClick={isExpandable ? () => toggleService(item.key) : undefined}
+                              style={{ cursor: isExpandable ? "pointer" : undefined, background: isOpen ? "var(--color-k-navy-tint)" : undefined }}
                             >
                               <td style={tdStyle}>
                                 {item.label}
                                 {isTopUserService && <span style={{ fontSize: 11, color: "var(--color-k-navy)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} TOP10</span>}
+                                {isGeminiDetail && <span style={{ fontSize: 11, color: "var(--color-k-navy)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} 오디오/텍스트 상세</span>}
                               </td>
                               <td style={tdStyle}>{usageLabel(item.usage, item.usageUnit)}</td>
-                              <td style={tdStyle}>{won(item.ourEstimateKrw)}</td>
-                              <td style={tdStyle}>
-                                {item.gcpActualKrw != null ? won(item.gcpActualKrw) : item.note ?? (item.category === "infra" ? "고정비" : "BigQuery 미설정")}
-                              </td>
+                              <td style={tdStyle}>{won(item.grossKrw)}</td>
+                              <td style={{ ...tdStyle, color: "var(--color-k-danger)" }}>{won(item.creditKrw)}</td>
+                              <td style={tdStyle}>{won(item.netKrw)}</td>
+                              <td style={tdStyle}>{item.estimateKrw === null ? (item.category === "infra" ? "해당없음" : "—") : won(item.estimateKrw)}</td>
+                              <td style={{ ...tdStyle, color: item.varianceKrw == null ? undefined : item.varianceKrw > 0 ? "var(--color-k-danger)" : "var(--color-k-success, #1a9c5c)" }}>{item.varianceKrw === null ? "—" : won(item.varianceKrw)}</td>
                               <td style={tdStyle}>{item.sharePct.toFixed(1)}%</td>
                             </tr>
-                            {isOpen && (
+                            {isOpen && isGeminiDetail && (
                               <tr>
-                                <td colSpan={5} style={{ padding: 0, borderBottom: "1px solid var(--color-k-border)" }}>
+                                <td colSpan={8} style={{ padding: 0, borderBottom: "1px solid var(--color-k-border)" }}>
+                                  <AccordionExpand>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-k-navy)", marginBottom: 10 }}>
+                                      Gemini 사용 형태별 상세
+                                    </div>
+                                    <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12 }}>
+                                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                        <thead>
+                                          <tr>
+                                            <th style={thStyle}>항목</th>
+                                            <th style={thStyle}>실제 사용 원가(gross)</th>
+                                            <th style={thStyle}>크레딧(credit)</th>
+                                            <th style={thStyle}>순 원가(net)</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {[
+                                            { key: "input_audio", label: "입력 오디오" },
+                                            { key: "output_audio", label: "출력 오디오" },
+                                            { key: "text_input", label: "텍스트 입력" },
+                                            { key: "text_output", label: "텍스트 출력" },
+                                            { key: "other", label: "기타" },
+                                          ].map(dim => {
+                                            const d = data.actualCost.geminiUsageDimensions[dim.key as keyof typeof data.actualCost.geminiUsageDimensions];
+                                            return (
+                                              <tr key={dim.key}>
+                                                <td style={tdStyle}>{dim.label}</td>
+                                                <td style={tdStyle}>{won(d.grossKrw)}</td>
+                                                <td style={{ ...tdStyle, color: "var(--color-k-danger)" }}>{won(d.creditKrw)}</td>
+                                                <td style={tdStyle}>{won(d.netKrw)}</td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </AccordionExpand>
+                                </td>
+                              </tr>
+                            )}
+                            {isOpen && isTopUserService && (
+                              <tr>
+                                <td colSpan={8} style={{ padding: 0, borderBottom: "1px solid var(--color-k-border)" }}>
                                   <AccordionExpand>
                                     <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-k-navy)", marginBottom: 10 }}>
                                       {item.label} 사용량 TOP10
