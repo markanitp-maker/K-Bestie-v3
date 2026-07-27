@@ -69,10 +69,39 @@
 - 자동 검증: `tsc`, `build`, `npm test`, Playwright 실배포 검증 완료
 - 다음 행동: 대표님 실기기에서 자유대화 화면 시각/조작감 최종 확인
 
-### ⚠️ 놀이 앱 아키텍처 방향 전환 확정 (2026-07-27)
-- 상태: 확정, 단계적 실행 대기
-- 근거 문서: `outputs/play-app-rollback-plan-20260727.md`
+### ✅ 놀이 앱 아키텍처 최종 확정 — 퀴즈마스터 리버스 프록시 (2026-07-27, 실행 완료)
+- 상태: **실행 완료**(Dev). Production 전환은 대표님 별도 결정 대기.
+- 근거 문서: `.omc/plans/quizmaster-resplit-plan.md`(EXECUTION APPROVED), `req04.md`(KY 놀이 앱 아키텍처 원칙)
 - 확정 방향:
+  - 퀴즈마스터는 **독립 프로젝트(Quiz repo) + 독립 Vercel 배포**가 유일한 정본이다(req04 원칙).
+  - K-Bestie-v3는 **런처 + 공통 자원**만 담당한다: 놀이 카드, 황금열쇠 차감·환불,
+    handoff token 발급, completion/refund 콜백 수신.
+  - 사용자 진입 경로 `/play/quiz`는 **iframe이 아니라 same-origin 리버스 프록시**로
+    독립 Quiz 배포에 연결된다(`middleware.ts` → `app/api/quiz-proxy/[[...path]]/route.ts`).
+    브라우저 주소창에는 항상 K-Bestie 도메인만 보이고 Quiz 배포 주소는 노출되지 않는다.
+  - 프록시는 K-Bestie 인증 세션을 요구하고, 업스트림으로 나가는 쿠키를 Quiz 전용
+    allowlist로만 재조립하며(부모 세션 쿠키 유출 차단), 업스트림의 `Set-Cookie`도 같은
+    allowlist로 걸러 K-Bestie 쿠키 덮어쓰기를 막는다. 서버간 공유 시크릿
+    (`QUIZ_INTERNAL_AUTH_SECRET`, `x-quiz-proxy-auth` 헤더)이 없으면 양쪽 모두 fail-closed.
+  - **인앱 중복 구현은 제거 완료**(Phase 7): `app/play/quiz/{page,layout}.tsx`,
+    `components/quiz/QuizPlayScreen.tsx`, `lib/quiz/play/`(17개), `app/api/quiz-play/`(11개)
+    총 31개 파일 삭제. 롤백용 `quiz_proxy` has-게이트도 함께 제거했다 — 폴백이 사라진 뒤
+    게이트를 남기면 `quiz_proxy=off` 쿠키를 든 브라우저가 영구 404를 받기 때문.
+  - 오류 복귀 경로: Quiz가 진입 실패 시 `/play/quiz-error?quiz_error_code=...`로 돌려보내고,
+    K-Bestie가 그 화면을 직접 서빙한다(프록시 대상 아님).
+  - 고아 황금열쇠 정산: `POST /api/batch/quiz-handoff-reconcile`(`BATCH_SECRET` 인증)이
+    attempt로 이어지지 못한 handoff를 회수한다. pg_cron 등록은 대표님 실행 대기.
+- 안전 스냅샷: 브랜치/태그 `pre-play-rollback-snapshot-20260726`(커밋 `72ace57`)
+- 다음 행동: Production용 별도 Quiz Vercel 프로젝트 생성 여부·시점 대표님 결정
+
+### ⛔ (SUPERSEDED) 놀이 앱 아키텍처 방향 전환 확정 (2026-07-27) — iframe PlayModal 안
+> **이 항목은 위 "리버스 프록시" 확정으로 대체됐다(2026-07-27).** 아래 iframe PlayModal
+> 서술은 검토 과정에서 나온 이전 안이며 최종 결정이 아니다. 계획 문서 Phase 0 항목 1이
+> 지적한 "정본 문서 충돌"이 이 대목이었고, 대표님이 리버스 프록시 방향을 최종 확인하면서
+> 종결됐다. 이력 보존을 위해 삭제하지 않고 남긴다.
+- 상태: ~~확정, 단계적 실행 대기~~ → **폐기(superseded)**
+- 근거 문서: `outputs/play-app-rollback-plan-20260727.md`
+- 당시 방향(현재 무효):
   - MBTI·퀴즈마스터는 각자 **독립 프로젝트·독립 Vercel 배포**로 되돌린다(각각 별도 Claude Code 세션에서 복원·재작성·배포 진행 중)
   - K-Bestie-v3에는 최종적으로 **놀이 카드 / 공통 황금열쇠 차감·환불 / handoff token 발급 / completion·refund callback 수신 / 독립 놀이 앱 URL을 불러오는 공통 전체화면 인앱 iframe PlayModal**만 남긴다
   - 현재 K-Bestie-v3 안에 있는 네이티브 MBTI·퀴즈 코드(`components/mbti`, `lib/mbti`, `app/api/mbti`, `components/quiz`, `lib/quiz/play`, `app/api/quiz-play` 등, 약 8,703줄)는 **삭제하지 않고 임시 안전망으로 보존** — 각 독립 앱의 Dev 배포 + E2E 검증이 끝난 뒤 연동 계약이 전달되면 연결·검증 후 단계적으로 제거
@@ -80,8 +109,10 @@
 - 중단된 것: K-Bestie-v3 안에서 놀이 UI·문항·채점·진행상태·이어하기·결과·리더보드를 추가 이식·확장하는 모든 작업(병렬 세션 포함, 단 병렬 세션은 각 세션 소유자가 직접 중단해야 함)
 - 다음 행동: MBTI·퀴즈마스터 Dev URL과 연동 계약(handoff/completion/refund) 전달 대기 → 연결·검증 → 중복 네이티브 코드 단계적 제거(계획 문서의 Phase 1~5)
 
-### 010 + 013 + 016 퀴즈마스터 연동 묶음 (구 방향 — 아키텍처 전환으로 재검토 대상)
-- 상태: 대표님 확인 대기 → 위 아키텍처 전환에 따라 최종 형태 변경 예정(handoff/callback 부분은 유지, 네이티브 플레이 화면 부분은 iframe으로 대체 예정)
+### 010 + 013 + 016 퀴즈마스터 연동 묶음 (최종 형태로 정리 완료)
+- 상태: **정리 완료** — handoff/completion/refund 콜백 계약은 그대로 유효하고 계속 쓰인다.
+  네이티브 플레이 화면 부분은 iframe이 아니라 **리버스 프록시로 대체됐고, 인앱 구현은
+  Phase 7에서 삭제됐다**(위 "놀이 앱 아키텍처 최종 확정" 참고).
 - 근거 요청서:
   - `requests/010-quizmaster-main-app-integration.md`
   - `requests/_done/013-Quiz-add.md`
@@ -141,14 +172,17 @@
   - 상태배지 길이 변화에도 케이/토글이 흔들리지 않도록 그리드 구조로 수정 완료
 - Dev 배포: 됨
 
-### 021 퀴즈 내부 모듈화 (아키텍처 전환으로 되돌아갈 예정)
-- 상태: 개발 완료·Dev 배포 → **아키텍처 방향 전환에 따라 iframe PlayModal로 대체 예정**(위 "놀이 앱 아키텍처 방향 전환 확정" 참고)
+### 021 퀴즈 내부 모듈화 (되돌림 완료 — 코드 삭제됨)
+- 상태: **되돌림 완료**. 이 항목이 만든 인앱 플레이 모듈은 Phase 7에서 전부 삭제됐다.
 - 근거 요청서: `requests/_done/021-Quiz-add.md`
-- 관련 커밋: `f191b5b`, `8c9ab6c`
-- 현재 상태:
-  - 외부 퀴즈마스터 리다이렉트 의존을 줄이고 K-Bestie 내부 플레이 모듈로 전환 완료(당시 지시에 따름)
-  - 이후 대표님이 아키텍처를 독립 앱+iframe 방식으로 재확정(2026-07-27) — 이 커밋들은 삭제하지 않고 임시 보존, 완료/환불 콜백 계약(`8c9ab6c` 포함)은 계속 유효
-- Dev 배포: 됨(제거는 `outputs/play-app-rollback-plan-20260727.md` 단계 계획에 따라 나중에 진행)
+- 관련 커밋: `f191b5b`, `8c9ab6c` / 되돌림: `c7a76e2`(31개 파일 삭제)
+- 경과:
+  - 외부 퀴즈마스터 리다이렉트 의존을 줄이고 K-Bestie 내부 플레이 모듈로 전환(당시 지시에 따름)
+  - 이후 아키텍처가 **독립 앱 + 리버스 프록시**로 최종 확정되며(iframe 안은 채택되지 않음)
+    이 모듈은 중복 구현이 됐고, Dev E2E·캐너리 통과 후 삭제했다.
+  - 완료/환불 콜백 계약(`8c9ab6c` 포함)은 **삭제 대상이 아니었고 계속 유효**하다 —
+    독립 Quiz 앱이 그대로 호출한다.
+- Dev 배포: 삭제 반영 완료(`tsc`/`build` 통과, `api/quiz-play` 라우트 0개 확인)
 
 ### 014 추가요청 + 아이 홈 카드 색상 체계
 - 상태: 개발 완료·Dev 배포
@@ -191,9 +225,15 @@
 - 다음 행동: 대표님 결정 사항 확정 후 구현 라운드 시작
 
 ### 공통 Resume Session 기능 (아키텍처 전환으로 재검토 필요)
-- 상태: 병렬 세션에서 처리·`_done/` 이관됨(`requests/_done/feature-play-resume-session.md`) → **놀이 앱 아키텍처가 독립 앱+iframe으로 재확정되며 이어하기 로직 소유권 재검토 필요**
-- 이유: 퀴즈/MBTI 이어하기 로직이 K-Bestie 내부(`k_play_sessions`/`quiz_attempts` 직접 참조)에 있었으나, 놀이 실행이 독립 앱으로 넘어가면 이어하기 상태 관리도 각 독립 앱 책임으로 이동할 가능성이 큼
-- 다음 행동: `outputs/play-app-rollback-plan-20260727.md`의 단계 계획과 함께 재검토
+- 상태: 병렬 세션에서 처리·`_done/` 이관됨(`requests/_done/feature-play-resume-session.md`)
+  → **퀴즈마스터 몫은 소유권 이전 완료**, MBTI 몫은 재검토 대상으로 남음
+- 이유: 퀴즈/MBTI 이어하기 로직이 K-Bestie 내부(`k_play_sessions`/`quiz_attempts` 직접 참조)에
+  있었으나, 놀이 실행이 독립 앱으로 넘어가면 이어하기 상태 관리도 각 독립 앱 책임으로 이동
+- 퀴즈마스터 확정 결과: K-Bestie는 `/api/play/session`으로 이어하기 **가능 여부만** 판단하고
+  (`quiz_attempts` 읽기 전용 조회 — 계획에서 명시 승인된 예외), 실제 재개는 Quiz 앱이 자기
+  세션으로 처리한다. K-Bestie가 claim 라우트를 직접 호출하던 구조는 제거됐다
+  (`app/child/play/page.tsx`에 `quizAttemptClaimPath`/`lib/quiz/play/*` import 0개).
+- 다음 행동: MBTI 쪽 이어하기 소유권만 별도 재검토
 
 ## 5. 외부 의존·차단
 
