@@ -185,24 +185,39 @@ Relation을 먼저 정의하면 FK 순서상 entities가 선행해야 하므로 
 
 ### 2-2. `memory_facts`
 
+> 2026-07-27 대표님 확정 정책 반영 — 원문이 삭제된 뒤에도 fact는 살아남아야 하므로,
+> 아래 구조화 메타데이터(§8-2 참고)는 전부 이 테이블에 **영구 보존**한다. 원문 텍스트는
+> 여기 없다(`memory_evidence.source_text`에만, 임시).
+
 ```sql
 CREATE TABLE memory_facts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   child_id UUID NOT NULL REFERENCES child_profiles(id) ON DELETE CASCADE,
-  fact_type TEXT NOT NULL CHECK (fact_type IN ('interest','friend','family','dream','event','trait','pattern')),
+  fact_type TEXT NOT NULL CHECK (fact_type IN ('interest','friend','family','dream','event','trait','pattern')), -- = "category"
   subject TEXT,                    -- 이 사실이 누구/무엇에 대한 것인지(자유 텍스트, entity와는 별개)
   content TEXT NOT NULL,
   confidence NUMERIC(3,2) NOT NULL DEFAULT 0.5 CHECK (confidence BETWEEN 0 AND 1),
   importance NUMERIC(3,2) NOT NULL DEFAULT 0.5 CHECK (importance BETWEEN 0 AND 1),
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','superseded','rejected')),
-  -- + 같은 사실이 반복 언급될 때 새 행을 또 만들지 않고 여기로 합친다(§4 재확인 로직).
-  reinforcement_count INT NOT NULL DEFAULT 1,
-  last_reinforced_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- 대표님 지시: active를 무기한 확정하지 않는다 — 장기간 미확인/상충 시 전환 가능해야 함.
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','stale','superseded','invalidated','rejected')),
+  -- 이 사실이 최초 관찰된 맥락(원문 삭제 후에도 영구 보존).
+  source_type TEXT NOT NULL CHECK (source_type IN ('mission','free_chat')),
+  source_date DATE NOT NULL,       -- 최초 관찰된 business_date
+  session_type TEXT,               -- 'mission' | 'free' (chat_sessions.session_type와 동일 값)
+  -- 재확인(reinforcement) 추적 — 같은 사실이 반복 관찰되면 새 행을 만들지 않고 여기를 갱신.
+  source_count INT NOT NULL DEFAULT 1,
+  first_observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_confirmed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- 추출에 사용된 모델/프롬프트 버전(원문 없이도 "무엇이 이 결론을 냈는지" 재현/디버깅 가능하게).
+  model_version TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_memory_facts_child_id ON memory_facts(child_id);
 CREATE INDEX idx_memory_facts_child_status ON memory_facts(child_id, status);
+-- stale 전환 배치가 스캔할 대상(오래 미확인된 active fact)을 빠르게 찾기 위한 인덱스.
+CREATE INDEX idx_memory_facts_last_confirmed ON memory_facts(last_confirmed_at) WHERE status = 'active';
 ```
 
 ### 2-3. `memory_relations`
@@ -223,17 +238,37 @@ CREATE INDEX idx_memory_relations_child_id ON memory_relations(child_id);
 
 ### 2-4. `memory_evidence` (요청서 §7 "모든 Memory는 반드시 근거를 가져야 한다" — NOT NULL FK로 강제)
 
+> 2026-07-27 대표님 확정 정책 — **혼합 정책**(원문 임시 보존 + 원문과 무관한 요약 영구
+> 보존)으로 설계한다. 상세 근거·삭제 절차는 §8-2 "Memory Evidence Lifecycle" 참고.
+
 ```sql
 CREATE TABLE memory_evidence (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   memory_fact_id UUID NOT NULL REFERENCES memory_facts(id) ON DELETE CASCADE,
-  conversation_id UUID REFERENCES raw_daily_conversations(id) ON DELETE SET NULL,
-  message_id UUID,                 -- chat_messages.id (7일 후 원문 삭제되므로 FK 미설정, 아래 §6 참고)
-  source_text TEXT NOT NULL,       -- 원문 발췌(짧게) — 이것 자체가 이미 개인정보를 담을 수 있음(§8 참고)
+  -- ── 영구 보존(원문 인용이 아닌, LLM이 생성한 최소화된 구조화 근거 요약) ──
+  evidence_summary TEXT NOT NULL, -- 예: "미션 대화 중 축구를 좋아한다고 언급" — 원문 발췌 금지
+  -- ── 임시 보존(생성 후 최대 7일, raw_daily_conversations/corrected_daily_conversations/
+  --    chat_messages와 동일한 파기 리듬 — report_generated_at 기준 + 7일) ──
+  source_text TEXT,                -- NULL 허용 — 7일 후 반드시 NULL(20자 요약 등으로 축약해
+                                    -- 영구 보존하는 것도 금지, 대표님 명시 지시)
+  source_message_id UUID,          -- chat_messages.id — 원본 삭제 시 명시적으로 NULL 처리
+  source_conversation_id UUID,     -- raw_daily_conversations.id — 원본 삭제 시 명시적으로 NULL 처리
+  source_deleted_at TIMESTAMPTZ,   -- 원문(source_text/message_id/conversation_id)이 실제로
+                                    -- NULL 처리된 시각(파기 배치가 기록) — NULL이면 아직 보존 중
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_memory_evidence_fact_id ON memory_evidence(memory_fact_id);
+-- 파기 배치가 "아직 원문이 남아있는데 7일 지난 행"을 빠르게 찾기 위한 인덱스.
+CREATE INDEX idx_memory_evidence_pending_purge ON memory_evidence(created_at)
+  WHERE source_deleted_at IS NULL AND source_text IS NOT NULL;
 ```
+
+**의도적으로 하지 않는 것(대표님 명시 금지)**: `source_text`를 축약(20자 등)해서
+영구 보존하는 것, `source_message_id`/`source_conversation_id`가 가리키던 원본이
+삭제된 뒤에도 그 내용을 재구성할 수 있는 해시나 임베딩을 별도로 남기는 것 — 둘 다
+하지 않는다. `memory_embeddings`(§2-5)의 벡터는 **`memory_facts.content`(사실 요약,
+원문 아님)를 임베딩한 것**이며, `memory_evidence.source_text`를 임베딩하지 않는다
+— 원문 자체가 벡터로 남아 우회 복원되는 경로를 원천적으로 막는다.
 
 ### 2-5. `memory_embeddings`
 
@@ -294,18 +329,30 @@ GRANT ALL ON memory_entities, memory_facts, memory_relations, memory_evidence,
 ```
 1. corrected_daily_conversations에 그날 보정 대화가 쌓임(기존, 불변)
 2. Memory Extraction Agent가 그날치 report_eligible=true 대화만 읽음
-   (daily_reports가 쓰는 것과 동일한 조건 — 민감/무의미 대화는 애초에 제외됨)
-3. LLM 1회 호출로 Fact/Entity/Relation 후보를 함께 추출(JSON)
+   (daily_reports가 쓰는 것과 동일한 조건 — 민감/무의미 대화는 애초에 제외됨),
+   session_type(mission/free)·business_date를 함께 확보
+3. LLM 1회 호출(모델/프롬프트 버전 기록)로 Fact/Entity/Relation 후보를 함께 추출(JSON)
 4. 각 Fact 후보에 대해:
-   a. 임베딩 생성(gemini-embedding-001)
-   b. 같은 child_id 안에서 벡터 유사도 top-1 기존 fact 검색
-   c. 유사도가 임계치(예: 0.92) 이상이면 "동일 사실 재확인"으로 판단
-      → 기존 fact.reinforcement_count += 1, confidence 소폭 상향, memory_history에
-        action='reinforced' 기록(새 행 생성하지 않음 — §7-2 참고)
-   d. 임계치 미달이면 새 fact/entity/relation/evidence/embedding 행 생성,
+   a. memory_facts.content(추출된 사실 텍스트, 원문 아님)를 임베딩(gemini-embedding-001)
+   b. 같은 child_id 안에서 벡터 유사도 top-1 기존 active fact 검색
+   c. 유사도가 임계치(예: 0.92, §9 튜닝 대상) 이상이면 "동일 사실 재확인"으로 판단
+      → 기존 fact.source_count += 1, last_confirmed_at=now(), confidence 소폭 상향,
+        memory_history에 action='reinforced' 기록(새 행 생성하지 않음 — §4 참고)
+   d. 임계치 미달이면 새 fact 생성(source_type/source_date/session_type/
+      first_observed_at/last_confirmed_at/source_count=1/model_version/prompt_version
+      전부 채움) + entity/relation/evidence/embedding 행 생성,
       memory_history에 action='created' 기록
-5. 모든 fact는 최소 1개의 memory_evidence를 가져야 저장을 완료로 본다
-   (evidence 없이 fact만 insert되는 경로를 코드에서 금지 — 트랜잭션 단위로 처리)
+5. 모든 fact는 최소 1개의 memory_evidence를 가져야 저장을 완료로 본다(evidence_summary는
+   NOT NULL이라 반드시 채움, source_text는 이 시점엔 원문 발췌를 그대로 채움 — 임시 보존
+   시작). evidence 없이 fact만 insert되는 경로는 코드에서 금지(트랜잭션 단위 처리).
+6. (신규, 매일 배치) **원문 파기 배치** — 기존 raw_daily_conversations/
+   corrected_daily_conversations 파기(§0-2 표, `report_generated_at`+7일 기준)와 같은
+   실행에서, 그 시각 기준 7일이 지난 memory_evidence 행을 찾아
+   source_text=NULL, source_message_id=NULL, source_conversation_id=NULL,
+   source_deleted_at=now()로 갱신한다. evidence_summary/memory_facts는 손대지 않는다.
+7. (신규, 주 1회 배치) **stale 전환 배치** — `last_confirmed_at`이 오래(예: 90일, §9
+   튜닝 대상) 지난 `active` fact를 `stale`로 전환. 상충하는 새 fact가 감지되면(§4)
+   즉시 `invalidated`/`superseded`로 전환(재확인 대기 없이).
 ```
 
 ---
@@ -313,22 +360,28 @@ GRANT ALL ON memory_entities, memory_facts, memory_relations, memory_evidence,
 ## 4. Memory Lifecycle
 
 ```
-created(신규) → active(사용 중, 검색 대상)
-              → reinforced(같은 사실 반복 확인 — 새 행 아님, 기존 행 갱신)
-              → superseded(더 최신 사실이 이전 사실을 대체 — 예: "이사 가서 전 학교
-                친구와 연락 끊김"이 "민지와 친함"을 대체하면 이전 행 status=superseded,
-                새 행 생성 후 relation으로 연결 가능)
-              → rejected(추출 오류/저품질로 판단 — 검색 대상에서 제외, 삭제하지 않고
-                보존해 history 추적 가능하게 유지)
+created(신규, source_count=1)
+   → active(사용 중, 검색 대상)
+        ↺ 재확인될 때마다 source_count+=1, last_confirmed_at=now() (같은 행, 새 행 아님)
+   → stale(오래(예 90일) 재확인 안 됨 — 대표님 지시: active를 무기한 확정하지 않는다.
+     검색에서는 제외되지만 완전히 버리지는 않음 — 다시 관찰되면 active로 복귀 가능)
+   → superseded(더 최신 사실이 이전 사실을 대체 — 예: "이사 가서 전 학교 친구와 연락
+     끊김"이 "민지와 친함"을 대체하면 이전 행 status=superseded, 새 행 생성 후
+     relation으로 연결 가능)
+   → invalidated(상충하는 새 사실이 감지됨 — superseded와 달리 "새 사실로 대체"가
+     아니라 "이전 사실 자체가 틀렸다"로 판단된 경우. 예: "형이 있다"→"외동이라고 확인"처럼
+     교체가 아닌 정정)
+   → rejected(추출 시점에 이미 오류/저품질로 판단 — 검색 대상에서 제외, 삭제하지 않고
+     보존해 history 추적 가능하게 유지)
 ```
 
 `status != 'active'`인 fact는 벡터 검색 쿼리에서 `WHERE status = 'active'`로 항상
 제외한다(Retrieval 쿼리에 고정 조건으로 포함, §5 참고).
 
 **dedup 정책이 필요한 이유**: 현재 `generateMemorySummaries`처럼 매일 델리트+인서트하면
-"축구를 좋아한다"가 30일 쌓여 30개 fact가 된다. 새 파이프라인은 위 3-4단계로 반복
-사실을 하나의 fact로 합치고 `reinforcement_count`/`importance`만 올린다 — 이게 이
-설계의 핵심 차별점이다.
+"축구를 좋아한다"가 30일 쌓여 30개 fact가 된다. 새 파이프라인은 위 §3 3-4단계로 반복
+사실을 하나의 fact로 합치고 `source_count`/`confidence`/`last_confirmed_at`만 올린다
+— 이게 이 설계의 핵심 차별점이다.
 
 ---
 
@@ -396,19 +449,27 @@ Pipeline 구현) 이후 `usage_events`에 새 kind(`embedding`)를 추가해 실
 1. **격리**: 모든 신규 테이블 RLS는 서비스 롤 전용(§2-7) — `child_memory`와 동일 수준.
    벡터 검색 쿼리는 반드시 `child_id` 조건을 포함하며, 다른 아이 데이터 조회 경로 자체가
    코드상 존재하지 않는다(요청서 §8 절대 조건).
-2. **`memory_evidence.source_text`와 7일 원문 삭제 정책의 긴장 관계(대표님 확인 필요)**:
-   `chat_messages`는 기존 정책상 7일 후 삭제된다(retention 정책, 이미 구현됨). 그런데
-   `memory_evidence.source_text`는 그 원문의 발췌를 **복사**해 저장하므로, fact가
-   `status='active'`로 남아있는 한 원문 삭제 이후에도 그 발췌문은 계속 남는다 —
-   즉 이 설계는 "장기 기억의 근거 추적 가능성"과 "7일 원문 파기 원칙"이 구조적으로
-   충돌한다. 이 문서는 결정하지 않고 옵션만 제시한다:
-   - (a) `source_text`를 아주 짧게(예: 20자 이내) 제한해 "근거가 있다"는 사실만
-     남기고 원문 재구성이 불가능한 수준으로 축약.
-   - (b) `source_text`도 원문과 같은 보존 정책(생성 후 N일 뒤 NULL로 마스킹)을 적용.
-   - (c) 장기 기억(long_term에 해당하는 fact)만 evidence를 영구 보존 허용(이미
-     "장기 기억은 만료 없음"이라는 기존 `child_memory.long_term` 정책과 일관).
-   **Step 2 착수 전 대표님 결정 필요** — 이 문서는 옵션 (c)를 기본값으로 제안하되
-   확정하지 않는다.
+2. **Memory Evidence Lifecycle과 보존·삭제 정책 (2026-07-27 대표님 확정, 혼합 정책)**:
+   `chat_messages`/`raw_daily_conversations`/`corrected_daily_conversations`는 기존
+   정책상 `report_generated_at` 기준 7일 후 삭제된다(이미 구현됨). `memory_evidence`도
+   이 리듬에 정확히 맞춘다 — **원문(`source_text`/`source_message_id`/
+   `source_conversation_id`)은 생성 후 최대 7일만 임시 보존하고, 그 뒤 반드시 NULL로
+   마스킹한다.** 20자 등으로 축약해 영구 보존하는 것도 금지(원문 재구성 우회 경로가
+   되기 때문) — 삭제는 삭제다, 축약본으로 대체하지 않는다.
+   - **영구 보존은 원문이 아니라 `evidence_summary`(LLM이 생성한 최소화된 구조화 요약,
+     원문 인용 금지)와 `memory_facts`의 구조화 메타데이터
+     (`fact_type`/`confidence`/`importance`/`source_type`/`source_date`/`session_type`/
+     `first_observed_at`/`last_confirmed_at`/`source_count`/`model_version`/
+     `prompt_version`)만이다.** 이 필드들은 원문이 아니므로 삭제 대상이 아니다.
+   - **역복원 경로 차단**: 원본이 삭제된 뒤에도 그 내용을 재구성할 수 있는 해시·임베딩을
+     별도로 남기지 않는다 — 이 때문에 `memory_embeddings.embedding`은 반드시
+     `memory_facts.content`(추출된 사실 요약)를 임베딩한 것이어야 하고, 절대
+     `memory_evidence.source_text`(원문)를 임베딩해서는 안 된다(§2-4 재확인).
+   - **fact 자체의 생존**: fact는 원문(evidence) 삭제 후에도 그대로 유지된다. 이후 같은
+     사실이 다시 관찰되면 `source_count`/`last_confirmed_at`/`confidence`를 갱신한다
+     (§3-4c, §4). `active` 상태를 무기한 확정하지 않고, 장기간 미확인·상충 시
+     `stale`/`superseded`/`invalidated`로 전환한다(§4 Lifecycle).
+   - **파기 배치**: 위 §3 Step 6에서 매일 실행, 기존 파기 배치와 같은 트리거에 병행.
 3. **부모 조회 API(`GET /api/parent/memory/query`)**: 기존 절대 규칙("부모 원문 열람
    불가, RLS")과 정합성 확인 필요 — 이 API는 fact의 **요약/답변**만 반환하고 원문
    `source_text`는 API 응답에 포함하지 않는다(내부 근거 추적용으로만 DB에 존재, 부모
@@ -421,9 +482,11 @@ Pipeline 구현) 이후 `usage_events`에 새 kind(`embedding`)를 추가해 실
 
 ## 9. 대표님 확인이 필요한 미결 사항 (임의 결정하지 않음)
 
-1. §8-2 `memory_evidence.source_text` 보존 정책 — (a)/(b)/(c) 중 선택.
-2. 재확인(reinforcement) 유사도 임계치(위 예시 0.92)는 초안 값 — 실제 데이터로
-   튜닝 필요(Step 3~4 구현 중 재검토 대상으로 남김, 지금 확정하지 않음).
+1. ~~§8-2 `memory_evidence.source_text` 보존 정책~~ — **2026-07-27 확정(혼합 정책,
+   §2-4/§8-2 반영 완료).**
+2. 재확인(reinforcement) 유사도 임계치(위 예시 0.92)와 stale 전환 기준(위 예시 90일)은
+   초안 값 — 실제 데이터로 튜닝 필요(Step 3~4 구현 중 재검토 대상으로 남김, 지금
+   확정하지 않음).
 3. `memory_facts.fact_type`에 요청서 원안 5종(`interest/friend/family/dream/event`)
    외 `trait`(성향)/`pattern`(반복 패턴)을 이 문서에서 추가 제안했다 — 요청서 §1 목표
    문구("아이 성향... 반복 패턴")와 맞추기 위한 확장이며, 대표님 확인 후 확정.
