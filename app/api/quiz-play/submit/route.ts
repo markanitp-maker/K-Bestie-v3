@@ -15,7 +15,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getLeaderboardIdentity } from "@/lib/quiz/play/profile";
-import { getRankForUser } from "@/lib/quiz/play/leaderboard";
+import { getRankForChild } from "@/lib/quiz/play/leaderboard";
 import { scoreAttempt } from "@/lib/quiz/play/scoring";
 import { notifyCompletion } from "@/lib/quiz/play/rewardsCallback";
 import { apiError, parseJson, resolveAttempt } from "@/lib/quiz/play/route-helpers";
@@ -57,7 +57,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     correctByQuestionId,
   });
 
-  const identity = await getLeaderboardIdentity(userId);
+  // 리더보드 identity는 로그인 계정(userId)이 아니라 이 attempt가 귀속된 아이
+  // (attempt.child_id)를 기준으로 조회한다 — 보호자 한 명이 여러 자녀를 플레이시켜도
+  // 자녀별로 별도 행이 쌓여야 하기 때문. child_id가 없으면 누구의 점수인지 서버가
+  // 단정할 수 없으므로 리더보드 누적은 건너뛰고 점수/상태/타이머만 확정한다.
+  // identity 조회가 실패해도 아이의 점수 확정(status/타이머/score)은 절대 막지 않는다.
+  // 실패하면 이번 판만 리더보드에 안 올라갈 뿐, 제출 자체는 정상 완료돼야 한다.
+  let identity: Awaited<ReturnType<typeof getLeaderboardIdentity>> = null;
+  try {
+    identity = await getLeaderboardIdentity(attempt.child_id);
+  } catch (err) {
+    console.error(`[quiz-leaderboard] identity lookup failed for attempt ${attempt.id}:`, err);
+  }
 
   const { data, error } = await supabase.rpc("quiz_submit_attempt", {
     p_attempt_id: attempt.id,
@@ -73,7 +84,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   let rank: number | null = null;
   try {
-    rank = await getRankForUser(userId);
+    rank = await getRankForChild(attempt.child_id);
   } catch {
     rank = null;
   }
@@ -116,6 +127,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     accumulated_time_seconds: finalAccumulated,
     cumulative_score: row.result_cumulative_score,
     cumulative_time: row.result_cumulative_time,
+    completed_attempts: row.result_completed_attempts,
     rank,
     status: "submitted",
     already_submitted: row.result_already_submitted,

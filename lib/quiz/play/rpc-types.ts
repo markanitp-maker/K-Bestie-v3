@@ -22,6 +22,7 @@ export interface SubmitAttemptRow {
   result_accumulated_time: number | null;
   result_cumulative_score: number | null;
   result_cumulative_time: number | null;
+  result_completed_attempts: number | null;
   result_already_submitted: boolean;
   result_found: boolean;
 }

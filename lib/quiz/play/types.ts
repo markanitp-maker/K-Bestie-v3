@@ -88,7 +88,14 @@ export interface QuizQuestionBankRow {
 
 export type QuizQuestionPublic = Omit<QuizQuestionBankRow, "correct_option_index">;
 
+/**
+ * quiz_leaderboard 행. 고유 단위는 child_id(아이)다 — 같은 보호자 계정으로 여러
+ * 자녀를 플레이시켜도 자녀마다 별도 행이 된다. user_id는 "마지막으로 이 아이를
+ * 플레이시킨 로그인 계정" 메타데이터일 뿐 고유키가 아니다.
+ * cumulative_time은 초 단위(double precision)다.
+ */
 export interface QuizLeaderboardRow {
+  child_id: string;
   user_id: string;
   name: string;
   login_id: string;
@@ -96,12 +103,23 @@ export interface QuizLeaderboardRow {
   is_reward_eligible: boolean;
   cumulative_score: number;
   cumulative_time: number;
+  completed_attempts: number;
   created_at: string;
   updated_at: string;
 }
 
-export type QuizLeaderboardPublicEntry = Omit<QuizLeaderboardRow, "login_id"> & {
+/**
+ * 클라이언트로 나가는 리더보드 항목. child_id/user_id/login_id 원본은 싣지 않는다
+ * (다른 가정 아이의 UUID·로그인 아이디 노출 방지). 렌더 key/본인 식별에는
+ * 되돌릴 수 없는 entry_key와 서버가 계산한 is_self만 쓴다.
+ */
+export type QuizLeaderboardPublicEntry = Omit<
+  QuizLeaderboardRow,
+  "child_id" | "user_id" | "login_id"
+> & {
+  entry_key: string;
   masked_id: string;
+  is_self: boolean;
 };
 
 export interface QuizBugReportRow {

@@ -19,7 +19,7 @@ import {
   QUIZ_HEARTBEAT_PATH,
   QUIZ_BACKGROUND_PATH,
   QUIZ_BUG_REPORT_PATH,
-  QUIZ_LEADERBOARD_PATH,
+  quizLeaderboardPath,
   quizAttemptHydratePath,
   type QuizRedeemResponse,
   type QuizStartResponse,
@@ -81,6 +81,7 @@ export default function QuizPlayScreen({
   const [bugReportState, setBugReportState] = useState<BugReportState>("idle");
   const [isAdvancing, setIsAdvancing] = useState(false);
   const [leaderboard, setLeaderboard] = useState<QuizLeaderboardPublicEntry[] | null>(null);
+  const [leaderboardSelf, setLeaderboardSelf] = useState<QuizLeaderboardResponse["self"]>(null);
 
   // ---- 0) 이어하기: 이미 시작된 attempt가 있으면 redeem/과목선택을 건너뛰고 서버
   // 상태를 그대로 재확인해 복원한다("이어하기"는 절대 초기화·재출제하지 않는다). ----
@@ -120,6 +121,7 @@ export default function QuizPlayScreen({
           accumulated_time_seconds: data.attempt.accumulated_time_seconds,
           cumulative_score: null,
           cumulative_time: null,
+          completed_attempts: null,
           rank: null,
           status: "submitted",
           already_submitted: true,
@@ -290,10 +292,12 @@ export default function QuizPlayScreen({
 
     async function loadLeaderboard() {
       try {
-        const res = await fetch(QUIZ_LEADERBOARD_PATH);
+        const res = await fetch(quizLeaderboardPath(childId));
         if (!res.ok || ignore) return;
         const data = (await res.json()) as QuizLeaderboardResponse;
-        if (!ignore) setLeaderboard(data.entries);
+        if (ignore) return;
+        setLeaderboard(data.entries);
+        setLeaderboardSelf(data.self);
       } catch {
         // leave leaderboard as null — section renders empty, nothing else affected
       }
@@ -303,7 +307,7 @@ export default function QuizPlayScreen({
     return () => {
       ignore = true;
     };
-  }, [phase]);
+  }, [phase, childId]);
 
   const currentQuestion = questions[position];
 
@@ -544,12 +548,15 @@ export default function QuizPlayScreen({
               {result?.score ?? 0}점
             </p>
             <p className="mt-3 text-base text-k-text-secondary">
-              {result?.rank != null ? `현재 순위: ${result.rank}위` : "잘했어요!"}
+              {(result?.rank ?? leaderboardSelf?.rank) != null
+                ? `현재 순위: ${result?.rank ?? leaderboardSelf?.rank}위`
+                : "잘했어요!"}
             </p>
           </div>
 
           <div className="w-full max-w-sm rounded-3xl p-6 text-left shadow-md" style={{ background: "var(--color-k-surface)" }}>
-            <h2 className="mb-3 text-lg font-semibold text-k-text-primary">리더보드</h2>
+            <h2 className="mb-1 text-lg font-semibold text-k-text-primary">리더보드</h2>
+            <p className="mb-3 text-xs text-k-text-secondary">누적 점수 순위예요</p>
             {leaderboard === null ? (
               <p className="text-sm text-k-text-secondary">불러오는 중...</p>
             ) : leaderboard.length === 0 ? (
@@ -558,16 +565,49 @@ export default function QuizPlayScreen({
               <ol className="flex flex-col gap-2">
                 {leaderboard.map((entry, index) => (
                   <li
-                    key={entry.user_id}
-                    className="flex items-center justify-between rounded-2xl bg-white px-3 py-2 text-sm"
+                    key={entry.entry_key}
+                    className="flex items-center justify-between rounded-2xl px-3 py-2 text-sm"
+                    style={{
+                      background: entry.is_self ? "var(--color-k-warning-bg)" : "#ffffff",
+                      outline: entry.is_self ? "2px solid var(--color-k-orange)" : undefined,
+                    }}
                   >
                     <span className="font-medium text-k-text-primary">
                       {index + 1}. {entry.name} ({entry.masked_id})
                     </span>
-                    <span style={{ color: "var(--color-k-sky-blue)" }}>{entry.cumulative_score}점</span>
+                    <span style={{ color: "var(--color-k-sky-blue)" }}>
+                      {entry.cumulative_score}점
+                    </span>
                   </li>
                 ))}
               </ol>
+            )}
+
+            {/* 상위 목록 밖이어도 본인 순위·누적 기록은 항상 따로 보여준다. */}
+            {leaderboardSelf && !leaderboard?.some((e) => e.is_self) && (
+              <div
+                className="mt-3 flex items-center justify-between rounded-2xl px-3 py-2 text-sm"
+                style={{
+                  background: "var(--color-k-warning-bg)",
+                  outline: "2px solid var(--color-k-orange)",
+                }}
+              >
+                <span className="font-medium text-k-text-primary">
+                  {leaderboardSelf.rank}. {leaderboardSelf.entry.name} (
+                  {leaderboardSelf.entry.masked_id})
+                </span>
+                <span style={{ color: "var(--color-k-sky-blue)" }}>
+                  {leaderboardSelf.entry.cumulative_score}점
+                </span>
+              </div>
+            )}
+
+            {leaderboardSelf && (
+              <p className="mt-3 text-xs text-k-text-secondary">
+                누적 {leaderboardSelf.entry.cumulative_score}점 ·{" "}
+                {Math.round(leaderboardSelf.entry.cumulative_time)}초 ·{" "}
+                {leaderboardSelf.entry.completed_attempts}회 완료
+              </p>
             )}
           </div>
 

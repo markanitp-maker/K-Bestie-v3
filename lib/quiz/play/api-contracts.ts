@@ -14,6 +14,13 @@ export const QUIZ_BACKGROUND_PATH = "/api/quiz-play/background";
 export const QUIZ_BUG_REPORT_PATH = "/api/quiz-play/bug-report";
 export const QUIZ_LEADERBOARD_PATH = "/api/quiz-play/leaderboard";
 
+/** 리더보드는 아이(child_id) 단위이므로 본인 순위를 받으려면 childId를 실어 보낸다. */
+export function quizLeaderboardPath(childId?: string | null): string {
+  return childId
+    ? `${QUIZ_LEADERBOARD_PATH}?childId=${encodeURIComponent(childId)}`
+    : QUIZ_LEADERBOARD_PATH;
+}
+
 export function quizAttemptHydratePath(attemptId: string): string {
   return `/api/quiz-play/attempt/${attemptId}`;
 }
@@ -95,10 +102,17 @@ export interface QuizSubmitRequest {
 }
 
 export interface QuizSubmitResponse {
+  /** 이번 판 점수. */
   score: number;
+  /** 이번 판 서버 확정 풀이시간(초). */
   accumulated_time_seconds: number;
+  /** 이 아이(child_id)의 누적 점수. 리더보드 행이 없으면 null. */
   cumulative_score: number | null;
+  /** 이 아이의 누적 풀이시간(초). */
   cumulative_time: number | null;
+  /** 이 아이의 누적 완료 횟수. */
+  completed_attempts: number | null;
+  /** 이 아이의 현재 순위(상위 목록 밖이어도 채워진다). */
   rank: number | null;
   status: "submitted";
   already_submitted: boolean;
@@ -122,9 +136,15 @@ export interface QuizBackgroundResponse {
   accumulated_time_seconds: number;
 }
 
-/** GET /api/quiz-play/leaderboard — 독립 퀴즈마스터 프로젝트 /api/quiz/leaderboard에서 포팅. */
+/**
+ * GET /api/quiz-play/leaderboard[?childId=...]
+ * entries는 시드(더미)와 실사용자를 같은 정렬 풀에서 뽑은 상위 N명이고,
+ * self는 그 상위 목록 밖이더라도 항상 채워지는 "이 아이 본인" 항목이다
+ * (아직 한 판도 완료하지 않아 리더보드 행이 없으면 null).
+ */
 export interface QuizLeaderboardResponse {
   entries: QuizLeaderboardPublicEntry[];
+  self: { rank: number; entry: QuizLeaderboardPublicEntry } | null;
 }
 
 /** GET /api/quiz-play/attempt/active — 독립 퀴즈마스터 프로젝트에서 포팅. */
