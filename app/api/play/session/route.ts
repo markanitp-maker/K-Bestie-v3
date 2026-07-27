@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
-import { ATTEMPT_MAX_AGE_MS } from "@/lib/quiz/play/route-helpers";
+import { ATTEMPT_MAX_AGE_MS } from "@/lib/quiz/attemptWindow";
 
 export const runtime = "nodejs";
 

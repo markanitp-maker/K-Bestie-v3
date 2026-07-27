@@ -3,10 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isAdminEmail } from "@/lib/admin/isAdminEmail";
 import { getSupabaseUrl, getSupabaseAnonKey } from "@/lib/supabase/env";
 import {
-  QUIZ_PROXY_COOKIE,
   QUIZ_PROXY_INTERNAL_PREFIX,
   QUIZ_PROXY_PATH_PREFIX,
-  isQuizProxyEnabled,
   isQuizProxyPath,
 } from "@/lib/play/quizProxyGate";
 
@@ -22,25 +20,19 @@ import {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // ── /play/quiz has-게이트 (계획 Phase 4.2) ──────────────────────────────────
+  // ── /play/quiz → 독립 Quiz 배포 리버스 프록시 ──────────────────────────────
   // 이 분기는 반드시 middleware()의 **가장 첫 문장**이어야 한다. 아래
   // supabase.auth.getUser()보다 앞서지 않으면 (a) 리전 성능 문제(7513d8a) 이후
   // 의도적으로 matcher를 좁혀 없앤 불필요한 세션 재검증 왕복이 /play/quiz의 모든
-  // 요청(정적 자산 포함)에서 되살아나고, (b) 게이트 대상 요청이 K-Bestie 로그인
-  // 여부와 무관하게 /login으로 잘못 튕겨나간다.
+  // 요청(정적 자산 포함)에서 되살아나고, (b) 이 요청이 K-Bestie 로그인 여부와
+  // 무관하게 /login으로 잘못 튕겨나간다(인증은 프록시 핸들러가 직접 처리한다).
+  //
+  // 계획 Phase 7에서 인앱 레거시 구현(app/play/quiz/page.tsx)을 삭제하면서
+  // `quiz_proxy` has-게이트도 함께 제거했다 — 되돌아갈 대상이 사라진 뒤에도 게이트를
+  // 남겨두면 `quiz_proxy=off` 쿠키를 들고 있는 브라우저(캐너리 기간에 실제로 설정한
+  // 테스터들)가 폴백 라우트 부재로 영구 404를 받는다. 즉 "죽은 코드"가 아니라 함정이
+  // 되므로, 롤백 수단이 사라진 시점에 게이트도 같이 없애는 것이 정직하다.
   if (isQuizProxyPath(pathname)) {
-    if (!isQuizProxyEnabled(request.cookies.get(QUIZ_PROXY_COOKIE)?.value)) {
-      // 게이트 OFF(기본값) — 기존 인앱 구현(app/play/quiz/page.tsx)을 그대로 서빙.
-      // 이 응답은 **쿠키에 따라 달라지므로 공유 캐시에 저장되면 안 된다**. 저장되는
-      // 순간 이후 요청이 엣지 캐시에서 바로 응답돼 게이트 판정이 아예 일어나지 않고,
-      // `quiz_proxy=on`이 조용히 무시된다(E2E에서 실제로 발생: `x-vercel-cache: HIT`,
-      // age 600초+). app/play/quiz/layout.tsx의 force-dynamic과 이중 방어.
-      const passthrough = NextResponse.next();
-      passthrough.headers.set("cache-control", "private, no-store, must-revalidate");
-      return passthrough;
-    }
-    // 게이트 ON — 쿠키 스트립이 가능한 Route Handler 프록시로 내부 rewrite.
-    // 사용자에게 보이는 URL은 /play/quiz 그대로다.
     const proxyUrl = request.nextUrl.clone();
     proxyUrl.pathname = `${QUIZ_PROXY_INTERNAL_PREFIX}${pathname.slice(QUIZ_PROXY_PATH_PREFIX.length)}`;
     return NextResponse.rewrite(proxyUrl);

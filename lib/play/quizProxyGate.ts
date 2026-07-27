@@ -12,9 +12,6 @@
  * 그 반대인 상태가 생긴다.
  */
 
-/** has-게이트 쿠키 이름. `on`이면 프록시, `off`면 인앱 구현. */
-export const QUIZ_PROXY_COOKIE = "quiz_proxy";
-
 /** 사용자에게 보이는 경로 prefix. */
 export const QUIZ_PROXY_PATH_PREFIX = "/play/quiz";
 
@@ -47,16 +44,4 @@ export function isQuizProxyPath(pathname: string): boolean {
     pathname === QUIZ_PROXY_PATH_PREFIX ||
     pathname.startsWith(`${QUIZ_PROXY_PATH_PREFIX}/`)
   );
-}
-
-/**
- * 게이트 판정. 쿠키가 명시적으로 지정되면 그 값이 최우선(롤백 레버), 없으면
- * `QUIZ_PROXY_DEFAULT` 환경변수의 기본값을 따른다.
- *
- * 기본값은 OFF다 — 컷오버(`QUIZ_PROXY_DEFAULT=on`)는 E2E 통과 후 별도 작업(Phase 4.6).
- */
-export function isQuizProxyEnabled(cookieValue: string | undefined): boolean {
-  if (cookieValue === "on") return true;
-  if (cookieValue === "off") return false;
-  return process.env.QUIZ_PROXY_DEFAULT === "on";
 }

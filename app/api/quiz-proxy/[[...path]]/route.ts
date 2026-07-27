@@ -1,8 +1,8 @@
 /**
  * `/play/quiz` reverse-proxy — Route Handler 구현 (계획 Phase 4 + Phase 0.7 errata).
  *
- * 사용자에게 보이는 경로는 `/play/quiz/**`이고, middleware가 has-게이트(`quiz_proxy=on`)
- * 통과분만 `/api/quiz-proxy/**`로 rewrite해 이 핸들러로 보낸다. 여기서 업스트림
+ * 사용자에게 보이는 경로는 `/play/quiz/**`이고, middleware가 이를 `/api/quiz-proxy/**`로
+ * 내부 rewrite해 이 핸들러로 보낸다. 여기서 업스트림
  * (독립 Quiz Vercel 배포) 요청을 `fetch()`로 직접 조립한다.
  *
  * **왜 `next.config.ts`의 `rewrites()`나 `NextResponse.rewrite()`가 아니라 이 방식인가**:
@@ -19,7 +19,9 @@
  *    수용(같은 리뷰 기준 적용)하되 (a) 모든 프록시 요청에 서버간 인증 헤더를 붙여 raw
  *    업스트림 URL이 최종 사용자에게 직접 사용 불가능하게 하고, (b) 프록시 자체가
  *    K-Bestie 인증 세션을 요구한다.
- *  - **`quiz_proxy` 쿠키는 롤아웃 스위치이지 보안 경계가 아니다.**
+ *  - 롤아웃용 `quiz_proxy` has-게이트는 계획 Phase 7에서 레거시 인앱 구현과 함께
+ *    제거했다(되돌아갈 폴백이 없어진 뒤에도 남겨두면 `off` 쿠키를 든 브라우저가
+ *    영구 404를 받는 함정이 된다). 인증은 아래 2번의 세션 검사로만 판정한다.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -27,10 +29,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   QUIZ_ERROR_PATH,
-  QUIZ_PROXY_COOKIE,
   QUIZ_PROXY_INTERNAL_PREFIX,
   QUIZ_PROXY_PATH_PREFIX,
-  isQuizProxyEnabled,
 } from "@/lib/play/quizProxyGate";
 
 export const runtime = "nodejs";
@@ -111,13 +111,7 @@ function resolveAppHost(request: NextRequest): string | null {
 }
 
 async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
-  // ── 1. 롤아웃 게이트(보안 경계 아님) ───────────────────────────────────────
-  // middleware를 거치지 않고 `/api/quiz-proxy/*`로 직접 들어온 요청도 동일하게 막는다.
-  if (!isQuizProxyEnabled(request.cookies.get(QUIZ_PROXY_COOKIE)?.value)) {
-    return new NextResponse("Not Found", { status: 404 });
-  }
-
-  // ── 2. 경로 도출 ───────────────────────────────────────────────────────────
+  // ── 1. 경로 도출 ───────────────────────────────────────────────────────────
   // middleware rewrite 후의 pathname은 내부 prefix지만, 런타임에 따라 원래
   // `/play/quiz` prefix가 그대로 보일 수도 있으므로 둘 다 받는다. 둘 다 아니면
   // 조용히 루트로 프록시하지 말고(무성 오배송) 거절한다.
@@ -140,7 +134,7 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
   /** 사용자에게 보이는 원래 경로. 로그인 리다이렉트의 `from`으로 쓴다. */
   const publicPath = `${QUIZ_PROXY_PATH_PREFIX}${suffix}`;
 
-  // ── 3. K-Bestie 인증 세션 필수 ─────────────────────────────────────────────
+  // ── 2. K-Bestie 인증 세션 필수 ─────────────────────────────────────────────
   // 게이트 쿠키는 롤아웃 스위치일 뿐이므로, 업스트림으로 나가기 전에 실제 세션을
   // 확인한다(대표 결정 task #45-b).
   const supabase = await createClient();
@@ -161,7 +155,7 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  // ── 4. 업스트림 설정(둘 다 fail-closed) ────────────────────────────────────
+  // ── 3. 업스트림 설정(둘 다 fail-closed) ────────────────────────────────────
   const upstreamOrigin = process.env.QUIZ_UPSTREAM_ORIGIN?.replace(/\/+$/, "");
   if (!upstreamOrigin) {
     console.error("[quiz-proxy] QUIZ_UPSTREAM_ORIGIN 미설정 — /play/quiz 프록시 불가");
@@ -195,7 +189,7 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
     return new NextResponse("Bad Request", { status: 400 });
   }
 
-  // ── 5. Outbound 헤더 조립(쿠키 스트립 + 시크릿 부착을 같은 패스에서) ───────
+  // ── 4. Outbound 헤더 조립(쿠키 스트립 + 시크릿 부착을 같은 패스에서) ───────
   const outboundHeaders = new Headers();
   request.headers.forEach((value, key) => {
     if (REQUEST_HEADER_ALLOWLIST.has(key)) outboundHeaders.set(key, value);
@@ -227,7 +221,7 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
     outboundHeaders.set("x-vercel-set-bypass-cookie", "false");
   }
 
-  // ── 6. 본문 상한 ───────────────────────────────────────────────────────────
+  // ── 5. 본문 상한 ───────────────────────────────────────────────────────────
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const declaredLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BODY_BYTES) {
@@ -243,7 +237,7 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
     }
   }
 
-  // ── 7. 업스트림 호출 ───────────────────────────────────────────────────────
+  // ── 6. 업스트림 호출 ───────────────────────────────────────────────────────
   let upstreamResponse: Response;
   try {
     upstreamResponse = await fetch(upstreamUrl, {
@@ -263,7 +257,7 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
     return new NextResponse("Bad Gateway", { status: 502 });
   }
 
-  // ── 8. 응답 헤더 필터링 ────────────────────────────────────────────────────
+  // ── 7. 응답 헤더 필터링 ────────────────────────────────────────────────────
   const responseHeaders = new Headers();
   upstreamResponse.headers.forEach((value, key) => {
     if (RESPONSE_HEADER_ALLOWLIST.has(key)) responseHeaders.set(key, value);

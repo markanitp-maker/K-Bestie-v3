@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import FeedbackTab from "./FeedbackTab";
+import ManualReportingTab from "./ManualReportingTab";
 import {
   ResponsiveContainer,
   LineChart,
@@ -499,7 +500,7 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback" | "beta-applications";
+type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting";
 
 const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
@@ -509,6 +510,7 @@ const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "account-restore", label: "계정 복구 승인" },
   { id: "feedback", label: "문의·건의·버그 접수" },
   { id: "beta-applications", label: "베타 신청 관리" },
+  { id: "manual-reporting", label: "리포팅 수동 실행" },
 ];
 
 interface ProviderSwitchRow {
@@ -1077,7 +1079,9 @@ function AdminDashboard() {
     <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
       {/* 왼쪽 사이드바 네비게이션 */}
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, width: 180, flexShrink: 0 }}>
-        {ADMIN_NAV_ITEMS.map((item) => (
+        {ADMIN_NAV_ITEMS.map((item) => {
+          if (item.id === "manual-reporting" && process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod") return null;
+          return (
           <button
             key={item.id}
             onClick={() => setPage(item.id)}
@@ -1095,7 +1099,8 @@ function AdminDashboard() {
           >
             {item.label}
           </button>
-        ))}
+          );
+        })}
       </nav>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1110,6 +1115,8 @@ function AdminDashboard() {
           <FeedbackTab />
         ) : page === "beta-applications" ? (
           <BetaApplicationsTab />
+        ) : page === "manual-reporting" ? (
+          <ManualReportingTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
