@@ -21,6 +21,7 @@
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { GoogleAuth } from "npm:google-auth-library@9";
+import { GoogleGenAI } from "npm:@google/genai@2.8.0";
 import {
   REPORT_PROMPT_TEMPLATE,
   WEEKLY_REPORT_PROMPT_TEMPLATE,
@@ -789,31 +790,34 @@ const EXTRACTION_MAX_OUTPUT_TOKENS = 4096; // 실측: 1024로는 다중 fact+ent
 
 /** gemini-embedding-001(Vertex) 호출 — memory_facts.content(추출 요약)만 임베딩한다.
  *  절대 원문(대화 발췌)을 임베딩하지 않는다(원본 삭제 후 역복원 경로 차단, 설계 문서 §2-4). */
-async function embedText(text: string, taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY"): Promise<number[]> {
+let cachedGenAIClient: GoogleGenAI | null = null;
+
+/** codex 리뷰 지적(하드룰 위반): 처음엔 이 파일 기존 callVertex()와 동일하게 raw fetch로
+ *  구현했었는데, 이 프로젝트의 절대 규칙("AI SDK는 @google/genai만 사용")을 어긴 것이었다.
+ *  임베딩은 신규 코드라 예외 없이 SDK로 교체한다(callVertex는 기존 코드라 이번 범위에서
+ *  건드리지 않음 — 별도 이슈). */
+function getGenAIClient(): GoogleGenAI {
+  if (cachedGenAIClient) return cachedGenAIClient;
+  const keyJson = Deno.env.get("GCP_VERTEX_SA_KEY_JSON");
   const project = Deno.env.get("GOOGLE_CLOUD_PROJECT");
+  if (!keyJson) throw new Error("GCP_VERTEX_SA_KEY_JSON not configured");
   if (!project) throw new Error("GOOGLE_CLOUD_PROJECT not configured");
   const location = Deno.env.get("GOOGLE_CLOUD_LOCATION") || "us-central1";
-  const accessToken = await getVertexAccessToken();
-  const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+  const credentials = JSON.parse(keyJson);
+  cachedGenAIClient = new GoogleGenAI({ vertexai: true, project, location, googleAuthOptions: { credentials } });
+  return cachedGenAIClient;
+}
 
-  const res = await fetch(
-    `https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${EMBEDDING_MODEL}:predict`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
-      body: JSON.stringify({
-        instances: [{ content: text, task_type: taskType }],
-        parameters: { outputDimensionality: EMBEDDING_DIMENSIONS },
-      }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`Vertex embedding API ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  }
-  const data = await res.json();
-  const values = data?.predictions?.[0]?.embeddings?.values;
+async function embedText(text: string, taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY"): Promise<number[]> {
+  const ai = getGenAIClient();
+  const response = await ai.models.embedContent({
+    model: EMBEDDING_MODEL,
+    contents: text,
+    config: { taskType, outputDimensionality: EMBEDDING_DIMENSIONS },
+  });
+  const values = response.embeddings?.[0]?.values;
   if (!Array.isArray(values) || values.length !== EMBEDDING_DIMENSIONS) {
-    throw new Error(`Vertex embedding API 응답 형식 오류(차원 ${values?.length ?? "?"})`);
+    throw new Error(`임베딩 응답 형식 오류(차원 ${values?.length ?? "?"})`);
   }
   return values;
 }
@@ -842,6 +846,9 @@ export interface MemoryFactBatchResult {
   factsPromoted: number;
   skipped: string[];
   errors: { childId: string; error: string }[];
+  // codex 지적: entity upsert/relation insert 실패가 조용히 무시되고 있었다 — 전체 fact
+  // 처리를 막지는 않되(부분 실패로 흐름을 끊지 않음), 결과에는 보이게 한다.
+  entityRelationWarnings: { childId: string; warning: string }[];
 }
 
 const TRAIT_PATTERN_TYPES = new Set(["trait", "pattern"]);
@@ -853,6 +860,7 @@ const TRAIT_PATTERN_TYPES = new Set(["trait", "pattern"]);
 export async function generateMemoryFacts(db: SupabaseClient, targetDate: string): Promise<MemoryFactBatchResult> {
   const result: MemoryFactBatchResult = {
     childrenProcessed: [], factsCreated: 0, factsReinforced: 0, factsPromoted: 0, skipped: [], errors: [],
+    entityRelationWarnings: [],
   };
 
   // generateDailyReports와 동일한 소스·조건(report_eligible=true) — raw_daily_conversations
@@ -957,9 +965,21 @@ ${transcriptText}
 
       const facts = Array.isArray(parsed.facts) ? parsed.facts : [];
       const allowedFactTypes = new Set(["interest", "friend", "family", "dream", "event", "trait", "pattern"]);
+      // codex 지적: responseMimeType(이 프로젝트 하드룰로 금지)을 쓰지 않고도, 파싱 후
+      // 필드 형식을 직접 검증한다 — 프롬프트 지시만으로는 형식을 강제할 수 없다.
+      const clamp01 = (v: unknown, fallback: number): number => {
+        const n = typeof v === "number" && Number.isFinite(v) ? v : fallback;
+        return Math.min(1, Math.max(0, n));
+      };
 
       for (const rawFact of facts) {
-        if (!allowedFactTypes.has(rawFact.fact_type) || !rawFact.content || !rawFact.evidence_summary) continue;
+        if (
+          typeof rawFact.fact_type !== "string" || !allowedFactTypes.has(rawFact.fact_type) ||
+          typeof rawFact.content !== "string" || !rawFact.content.trim() ||
+          typeof rawFact.evidence_summary !== "string" || !rawFact.evidence_summary.trim()
+        ) continue;
+        rawFact.confidence = clamp01(rawFact.confidence, 0.5);
+        rawFact.importance = clamp01(rawFact.importance, 0.5);
 
         const embedding = await embedText(rawFact.content, "RETRIEVAL_DOCUMENT");
         const embeddingLiteral = toPgVectorLiteral(embedding);
@@ -967,13 +987,37 @@ ${transcriptText}
         const { data: matchRows, error: matchErr } = await db.rpc("find_similar_memory_fact", {
           p_child_id: childId,
           p_embedding: embeddingLiteral,
+          p_fact_type: rawFact.fact_type, // codex 지적: 타입 필터 없으면 다른 유형과 잘못 합쳐짐
           p_similarity_threshold: REINFORCEMENT_SIMILARITY_THRESHOLD,
         });
         if (matchErr) throw new Error(`벡터 유사도 검색 실패: ${matchErr.message}`);
         const match = Array.isArray(matchRows) ? matchRows[0] : matchRows;
 
         if (match?.fact_id) {
-          // 재확인 — 기존 fact(candidate 포함) 갱신, 새 행 생성하지 않음.
+          // codex 지적: 같은 날짜에 배치를 재실행하면(수동 재시도 등) 같은 대화를 매번
+          // "새로운 독립 evidence"로 세어 source_count를 계속 올리던 문제 — evidence를
+          // (fact_id, source_date) 유니크 인덱스로 먼저 insert하고, 충돌(=이미 오늘자
+          // evidence가 있음)이면 오늘은 이미 반영됐다고 보고 카운트를 올리지 않는다.
+          const { data: evInserted, error: evErr } = await db
+            .from("memory_evidence")
+            .upsert(
+              {
+                memory_fact_id: match.fact_id,
+                evidence_summary: rawFact.evidence_summary,
+                source_text: rawFact.source_excerpt ?? null,
+                source_date: targetDate,
+              },
+              { onConflict: "memory_fact_id,source_date", ignoreDuplicates: true },
+            )
+            .select("id");
+          if (evErr) throw new Error(`evidence 저장 실패: ${evErr.message}`);
+
+          if (!evInserted || evInserted.length === 0) {
+            // 오늘자 evidence가 이미 있었음(같은 날 재실행) — 독립적인 재확인이 아니므로
+            // source_count/confidence/승격 판단을 건드리지 않고 건너뛴다.
+            continue;
+          }
+
           const { data: existingFact, error: fetchErr } = await db
             .from("memory_facts")
             .select("id, status, source_count, confidence")
@@ -997,13 +1041,6 @@ ${transcriptText}
             })
             .eq("id", match.fact_id);
           if (updErr) throw new Error(`fact 갱신 실패: ${updErr.message}`);
-
-          const { error: evErr } = await db.from("memory_evidence").insert({
-            memory_fact_id: match.fact_id,
-            evidence_summary: rawFact.evidence_summary,
-            source_text: rawFact.source_excerpt ?? null,
-          });
-          if (evErr) throw new Error(`evidence 저장 실패: ${evErr.message}`);
 
           await db.from("memory_history").insert({
             memory_id: match.fact_id,
@@ -1051,6 +1088,7 @@ ${transcriptText}
           memory_fact_id: factId,
           evidence_summary: rawFact.evidence_summary,
           source_text: rawFact.source_excerpt ?? null,
+          source_date: targetDate,
         });
         if (evInsertErr) throw new Error(`evidence 저장 실패: ${evInsertErr.message}`);
 
@@ -1081,7 +1119,12 @@ ${transcriptText}
             .select("id")
             .single();
           if (entErr) {
-            console.error("[generateMemoryFacts] entity upsert 실패(계속 진행):", entErr.message);
+            // codex 지적: 조용히 넘어가면 이 entity를 참조하는 relation도 이유 없이
+            // 누락된다 — result에 보이게 기록한다(전체 fact 처리를 막지는 않음).
+            result.entityRelationWarnings.push({
+              childId,
+              warning: `entity upsert 실패(${ent.entity_name}): ${entErr.message}`,
+            });
             continue;
           }
           entityIdByName.set(ent.entity_name, upserted.id);
@@ -1089,14 +1132,26 @@ ${transcriptText}
         for (const rel of rawFact.relations ?? []) {
           const sourceId = entityIdByName.get(rel.source_entity_name);
           const targetId = entityIdByName.get(rel.target_entity_name);
-          if (!sourceId || !targetId) continue;
-          await db.from("memory_relations").insert({
+          if (!sourceId || !targetId) {
+            result.entityRelationWarnings.push({
+              childId,
+              warning: `relation 건너뜀(entity 미확보): ${rel.source_entity_name} -> ${rel.target_entity_name}`,
+            });
+            continue;
+          }
+          const { error: relErr } = await db.from("memory_relations").insert({
             child_id: childId,
             source_entity_id: sourceId,
             relation_type: rel.relation_type,
             target_entity_id: targetId,
             derived_from_fact_id: factId,
           });
+          if (relErr) {
+            result.entityRelationWarnings.push({
+              childId,
+              warning: `relation 저장 실패(${rel.source_entity_name}->${rel.target_entity_name}): ${relErr.message}`,
+            });
+          }
         }
 
         result.factsCreated++;
@@ -1274,13 +1329,17 @@ export async function purgeExpiredMemoryEvidence(
   dryRun: boolean,
 ): Promise<MemoryEvidencePurgeResult> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // codex 지적: source_text만 NULL인지 확인하면, source_text는 이미 NULL인데
+  // source_message_id/source_conversation_id만 남아있는 행은 영원히 파기 대상에서
+  // 빠졌다 — 셋 중 하나라도 남아있으면 파기 대상으로 잡는다.
+  const hasResidualSourceFilter = "source_text.not.is.null,source_message_id.not.is.null,source_conversation_id.not.is.null";
 
   if (dryRun) {
     const { count, error } = await db
       .from("memory_evidence")
       .select("id", { count: "exact", head: true })
       .is("source_deleted_at", null)
-      .not("source_text", "is", null)
+      .or(hasResidualSourceFilter)
       .lt("created_at", sevenDaysAgo);
     if (error) throw new Error(`purgeExpiredMemoryEvidence: 대상 조회 실패 — ${error.message}`);
     return { purgedCount: count ?? 0, dryRun };
@@ -1291,7 +1350,7 @@ export async function purgeExpiredMemoryEvidence(
     .from("memory_evidence")
     .update({ source_text: null, source_message_id: null, source_conversation_id: null, source_deleted_at: now })
     .is("source_deleted_at", null)
-    .not("source_text", "is", null)
+    .or(hasResidualSourceFilter)
     .lt("created_at", sevenDaysAgo)
     .select("id");
   if (error) throw new Error(`purgeExpiredMemoryEvidence: 파기 실패 — ${error.message}`);
