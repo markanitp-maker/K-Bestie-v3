@@ -88,6 +88,29 @@ const ORPHAN_TTL_MS = 6 * 60 * 60 * 1000;
 /** 한 번의 실행에서 처리할 최대 건수(폭주 방지). */
 const MAX_BATCH = 200;
 
+/**
+ * `expires_at` 비교에 적용하는 클럭 스큐 여유분.
+ *
+ * 이 필터의 "지금"은 **앱 프로세스의 시계**(`new Date()`)인데 비교 대상 `expires_at`은
+ * DB에 저장된 값이고, 소비 게이트는 **DB의 `now()`**로 판정한다. PostgREST 필터에서는
+ * 서버측 `now()`를 쓸 수 없어 이 불일치를 없앨 수 없다.
+ *
+ * 앱 시계가 DB보다 S초 빠르면 `expires_at <= now()`가 **실제 만료 S초 전에** 참이 된다.
+ * handoff TTL이 60초뿐이라(`HANDOFF_TOKEN_TTL_SECONDS`) 그 S초 동안의 토큰은 아직
+ * **소비 가능**하다 — 열쇠를 환불한 직후 아이가 그 토큰을 소비해 attempt를 시작하면
+ * 놀이도 하고 열쇠도 받는 이중 지급이 된다. attempt 교차확인은 환불 시점에 아직
+ * attempt 행이 없어 막아주지 못한다.
+ *
+ * 그래서 만료 판정을 이 여유분만큼 **늦춘다**. 스윕은 어차피 시간 단위로 도는 배치라
+ * 5분 지연은 사용자에게 아무 영향이 없고, 어떤 현실적인 NTP 스큐보다도 훨씬 크다.
+ * (`mint_attempts >= 3`은 카운터라 시계와 무관하고, 그 값이면 게이트(`< 3`)가 이미
+ *  소비를 막으므로 여유분이 필요 없다 — 그쪽은 즉시 회수된다.)
+ *
+ * 6시간 창을 쓰는 `'consumed'` 분기는 이 문제에 실질적으로 둔감해서(스큐가 창의
+ * 0.1% 수준) 여유분을 적용하지 않는다.
+ */
+const CLOCK_SKEW_MARGIN_MS = 5 * 60 * 1000;
+
 const REFUND_REASON = "reconcile_orphaned_handoff";
 
 interface RefundRpcResult {
@@ -125,7 +148,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const supabase = createServiceClient();
-  const nowIso = new Date().toISOString();
+  // 만료 판정에는 클럭 스큐 여유분을 빼서 **늦게** 판정한다(위 상수 주석 참고).
+  const expiryCutoffIso = new Date(Date.now() - CLOCK_SKEW_MARGIN_MS).toISOString();
   const cutoffIso = new Date(Date.now() - ORPHAN_TTL_MS).toISOString();
   const SELECT_COLS = "token, user_id, child_id, reward_transaction_id, issued_at, status";
 
@@ -138,7 +162,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     .select(SELECT_COLS)
     .in("status", ["pending", "mint_failed"])
     .not("reward_transaction_id", "is", null)
-    .or(`expires_at.lte."${nowIso}",mint_attempts.gte.3`)
+    .or(`expires_at.lte."${expiryCutoffIso}",mint_attempts.gte.3`)
     .order("issued_at", { ascending: true })
     .limit(MAX_BATCH);
 
