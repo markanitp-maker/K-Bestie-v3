@@ -9,7 +9,9 @@ import KChatbotWidget from "@/components/KChatbotWidget";
 
 const GAMES = [
   { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", keys: 2 },
-  { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "#3b82f6", keys: 1 },
+  // keys는 화면 표시·부족 판정용 값이다. 실제 차감은 서버가 하므로
+  // lib/quiz/handoffToken.ts의 QUIZ_GOLD_KEY_COST와 반드시 같아야 한다(2026-07-27: 1 → 2).
+  { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "#3b82f6", keys: 2 },
   { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "#22c55e", keys: 3 },
   { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-sky-blue)", keys: 3 },
 ];

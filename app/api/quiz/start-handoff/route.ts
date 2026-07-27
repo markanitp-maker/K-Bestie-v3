@@ -1,7 +1,7 @@
 /**
  * POST /api/quiz/start-handoff — 퀴즈마스터 시작 진입점 (requests/010 작업1)
  *
- * 로그인한 아이의 실제 학년을 조회하고 황금열쇠 1개를 차감한 뒤 handoff token을
+ * 로그인한 아이의 실제 학년을 조회하고 황금열쇠 2개를 차감한 뒤 handoff token을
  * 돌려준다. 골드키 소비는 MBTI 등 놀이 세션 인프라(consume_play_access/
  * k_play_sessions)가 아니라 기존 범용 경로(lib/goldkey/ledger.ts의 consumeKeys)를
  * 그대로 재사용한다 — lib/quiz/handoffToken.ts 참고. MBTI 쪽 라우트/스키마는 이

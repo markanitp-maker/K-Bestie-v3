@@ -15,6 +15,18 @@ import { parseGrade } from "@/lib/mission/selectQuestions";
 
 const HANDOFF_TOKEN_TTL_SECONDS = 60;
 
+/**
+ * 퀴즈마스터 1회 시작 비용(황금열쇠). 2026-07-27 대표 지시로 1 → 2로 변경.
+ *
+ * 차감은 **handoff token 발급 시점에 여기서만** 일어난다. 이어하기(resume)는 이 경로를
+ * 아예 타지 않으므로 재차감되지 않는다.
+ *
+ * 화면 표시값은 `app/child/play/page.tsx`의 `GAMES` 배열(`keys`)에 따로 있다 —
+ * 둘이 어긋나면 UI가 실제 차감량과 다른 숫자를 안내하게 되므로 **한쪽만 바꾸지 말 것.**
+ * (놀이 4종이 전부 그 배열에 비용을 두는 기존 구조라 퀴즈만 공유 상수로 빼지 않았다.)
+ */
+const QUIZ_GOLD_KEY_COST = 2;
+
 export type CreateQuizHandoffResult =
   | { ok: true; token: string }
   | {
@@ -52,7 +64,7 @@ export async function createQuizHandoffToken(childId: string): Promise<CreateQui
     return { ok: false, reason: "child_not_found" };
   }
 
-  const consumeResult = await consumeKeys(childId, 1);
+  const consumeResult = await consumeKeys(childId, QUIZ_GOLD_KEY_COST);
   if (!consumeResult.ok) {
     return { ok: false, reason: "insufficient_balance" };
   }
