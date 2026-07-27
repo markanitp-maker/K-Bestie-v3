@@ -14,6 +14,7 @@ import {
   checkAuth,
   deleteExpiredChatMessages,
   deleteExpiredConversationPipelineData,
+  purgeExpiredMemoryEvidence,
 } from "../_shared/batch.ts";
 
 Deno.serve(async (req: Request) => {
@@ -46,6 +47,16 @@ Deno.serve(async (req: Request) => {
     // (리포트 생성 완료 + 7일 기준, 같은 CHAT_RETENTION_DELETE_ENABLED 플래그 재사용)
     const step4 = await deleteExpiredConversationPipelineData(db, !isDeleteEnabled);
 
+    // Step 5(023, 신규): memory_evidence 원문(source_text 등) 7일 경과 자동 파기(§8-2).
+    // 별도 try/catch — 이 신규 파이프라인 실패가 위 기존 4단계 성공 응답을 막지 않게 한다.
+    let step5: unknown;
+    try {
+      step5 = await purgeExpiredMemoryEvidence(db, !isDeleteEnabled);
+    } catch (e) {
+      console.error("[daily-batch] purgeExpiredMemoryEvidence(023) 실패(기존 파이프라인과 무관, 계속 진행):", e);
+      step5 = { error: String(e) };
+    }
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -55,6 +66,7 @@ Deno.serve(async (req: Request) => {
           step2_reports: step2,
           step3_retentionDelete: step3,
           step4_conversationPipelineRetentionDelete: step4,
+          step5_memoryEvidencePurge: step5,
           durationMs: Date.now() - start
         },
       }),

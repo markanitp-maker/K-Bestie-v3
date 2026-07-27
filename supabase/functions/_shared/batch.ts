@@ -775,6 +775,342 @@ ${transcriptText}
   return result;
 }
 
+// ── 023 LLM Wiki + RAG Memory — Step 3: Memory Extraction Agent ──────────
+// 설계 문서: docs/k-bestie-llm-wiki-design.md. 기존 generateMemorySummaries(위)는
+// 한 줄도 건드리지 않는다 — 같은 배치 트리거(memory-batch)에서 병행 호출되는
+// 완전히 별도의 파이프라인이다.
+
+const EMBEDDING_MODEL = "gemini-embedding-001";
+const EMBEDDING_DIMENSIONS = 768;
+const REINFORCEMENT_SIMILARITY_THRESHOLD = 0.92; // 설계 문서 §9 — 튜닝 대상, 확정값 아님
+const TRAIT_PATTERN_SELF_STATEMENT_CONFIDENCE = 0.85; // 설계 문서 §9 — 튜닝 대상
+const EXTRACTION_PROMPT_VERSION = "extraction-v1";
+const EXTRACTION_MAX_OUTPUT_TOKENS = 4096; // 실측: 1024로는 다중 fact+entity+relation JSON이 잘림
+
+/** gemini-embedding-001(Vertex) 호출 — memory_facts.content(추출 요약)만 임베딩한다.
+ *  절대 원문(대화 발췌)을 임베딩하지 않는다(원본 삭제 후 역복원 경로 차단, 설계 문서 §2-4). */
+async function embedText(text: string, taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY"): Promise<number[]> {
+  const project = Deno.env.get("GOOGLE_CLOUD_PROJECT");
+  if (!project) throw new Error("GOOGLE_CLOUD_PROJECT not configured");
+  const location = Deno.env.get("GOOGLE_CLOUD_LOCATION") || "us-central1";
+  const accessToken = await getVertexAccessToken();
+  const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+
+  const res = await fetch(
+    `https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${EMBEDDING_MODEL}:predict`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${accessToken}` },
+      body: JSON.stringify({
+        instances: [{ content: text, task_type: taskType }],
+        parameters: { outputDimensionality: EMBEDDING_DIMENSIONS },
+      }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Vertex embedding API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const values = data?.predictions?.[0]?.embeddings?.values;
+  if (!Array.isArray(values) || values.length !== EMBEDDING_DIMENSIONS) {
+    throw new Error(`Vertex embedding API 응답 형식 오류(차원 ${values?.length ?? "?"})`);
+  }
+  return values;
+}
+
+function toPgVectorLiteral(values: number[]): string {
+  return `[${values.join(",")}]`;
+}
+
+interface ExtractedFact {
+  fact_type: "interest" | "friend" | "family" | "dream" | "event" | "trait" | "pattern";
+  subject?: string | null;
+  content: string;
+  confidence?: number;
+  importance?: number;
+  is_explicit_self_statement?: boolean;
+  evidence_summary: string;
+  source_excerpt?: string; // 임시 보존(최대 7일) — 원문 발췌, 영구 보존 금지
+  entities?: { entity_type: "person" | "place" | "object" | "activity" | "other"; entity_name: string }[];
+  relations?: { source_entity_name: string; relation_type: string; target_entity_name: string }[];
+}
+
+export interface MemoryFactBatchResult {
+  childrenProcessed: string[];
+  factsCreated: number;
+  factsReinforced: number;
+  factsPromoted: number;
+  skipped: string[];
+  errors: { childId: string; error: string }[];
+}
+
+const TRAIT_PATTERN_TYPES = new Set(["trait", "pattern"]);
+
+/** 023 Step 3: corrected_daily_conversations(report_eligible=true)에서 Fact/Entity/
+ *  Relation을 추출해 memory_facts 등 LLM Wiki 테이블에 저장한다. 기존 child_memory
+ *  파이프라인과 완전히 독립적으로 동작하며, 이 함수의 예외는 절대 상위(memory-batch
+ *  index.ts)의 generateMemorySummaries 실행에 영향을 주지 않는다(별도 try/catch). */
+export async function generateMemoryFacts(db: SupabaseClient, targetDate: string): Promise<MemoryFactBatchResult> {
+  const result: MemoryFactBatchResult = {
+    childrenProcessed: [], factsCreated: 0, factsReinforced: 0, factsPromoted: 0, skipped: [], errors: [],
+  };
+
+  // generateDailyReports와 동일한 소스·조건(report_eligible=true) — raw_daily_conversations
+  // 기준으로 그날 아이가 있었던 목록을 뽑는다(세션 기준이 아니라 018 파이프라인 산출물 기준).
+  const { data: rawRows, error: rawListErr } = await db
+    .from("raw_daily_conversations")
+    .select("child_id")
+    .eq("business_date", targetDate);
+  if (rawListErr) throw new Error(`generateMemoryFacts: 대상 아이 조회 실패 — ${rawListErr.message}`);
+  if (!rawRows?.length) return result;
+
+  const childIds = Array.from(new Set(rawRows.map((r: { child_id: string }) => r.child_id)));
+  const reportModel = await resolveGroupAModel(db);
+
+  for (const childId of childIds) {
+    try {
+      const { data: conversations, error: convErr } = await db
+        .from("raw_daily_conversations")
+        .select(`
+          id, speaker, raw_text, turn_order, session_type,
+          corrected_daily_conversations ( corrected_text, report_eligible )
+        `)
+        .eq("child_id", childId)
+        .eq("business_date", targetDate)
+        .order("turn_order", { ascending: true });
+      if (convErr) throw new Error(`대화 조회 실패: ${convErr.message}`);
+
+      const validConversations = (conversations || []).filter((c: any) => {
+        if (c.speaker === "k") return true;
+        const corr = Array.isArray(c.corrected_daily_conversations)
+          ? c.corrected_daily_conversations[0]
+          : c.corrected_daily_conversations;
+        return corr?.report_eligible === true;
+      });
+      if (!validConversations.length || !validConversations.some((c: any) => c.speaker === "child")) {
+        result.skipped.push(childId);
+        continue;
+      }
+
+      const sessionType = validConversations.find((c: any) => c.session_type)?.session_type ?? null;
+      const transcriptText = validConversations
+        .map((c: any) => {
+          if (c.speaker === "child") {
+            const corr = Array.isArray(c.corrected_daily_conversations)
+              ? c.corrected_daily_conversations[0]
+              : c.corrected_daily_conversations;
+            return `아이: ${corr.corrected_text}`;
+          }
+          return `케이: ${c.raw_text}`;
+        })
+        .join("\n");
+
+      const prompt = `너는 아이와 케이의 대화에서 장기적으로 기억할 가치가 있는 사실(Fact)과 그 사실에
+연결된 사람/장소/사물(Entity), 그리고 Entity 간 관계(Relation)를 추출하는 역할이다.
+
+아래는 오늘 하루 아이와 나눈 대화 원문이다.
+
+${transcriptText}
+
+다음 형식의 JSON으로만 응답해라(다른 텍스트 없이):
+{
+  "facts": [
+    {
+      "fact_type": "interest" | "friend" | "family" | "dream" | "event" | "trait" | "pattern",
+      "subject": "이 사실이 누구/무엇에 대한 것인지(짧은 텍스트, 없으면 null)",
+      "content": "짧은 사실 문장(한 문장)",
+      "confidence": 0.0~1.0 (이 추출이 얼마나 확실한지),
+      "importance": 0.0~1.0 (이 사실이 얼마나 중요한지),
+      "is_explicit_self_statement": true 또는 false (아이가 스스로 명확히 말한 것인지,
+        추론/암시가 아닌지 — trait/pattern에서만 중요),
+      "evidence_summary": "원문을 그대로 인용하지 말고, '미션 대화 중 축구를 좋아한다고
+        언급'처럼 근거를 짧게 요약(20자 내외)",
+      "source_excerpt": "이 사실의 근거가 된 원문 발췌(짧게, 실제 대화 문장)",
+      "entities": [{"entity_type": "person"|"place"|"object"|"activity"|"other", "entity_name": "이름"}],
+      "relations": [{"source_entity_name": "...", "relation_type": "...", "target_entity_name": "..."}]
+    }
+  ]
+}
+
+규칙(반드시 지켜라):
+- fact_type이 "trait"(성향) 또는 "pattern"(반복 패턴)인 경우, 단일 발화나 일회성
+  사건만으로는 절대 만들지 마라 — 오늘 대화 안에서도 여러 번 드러나거나, 아이가
+  명확히 스스로 규정한 경우("나는 원래 조용한 편이야")에만 만들어라.
+- 반복해서 기억할 가치가 있는 것만 담아라(좋아하는 것, 친구 이름, 가족 이야기, 꿈,
+  특별한 사건, 안정적인 성향, 반복되는 행동/감정 패턴). 단순 인사·하루짜리 잡담은
+  제외해라. 없으면 facts를 빈 배열로 둬라.
+- 아이의 안전을 위협하거나 민감한 개인정보(주소, 전화번호 등)는 절대 담지 마라.
+- source_excerpt는 이 서버가 최대 7일만 임시 보관하고 이후 반드시 삭제한다 — 너무
+  길게 인용하지 말고 근거 확인에 필요한 최소한만 담아라.`;
+
+      // reportModel.maxOutputTokens(1024, generateDailyReports/generateMemorySummaries와
+      // 공유하는 상수)는 이 fact/entity/relation/evidence 구조화 추출에는 부족해 JSON이
+      // 잘렸다(실측 확인) — 공유 상수는 그대로 두고 이 호출에서만 더 큰 값을 쓴다.
+      const text = await callReportModel(reportModel, prompt, EXTRACTION_MAX_OUTPUT_TOKENS);
+
+      let parsed: { facts?: ExtractedFact[] };
+      try {
+        parsed = extractJSON(text);
+      } catch {
+        throw new Error(`JSON 파싱 실패: ${text.slice(0, 100)}`);
+      }
+
+      const facts = Array.isArray(parsed.facts) ? parsed.facts : [];
+      const allowedFactTypes = new Set(["interest", "friend", "family", "dream", "event", "trait", "pattern"]);
+
+      for (const rawFact of facts) {
+        if (!allowedFactTypes.has(rawFact.fact_type) || !rawFact.content || !rawFact.evidence_summary) continue;
+
+        const embedding = await embedText(rawFact.content, "RETRIEVAL_DOCUMENT");
+        const embeddingLiteral = toPgVectorLiteral(embedding);
+
+        const { data: matchRows, error: matchErr } = await db.rpc("find_similar_memory_fact", {
+          p_child_id: childId,
+          p_embedding: embeddingLiteral,
+          p_similarity_threshold: REINFORCEMENT_SIMILARITY_THRESHOLD,
+        });
+        if (matchErr) throw new Error(`벡터 유사도 검색 실패: ${matchErr.message}`);
+        const match = Array.isArray(matchRows) ? matchRows[0] : matchRows;
+
+        if (match?.fact_id) {
+          // 재확인 — 기존 fact(candidate 포함) 갱신, 새 행 생성하지 않음.
+          const { data: existingFact, error: fetchErr } = await db
+            .from("memory_facts")
+            .select("id, status, source_count, confidence")
+            .eq("id", match.fact_id)
+            .single();
+          if (fetchErr) throw new Error(`기존 fact 조회 실패: ${fetchErr.message}`);
+
+          const newSourceCount = (existingFact.source_count ?? 1) + 1;
+          const shouldPromote = existingFact.status === "candidate" && newSourceCount >= 2;
+          const newStatus = shouldPromote ? "active" : existingFact.status;
+          const newConfidence = Math.min(1, (existingFact.confidence ?? 0.5) + 0.05);
+
+          const { error: updErr } = await db
+            .from("memory_facts")
+            .update({
+              source_count: newSourceCount,
+              last_confirmed_at: new Date().toISOString(),
+              confidence: newConfidence,
+              status: newStatus,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", match.fact_id);
+          if (updErr) throw new Error(`fact 갱신 실패: ${updErr.message}`);
+
+          const { error: evErr } = await db.from("memory_evidence").insert({
+            memory_fact_id: match.fact_id,
+            evidence_summary: rawFact.evidence_summary,
+            source_text: rawFact.source_excerpt ?? null,
+          });
+          if (evErr) throw new Error(`evidence 저장 실패: ${evErr.message}`);
+
+          await db.from("memory_history").insert({
+            memory_id: match.fact_id,
+            action: shouldPromote ? "promoted" : "reinforced",
+            before_value: { status: existingFact.status, source_count: existingFact.source_count },
+            after_value: { status: newStatus, source_count: newSourceCount },
+          });
+
+          if (shouldPromote) result.factsPromoted++;
+          else result.factsReinforced++;
+          continue;
+        }
+
+        // 신규 fact — trait/pattern 게이트(설계 문서 §3-4e) 적용.
+        let initialStatus: "candidate" | "active" = "active";
+        if (TRAIT_PATTERN_TYPES.has(rawFact.fact_type)) {
+          const isConfidentSelfStatement =
+            rawFact.is_explicit_self_statement === true &&
+            (rawFact.confidence ?? 0) >= TRAIT_PATTERN_SELF_STATEMENT_CONFIDENCE;
+          initialStatus = isConfidentSelfStatement ? "active" : "candidate";
+        }
+
+        const { data: insertedFact, error: insertErr } = await db
+          .from("memory_facts")
+          .insert({
+            child_id: childId,
+            fact_type: rawFact.fact_type,
+            subject: rawFact.subject ?? null,
+            content: rawFact.content,
+            confidence: rawFact.confidence ?? 0.5,
+            importance: rawFact.importance ?? 0.5,
+            status: initialStatus,
+            source_type: sessionType === "mission" ? "mission" : "free_chat",
+            source_date: targetDate,
+            session_type: sessionType,
+            model_version: reportModel.modelId,
+            prompt_version: EXTRACTION_PROMPT_VERSION,
+          })
+          .select("id")
+          .single();
+        if (insertErr) throw new Error(`fact 저장 실패: ${insertErr.message}`);
+        const factId = insertedFact.id;
+
+        const { error: evInsertErr } = await db.from("memory_evidence").insert({
+          memory_fact_id: factId,
+          evidence_summary: rawFact.evidence_summary,
+          source_text: rawFact.source_excerpt ?? null,
+        });
+        if (evInsertErr) throw new Error(`evidence 저장 실패: ${evInsertErr.message}`);
+
+        const { error: embErr } = await db.from("memory_embeddings").insert({
+          memory_fact_id: factId,
+          child_id: childId,
+          embedding: embeddingLiteral,
+          model: EMBEDDING_MODEL,
+        });
+        if (embErr) throw new Error(`embedding 저장 실패: ${embErr.message}`);
+
+        await db.from("memory_history").insert({
+          memory_id: factId,
+          action: "created",
+          after_value: { fact_type: rawFact.fact_type, status: initialStatus },
+        });
+
+        // Entity/Relation — 이름 기준으로 upsert(같은 아이 안에서 중복 방지, §2-1 유니크 인덱스).
+        const entityIdByName = new Map<string, string>();
+        for (const ent of rawFact.entities ?? []) {
+          if (!ent.entity_name) continue;
+          const { data: upserted, error: entErr } = await db
+            .from("memory_entities")
+            .upsert(
+              { child_id: childId, entity_type: ent.entity_type, entity_name: ent.entity_name },
+              { onConflict: "child_id,entity_type,entity_name" },
+            )
+            .select("id")
+            .single();
+          if (entErr) {
+            console.error("[generateMemoryFacts] entity upsert 실패(계속 진행):", entErr.message);
+            continue;
+          }
+          entityIdByName.set(ent.entity_name, upserted.id);
+        }
+        for (const rel of rawFact.relations ?? []) {
+          const sourceId = entityIdByName.get(rel.source_entity_name);
+          const targetId = entityIdByName.get(rel.target_entity_name);
+          if (!sourceId || !targetId) continue;
+          await db.from("memory_relations").insert({
+            child_id: childId,
+            source_entity_id: sourceId,
+            relation_type: rel.relation_type,
+            target_entity_id: targetId,
+            derived_from_fact_id: factId,
+          });
+        }
+
+        result.factsCreated++;
+      }
+
+      result.childrenProcessed.push(childId);
+    } catch (e) {
+      result.errors.push({ childId, error: String(e) });
+    }
+  }
+
+  return result;
+}
+
 export interface RetentionDeleteResult {
   targetSessionIds: string[];
   deletedMessageCount: number;
@@ -919,4 +1255,46 @@ export async function deleteExpiredConversationPipelineData(
   result.rawDeleted = rawDeleted?.length ?? 0;
 
   return result;
+}
+
+export interface MemoryEvidencePurgeResult {
+  purgedCount: number;
+  dryRun: boolean;
+}
+
+/**
+ * 023 설계 문서 §2-4/§3 Step 6/§8-2 — memory_evidence의 원문(source_text/
+ * source_message_id/source_conversation_id)은 생성 후 최대 7일만 임시 보존하고
+ * 반드시 NULL로 마스킹한다(20자 축약 등으로 대체 보존하는 것도 금지 — 대표님 명시
+ * 지시). evidence_summary/memory_facts는 이 함수가 절대 건드리지 않는다 — 영구
+ * 보존 대상이며 원문이 아니다.
+ */
+export async function purgeExpiredMemoryEvidence(
+  db: SupabaseClient,
+  dryRun: boolean,
+): Promise<MemoryEvidencePurgeResult> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  if (dryRun) {
+    const { count, error } = await db
+      .from("memory_evidence")
+      .select("id", { count: "exact", head: true })
+      .is("source_deleted_at", null)
+      .not("source_text", "is", null)
+      .lt("created_at", sevenDaysAgo);
+    if (error) throw new Error(`purgeExpiredMemoryEvidence: 대상 조회 실패 — ${error.message}`);
+    return { purgedCount: count ?? 0, dryRun };
+  }
+
+  const now = new Date().toISOString();
+  const { data: purged, error } = await db
+    .from("memory_evidence")
+    .update({ source_text: null, source_message_id: null, source_conversation_id: null, source_deleted_at: now })
+    .is("source_deleted_at", null)
+    .not("source_text", "is", null)
+    .lt("created_at", sevenDaysAgo)
+    .select("id");
+  if (error) throw new Error(`purgeExpiredMemoryEvidence: 파기 실패 — ${error.message}`);
+
+  return { purgedCount: purged?.length ?? 0, dryRun };
 }
