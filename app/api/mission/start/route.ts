@@ -23,14 +23,14 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { childId?: string; roundType?: RoundType };
+  let body: { childId?: string; roundType?: RoundType; confirmRestart?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { childId, roundType } = body;
+  const { childId, roundType, confirmRestart } = body;
   if (!childId || !roundType) {
     return NextResponse.json({ error: "childId, roundType required" }, { status: 400 });
   }
@@ -119,6 +119,19 @@ export async function POST(req: NextRequest) {
       : todaySessionRow.mission_progress;
     if (todayProgress?.status !== "COMPLETED") {
       existingSessionRow = todaySessionRow;
+    } else if (confirmRestart !== true) {
+      // codex 지적: !confirmRestart는 "false"(문자열) 같은 truthy-지만-boolean-아닌 값이
+      // 들어와도 확인 게이트를 우회할 수 있었다 — 정확히 boolean true일 때만 통과시킨다.
+      // 022 지시서: 오늘 이미 완료(COMPLETED)한 라운드에 재진입하면 지금까지는 확인 없이
+      // 조용히 새 세션을 만들었다(011의 "완료 세션 재사용 안 함" 정책 자체는 유지) — 여기서는
+      // 새 세션을 만들기 전에 "다시 할래요?" 확인이 필요함을 클라이언트에 알리고 즉시
+      // 반환한다. 클라이언트가 confirmRestart:true로 다시 호출해야만 아래로 진행해 새
+      // 세션을 만든다. 진행 중/미완료 세션에는 전혀 영향 없음(이 분기는 COMPLETED일 때만).
+      return NextResponse.json({
+        requiresConfirmation: true,
+        alreadyCompletedToday: true,
+        roundType,
+      });
     }
   }
 

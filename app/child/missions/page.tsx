@@ -106,7 +106,16 @@ function MissionInner() {
   const searchParams = useSearchParams();
   const { quality: connectionQuality, recordStageResult, recordNormalTurn } = usePipelineConnectionQuality();
 
-  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error">("loading");
+  // confirm_restart_after_completion(022): 오늘 이미 완료한 라운드에 재진입 시 "다시 할까요?"
+  // 확인 없이 조용히 새 세션이 만들어지던 문제 수정 — 서버가 requiresConfirmation을 반환하면
+  // 이 phase로 멈추고 확인 UI를 보여준다(진행 중/미완료 세션에는 영향 없음).
+  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "confirm_restart_after_completion">("loading");
+  // 한 번만 소비되는 플래그(ref) — URL 쿼리에 남기면 이후 재진입 때도 계속 true로
+  // 남아 두 번째부터는 확인 없이 넘어가 버리므로, 컴포넌트 상태로만 들고 있다가
+  // 이 effect 시작 시 즉시 리셋한다. restartTrigger는 같은 effect를 다시 실행시키기
+  // 위한 카운터일 뿐 값 자체는 쓰지 않는다.
+  const confirmRestartRef = useRef(false);
+  const [restartTrigger, setRestartTrigger] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [childId, setChildId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -1196,7 +1205,9 @@ function MissionInner() {
   useEffect(() => {
     if (phase === "ready" && missionState !== "completed") {
       setSessionActive(true);
-    } else if (missionState === "completed" || phase === "closed" || phase === "error") {
+    } else if (missionState === "completed" || phase === "closed" || phase === "error" || phase === "confirm_restart_after_completion") {
+      // codex 지적: confirm_restart_after_completion 진입 시에도 이전 세션이 활성 상태로
+      // 남아있으면(예: restartTrigger 재실행 경합) 마이크/음성 세션이 꺼지지 않을 수 있다.
       setSessionActive(false);
     }
   }, [phase, missionState]);
@@ -1415,10 +1426,12 @@ function MissionInner() {
       setRoundType(round);
 
       try {
+        const confirmRestart = confirmRestartRef.current;
+        confirmRestartRef.current = false; // 한 번만 소비 — 다음 재진입 때 다시 확인받아야 한다
         const res = await fetch("/api/mission/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ childId: cid, roundType: round }),
+          body: JSON.stringify({ childId: cid, roundType: round, confirmRestart }),
         });
         const data = await res.json();
         logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
@@ -1426,6 +1439,11 @@ function MissionInner() {
         if (!res.ok) {
           setErrorMsg(data.error ?? "미션을 시작하지 못했어요");
           setPhase("error");
+          return;
+        }
+        // 022: 오늘 이미 완료(COMPLETED)한 라운드 — 새 세션을 만들기 전에 확인부터 받는다.
+        if (data.requiresConfirmation) {
+          setPhase("confirm_restart_after_completion");
           return;
         }
         setSessionId(data.sessionId);
@@ -1548,7 +1566,7 @@ function MissionInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [searchParams, router]);
+  }, [searchParams, router, restartTrigger]);
 
   // Live 모드가 활성화될 때 interactionMode 설정 동기화 (STT/TTS는 setInputMode+setMicEnabled로 동일 개념 적용)
   useEffect(() => {
@@ -1805,6 +1823,40 @@ function MissionInner() {
     );
   }
 
+  if (phase === "confirm_restart_after_completion") {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
+        <p className="text-5xl">🎉</p>
+        <p className="text-base font-bold text-gray-800">오늘 미션은 이미 완료했어요!</p>
+        <p className="text-xs text-gray-500 leading-relaxed">
+          한 번 더 하고 싶으면 새로 시작할 수 있어요.
+        </p>
+        <div className="flex gap-2 w-full max-w-xs">
+          <button
+            onClick={() => {
+              confirmRestartRef.current = true;
+              setPhase("loading");
+              setRestartTrigger((n) => n + 1);
+            }}
+            className="flex-1 py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+            style={{ background: "var(--color-k-orange)" }}
+          >
+            다시 할래요
+          </button>
+          <button
+            onClick={() => {
+              setSessionActive(false);
+              router.replace("/child/home");
+            }}
+            className="flex-1 py-3.5 rounded-2xl font-bold text-gray-600 bg-gray-100 text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          >
+            미션 나가기
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (phase === "error") {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
@@ -1927,10 +1979,14 @@ function MissionInner() {
 
   // 011 2차: "복구 불가능한 경우에만" 뜨는 재시도 UI — 케이 말풍선도, 상단 배너도 아니다.
   // 화면 중앙에 짧은 문구 + 다시 시도/미션 나가기 버튼만 보여준다(011 §"복구 불가능 오류 UI").
+  // 2026-07-27: 문구를 "다시 한번 해볼까?"에서 "케이랑 접속이 끊겼네?"로 변경 — 이 팝업은
+  // 진행률과 무관하게 STT 실패/음성 연결 문제 시에만 뜨는데, 기존 문구가 "미션 재시작"
+  // 의미로 오해될 수 있어(022 요청서 참고) 목적을 명확히 하는 문구로 교체했다. 버튼
+  // 동작(세션·진행상태 유지 + 재연결 / 미션 나가기)은 변경 없음.
   const retryOverlay = showRetryButton && (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/10 px-6">
       <div className="bg-white rounded-2xl shadow-lg p-5 flex flex-col items-center gap-3 max-w-xs">
-        <p className="text-sm font-bold text-gray-700 text-center">다시 한번 해볼까?</p>
+        <p className="text-sm font-bold text-gray-700 text-center">케이랑 접속이 끊겼네?</p>
         <div className="flex gap-2 w-full">
           <button
             onClick={() => {
