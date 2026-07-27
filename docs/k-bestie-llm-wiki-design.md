@@ -199,7 +199,9 @@ CREATE TABLE memory_facts (
   confidence NUMERIC(3,2) NOT NULL DEFAULT 0.5 CHECK (confidence BETWEEN 0 AND 1),
   importance NUMERIC(3,2) NOT NULL DEFAULT 0.5 CHECK (importance BETWEEN 0 AND 1),
   -- 대표님 지시: active를 무기한 확정하지 않는다 — 장기간 미확인/상충 시 전환 가능해야 함.
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','stale','superseded','invalidated','rejected')),
+  -- candidate: trait/pattern 전용 — 근거 기준(§4 참고) 미달 시 active로 바로 승격하지
+  -- 않고 여기 머문다(검색 대상 아님, §5 쿼리는 status='active'만 봄).
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('candidate','active','stale','superseded','invalidated','rejected')),
   -- 이 사실이 최초 관찰된 맥락(원문 삭제 후에도 영구 보존).
   source_type TEXT NOT NULL CHECK (source_type IN ('mission','free_chat')),
   source_date DATE NOT NULL,       -- 최초 관찰된 business_date
@@ -295,7 +297,7 @@ CREATE INDEX idx_memory_embeddings_hnsw ON memory_embeddings
 CREATE TABLE memory_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   memory_id UUID NOT NULL,         -- memory_facts.id (다형 참조라 FK 미설정, 코드에서 검증)
-  action TEXT NOT NULL CHECK (action IN ('created','reinforced','superseded','rejected')),
+  action TEXT NOT NULL CHECK (action IN ('created','reinforced','promoted','stale','superseded','invalidated','rejected')),
   before_value JSONB,
   after_value JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -342,6 +344,20 @@ GRANT ALL ON memory_entities, memory_facts, memory_relations, memory_evidence,
       first_observed_at/last_confirmed_at/source_count=1/model_version/prompt_version
       전부 채움) + entity/relation/evidence/embedding 행 생성,
       memory_history에 action='created' 기록
+   e. **trait/pattern 전용 게이트(2026-07-27 대표님 확정)**: `fact_type IN
+      ('trait','pattern')`인 신규 fact는 (d)에서 곧바로 `active`로 만들지 않는다.
+      아래 조건 중 하나를 만족해야 `active`, 아니면 `status='candidate'`로 저장한다.
+      - 서로 다른 날짜·서로 다른 대화(대화 세션)에서 나온 **독립적인 evidence가
+        누적 2건 이상**(같은 대화 안에서 반복 언급은 1건으로 침), 또는
+      - 단 1건이라도 아이의 **명시적 자기진술**이고 추출 모델이 높은 confidence(예:
+        ≥0.85, §9 튜닝 대상)로 판단한 경우.
+      단일 발화·일회성 사건만으로는 절대 trait/pattern을 만들지 않는다(요청서 §1
+      "반복 패턴"이라는 정의 자체와 일치). `interest/friend/family/dream/event`
+      5종은 이 게이트를 적용하지 않는다(기존 요청서 원안 그대로, 1건 관찰로도
+      `active` 가능).
+      candidate 상태에서 두 번째 독립 evidence가 확보되면(다음날 배치 실행 시 §4c와
+      같은 벡터 매칭으로 같은 fact를 다시 찾음) `active`로 승격하고
+      memory_history에 action='promoted' 기록.
 5. 모든 fact는 최소 1개의 memory_evidence를 가져야 저장을 완료로 본다(evidence_summary는
    NOT NULL이라 반드시 채움, source_text는 이 시점엔 원문 발췌를 그대로 채움 — 임시 보존
    시작). evidence 없이 fact만 insert되는 경로는 코드에서 금지(트랜잭션 단위 처리).
@@ -361,7 +377,9 @@ GRANT ALL ON memory_entities, memory_facts, memory_relations, memory_evidence,
 
 ```
 created(신규, source_count=1)
-   → active(사용 중, 검색 대상)
+   → [fact_type IN ('trait','pattern') AND 근거 기준 미달] → candidate(검색 대상 아님,
+        §3-4e 참고) → [독립 evidence 2건째 확보] → active로 승격(action='promoted')
+   → [그 외(5종 기존 타입) 또는 근거 기준 충족] → active(사용 중, 검색 대상)
         ↺ 재확인될 때마다 source_count+=1, last_confirmed_at=now() (같은 행, 새 행 아님)
    → stale(오래(예 90일) 재확인 안 됨 — 대표님 지시: active를 무기한 확정하지 않는다.
      검색에서는 제외되지만 완전히 버리지는 않음 — 다시 관찰되면 active로 복귀 가능)
@@ -484,12 +502,12 @@ Pipeline 구현) 이후 `usage_events`에 새 kind(`embedding`)를 추가해 실
 
 1. ~~§8-2 `memory_evidence.source_text` 보존 정책~~ — **2026-07-27 확정(혼합 정책,
    §2-4/§8-2 반영 완료).**
-2. 재확인(reinforcement) 유사도 임계치(위 예시 0.92)와 stale 전환 기준(위 예시 90일)은
-   초안 값 — 실제 데이터로 튜닝 필요(Step 3~4 구현 중 재검토 대상으로 남김, 지금
-   확정하지 않음).
-3. `memory_facts.fact_type`에 요청서 원안 5종(`interest/friend/family/dream/event`)
-   외 `trait`(성향)/`pattern`(반복 패턴)을 이 문서에서 추가 제안했다 — 요청서 §1 목표
-   문구("아이 성향... 반복 패턴")와 맞추기 위한 확장이며, 대표님 확인 후 확정.
+2. 재확인(reinforcement) 유사도 임계치(위 예시 0.92), stale 전환 기준(위 예시 90일),
+   trait/pattern 자기진술 confidence 임계치(위 예시 0.85)는 초안 값 — 실제 데이터로
+   튜닝 필요(Step 3~4 구현 중 재검토 대상으로 남김, 지금 확정하지 않음).
+3. ~~`memory_facts.fact_type` 범위~~ — **2026-07-27 확정: 7종
+   (`interest/friend/family/dream/event/trait/pattern`) 전부 적용.** trait/pattern은
+   candidate 게이트(§3-4e, §4)를 통과해야 `active`로 승격된다.
 
 ---
 
