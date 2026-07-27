@@ -9,6 +9,12 @@
 
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createGenAIClient, LEAN_E_MODEL_ID } from "@/app/api/_lib/ai";
+import { searchMemoryFacts, formatMemoryFactsForPrompt } from "@/lib/memory/vectorRetrieval";
+
+// 023 LLM Wiki(Step 6) — 인사말은 세션 시작 시점이라 아이 발화가 아직 없어 검색 "쿼리"가
+// 없다. "최근에 있었던 일·관심사·감정"이라는 고정 주제 임베딩으로 일반적으로 가장 관련성
+// 높은 기억을 가져오는 절충안을 쓴다(설계 문서 §6, 완전한 발화 기반 검색은 아님).
+const GREETING_TOPIC_QUERY = "아이와의 최근 대화에서 있었던 일, 관심사, 감정 변화";
 
 export async function buildMemoryGreeting(
   db: SupabaseClient,
@@ -16,43 +22,51 @@ export async function buildMemoryGreeting(
   givenNameVocative: string | null
 ): Promise<string | null> {
   try {
-    const nowIso = new Date().toISOString();
+    // 실패/결과 0건이면 기존 child_memory recency 조회로 fallback(요청서 §8).
+    const vectorFacts = await searchMemoryFacts(db, childId, GREETING_TOPIC_QUERY, 5);
+    let memoryText: string;
 
-    const [longTermSettled, shortTermSettled] = await Promise.allSettled([
-      db
-        .from("child_memory")
-        .select("category, content, business_date")
-        .eq("child_id", childId)
-        .eq("memory_type", "long_term")
-        .order("business_date", { ascending: false })
-        .limit(10),
-      db
-        .from("child_memory")
-        .select("category, content, business_date")
-        .eq("child_id", childId)
-        .eq("memory_type", "short_term")
-        .gt("expires_at", nowIso)
-        .order("business_date", { ascending: false })
-        .limit(5),
-    ]);
+    if (vectorFacts) {
+      memoryText = formatMemoryFactsForPrompt(vectorFacts);
+    } else {
+      const nowIso = new Date().toISOString();
 
-    if (longTermSettled.status === "rejected" || shortTermSettled.status === "rejected") {
-      return null;
+      const [longTermSettled, shortTermSettled] = await Promise.allSettled([
+        db
+          .from("child_memory")
+          .select("category, content, business_date")
+          .eq("child_id", childId)
+          .eq("memory_type", "long_term")
+          .order("business_date", { ascending: false })
+          .limit(10),
+        db
+          .from("child_memory")
+          .select("category, content, business_date")
+          .eq("child_id", childId)
+          .eq("memory_type", "short_term")
+          .gt("expires_at", nowIso)
+          .order("business_date", { ascending: false })
+          .limit(5),
+      ]);
+
+      if (longTermSettled.status === "rejected" || shortTermSettled.status === "rejected") {
+        return null;
+      }
+      if (longTermSettled.value.error || shortTermSettled.value.error) {
+        console.error(
+          "[memoryGreeting] child_memory 조회 실패:",
+          longTermSettled.value.error || shortTermSettled.value.error
+        );
+        return null;
+      }
+
+      const memories = [...(shortTermSettled.value.data ?? []), ...(longTermSettled.value.data ?? [])];
+      if (memories.length === 0) return null;
+
+      memoryText = memories
+        .map((m) => `[${m.business_date}] ${m.category ? `(${m.category}) ` : ""}${m.content}`)
+        .join("\n");
     }
-    if (longTermSettled.value.error || shortTermSettled.value.error) {
-      console.error(
-        "[memoryGreeting] child_memory 조회 실패:",
-        longTermSettled.value.error || shortTermSettled.value.error
-      );
-      return null;
-    }
-
-    const memories = [...(shortTermSettled.value.data ?? []), ...(longTermSettled.value.data ?? [])];
-    if (memories.length === 0) return null;
-
-    const memoryText = memories
-      .map((m) => `[${m.business_date}] ${m.category ? `(${m.category}) ` : ""}${m.content}`)
-      .join("\n");
 
     const systemInstruction = `너는 아이의 친근한 AI 친구 케이야. 아래 '최근 기억'을 참고해서, 아이와의 대화를 시작하는 짧은 인사말을 만들지 판단해라.
 

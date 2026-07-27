@@ -503,8 +503,10 @@ Pipeline 구현) 이후 `usage_events`에 새 kind(`embedding`)를 추가해 실
 1. ~~§8-2 `memory_evidence.source_text` 보존 정책~~ — **2026-07-27 확정(혼합 정책,
    §2-4/§8-2 반영 완료).**
 2. 재확인(reinforcement) 유사도 임계치(위 예시 0.92), stale 전환 기준(위 예시 90일),
-   trait/pattern 자기진술 confidence 임계치(위 예시 0.85)는 초안 값 — 실제 데이터로
-   튜닝 필요(Step 3~4 구현 중 재검토 대상으로 남김, 지금 확정하지 않음).
+   trait/pattern 자기진술 confidence 임계치(위 예시 0.85), **검색(retrieval) 최소
+   유사도 `search_memory_facts`의 `min_similarity=0.3`(codex 리뷰 지적 — 실측·평가
+   근거 없는 임의값)** 은 전부 초안 값 — 실제 데이터로 튜닝 필요(Step 3~5 구현 중
+   재검토 대상으로 남김, 지금 확정하지 않음).
 3. ~~`memory_facts.fact_type` 범위~~ — **2026-07-27 확정: 7종
    (`interest/friend/family/dream/event/trait/pattern`) 전부 적용.** trait/pattern은
    candidate 게이트(§3-4e, §4)를 통과해야 `active`로 승격된다.
