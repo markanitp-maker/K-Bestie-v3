@@ -508,6 +508,22 @@ Pipeline 구현) 이후 `usage_events`에 새 kind(`embedding`)를 추가해 실
 3. ~~`memory_facts.fact_type` 범위~~ — **2026-07-27 확정: 7종
    (`interest/friend/family/dream/event/trait/pattern`) 전부 적용.** trait/pattern은
    candidate 게이트(§3-4e, §4)를 통과해야 `active`로 승격된다.
+4. **Step 3 codex 리뷰에서 발견, 이번 라운드에서 의도적으로 미해결(잔여 리스크)**:
+   - **트랜잭션 원자성 없음**: fact/evidence/embedding/history/entity/relation 저장이
+     하나의 DB 트랜잭션이 아니다 — 중간에 실패하면 evidence 없는 fact, embedding 없는
+     fact가 남을 수 있다(§3 Step 5 "evidence 없이 fact 저장 금지" 원칙과 완전히
+     일치하지 않음). `generateDailyReports`/`generateMemorySummaries`(기존 코드)도
+     같은 방식이라 이 파이프라인만의 새 문제는 아니지만, 근본 해결은 아니다.
+   - **동시 실행 경쟁 상태**: 벡터 조회→갱신이 read-modify-write라 같은 아이·같은
+     시각에 두 실행이 겹치면 증가분이 유실되거나 중복 fact가 생길 수 있다. 지금은
+     daily-batch/memory-batch가 pg_cron 1일 1회 호출 구조라 정상 운영 중 동시실행
+     경로가 없음 — 리스크는 낮지만 0은 아니다(수동 중복 트리거 시 발생 가능).
+   - **세션 단위 출처 분리 미흡**: 하루에 여러 세션(미션+자유대화 등)이 있으면 하나의
+     transcript로 합쳐 추출하고, 첫 세션의 session_type만 모든 fact에 적용한다 —
+     세션별로 독립 추출하지 않아 출처 메타데이터가 부정확할 수 있다.
+   - 위 3건은 다음 라운드(Step 4 이후 안정화 작업)에서 재검토 대상으로 남긴다 —
+     2026-07-27 codex 리뷰가 이 3건을 [복잡]으로 분류했고, 대표님께도 이렇게
+     보고했다.
 
 ---
 
