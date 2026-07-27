@@ -8,12 +8,14 @@ import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 import KChatbotWidget from "@/components/KChatbotWidget";
 
 const GAMES = [
-  { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", keys: 2 },
+  // comingSoon: 실제 게임 화면이 아직 없는 placeholder 카드 — 클릭해도 황금열쇠 차감/
+  // 시작 확인 모달로 이어지면 안 된다(2026-07-27 실사용 손실 발견, 즉시 차단).
+  { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", keys: 2, comingSoon: true },
   // keys는 화면 표시·부족 판정용 값이다. 실제 차감은 서버가 하므로
   // lib/quiz/handoffToken.ts의 QUIZ_GOLD_KEY_COST와 반드시 같아야 한다(2026-07-27: 1 → 2).
-  { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "#3b82f6", keys: 2 },
-  { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "#22c55e", keys: 3 },
-  { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-sky-blue)", keys: 3 },
+  { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "#3b82f6", keys: 2, comingSoon: false },
+  { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "#22c55e", keys: 3, comingSoon: false },
+  { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-sky-blue)", keys: 3, comingSoon: true },
 ];
 
 /**
@@ -154,6 +156,12 @@ export default function ChildPlayPage() {
   }, [childId, refetchBalance]);
 
   const handleGameClick = async (game: typeof GAMES[0]) => {
+    // 아직 실제 게임 화면이 없는 placeholder(만화책/헤어스타일) — 황금열쇠 차감/시작
+    // 확인 모달로 절대 이어지지 않게 여기서 즉시 종료한다(예약 API 호출 자체를 막음).
+    if (game.comingSoon) {
+      alert("준비 중입니다");
+      return;
+    }
     if (!childId) {
       alert("로그인 정보가 필요합니다. 다시 로그인해주세요.");
       return;
@@ -363,11 +371,11 @@ export default function ChildPlayPage() {
                 <div
                   key={game.id}
                   onClick={() => { handleGameClick(game); }}
-                  className="flex flex-col items-center justify-center gap-3 rounded-3xl px-3 py-6 shadow-md select-none active:scale-95 transition-transform relative overflow-hidden cursor-pointer"
+                  className={`flex flex-col items-center justify-center gap-3 rounded-3xl px-3 py-6 shadow-md select-none active:scale-95 transition-transform relative overflow-hidden cursor-pointer ${game.comingSoon ? "opacity-60" : ""}`}
                   style={{ background: game.bg }}
                 >
                   <div className="absolute top-2 right-3 bg-black/20 text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                    🔑 필요 {game.keys}
+                    {game.comingSoon ? "준비중" : `🔑 필요 ${game.keys}`}
                   </div>
                   <div
                     className="w-14 h-14 mt-3 rounded-2xl flex items-center justify-center text-3xl"
