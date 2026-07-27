@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { getSupabaseTarget } from "@/lib/supabase/env";
+import { isRealCalendarDate } from "@/lib/admin/reportingDateValidation";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
   }
 
   const businessDate = req.nextUrl.searchParams.get("businessDate");
-  if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+  if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate) || !isRealCalendarDate(businessDate)) {
     return NextResponse.json({ error: "Invalid businessDate" }, { status: 400 });
   }
 
@@ -26,13 +27,22 @@ export async function GET(req: NextRequest) {
     db.from("daily_reports").select("child_id").eq("business_date", businessDate).is("deleted_at", null)
   ]);
 
-  const childrenRes = results[0].status === "fulfilled" ? results[0].value : { error: new Error("Failed"), data: [] };
-  const rawRes = results[1].status === "fulfilled" ? results[1].value : { error: null, data: [] };
-  const reportRes = results[2].status === "fulfilled" ? results[2].value : { error: null, data: [] };
+  const childrenRes = results[0].status === "fulfilled" ? results[0].value : { error: new Error("child_profiles 조회 실패(요청 자체가 거부됨)"), data: [] };
+  const rawRes = results[1].status === "fulfilled" ? results[1].value : { error: new Error("raw_daily_conversations 조회 실패(요청 자체가 거부됨)"), data: [] };
+  const reportRes = results[2].status === "fulfilled" ? results[2].value : { error: new Error("daily_reports 조회 실패(요청 자체가 거부됨)"), data: [] };
 
-  if (childrenRes.error) return NextResponse.json({ error: childrenRes.error.message }, { status: 500 });
+  // codex 리뷰 지적: fulfilled 상태라도 Supabase 쿼리 자체의 error 필드는 별도 확인 필요.
+  for (const [label, res] of [
+    ["child_profiles", childrenRes],
+    ["raw_daily_conversations", rawRes],
+    ["daily_reports", reportRes],
+  ] as const) {
+    if (res.error) {
+      return NextResponse.json({ error: `${label} 조회 실패: ${res.error.message}` }, { status: 500 });
+    }
+  }
 
-  const totalChildren = childrenRes.data.length;
+  const totalChildren = (childrenRes.data || []).length;
   
   const rawChildIds = new Set((rawRes.data || []).map((r: any) => r.child_id));
   const hasValidConversation = rawChildIds.size;

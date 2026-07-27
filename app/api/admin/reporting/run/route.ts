@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { getSupabaseTarget } from "@/lib/supabase/env";
 import { runContextCorrectionPipeline } from "@/lib/batch/contextCorrection";
 import { generateDailyReports } from "@/lib/batch/generateDailyReports";
+import { isRealCalendarDate } from "@/lib/admin/reportingDateValidation";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
 
   const { businessDate, action, target } = body;
 
-  if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+  if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate) || !isRealCalendarDate(businessDate)) {
     return NextResponse.json({ error: "Invalid businessDate" }, { status: 400 });
   }
 
@@ -118,8 +119,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // codex 리뷰 지적: collect/generate 각각 부분 오류(errors 배열)가 있어도 지금까지는
+  // 전체 응답이 ok:true, UI는 "✅ 성공"으로만 표시해 아이별/세션별 실패가 성공으로
+  // 오인될 수 있었다(실제로 QA 계정 실행에서 재현 - 8세션 중 2개가 collect 에러였는데
+  // 전체는 성공으로 표시됨). 부분 실패 여부를 별도 필드로 명시한다.
+  const hasPartialErrors =
+    (collectResult?.errors?.length ?? 0) > 0 || (generateResult?.errors?.length ?? 0) > 0;
+
   return NextResponse.json({
     ok: true,
+    partialFailure: hasPartialErrors,
     businessDate,
     action,
     target,

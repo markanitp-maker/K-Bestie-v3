@@ -298,7 +298,17 @@ export default function ManualReportingTab() {
               ) : (
                 <>
                   <div style={{ marginBottom: 8 }}>
-                    <strong>✅ 성공</strong> (동작: {runResult.action})
+                    {runResult.partialFailure ? (
+                      <strong style={{ color: "var(--color-k-danger)" }}>⚠️ 일부 실패</strong>
+                    ) : (
+                      <strong>✅ 성공</strong>
+                    )}
+                    {" "}(동작: {runResult.action})
+                    {runResult.partialFailure && (
+                      <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginTop: 4 }}>
+                        아래 수집/생성 에러 목록을 확인하세요 - 일부 세션·아이는 처리되지 않았을 수 있습니다.
+                      </div>
+                    )}
                   </div>
                   {runResult.collect && (
                     <div style={{ marginBottom: 8 }}>
