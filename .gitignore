@@ -67,3 +67,5 @@ requests/_blocked.md
 .env*
 
 .vercel
+test-results/
+playwright-report/

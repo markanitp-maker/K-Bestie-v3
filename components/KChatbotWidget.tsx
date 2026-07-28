@@ -38,6 +38,177 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
   // DB 레벨에서 막는다(app/api/support/route.ts 참고).
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
 
+  // --- NEW STATE FOR DRAGGABLE ---
+  const [position, setPosition] = useState<{ xPercent: number; yPercent: number; edge: "left" | "right" } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
+  
+  const dragRef = useRef({
+    startX: 0,
+    startY: 0,
+    offsetX: 0,
+    offsetY: 0,
+    isPointerDown: false,
+    longPressTimer: null as NodeJS.Timeout | null,
+    isDragging: false,
+    wasDragging: false,
+  });
+
+  // 롱프레스 타이머가 대기 중일 때 컴포넌트가 언마운트되면 타이머 콜백이 이미 사라진
+  // 컴포넌트의 setState를 호출하게 되므로, 언마운트 시 반드시 정리한다.
+  useEffect(() => {
+    return () => {
+      if (dragRef.current.longPressTimer) {
+        clearTimeout(dragRef.current.longPressTimer);
+        dragRef.current.longPressTimer = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("k_chatbot_widget_position");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed.xPercent === "number" && typeof parsed.yPercent === "number" && (parsed.edge === "left" || parsed.edge === "right")) {
+          setPosition(parsed);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return; // Only left click for mouse
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    dragRef.current = {
+      ...dragRef.current,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      isPointerDown: true,
+      isDragging: false,
+      wasDragging: false,
+    };
+    
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    // 아이 화면에서만 롱프레스로 드래그 진입한다. 부모 화면은 handlePointerMove의
+    // 10px 이동 임계치로만 드래그를 시작해야 하는데, 이 타이머가 화면 구분 없이
+    // 걸려 있으면 부모 화면에서 "이동 없이 400ms 이상 누르고 있다가 뗀 평범한 클릭"도
+    // 드래그로 오인되어 모달이 안 열리고 위치까지 덮어써지는 버그가 생긴다.
+    if (appSurface !== "child") return;
+
+    dragRef.current.longPressTimer = setTimeout(() => {
+      if (dragRef.current.isPointerDown) {
+        dragRef.current.isDragging = true;
+        setIsDragging(true);
+        setDragPos({
+          x: dragRef.current.startX - dragRef.current.offsetX,
+          y: dragRef.current.startY - dragRef.current.offsetY,
+        });
+      }
+    }, 400);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragRef.current.isPointerDown) return;
+    
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    
+    if (!dragRef.current.isDragging && Math.sqrt(dx * dx + dy * dy) > 10) {
+      if (appSurface === "child") {
+        // Child screen: Must long press to move. Swipe cancels.
+        // 롱프레스 완료 전 10px 이상 스와이프는 드래그도 클릭도 아닌 취소 동작이므로,
+        // wasDragging을 세팅해 뒤이어 발생하는 native click이 모달을 열지 않게 막는다.
+        if (dragRef.current.longPressTimer) {
+          clearTimeout(dragRef.current.longPressTimer);
+          dragRef.current.longPressTimer = null;
+        }
+        dragRef.current.isPointerDown = false;
+        dragRef.current.wasDragging = true;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        return;
+      } else {
+        // Parent screen: Immediate drag allowed
+        if (dragRef.current.longPressTimer) {
+          clearTimeout(dragRef.current.longPressTimer);
+          dragRef.current.longPressTimer = null;
+        }
+        dragRef.current.isDragging = true;
+        setIsDragging(true);
+      }
+    }
+    
+    if (dragRef.current.isDragging) {
+      setDragPos({
+        x: e.clientX - dragRef.current.offsetX,
+        y: e.clientY - dragRef.current.offsetY,
+      });
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragRef.current.isPointerDown) return;
+    
+    if (dragRef.current.longPressTimer) {
+      clearTimeout(dragRef.current.longPressTimer);
+      dragRef.current.longPressTimer = null;
+    }
+    
+    dragRef.current.isPointerDown = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    
+    if (dragRef.current.isDragging) {
+      dragRef.current.isDragging = false;
+      dragRef.current.wasDragging = true;
+      setIsDragging(false);
+      
+      const btnX = e.clientX - dragRef.current.offsetX;
+      const btnY = e.clientY - dragRef.current.offsetY;
+      
+      const xPercent = (btnX / window.innerWidth) * 100;
+      const yPercent = (btnY / window.innerHeight) * 100;
+      
+      const edge = xPercent < 50 ? "left" : "right";
+      let snappedY = 50;
+      if (yPercent < 33) snappedY = 15;
+      else if (yPercent > 66) snappedY = 85;
+      else snappedY = 50;
+      
+      const newPos = { 
+        xPercent: edge === "left" ? 5 : 95, 
+        yPercent: snappedY, 
+        edge: edge as "left" | "right" 
+      };
+      setPosition(newPos);
+      
+      try {
+        localStorage.setItem("k_chatbot_widget_position", JSON.stringify({
+          ...newPos,
+          updatedAt: new Date().toISOString()
+        }));
+      } catch (err) {}
+      
+      setTimeout(() => {
+        dragRef.current.wasDragging = false;
+      }, 100);
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (dragRef.current.wasDragging) {
+      e.preventDefault();
+      return;
+    }
+    setIsOpen(true);
+  };
+  // ------------------------------
+
   // 022: DemoFrame(app/demo/components/DemoFrame.tsx)은 PC(포인터 fine + 폭 900px
   // 이상)에서 기기 목업을 그리며, 그 목업 안의 실제 페이지 콘텐츠에는
   // innerPaddingTop(태블릿 목업 pt-8=32px, 스마트폰 목업 pt-10=40px, 상단 상태바
@@ -190,6 +361,70 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
     }
   };
 
+  const getButtonStyles = (): React.CSSProperties => {
+    const defaultRight = containerMaxWidthPx
+      ? `max(0.75rem, calc(50% - ${containerMaxWidthPx / 2}px + 0.75rem))`
+      : "0.75rem";
+    const defaultLeft = containerMaxWidthPx
+      ? `max(0.75rem, calc(50% - ${containerMaxWidthPx / 2}px + 0.75rem))`
+      : "0.75rem";
+
+    const baseStyle: React.CSSProperties = {
+      background: "var(--color-k-navy)",
+      touchAction: "none",
+      transition: isDragging ? "none" : "top 0.3s, left 0.3s, right 0.3s, bottom 0.3s, transform 0.3s",
+    };
+
+    if (isDragging) {
+      return {
+        ...baseStyle,
+        top: `${dragPos.y}px`,
+        left: `${dragPos.x}px`,
+        right: "auto",
+        bottom: "auto",
+        transform: "scale(1.05)",
+        opacity: 0.9,
+      };
+    }
+
+    if (!position) {
+      return {
+        ...baseStyle,
+        top: `calc(${topOffsetPx + pcMockupPaddingTopPx}px + env(safe-area-inset-top))`,
+        right: defaultRight,
+        left: "auto",
+        bottom: "auto",
+        transform: "translateY(0)",
+      };
+    }
+
+    const style = { ...baseStyle };
+    
+    if (position.edge === "left") {
+      style.left = defaultLeft;
+      style.right = "auto";
+    } else {
+      style.right = defaultRight;
+      style.left = "auto";
+    }
+
+    if (position.yPercent === 15) {
+      style.top = `calc(${topOffsetPx + pcMockupPaddingTopPx}px + env(safe-area-inset-top))`;
+      style.bottom = "auto";
+      style.transform = "translateY(0)";
+    } else if (position.yPercent === 50) {
+      style.top = "50%";
+      style.bottom = "auto";
+      style.transform = "translateY(-50%)";
+    } else if (position.yPercent === 85) {
+      style.top = "auto";
+      style.bottom = `calc(90px + env(safe-area-inset-bottom))`;
+      style.transform = "translateY(0)";
+    }
+
+    return style;
+  };
+
   return (
     <>
       {/* 022: 좌측 하단 플로팅 → 상단 헤더 우측 영역으로 이동, 라벨 "케이 챗봇"→"문의".
@@ -199,20 +434,13 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
           표시 등)와의 겹침을 피한다. */}
       <button
         ref={triggerRef}
-        onClick={() => setIsOpen(true)}
-        className={containerMaxWidthPx ? "fixed z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors" : "fixed right-3 z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors"}
-        style={{
-          background: "var(--color-k-navy)",
-          top: `calc(${topOffsetPx + pcMockupPaddingTopPx}px + env(safe-area-inset-top))`,
-          // vw는 실제 브라우저 뷰포트 기준으로만 계산돼(이 fixed 버튼의 containing
-          // block인 DemoFrame의 transform 요소를 무시함) PC 기기 목업(DemoFrame이 실제
-          // 뷰포트보다 좁은 목업 박스를 그리는 경우) 안에서 잘못된 위치로 계산된다.
-          // %는 position:fixed에서도 containing block(=DemoFrame의 transform 요소,
-          // 없으면 실제 뷰포트)의 폭 기준으로 해석되므로 두 경우 모두 올바르게 맞는다.
-          ...(containerMaxWidthPx
-            ? { right: `max(0.75rem, calc(50% - ${containerMaxWidthPx / 2}px + 0.75rem))` }
-            : {}),
-        }}
+        onClick={handleClick}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        className="fixed z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors select-none"
+        style={getButtonStyles()}
         aria-label="문의하기 열기"
       >
         <span className="text-base leading-none">💬</span>
