@@ -1,3 +1,6 @@
+import * as dotenv from "dotenv";
+import * as path from "path";
+dotenv.config({ path: path.resolve(__dirname, ".env.local") });
 import { defineConfig, devices } from "@playwright/test";
 
 // CLAUDE.md §16 — agy E2E QA(§4-D)용 최소 설정. chromium headless 하나만 정의한다.
