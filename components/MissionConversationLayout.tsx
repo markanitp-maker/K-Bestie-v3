@@ -244,11 +244,11 @@ export function MissionConversationLayout({
 
         {/* Auto/Manual Mode Toggles */}
         <div className="relative z-20 flex justify-center gap-2 -mt-2 mb-3 h-[44px] shrink-0">
-           <button onClick={() => onChangeMode('auto')} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] h-[44px] rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95`}>
+           <button onClick={() => onChangeMode('auto')} disabled={isClosing} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] h-[44px] rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
              자동
              {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
            </button>
-           <button onClick={() => onChangeMode('manual')} aria-pressed={!isAuto} className={`flex items-center justify-center min-w-[64px] h-[44px] rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${!isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95`}>
+           <button onClick={() => onChangeMode('manual')} disabled={isClosing} aria-pressed={!isAuto} className={`flex items-center justify-center min-w-[64px] h-[44px] rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${!isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
              수동
              {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
            </button>
@@ -259,6 +259,7 @@ export function MissionConversationLayout({
           {isTextMode ? (
             <div className="w-full px-4 flex gap-2">
               <input
+                ref={(el) => el?.focus()}
                 type="text"
                 value={textInput}
                 onChange={(e) => onChangeTextInput(e.target.value)}
@@ -271,7 +272,7 @@ export function MissionConversationLayout({
               />
               <button
                 onClick={onSendText}
-                disabled={!textInput.trim()}
+                disabled={!textInput.trim() || isClosing}
                 className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center text-white disabled:opacity-40 cursor-pointer shadow-md bg-[var(--color-k-orange)] active:scale-95"
                 aria-label="전송"
               >
@@ -289,8 +290,9 @@ export function MissionConversationLayout({
             <div className="w-full flex items-center justify-center h-[72px] relative">
               {/* Keyboard Button */}
               <button 
-                onClick={onToggleTextMode} 
-                className="absolute left-6 w-[48px] h-[48px] bg-white/80 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-sm border border-gray-200 cursor-pointer active:scale-95" 
+                onClick={onToggleTextMode}
+                disabled={isClosing}
+                className="absolute left-6 w-[48px] h-[48px] bg-white/80 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-sm border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" 
                 aria-label="텍스트로 답하기"
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
@@ -306,12 +308,14 @@ export function MissionConversationLayout({
                 )}
                 <button 
                   onClick={onMicClick} 
-                  disabled={isMicDisabled && !isRecording} 
-                  className={`w-[72px] h-[72px] rounded-[36px] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 ${isMicDisabled && !isRecording ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-[var(--color-k-orange)]'}`}
+                  disabled={isMicDisabled} 
+                  className={`w-[72px] h-[72px] rounded-[36px] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 ${isMicDisabled ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-[var(--color-k-orange)]'}`}
                   aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
                 >
                   {isRecording ? (
                     <div className="w-[24px] h-[24px] rounded-sm bg-white" />
+                  ) : isMicDisabled ? (
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
                   ) : (
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
                   )}

@@ -40,9 +40,7 @@ interface MissionQuestion {
 
 type QuestionState = "pending" | "answered" | "skipped" | "refused";
 
-// 미션 종료 시 케이가 정확히 말해야 하는 문구 — 5번째 유효 답변이 확정된 직후 Live 세션에
-// 전용 종료 발화(live.speakClosingLine)로 이 문장을 보내 케이가 이것만 말하고 끝내게 한다.
-const MISSION_CLOSING_LINE = "오늘의 미션을 모두 완료했어! 황금열쇠를 받았어. 내일 또 만나자!";
+
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binary = atob(base64);
@@ -143,6 +141,7 @@ function MissionInner() {
   const questionStatesRef = useRef<Record<string, QuestionState>>({});
   const askedIndexRef = useRef<number>(-1);
   const missionStateRef = useRef<MissionCompletionState>("active");
+  const missionClosingLineRef = useRef<string>("오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!");
   // Live 모드 전용 미션 턴 상태머신 — awaiting_child(아이 답변 대기) → processing_answer(답변
   // 판정/다음 질문 생성 중) → speaking_k(케이가 말하는 중) → awaiting_child. handleTurnComplete의
   // 재진입 가드와 onAudioQueueDrained의 복귀 신호가 이 상태를 관리한다(STT/TTS 모드는 기존
@@ -181,6 +180,7 @@ function MissionInner() {
   // 종료 문구 TTS 폴백이 중복 실행되지 않도록 하는 가드(컨트롤러의 closingFinished 위에 얹는
   // 이중 방어) — onClosingAudioTimeout이 어떤 이유로든 두 번 불려도 재생/저장은 1회만.
   const closingFallbackFiredRef = useRef(false);
+  const closingTurnAppendedRef = useRef(false);
   const missionControllerRef = useRef<MissionCompletionController | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   // askQuestion은 훅 생성 이후에만 얻을 수 있어 ref로 우회
@@ -347,6 +347,9 @@ function MissionInner() {
     // (Live/비Live 공통 콜백이라 두 모드 모두 이 시점에서 회복된다).
     if (turn.role === "k") {
       recordNormalTurn();
+      if (turn.text === missionClosingLineRef.current) {
+        closingTurnAppendedRef.current = true;
+      }
     }
     const isLive = voiceModeRef.current === "live";
 
@@ -649,6 +652,14 @@ function MissionInner() {
 
           // setCompleted는 발화 완료 후 상태 전이 시에 호출되도록 위임
           if (data.completed) {
+            const rwStatus = data.rewardStatus ?? "none";
+            if (rwStatus === "awarded" || rwStatus === "already_earned" || rwStatus === "granted") {
+              missionClosingLineRef.current = "오늘 미션을 모두 완료했어! 황금열쇠를 받았어. 다음에 또 보자!";
+            } else {
+              missionClosingLineRef.current = "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!";
+            }
+            missionStateRef.current = "completing";
+            setMissionState("completing");
           // 5번째 유효 답변 확정 — 여기서 곧바로 세션을 끊지 않는다(케이가 아직 종료 발화를
           // 하는/할 중일 수 있음). Live 모드는 별도 종료 플로우(missionCompletionFlow)가
           // "종료 발화의 turnComplete + 오디오 재생 완료 + 700ms" 이후에만 세션을 닫는다.
@@ -668,7 +679,7 @@ function MissionInner() {
             }
             setTurnPhase("k_speaking");
             liveRef.current?.lockNow();
-            const success = liveRef.current?.speakClosingLine("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
+            const success = liveRef.current?.speakClosingLine(missionClosingLineRef.current);
             missionControllerRef.current?.start({ immediateTtsFallback: !success });
           } else {
             // STT/TTS(Tier1/2) 경로는 연속 스트리밍 세션이 아니라 매 발화가 개별 TTS
@@ -684,9 +695,9 @@ function MissionInner() {
             setTurnPhase("k_speaking");
             sttSetMicEnabledRef.current?.(false);
             if (kVoiceEnabledRef.current) {
-              await sttTts.speak("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
+              await sttTts.speak(missionClosingLineRef.current);
             } else {
-              sttTts.sayText("오늘 미션 끝났어. 이야기해 줘서 고마워. 잘 자!");
+              sttTts.sayText(missionClosingLineRef.current);
             }
             missionStateRef.current = "completed";
             setMissionState("completed");
@@ -1117,7 +1128,7 @@ function MissionInner() {
       },
       // fallback/외부 종료 경로 전용 — 정상 경로는 케이 본인의 발화가 이미 화면에 떠 있다.
       onShowCompletionText: () => {
-        liveRef.current?.appendTurn({ role: "k", text: MISSION_CLOSING_LINE });
+        liveRef.current?.appendTurn({ role: "k", text: missionClosingLineRef.current });
       },
       onCloseSession: () => {
         liveRef.current?.stopSession();
@@ -1133,11 +1144,15 @@ function MissionInner() {
       onClosingAudioTimeout: async () => {
         if (closingFallbackFiredRef.current) return;
         closingFallbackFiredRef.current = true;
-        const kId = nextTurnId();
-        const fallbackSeq = nextDisplaySequence();
-        liveRef.current?.appendTurn({ role: "k", text: MISSION_CLOSING_LINE, id: kId, displaySequence: fallbackSeq });
-        saveMessage("k", MISSION_CLOSING_LINE, fallbackSeq, kId);
-        await playClosingLineViaTts(MISSION_CLOSING_LINE, sessionIdRef.current);
+        const text = missionClosingLineRef.current;
+        if (!closingTurnAppendedRef.current) {
+          closingTurnAppendedRef.current = true;
+          const kId = nextTurnId();
+          const fallbackSeq = nextDisplaySequence();
+          liveRef.current?.appendTurn({ role: "k", text, id: kId, displaySequence: fallbackSeq });
+          saveMessage("k", text, fallbackSeq, kId);
+        }
+        await playClosingLineViaTts(text, sessionIdRef.current);
       },
       onLog: (event, fields) => console.log(`[MissionFlow] ${event}`, fields ?? {}),
     });
@@ -1322,38 +1337,59 @@ function MissionInner() {
   askQuestionRef.current = askQuestion;
 
   const switchToText = useCallback(() => {
+    if (missionStateRef.current !== "active") return;
+    
+    // 1. VAD/activity 및 마이크 중단 (모드 변경 전 무조건 실행)
+    if (isLiveMode) {
+      live.sendActivityEnd();
+      live.setAudioMuted(false);
+    } else {
+      sttTts.setMicEnabled(false);
+    }
+    voice.setMicEnabled(false);
+
+    // 녹음 중이었을 때의 추가 정리 작업
     if (isRecordingRef.current) {
       try {
-        if (isLiveMode) {
-          live.sendActivityEnd();
-          live.setAudioMuted(false);
-          // child_listening 유지 (turnComplete에서 대기)
-        } else {
+        if (!isLiveMode) {
           sttAbortControllerRef.current = new AbortController();
           const capturedId = activeChildTurnIdRef.current;
           sttTimeoutRef.current = setTimeout(() => {
             if (activeChildTurnIdRef.current !== capturedId) return;
             attemptSilentRecoveryOrShowRetry();
           }, 10000);
-          // child_listening 유지 (turnComplete에서 대기)
           sttTts.manualFinalize(sttAbortControllerRef.current.signal);
-          sttTts.setMicEnabled(false);
         }
       } finally {
         setIsRecording(false);
         isRecordingRef.current = false;
       }
     }
+    
+    // 2. 모드 수동 변경
+    if (isAutoRef.current) {
+      if (isLiveMode) {
+        live.setInteractionMode("manual");
+      } else {
+        sttTts.setInputMode("manual");
+      }
+      setIsAuto(false);
+      isAutoRef.current = false;
+      if (childIdRef.current) {
+        localStorage.setItem(`k_voice_input_mode:${childIdRef.current}`, "manual");
+      }
+    }
+    // 3. 텍스트 입력 UI 열기
     setMode("text");
-    voice.setMicEnabled(false);
-  }, [voice, live, isLiveMode, sttTts, setTurnPhase, resetToIdle]);
+  }, [voice, live, isLiveMode, sttTts, attemptSilentRecoveryOrShowRetry]);
 
   const switchToVoice = useCallback(() => {
+    if (missionStateRef.current !== "active") return;
     setMode("voice");
-    voice.setMicEnabled(true);
-  }, [voice]);
+  }, []);
 
   const handleSendText = useCallback(() => {
+    if (missionStateRef.current !== "active") return; // 완료 상태 가드
     if (answerInFlightRef.current) return; // 처리 중엔 새 제출을 아예 막는다
     const text = textInput.trim();
     if (!text) return;
@@ -1567,6 +1603,7 @@ function MissionInner() {
   }, [voice.status, isAuto, isLiveMode, live.setInteractionMode, sttTts.setInputMode, sttTts.setMicEnabled]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
+    if (missionStateRef.current !== "active") return; // 완료 시 모드 변경 차단
     // 실제 탭 이벤트 안 — Android에서 케이 오디오 AudioContext가 아직 suspended라면 여기서
     // 재시도(자동 모드는 세션이 useEffect에서 제스처 없이 시작돼 특히 도움이 된다).
     if (isLiveMode) void live.unlockAudio();
@@ -1949,16 +1986,51 @@ function MissionInner() {
   // 중)로 판단한다 — 이 값이 예전엔 Live 전용으로만 게이팅돼 있어 실제 Dev 환경(STT/TTS)에서는
   // 항상 false였고(011 "문제 A"), isProcessingAnswer만 봤을 때도 TTS 재생 구간(케이가 실제로
   // 말하는 중)이 빠져 있어 그 사이엔 버튼이 다시 "대기" 모양으로 되돌아가는 문제가 있었다.
-  const isThinkingTurn = !isAuto && (isLiveMode ? turnPhaseUi !== "idle" : (isProcessingAnswer || sttTts.isSpeaking));
-  // 회색 비활성 버튼의 문구를 "케이가 말하는 중"과 "케이가 생각하는 중"으로 구분(같은 회색
-  // 비활성 모양, 문구만 다름) — 아이가 실제로 케이 목소리가 나오는 순간인지 구분할 수 있게 한다.
+  // 권장 상태 파생 구조에 따라 단일 Source of Truth 관리
+  const isMissionCompleted = missionState !== "active" || completed;
+  const canAcceptVoiceInput =
+    !isMissionCompleted &&
+    mode !== "text" &&
+    voice.status === "live" &&
+    (isLiveMode
+      ? (turnPhaseUi === "idle" || turnPhaseUi === "child_listening")
+      : (!isProcessingAnswer && !sttTts.isSpeaking));
+
+  const isButtonBlocked = !canAcceptVoiceInput;
+  
+  // 마이크 활성 상태 동기화
+  useEffect(() => {
+    if (!canAcceptVoiceInput) {
+      if (isRecordingRef.current) {
+         if (isLiveMode) {
+           live.sendActivityEnd();
+           live.setAudioMuted(false);
+         } else {
+           sttCancelFinalizeRef.current?.();
+           sttSetMicEnabledRef.current?.(false);
+         }
+         setIsRecording(false);
+         isRecordingRef.current = false;
+      }
+      if (isLiveMode) {
+           live.setMicEnabled(false);
+         } else {
+           sttSetMicEnabledRef.current?.(false);
+         }
+    } else {
+      if (isAutoRef.current) {
+         if (isLiveMode) {
+           live.setMicEnabled(true);
+         } else {
+           sttSetMicEnabledRef.current?.(true);
+         }
+      }
+    }
+  }, [canAcceptVoiceInput, isLiveMode, live]);
+
+  // 회색 비활성 버튼의 문구를 "케이가 말하는 중"과 "케이가 생각하는 중"으로 구분
   const isKSpeakingNow = isLiveMode ? turnPhaseUi === "k_speaking" : sttTts.isSpeaking;
-  // 버튼 클릭 가능 여부는 isThinkingTurn을 그대로 쓰면 안 된다 — Live 모드의 turnPhaseUi는
-  // 녹음 시작 즉시 "child_listening"(≠idle)으로 바뀌어 isThinkingTurn이 true가 되므로,
-  // isRecording으로 override하지 않으면 방금 녹음을 시작한 버튼이 그 순간 disabled로
-  // 잠겨 "눌러서 녹음을 끝낼 수 있어야 함" 요구사항을 만족하지 못한다(QA 중 실제 재현·발견).
-  // 녹음 중에는 항상 클릭 가능해야 한다 — 회색 비활성은 "K가 말하는 중/생각하는 중"에만.
-  const isButtonBlocked = isThinkingTurn && !isRecording;
+  
   // 012 "좌측에 현재 미션 라벨(예: 하교 후 미션)" — roundType 판정 로직 자체는 건드리지
   // 않고 그 결과값(round1_day/round2_night/common)만 라벨 텍스트로 매핑한다.
   const missionLabel =
@@ -2022,18 +2094,7 @@ function MissionInner() {
       
       {retryOverlay}
 
-      {isDone && (
-        <div className="fixed top-[64px] left-0 right-0 z-[60] text-center px-4 pointer-events-none drop-shadow-md">
-          <h1 className="text-[15px] font-extrabold text-[#3a2f2a]">
-            오늘의 미션을 완료했어요!
-          </h1>
-          <p className="text-[12px] mt-1 text-[#4a3b32] font-semibold bg-white/60 inline-block px-3 py-1 rounded-full backdrop-blur-md">
-            {missionState === "completed"
-              ? MISSION_CLOSING_LINE
-              : "황금열쇠를 받았어요. 내일 또 만나요! 🔑"}
-          </p>
-        </div>
-      )}
+
 
       {/* 조기 종료 감지/오디오 언락 UI (absolute/fixed로 띄움) */}
       {isLiveMode && live.audioLocked && voice.status === "live" && (
