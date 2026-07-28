@@ -282,7 +282,7 @@ export default function ChildHomePage() {
 
           {/* Greeting Area */}
           <div className="flex flex-col items-center text-center mt-6 mb-3">
-            <h1 className="text-[26px] font-extrabold leading-[1.2]">
+            <h1 className="font-brand text-[26px] font-extrabold leading-[1.2]">
               {greetingTitle}<br/>오늘은 뭐 하고 놀까?
             </h1>
           </div>

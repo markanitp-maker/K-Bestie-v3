@@ -347,7 +347,7 @@ export default function ChildPlayPage() {
         
         {/* 헤더 */}
         <div className="shrink-0 relative flex items-center justify-center px-4 pt-4 pb-2 z-10">
-          <Link href="/child/home" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
+          <Link href="/child/home" className="font-brand font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             케이와 놀이
           </Link>
           <div
