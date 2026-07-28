@@ -102,12 +102,38 @@ export default function ParentSettingsPage() {
   const [editGivenName, setEditGivenName] = useState("");
   const [editGrade, setEditGrade] = useState("");
   const [editInterests, setEditInterests] = useState<string[]>([]);
-  const [editTier, setEditTier] = useState<number>(1);
   const [editOriginalTier, setEditOriginalTier] = useState<number>(1);
-  const [savingTier, setSavingTier] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // 요금제 다운그레이드 확인 모달 — "확인" 전에는 어떤 스탬프도 부여하지 않는다(비가역 파기 실수 방지).
-  const [showDowngradeConfirm, setShowDowngradeConfirm] = useState(false);
+
+  // 027: 자녀 프로필 저장 검증/피드백 상태
+  const [saveFieldErrors, setSaveFieldErrors] = useState<{ familyName?: string; givenName?: string; grade?: string; interests?: string }>({});
+  const [saveErrorSummary, setSaveErrorSummary] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "success" | "error">("idle");
+  const [saveServerError, setSaveServerError] = useState<string | null>(null);
+  const familyNameInputRef = useRef<HTMLInputElement | null>(null);
+  const givenNameInputRef = useRef<HTMLInputElement | null>(null);
+  const gradeSectionRef = useRef<HTMLDivElement | null>(null);
+  const interestsSectionRef = useRef<HTMLDivElement | null>(null);
+  // 모달을 열 때의 원본 프로필 값 스냅샷 — 요금제 변경요청 직전 "수정 중인 값이 있는지" 판정용(§10)
+  const originalProfileRef = useRef<{ familyName: string; givenName: string; grade: string; interests: string[] } | null>(null);
+
+  // 027: 요금제 변경 요청(승인 대기) 상태 — 즉시 tier를 바꾸지 않고 요청만 생성한다.
+  const [planRequest, setPlanRequest] = useState<{
+    id: string;
+    current_plan_snapshot: number;
+    requested_tier: number;
+    status: "pending" | "approved" | "rejected" | "cancelled";
+    requested_at: string;
+    reviewed_at: string | null;
+    review_note: string | null;
+  } | null>(null);
+  const [pendingPlanTier, setPendingPlanTier] = useState<number | null>(null);
+  const [showPlanConfirm, setShowPlanConfirm] = useState(false);
+  const [showUnsavedGate, setShowUnsavedGate] = useState(false);
+  const [planRequestSubmitting, setPlanRequestSubmitting] = useState(false);
+  const [planRequestError, setPlanRequestError] = useState<string | null>(null);
+  const [showPlanAccepted, setShowPlanAccepted] = useState<{ requestedTier: number; currentTier: number } | null>(null);
+  const [cancellingPlanRequest, setCancellingPlanRequest] = useState(false);
 
   // Care Insight 연장 관련 상태
   const [extensionYears, setExtensionYears] = useState<number>(0);
@@ -152,6 +178,16 @@ export default function ParentSettingsPage() {
       setCopiedChildCreds(false);
       setCheckingAccount(false);
       setResettingChildPassword(false);
+      originalProfileRef.current = null;
+      setSaveFieldErrors({});
+      setSaveErrorSummary(null);
+      setSaveServerError(null);
+      setSaveState("idle");
+      setPlanRequest(null);
+      setPlanRequestError(null);
+      setPendingPlanTier(null);
+      setShowPlanConfirm(false);
+      setShowUnsavedGate(false);
     }
   }, [editChild]);
 
@@ -350,28 +386,156 @@ export default function ParentSettingsPage() {
     }
   }, [store.activeFamilyId, isOwner]);
 
-  const commitChildSave = async () => {
-    if (!editGivenName.trim() || !editChild) return;
-    updateChild(editChild.id, {
-      familyName: editFamilyName.trim(),
-      givenName: editGivenName.trim(),
-      grade: editGrade,
-      interests: editInterests,
-    } as any);
-    if (editTier !== editOriginalTier) {
-      setSavingTier(true);
-      try {
-        await fetch(`/api/child/${editChild.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tier: editTier }),
-        });
-      } catch {} finally {
-        setSavingTier(false);
-      }
+  const validateChildProfile = () => {
+    const errors: { familyName?: string; givenName?: string; grade?: string; interests?: string } = {};
+    if (!editFamilyName.trim()) errors.familyName = "성을 입력해 주세요.";
+    if (!editGivenName.trim()) errors.givenName = "이름을 입력해 주세요.";
+    if (!editGrade) errors.grade = "학년을 선택해 주세요.";
+    if (editInterests.length === 0) errors.interests = "관심사를 한 개 이상 선택해 주세요.";
+    return errors;
+  };
+
+  const focusFirstChildProfileError = (errors: { familyName?: string; givenName?: string; grade?: string; interests?: string }) => {
+    if (errors.familyName) { familyNameInputRef.current?.focus(); return; }
+    if (errors.givenName) { givenNameInputRef.current?.focus(); return; }
+    if (errors.grade) { gradeSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    if (errors.interests) { interestsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  };
+
+  const isChildProfileDirty = () => {
+    const orig = originalProfileRef.current;
+    if (!orig) return false;
+    const sortedOrig = [...orig.interests].sort().join(",");
+    const sortedNow = [...editInterests].sort().join(",");
+    return (
+      orig.familyName !== editFamilyName.trim() ||
+      orig.givenName !== editGivenName.trim() ||
+      orig.grade !== editGrade ||
+      sortedOrig !== sortedNow
+    );
+  };
+
+  // 자녀 기본정보 저장 — 요금제는 이 함수가 절대 건드리지 않는다(§8, 프로필 저장과 요금제
+  // 변경 분리). 성공 시 true, 검증/서버 실패 시 false를 반환해 호출부가 이어서 분기할 수 있다.
+  const commitChildProfileSave = async (): Promise<boolean> => {
+    const errors = validateChildProfile();
+    if (Object.keys(errors).length > 0) {
+      setSaveFieldErrors(errors);
+      setSaveErrorSummary("입력하지 않은 항목이 있어요. 표시된 내용을 확인해 주세요.");
+      focusFirstChildProfileError(errors);
+      return false;
     }
-    setEditChild(null);
-    loadFamilyMembers();
+    if (!editChild) return false;
+
+    setSaveFieldErrors({});
+    setSaveErrorSummary(null);
+    setSaveServerError(null);
+    setSaveState("saving");
+
+    try {
+      const res = await fetch(`/api/child/${editChild.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          familyName: editFamilyName.trim(),
+          givenName: editGivenName.trim(),
+          grade: editGrade,
+          interests: editInterests,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveState("error");
+        setSaveServerError(
+          res.status === 403
+            ? "이 자녀의 정보를 수정할 권한이 없어요."
+            : (data.error || "자녀 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
+        );
+        return false;
+      }
+
+      updateChild(editChild.id, {
+        familyName: editFamilyName.trim(),
+        givenName: editGivenName.trim(),
+        grade: editGrade,
+        interests: editInterests,
+      } as any);
+      originalProfileRef.current = {
+        familyName: editFamilyName.trim(),
+        givenName: editGivenName.trim(),
+        grade: editGrade,
+        interests: [...editInterests],
+      };
+      setSaveState("success");
+      await loadFamilyMembers();
+      return true;
+    } catch {
+      setSaveState("error");
+      setSaveServerError("자녀 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.");
+      return false;
+    }
+  };
+
+  const refreshPlanRequest = async (childId: string) => {
+    try {
+      const res = await fetch(`/api/child/${childId}/plan-change-request`);
+      const data = await res.json().catch(() => ({ request: null }));
+      setPlanRequest(res.ok ? (data.request ?? null) : null);
+    } catch {
+      setPlanRequest(null);
+    }
+  };
+
+  // 요금제 변경 요청 실제 생성 — 부모가 확인 다이얼로그(또는 "저장하고 진행")를 통해
+  // 명시적으로 동의한 뒤에만 호출한다. 현재 요금제는 여기서도 바뀌지 않는다(관리자 승인 시에만 반영).
+  const requestPlanChange = async (tier: number) => {
+    if (!editChild) return;
+    setPlanRequestSubmitting(true);
+    setPlanRequestError(null);
+    try {
+      const res = await fetch(`/api/child/${editChild.id}/plan-change-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestedTier: tier }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPlanRequestError(data.error || "요금제 변경 요청을 생성하지 못했어요.");
+        await refreshPlanRequest(editChild.id);
+        return;
+      }
+      setShowPlanAccepted({ requestedTier: tier, currentTier: editOriginalTier });
+      await refreshPlanRequest(editChild.id);
+    } catch {
+      setPlanRequestError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setPlanRequestSubmitting(false);
+      setPendingPlanTier(null);
+    }
+  };
+
+  // 요금제 카드 클릭 — §9/§10: 현재 요금제 재선택은 무시, 대기 중 요청이 있으면 무시,
+  // 프로필 미저장 변경이 있으면 먼저 저장 게이트를 띄운다.
+  const handlePlanCardClick = (tier: number) => {
+    if (tier === editOriginalTier) return;
+    if (planRequest?.status === "pending") return;
+    setPendingPlanTier(tier);
+    if (isChildProfileDirty()) {
+      setShowUnsavedGate(true);
+    } else {
+      setShowPlanConfirm(true);
+    }
+  };
+
+  const handleCancelPlanRequest = async () => {
+    if (!editChild) return;
+    setCancellingPlanRequest(true);
+    try {
+      const res = await fetch(`/api/child/${editChild.id}/plan-change-request`, { method: "DELETE" });
+      if (res.ok) await refreshPlanRequest(editChild.id);
+    } catch {} finally {
+      setCancellingPlanRequest(false);
+    }
   };
 
   const handleWithdrawConsent = async () => {
@@ -618,6 +782,9 @@ export default function ParentSettingsPage() {
       setEditInterests((prev) =>
         prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
       );
+      if (saveFieldErrors.interests) {
+        setSaveFieldErrors((prev) => ({ ...prev, interests: undefined }));
+      }
     } else {
       setAddChildInterests((prev) =>
         prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
@@ -846,12 +1013,24 @@ export default function ParentSettingsPage() {
                                       grade: m.grade,
                                       interests: m.interests
                                     });
-                                    setEditFamilyName(m.familyName ?? "");
-                                    setEditGivenName(m.givenName ?? "");
-                                    setEditGrade(m.grade);
-                                    setEditInterests(m.interests ?? []);
-                                    setEditTier(m.tier ?? 1);
+                                    const familyName = m.familyName ?? "";
+                                    const givenName = m.givenName ?? "";
+                                    const grade = m.grade;
+                                    const interests = m.interests ?? [];
+                                    setEditFamilyName(familyName);
+                                    setEditGivenName(givenName);
+                                    setEditGrade(grade);
+                                    setEditInterests(interests);
                                     setEditOriginalTier(m.tier ?? 1);
+                                    originalProfileRef.current = { familyName, givenName, grade, interests: [...interests] };
+                                    setSaveFieldErrors({});
+                                    setSaveErrorSummary(null);
+                                    setSaveServerError(null);
+                                    setSaveState("idle");
+                                    setPlanRequest(null);
+                                    setPlanRequestError(null);
+                                    setPendingPlanTier(null);
+                                    refreshPlanRequest(m.childId);
                                   }}
                                   className={isMobileCard ? "block w-full text-[10px] bg-[#f3f4f6] text-gray-600 font-bold py-2 rounded-lg cursor-pointer text-center whitespace-nowrap" : "text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer text-center whitespace-nowrap"}
                                 >
@@ -1226,43 +1405,69 @@ export default function ParentSettingsPage() {
                 자녀 프로필 수정
               </p>
 
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="성"
-                  value={editFamilyName}
-                  onChange={(e) => setEditFamilyName(e.target.value)}
-                  className="w-1/3 px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
-                />
-                <input
-                  type="text"
-                  placeholder="이름"
-                  value={editGivenName}
-                  onChange={(e) => setEditGivenName(e.target.value)}
-                  className="w-2/3 px-3 py-2 text-xs border border-gray-200 rounded-xl bg-gray-50/50 outline-none"
-                />
+              {saveErrorSummary && (
+                <p className="text-[10px] text-red-500 font-bold text-center -mt-1">{saveErrorSummary}</p>
+              )}
+
+              <div className="flex gap-2 items-start">
+                <div className="w-1/3">
+                  <input
+                    ref={familyNameInputRef}
+                    type="text"
+                    placeholder="성"
+                    aria-label="성"
+                    value={editFamilyName}
+                    onChange={(e) => { setEditFamilyName(e.target.value); if (saveFieldErrors.familyName) setSaveFieldErrors((prev) => ({ ...prev, familyName: undefined })); }}
+                    aria-invalid={!!saveFieldErrors.familyName}
+                    aria-describedby={saveFieldErrors.familyName ? "edit-family-name-error" : undefined}
+                    className={`w-full px-3 py-2 text-xs border rounded-xl bg-gray-50/50 outline-none ${saveFieldErrors.familyName ? "border-red-400" : "border-gray-200"}`}
+                  />
+                  {saveFieldErrors.familyName && (
+                    <p id="edit-family-name-error" className="text-[9px] text-red-500 mt-0.5">{saveFieldErrors.familyName}</p>
+                  )}
+                </div>
+                <div className="w-2/3">
+                  <input
+                    ref={givenNameInputRef}
+                    type="text"
+                    placeholder="이름"
+                    aria-label="이름"
+                    value={editGivenName}
+                    onChange={(e) => { setEditGivenName(e.target.value); if (saveFieldErrors.givenName) setSaveFieldErrors((prev) => ({ ...prev, givenName: undefined })); }}
+                    aria-invalid={!!saveFieldErrors.givenName}
+                    aria-describedby={saveFieldErrors.givenName ? "edit-given-name-error" : undefined}
+                    className={`w-full px-3 py-2 text-xs border rounded-xl bg-gray-50/50 outline-none ${saveFieldErrors.givenName ? "border-red-400" : "border-gray-200"}`}
+                  />
+                  {saveFieldErrors.givenName && (
+                    <p id="edit-given-name-error" className="text-[9px] text-red-500 mt-0.5">{saveFieldErrors.givenName}</p>
+                  )}
+                </div>
               </div>
 
-              <div>
+              <div ref={gradeSectionRef}>
                 <p className="text-[9px] text-gray-400 mb-1">학년</p>
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-3 gap-1" aria-describedby={saveFieldErrors.grade ? "edit-grade-error" : undefined}>
                   {GRADES.map((g) => (
                     <button
                       key={g}
-                      onClick={() => setEditGrade(g)}
+                      onClick={() => { setEditGrade(g); if (saveFieldErrors.grade) setSaveFieldErrors((prev) => ({ ...prev, grade: undefined })); }}
+                      aria-pressed={editGrade === g}
                       className={`py-1.5 text-[9px] font-bold border rounded-lg cursor-pointer ${
                         editGrade === g ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                      }`}
+                      } ${saveFieldErrors.grade ? "border-red-400" : ""}`}
                     >
                       {g}
                     </button>
                   ))}
                 </div>
+                {saveFieldErrors.grade && (
+                  <p id="edit-grade-error" className="text-[9px] text-red-500 mt-1">{saveFieldErrors.grade}</p>
+                )}
               </div>
 
-              <div>
+              <div ref={interestsSectionRef}>
                 <p className="text-[9px] text-gray-400 mb-1">관심사</p>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1" aria-describedby={saveFieldErrors.interests ? "edit-interests-error" : undefined}>
                   {INTERESTS.map((interest) => {
                     const has = editInterests.includes(interest);
                     return (
@@ -1271,33 +1476,66 @@ export default function ParentSettingsPage() {
                         onClick={() => toggleInterest(interest, true)}
                         className={`px-2.5 py-1 text-[9px] font-bold border rounded-full cursor-pointer ${
                           has ? "bg-[var(--color-k-orange)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                        }`}
+                        } ${saveFieldErrors.interests ? "border-red-400" : ""}`}
                       >
                         {interest}
                       </button>
                     );
                   })}
                 </div>
+                {saveFieldErrors.interests && (
+                  <p id="edit-interests-error" className="text-[9px] text-red-500 mt-1">{saveFieldErrors.interests}</p>
+                )}
               </div>
 
               <div>
                 <p className="text-[9px] text-gray-400 mb-1">요금제</p>
                 <div className="grid grid-cols-3 gap-1">
-                  {CARE_PLANS.map((p) => (
-                    <button
-                      key={p.tier}
-                      onClick={() => setEditTier(p.tier)}
-                      className={`py-1.5 text-[9px] font-bold border rounded-lg cursor-pointer ${
-                        editTier === p.tier ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
+                  {CARE_PLANS.map((p) => {
+                    const isCurrent = p.tier === editOriginalTier;
+                    const isPendingRequested = planRequest?.status === "pending" && planRequest.requested_tier === p.tier;
+                    return (
+                      <button
+                        key={p.tier}
+                        onClick={() => handlePlanCardClick(p.tier)}
+                        disabled={isCurrent || (planRequest?.status === "pending" && !isPendingRequested)}
+                        className={`py-1.5 px-1 text-[9px] font-bold border rounded-lg flex flex-col items-center gap-0.5 ${
+                          isCurrent || isPendingRequested ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                        } ${isCurrent ? "cursor-default" : "cursor-pointer"} disabled:opacity-60`}
+                      >
+                        <span>{p.label}</span>
+                        {isCurrent && <span className="text-[7px] font-normal opacity-80">현재 이용 중</span>}
+                        {isPendingRequested && <span className="text-[7px] font-normal opacity-80">승인 대기 중</span>}
+                      </button>
+                    );
+                  })}
                 </div>
+                {planRequest?.status === "pending" && (
+                  <div className="mt-1.5 flex items-center justify-between gap-2 bg-orange-50 border border-orange-200/70 rounded-lg px-2 py-1.5">
+                    <p className="text-[9px] text-[var(--color-k-orange)] font-bold">
+                      {CARE_PLANS.find((p) => p.tier === planRequest.requested_tier)?.label ?? ""} 변경 요청 · 관리자 확인 중
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleCancelPlanRequest}
+                      disabled={cancellingPlanRequest}
+                      className="text-[9px] text-gray-400 underline cursor-pointer disabled:opacity-50 shrink-0"
+                    >
+                      요청 취소
+                    </button>
+                  </div>
+                )}
+                {planRequest?.status === "rejected" && (
+                  <p className="mt-1.5 text-[9px] text-red-500">
+                    변경 요청이 승인되지 않았어요.{planRequest.review_note ? ` (${planRequest.review_note})` : ""}
+                  </p>
+                )}
+                {planRequestError && (
+                  <p className="mt-1.5 text-[9px] text-red-500">{planRequestError}</p>
+                )}
               </div>
 
-              {editTier === 2 && (
+              {editOriginalTier === 2 && (
                 <div className="mt-2 p-3 bg-gray-50 border border-gray-200/60 rounded-xl">
                   <div className="flex justify-between items-center mb-1">
                     <p className="text-[11px] font-bold text-gray-700">Care Insight 확장팩</p>
@@ -1518,22 +1756,25 @@ export default function ParentSettingsPage() {
                 </div>
               </div>
 
+              {saveServerError && (
+                <p className="text-[10px] text-red-500 font-bold text-center">{saveServerError}</p>
+              )}
+              {saveState === "success" && (
+                <p className="text-[10px] text-green-600 font-bold text-center">자녀 정보가 저장되었어요.</p>
+              )}
+
               <div className="flex gap-2 mt-1">
                 <button
                   onClick={async () => {
-                    if (!editGivenName.trim() || !editChild) return;
-                    // 다운그레이드(요금제 하향)면 저장 직전 확인 모달을 먼저 띄운다 — "확인"을
-                    // 누르기 전까지는 이름/관심사 등 다른 항목도 포함해 어떤 변경도 커밋하지 않는다.
-                    if (editTier < editOriginalTier) {
-                      setShowDowngradeConfirm(true);
-                      return;
+                    const ok = await commitChildProfileSave();
+                    if (ok) {
+                      setTimeout(() => setEditChild(null), 900);
                     }
-                    await commitChildSave();
                   }}
-                  disabled={savingTier}
+                  disabled={saveState === "saving"}
                   className="flex-1 py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
                 >
-                  {savingTier ? "저장중" : "저장"}
+                  {saveState === "saving" ? "저장 중..." : "저장"}
                 </button>
                 <button
                   onClick={() => setEditChild(null)}
@@ -1578,34 +1819,103 @@ export default function ParentSettingsPage() {
           </div>
         )}
 
-        {showDowngradeConfirm && editChild && (
+        {/* §9 요금제 변경 확인 다이얼로그 — "변경 요청"을 눌러야만 요청이 생성된다. */}
+        {showPlanConfirm && editChild && pendingPlanTier !== null && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
             <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
               <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
-                요금제를 낮추시겠어요?
+                요금제 변경을 요청할까요?
+              </p>
+              <p className="text-xs leading-relaxed text-gray-500 mb-2">
+                현재 요금제: {CARE_PLANS.find((p) => p.tier === editOriginalTier)?.label}<br />
+                변경 요청: {CARE_PLANS.find((p) => p.tier === pendingPlanTier)?.label}
               </p>
               <p className="text-xs leading-relaxed text-gray-500 mb-4">
-                {formatRetentionLabel(editTier as Tier)} 초과 데이터는 1개월 후 완전 파기됩니다. 1개월 안에 다시
-                요금제를 올리면 데이터를 복구할 수 있어요.
+                관리자 승인 후 변경된 요금제가 적용됩니다.
+                {pendingPlanTier < editOriginalTier && (
+                  <> 승인되면 {formatRetentionLabel(pendingPlanTier as Tier)} 초과 데이터는 1개월 후 완전 파기돼요. 1개월 안에 다시 요금제를 올리면 복구할 수 있어요.</>
+                )}
               </p>
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
-                    setShowDowngradeConfirm(false);
-                    await commitChildSave();
+                    setShowPlanConfirm(false);
+                    await requestPlanChange(pendingPlanTier);
                   }}
-                  disabled={savingTier}
+                  disabled={planRequestSubmitting}
                   className="flex-1 py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
                 >
-                  확인
+                  변경 요청
                 </button>
                 <button
-                  onClick={() => setShowDowngradeConfirm(false)}
+                  onClick={() => { setShowPlanConfirm(false); setPendingPlanTier(null); }}
                   className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
                 >
                   취소
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* §10 프로필 미저장 변경이 있는 상태에서 요금제를 선택한 경우의 게이트 */}
+        {showUnsavedGate && editChild && pendingPlanTier !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+            <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
+              <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+                수정 중인 자녀 정보가 있어요.
+              </p>
+              <p className="text-xs leading-relaxed text-gray-500 mb-4">
+                자녀 정보를 먼저 저장한 뒤 요금제 변경을 진행해 주세요.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    const tier = pendingPlanTier;
+                    setShowUnsavedGate(false);
+                    const ok = await commitChildProfileSave();
+                    if (ok) {
+                      await requestPlanChange(tier);
+                    }
+                  }}
+                  disabled={saveState === "saving" || planRequestSubmitting}
+                  className="flex-1 py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
+                >
+                  저장하고 진행
+                </button>
+                <button
+                  onClick={() => { setShowUnsavedGate(false); setPendingPlanTier(null); }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-lg cursor-pointer"
+                >
+                  계속 수정
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* §14 요금제 변경 요청 접수 화면 */}
+        {showPlanAccepted && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+            <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
+              <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+                요금제 변경 요청이 접수되었어요
+              </p>
+              <p className="text-xs leading-relaxed text-gray-500 mb-3">
+                현재 관리자가 요청 내용을 확인하고 있습니다.<br />
+                승인되면 선택한 요금제가 적용됩니다.
+              </p>
+              <div className="text-xs text-gray-600 bg-gray-50 rounded-xl p-3 mb-4 flex flex-col gap-1">
+                <div className="flex justify-between"><span className="text-gray-400">현재 요금제</span><span className="font-bold">{CARE_PLANS.find((p) => p.tier === showPlanAccepted.currentTier)?.label}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">요청한 요금제</span><span className="font-bold">{CARE_PLANS.find((p) => p.tier === showPlanAccepted.requestedTier)?.label}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">현재 상태</span><span className="font-bold text-[var(--color-k-orange)]">관리자 확인 중</span></div>
+              </div>
+              <button
+                onClick={() => { setShowPlanAccepted(null); setEditChild(null); }}
+                className="w-full py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer"
+              >
+                확인
+              </button>
             </div>
           </div>
         )}

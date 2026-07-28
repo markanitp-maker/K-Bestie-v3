@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import FeedbackTab from "./FeedbackTab";
 import ManualReportingTab from "./ManualReportingTab";
+import PlanChangeRequestsTab from "./PlanChangeRequestsTab";
 import {
   ResponsiveContainer,
   LineChart,
@@ -536,7 +537,7 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting";
+type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests";
 
 const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
@@ -547,6 +548,7 @@ const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "feedback", label: "문의·건의·버그 접수" },
   { id: "beta-applications", label: "베타 신청 관리" },
   { id: "manual-reporting", label: "리포팅 수동 실행" },
+  { id: "plan-change-requests", label: "요금제 변경 요청" },
 ];
 
 interface ProviderSwitchRow {
@@ -1153,6 +1155,8 @@ function AdminDashboard() {
           <BetaApplicationsTab />
         ) : page === "manual-reporting" ? (
           <ManualReportingTab />
+        ) : page === "plan-change-requests" ? (
+          <PlanChangeRequestsTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}

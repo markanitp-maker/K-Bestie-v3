@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { LIVE_VOICE_NAMES } from "@/lib/plan/liveVoices";
-import { stampRetention, restoreRetention } from "@/lib/plan/retentionStamp";
-import type { Tier } from "@/lib/plan/retention";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
@@ -25,7 +23,7 @@ export async function GET(
   try {
     const { data, error } = await supabase
       .from("child_profiles")
-      .select("id, name, grade, interests, tier, live_voice_name")
+      .select("id, name, given_name, family_name, grade, interests, tier, live_voice_name")
       .eq("id", id)
       .single();
 
@@ -59,7 +57,6 @@ export async function PATCH(
     grade?: string;
     interests?: string[];
     liveVoiceName?: string;
-    tier?: number;
     withdrawConsent?: boolean;
   };
   try {
@@ -81,6 +78,10 @@ export async function PATCH(
     updateData.family_name = body.familyName.trim();
     updateData.given_name = body.givenName.trim();
     updateData.name = (body.familyName.trim() + body.givenName.trim()).trim();
+
+    if (Array.isArray(body.interests) && body.interests.length === 0) {
+      return NextResponse.json({ error: "관심사를 한 개 이상 선택해 주세요." }, { status: 400 });
+    }
   } else if (body.name?.trim()) {
     updateData.name = body.name.trim();
   }
@@ -93,12 +94,10 @@ export async function PATCH(
     }
     updateData.live_voice_name = body.liveVoiceName;
   }
-  if (body.tier !== undefined) {
-    if (![1, 2, 3].includes(body.tier)) {
-      return NextResponse.json({ error: "지원하지 않는 요금제입니다" }, { status: 400 });
-    }
-    updateData.tier = body.tier;
-  }
+  // 요금제(tier)는 이 라우트로 즉시 변경할 수 없다 — requests/027 결정에 따라 요금제 변경은
+  // /api/child/[id]/plan-change-request로 요청을 생성하고 관리자 승인 시에만 실제 반영된다
+  // (admin_approve_plan_change_request RPC). 여기서 tier를 다시 받으면 승인 절차를 우회하게
+  // 되므로 body.tier는 의도적으로 읽지 않는다.
 
   // child 역할(자녀 본인)은 자기 프로필에서 목소리(live_voice_name)만 바꿀 수 있다.
   // RLS(child_profiles_update)가 child 역할의 UPDATE를 조용히 0-row로 막으므로 아래 실제
@@ -120,7 +119,7 @@ export async function PATCH(
   // 조용히 성공하므로, 반드시 이 SELECT 결과(행 존재 여부)만으로 판정한다.
   const { data: existing, error: fetchErr } = await supabase
     .from("child_profiles")
-    .select("id, tier")
+    .select("id")
     .eq("id", id)
     .maybeSingle();
 
@@ -139,18 +138,6 @@ export async function PATCH(
       .eq("id", id);
 
     if (error) throw error;
-
-    // tier 변경 시 유효 보존기간 재계산 스탬프/복구 — 소유권은 위에서 이미 확인 완료.
-    // activePackCount는 결제 시스템이 없어 항상 0(향후 확장팩 결제 연동 시 실제 값으로 교체).
-    if (body.tier !== undefined && body.tier !== (existing.tier as Tier)) {
-      const oldTier = existing.tier as Tier;
-      const newTier = body.tier as Tier;
-      if (newTier < oldTier) {
-        await stampRetention(id, newTier, 0);
-      } else if (newTier > oldTier) {
-        await restoreRetention(id, newTier, 0);
-      }
-    }
 
     return NextResponse.json({ ok: true });
   } catch {

@@ -52,7 +52,7 @@ export async function GET(
     .select(`
       id, name, created_by, created_at,
       family_members(id, user_id, role, joined_at, deleted_at),
-      child_profiles(id, name, grade, interests, created_at, tier, member_id, guardian_consent, guardian_consent_withdrawn_at)
+      child_profiles(id, name, given_name, family_name, grade, interests, created_at, tier, member_id, guardian_consent, guardian_consent_withdrawn_at)
     `)
     .eq("id", id)
     .order("created_at", { referencedTable: "child_profiles", ascending: true })

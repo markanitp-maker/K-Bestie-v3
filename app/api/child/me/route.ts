@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest) {
   // 2. child_profiles에서 member_id가 일치하는 행 검색
   const { data: child, error: childErr } = await svc
     .from("child_profiles")
-    .select("id, family_id, member_id, name, grade, interests, email, created_at, tier, live_voice_name")
+    .select("id, family_id, member_id, name, given_name, family_name, grade, interests, email, created_at, tier, live_voice_name")
     .eq("member_id", member.id)
     .maybeSingle();
 
