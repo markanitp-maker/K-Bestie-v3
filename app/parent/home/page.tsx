@@ -1,27 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
-import { ParentHeader } from "@/components/ParentHeader";
+import { ParentHomeHeader } from "./components/ParentHomeHeader";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
 import { SkeletonBox } from "@/components/Skeleton";
 import KChatbotWidget from "@/components/KChatbotWidget";
-
-type EmotionLevel = "safe" | "warning" | "danger";
-
-interface DashboardCards {
-  school_life?: string;
-  peer_relations?: string;
-  interests?: string;
-  study_concerns?: string;
-  digital_interests?: string;
-  future_dreams?: string;
-  recurring_stories?: string;
-}
+import { ConversationGuideHeader } from "./components/ConversationGuideHeader";
+import { TodayConversationGuide } from "./components/TodayConversationGuide";
+import { InsightGrid } from "./components/InsightGrid";
 
 interface Report {
   id: string;
@@ -29,16 +20,18 @@ interface Report {
   mood_score: number;
   emotion_tags: string[];
   parent_guide: string;
-  emotion_level: EmotionLevel | null;
-  dashboard_cards: DashboardCards | null;
+  emotion_level: "safe" | "warning" | "danger" | null;
+  school_academy_life?: string;
+  peer_friendship?: string;
+  emotion_hint?: string;
+  interests_preferences?: string;
+  study_concerns?: string;
+  digital_content_interests?: string;
+  future_dreams?: string;
+  recurring_stories?: string;
+  business_date?: string;
   created_at: string;
 }
-
-const EMOTION_HINT_MAP: Record<EmotionLevel, { emoji: string; label: string }> = {
-  safe: { emoji: "🌿", label: "안정적이에요" },
-  warning: { emoji: "🍂", label: "마음 살펴주세요" },
-  danger: { emoji: "❤️‍🩹", label: "지금 함께해주세요" },
-};
 
 export default function ParentHomePage() {
   const { view } = useDemoView();
@@ -52,6 +45,9 @@ export default function ParentHomePage() {
   const [parentName, setParentName] = useState<string>("보호자");
   const [latestReport, setLatestReport] = useState<Report | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<{ status: number; message: string } | null>(null);
+  const [insightsData, setInsightsData] = useState<any>(null);
+  const [todaysQuote, setTodaysQuote] = useState<string | null>(null);
 
   // 가족 초대 팝업 관련 상태
   const [pendingInvite, setPendingInvite] = useState<{ id: string; familyName: string; inviterName: string } | null>(null);
@@ -430,33 +426,73 @@ export default function ParentHomePage() {
     }
   };
 
-  useEffect(() => {
+  const fetchSeqRef = useRef<number>(0);
+
+  const fetchReports = useCallback(() => {
     if (!activeChild) {
       setLatestReport(null);
+      setInsightsData(null);
+      setTodaysQuote(null);
+      setReportError(null);
       return;
     }
+    const seq = ++fetchSeqRef.current;
+    
     setReportLoading(true);
+    setReportError(null);
+
     fetch(`/api/parent/reports?childId=${encodeURIComponent(activeChild.id)}`)
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (!r.ok) {
+           let errData = {};
+           try { errData = await r.json(); } catch {}
+           throw { status: r.status, message: (errData as any).error || "Failed" };
+        }
+        return r.json();
+      })
       .then((data) => {
+        if (fetchSeqRef.current !== seq) return;
+        if (data.childId && data.childId !== activeChild.id) return;
+        
         const reports: Report[] = data?.reports ?? [];
         if (reports.length > 0) {
           setLatestReport(reports[0]);
         } else {
           setLatestReport(null);
         }
+        setInsightsData(data?.insights ?? null);
+        setTodaysQuote(data?.todaysQuote ?? null);
       })
-      .catch(() => {
+      .catch((err) => {
+        if (fetchSeqRef.current !== seq) return;
         setLatestReport(null);
+        setInsightsData(null);
+        setTodaysQuote(null);
+        if (err.status) {
+          setReportError({ status: err.status, message: err.message || "Network Error" });
+        } else {
+          setReportError({ status: 0, message: "Network Disconnected" });
+        }
       })
-      .finally(() => setReportLoading(false));
-  }, [activeChild?.id]);
+      .finally(() => {
+        if (fetchSeqRef.current === seq) {
+          setReportLoading(false);
+        }
+      });
+  }, [activeChild]);
+
+  useEffect(() => {
+    fetchReports();
+    return () => {
+      fetchSeqRef.current += 1;
+    };
+  }, [fetchReports]);
 
   if (!mounted || syncingFamily) {
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
-          <ParentHeader />
+          <ParentHomeHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
             <SkeletonBox className="w-28 h-5 mb-3" />
             <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3`}>
@@ -488,7 +524,7 @@ export default function ParentHomePage() {
       return (
         <DemoFrame>
           <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
-            <ParentHeader />
+            <ParentHomeHeader />
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
               <p className="text-5xl">⏳</p>
               <div>
@@ -518,7 +554,7 @@ export default function ParentHomePage() {
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
-          <ParentHeader />
+          <ParentHomeHeader />
 
           {viewState === "select" && (
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-10 flex flex-col items-center text-center gap-6">
@@ -690,7 +726,7 @@ export default function ParentHomePage() {
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
-          <ParentHeader />
+          <ParentHomeHeader />
           <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
             <p className="text-5xl">🧒</p>
             <div>
@@ -714,60 +750,63 @@ export default function ParentHomePage() {
     );
   }
 
-  // 대시보드 카드 구성
-  const dbCards = latestReport?.dashboard_cards ?? {};
-  const currentEmotionLevel = latestReport?.emotion_level ?? null;
 
-  const cardList = [
-    { icon: "🏫", title: "학교·학원 생활", value: dbCards.school_life || "기록 없음" },
-    { icon: "👥", title: "친구 관계와 또래 생활", value: dbCards.peer_relations || "기록 없음" },
-    {
-      icon: currentEmotionLevel ? EMOTION_HINT_MAP[currentEmotionLevel].emoji : "🙂",
-      title: "감정 힌트",
-      value: currentEmotionLevel ? EMOTION_HINT_MAP[currentEmotionLevel].label : "기록 없음",
-    },
-    { icon: "✨", title: "관심사와 개인 취향", value: dbCards.interests || "기록 없음" },
-    { icon: "📚", title: "공부 고민", value: dbCards.study_concerns || "기록 없음" },
-    { icon: "📱", title: "디지털 관심사와 콘텐츠 취향", value: dbCards.digital_interests || "기록 없음" },
-    { icon: "🌈", title: "미래·진로·꿈", value: dbCards.future_dreams || "기록 없음" },
-    { icon: "🔁", title: "반복되는 이야기", value: dbCards.recurring_stories || "기록 없음" },
-  ];
 
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
-        <ParentHeader />
+        <ParentHomeHeader />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
-          <h2 className="text-base font-bold mb-3" style={{ color: "var(--color-k-text-k-navy)" }}>
-            아이 현황 보기
-          </h2>
-
+          <ConversationGuideHeader />
+          
           {reportLoading ? (
-            <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <SkeletonBox key={i} className="h-24" />
-              ))}
+            <>
+              <div className="bg-[#10315B] rounded-[20px] p-5 shadow-sm mt-4 mb-6">
+                <SkeletonBox className="w-24 h-4 mb-3" />
+                <SkeletonBox className="w-full h-4 mb-1" />
+                <SkeletonBox className="w-2/3 h-4" />
+              </div>
+              <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <SkeletonBox key={i} className="h-32 rounded-[18px]" />
+                ))}
+              </div>
+            </>
+          ) : reportError ? (
+            <div className="mt-8 flex flex-col items-center text-center px-4 mb-8">
+              <p className="text-4xl mb-4">⚠️</p>
+              {reportError.status === 403 ? (
+                <p className="text-sm font-bold text-gray-800">이 자녀의 리포트를 확인할 권한이 없어요.</p>
+              ) : reportError.status === 0 ? (
+                <>
+                  <p className="text-sm font-bold text-gray-800">네트워크 연결이 끊어졌어요.</p>
+                  <p className="text-xs text-gray-500 mt-1 mb-4">인터넷 연결을 확인하고 다시 시도해 주세요.</p>
+                  <button 
+                    onClick={() => fetchReports()} 
+                    className="px-6 py-2.5 bg-k-navy text-white text-sm font-bold rounded-xl active:scale-95 cursor-pointer"
+                  >
+                    재시도
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-bold text-gray-800">대화 가이드를 불러오지 못했어요.</p>
+                  <p className="text-xs text-gray-500 mt-1 mb-4">잠시 후 다시 시도해 주세요.</p>
+                  <button 
+                    onClick={() => fetchReports()} 
+                    className="px-6 py-2.5 bg-k-navy text-white text-sm font-bold rounded-xl active:scale-95 cursor-pointer"
+                  >
+                    재시도
+                  </button>
+                </>
+              )}
             </div>
           ) : (
-            <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
-              {cardList.map((card, i) => (
-                <div key={i} className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <div className="text-xl mb-2 select-none">{card.icon}</div>
-                    <p className="text-[11px] mb-1 leading-tight" style={{ color: "var(--color-k-text-k-sky-blue)" }}>
-                      {card.title}
-                    </p>
-                  </div>
-                  <p
-                    className="text-xs font-bold leading-normal mt-1 break-words"
-                    style={{ color: card.value === "기록 없음" ? "var(--color-k-text-k-sky-blue)" : "var(--color-k-text-k-navy)" }}
-                  >
-                    {card.value}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <>
+              <TodayConversationGuide guideText={todaysQuote ?? undefined} />
+              <InsightGrid report={latestReport} insights={insightsData} />
+            </>
           )}
         </div>
 
