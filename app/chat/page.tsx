@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
-import { RealChildNav } from "@/components/RealChildNav";
 import { VoiceInputModeSwitch } from "@/components/VoiceInputModeSwitch";
 import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";

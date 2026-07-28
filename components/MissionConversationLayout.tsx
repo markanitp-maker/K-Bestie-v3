@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 
 export interface MissionTranscriptTurn {
   id: string;
@@ -10,357 +10,327 @@ export interface MissionTranscriptTurn {
 }
 
 export interface MissionConversationLayoutProps {
-  /** 상단 고정 헤더 */
-  onBack: () => void;
-  progressCurrent: number; // 예: 3
-  progressTotal: number;   // 예: 10
-  /** 012: 좌측에 표시할 현재 미션 라벨(예: "하교 후 미션"/"취침 전 미션"). 없으면 라벨 생략. */
-  missionLabel?: string;
+  onClose: () => void;
+  isClosing?: boolean;
 
-  /** 히스토리 존 — 최신이 아닌 지난 대화들(오래될수록 흐리게 표시) */
+  progressCurrent: number;
+  progressTotal: number;
+
   history: MissionTranscriptTurn[];
-
-  /** 중앙 액티브 존 — 현재 진행 중인 발화 1개(케이 또는 아이) */
   activeTurn: MissionTranscriptTurn | null;
-  /** 012: 마스코트/상태배지/자동-수동 토글 — activeTurn 여부와 무관하게 항상 노출한다
-   *  (다른 팀이 만든 KBestieMascotAnimation 등을 그대로 끼워 넣을 수 있게 ReactNode로
-   *  받는다 — 이 컴포넌트 자신은 마스코트를 모른다). */
-  mascotSlot?: React.ReactNode;
+  interimChildText?: string;
 
-  /** 하단 마이크 존 */
-  isListening: boolean;
-  micLevel: number; // 0~1, 실제 RMS 등 정규화된 값
+  voiceState: "idle" | "listening" | "thinking" | "speaking" | "connecting" | "reconnecting" | "error" | "no_input";
+  
+  isMuted: boolean;
+  onToggleMute: () => void;
 
-  /** 우측 상단 등에 표시할 부가 슬롯(연결 품질 표시 등을 다른 담당자가 여기 끼워 넣을 수
-   *  있게 ReactNode로 받는다). */
-  headerExtraSlot?: React.ReactNode;
+  isAuto: boolean;
+  onChangeMode: (mode: "auto" | "manual") => void;
+
+  isRecording: boolean;
+  isMicDisabled: boolean;
+  onMicClick: () => void;
+  onMicStop?: () => void; // for manual mode to stop
+
+  textInput: string;
+  onChangeTextInput: (text: string) => void;
+  onSendText: () => void;
+  isTextMode: boolean;
+  onToggleTextMode: () => void;
+
+  hasError?: boolean;
 }
 
 export function MissionConversationLayout({
-  onBack,
+  onClose,
+  isClosing,
   progressCurrent,
   progressTotal,
-  missionLabel,
   history,
   activeTurn,
-  mascotSlot,
-  isListening,
-  micLevel,
-  headerExtraSlot,
+  interimChildText,
+  voiceState,
+  isMuted,
+  onToggleMute,
+  isAuto,
+  onChangeMode,
+  isRecording,
+  isMicDisabled,
+  onMicClick,
+  textInput,
+  onChangeTextInput,
+  onSendText,
+  isTextMode,
+  onToggleTextMode,
+  hasError
 }: MissionConversationLayoutProps) {
-  const progressPercent = progressTotal > 0 ? (progressCurrent / progressTotal) * 100 : 0;
-  const isMissionComplete = progressTotal > 0 && progressCurrent >= progressTotal;
+  // Extract turns
+  const allTurns = activeTurn ? [...history, activeTurn] : history;
+  
+  const lastKIndex = allTurns.findLastIndex(t => t.role === 'k');
+  const currentQuestionText = lastKIndex >= 0 ? allTurns[lastKIndex].text : "케이가 질문을 준비하고 있어요...";
+  
+  const childTurnsBeforeK = allTurns.slice(0, lastKIndex >= 0 ? lastKIndex : allTurns.length).filter(t => t.role === 'child');
+  const prevChildText = childTurnsBeforeK.length > 0 ? childTurnsBeforeK[childTurnsBeforeK.length - 1].text : "";
 
-  // 012 "새 말풍선 추가 시 자동 최하단 스크롤 + 사용자가 위로 스크롤 중이면 자동 스크롤을
-  // 멈추고 '새 메시지' 플로팅 버튼 노출". history/activeTurn이 바뀔 때마다(새 말풍선 추가)
-  // 사용자가 바닥 근처에 있으면(shouldAutoScroll) 부드럽게 최하단으로 스크롤하고, 위로
-  // 스크롤해 올라가 있는 중이면 스크롤을 건드리지 않고 플로팅 버튼만 띄운다.
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
-  const [showNewMessageButton, setShowNewMessageButton] = useState(false);
+  const kTurnsBeforeK = allTurns.slice(0, lastKIndex >= 0 ? lastKIndex : allTurns.length).filter(t => t.role === 'k');
+  const prevKText = kTurnsBeforeK.length > 0 ? kTurnsBeforeK[kTurnsBeforeK.length - 1].text : "";
 
-  // claude-review 지적: history는 호출부(missions/page.tsx)가 매 렌더마다
-  // historyTurns.map(...)으로 새 배열을 만들어 넘기므로, [history, activeTurn]을 그대로
-  // 의존성으로 쓰면 메시지 내용과 무관한 부모 리렌더(turnPhase 변화 등)마다 이 effect가
-  // 재실행돼 사용자가 위로 스크롤 중이어도 스크롤이 하단으로 튕길 수 있다. 실제 "내용이
-  // 바뀌었는가"만 반영하는 안정적인 값(길이 + 마지막 히스토리 항목 id + activeTurn의
-  // id/text)만 의존성으로 쓴다.
-  const lastHistoryTurn = history[history.length - 1];
+  // Map state
+  let stateText = "";
+  let StateIcon = null;
+  switch (voiceState) {
+    case "listening":
+    case "no_input":
+      stateText = "듣는 중";
+      StateIcon = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>;
+      break;
+    case "thinking":
+      stateText = "생각 중";
+      StateIcon = <div className="flex gap-0.5"><div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"0ms"}}/><div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"150ms"}}/><div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"300ms"}}/></div>;
+      break;
+    case "speaking":
+      stateText = "말하는 중";
+      StateIcon = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+      break;
+    case "connecting":
+      stateText = "연결 중";
+      StateIcon = <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin motion-reduce:animate-none" />;
+      break;
+    case "reconnecting":
+      stateText = "다시 연결 중";
+      StateIcon = <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin motion-reduce:animate-none" />;
+      break;
+    case "error":
+      stateText = "연결 오류";
+      StateIcon = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+      break;
+    default:
+      stateText = "대기 중";
+      StateIcon = <div className="w-2 h-2 rounded-full bg-gray-300" />;
+      break;
+  }
+
+  // 진행 중(isDone===false → isClosing===false) 구간에서도 연속 클릭으로 stopSession/라우팅이
+  // 중복 실행되지 않도록 컴포넌트 로컬로 한 번 더 잠근다(부모의 isClosing은 미션 완료 여부만 반영).
+  const [closeRequested, setCloseRequested] = useState(false);
+  const handleCloseClick = () => {
+    if (closeRequested) return;
+    setCloseRequested(true);
+    onClose();
+  };
+
+  const [lastProgress, setLastProgress] = useState(progressCurrent);
+  const [scaleStar, setScaleStar] = useState(-1);
   useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    if (shouldAutoScroll) {
-      el.scrollTop = el.scrollHeight;
-      setShowNewMessageButton(false);
-    } else {
-      setShowNewMessageButton(true);
+    if (progressCurrent > lastProgress) {
+      setScaleStar(progressCurrent - 1);
+      setTimeout(() => setScaleStar(-1), 200);
+      setLastProgress(progressCurrent);
+    } else if (progressCurrent < lastProgress) {
+      setLastProgress(progressCurrent);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history.length, lastHistoryTurn?.id, activeTurn?.id, activeTurn?.text]);
-
-  const handleHistoryScroll = () => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const nearBottom = distanceFromBottom < 24;
-    setShouldAutoScroll(nearBottom);
-    if (nearBottom) setShowNewMessageButton(false);
-  };
-
-  const scrollToBottomNow = () => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-    setShouldAutoScroll(true);
-    setShowNewMessageButton(false);
-  };
+  }, [progressCurrent, lastProgress]);
 
   return (
-    // height는 100dvh가 아니라 100%여야 한다 — 이 컴포넌트는 PC/PWA(desktop)에서
-    // app/child/missions/page.tsx가 DemoFrame(태블릿/스마트폰 기기 목업 프레임)으로
-    // 감싼 상태로 렌더된다. DemoFrame의 목업 화면 영역은 실제 브라우저 뷰포트보다 훨씬
-    // 작은 고정 픽셀 높이(예: 1920x1080 PC에서 약 700px)를 갖는데, 100dvh는 그 부모
-    // 크기와 무관하게 항상 "실제 기기 전체 뷰포트" 높이로 계산되어(2026-07-25 대표님
-    // PC PWA 재현 — 하단 마스코트 미노출) 목업 프레임보다 훨씬 큰 콘텐츠가 렌더되고
-    // 그 초과분(하단 고정 마스코트 영역)이 화면 밖으로 밀려나 보이지 않았다. 100%는
-    // 실제 부모 컨테이너 크기를 그대로 물려받으므로 DemoFrame 안(PC)과 DemoFrame의
-    // h-dvh 래퍼 안(실기기, 값은 100dvh와 동일)에서 모두 정확히 맞아떨어진다.
-    <div style={{ height: "100%", width: "100%", overflow: "hidden", display: "flex", justifyContent: "center", background: "var(--color-k-surface)" }}>
-      <div style={{ width: "100%", maxWidth: 560, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflow: "hidden" }}>
+      <div className="w-full max-w-[480px] h-full flex flex-col relative" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
         
-        {/* 상단 고정 헤더 */}
-        <div style={{ flexShrink: 0, padding: "calc(10px + env(safe-area-inset-top)) 14px 10px", borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0 }}>
-            <button
-              onClick={onBack}
-              style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#6b7280", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}
-            >
-              ← 뒤로가기
-            </button>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Image src="/Images/logo/Logo.png" alt="내친구 케이" width={98} height={28} className="object-contain" priority />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 40, justifyContent: "flex-end" }}>
-              {headerExtraSlot}
-            </div>
-          </div>
-          {/* requests/019 — MissionProgress는 미션 화면에서만 표시한다(자유대화는 진행률
-              개념 자체가 없음). missionLabel이 없으면(자유대화 호출부) 라벨+진행률 바
-              전체를 렌더하지 않는다 - 012의 "0/10을 스텝 인디케이터로" 표시는 그대로 유지. */}
-          {missionLabel && (
-            <>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: isMissionComplete ? "#b8860b" : "var(--color-k-navy)" }}>
-                  {missionLabel}
-                </span>
-                {isMissionComplete && (
-                  <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: "#f0a020", borderRadius: 999, padding: "2px 8px" }}>
-                    🎉 완료!
-                  </span>
-                )}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                <span style={{ fontSize: 12, color: isMissionComplete ? "#b8860b" : "#6b7280", whiteSpace: "nowrap", fontWeight: 600 }}>
-                  {progressCurrent}/{progressTotal}
-                </span>
-                <div
-                  style={{
-                    flex: 1,
-                    display: "flex",
-                    gap: 4,
-                    height: 6,
-                    padding: isMissionComplete ? 3 : 0,
-                    borderRadius: 999,
-                    background: isMissionComplete ? "#fff3d6" : "transparent",
-                    transition: "background-color 0.3s ease-in-out",
-                  }}
-                >
-                  {Array.from({ length: progressTotal }).map((_, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        flex: 1,
-                        height: "100%",
-                        borderRadius: 999,
-                        background: isMissionComplete ? "#f0a020" : i < progressCurrent ? "var(--color-k-navy)" : "#eef2f1",
-                        transition: "background-color 0.25s ease-in-out",
-                      }}
-                      className={!isMissionComplete && i === progressCurrent ? "animate-pulse" : ""}
-                    />
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+        {/* Decorations */}
+        <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden">
+          {/* Simple CSS shapes for decorations as per requirement not to use heavy canvas */}
+          <div className="absolute top-[10%] left-[10%] w-16 h-8 bg-white rounded-full blur-[2px]" />
+          <div className="absolute top-[20%] right-[15%] w-12 h-6 bg-white rounded-full blur-[2px]" />
+          <div className="absolute top-[15%] left-[50%] w-2 h-2 bg-yellow-200 rounded-full blur-[1px]" />
+          <div className="absolute top-[40%] left-[20%] w-3 h-3 bg-yellow-100 rounded-full blur-[1px]" />
+          <div className="absolute top-[60%] right-[10%] w-10 h-10 bg-white/50 rounded-lg rotate-12 blur-[1px]" />
+          <div className="absolute top-[75%] left-[15%] w-8 h-8 bg-white/40 rounded-full blur-[1px]" />
         </div>
 
-        {/* 중앙 히스토리 존 — 011 "최근 대화 말풍선 최대 3개만 표시, 나머지는 쌓지 않음":
-            여기서 최근 3개로 자른다(호출부가 더 많이 넘기더라도 이 컴포넌트가 최종 방어).
-            현재 활성 발화(activeTurn)는 더 이상 이 스크롤 영역에 두지 않고 하단 고정
-            영역으로 옮겼다 — 예전엔 activeTurn(케이 말풍선+마스코트+상태배지)이 이 스크롤
-            가능한 영역 안에 있어서, 히스토리가 쌓이면 화면 밖으로 밀려날 수 있었다(011
-            "하단 고정 영역: 현재 케이 말풍선/마스코트/상태배지" 요구사항과 불일치). overflow는
-            auto가 아니라 hidden — 3개로 자른 이상 스크롤이 필요할 일이 없고, 011은 별도
-            스크롤바 표시 자체를 금지한다. */}
-        {/* 중앙 히스토리 존 — 전체 히스토리를 렌더하되 최대 3개 높이 정도로 스크롤 적용 */}
-        <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
-        <div
-          ref={scrollContainerRef}
-          onScroll={handleHistoryScroll}
-          className="mission-history-scroll-container"
-          style={{ height: "100%", maxHeight: 280, overflowY: "auto", display: "flex", flexDirection: "column", padding: "20px 14px", scrollBehavior: "smooth" }}
-        >
-          <style>{`
-            .mission-history-scroll-container::-webkit-scrollbar {
-              width: 4px;
-            }
-            .mission-history-scroll-container::-webkit-scrollbar-thumb {
-              background: rgba(156, 163, 175, 0.5);
-              border-radius: 4px;
-            }
-          `}</style>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: "auto" }}>
-            {history.map((turn, index, arr) => {
-              // 역순 인덱스 (끝에서 멀수록 0에 가까움)
-              const distanceFromEnd = arr.length - 1 - index;
-              // 오래된 것일수록 투명도를 낮춤 (최대 1, 최소 0.4)
-              const baseOpacity = Math.max(0.4, 1 - distanceFromEnd * 0.15);
+        {/* Top Right Close Button */}
+        <div className="absolute top-0 right-0 p-[calc(10px+env(safe-area-inset-top))] z-50">
+          <button onClick={handleCloseClick} disabled={isClosing || closeRequested} className="w-[44px] h-[44px] flex items-center justify-center cursor-pointer disabled:opacity-50 active:scale-95 text-gray-700">
+            <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
 
-              const isChild = turn.role === "child";
+        {/* Pill Progress Bar */}
+        <div className="mt-[calc(54px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] h-[44px] bg-white rounded-full shadow-sm flex items-center px-4 relative z-10 shrink-0">
+          <div className="flex w-full justify-between gap-1.5 h-full py-2.5">
+            {Array.from({length: progressTotal}).map((_, i) => {
+              const isFilled = i < progressCurrent;
+              const isAnimating = i === scaleStar;
               return (
-                <div
-                  key={turn.id}
-                  style={{
-                    alignSelf: isChild ? "flex-end" : "flex-start",
-                    maxWidth: "80%",
-                    padding: "10px 14px",
-                    borderRadius: 16,
-                    background: isChild ? "var(--color-k-navy)" : "#fff",
-                    color: isChild ? "#fff" : "var(--color-k-text-primary)",
-                    border: isChild ? "none" : "1px solid #e5e7eb",
-                    fontSize: 14,
-                    lineHeight: 1.45,
-                    opacity: baseOpacity,
-                    wordBreak: "break-word",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {turn.text}
+                <div key={i} className="flex-1 relative flex items-center justify-center">
+                  <div 
+                    className={`w-full h-full rounded-full transition-colors duration-300 ${isFilled ? 'bg-[var(--color-k-orange)]' : 'bg-[#D5ECFF]'}`} 
+                    style={{ transform: isAnimating ? 'scale(1.3)' : 'scale(1)', transition: 'transform 150ms ease-out, background-color 300ms' }}
+                  />
+                  {isFilled && <div className="absolute inset-0 rounded-full border border-yellow-300/50" />}
                 </div>
               );
             })}
           </div>
         </div>
-        {/* 012 "새 말풍선 추가 시 자동 최하단 스크롤, 사용자가 위로 스크롤 중이면 자동 스크롤을
-            멈추고 새 메시지 플로팅 버튼 노출" */}
-        {showNewMessageButton && (
-          <button
-            onClick={scrollToBottomNow}
-            style={{
-              position: "absolute",
-              bottom: 8,
-              left: "50%",
-              transform: "translateX(-50%)",
-              background: "var(--color-k-navy)",
-              color: "#fff",
-              fontSize: 12,
-              fontWeight: 700,
-              padding: "6px 14px",
-              borderRadius: 999,
-              border: "none",
-              boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
-              cursor: "pointer",
-              zIndex: 5,
-            }}
-          >
-            ↓ 새 메시지
-          </button>
-        )}
+
+        {/* Previous Chat Summary Area (Flexible) */}
+        <div className="flex-1 flex flex-col justify-end items-center pb-3 z-10 px-4 min-h-[40px] w-full">
+          {interimChildText ? (
+            // 확정 답변이 아닌 실시간 중간 자막 — 진행률/유효답변 판정에는 영향 없음, 표시만.
+            <div className="text-gray-400 text-[13px] text-center max-w-[85%] line-clamp-2 mb-2 font-medium italic">
+              {interimChildText}
+            </div>
+          ) : prevChildText && (
+            <div className="text-gray-500 text-[13px] text-center max-w-[85%] line-clamp-2 mb-2 font-medium">
+              {prevChildText}
+            </div>
+          )}
+          {prevKText && (
+            <div className="bg-white/70 backdrop-blur-md px-4 py-2.5 rounded-2xl text-[13px] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] max-w-[85%] line-clamp-4 text-center">
+              {prevKText}
+            </div>
+          )}
         </div>
 
-        {/* 하단 고정 영역 — 011 "현재 케이 말풍선 / 케이 마스코트 / 상태 배지 / 음성 ON/OFF /
-            대화·종료 메뉴". activeTurn(현재 발화 중인 말풍선)과 mascotSlot(마스코트+상태배지)을
-            여기로 옮겨 스크롤 영역과 완전히 분리했다 — 히스토리가 몇 개든 이 영역은 항상 보인다.
-            2026-07-25 대표님 실기기 확인: 마스코트가 반쯤 잘리는 문제 수정 —
-            (1) overflow:visible로 명시(내부에서 잘라내지 않음, 실제 클리핑 원인은 바깥
-                히스토리 영역의 minHeight:0 누락이었지만 방어적으로 여기도 visible 명시),
-            (2) 실제 조작 버튼(app/child/missions/page.tsx가 이 컴포넌트 위에
-                absolute bottom-0으로 겹쳐 그리는 마이크/텍스트/종료 버튼 행,
-                약 20px+64px+20px+safe-area ≈ 104px+safe-area)과 마스코트가 겹치지
-                않도록 하단 여백을 120px+safe-area로 늘림(기존 16px+safe-area는
-                실제 버튼 행 높이보다 훨씬 작아서 마스코트 아랫부분이 그 버튼 행에
-                가려질 수 있었음),
-            (3) 예전에 있던 자체 "듣고 있어요/파형" 장식 영역은 어차피 실제 버튼 행에
-                완전히 가려지도록 설계돼 있었던 죽은 UI라(주석 그대로: 이 컴포넌트 위에
-                "겹쳐서 표시") 제거해 마스코트가 쓸 수 있는 세로 공간을 늘림. */}
-        <div style={{ flexShrink: 0, borderTop: "1px solid #e5e7eb", background: "#fff", padding: "16px 14px calc(120px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", alignItems: "center", overflow: "visible" }}>
-          {activeTurn && (
-            <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
-              {activeTurn.role === "k" ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
-                  <div style={{
-                    position: "relative",
-                    background: "#fff",
-                    border: "2px solid var(--color-k-navy)",
-                    borderRadius: 20,
-                    padding: "16px 20px",
-                    color: "var(--color-k-text-primary)",
-                    fontSize: 18,
-                    fontWeight: 700,
-                    lineHeight: 1.4,
-                    textAlign: "center",
-                    maxWidth: "90%",
-                    boxShadow: "0 4px 12px rgba(26, 107, 90, 0.1)",
-                    wordBreak: "break-word",
-                    whiteSpace: "pre-wrap",
-                  }}>
-                    {activeTurn.text}
-                    {/* 말풍선 꼬리 (아래쪽 마스코트를 향함) */}
-                    <div style={{
-                      position: "absolute",
-                      bottom: -10,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      width: 0,
-                      height: 0,
-                      borderLeft: "10px solid transparent",
-                      borderRight: "10px solid transparent",
-                      borderTop: "10px solid var(--color-k-navy)",
-                    }} />
-                    <div style={{
-                      position: "absolute",
-                      bottom: -7,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      width: 0,
-                      height: 0,
-                      borderLeft: "8px solid transparent",
-                      borderRight: "8px solid transparent",
-                      borderTop: "8px solid #fff",
-                    }} />
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  background: "var(--color-k-navy)",
-                  color: "#fff",
-                  borderRadius: 20,
-                  padding: "16px 20px",
-                  fontSize: 18,
-                  fontWeight: 700,
-                  lineHeight: 1.4,
-                  textAlign: "center",
-                  maxWidth: "90%",
-                  boxShadow: "0 4px 12px rgba(26, 107, 90, 0.2)",
-                  wordBreak: "break-word",
-                  whiteSpace: "pre-wrap",
-                }}>
-                  {activeTurn.text}
-                </div>
-              )}
-            </div>
-          )}
-          {/* 012: 마스코트/상태배지/자동-수동 토글은 activeTurn(케이가 실제 말하는 순간)
-              여부와 무관하게 항상 노출한다 — 이전엔 K 말풍선이 뜬 순간에만 mascotSlot이
-              함께 렌더돼, 그 슬롯 안에 자동/수동 토글을 옮기면 아이 차례·침묵 구간엔 토글
-              자체가 사라져 모드를 바꿀 수 없는 문제가 있었다(대표님께 직접 확인해 "항상
-              표시"로 확정). */}
-          {mascotSlot && (
-            <div style={{ marginTop: activeTurn ? 8 : 0 }}>
-              {mascotSlot}
-            </div>
-          )}
-          {/* 2026-07-25 대표님 실기기 확인 후 제거: 이 자리에 있던 자체 "듣고 있어요/파형"
-              장식 영역은 app/child/missions/page.tsx가 이 컴포넌트 바로 위에 absolute로
-              겹쳐 그리는 실제 마이크/텍스트/종료 버튼 행에 항상 완전히 가려지도록 설계돼
-              있었다(이 파일 상단 주석 "장식용 마이크 파형 존 위에 겹쳐서 표시" 참고) — 즉
-              애초에 사용자에게 보인 적이 없는 죽은 UI였다. 상태 표시는 mascotSlot에 이미
-              포함된 VoiceConversationStateBadge(듣는 중/생각하는 중/말하는 중)가 activeTurn과
-              함께 보여준다. 이 죽은 UI를 제거해 마스코트가 쓸 수 있는 세로 공간을 넓혔다
-              (마스코트가 반쯤 잘리던 원인 중 하나 — 나머지 원인은 위 히스토리 영역의
-              minHeight:0 누락). isListening/micLevel prop은 호출부 호환을 위해 인터페이스에
-              남겨두되 더 이상 이 안에서 렌더링하지 않는다. */}
+        {/* Current Question Bubble */}
+        <div className="relative z-20 w-[84%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[18px] py-[16px] flex flex-col max-h-[160px] shrink-0">
+          <div className="overflow-y-auto w-full styled-scrollbar pr-1">
+            <p className="text-left text-[#3a2f2a] text-[16px] font-[650] leading-[1.45] whitespace-pre-wrap break-words">
+              {currentQuestionText}
+            </p>
+          </div>
+          {/* Triangle tail */}
+          <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
+          <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
         </div>
+
+        {/* Mascot Area & Side Cards */}
+        <div className="relative z-10 mt-6 flex items-end justify-between px-6 w-full h-[180px] shrink-0">
+          
+          {/* Left Mute Card */}
+          <button onClick={onToggleMute} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] p-2 flex flex-col items-center justify-center min-w-[64px] min-h-[64px] shadow-sm mb-12 active:scale-95 cursor-pointer">
+            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-lg mb-1">{isMuted ? '🔇' : '🔊'}</div>
+            <span className="text-[10px] font-extrabold text-gray-600">{isMuted ? '소리 꺼짐' : '소리 켜짐'}</span>
+          </button>
+
+          {/* Mascot & Platform */}
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-0 flex flex-col items-center justify-end h-full w-[160px]">
+             {/* Halo */}
+             <div className="absolute bottom-[30px] w-[140px] h-[140px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
+             {/* Mascot */}
+             <div className="relative z-10 w-full flex justify-center items-end pb-[26px]">
+               <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={130} />
+             </div>
+             {/* Platform */}
+             <div className="absolute bottom-0 w-[140px] h-[40px] pointer-events-none">
+               {/* Top oval */}
+               <div className="absolute top-0 w-full h-[24px] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
+               {/* Side cylinder */}
+               <div className="absolute top-[12px] w-full h-[28px] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
+               {/* Shadow on platform */}
+               <div className="absolute top-[6px] left-[20px] w-[100px] h-[12px] bg-black/5 rounded-[100%] z-10 blur-sm" />
+             </div>
+          </div>
+
+          {/* Right State Card */}
+          <div className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] p-2 flex flex-col items-center justify-center min-w-[64px] min-h-[64px] shadow-sm mb-12">
+             <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-gray-700 mb-1">
+               {StateIcon}
+             </div>
+             <span className="text-[10px] font-extrabold text-gray-600">{stateText}</span>
+          </div>
+        </div>
+
+        {/* Auto/Manual Mode Toggles */}
+        <div className="relative z-20 flex justify-center gap-2 -mt-2 mb-3 h-[44px] shrink-0">
+           <button onClick={() => onChangeMode('auto')} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] h-[44px] rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95`}>
+             자동
+             {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
+           </button>
+           <button onClick={() => onChangeMode('manual')} aria-pressed={!isAuto} className={`flex items-center justify-center min-w-[64px] h-[44px] rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${!isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95`}>
+             수동
+             {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
+           </button>
+        </div>
+
+        {/* Bottom Inputs Area */}
+        <div className="relative z-30 w-full shrink-0 bg-transparent flex items-center pb-[calc(16px+env(safe-area-inset-bottom))]">
+          {isTextMode ? (
+            <div className="w-full px-4 flex gap-2">
+              <input
+                type="text"
+                value={textInput}
+                onChange={(e) => onChangeTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSendText(); }
+                }}
+                placeholder="케이에게 텍스트로 답하기..."
+                className="flex-1 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors"
+                maxLength={200}
+              />
+              <button
+                onClick={onSendText}
+                disabled={!textInput.trim()}
+                className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center text-white disabled:opacity-40 cursor-pointer shadow-md bg-[var(--color-k-orange)] active:scale-95"
+                aria-label="전송"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+              <button
+                onClick={onToggleTextMode}
+                className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200"
+                aria-label="닫기"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          ) : (
+            <div className="w-full flex items-center justify-center h-[72px] relative">
+              {/* Keyboard Button */}
+              <button 
+                onClick={onToggleTextMode} 
+                className="absolute left-6 w-[48px] h-[48px] bg-white/80 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-sm border border-gray-200 cursor-pointer active:scale-95" 
+                aria-label="텍스트로 답하기"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
+              </button>
+
+              {/* Main Mic Button */}
+              <div className="relative flex items-center justify-center">
+                {isRecording && (
+                  <>
+                    <div className="absolute w-[90px] h-[90px] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
+                    <div className="absolute w-[110px] h-[110px] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
+                  </>
+                )}
+                <button 
+                  onClick={onMicClick} 
+                  disabled={isMicDisabled && !isRecording} 
+                  className={`w-[72px] h-[72px] rounded-[36px] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 ${isMicDisabled && !isRecording ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-[var(--color-k-orange)]'}`}
+                  aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
+                >
+                  {isRecording ? (
+                    <div className="w-[24px] h-[24px] rounded-sm bg-white" />
+                  ) : (
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Interim Text absolutely positioned near mic if needed. Leaving out as per requirements focus */}
+        <style dangerouslySetInnerHTML={{__html:`
+          .styled-scrollbar::-webkit-scrollbar {
+            width: 4px;
+          }
+          .styled-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(224,90,63,0.3);
+            border-radius: 4px;
+          }
+        `}} />
       </div>
     </div>
   );

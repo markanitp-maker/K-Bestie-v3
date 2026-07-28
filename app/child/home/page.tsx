@@ -4,85 +4,48 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
-import { RealChildNav } from "@/components/RealChildNav";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { useInstallPrompt } from "@/hooks/useInstallPrompt";
+import { appendVocative } from "@/lib/utils/koreanParticle";
 
-type ChildInfo = { id: string; name: string; grade: string };
+// 이 프로젝트는 아이콘 라이브러리(lucide-react/heroicons)를 설치하지 않고 인라인
+// SVG·이모지만 사용하는 관례라(package.json에 둘 다 없음), 로그아웃/닫기 아이콘 2개만
+// 위해 새 의존성을 추가하지 않고 최소 인라인 SVG로 대체한다.
+function LogOut({ size = 20, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
 
-// 대표님 지시(2026-07-25): 아이 홈 주요 액션 카드는 화면 하나의 하드코딩이 아니라
-// "child action card" variant 체계로 관리한다 — 카드마다 기능적 의미가 다르므로
-// (미션=가장 강한 CTA, 대화=더 부드럽고 따뜻한 톤, 놀이=차분한 정보색) 색을 구분한다.
-// 새 CSS 변수/디자인 스킬 파일은 건드리지 않고, 이미 globals.css에 존재하는
-// v2.0 토큰(--color-k-orange/--color-k-mascot-orange/--color-k-sky-blue)만 참조한다.
-// hover/pressed는 새 색상 토큰을 추가하는 대신 brightness 필터(다크모드·터치 모두 안전)로
-// 표현해 이번 변경이 globals.css/스킬 파일 확장 없이 프로젝트 코드만으로 완결되게 했다.
-type ChildActionCardVariant = "primary" | "warm" | "info";
+function X({ size = 20, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
 
-const CHILD_ACTION_CARD_VARIANTS: Record<
-  ChildActionCardVariant,
-  { bg: string; badgeBg: string }
-> = {
-  // 미션 진행 — 가장 강한 CTA. K-Orange 그대로 유지.
-  primary: { bg: "var(--color-k-orange)", badgeBg: "rgba(255,255,255,0.25)" },
-  // 대화하기 — 미션과 같은 주황을 쓰지 않고 K-Mascot-Orange 기반의 더 부드럽고
-  // 따뜻한 톤으로 분리(미션 카드와 한눈에 다른 성격으로 인지되도록).
-  warm: { bg: "var(--color-k-mascot-orange)", badgeBg: "rgba(255,255,255,0.28)" },
-  // 케이와 놀이 — K-Sky-Blue 유지.
-  info: { bg: "var(--color-k-sky-blue)", badgeBg: "rgba(255,255,255,0.25)" },
-};
-
-const HOME_CARDS: Array<{
-  icon: string;
-  title: string;
-  desc: string;
-  href: string;
-  variant: ChildActionCardVariant;
-}> = [
-  {
-    icon: "🎯",
-    title: "미션 진행",
-    desc: "오늘의 미션을 시작해요",
-    href: "/child/missions",
-    variant: "primary",
-  },
-  {
-    icon: "💬",
-    title: "대화하기",
-    desc: "케이랑 이야기 나눠요",
-    href: "/chat",
-    variant: "warm",
-  },
-  {
-    icon: "🎮",
-    title: "케이와 놀이",
-    desc: "재미있는 놀이를 해봐요",
-    href: "/child/play",
-    variant: "info",
-  },
-];
-
-const getFriendlyName = (fullName: string): string => {
-  if (!fullName) return "";
-  // 성을 제외한 이름만 추출 (2글자 이상이면 첫 글자 성 1자를 제외)
-  const nameOnly = fullName.length > 1 ? fullName.substring(1) : fullName;
-
-  // 받침 유무에 따른 호격조사 '아'/'야' 판별
-  const lastChar = nameOnly.charCodeAt(nameOnly.length - 1);
-  if (lastChar >= 0xac00 && lastChar <= 0xd7a3) {
-    const hasBatchim = (lastChar - 0xac00) % 28 > 0;
-    return `${nameOnly}${hasBatchim ? "아" : "야"}`;
-  }
-  return nameOnly;
-};
+type ChildInfo = { id: string; name: string; given_name?: string; grade: string };
 
 export default function ChildHomePage() {
   const [child, setChild] = useState<ChildInfo | null>(null);
   const [goldKeyBalance, setGoldKeyBalance] = useState<number | null>(null);
   const [noChild, setNoChild] = useState(false);
   const [loading, setLoading] = useState(true);
-  // A~F 대화방식 테스트 진입 버튼은 테스트 계정(is_test_account=true)에만 노출.
-  // 서버가 /api/child/test-mode 에서 재검증하므로, 200이면 테스트 계정 → 버튼 표시.
-  const [isTestAccount, setIsTestAccount] = useState(false);
+  
+  // Mission state
+  const [missionStatus, setMissionStatus] = useState<any>(null);
+  const [missionClosed, setMissionClosed] = useState(false);
+  
+  // PWA install banner state
+  const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
+  const [showPwaBanner, setShowPwaBanner] = useState(false);
+  const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
 
   useEffect(() => {
     // 1. /api/child/me를 호출하여 세션 기반의 아이 프로필 확인
@@ -99,10 +62,7 @@ export default function ChildHomePage() {
         return false;
       })
       .then((success) => {
-        if (success) {
-          setLoading(false);
-          return;
-        }
+        if (success) return;
 
         // 2. 세션에 없으면 기존 localStorage 및 ID 매핑 폴백
         const id = localStorage.getItem("k_child_id");
@@ -115,10 +75,15 @@ export default function ChildHomePage() {
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
             if (data) setChild(data);
-            else setNoChild(true);
+            else {
+              setNoChild(true);
+              setLoading(false);
+            }
           })
-          .catch(() => setNoChild(true))
-          .finally(() => setLoading(false));
+          .catch(() => {
+            setNoChild(true);
+            setLoading(false);
+          });
       })
       .catch(() => {
         setNoChild(true);
@@ -128,33 +93,89 @@ export default function ChildHomePage() {
 
   useEffect(() => {
     if (!child?.id) return;
-    fetch(`/api/goldkey/balance?childId=${child.id}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data) setGoldKeyBalance(data.balance); })
-      .catch(() => {});
+
+    const fetchAll = async () => {
+      try {
+        const [gkRes, timeCfgRes, progressRes] = await Promise.allSettled([
+          fetch(`/api/goldkey/balance?childId=${child.id}`),
+          fetch("/api/config/child-time-restrictions"),
+          fetch(`/api/mission/today-progress?childId=${child.id}`)
+        ]);
+
+        if (gkRes.status === "fulfilled" && gkRes.value.ok) {
+          const gkData = await gkRes.value.json();
+          setGoldKeyBalance(gkData.balance);
+        }
+
+        let timeRestrictionsEnabled = false;
+        if (timeCfgRes.status === "fulfilled" && timeCfgRes.value.ok) {
+          const cfg = await timeCfgRes.value.json();
+          if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
+        }
+
+        // 운영시간 게이트는 이 화면에서 다시 계산하지 않고 /api/mission/today-progress가
+        // 돌려주는 currentRound(lib/mission/missionTimeGate.ts와 동일 정본 로직)를 그대로
+        // 신뢰한다 — 예전에 이 화면이 자체적으로 13~19시/19~23시로 다시 계산했다가 실제
+        // 미션 화면의 13~17시/19~23시 정책과 어긋난 적이 있어(리뷰에서 발견) 소스를 하나로 통일.
+        if (progressRes.status === "fulfilled" && progressRes.value.ok) {
+          const progData = await progressRes.value.json();
+          setMissionStatus(progData);
+          if (!progData.activeRound && timeRestrictionsEnabled) {
+            setMissionClosed(true);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching home data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchAll();
   }, [child?.id]);
 
   useEffect(() => {
-    // 테스트 계정 여부 서버 재검증(일반 계정은 403 → 버튼 미노출).
-    fetch("/api/child/test-mode")
-      .then((r) => setIsTestAccount(r.status === 200))
-      .catch(() => setIsTestAccount(false));
-  }, []);
+    // installPrompt/isIOS로만 게이트하면 미지원 브라우저(예: 데스크톱 Firefox)에서 배너 자체가
+    // 나오지 않아 onInstallClick의 "미지원 안내" 분기가 영원히 도달 불가능해진다 — standalone이
+    // 아니고 닫지 않았으면 항상 노출하고, 지원 여부 판단은 클릭 시점에 한다.
+    const bannerHidden = sessionStorage.getItem("hide_pwa_banner");
+    setShowPwaBanner(!isStandalone && !bannerHidden);
+  }, [isStandalone]);
+
+  const handleDismissPwa = () => {
+    sessionStorage.setItem("hide_pwa_banner", "true");
+    setShowPwaBanner(false);
+  };
+
+  const onInstallClick = async () => {
+    if (installPrompt) {
+      await handleInstall();
+      setShowPwaBanner(false);
+    } else if (isIOS) {
+      alert("공유 버튼을 누른 뒤 ‘홈 화면에 추가’를 선택해 주세요.");
+    } else {
+      alert("현재 브라우저는 앱 설치를 지원하지 않습니다. Chrome 또는 Edge를 사용해 주세요.");
+    }
+  };
 
   const handleLogout = async () => {
-    const { createClient } = await import("@/lib/supabase/client");
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    localStorage.removeItem("k_child_id");
-    localStorage.removeItem("login_role");
-    window.location.href = "/login?role=child";
+    if (isLogoutProcessing) return;
+    if (window.confirm("로그아웃할까요?")) {
+      setIsLogoutProcessing(true);
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      localStorage.removeItem("k_child_id");
+      localStorage.removeItem("login_role");
+      window.location.href = "/login?role=child";
+    }
   };
 
   if (loading) {
     return (
       <DemoFrame>
-        <div className="h-full flex items-center justify-center bg-k-background">
-          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-orange) var(--color-k-orange) transparent transparent" }} />
+        <div className="h-full flex items-center justify-center" style={{ background: "linear-gradient(180deg, #BFE8FF 0%, #EAF7FF 38%, #FFF9F2 75%, #FFF7E9 100%)" }}>
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
         </div>
       </DemoFrame>
     );
@@ -166,8 +187,8 @@ export default function ChildHomePage() {
         <div className="h-full flex flex-col items-center justify-center px-6 py-8 text-center bg-k-background">
           <div className="max-w-md w-full bg-k-surface rounded-3xl p-8 shadow-md border border-k-orange/10">
             <p className="text-5xl mb-4">🌱</p>
-            <p className="text-lg font-bold text-k-text-k-orange">가족 연결이 필요해요</p>
-            <p className="text-xs mt-3 leading-relaxed text-k-text-k-sky-blue">
+            <p className="text-lg font-bold" style={{ color: "var(--color-k-orange)" }}>가족 연결이 필요해요</p>
+            <p className="text-xs mt-3 leading-relaxed" style={{ color: "var(--color-k-sky-blue)" }}>
               현재 로그인한 구글 계정이 가족에 등록되어 있지 않습니다.
               <br />
               부모님 앱에서 아이 추가 화면을 통해 이메일을 예약 등록했는지 확인해 주세요.
@@ -175,6 +196,7 @@ export default function ChildHomePage() {
 
             <button
               onClick={handleLogout}
+              disabled={isLogoutProcessing}
               className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform mt-6 cursor-pointer bg-k-orange"
             >
               로그아웃 후 다시 로그인하기
@@ -185,101 +207,178 @@ export default function ChildHomePage() {
     );
   }
 
+  const childName = child?.given_name || child?.name || "";
+  const greetingName = childName ? appendVocative(childName) : "안녕";
+  const greetingTitle = childName ? `안녕, ${greetingName}!` : "안녕!";
+
+  let missionTitle = "미션 진행";
+  let missionDesc = "오늘의 미션을 시작해요";
+  let missionBubble = "오늘의 미션을 시작해 볼까?";
+  let missionUrl = "/child/missions";
+  let progressText = "";
+  
+  if (missionClosed) {
+    missionBubble = "지금은 미션을 할 수 없는 시간이야.";
+  } else if (missionStatus?.hasMission) {
+    if (missionStatus.status === "COMPLETED" || missionStatus.validAnswerCount >= missionStatus.requiredCount) {
+      missionTitle = "미션 완료";
+      missionDesc = "오늘의 미션을 모두 완료했어요";
+      missionBubble = "오늘의 미션을 모두 완료했어!";
+      progressText = "완료";
+    } else if (missionStatus.status === "IN_PROGRESS" || missionStatus.validAnswerCount > 0) {
+      missionTitle = "미션 계속하기";
+      missionDesc = "진행 중인 미션을 이어서 해요";
+      missionBubble = "미션이 진행되고 있어요. 같이 할까?";
+      progressText = `${missionStatus.validAnswerCount}/${missionStatus.requiredCount}`;
+    }
+  }
+
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden bg-k-background">
-        <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
-          <Link href="/child/home" className="cursor-pointer">
-            <Image
-              src="/Images/logo/Logo.png"
-              alt="내친구 케이"
-              width={84}
-              height={24}
-              className="object-contain"
-              priority
-            />
-          </Link>
+      <div className="relative h-full flex flex-col overflow-y-auto overflow-x-hidden w-full text-[var(--color-k-navy)]"
+           style={{ background: "linear-gradient(180deg, #BFE8FF 0%, #EAF7FF 38%, #FFF9F2 75%, #FFF7E9 100%)" }}>
+        
+        {/* Background Clouds (decorative) */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-50 flex items-start justify-between pt-24 px-4 z-0">
+           <div className="w-16 h-8 bg-white rounded-full blur-[2px] opacity-80" style={{ transform: "scale(1.5)" }} />
+           <div className="w-20 h-10 bg-white rounded-full blur-[2px] opacity-80 mt-12" style={{ transform: "scale(1.2)" }} />
+        </div>
+        
+        {/* Top Action Bar */}
+        <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top)] mt-4 relative z-10 w-full max-w-[480px] mx-auto">
+          <div className="w-[44px]"></div>
+          {/* Mission Event Pill (Hidden as requested: "이 영역은 숨김 처리") */}
+          <div className="invisible">
+            <div className="px-4 py-1.5 bg-white/70 rounded-full border border-[var(--color-k-navy)] shadow-sm text-sm font-semibold">
+              🔥 이번 달 미션 진행
+            </div>
+          </div>
+          <button 
+            onClick={handleLogout}
+            disabled={isLogoutProcessing}
+            className="w-[44px] h-[44px] flex items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
+            aria-label="로그아웃"
+          >
+            <LogOut size={20} color="var(--color-k-navy)" />
+          </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
-          {/* 태블릿/PC에서 카드가 화면 전체 폭으로 늘어나지 않도록 스마트폰과 동일한 콘텐츠 폭으로
-              제한한다. max-w-md(448px)는 실제 스마트폰 뷰포트보다 넓은 값이라 스마트폰에서는
-              항상 무효(디자인 변경 없음) — 태블릿/PC처럼 448px보다 넓은 화면에서만 작동한다. */}
-          <div className="max-w-md mx-auto w-full">
-          <div className="flex flex-col items-center text-center mb-6">
+        <div className="flex-1 w-full max-w-[480px] mx-auto px-4 pb-20 flex flex-col relative z-10">
+          
+          {/* Mascot Area */}
+          <div className="flex flex-col items-center justify-center flex-1 min-h-[160px] relative">
             <Image
               src="/Images/mascot/mascot-standing.png"
               alt="케이 마스코트"
-              width={96}
-              height={96}
-              className="object-contain mb-2"
+              width={205}
+              height={205}
+              className="object-contain drop-shadow-md z-10"
+              style={{ width: "clamp(150px, 43vw, 205px)", height: "auto" }}
               priority
             />
-            <h1 className="text-lg font-bold text-k-text-k-orange">
-              {child ? `안녕, ${getFriendlyName(child.name)}! 오늘은 뭐 하고 놀까?` : "안녕! 오늘은 뭐 하고 놀까?"}
-            </h1>
-            <p className="text-xs mt-1 text-k-text-k-sky-blue">
-              케이랑 같이 재미있게 보내봐요
-            </p>
+            {/* Oval shadow under mascot */}
+            <div className="absolute bottom-0 w-32 h-4 bg-black/5 rounded-[50%] blur-[2px]"></div>
           </div>
 
-          <div className="flex flex-col gap-4">
-            {HOME_CARDS.map((card) => {
-              const variantStyle = CHILD_ACTION_CARD_VARIANTS[card.variant];
-              return (
-              <Link
-                key={card.title}
-                href={card.href}
-                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-all active:scale-[0.98] hover:brightness-95 active:brightness-90"
-                style={{ background: variantStyle.bg }}
-              >
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0"
-                  style={{ background: variantStyle.badgeBg }}
-                >
-                  {card.icon}
+          {/* Greeting Area */}
+          <div className="flex flex-col items-center text-center mt-6 mb-3">
+            <h1 className="text-[26px] font-extrabold leading-[1.2]">
+              {greetingTitle}<br/>오늘은 뭐 하고 놀까?
+            </h1>
+          </div>
+
+          {/* Status Bubble */}
+          <div className="flex justify-center mb-5">
+            <div className="relative bg-white px-4 py-2 rounded-full border border-[var(--color-k-orange)] shadow-sm text-sm font-medium inline-block max-w-[85%] text-center">
+              {missionBubble}
+              {/* Triangle pointer */}
+              <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-[var(--color-k-orange)] transform rotate-45"></div>
+            </div>
+          </div>
+
+          {/* Primary Action Cards */}
+          <div className="flex flex-col gap-3">
+            {/* Mission Card (Primary) */}
+            <Link 
+              href={missionUrl}
+              className="flex items-center gap-4 rounded-[24px] px-5 py-5 shadow-sm transition-transform active:scale-[0.98] w-full"
+              style={{ background: "var(--color-k-orange)" }}
+            >
+              <div className="w-14 h-14 rounded-[18px] flex items-center justify-center text-3xl shrink-0 bg-white/25">
+                🎯
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-white font-bold text-lg">{missionTitle}</p>
+                <p className="text-white/90 text-sm mt-0.5 truncate">{missionDesc}</p>
+              </div>
+              {progressText && (
+                <div className="shrink-0 text-[var(--color-k-navy)] font-bold text-[13px] bg-white px-2.5 py-1 rounded-full shadow-sm">
+                  {progressText}
                 </div>
-                <div className="flex-1 text-left">
-                  <p className="text-white font-bold text-base">{card.title}</p>
-                  <p className="text-white/85 text-xs mt-0.5">
-                    {card.desc}
-                    {card.href === "/child/play" && goldKeyBalance !== null && (
-                      <span className="ml-1.5 font-bold">· 🔑 {goldKeyBalance}개 보유</span>
-                    )}
+              )}
+            </Link>
+
+            {/* Sub Cards (Grid) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Talk Card */}
+              <Link 
+                href="/chat"
+                className="flex items-center gap-4 rounded-[20px] px-4 py-4 shadow-sm transition-transform active:scale-[0.98] w-full"
+                style={{ background: "var(--color-k-mascot-orange)" }}
+              >
+                <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl shrink-0 bg-white/30">
+                  💬
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-[var(--color-k-navy)] font-bold text-[15px]">대화하기</p>
+                  <p className="text-[var(--color-k-navy)]/90 text-[13px] mt-0.5 truncate">케이랑 이야기 나눠요</p>
+                </div>
+              </Link>
+
+              {/* Play Card */}
+              <Link 
+                href="/child/play"
+                className="flex items-center gap-4 rounded-[20px] px-4 py-4 shadow-sm transition-transform active:scale-[0.98] w-full"
+                style={{ background: "var(--color-k-sky-blue)" }}
+              >
+                <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl shrink-0 bg-white/25">
+                  🎮
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-[var(--color-k-navy)] font-bold text-[15px]">케이와 놀이</p>
+                  <p className="text-[var(--color-k-navy)] text-[13px] mt-0.5 truncate">
+                    {goldKeyBalance !== null ? `🔑 ${goldKeyBalance}개 보유` : "재미있는 놀이를 해봐요"}
                   </p>
                 </div>
-                <span className="text-white text-lg">→</span>
               </Link>
-              );
-            })}
-
-            {isTestAccount && (
-              <Link
-                href="/child/test-modes"
-                className="flex items-center gap-4 rounded-3xl px-5 py-5 shadow-md transition-transform active:scale-[0.98] border-2 border-dashed bg-k-surface border-k-orange"
+            </div>
+          </div>
+        </div>
+        
+        {/* PWA Install Banner */}
+        {showPwaBanner && (
+          <div className="sticky bottom-0 w-full bg-[#FFF9F2] border-t border-black/5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] p-4 flex items-center justify-between z-50 mt-auto pb-[env(safe-area-inset-bottom,16px)]">
+            <p className="text-sm font-semibold text-[var(--color-k-navy)] px-2">모바일 / 태블릿 / PC</p>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={onInstallClick}
+                className="h-[44px] px-5 rounded-full bg-[var(--color-k-orange)] text-white font-bold text-[15px] shadow-sm active:scale-95 transition-transform"
               >
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 bg-k-orange-tint">
-                  🧪
-                </div>
-                <div className="flex-1 text-left">
-                  <p className="font-bold text-base text-k-orange">대화 방식 테스트</p>
-                  <p className="text-xs mt-0.5 text-k-text-k-sky-blue">A~F 방식 선택 (테스트 계정 전용)</p>
-                </div>
-                <span className="text-lg text-k-orange">→</span>
-              </Link>
-            )}
+                앱 설치하기
+              </button>
+              <button 
+                onClick={handleDismissPwa}
+                className="w-[44px] h-[44px] flex items-center justify-center rounded-full bg-black/5 text-[var(--color-k-navy)] active:bg-black/10 transition-colors"
+                aria-label="닫기"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
-          </div>
-        </div>
-
-        {/* 하단 네비게이션도 스마트폰과 동일한 폭을 유지 — RealChildNav 자체(다른 화면에서도
-            공유됨)는 건드리지 않고 이 화면에서만 로컬로 폭을 제한한다. */}
-        <div className="max-w-md mx-auto w-full">
-          <RealChildNav active="홈" />
-        </div>
+        )}
       </div>
-    
-        <KChatbotWidget appSurface="child" />
-      </DemoFrame>
+
+      <KChatbotWidget appSurface="child" />
+    </DemoFrame>
   );
 }

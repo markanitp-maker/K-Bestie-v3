@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import ChildTabBar from "@/components/ChildTabBar";
 import { useStore } from "@/hooks/useStore";
 
 export default function ChildFinishPage() {
@@ -76,7 +75,6 @@ export default function ChildFinishPage() {
         </div>
       </div>
 
-      <ChildTabBar />
     </div>
   );
 }

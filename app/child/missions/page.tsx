@@ -7,7 +7,6 @@ import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import { MissionConversationLayout } from "@/components/MissionConversationLayout";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
-import { RealChildNav } from "@/components/RealChildNav";
 import { useVoiceChat } from "@/hooks/useVoiceChat";
 import { useGeminiLive, type Turn } from "@/hooks/useGeminiLive";
 import { SkeletonBox } from "@/components/Skeleton";
@@ -19,6 +18,7 @@ import { MissionCompletionController, type MissionCompletionState } from "@/lib/
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
 import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
 import { ChildConversationContext } from "@/lib/mission/ChildConversationContext";
+import { getKstHour, currentRound } from "@/lib/mission/missionTimeGate";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { appendVocative } from "@/lib/utils/koreanParticle";
@@ -87,19 +87,6 @@ async function playClosingLineViaTts(text: string, sessionId: string | null): Pr
 // 운영시간 게이트 on/off는 서버 환경변수 CHILD_TIME_RESTRICTIONS_ENABLED로 제어한다
 // (/api/config/child-time-restrictions 참고) — 게이트 로직(getKstHour/currentRound) 자체는
 // 그대로 유지하고, 적용 여부만 이 스위치로 결정한다.
-
-// 운영시간 게이트 (KST)
-function getKstHour(): number {
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  return new Date(utc + 9 * 3600000).getHours();
-}
-
-function currentRound(hour: number): RoundType | null {
-  if (hour >= 13 && hour < 17) return "round1_day";
-  if (hour >= 19 && hour <= 23) return "round2_night";
-  return null;
-}
 
 function MissionInner() {
   const router = useRouter();
@@ -2016,598 +2003,93 @@ function MissionInner() {
     </div>
   );
 
-  if (!isLiveMode) {
-    const visibleTurns = voice.transcript.filter((t) => t.role !== "child");
-    const activeVisibleTurn = visibleTurns.length > 0 ? visibleTurns[visibleTurns.length - 1] : null;
-    const historyTurns = visibleTurns.slice(0, -1);
-    const missionDoneNow = missionStateRef.current !== "active" || completed;
 
-    return (
-      <div className="h-full relative overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
-        {wakeLockWarning && (
-          <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
-            <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
-              기기 설정으로 화면이 꺼질 수 있어요
-            </div>
-          </div>
-        )}
-
-        {missionDoneNow && (
-          <div className="absolute top-[64px] left-0 right-0 z-30 text-center px-4 pointer-events-none">
-            <h1 className="text-base font-bold" style={{ color: "var(--color-k-text-primary)" }}>
-              오늘의 미션을 완료했어요!
-            </h1>
-            <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
-              {missionState === "completed"
-                ? MISSION_CLOSING_LINE
-                : "황금열쇠를 받았어요. 내일 또 만나요! 🔑"}
-            </p>
-          </div>
-        )}
-
-        {retryOverlay}
-
-        <MissionConversationLayout
-          onBack={() => {
-            voice.stopSession();
-            setSessionActive(false);
-            router.push("/child/home");
-          }}
-          progressCurrent={gauge}
-          progressTotal={requiredCount}
-          missionLabel={missionLabel}
-          history={historyTurns.map((t, i) => ({
-            id: t.id ?? `h-${i}`,
-            role: t.role === "child" ? "child" : "k",
-            text: t.text,
-          }))}
-          activeTurn={
-            activeVisibleTurn
-              ? {
-                  id: activeVisibleTurn.id ?? "active",
-                  role: activeVisibleTurn.role === "child" ? "child" : "k",
-                  text: activeVisibleTurn.text,
-                }
-              : null
-          }
-          /* 012: 상태배지(좌) - 케이 캐릭터(중앙) - 자동/수동 토글(우) 한 줄. 이전엔 이 배지가
-             마스코트 오른쪽에 절대위치로 붙어 있었고 토글/스피커는 상단 헤더에 있었다 —
-             대표님이 "마스코트/배지/토글은 항상 표시" 방침을 확정해, activeTurn(케이가 실제
-             말하는 순간) 여부와 무관하게 이 슬롯 전체가 항상 렌더되도록
-             MissionConversationLayout.tsx도 함께 수정했다. */
-          mascotSlot={
-            // 020: 좌(상태배지)/중(케이)/우(토글) 3열 grid로 고정 - flex+justify-center는
-            // 그룹 전체 폭이 상태 텍스트 길이("듣는 중"↔"생각하는 중"↔"말하는 중")에 따라
-            // 바뀔 때마다 가운데 정렬 기준이 이동해 케이가 좌우로 움직이는 것처럼 보였다.
-            // grid-cols-[1fr_auto_1fr]는 가운데 열(케이) 폭이 콘텐츠에 의해서만 정해지고
-            // 좌/우 열은 남는 공간을 균등히 나눠 가지므로, 배지 텍스트 길이가 바뀌어도
-            // 케이의 그리드 상 중앙 위치 자체는 전혀 이동하지 않는다.
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 w-full">
-              <div className="justify-self-end">
-                <VoiceConversationStateBadge state={voiceState} />
-              </div>
-              <div className="relative inline-flex items-center justify-center">
-                <KBestieMascotAnimation
-                  state={(isLiveMode ? turnPhaseUi === "k_speaking" : sttTts.isSpeaking) ? "talking" : "idle"}
-                  size={72}
-                />
-                <button
-                  onClick={toggleKVoice}
-                  className="absolute bottom-0 left-0 w-7 h-7 rounded-full flex items-center justify-center shadow-sm text-xs cursor-pointer transition-transform active:scale-95"
-                  style={{ background: kVoiceEnabled ? "var(--color-k-orange)" : "#e5e7eb", color: kVoiceEnabled ? "#fff" : "#9ca3af" }}
-                  aria-label={kVoiceEnabled ? "케이 음성 끄기" : "케이 음성 켜기"}
-                >
-                  {kVoiceEnabled ? "🔊" : "🔇"}
-                </button>
-              </div>
-              <div className="justify-self-start">
-                {!missionDoneNow && (
-                  <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
-                )}
-              </div>
-            </div>
-          }
-          isListening={isRecording}
-          micLevel={isRecording ? 0.6 : 0}
-          headerExtraSlot={
-            <ConnectionQualityIndicator quality={connectionQuality} live={true} />
-          }
-        />
-
-        {/* 실제 조작 가능한 하단 컨트롤(마이크 버튼 / 텍스트 입력) - 기존 로직·핸들러 그대로,
-            MissionConversationLayout의 장식용 마이크 파형 존 위에 겹쳐서 표시한다.
-            MissionConversationLayout.tsx 자체는 버튼을 모르므로 여기서 별도로 얹는다. */}
-        <div className="absolute bottom-0 left-0 right-0 z-20">
-          {mode === "voice" ? (
-            <div className="flex items-center justify-center gap-8 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
-              <button
-                onClick={switchToText}
-                className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-                aria-label="텍스트로 대화하기"
-              >
-                💬
-              </button>
-
-              {isConnecting && (
-                <button disabled className="w-16 h-16 rounded-full flex items-center justify-center bg-gray-100 shadow-sm cursor-not-allowed">
-                  <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-                </button>
-              )}
-
-              {isLive && !missionDoneNow && (
-                isAuto ? (
-                  <div className="w-16 h-16" />
-                ) : (
-                  <button
-                    onClick={handleCentralButtonClick}
-                    disabled={isButtonBlocked}
-                    // 014 추가요청: "말하기 버튼"이 정지 버튼과 색상·형태가 비슷해 구분이
-                    // 어렵다는 대표님 실기기 피드백 — 대기 상태는 원형(마이크), 녹음 중엔
-                    // 버튼 자체 모양도 둥근 사각형(정지)으로 바꿔 아이콘뿐 아니라 컨테이너
-                    // 형태까지 분리한다.
-                    className={`w-16 h-16 flex items-center justify-center text-white shadow-md transition-all ${
-                      isRecording ? "rounded-2xl" : "rounded-full"
-                    } ${isButtonBlocked ? "cursor-not-allowed" : "cursor-pointer active:scale-95"}`}
-                    style={{ background: isRecording ? "#e05a3f" : isThinkingTurn ? "#9ca3af" : "var(--color-k-orange)" }}
-                    aria-label={
-                      isRecording
-                        ? "녹음 종료"
-                        : isThinkingTurn
-                          ? (isKSpeakingNow ? "케이가 말하고 있어요" : "케이가 생각하고 있어요")
-                          : "마이크 입력 시작"
-                    }
-                  >
-                    {isRecording ? (
-                      <div className="w-5 h-5 rounded-sm bg-white" />
-                    ) : isThinkingTurn ? (
-                      <div className="w-5 h-5 border-2 border-white/60 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="2" width="6" height="11" rx="3" />
-                        <path d="M5 10a7 7 0 0 0 14 0" />
-                        <line x1="12" y1="17" x2="12" y2="21" />
-                        <line x1="8" y1="21" x2="16" y2="21" />
-                      </svg>
-                    )}
-                  </button>
-                )
-              )}
-
-              {!isLive && !isConnecting && !missionDoneNow && autoStartFailed && (
-                <button
-                  onClick={() => {
-                    setAutoStartFailed(false);
-                    voice.startSession();
-                  }}
-                  className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-                  style={{ background: "var(--color-k-orange)" }}
-                  aria-label="미션 시작"
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </button>
-              )}
-
-              {missionDoneNow && (
-                <button
-                  onClick={() => {
-                    setSessionActive(false);
-                    router.replace("/child/home");
-                  }}
-                  className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-                  style={{ background: "var(--color-k-orange)" }}
-                  aria-label="홈으로 이동"
-                >
-                  ✕
-                </button>
-              )}
-
-              <button
-                onClick={handleClose}
-                className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-                aria-label="닫기"
-              >
-                ✕
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
-              <button
-                onClick={switchToVoice}
-                className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-                aria-label="음성으로 전환"
-              >
-                🎤
-              </button>
-              <input
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
-                }}
-                placeholder="케이에게 답해봐..."
-                disabled={missionDoneNow || isProcessingAnswer}
-                className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
-                maxLength={200}
-              />
-              <button
-                onClick={handleSendText}
-                disabled={missionDoneNow || !textInput.trim() || isProcessingAnswer}
-                className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
-                style={{ background: "var(--color-k-orange)" }}
-                aria-label="전송"
-              >
-                ➤
-              </button>
-              <button
-                onClick={handleClose}
-                className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-                aria-label="닫기"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const allTurns = voice.transcript.map(t => ({
+    id: t.id ?? Math.random().toString(),
+    role: t.role === "child" ? "child" : "k",
+    text: t.text
+  }));
 
   return (
-    <div className="h-full relative flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
+    <>
       {wakeLockWarning && (
-        <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className="fixed top-[80px] left-0 right-0 flex justify-center z-[100] pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
             기기 설정으로 화면이 꺼질 수 있어요
           </div>
         </div>
       )}
+      
       {retryOverlay}
-      {/* 상단 고정 영역: 헤더 + 진행률 게이지 + 마스코트 (스크롤되지 않음) */}
-      <div className="shrink-0 sticky top-0 z-10" style={{ background: "var(--color-k-surface)" }}>
-        <div className="relative flex items-center justify-center px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-1">
-          {/* 좌상단 뒤로가기 버튼 */}
-          <button
-            aria-label="홈으로 돌아가기"
-            onClick={() => {
-              voice.stopSession();
-              setSessionActive(false);
-              router.push("/child/home");
-            }}
-            className="absolute left-2 top-[calc(50%+env(safe-area-inset-top)/2)] -translate-y-1/2 w-12 h-12 flex items-center justify-center cursor-pointer text-gray-600 z-20"
-          >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
-          <Link href="/child/home" className="cursor-pointer shrink-0">
-            <Image
-              src="/Images/logo/Logo.png"
-              alt="내친구 케이"
-              width={84}
-              height={24}
-              className="object-contain"
-              priority
-            />
-          </Link>
+
+      {isDone && (
+        <div className="fixed top-[64px] left-0 right-0 z-[60] text-center px-4 pointer-events-none drop-shadow-md">
+          <h1 className="text-[15px] font-extrabold text-[#3a2f2a]">
+            오늘의 미션을 완료했어요!
+          </h1>
+          <p className="text-[12px] mt-1 text-[#4a3b32] font-semibold bg-white/60 inline-block px-3 py-1 rounded-full backdrop-blur-md">
+            {missionState === "completed"
+              ? MISSION_CLOSING_LINE
+              : "황금열쇠를 받았어요. 내일 또 만나요! 🔑"}
+          </p>
         </div>
+      )}
 
-        {isDone && (
-          <div className="text-center pt-1.5 pb-2">
-            <h1 className="text-lg font-bold" style={{ color: "var(--color-k-text-primary)" }}>
-              오늘의 미션을 완료했어요!
-            </h1>
-            <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
-              {/* missionState==="completed"(종료 발화+700ms 대기까지 실제로 끝난 시점)일 때만
-                  정확한 완료 안내 문구를 표시 — completing 중엔 기존 문구 그대로 유지. */}
-              {missionState === "completed"
-                ? MISSION_CLOSING_LINE
-                : "황금열쇠를 받았어요. 내일 또 만나요! 🔑"}
-            </p>
-          </div>
-        )}
-
-        <div className="px-6 mt-1.5 mb-2">
-          {/* 012 "0/10을 스텝 인디케이터로": 좌측 미션 라벨, 우측 n/10, 완료 시 축하 색상 */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold" style={{ color: gauge >= requiredCount ? "#b8860b" : "var(--color-k-orange)" }}>
-              {missionLabel}
-            </span>
-            <div className="flex items-center gap-2">
-              {gauge >= requiredCount && (
-                <span className="text-[11px] font-extrabold text-white rounded-full px-2 py-0.5" style={{ background: "#f0a020" }}>
-                  🎉 완료!
-                </span>
-              )}
-              <span className="text-xs font-semibold" style={{ color: gauge >= requiredCount ? "#b8860b" : "#6b7280" }}>
-                {gauge}/{requiredCount}
-              </span>
-            </div>
-          </div>
-          <div
-            className="mt-1.5 flex gap-1 h-1.5 rounded-full"
-            style={{
-              padding: gauge >= requiredCount ? 3 : 0,
-              background: gauge >= requiredCount ? "#fff3d6" : "transparent",
-            }}
-          >
-            {Array.from({ length: requiredCount }).map((_, i) => (
-              <div
-                key={i}
-                className={`flex-1 h-full rounded-full transition-colors duration-300 ${!(gauge >= requiredCount) && i === gauge ? "animate-pulse" : ""}`}
-                style={{
-                  background: gauge >= requiredCount ? "#f0a020" : i < gauge ? "var(--color-k-orange)" : "#eef2f1",
-                }}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* 012: 상태배지(좌) - 케이 캐릭터(중앙) - 자동/수동 토글(우), 항상 노출
-            020: grid-cols-[1fr_auto_1fr]로 고정 - flex+justify-center는 상태 텍스트
-            길이가 바뀔 때마다 그룹 전체 폭이 변해 케이가 좌우로 움직여 보이는 문제가
-            있었다. 가운데 열(케이)은 콘텐츠 폭만큼만 차지하고 좌우 열이 남는 공간을
-            나눠 가지므로 배지 내용이 바뀌어도 케이의 그리드 상 위치는 이동하지 않는다. */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mb-2 max-w-sm mx-auto">
-          <div className="justify-self-end">
-            <VoiceConversationStateBadge state={voiceState} />
-          </div>
-          <div className="relative inline-flex items-center justify-center">
-            <KBestieMascotAnimation state="idle" size={96} />
-            {/* 012 claude-review 지적: 이 블록은 이미 Live 전용 분기(if (!isLiveMode) 블록
-                이후) 안에 있어 !isLiveMode는 여기서 항상 false다 — 예전부터 있던 죽은
-                조건문이라 Live(Tier3)에서 스피커 아이콘이 실제로는 한 번도 렌더된 적이
-                없었다. 항목(4) 요구사항을 Live 트리에서도 충족하도록 가드를 제거한다. */}
-            <button
-              onClick={toggleKVoice}
-              className="absolute bottom-0 left-0 w-8 h-8 rounded-full flex items-center justify-center shadow-sm text-sm cursor-pointer transition-transform active:scale-95"
-              style={{ background: kVoiceEnabled ? "var(--color-k-orange)" : "#e5e7eb", color: kVoiceEnabled ? "#fff" : "#9ca3af" }}
-              aria-label={kVoiceEnabled ? "케이 음성 끄기" : "케이 음성 켜기"}
-            >
-              {kVoiceEnabled ? "🔊" : "🔇"}
-            </button>
-          </div>
-          <div className="justify-self-start">
-            {!isDone && (
-              <VoiceInputModeSwitch isAuto={isAuto} onChange={handleModeChange} />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 대화 말풍선: 이 영역만 스크롤 */}
-      <div
-        ref={bubbleRef}
-        className="flex-1 min-h-0 px-4 flex flex-col gap-3 overflow-y-auto pb-4"
-      >
-        {voice.transcript.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-center p-4">
-            <p className="text-xs leading-relaxed" style={{ color: "#9ca3af" }}>
-              {isAuto
-                ? "케이가 자동으로 들을 준비를 하고 있어요 🌿"
-                : "세션 시작 뒤 말하기 버튼을 사용해 말해요 🌿"}
-            </p>
-          </div>
-        ) : (
-          voice.transcript
-            .filter((turn) => isLiveMode || turn.role !== "child")
-            .map((turn, i) => (
-            <div
-              key={turn.id ?? i}
-              className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                turn.role === "k" ? "self-start" : "self-end"
-              }`}
-              style={{
-                background: turn.role === "k" ? "#f3f4f6" : "#3b82f6",
-                color: turn.role === "k" ? "var(--color-k-text-primary)" : "#ffffff",
-                borderRadius: turn.role === "k" ? "16px 16px 16px 2px" : "16px 16px 2px 16px",
-              }}
-            >
-              {turn.text}
-            </div>
-          ))
-        )}
-        {/* 아이가 말하는 도중의 실시간 중간 자막 — 확정 전이라 옅게 표시 */}
-        {isLiveMode && voice.interimChildText && (
-          <div
-            className="max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed self-end opacity-60"
-            style={{
-              background: "#3b82f6",
-              color: "#ffffff",
-              borderRadius: "16px 16px 2px 16px",
-            }}
-          >
-            {voice.interimChildText}
-          </div>
-        )}
-      </div>
-
-      {/* Android 등 일부 브라우저는 사용자 제스처 밖에서 만들어진 AudioContext가 계속
-          suspended로 남아 케이 목소리가 전혀 안 들릴 수 있다(자막은 정상 표시됨) — 자동 재시도가
-          모두 실패했을 때만 뜨는 최후 수단. 탭 즉시 resume()을 시도하고 성공하면(audioLocked가
-          false로 바뀌면) 스스로 사라진다. */}
+      {/* 조기 종료 감지/오디오 언락 UI (absolute/fixed로 띄움) */}
       {isLiveMode && live.audioLocked && voice.status === "live" && (
-        <div className="px-4 pb-2 shrink-0">
+        <div className="fixed top-[120px] left-1/2 -translate-x-1/2 z-[60] w-[90%] max-w-[320px]">
           <button
             onClick={() => void live.unlockAudio()}
-            className="w-full py-2.5 rounded-xl text-sm font-bold text-white cursor-pointer"
+            className="w-full py-3 rounded-2xl text-sm font-bold text-white cursor-pointer shadow-lg active:scale-95 transition-transform"
             style={{ background: "var(--color-k-orange)" }}
           >
             🔊 케이 목소리 켜기
           </button>
         </div>
       )}
-
-      {/* 하단 버튼 바 */}
-      {mode === "voice" ? (
-        <div className="flex items-center justify-center gap-8 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
+      
+      {!isLiveMode && !isConnecting && !isDone && autoStartFailed && (
+        <div className="fixed top-[120px] left-1/2 -translate-x-1/2 z-[60] w-[90%] max-w-[320px]">
           <button
-            onClick={switchToText}
-            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-            aria-label="텍스트로 대화하기"
-          >
-            💬
-          </button>
-
-          {isConnecting && (
-            <button disabled className="w-16 h-16 rounded-full flex items-center justify-center bg-gray-100 shadow-sm cursor-not-allowed">
-              <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-            </button>
-          )}
-
-          {isLive && !isDone && (
-            isAuto ? (
-              // 자동 모드일 때는 중앙 버튼을 완전히 숨김
-              <div className="w-16 h-16" />
-            ) : (
-              // 수동 모드일 때는 중앙 버튼 노출 및 레벨 비터 연결
-              <div className="relative flex items-center justify-center">
-                {isRecording && (
-                  <>
-                    <div className="absolute -top-8 text-[11px] font-extrabold text-orange-600 whitespace-nowrap bg-orange-50 px-2.5 py-0.5 rounded-full border border-orange-200 animate-bounce">
-                      케이가 듣고 있어요
-                    </div>
-                    <div
-                      ref={pingRef}
-                      className="absolute w-16 h-16 rounded-full bg-orange-400/20 pointer-events-none transition-transform duration-75"
-                    />
-                  </>
-                )}
-                {/* 아이 답변 판정/다음 질문 생성 중(최대 10~32초)엔 canStartRecording 가드가
-                    버튼 탭을 조용히 무시한다 — 이 표시가 없으면 버튼이 그대로 "말하기 시작"
-                    모양이라 "눌러도 반응이 없다"로 보였다(진짜 원인: 시각 피드백 부재). */}
-                {!isRecording && isThinkingTurn && (
-                  <div className="absolute -top-8 text-[11px] font-extrabold text-gray-500 whitespace-nowrap bg-gray-100 px-2.5 py-0.5 rounded-full border border-gray-200">
-                    {isKSpeakingNow ? "케이가 말하고 있어요" : "케이가 생각하고 있어요…"}
-                  </div>
-                )}
-                <button
-                  ref={buttonRef}
-                  onClick={handleCentralButtonClick}
-                  disabled={isButtonBlocked}
-                  // 014 추가요청: 대기(원형, 마이크)와 녹음중(둥근 사각형, 정지) 컨테이너
-                  // 형태를 분리해 아이콘뿐 아니라 버튼 모양으로도 구분되게 한다.
-                  className={`relative w-16 h-16 flex items-center justify-center text-white shadow-md transition-all duration-75 ${
-                    isRecording ? "rounded-2xl" : "rounded-full"
-                  } ${
-                    isButtonBlocked ? "cursor-not-allowed" : "active:scale-95 cursor-pointer"
-                  } ${
-                    isRecording
-                      ? "bg-gradient-to-br from-orange-400 to-orange-500"
-                      : isThinkingTurn
-                        ? "bg-gray-300"
-                        : "bg-[var(--color-k-orange)]"
-                  }`}
-                  aria-label={
-                    isRecording
-                      ? "녹음 종료"
-                      : isThinkingTurn
-                        ? (isKSpeakingNow ? "케이가 말하고 있어요" : "케이가 생각하고 있어요")
-                        : "마이크 입력 시작"
-                  }
-                >
-                  {isRecording ? (
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
-                      <rect x="6" y="6" width="12" height="12" rx="2" />
-                    </svg>
-                  ) : isThinkingTurn ? (
-                    <div className="w-5 h-5 border-2 border-white/60 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <span className="text-2xl">🎤</span>
-                  )}
-                </button>
-              </div>
-            )
-          )}
-
-          {!isLive && !isConnecting && !isDone && autoStartFailed && (
-            <button
-              onClick={() => {
-                // 실제 탭 이벤트 안 — Android 자동재생 정책상 오디오 언락은 이 동기 호출
-                // 스택 안에서 시도해야 효과가 있다(startSession 내부의 언락 시도는 이미
-                // await를 여러 번 거친 뒤라 실패할 수 있음).
-                if (isLiveMode) void live.unlockAudio();
-                setAutoStartFailed(false);
-                voice.startSession();
-              }}
-              className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-              style={{ background: "var(--color-k-orange)" }}
-              aria-label="미션 시작"
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </button>
-          )}
-
-          {isDone && (
-            <button
-              onClick={() => {
-                setSessionActive(false);
-                router.replace("/child/home");
-              }}
-              className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md transition-transform active:scale-95 cursor-pointer"
-              style={{ background: "var(--color-k-orange)" }}
-              aria-label="홈으로 이동"
-            >
-              ✕
-            </button>
-          )}
-
-          <button
-            onClick={handleClose}
-            className="w-11 h-11 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-            aria-label="닫기"
-          >
-            ✕
-          </button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shrink-0 bg-white border-t border-gray-50">
-          <button
-            onClick={switchToVoice}
-            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-            aria-label="음성으로 전환"
-          >
-            🎤
-          </button>
-          <input
-            value={textInput}
-            onChange={(e) => setTextInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
+            onClick={() => {
+              if (isLiveMode) void live.unlockAudio();
+              setAutoStartFailed(false);
+              voice.startSession();
             }}
-            placeholder="케이에게 답해봐..."
-            disabled={isDone || isProcessingAnswer}
-            className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-gray-200 disabled:opacity-50"
-            maxLength={200}
-          />
-          <button
-            onClick={handleSendText}
-            disabled={isDone || !textInput.trim() || isProcessingAnswer}
-            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 cursor-pointer"
+            className="w-full py-3 rounded-2xl text-sm font-bold text-white cursor-pointer shadow-lg active:scale-95 transition-transform"
             style={{ background: "var(--color-k-orange)" }}
-            aria-label="전송"
           >
-            ➤
-          </button>
-          <button
-            onClick={handleClose}
-            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center bg-white shadow-sm text-lg cursor-pointer"
-            aria-label="닫기"
-          >
-            ✕
+            ▶️ 미션 시작하기
           </button>
         </div>
       )}
-    </div>
+
+      <MissionConversationLayout
+        onClose={handleClose}
+        isClosing={isDone}
+        progressCurrent={gauge}
+        progressTotal={requiredCount}
+        history={allTurns as any}
+        activeTurn={null}
+        interimChildText={isLiveMode ? voice.interimChildText : undefined}
+        voiceState={voiceState}
+        isMuted={!kVoiceEnabled}
+        onToggleMute={toggleKVoice}
+        isAuto={isAuto}
+        onChangeMode={handleModeChange}
+        isRecording={isRecording}
+        isMicDisabled={isButtonBlocked}
+        onMicClick={handleCentralButtonClick}
+        textInput={textInput}
+        onChangeTextInput={setTextInput}
+        onSendText={handleSendText}
+        isTextMode={mode === "text"}
+        onToggleTextMode={() => (mode === "text" ? switchToVoice() : switchToText())}
+      />
+    </>
   );
 }
 
-// 테스트 계정이 A~E 대화방식 테스트에서 E안을 선택한 경우, /child/missions 실제 실행 경로에서
-// 기존 미션 대신 E안 러너를 렌더한다. 일반 계정(및 E 미선택)은 기존 MissionInner 그대로 —
-// 게이트가 'e'로 결정되기 전엔 MissionInner를 마운트하지 않아 기존 흐름에 회귀가 없다.
 function MissionRouteGate() {
   const [decision, setDecision] = useState<"loading" | "ab" | "ef" | "cd" | "normal">("loading");
   const [selectedMode, setSelectedMode] = useState<"A" | "B" | "C" | "D" | "E" | "F">("C");
@@ -2654,19 +2136,12 @@ function MissionRouteGate() {
   }
   // 일반 계정 미션은 기존 그대로(DemoFrame) — 회귀 없음.
   return (
-    <DemoFrame>
+    <>
       <MissionInner />
-    
-        {/* 022: 이 화면 헤더는 뒤로가기/로고/연결상태(headerExtraSlot) 한 줄 + 미션
-            라벨/진행률 바 두 줄이 추가로 붙어 기본 헤더보다 훨씬 높다(약 90px대) - 기존
-            headerExtraSlot의 ConnectionQualityIndicator와 같은 우측 상단 자리에 겹쳐
-            뜨지 않도록, 진행률 바까지 전부 지나간 지점 아래로 오프셋을 크게 준다.
-            MissionConversationLayout 내부가 maxWidth:560으로 중앙 정렬되어(태블릿/PC
-            폭에서 그 컬럼 밖은 회색 여백) containerMaxWidthPx로 그 컬럼 우측 끝에
-            맞춰 정렬한다 - 지정 안 하면 뷰포트 우측 끝(회색 여백 안)에 떠 헤더와
-            분리돼 보인다. */}
-        <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={560} />
-      </DemoFrame>
+      <div className="absolute top-0 right-0">
+        <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={480} />
+      </div>
+    </>
   );
 }
 

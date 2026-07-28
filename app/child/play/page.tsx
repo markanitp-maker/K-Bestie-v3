@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
-import { RealChildNav } from "@/components/RealChildNav";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 import KChatbotWidget from "@/components/KChatbotWidget";
 
@@ -390,7 +389,6 @@ export default function ChildPlayPage() {
           </div>
         </div>
 
-        <RealChildNav active="놀이" />
 
         {/* 1. 이어하기/시작하기 액션 모달 */}
         {showActionModal && selectedGame && !showFinalConfirm && !showGameScreen && !showInsufficientModal && (
