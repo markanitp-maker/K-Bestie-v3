@@ -134,8 +134,8 @@ export function MissionConversationLayout({
   }, [progressCurrent, lastProgress]);
 
   return (
-    <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflow: "hidden" }}>
-      <div className="w-full max-w-[480px] h-full flex flex-col relative" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+    <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "auto" }}>
+      <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col relative shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
         
         {/* Decorations */}
         <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden">
@@ -174,27 +174,35 @@ export function MissionConversationLayout({
           </div>
         </div>
 
+        {/* Spacer above conversation */}
+        {/* max-[400px] 플로어: 이 화면 상단에는 KChatbotWidget(문의 버튼, topOffsetPx=104
+            + 높이 약 40px)이 fixed로 우상단에 떠 있다. 좁은 화면(≤400px)에서 dvh 기반
+            clamp 최솟값(8px)까지 줄어들면 진행률 바 하단(98px)+8px=106px에서 바로 이전
+            대화 영역이 시작돼 문의 버튼(104~144px)과 겹친다. 문의 버튼은 이 컴포넌트가
+            모르는 별도 fixed 오버레이라 여기서 폭을 줄이는 대신 세로 여백을 그 버튼
+            높이만큼 확보한다(033 QA에서 실측 겹침 확인). */}
+        <div className="flex-[0.5_1_0%] min-h-[clamp(8px,1.5dvh,24px)] max-[400px]:min-h-[56px]" />
+
         {/* Previous Chat Summary Area (Flexible) */}
-        <div className="flex-1 flex flex-col justify-end items-center pb-3 z-10 px-4 min-h-[40px] w-full">
+        <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink gap-[clamp(6px,1dvh,12px)] mb-[clamp(8px,1.5dvh,16px)] min-h-[0] overflow-hidden">
           {interimChildText ? (
-            // 확정 답변이 아닌 실시간 중간 자막 — 진행률/유효답변 판정에는 영향 없음, 표시만.
-            <div className="text-gray-400 text-[13px] text-center max-w-[85%] line-clamp-2 mb-2 font-medium italic">
+            <div className="text-gray-400 text-[clamp(12px,1.5dvh,14px)] text-center max-w-[85%] line-clamp-2 font-medium italic shrink min-h-0">
               {interimChildText}
             </div>
           ) : prevChildText && (
-            <div className="text-gray-500 text-[13px] text-center max-w-[85%] line-clamp-2 mb-2 font-medium">
+            <div className="text-gray-500 text-[clamp(12px,1.5dvh,14px)] text-center max-w-[85%] line-clamp-2 font-medium shrink min-h-0">
               {prevChildText}
             </div>
           )}
           {prevKText && (
-            <div className="bg-white/70 backdrop-blur-md px-4 py-2.5 rounded-2xl text-[13px] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] max-w-[85%] line-clamp-4 text-center">
+            <div className="bg-white/70 backdrop-blur-md px-[clamp(14px,3vw,18px)] py-[clamp(8px,1.2dvh,14px)] rounded-[16px] text-[13px] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] line-clamp-2 text-center shrink min-h-0">
               {prevKText}
             </div>
           )}
         </div>
 
         {/* Current Question Bubble */}
-        <div className="relative z-20 w-[84%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[18px] py-[16px] flex flex-col max-h-[160px] shrink-0">
+        <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[15px] py-[14px] flex flex-col max-h-[clamp(120px,18dvh,160px)] min-h-[70px] shrink">
           <div className="overflow-y-auto w-full styled-scrollbar pr-1">
             <p className="text-left text-[#3a2f2a] text-[16px] font-[650] leading-[1.45] whitespace-pre-wrap break-words">
               {currentQuestionText}
@@ -205,36 +213,39 @@ export function MissionConversationLayout({
           <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
         </div>
 
+        {/* Spacer between bubble and mascot */}
+        <div className="flex-[1_1_0%] min-h-[clamp(12px,2dvh,42px)]" />
+
         {/* Mascot Area & Side Cards */}
-        <div className="relative z-10 mt-6 flex items-end justify-between px-6 w-full h-[180px] shrink-0">
+        <div className="relative z-10 flex items-end justify-between px-[clamp(16px,4vw,24px)] w-full h-[clamp(140px,20dvh,170px)] shrink min-h-[110px]">
           
           {/* Left Mute Card */}
-          <button onClick={onToggleMute} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] p-2 flex flex-col items-center justify-center min-w-[64px] min-h-[64px] shadow-sm mb-12 active:scale-95 cursor-pointer">
+          <button onClick={onToggleMute} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(54px,14vw,64px)] h-[clamp(62px,16vw,76px)] shadow-sm mb-[clamp(16px,3dvh,36px)] active:scale-95 cursor-pointer">
             <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-lg mb-1">{isMuted ? '🔇' : '🔊'}</div>
             <span className="text-[10px] font-extrabold text-gray-600">{isMuted ? '소리 꺼짐' : '소리 켜짐'}</span>
           </button>
 
           {/* Mascot & Platform */}
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-0 flex flex-col items-center justify-end h-full w-[160px]">
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-0 flex flex-col items-center justify-end h-full w-[clamp(130px,36vw,160px)]">
              {/* Halo */}
-             <div className="absolute bottom-[30px] w-[140px] h-[140px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
+             <div className="absolute bottom-[20px] w-[120px] h-[120px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
              {/* Mascot */}
-             <div className="relative z-10 w-full flex justify-center items-end pb-[26px]">
-               <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={130} />
+             <div className="relative z-10 w-full flex justify-center items-end pb-[clamp(16px,3dvh,26px)]">
+               <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={116} className="!w-[clamp(78px,24vw,112px)] !h-[clamp(78px,24vw,112px)]" />
              </div>
              {/* Platform */}
-             <div className="absolute bottom-0 w-[140px] h-[40px] pointer-events-none">
+             <div className="absolute bottom-0 w-[clamp(120px,32vw,140px)] h-[clamp(24px,4.5dvh,36px)] pointer-events-none">
                {/* Top oval */}
-               <div className="absolute top-0 w-full h-[24px] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
+               <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
                {/* Side cylinder */}
-               <div className="absolute top-[12px] w-full h-[28px] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
+               <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
                {/* Shadow on platform */}
-               <div className="absolute top-[6px] left-[20px] w-[100px] h-[12px] bg-black/5 rounded-[100%] z-10 blur-sm" />
+               <div className="absolute top-[15%] left-[15%] w-[70%] h-[35%] bg-black/5 rounded-[100%] z-10 blur-sm" />
              </div>
           </div>
 
           {/* Right State Card */}
-          <div className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] p-2 flex flex-col items-center justify-center min-w-[64px] min-h-[64px] shadow-sm mb-12">
+          <div className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(54px,14vw,64px)] h-[clamp(62px,16vw,76px)] shadow-sm mb-[clamp(16px,3dvh,36px)]">
              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-gray-700 mb-1">
                {StateIcon}
              </div>
@@ -243,19 +254,22 @@ export function MissionConversationLayout({
         </div>
 
         {/* Auto/Manual Mode Toggles */}
-        <div className="relative z-20 flex justify-center gap-2 -mt-2 mb-3 h-[44px] shrink-0">
-           <button onClick={() => onChangeMode('auto')} disabled={isClosing} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] h-[44px] rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+        <div className="relative z-20 flex justify-center gap-2 mt-[clamp(2px,0.5dvh,8px)] h-[clamp(44px,6dvh,48px)] shrink-0">
+           <button onClick={() => onChangeMode('auto')} disabled={isClosing} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
              자동
              {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
            </button>
-           <button onClick={() => onChangeMode('manual')} disabled={isClosing} aria-pressed={!isAuto} className={`flex items-center justify-center min-w-[64px] h-[44px] rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${!isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+           <button onClick={() => onChangeMode('manual')} disabled={isClosing} aria-pressed={!isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${!isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
              수동
              {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
            </button>
         </div>
 
+        {/* Spacer between mode and mic */}
+        <div className="flex-[0.8_1_0%] min-h-[clamp(12px,2dvh,30px)]" />
+
         {/* Bottom Inputs Area */}
-        <div className="relative z-30 w-full shrink-0 bg-transparent flex items-center pb-[calc(16px+env(safe-area-inset-bottom))]">
+        <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(16px,4dvh,40px)+env(safe-area-inset-bottom))]">
           {isTextMode ? (
             <div className="w-full px-4 flex gap-2">
               <input
@@ -287,12 +301,12 @@ export function MissionConversationLayout({
               </button>
             </div>
           ) : (
-            <div className="w-full flex items-center justify-center h-[72px] relative">
+            <div className="w-full flex items-center justify-center h-[clamp(72px,11vw,82px)] relative">
               {/* Keyboard Button */}
               <button 
                 onClick={onToggleTextMode}
                 disabled={isClosing}
-                className="absolute left-6 w-[48px] h-[48px] bg-white/80 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-sm border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" 
+                className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(44px,11vw,54px)] h-[clamp(44px,11vw,54px)] bg-white/80 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-sm border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" 
                 aria-label="텍스트로 답하기"
               >
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
@@ -302,14 +316,14 @@ export function MissionConversationLayout({
               <div className="relative flex items-center justify-center">
                 {isRecording && (
                   <>
-                    <div className="absolute w-[90px] h-[90px] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
-                    <div className="absolute w-[110px] h-[110px] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
+                    <div className="absolute w-[clamp(90px,13vw,100px)] h-[clamp(90px,13vw,100px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
+                    <div className="absolute w-[clamp(108px,16vw,120px)] h-[clamp(108px,16vw,120px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
                   </>
                 )}
                 <button 
                   onClick={onMicClick} 
                   disabled={isMicDisabled} 
-                  className={`w-[72px] h-[72px] rounded-[36px] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 ${isMicDisabled ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-[var(--color-k-orange)]'}`}
+                  className={`w-[clamp(72px,11vw,82px)] h-[clamp(72px,11vw,82px)] rounded-[50%] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 ${isMicDisabled ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-[var(--color-k-orange)]'}`}
                   aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
                 >
                   {isRecording ? (

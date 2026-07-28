@@ -1798,6 +1798,115 @@ function MissionInner() {
     bubbleRef.current?.scrollTo({ top: bubbleRef.current.scrollHeight, behavior: "smooth" });
   }, [voice.transcript, voice.interimChildText]);
 
+  const isConnecting = voice.status === "connecting";
+  const isLive = voice.status === "live";
+  // completing 단계부터 이미 100%/완료 취급(마이크·입력 비활성화) — completed와의 차이는
+  // "종료 발화가 아직 재생 중인지"뿐이라 화면 표시상 구분할 필요가 없다.
+  const isDone = missionState !== "active" || completed;
+
+  let voiceState: VoiceConversationState = "idle";
+  if (isConnecting) {
+    voiceState = "connecting";
+  } else if (isLiveMode) {
+    // 실장애 재현(2026-07-26): Live 세션이 정상 오픈된 채로 클라이언트가 AUTO 모드에서
+    // 실제 오디오를 relay로 한 번도 못 보내는 구간이 있었다(VAD RMS_THRESHOLD 미도달 등) —
+    // 실측 결과 이 구간에서 turnPhaseUi는 "child_listening"으로 전환되지 않고 세션 시작
+    // 시점의 "idle" 그대로 남아있는 경우가 있었다(새 세션의 첫 턴 등) — turnPhaseUi 값에
+    // 의존하지 않고 live.noAudioInput 하나만으로 최우선 판정한다. hooks/useGeminiLive.ts가
+    // 마이크 활성+K 비발화 상태에서만 이 신호를 켜므로(K가 말하는 중이면 절대 true가 될 수
+    // 없음), turnPhaseUi가 무엇이든 이 값이 true면 항상 "no_input"을 보여줘도 안전하다.
+    // 세션/WebSocket은 전혀 건드리지 않으며, 다시 소리가 감지되면 자동으로 꺼진다.
+    if (live.noAudioInput) {
+      voiceState = "no_input";
+    } else if (turnPhaseUi === "child_listening" || turnPhaseUi === "child_finalizing") {
+      voiceState = "listening";
+    } else if (turnPhaseUi === "waiting_k") {
+      voiceState = "thinking";
+    } else if (turnPhaseUi === "k_speaking") {
+      voiceState = "speaking";
+    } else if (turnPhaseUi === "recovering") {
+      voiceState = "idle";
+    }
+  } else {
+    // 011 "문제 A": turnPhaseUi(child_listening/waiting_k/k_speaking)는 Live 파이프라인
+    // 전용 상태값이라(handleTurnComplete 내부에서 isLive일 때만 setTurnPhase를 호출) 실제
+    // Dev 환경의 STT→LLM→TTS 경로에서는 이 값이 절대 갱신되지 않았다 — isThinkingTurn도
+    // `isLiveMode && ...`로 게이팅돼 있어 "생각하는 중" 표시 자체가 코드상 도달 불가능한
+    // 상태였다(2026-07-25 코드 대조 확인). 대신 STT/TTS 경로에서 이미 실시간으로 갱신되고
+    // 있는 실제 신호를 그대로 쓴다: isRecording(마이크 입력 중) → isProcessingAnswer(발화
+    // 종료 후 답변 판정+다음 질문 생성 중, STT~TTS 요청 구간) → sttTts.isSpeaking(TTS
+    // 요청~실제 오디오 재생 종료까지, useVoiceChat.speak()가 그대로 관리).
+    if (isRecording || isAutoListening) {
+      // 2026-07-27 재현 테스트 수정: isRecording은 수동 녹음 버튼 전용 상태라 AUTO 모드
+      // (기본값)에서는 절대 true가 안 돼 "듣는 중"이 코드상 도달 불가능했다(Playwright
+      // 실측 확인). isAutoListening(위 onSpeechBegin/onSpeechEnd)이 AUTO 모드의 실제
+      // 음성 감지 구간을 보강한다.
+      voiceState = "listening";
+    } else if (isProcessingAnswer) {
+      voiceState = "thinking";
+    } else if (sttTts.isSpeaking) {
+      voiceState = "speaking";
+    }
+  }
+  if (isDone) {
+    voiceState = "idle";
+  }
+  const missionPercent = progressPercent;
+  // 수동 버튼 전용 — 답변 판정/다음 질문 생성 중이거나 케이가 말하는 중엔 canStartRecording
+  // 가드가 탭을 무시하므로, 버튼을 회색 비활성 모양으로 바꿔 침묵 무시와 진짜 먹통을 아이가
+  // 구분할 수 있게 한다(대표님 추가 요구 — 하단 메인 버튼 3단계: 대기/녹음중/K말하는중).
+  // Live 모드는 turnPhaseUi로 판단(child_finalizing/waiting_k/k_speaking 전부 포함).
+  // STT/TTS 모드는 isProcessingAnswer(판정+다음 질문 생성 중) OR sttTts.isSpeaking(TTS 재생
+  // 중)로 판단한다 — 이 값이 예전엔 Live 전용으로만 게이팅돼 있어 실제 Dev 환경(STT/TTS)에서는
+  // 항상 false였고(011 "문제 A"), isProcessingAnswer만 봤을 때도 TTS 재생 구간(케이가 실제로
+  // 말하는 중)이 빠져 있어 그 사이엔 버튼이 다시 "대기" 모양으로 되돌아가는 문제가 있었다.
+  // 권장 상태 파생 구조에 따라 단일 Source of Truth 관리
+  const isMissionCompleted = missionState !== "active" || completed;
+  const canAcceptVoiceInput =
+    !isMissionCompleted &&
+    mode !== "text" &&
+    voice.status === "live" &&
+    (isLiveMode
+      ? (turnPhaseUi === "idle" || turnPhaseUi === "child_listening")
+      : (!isProcessingAnswer && !sttTts.isSpeaking));
+
+  const isButtonBlocked = !canAcceptVoiceInput;
+
+  // 마이크 활성 상태 동기화
+  // Rules of Hooks: 이 useEffect는 아래 phase==="loading"/"closed"/"error" 조기 return들보다
+  // 반드시 먼저 호출돼야 한다(033 QA 실측 크래시 확인 — "Rendered more hooks than during the
+  // previous render"/React #310). 원래 이 아래(현재 return 직전)에 있었는데, phase가 loading/
+  // closed/error일 때는 이 useEffect 호출 자체가 건너뛰어져 렌더마다 훅 호출 개수가 달라져
+  // 화면 전체가 크래시했다 — 위쪽 wakeLockWarning 훅과 동일한 이유로 조기 return보다 앞에 둔다.
+  useEffect(() => {
+    if (!canAcceptVoiceInput) {
+      if (isRecordingRef.current) {
+         if (isLiveMode) {
+           live.sendActivityEnd();
+           live.setAudioMuted(false);
+         } else {
+           sttCancelFinalizeRef.current?.();
+           sttSetMicEnabledRef.current?.(false);
+         }
+         setIsRecording(false);
+         isRecordingRef.current = false;
+      }
+      if (isLiveMode) {
+           live.setMicEnabled(false);
+         } else {
+           sttSetMicEnabledRef.current?.(false);
+         }
+    } else {
+      if (isAutoRef.current) {
+         if (isLiveMode) {
+           live.setMicEnabled(true);
+         } else {
+           sttSetMicEnabledRef.current?.(true);
+         }
+      }
+    }
+  }, [canAcceptVoiceInput, isLiveMode, live]);
+
   if (phase === "loading") {
     return (
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
@@ -1923,110 +2032,6 @@ function MissionInner() {
       </div>
     );
   }
-
-  const isConnecting = voice.status === "connecting";
-  const isLive = voice.status === "live";
-  // completing 단계부터 이미 100%/완료 취급(마이크·입력 비활성화) — completed와의 차이는
-  // "종료 발화가 아직 재생 중인지"뿐이라 화면 표시상 구분할 필요가 없다.
-  const isDone = missionState !== "active" || completed;
-
-  let voiceState: VoiceConversationState = "idle";
-  if (isConnecting) {
-    voiceState = "connecting";
-  } else if (isLiveMode) {
-    // 실장애 재현(2026-07-26): Live 세션이 정상 오픈된 채로 클라이언트가 AUTO 모드에서
-    // 실제 오디오를 relay로 한 번도 못 보내는 구간이 있었다(VAD RMS_THRESHOLD 미도달 등) —
-    // 실측 결과 이 구간에서 turnPhaseUi는 "child_listening"으로 전환되지 않고 세션 시작
-    // 시점의 "idle" 그대로 남아있는 경우가 있었다(새 세션의 첫 턴 등) — turnPhaseUi 값에
-    // 의존하지 않고 live.noAudioInput 하나만으로 최우선 판정한다. hooks/useGeminiLive.ts가
-    // 마이크 활성+K 비발화 상태에서만 이 신호를 켜므로(K가 말하는 중이면 절대 true가 될 수
-    // 없음), turnPhaseUi가 무엇이든 이 값이 true면 항상 "no_input"을 보여줘도 안전하다.
-    // 세션/WebSocket은 전혀 건드리지 않으며, 다시 소리가 감지되면 자동으로 꺼진다.
-    if (live.noAudioInput) {
-      voiceState = "no_input";
-    } else if (turnPhaseUi === "child_listening" || turnPhaseUi === "child_finalizing") {
-      voiceState = "listening";
-    } else if (turnPhaseUi === "waiting_k") {
-      voiceState = "thinking";
-    } else if (turnPhaseUi === "k_speaking") {
-      voiceState = "speaking";
-    } else if (turnPhaseUi === "recovering") {
-      voiceState = "idle";
-    }
-  } else {
-    // 011 "문제 A": turnPhaseUi(child_listening/waiting_k/k_speaking)는 Live 파이프라인
-    // 전용 상태값이라(handleTurnComplete 내부에서 isLive일 때만 setTurnPhase를 호출) 실제
-    // Dev 환경의 STT→LLM→TTS 경로에서는 이 값이 절대 갱신되지 않았다 — isThinkingTurn도
-    // `isLiveMode && ...`로 게이팅돼 있어 "생각하는 중" 표시 자체가 코드상 도달 불가능한
-    // 상태였다(2026-07-25 코드 대조 확인). 대신 STT/TTS 경로에서 이미 실시간으로 갱신되고
-    // 있는 실제 신호를 그대로 쓴다: isRecording(마이크 입력 중) → isProcessingAnswer(발화
-    // 종료 후 답변 판정+다음 질문 생성 중, STT~TTS 요청 구간) → sttTts.isSpeaking(TTS
-    // 요청~실제 오디오 재생 종료까지, useVoiceChat.speak()가 그대로 관리).
-    if (isRecording || isAutoListening) {
-      // 2026-07-27 재현 테스트 수정: isRecording은 수동 녹음 버튼 전용 상태라 AUTO 모드
-      // (기본값)에서는 절대 true가 안 돼 "듣는 중"이 코드상 도달 불가능했다(Playwright
-      // 실측 확인). isAutoListening(위 onSpeechBegin/onSpeechEnd)이 AUTO 모드의 실제
-      // 음성 감지 구간을 보강한다.
-      voiceState = "listening";
-    } else if (isProcessingAnswer) {
-      voiceState = "thinking";
-    } else if (sttTts.isSpeaking) {
-      voiceState = "speaking";
-    }
-  }
-  if (isDone) {
-    voiceState = "idle";
-  }
-  const missionPercent = progressPercent;
-  // 수동 버튼 전용 — 답변 판정/다음 질문 생성 중이거나 케이가 말하는 중엔 canStartRecording
-  // 가드가 탭을 무시하므로, 버튼을 회색 비활성 모양으로 바꿔 침묵 무시와 진짜 먹통을 아이가
-  // 구분할 수 있게 한다(대표님 추가 요구 — 하단 메인 버튼 3단계: 대기/녹음중/K말하는중).
-  // Live 모드는 turnPhaseUi로 판단(child_finalizing/waiting_k/k_speaking 전부 포함).
-  // STT/TTS 모드는 isProcessingAnswer(판정+다음 질문 생성 중) OR sttTts.isSpeaking(TTS 재생
-  // 중)로 판단한다 — 이 값이 예전엔 Live 전용으로만 게이팅돼 있어 실제 Dev 환경(STT/TTS)에서는
-  // 항상 false였고(011 "문제 A"), isProcessingAnswer만 봤을 때도 TTS 재생 구간(케이가 실제로
-  // 말하는 중)이 빠져 있어 그 사이엔 버튼이 다시 "대기" 모양으로 되돌아가는 문제가 있었다.
-  // 권장 상태 파생 구조에 따라 단일 Source of Truth 관리
-  const isMissionCompleted = missionState !== "active" || completed;
-  const canAcceptVoiceInput =
-    !isMissionCompleted &&
-    mode !== "text" &&
-    voice.status === "live" &&
-    (isLiveMode
-      ? (turnPhaseUi === "idle" || turnPhaseUi === "child_listening")
-      : (!isProcessingAnswer && !sttTts.isSpeaking));
-
-  const isButtonBlocked = !canAcceptVoiceInput;
-  
-  // 마이크 활성 상태 동기화
-  useEffect(() => {
-    if (!canAcceptVoiceInput) {
-      if (isRecordingRef.current) {
-         if (isLiveMode) {
-           live.sendActivityEnd();
-           live.setAudioMuted(false);
-         } else {
-           sttCancelFinalizeRef.current?.();
-           sttSetMicEnabledRef.current?.(false);
-         }
-         setIsRecording(false);
-         isRecordingRef.current = false;
-      }
-      if (isLiveMode) {
-           live.setMicEnabled(false);
-         } else {
-           sttSetMicEnabledRef.current?.(false);
-         }
-    } else {
-      if (isAutoRef.current) {
-         if (isLiveMode) {
-           live.setMicEnabled(true);
-         } else {
-           sttSetMicEnabledRef.current?.(true);
-         }
-      }
-    }
-  }, [canAcceptVoiceInput, isLiveMode, live]);
 
   // 회색 비활성 버튼의 문구를 "케이가 말하는 중"과 "케이가 생각하는 중"으로 구분
   const isKSpeakingNow = isLiveMode ? turnPhaseUi === "k_speaking" : sttTts.isSpeaking;
