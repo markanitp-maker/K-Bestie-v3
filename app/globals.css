@@ -1,11 +1,10 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css");
+@import url("https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap");
 @import "tailwindcss";
 
 /* 014: naechingu-k-design 스킬 폰트(CDN) — Pretendard/Gaegu가 그동안 --font-base에
    이름만 적혀 있고 실제로 로드된 적이 없어(어느 레이아웃에도 <link>/@font-face 없음)
    전 화면이 조용히 시스템 폰트로만 렌더되고 있었다. */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css");
-@import url("https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap");
-
 @theme {
   /* ── 브랜드 컬러(기존, 유지) ── */
   --color-primary: #1A6B5A;
