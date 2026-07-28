@@ -103,6 +103,42 @@
   --color-k-orange-tint: #FDECE1;
   --color-k-orange-hover: #C94E0F;
   --color-k-navy-hover: #0C2444;
+
+  /* ══════════════════════════════════════════════════════════════════
+     026-UIUX-change.md Phase 1: Design System v2 Semantic Token 추가.
+     Primitive(k-navy/k-orange/k-mascot-orange/k-sky-blue)는 위 v2 블록에 이미
+     존재해 새로 만들지 않았다 — 026이 요청한 "brand-k-*" 이름 대신 이 저장소의
+     기존 --color-k-* 명명을 그대로 따라 중복 토큰 생성을 피했다. 여기서는 026이
+     새로 요구한 의미(semantic) 토큰과 Warm Neutral 스케일만 추가한다. 전체 HEX
+     자동 치환이나 기존 컴포넌트 일괄 변경은 이번 범위가 아니다(026 명시 금지).
+     ══════════════════════════════════════════════════════════════════ */
+  /* Warm Neutral — 기존 차가운 Tailwind Gray 대신 사용할 서비스 톤 */
+  --color-warm-neutral-50: #FFF9F2;
+  --color-warm-neutral-100: #FFF4E8;
+  --color-warm-neutral-200: #F5EBDD;
+  --color-warm-neutral-300: #E6D8C8;
+  --color-warm-neutral-500: #8A7F73;
+  --color-warm-neutral-700: #4A4038;
+  --color-warm-neutral-900: #1E1915;
+
+  /* Semantic — action (026 CTA 정책: Primary는 흰 텍스트 금지, Navy 텍스트로 대비 확보) */
+  --color-action-primary-bg: var(--color-k-orange);
+  --color-action-primary-text: var(--color-k-navy);
+  --color-action-secondary-bg: var(--color-k-navy);
+  --color-action-secondary-text: #FFFFFF;
+
+  /* Semantic — 텍스트/배경 */
+  --color-text-primary: var(--color-k-text-primary);
+  --color-background-page: var(--color-warm-neutral-50);
+
+  /* Semantic — 보상/음성 상태 */
+  --color-reward: var(--color-k-mascot-orange);
+  --color-voice-listening: var(--color-k-sky-blue);
+  --color-voice-speaking: var(--color-k-orange);
+
+  /* Semantic — 상태(기존 k-success/k-danger를 의미 이름으로도 노출) */
+  --color-state-success: var(--color-k-success);
+  --color-state-error: var(--color-k-danger);
 }
 
 /* ── 글로벌 기본값 ── */
