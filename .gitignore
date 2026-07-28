@@ -69,3 +69,9 @@ requests/_blocked.md
 .vercel
 test-results/
 playwright-report/
+
+# 034: 김비서 브리지 런타임 상태(질문/답변/이력) — 소스코드 아님, 로컬 상태만
+.claude/kim-bridge/outbox/
+.claude/kim-bridge/inbox/
+.claude/kim-bridge/archive/
+.claude/kim-bridge/state.json
