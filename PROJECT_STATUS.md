@@ -195,6 +195,20 @@
   - 아이 홈 액션 카드 색상 variant 체계 적용 완료
 - Dev 배포: 됨
 
+### 020 Care Start / Care Insight / Care Premium 음성 UI 레이아웃 통합
+- 상태: 완료(코드 변경 없음 — 착수 전 조사로 이미 충족 확인)
+- 근거 요청서: `requests/_done/020-unify-care-plan-voice-layout.md`
+- 현재 상태:
+  - 미션 화면(`app/child/missions/page.tsx`)은 Live API(Care Premium)/STT·TTS
+    (Care Start·Insight) 모두 이미 동일한 `MissionConversationLayout`을 쓴다 —
+    011 지시서 여러 라운드에서 이미 통합·실측 검증 완료(재작업 불필요).
+  - 자유대화 화면(`app/chat/page.tsx`)은 Care Premium이라도 Live API를 전혀
+    쓰지 않는다(Care Start/Insight와 동일하게 STT/TTS만) — "교체할 기존 Live
+    UI"가 없고 Live API 자체가 부재한 상태라 020의 UI-only 범위 밖으로 판단,
+    대표님 확정으로 별도 요청서(`requests/024-freechat-live-api-care-premium.md`)로
+    분리.
+- Dev 배포: 해당 없음(코드 변경 0건)
+
 ## 3. 개발 문서 완료
 
 ### 098 PROJECT_STATUS 최신화
@@ -207,14 +221,6 @@
   - 요청서 099 체크리스트 문서 작성 시 이 문서를 기준 소스로 사용
 
 ## 4. 미착수
-
-### 020 Care Start / Care Insight / Care Premium 음성 UI 레이아웃 통합
-- 상태: 미착수
-- 근거 요청서: `requests/020-unify-care-plan-voice-layout.md`
-- 이유:
-  - 019에서 자유대화 화면 통합은 진행됐지만, 이 요청서가 요구하는 "Care Premium까지 동일 UI 구조 통합"을 완료로 선언한 기록은 아직 없음
-  - 특히 Premium Live 전용 UI를 최신 공통 레이아웃으로 완전히 통합했다는 `_log.md` 완료 기록이 아직 없다
-- 다음 행동: Premium Live 트리까지 포함한 통합 범위와 회귀 검증 계획을 별도 라운드로 진행
 
 ### 베타 사용자 승인 및 서비스 플랜 관리 시스템
 - 상태: 미착수(분석만 완료)
@@ -249,6 +255,14 @@
   - 베타 신청 문항/폼 구조
   - 승인 시 플랜을 부모/아이 tier에 어떻게 반영할지
 - 다음 행동: 대표님 결정 후에만 구현 시작
+
+### 자유대화 Care Premium(Live API) 적용
+- 상태: 외부 의존·차단(제품 방향 결정 필요)
+- 근거 요청서: `requests/024-freechat-live-api-care-premium.md`
+- 막힘 이유: Live API를 자유대화에 추가하는 것은 UI 수정이 아니라 신규 기능
+  구현 — 우선순위·일정·범위(미션 Live 파이프라인 재사용 여부 등)를 대표님이
+  결정해야 함(020 처리 중 분리·신규 등록, 2026-07-28)
+- 다음 행동: 대표님 결정 후 별도 세션에서 설계·구현 착수
 
 ## 6. 중단·보존
 

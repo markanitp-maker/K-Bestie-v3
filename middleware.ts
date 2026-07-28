@@ -91,17 +91,33 @@ export async function middleware(request: NextRequest) {
   }
 
   // 탈퇴 계정 로그인 게이트 추가
-  if (!isAdminPath && pathname.startsWith("/parent") && pathname !== "/account/withdrawn") {
-    // anon 클라이언트로 부모 상태 조회 (parents_select_own RLS 적용)
+  if (
+    !isAdminPath &&
+    pathname.startsWith("/parent") &&
+    pathname !== "/account/withdrawn" &&
+    pathname !== "/account/pending" &&
+    pathname !== "/beta/apply"
+  ) {
+    // anon 클라이언트로 부모 상태 조회 (parents_select_own RLS 적용) — 탈퇴 게이트와
+    // 베타 승인 게이트가 같은 쿼리를 공유한다(추가 DB 왕복 없이 approval_status만 더 선택).
     const { data: parent } = await supabase
       .from("parents")
-      .select("account_status")
+      .select("account_status, approval_status")
       .eq("id", user.id)
       .maybeSingle();
 
     if (parent && (parent.account_status === "WITHDRAWN_PENDING" || parent.account_status === "RESTORE_REQUESTED")) {
       const url = request.nextUrl.clone();
       url.pathname = "/account/withdrawn";
+      return NextResponse.redirect(url);
+    }
+
+    // 베타 승인 게이트 — pending/rejected는 /account/pending으로 보낸다. 이미 신청서를
+    // 제출했는지 여부는 여기서 추가 쿼리하지 않고(3번째 DB 왕복을 피하는 단순한 선택),
+    // /account/pending 페이지 자체가 필요 시 /beta/apply로 안내하도록 위임한다.
+    if (parent && (parent.approval_status === "pending" || parent.approval_status === "rejected")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/account/pending";
       return NextResponse.redirect(url);
     }
   }
