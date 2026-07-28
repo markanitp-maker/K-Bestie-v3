@@ -2,9 +2,20 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 import KChatbotWidget from "@/components/KChatbotWidget";
+
+function LogOut({ size = 20, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
 
 const GAMES = [
   // comingSoon: 실제 게임 화면이 아직 없는 placeholder 카드 — 클릭해도 황금열쇠 차감/
@@ -118,6 +129,20 @@ export default function ChildPlayPage() {
   const [showInsufficientModal, setShowInsufficientModal] = useState(false);
 
   const [showGameScreen, setShowGameScreen] = useState(false);
+  const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
+
+  const handleLogout = async () => {
+    if (isLogoutProcessing) return;
+    if (window.confirm("로그아웃할까요?")) {
+      setIsLogoutProcessing(true);
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      localStorage.removeItem("k_child_id");
+      localStorage.removeItem("login_role");
+      window.location.href = "/login?role=child";
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -158,7 +183,7 @@ export default function ChildPlayPage() {
     // 아직 실제 게임 화면이 없는 placeholder(만화책/헤어스타일) — 황금열쇠 차감/시작
     // 확인 모달로 절대 이어지지 않게 여기서 즉시 종료한다(예약 API 호출 자체를 막음).
     if (game.comingSoon) {
-      alert("준비 중입니다");
+      alert("열심히 준비하고 있어요.\n조금만 기다려 주세요!");
       return;
     }
     if (!childId) {
@@ -343,52 +368,206 @@ export default function ChildPlayPage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "var(--color-k-surface)" }}>
+      <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "var(--background-page, #FFF9F2)" }}>
         
         {/* 헤더 */}
-        <div className="shrink-0 relative flex items-center justify-center px-4 pt-4 pb-2 z-10">
-          <Link href="/child/home" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
-            케이와 놀이
+        <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top,16px)] mt-4 h-[52px] z-10 w-full max-w-[480px] mx-auto bg-white/50 backdrop-blur-sm border-b border-black/5">
+          <Link href="/child/home" className="w-[80px] h-[44px] flex items-center text-sm font-bold" style={{ color: "var(--color-k-navy)" }} aria-label="아이 홈으로 돌아가기">
+            ← 뒤로
           </Link>
-          <div
-            className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white shadow-sm rounded-full px-3 py-1 text-xs font-bold"
-            style={{ color: "var(--color-k-navy)" }}
-          >
-            🔑 {goldKeyBalance ?? "-"}개 보유
+          <h1 className="flex-1 text-center text-base font-bold truncate px-2" style={{ color: "var(--color-k-navy)" }}>
+            케이와 놀이
+          </h1>
+          <div className="w-[80px] flex justify-end">
+            <button 
+              onClick={handleLogout}
+              disabled={isLogoutProcessing}
+              className="w-[44px] h-[44px] flex items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
+              aria-label="로그아웃"
+            >
+              <LogOut size={20} color="var(--color-k-navy)" />
+            </button>
           </div>
         </div>
 
-        {/* 놀이 목록 */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 z-10">
-          <p className="text-sm text-center mb-5" style={{ color: "#6b7280" }}>
-            하고 싶은 놀이를 골라보세요
-          </p>
+        {/* 메인 스크롤 영역 */}
+        <div className="flex-1 overflow-y-auto w-full max-w-[480px] mx-auto pb-[180px] relative z-10">
+          
+          {/* 황금열쇠 보유 현황 카드 */}
+          <div className="px-4 mt-5">
+            <div className="bg-white rounded-[20px] shadow-sm flex items-center justify-between p-4" style={{ border: "1px solid rgba(226, 91, 18, 0.1)" }}>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🔑</span>
+                {goldKeyBalance === null ? (
+                  <div className="w-[56px] h-[20px] bg-black/10 rounded animate-pulse" />
+                ) : (
+                  <span className="font-bold text-base" style={{ color: "var(--color-k-navy)" }}>열쇠 {goldKeyBalance}개</span>
+                )}
+              </div>
+              <Link 
+                href="/child/missions" 
+                className="px-4 py-2.5 rounded-[16px] font-bold text-sm text-white shadow-sm transition-transform active:scale-95 flex items-center justify-center min-h-[44px]"
+                style={{ background: "var(--color-k-orange, #E25B12)" }}
+                aria-label="미션으로 이동해 황금열쇠 모으기"
+              >
+                더 모으기 →
+              </Link>
+            </div>
+          </div>
 
-          <div className="grid grid-cols-2 gap-4 pb-20">
-            {GAMES.map((game) => {
-              return (
-                <div
-                  key={game.id}
-                  onClick={() => { handleGameClick(game); }}
-                  className={`flex flex-col items-center justify-center gap-3 rounded-3xl px-3 py-6 shadow-md select-none active:scale-95 transition-transform relative overflow-hidden cursor-pointer ${game.comingSoon ? "opacity-60" : ""}`}
-                  style={{ background: game.bg }}
-                >
-                  <div className="absolute top-2 right-3 bg-black/20 text-white text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                    {game.comingSoon ? "준비중" : `🔑 필요 ${game.keys}`}
-                  </div>
-                  <div
-                    className="w-14 h-14 mt-3 rounded-2xl flex items-center justify-center text-3xl"
-                    style={{ background: "rgba(255,255,255,0.25)" }}
+          {/* 열쇠로 열어요 */}
+          <div className="px-4 mt-8">
+            <h2 className="text-lg font-bold mb-3" style={{ color: "var(--color-k-navy)" }}>열쇠로 열어요</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* 퀴즈마스터 */}
+              {(() => {
+                const game = GAMES.find(g => g.id === "quizmaster")!;
+                return (
+                  <button
+                    key={game.id}
+                    onClick={() => handleGameClick(game)}
+                    className="flex flex-col rounded-[24px] p-5 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5"
+                    style={{ background: "#EBF5FF" }}
+                    aria-label={`퀴즈마스터, 황금열쇠 ${game.keys}개 필요`}
                   >
-                    {game.icon}
-                  </div>
-                  <p className="text-white font-bold text-[13px] text-center tracking-tight">{game.title}</p>
-                </div>
-              );
-            })}
+                    <div className="flex justify-between items-start w-full mb-4">
+                      <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl bg-white shadow-sm">
+                        {game.icon}
+                      </div>
+                      <div className="bg-white/60 px-2 py-1 rounded-full text-xs font-bold text-blue-700 flex items-center gap-1">
+                        {goldKeyBalance === null ? (
+                          <div className="w-[100px] h-[16px] bg-blue-700/10 rounded animate-pulse" />
+                        ) : goldKeyBalance >= game.keys ? (
+                          <>🔓 시작할 수 있어요</>
+                        ) : (
+                          <>🔒 열쇠가 더 필요해요</>
+                        )}
+                      </div>
+                    </div>
+                    <h3 className="font-bold text-base mb-1" style={{ color: "var(--color-k-navy)" }}>{game.title}</h3>
+                    <p className="text-sm font-bold text-blue-600">🔑 {game.keys}개 필요</p>
+                  </button>
+                );
+              })()}
+
+              {/* 오늘의 나 (MBTI) */}
+              {(() => {
+                const game = GAMES.find(g => g.id === "mbti")!;
+                return (
+                  <button
+                    key={game.id}
+                    onClick={() => handleGameClick(game)}
+                    className="flex flex-col rounded-[24px] p-5 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5"
+                    style={{ background: "#E8F5E9" }}
+                    aria-label={`오늘의 나, 황금열쇠 ${game.keys}개 필요`}
+                  >
+                    <div className="flex justify-between items-start w-full mb-4">
+                      <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl bg-white shadow-sm">
+                        {game.icon}
+                      </div>
+                      <div className="bg-white/60 px-2 py-1 rounded-full text-xs font-bold text-green-700 flex items-center gap-1">
+                        {goldKeyBalance === null ? (
+                          <div className="w-[100px] h-[16px] bg-green-700/10 rounded animate-pulse" />
+                        ) : goldKeyBalance >= game.keys ? (
+                          <>🔓 시작할 수 있어요</>
+                        ) : (
+                          <>🔒 열쇠가 더 필요해요</>
+                        )}
+                      </div>
+                    </div>
+                    <h3 className="font-bold text-base mb-1" style={{ color: "var(--color-k-navy)" }}>오늘의 나</h3>
+                    <p className="text-sm text-green-800 mb-1 opacity-80">나의 성향 알아보기</p>
+                    <p className="text-sm font-bold text-green-700">🔑 {game.keys}개 필요</p>
+                  </button>
+                );
+              })()}
+            </div>
           </div>
+
+          {/* 곧 만나요 */}
+          <div className="px-4 mt-8">
+            <h2 className="text-lg font-bold mb-3" style={{ color: "var(--color-k-navy)" }}>곧 만나요</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* 만화책 읽기 */}
+              {(() => {
+                const game = GAMES.find(g => g.id === "comic_book")!;
+                return (
+                  <button
+                    type="button"
+                    key={game.id}
+                    onClick={() => handleGameClick(game)}
+                    className="flex flex-col rounded-[24px] p-5 shadow-sm text-left border border-black/5 opacity-70 bg-gray-100 cursor-default"
+                  >
+                    <div className="flex justify-between items-start w-full mb-4">
+                      <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl bg-white/50 grayscale">
+                        {game.icon}
+                      </div>
+                      <div className="bg-gray-200 px-2 py-1 rounded-full text-xs font-bold text-gray-600">
+                        준비 중
+                      </div>
+                    </div>
+                    <h3 className="font-bold text-base mb-1 text-gray-600">{game.title}</h3>
+                  </button>
+                );
+              })()}
+
+              {/* 헤어스타일 */}
+              {(() => {
+                const game = GAMES.find(g => g.id === "hairstyle")!;
+                return (
+                  <button
+                    type="button"
+                    key={game.id}
+                    onClick={() => handleGameClick(game)}
+                    className="flex flex-col rounded-[24px] p-5 shadow-sm text-left border border-black/5 opacity-70 bg-gray-100 cursor-default"
+                  >
+                    <div className="flex justify-between items-start w-full mb-4">
+                      <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl bg-white/50 grayscale">
+                        {game.icon}
+                      </div>
+                      <div className="bg-gray-200 px-2 py-1 rounded-full text-xs font-bold text-gray-600">
+                        준비 중
+                      </div>
+                    </div>
+                    <h3 className="font-bold text-base mb-1 text-gray-600">{game.title}</h3>
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+
         </div>
 
+        {/* 하단 케이 마스코트 영역 (Fixed) */}
+        <div className="absolute bottom-0 w-full max-w-[480px] left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+          <div className="flex items-end justify-between px-4 pb-[env(safe-area-inset-bottom,16px)] w-full relative">
+            <div className="w-[120px] shrink-0 z-10 pointer-events-auto">
+              <Image 
+                src="/Images/mascot/mascot-standing.png" 
+                alt="케이 마스코트" 
+                width={120}
+                height={120}
+                className="w-full h-auto object-contain drop-shadow-md -mb-2"
+                style={{ filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.1))" }}
+                priority
+              />
+            </div>
+            
+            <div className="flex-1 flex flex-col items-end mb-4 ml-[-10px] pointer-events-auto z-20">
+              <div className="relative bg-white px-4 py-3 rounded-2xl rounded-bl-sm border-2 shadow-sm mb-3 text-center max-w-full" style={{ borderColor: "var(--color-k-orange, #E25B12)" }}>
+                <p className="text-[13px] sm:text-sm font-bold" style={{ color: "var(--color-k-navy)" }}>미션 하면 열쇠를 줄게!</p>
+              </div>
+              
+              <Link 
+                href="/child/missions"
+                className="text-white font-bold py-3 px-5 rounded-[16px] shadow-md transition-transform active:scale-95 flex items-center min-h-[44px]"
+                style={{ background: "var(--color-k-orange, #E25B12)" }}
+              >
+                미션하러 가기 →
+              </Link>
+            </div>
+          </div>
+        </div>
 
         {/* 1. 이어하기/시작하기 액션 모달 */}
         {showActionModal && selectedGame && !showFinalConfirm && !showGameScreen && !showInsufficientModal && (
@@ -453,13 +632,21 @@ export default function ChildPlayPage() {
               <p className="text-gray-600 text-sm mb-6">
                 현재 {goldKeyBalance ?? 0}개 · 필요 {selectedGame.keys}개 · {Math.max(0, selectedGame.keys - (goldKeyBalance ?? 0))}개 부족
               </p>
-              <button
-                onClick={() => setShowInsufficientModal(false)}
-                className="w-full py-3.5 rounded-2xl text-white font-bold shadow-md active:scale-95 transition-transform"
-                style={{ background: selectedGame.bg }}
-              >
-                확인
-              </button>
+              <div className="flex gap-3 w-full">
+                <button
+                  onClick={() => setShowInsufficientModal(false)}
+                  className="flex-1 py-3.5 rounded-2xl bg-gray-100 text-gray-600 font-bold active:scale-95 transition-transform"
+                >
+                  닫기
+                </button>
+                <Link
+                  href="/child/missions"
+                  className="flex-[1.2] py-3.5 rounded-2xl text-white font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center"
+                  style={{ background: "var(--color-k-orange, #E25B12)" }}
+                >
+                  미션하러 가기
+                </Link>
+              </div>
             </div>
           </div>
         )}
