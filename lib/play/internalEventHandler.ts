@@ -14,6 +14,23 @@ import {
   type InternalEventType,
 } from "@/lib/play/internalEventIdempotency";
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * opaquePayload 병합. progress(마지막 문항 저장)와 complete(완료 통지) 호출은 서로 다른
+ * 부분 키 집합만 보내며 클라이언트에서 사실상 동시에(fire-and-forget) 발사될 수 있어
+ * 두 요청의 DB 쓰기 순서가 보장되지 않는다. 완전 교체 대신 두 값이 모두 객체일 때만
+ * 얕은 병합해, 어느 쪽이 나중에 반영되든 다른 쪽이 저장한 키를 잃지 않는다.
+ */
+export function mergeOpaquePayload(existing: unknown, incoming: unknown): unknown {
+  if (isPlainObject(existing) && isPlainObject(incoming)) {
+    return { ...existing, ...incoming };
+  }
+  return incoming ?? existing;
+}
+
 export interface CommonEnvelopeInput {
   playSessionId?: string;
   currentStep?: number;

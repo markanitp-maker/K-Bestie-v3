@@ -6,7 +6,7 @@
  */
 
 import type { NextRequest } from "next/server";
-import { handleInternalPlayEvent } from "@/lib/play/internalEventHandler";
+import { handleInternalPlayEvent, mergeOpaquePayload } from "@/lib/play/internalEventHandler";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   return handleInternalPlayEvent(req, "complete", async (session, body) => {
     const newProgressState = {
       ...session.progressState,
-      opaquePayload: body.opaquePayload ?? session.progressState.opaquePayload,
+      opaquePayload: mergeOpaquePayload(session.progressState.opaquePayload, body.opaquePayload),
       payloadVersion: body.payloadVersion ?? session.progressState.payloadVersion,
       revision: body.revision ?? session.progressState.revision,
     };
