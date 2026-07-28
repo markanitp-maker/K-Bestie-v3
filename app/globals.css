@@ -6,19 +6,10 @@
    이름만 적혀 있고 실제로 로드된 적이 없어(어느 레이아웃에도 <link>/@font-face 없음)
    전 화면이 조용히 시스템 폰트로만 렌더되고 있었다. */
 @theme {
-  /* ── 브랜드 컬러(기존, 유지) ── */
-  --color-primary: #1A6B5A;
-  --color-primary-light: #2a8a72;
-  --color-accent: hsl(17 76% 63%);
-
-  /* ── 배경(기존, 유지 — 실사용 0건이라 값은 그대로 두고 건드리지 않음) ── */
-  --color-bg: #FFF8E7;
+  /* ── 배경(026: v1 --color-bg/-parent-bg/-primary/-primary-light/-accent/-text-base/
+     -text-muted는 026-UIUX-change.md 지시로 실사용 0건 확인 후 제거함. --color-child-bg만
+     app/child/chat/page.tsx, app/child/finish/page.tsx가 여전히 참조해 유지한다) ── */
   --color-child-bg: hsl(44 100% 95%);
-  --color-parent-bg: hsl(210 17% 98%);
-
-  /* ── 텍스트(기존, 유지) ── */
-  --color-text-base: #1a1a1a;
-  --color-text-muted: #6b7280;
 
   /* ── 폰트(기존, 유지 — 값은 그대로, 위 CDN import로 실제 로드되게 함) ── */
   --font-base: 'Pretendard Variable', 'Pretendard', -apple-system, sans-serif;
@@ -32,42 +23,11 @@
   --radius-sm: 0.5rem;
 
   /* ══════════════════════════════════════════════════════════════════
-     014: naechingu-k-design 스킬 디자인 토큰 (신규 추가분)
-     기존 --color-* 토큰과 이름이 겹치지 않는 새 이름만 추가했다(위 기존 토큰은
-     실사용 0건 확인 후에도 안전을 위해 값을 바꾸지 않고 그대로 남겨둠 — 이번
-     Phase 1 범위는 공통 내비게이션 2개 + 대표 화면 2개뿐이라, 이 신규 토큰만
-     사용해서 그 범위 밖 화면에 영향이 가지 않게 했다). 62개 파일에 흩어진
-     인라인 hex 색상 조사 결과 가장 많이 쓰이는 값(#1a6b5a #fafaf8 #e8845a
-     #3a3a4a #1e1e2d #ffffff)이 이미 이 스킬 팔레트와 정확히 일치했다 — 즉
-     색상 자체를 바꾸는 게 아니라 이미 맞는 값을 토큰으로 승격시키는 작업이다.
-     ══════════════════════════════════════════════════════════════════ */
-  --color-warm-white: #FAFAF8;
-  --color-surface: #FFFFFF;
-  --color-secondary: #2D9F8F;
-  --color-coral: #E8845A;
-  --color-coral-hover: #D9714A;
-  --color-charcoal: #1E1E2D;
-  --color-body: #3A3A4A;
-  --color-muted: #8A8A97;
-  --color-tint: #ECF5F2;
-  --color-coral-tint: #FBECE3;
-  --color-hairline: #E7ECEA;
-  --color-success: #1A6B5A;
-  --color-success-bg: #ECF5F2;
-  --color-info: #2D9F8F;
-  --color-info-bg: #E4F2EF;
-  --color-warning: #E8A54A;
-  --color-warning-bg: #FBF0DD;
-  --color-danger: #D9534F;
-  --color-danger-bg: #FBE9E8;
-
-  /* ══════════════════════════════════════════════════════════════════
-     naechingu-k-design v2.0 (Navy/Orange) 디자인 토큰 — 위 014(v1, 딥그린/코랄)
-     블록을 대체하는 신규 브랜드 방향. 대표님 지시로 v1 → v2 전환 진행 중이며,
-     아직 /child/home·/parent/home·공용 내비게이션 2개만 검증 완료 상태라 위 v1
-     토큰은 나머지 화면이 계속 참조하므로 지금 삭제하지 않는다(전체 전환 완료 후
-     별도 작업으로 제거). 신규 화면/컴포넌트는 이 v2 토큰만 사용한다.
-     자세한 내용은 .claude/skills/naechingu-k-design/(v2.0) 참고.
+     naechingu-k-design v2.0 (Navy/Orange) 디자인 토큰 — 014(v1, 딥그린/코랄)를
+     대체하는 브랜드 방향. 전체 화면이 이미 이 v2 토큰으로 전환 완료됐다(v1
+     color 계열 및 hb 계열 토큰 블록은 026-UIUX-change.md 지시로 실사용 0건 확인
+     후 제거함, --color-child-bg만 예외적으로 유지 — 위 참고). 자세한 내용은
+     .claude/skills/naechingu-k-design/(v2.0) 참고.
      ══════════════════════════════════════════════════════════════════ */
   --color-k-navy: #10315B;
   --color-k-orange: #E25B12;
@@ -140,18 +100,15 @@
   --color-state-error: var(--color-k-danger);
 }
 
-/* ── 글로벌 기본값 ── */
+/* ── 글로벌 기본값(026: --color-bg/-text-base/-hb-bg/-parent-bg가 위에서 제거된
+   v1/hb 토큰을 계속 참조하던 dangling var() 회귀를 claude-review가 발견 -
+   v2 토큰으로 교체) ── */
 html,
 body {
   font-family: var(--font-base);
-  background-color: var(--color-bg);
-  color: var(--color-text-base);
+  background-color: var(--color-k-background);
+  color: var(--color-k-text-primary);
   -webkit-font-smoothing: antialiased;
-}
-
-/* ── 글로벌 기본 배경 ── */
-body {
-  background-color: var(--hb-bg);
 }
 
 /* ── 아이 화면 배경 ── */
@@ -162,7 +119,7 @@ body {
 
 /* ── 부모 화면 배경 ── */
 .parent-screen {
-  background-color: var(--color-parent-bg);
+  background-color: var(--color-k-background);
 }
 
 /* ── 채팅 페이지 PC 쉘 (폰-인-브라우저) ── */
@@ -243,24 +200,6 @@ body {
 
 .k-typing span:nth-child(2) { animation-delay: 0.18s; }
 .k-typing span:nth-child(3) { animation-delay: 0.36s; }
-
-/* ── HeartBloom 부모 디자인 변수(--hb-*) — v2.0 마이그레이션으로 더 이상 사용되지 않음.
-   이 변수를 참조하던 17개 파일은 모두 --color-k-* 토큰으로 교체됐다(v1 --color-* 블록과
-   같은 이유로 즉시 삭제하지 않고 되돌리기 대비용으로 남겨둔다). 아래 호버 선택자도
-   더 이상 어떤 인라인 style과도 매치되지 않는 죽은 규칙이라, 새 패턴으로 갱신했다. ── */
-:root {
-  --hb-primary: #1A6B5A;
-  --hb-primary-light: #E8F5F2;
-  --hb-primary-hover: #2D9F8F;
-  --hb-bg: #F4F4F8;
-  --hb-card: #FFFFFF;
-  --hb-border: rgba(0, 0, 0, 0.06);
-  --hb-shadow: 0 1px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
-  --hb-muted: #6B7280;
-  --hb-danger: #EF4444;
-  --hb-warning: #F59E0B;
-  --hb-success: #22C55E;
-}
 
 /* ── 인라인 style 버튼 전역 호버 스타일 적용(v2.0: --color-k-navy 패턴으로 갱신) ── */
 button[style*="var(--color-k-navy)"]:not(:disabled):hover,
