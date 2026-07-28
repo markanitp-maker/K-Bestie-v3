@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { DemoViewProvider } from "@/app/demo/components/DemoViewContext";
+import { getPwaIcons } from "@/lib/pwaIcons";
+
+const pwaIcons = getPwaIcons();
 
 export const metadata: Metadata = {
   title: "내친구 케이",
@@ -8,11 +11,11 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   icons: {
     icon: [
-      { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
-      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: pwaIcons.favicon16, sizes: "16x16", type: "image/png" },
+      { url: pwaIcons.favicon32, sizes: "32x32", type: "image/png" },
     ],
     apple: [
-      { url: "/icons/apple-touch-icon-180-v4.png", sizes: "180x180", type: "image/png" },
+      { url: pwaIcons.appleTouchIcon180, sizes: "180x180", type: "image/png" },
     ],
   },
   appleWebApp: {

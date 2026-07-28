@@ -1,4 +1,4 @@
-const CACHE_NAME = "kbestie-shell-v6";
+const CACHE_NAME = "kbestie-shell-v7";
 
 const PRECACHE_ASSETS = [
   "/manifest.json",
