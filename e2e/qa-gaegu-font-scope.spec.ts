@@ -22,7 +22,7 @@ test('home greeting headline uses Gaegu, rest of home stays Pretendard', async (
   await page.screenshot({ path: '/tmp/agy-qa-gaegu/home.png' });
 });
 
-test('play screen title uses Gaegu, subtitle stays Pretendard', async ({ page }) => {
+test('play screen title and subtitle both stay Pretendard (Gaegu reverted, 대표님 결정 2026-07-28)', async ({ page }) => {
   await page.goto('http://localhost:3910/login');
   await page.getByPlaceholder(/아이디/).fill('testi02');
   await page.getByPlaceholder(/비밀번호/).fill(process.env.QA_TEST_PASSWORD || '');
@@ -33,7 +33,7 @@ test('play screen title uses Gaegu, subtitle stays Pretendard', async ({ page })
 
   const titleFont = await page.getByText('케이와 놀이', { exact: true }).first().evaluate(el => getComputedStyle(el).fontFamily);
   console.log('PLAY title font:', titleFont);
-  expect(titleFont).toContain('Gaegu');
+  expect(titleFont).not.toContain('Gaegu');
 
   const subtitleFont = await page.getByText('하고 싶은 놀이를 골라보세요').first().evaluate(el => getComputedStyle(el).fontFamily);
   console.log('PLAY subtitle font:', subtitleFont);
