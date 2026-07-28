@@ -19,6 +19,7 @@
 - **[하드룰 4] Claude의 토큰 우선순위.** Claude의 토큰은 계획 수립·작업 분해·agy 지시·리뷰 판단·최종 통합에 우선 배분한다. 단순 반복 코딩에 토큰을 소모하지 않는다. 직접 코딩은 하드룰 1의 조건에 해당할 때만 한다.
 - **[하드룰 5] 큐를 비우기 전에 턴을 끝내지 않는다.** `requests/`에 처리 대기 지시서가 하나라도 남아 있으면 Claude는 턴을 종료하지 않는다. 한 지시서를 끝낼 때마다 반드시 `requests/`를 다시 나열해 신규 파일을 확인한다(§1-A).
 - **[하드룰 6] (v8 신설) 정적·동적 검증은 서로 대체하지 못한다.** codex 정적 코드리뷰를 통과했다고 "동작 확인 완료"가 아니고, agy E2E QA를 통과했다고 "코드가 규칙상 옳다"가 아니다. **사용자 동작(로그인/버튼/화면 전이/재화 차감 등)에 영향을 주는 변경은 반드시 두 게이트를 모두 거친다.** 순수 내부 로직·문서·비-UI 변경은 정적 게이트만으로 충분할 수 있으며, 이때 QA 생략 사유를 `_log.md`에 남긴다.
+- **[하드룰 7] (2026-07-28 신설) 2단 게이트를 통과하면 무조건 Dev Vercel에 배포한다.** 로컬/dev tmux 서버 검증만으로 끝내지 않는다. §2 ⑦ 통합 게이트 통과 직후, 대표님께 배포 여부를 다시 묻지 않고 곧바로 격리 워크트리 + `vercel --prod`(§환경 상수의 `k-bestie-v3-dev` 프로젝트, `.vercel/project.json`의 projectName이 정확히 `k-bestie-v3-dev`인지 배포 직전 재확인 — [[feedback_vercel_project_json_shared_hazard]])로 Dev에 배포하고, 배포 URL과 `readyState`/alias 결과를 `_log.md`에 기록한다. 배포 자체가 실패하면(빌드 에러 등) §12-D에 따라 원인과 함께 보고하되, "코드는 끝났지만 아직 배포 안 함" 상태로 조용히 턴을 마치지 않는다. **단, git push는 이 규칙과 무관하게 원격 `origin`(github.com/markanitp-maker)에만 하고, `legacy-origin`(github.com/markytb79-cpu)에는 어떤 경우에도 push하지 않는다** — `vercel --prod` 직접 배포는 git push를 거치지 않으므로 이 제약과 무관하게 항상 진행 가능하다. Production(`k-bestie-v3`) 배포는 이 하드룰 대상이 아니며 기존 안전장치(대표 명시 승인) 그대로 유지한다.
 
 ---
 
@@ -122,6 +123,10 @@
 ⑦ 모든 기능 묶음 병합 후 → 전체 통합 게이트(필수)
    ├─ 통합 정적 리뷰: claude-review 인스턴스 (codex 가용 시 병행)
    └─ 통합 E2E QA: agy QA 세션이 핵심 사용자 플로우 회귀 실행
+
+⑦-A (하드룰 7, 필수) → Dev Vercel 배포. 격리 워크트리 + `vercel --prod`로
+     k-bestie-v3-dev에 배포하고 alias/URL을 _log.md에 기록. 대표님께 배포
+     여부를 묻지 않고 곧바로 진행한다.
 
 ⑧ 완료 → 큐 항목이면 §1-A 3번(_done 이동 + _log 기록) 수행 후 §1-A 1번으로 복귀
 ```
@@ -424,6 +429,7 @@ npx playwright install --only-shell chromium
 
 - **개발 서버**: `k-bestie-v3-dev` — [https://k-bestie-v3-dev.vercel.app](https://k-bestie-v3-dev.vercel.app/), Supabase ref `mkrsaaedxqrcrktapaus`
 - **운영 서버**: `k-bestie-v3` — [https://app.k-bestie.com](https://app.k-bestie.com/), Supabase ref `fetvnhhjicndmxvhrffk`
+- **git 원격(2026-07-28 확정)**: push는 `origin`(github.com/markanitp-maker/K-Bestie-v3)에만 한다. `legacy-origin`(github.com/markytb79-cpu/K-Bestie-v3)에는 어떤 경우에도 push하지 않는다 — 대표님이 명시적으로 배포 금지를 지시했다. `vercel --prod` 직접 배포(하드룰 7)는 git push를 거치지 않으므로 이 제약과 무관하다.
 
 ---
 
