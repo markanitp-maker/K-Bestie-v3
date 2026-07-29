@@ -21,6 +21,18 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   const service = createServiceClient();
+
+  // 053: Care Premium(tier=3)은 모든 환경에서 차단 - 생성 자체를 막았지만 이 마이그레이션
+  // 이전에 이미 만들어진 pending 요청이 남아있을 가능성에 대비한 방어적 재검증.
+  const { data: reqRow } = await service
+    .from("plan_change_requests")
+    .select("requested_tier")
+    .eq("id", id)
+    .maybeSingle();
+  if (reqRow?.requested_tier === 3) {
+    return NextResponse.json({ error: "Care Premium은 현재 준비 중입니다." }, { status: 403 });
+  }
+
   const { data, error } = await service.rpc("admin_approve_plan_change_request", {
     p_admin_user_id: adminUser.id,
     p_admin_email: adminUser.email!,

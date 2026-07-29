@@ -90,34 +90,25 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // 탈퇴 계정 로그인 게이트 추가
+  // 탈퇴 계정 로그인 게이트
+  // 053: 부모 계정 단위 베타 승인 게이트(approval_status)는 완전히 제거했다 — 누구나
+  // 회원가입 직후 부모 메뉴에 즉시 접근한다. 아이별 승인은 child_approval_requests로
+  // 이전되어 실제 계정/프로필이 생기기 전에는 아이가 서비스에 나타나지 않는 방식으로
+  // 자연스럽게 게이트된다(별도 미들웨어 체크 불필요).
   if (
     !isAdminPath &&
     pathname.startsWith("/parent") &&
-    pathname !== "/account/withdrawn" &&
-    pathname !== "/account/pending" &&
-    pathname !== "/beta/apply"
+    pathname !== "/account/withdrawn"
   ) {
-    // anon 클라이언트로 부모 상태 조회 (parents_select_own RLS 적용) — 탈퇴 게이트와
-    // 베타 승인 게이트가 같은 쿼리를 공유한다(추가 DB 왕복 없이 approval_status만 더 선택).
     const { data: parent } = await supabase
       .from("parents")
-      .select("account_status, approval_status")
+      .select("account_status")
       .eq("id", user.id)
       .maybeSingle();
 
     if (parent && (parent.account_status === "WITHDRAWN_PENDING" || parent.account_status === "RESTORE_REQUESTED")) {
       const url = request.nextUrl.clone();
       url.pathname = "/account/withdrawn";
-      return NextResponse.redirect(url);
-    }
-
-    // 베타 승인 게이트 — pending/rejected는 /account/pending으로 보낸다. 이미 신청서를
-    // 제출했는지 여부는 여기서 추가 쿼리하지 않고(3번째 DB 왕복을 피하는 단순한 선택),
-    // /account/pending 페이지 자체가 필요 시 /beta/apply로 안내하도록 위임한다.
-    if (parent && (parent.approval_status === "pending" || parent.approval_status === "rejected")) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/account/pending";
       return NextResponse.redirect(url);
     }
   }

@@ -63,6 +63,11 @@ export async function POST(
     return NextResponse.json({ error: "지원하지 않는 요금제입니다" }, { status: 400 });
   }
 
+  // 053: Care Premium(tier=3)은 모든 환경에서 차단
+  if (body.requestedTier === 3) {
+    return NextResponse.json({ error: "Care Premium은 현재 준비 중입니다." }, { status: 403 });
+  }
+
   const service = createServiceClient();
   const { data, error } = await service.rpc("create_plan_change_request", {
     p_parent_user_id: user.id,

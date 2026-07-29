@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
-import { getSupabaseTarget } from "@/lib/supabase/env";
 import { stampRetention, restoreRetention } from "@/lib/plan/retentionStamp";
 import type { Tier } from "@/lib/plan/retention";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
@@ -39,8 +38,8 @@ export async function POST(
     return NextResponse.json({ error: "지원하지 않는 요금제입니다." }, { status: 400 });
   }
 
-  const isProd = getSupabaseTarget() === "prod";
-  if (isProd && requestedTier === 3) {
+  // 053: Care Premium(tier=3)은 모든 환경에서 차단
+  if (requestedTier === 3) {
     return NextResponse.json({ error: "Care Premium은 현재 준비 중입니다." }, { status: 403 });
   }
 

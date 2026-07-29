@@ -1,22 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CONSENT_DOCUMENT_VERSION } from "@/lib/plan/consentDocument";
+import { getChildApprovalEncryptionKey } from "@/lib/plan/childApprovalEncryption";
 
 export const runtime = "nodejs";
 
 /*
- * [UPDATED - 베타 최종: 아이디+비밀번호 계정 발급 방식]
- * 이전 흐름 (비활성화됨):
- *   - 이메일 예약 저장 + 구글 소셜 로그인 후 auto-join
+ * [UPDATED - 053: 아이별 관리자 승인 체계]
+ * 이전 흐름 (비활성화됨, 20260609~20260716 사이):
+ *   - 오너가 아이의 username + 임시 비밀번호를 직접 발급하면 그 즉시 실제 로그인 계정과
+ *     child_profiles가 생성됨.
  * 새 흐름:
- *   오너가 아이의 username + 임시 비밀번호를 직접 발급.
- *   아이는 아이디+비밀번호로 로그인, 첫 로그인 시 비밀번호 변경 안내.
- *   내부 Auth 이메일: username@kbestie.local (사용자에게 절대 노출 금지)
+ *   오너가 폼을 제출하면 실제 계정/프로필을 만들지 않고 child_approval_requests에 pending
+ *   요청만 생성한다. 관리자가 승인해야만 실제 계정+프로필이 생성된다(app/api/admin/
+ *   child-approval-requests/[id]/approve/route.ts). 아이디 형식·비밀번호 길이 검증은
+ *   기존과 동일하게 유지 — 나중에 승인 처리 시 그대로 재사용된다.
+ *   내부 Auth 이메일: username@kbestie.local (사용자에게 절대 노출 금지, 승인 시점에만 생성)
  */
 
-// username → Supabase Auth 내부 이메일 (절대 노출 금지)
-const FAKE_DOMAIN = "kbestie.local";
-const toAuthEmail = (username: string) => `${username}@${FAKE_DOMAIN}`;
 const USERNAME_REGEX = /^[a-zA-Z0-9가-힣_-]{2,20}$/;
 
 // GET /api/families/[id]/children — 가족 아이 목록
@@ -54,9 +55,9 @@ export async function POST(
   let body: {
     username: string;
     password: string;
-    name?: string;
     familyName?: string;
     givenName?: string;
+    gender?: string;
     grade: string;
     interests: string[];
     guardian_consent: boolean;
@@ -68,20 +69,16 @@ export async function POST(
   }
 
   const { username, password, grade, interests, guardian_consent } = body;
-  let name = body.name || "";
-  let familyName = body.familyName;
-  let givenName = body.givenName;
+  const familyName = body.familyName;
+  const givenName = body.givenName;
+  const gender = typeof body.gender === "string" && body.gender.trim() ? body.gender.trim() : null;
 
-  if (typeof familyName === "string" && typeof givenName === "string") {
-    if (!givenName.trim()) {
-      return NextResponse.json({ error: "이름을 입력해주세요" }, { status: 400 });
-    }
-    name = (familyName.trim() + givenName.trim()).trim();
+  if (!familyName?.trim() || !givenName?.trim()) {
+    return NextResponse.json({ error: "성과 이름을 입력해주세요" }, { status: 400 });
   }
-
-  if (!username?.trim() || !password || !name.trim() || !grade ||
+  if (!username?.trim() || !password || !grade ||
       !Array.isArray(interests) || interests.length === 0) {
-    return NextResponse.json({ error: "username, password, name, grade, interests 필수" }, { status: 400 });
+    return NextResponse.json({ error: "username, password, grade, interests 필수" }, { status: 400 });
   }
   if (!USERNAME_REGEX.test(username)) {
     return NextResponse.json(
@@ -106,10 +103,10 @@ export async function POST(
     .eq("user_id", user.id)
     .single();
   if (!parentMember || parentMember.role !== "owner_parent") {
-    return NextResponse.json({ error: "가족 오너만 아이 계정을 발급할 수 있습니다" }, { status: 403 });
+    return NextResponse.json({ error: "가족 오너만 아이 계정 승인 요청을 보낼 수 있습니다" }, { status: 403 });
   }
 
-  // 2. username 전역 유일성 확인
+  // 2. username 전역 유일성 확인 (실제 계정 + 대기 중인 요청 모두 - RPC 내부에서도 재검증됨)
   const { data: existingUsername } = await svc
     .from("member_accounts")
     .select("id")
@@ -122,76 +119,59 @@ export async function POST(
     );
   }
 
-  // 3. Supabase Auth 계정 생성 (내부 email: username@kbestie.local)
-  const { data: authData, error: authError } = await svc.auth.admin.createUser({
-    email: toAuthEmail(username.trim()),
-    password,
-    email_confirm: true,
-    user_metadata: { name: name.trim(), username: username.trim(), is_member_account: true },
-  });
-  if (authError) {
-    return NextResponse.json({ error: `계정 생성 실패: ${authError.message}` }, { status: 500 });
-  }
-  const newUserId = authData.user.id;
-
-  // 4. family_members 등록
-  const { data: familyMember, error: fmError } = await svc
-    .from("family_members")
-    .insert({ family_id: familyId, user_id: newUserId, role: "child" })
-    .select("id")
+  // 3. 가족 생성자(오너) 정보 조회 - 요청자 본인이 곧 생성자인 것이 일반적이나, 스키마상 명시적으로 저장한다
+  const { data: familyRow } = await svc
+    .from("families")
+    .select("created_by")
+    .eq("id", familyId)
     .single();
-  if (fmError) {
-    await svc.auth.admin.deleteUser(newUserId);
-    return NextResponse.json({ error: `가족 등록 실패: ${fmError.message}` }, { status: 500 });
-  }
+  const familyCreatorId = familyRow?.created_by ?? user.id;
+  const { data: familyCreatorParent } = await svc
+    .from("parents")
+    .select("email")
+    .eq("id", familyCreatorId)
+    .maybeSingle();
 
-  // 5. member_accounts 등록
-  const { error: accError } = await svc.from("member_accounts").insert({
-    id: newUserId,
-    username: username.trim(),
-    email: null,
-    display_name: name.trim(),
-    family_id: familyId,
-    role: "child",
-    created_by: user.id,
-    must_change_password: true,
+  // 4. 승인 요청 생성 (실제 계정/프로필은 관리자 승인 시에만 생성됨 - 053)
+  const { data, error } = await svc.rpc("create_child_approval_request", {
+    p_family_id: familyId,
+    p_requested_by: user.id,
+    p_family_creator_id: familyCreatorId,
+    p_requester_email: (user.email ?? "").trim().toLowerCase(),
+    p_family_creator_email: (familyCreatorParent?.email ?? user.email ?? "").trim().toLowerCase(),
+    p_family_name: familyName.trim(),
+    p_given_name: givenName.trim(),
+    p_gender: gender,
+    p_username: username.trim(),
+    p_password: password,
+    p_encryption_key: getChildApprovalEncryptionKey(),
+    p_grade: grade,
+    p_interests: interests,
+    p_guardian_consent: guardian_consent,
+    p_guardian_consent_version: CONSENT_DOCUMENT_VERSION,
   });
-  if (accError) {
-    await svc.from("family_members").delete().eq("id", familyMember.id);
-    await svc.auth.admin.deleteUser(newUserId);
-    return NextResponse.json({ error: `계정 정보 저장 실패: ${accError.message}` }, { status: 500 });
+
+  if (error) {
+    console.error("[api/families/:id/children] create_child_approval_request error:", error);
+    return NextResponse.json({ error: "승인 요청 생성에 실패했습니다" }, { status: 500 });
   }
 
-  // 6. child_profiles 생성
-  const { data: child, error: childErr } = await svc
-    .from("child_profiles")
-    .insert({
-      family_id: familyId,
-      member_id: familyMember.id,
-      name: name.trim(),
-      family_name: typeof familyName === "string" ? familyName.trim() : null,
-      given_name: typeof givenName === "string" ? givenName.trim() : null,
-      grade,
-      interests,
-      email: null,
-      guardian_consent: true,
-      guardian_consent_at: new Date().toISOString(),
-      guardian_consent_version: CONSENT_DOCUMENT_VERSION,
-    })
-    .select("id, name, grade, interests, created_at")
-    .single();
-  if (childErr) {
-    await svc.from("member_accounts").delete().eq("id", newUserId);
-    await svc.from("family_members").delete().eq("id", familyMember.id);
-    await svc.auth.admin.deleteUser(newUserId);
-    return NextResponse.json({ error: `아이 프로필 생성 실패: ${childErr.message}` }, { status: 500 });
+  const result = data?.[0] as { success: boolean; reason: string | null; request_id: string | null } | undefined;
+  if (!result?.success) {
+    if (result?.reason === "username_taken") {
+      return NextResponse.json(
+        { error: "이미 사용 중이거나 승인 대기 중인 아이디입니다. 다른 아이디를 사용하세요" },
+        { status: 409 }
+      );
+    }
+    if (result?.reason === "guardian_consent_required") {
+      return NextResponse.json({ error: "법정대리인 동의가 필요합니다" }, { status: 400 });
+    }
+    return NextResponse.json({ error: "승인 요청 생성에 실패했습니다" }, { status: 400 });
   }
 
   return NextResponse.json(
-    {
-      child,
-      member: { id: newUserId, username: username.trim(), must_change_password: true },
-    },
+    { request: { id: result.request_id, status: "pending" } },
     { status: 201 }
   );
 }

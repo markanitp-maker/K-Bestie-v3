@@ -33,6 +33,7 @@ export async function GET(request: Request) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      let redirectTo = returnUrl;
       try {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         if (user && !userError) {
@@ -40,10 +41,10 @@ export async function GET(request: Request) {
           const { error: upsertError } = await serviceSupabase
             .from("parents")
             .upsert(
-              { 
-                id: user.id, 
-                email: user.email ?? "", 
-                name: (user.user_metadata as any)?.name ?? "" 
+              {
+                id: user.id,
+                email: user.email ?? "",
+                name: (user.user_metadata as any)?.name ?? ""
               },
               { onConflict: "id", ignoreDuplicates: true }
             );
@@ -68,6 +69,11 @@ export async function GET(request: Request) {
                 feature: "auth",
                 route: "/auth/callback"
               });
+            } else if (returnUrl === "/") {
+              // 053: 가족에 아직 소속되지 않은 사용자(첫 로그인 오너 후보)는 온보딩
+              // (PWA 설치 안내 + 가족 만들기/참여하기)으로 먼저 보낸다. 명시적
+              // returnUrl이 있는 경우(초대 수락 등)는 그 목적지를 그대로 존중한다.
+              redirectTo = "/onboarding";
             }
           } catch (e) {
             console.error("[auth/callback] behavior event logging failed:", e);
@@ -77,7 +83,7 @@ export async function GET(request: Request) {
         console.error("[auth/callback] parents table upsert exception:", err?.message || err);
       }
 
-      return NextResponse.redirect(`${origin}${returnUrl}`);
+      return NextResponse.redirect(`${origin}${redirectTo}`);
     }
   }
 

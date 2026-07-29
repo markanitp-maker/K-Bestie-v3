@@ -77,11 +77,16 @@ export default function ParentSettingsPage() {
   const [addGivenName, setAddGivenName] = useState("");
   const [addUsername, setAddUsername] = useState("");
   const [addPassword, setAddPassword] = useState("");
+  const [addChildGender, setAddChildGender] = useState<string>("");
   const [addChildGrade, setAddChildGrade] = useState("1학년");
   const [addChildInterests, setAddChildInterests] = useState<string[]>([]);
   const [addChildConsent, setAddChildConsent] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
+  const [addSuccessMessage, setAddSuccessMessage] = useState<string | null>(null);
+
+  // 053: 아이 승인 요청(pending/creation_failed/rejected) 상태 - 조회 전용(승인/재시도는 관리자 화면)
+  const [approvalRequests, setApprovalRequests] = useState<any[]>([]);
 
   // 비밀번호 초기화 상태
   const [resettingMember, setResettingMember] = useState<any | null>(null);
@@ -372,8 +377,23 @@ export default function ParentSettingsPage() {
     }
   };
 
+  const loadApprovalRequests = async () => {
+    if (!store.activeFamilyId) {
+      setApprovalRequests([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/families/${store.activeFamilyId}/child-approval-requests`);
+      if (res.ok) {
+        const data = await res.json();
+        setApprovalRequests(data.requests ?? []);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     loadFamilyMembers();
+    loadApprovalRequests();
   }, [store.activeFamilyId]);
 
   useEffect(() => {
@@ -521,7 +541,7 @@ export default function ParentSettingsPage() {
   const handlePlanCardClick = (tier: number) => {
     if (planRequestSubmitting) return; // codex 044 리뷰: 처리 중 다른 플랜 재선택으로 병렬 요청 방지
     if (tier === editOriginalTier) return;
-    if (tier === 3 && process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod") return; // Production Premium 차단
+    if (tier === 3) return; // 053: Care Premium은 모든 환경에서 차단
     // codex 044 리뷰: planRequest는 관리자 승인이 필요했던 구 플랜변경요청 흐름의 잔존값이다.
     // 044는 Care Start/Insight 간 변경을 승인 없이 즉시 반영하도록 바뀌었으므로, 실제 사용
     // 이력 조회 결과 실사용자에게 남아있던 오래된 pending 요청 하나가 이 체크 때문에 신규
@@ -608,6 +628,7 @@ export default function ParentSettingsPage() {
     e.preventDefault();
     setAddError(null);
 
+    if (!addFamilyName.trim()) { setAddError("성을 입력해주세요."); return; }
     if (!addGivenName.trim()) { setAddError("이름을 입력해주세요."); return; }
     if (!addUsername.trim()) { setAddError("아이디를 입력해주세요."); return; }
     if (addPassword.length < 6) { setAddError("비밀번호는 6자 이상이어야 합니다."); return; }
@@ -621,6 +642,7 @@ export default function ParentSettingsPage() {
         password: addPassword,
         familyName: addFamilyName.trim(),
         givenName: addGivenName.trim(),
+        gender: addChildGender || undefined,
         grade: addChildGrade,
         interests: addChildInterests,
         guardian_consent: addChildConsent
@@ -634,7 +656,7 @@ export default function ParentSettingsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        setAddError(data.error || "아이 추가에 실패했습니다.");
+        setAddError(data.error || "승인 요청 접수에 실패했습니다.");
         return;
       }
 
@@ -642,13 +664,12 @@ export default function ParentSettingsPage() {
       setAddGivenName("");
       setAddUsername("");
       setAddPassword("");
+      setAddChildGender("");
       setAddChildInterests([]);
       setAddChildConsent(false);
       setActiveMenu(null);
-      await loadFamilyMembers();
-      
-      const { syncChildrenFromDB } = await import("@/lib/store");
-      await syncChildrenFromDB();
+      setAddSuccessMessage("승인 요청이 접수되었습니다. 관리자 승인 후 아이 계정이 만들어져요.");
+      await loadApprovalRequests();
     } catch {
       setAddError("네트워크 에러가 발생했습니다.");
     } finally {
@@ -883,6 +904,24 @@ export default function ParentSettingsPage() {
                       className="px-3.5 py-2 text-xs border border-gray-200 rounded-xl outline-none bg-gray-50/50"
                     />
                     <div>
+                      <p className="text-[10px] font-bold text-gray-500 mb-1 px-1">성별 (선택)</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[{ v: "male", label: "남자아이" }, { v: "female", label: "여자아이" }].map((opt) => (
+                          <button
+                            key={opt.v}
+                            type="button"
+                            onClick={() => setAddChildGender((prev) => (prev === opt.v ? "" : opt.v))}
+                            className={`py-1.5 text-[10px] font-bold rounded-xl border ${
+                              addChildGender === opt.v ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-600"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
                       <p className="text-[10px] font-bold text-gray-500 mb-1 px-1">학년 선택</p>
                       <div className="grid grid-cols-3 gap-1.5">
                         {GRADES.map((g) => (
@@ -943,8 +982,11 @@ export default function ParentSettingsPage() {
                       className="w-full py-2.5 rounded-xl text-white text-xs font-bold active:scale-95 transition-transform md:scroll-mb-[calc(7rem+env(safe-area-inset-bottom,0px))]"
                       style={{ background: "var(--color-k-navy)" }}
                     >
-                      {addLoading ? "아이 추가 중..." : "자녀 등록 완료"}
+                      {addLoading ? "승인 요청 접수 중..." : "승인 요청 보내기"}
                     </button>
+                    <p className="text-[9px] text-gray-400 px-1 text-center leading-relaxed">
+                      제출 후 관리자 승인이 완료되면 아이 계정이 만들어져요.
+                    </p>
                   </form>
                 ) : (
                   <p className="text-[10px] text-gray-400 text-center py-2">가족 오너 권한이 있는 보호자만 아이를 등록할 수 있습니다.</p>
@@ -952,6 +994,49 @@ export default function ParentSettingsPage() {
               </div>
             )}
           </div>
+
+          {/* 1-1. 아이 승인 요청 상태 (053 - 관리자 승인 전/거절/실패 상태만 조회) */}
+          {approvalRequests.length > 0 && (
+            <div className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3">
+              <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>아이 승인 요청 현황</p>
+              <div className="flex flex-col gap-2">
+                {approvalRequests.map((req) => {
+                  const statusMeta: Record<string, { label: string; color: string; bg: string }> = {
+                    pending: { label: "관리자 승인 대기 중", color: "#92400e", bg: "#fef3c7" },
+                    creation_failed: { label: "프로필 생성 실패 - 확인 중", color: "#991b1b", bg: "#fee2e2" },
+                    rejected: { label: "승인 거절됨", color: "#6b7280", bg: "#f3f4f6" },
+                    approved: { label: "승인 완료", color: "#065f46", bg: "#d1fae5" },
+                  };
+                  const meta = statusMeta[req.status] ?? statusMeta.pending;
+                  return (
+                    <div key={req.id} className="rounded-xl p-3 border border-gray-100 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-800 truncate">{req.family_name}{req.given_name} · {req.grade}</p>
+                        {req.status === "rejected" && req.rejected_reason && (
+                          <p className="text-[10px] text-gray-500 mt-0.5 truncate">사유: {req.rejected_reason}</p>
+                        )}
+                        {req.status === "creation_failed" && (
+                          <p className="text-[10px] text-gray-500 mt-0.5 truncate">관리자가 확인 후 다시 처리할 예정이에요</p>
+                        )}
+                      </div>
+                      <span
+                        className="shrink-0 px-2 py-1 rounded-full text-[10px] font-bold"
+                        style={{ color: meta.color, background: meta.bg }}
+                      >
+                        {meta.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {addSuccessMessage && (
+            <div className="bg-white rounded-2xl px-4 py-3 shadow-sm">
+              <p className="text-xs font-bold text-center" style={{ color: "var(--color-k-navy)" }}>{addSuccessMessage}</p>
+            </div>
+          )}
 
           {/* 2. 아이 프로필 정보 등록 메뉴 카드 (자녀 프로필 수정 전용) */}
           <div
@@ -1500,7 +1585,7 @@ export default function ParentSettingsPage() {
                 <div className="grid grid-cols-3 gap-1">
                   {CARE_PLANS.map((p) => {
                     const isCurrent = p.tier === editOriginalTier;
-                    const isPremiumProd = p.tier === 3 && process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod";
+                    const isPremiumProd = p.tier === 3; // 053: Care Premium은 모든 환경에서 차단
                     return (
                       <button
                         key={p.tier}

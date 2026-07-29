@@ -537,7 +537,7 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests";
+type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests";
 
 const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
@@ -549,6 +549,7 @@ const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "beta-applications", label: "베타 신청 관리" },
   { id: "manual-reporting", label: "리포팅 수동 실행" },
   { id: "plan-change-requests", label: "요금제 변경 요청" },
+  { id: "child-approval-requests", label: "아이 승인 요청" },
 ];
 
 interface ProviderSwitchRow {
@@ -853,7 +854,6 @@ function BetaApplicationsTab() {
   const [approveSelectedTier, setApproveSelectedTier] = useState<number>(2);
   const [resultToast, setResultToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const isProd = process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod";
 
   useEffect(() => {
     if (!resultToast) return;
@@ -994,7 +994,7 @@ function BetaApplicationsTab() {
               {[
                 { tier: 1, label: "Care Start" },
                 { tier: 2, label: "Care Insight (기본)" },
-                { tier: 3, label: "Care Premium", disabled: isProd }
+                { tier: 3, label: "Care Premium", disabled: true } // 053: 모든 환경에서 차단
               ].map(plan => (
                 <label key={plan.tier} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer ${approveSelectedTier === plan.tier ? 'border-[var(--color-k-navy)] bg-blue-50' : 'border-gray-200 hover:bg-gray-50'} ${plan.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
                   <input
@@ -1048,6 +1048,194 @@ function BetaApplicationsTab() {
                   setRejectModalUserId(null);
                   setRejectReason("");
                 }}
+                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleRejectConfirm}
+                className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl"
+              >
+                거절
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChildApprovalRequestsTab() {
+  const [requests, setRequests] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const [rejectModalId, setRejectModalId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [resultToast, setResultToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!resultToast) return;
+    const t = setTimeout(() => setResultToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [resultToast]);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch("/api/admin/child-approval-requests")
+      .then(r => r.json())
+      .then(d => {
+        setRequests(Array.isArray(d) ? d : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleApprove = async (id: string) => {
+    setActionLoading(id);
+    try {
+      const res = await fetch(`/api/admin/child-approval-requests/${id}/approve`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setResultToast({ type: "success", text: "승인 처리되었습니다. 아이 계정이 생성됐어요." });
+      } else {
+        setResultToast({ type: "error", text: data.error || "승인 처리에 실패했습니다." });
+      }
+      load();
+    } catch {
+      setResultToast({ type: "error", text: "오류 발생" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRejectConfirm = async () => {
+    if (!rejectModalId) return;
+    const id = rejectModalId;
+    setRejectModalId(null);
+    setActionLoading(id);
+    try {
+      const res = await fetch(`/api/admin/child-approval-requests/${id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: rejectReason }),
+      });
+      if (res.ok) {
+        setResultToast({ type: "success", text: "거절 처리되었습니다." });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setResultToast({ type: "error", text: data.error || "처리 실패" });
+      }
+      load();
+    } catch {
+      setResultToast({ type: "error", text: "오류 발생" });
+    } finally {
+      setActionLoading(null);
+      setRejectReason("");
+    }
+  };
+
+  const toast = resultToast && (
+    <div
+      style={{
+        position: "fixed", top: 16, right: 16, zIndex: 100,
+        padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+        background: resultToast.type === "success" ? "var(--color-k-navy)" : "var(--color-k-danger)",
+        color: "white", boxShadow: "var(--shadow-k-card)",
+      }}
+    >
+      {resultToast.text}
+    </div>
+  );
+
+  if (loading && !requests) return <>{toast}<EmptyState text="불러오는 중..." /></>;
+  if (!requests || requests.length === 0) return <>{toast}<EmptyState text="아이 승인 요청이 없습니다." /></>;
+
+  const STATUS_LABEL: Record<string, string> = {
+    pending: "승인 대기",
+    creation_failed: "프로필 생성 실패",
+    rejected: "거절됨",
+    approved: "승인 완료",
+  };
+
+  return (
+    <div>
+      {toast}
+      <SectionTitle>아이 승인 요청 관리</SectionTitle>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {requests.map((req: any) => {
+          const isActionable = req.status === "pending" || req.status === "creation_failed";
+          return (
+            <div key={req.id} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 4 }}>
+                    {req.family_name}{req.given_name} ({req.grade}) — {STATUS_LABEL[req.status] ?? req.status}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>
+                    요청일: {formatDateTime(req.requested_at)}<br />
+                    요청자: {req.requester_email}<br />
+                    가족 생성자: {req.family_creator_email}<br />
+                    관심사: {(req.interests || []).join(", ") || "없음"}
+                  </div>
+                  {req.status === "creation_failed" && req.failure_reason && (
+                    <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginTop: 8, background: "#fee2e2", padding: "6px 10px", borderRadius: 6 }}>
+                      실패 사유: {req.failure_reason}
+                    </div>
+                  )}
+                  {req.status === "rejected" && req.rejected_reason && (
+                    <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginTop: 8, background: "var(--color-k-surface)", padding: "6px 10px", borderRadius: 6 }}>
+                      거절 사유: {req.rejected_reason}
+                    </div>
+                  )}
+                </div>
+                {isActionable && (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => { setRejectModalId(req.id); setRejectReason(""); }}
+                      disabled={actionLoading === req.id}
+                      style={{
+                        padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-k-danger)",
+                        background: "white", color: "var(--color-k-danger)", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                      }}
+                    >
+                      거절
+                    </button>
+                    <button
+                      onClick={() => handleApprove(req.id)}
+                      disabled={actionLoading === req.id}
+                      style={{
+                        padding: "6px 12px", borderRadius: 8, border: "none",
+                        background: "var(--color-k-navy)", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                      }}
+                    >
+                      {req.status === "creation_failed" ? (actionLoading === req.id ? "재시도 중..." : "재시도") : (actionLoading === req.id ? "승인 중..." : "승인")}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {rejectModalId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="text-lg font-bold text-[var(--color-k-navy)] mb-4">아이 승인 거절</h3>
+            <p className="text-sm text-gray-600 mb-4">거절 사유를 입력하세요 (선택)</p>
+            <textarea
+              className="w-full p-3 border border-gray-200 rounded-xl mb-6 h-24 resize-none focus:outline-none focus:border-[var(--color-k-navy)]"
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              placeholder="사유 입력..."
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setRejectModalId(null); setRejectReason(""); }}
                 className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl"
               >
                 취소
@@ -1263,6 +1451,8 @@ function AdminDashboard() {
           <ManualReportingTab />
         ) : page === "plan-change-requests" ? (
           <PlanChangeRequestsTab />
+        ) : page === "child-approval-requests" ? (
+          <ChildApprovalRequestsTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
