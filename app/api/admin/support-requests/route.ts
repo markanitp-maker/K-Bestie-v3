@@ -37,5 +37,60 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ requests: data });
+  const childIds = Array.from(
+    new Set(
+      (data ?? [])
+        .filter((request) => request.submitter_role === "child" && request.child_id)
+        .map((request) => request.child_id as string)
+    )
+  );
+  const parentIds = Array.from(
+    new Set(
+      (data ?? [])
+        .filter((request) => request.submitter_role !== "child" && request.user_id)
+        .map((request) => request.user_id as string)
+    )
+  );
+
+  const childNames = new Map<string, string>();
+  if (childIds.length > 0) {
+    const { data: children, error: childError } = await service
+      .from("child_profiles")
+      .select("id, name")
+      .in("id", childIds);
+
+    if (childError) {
+      return NextResponse.json({ error: childError.message }, { status: 500 });
+    }
+
+    for (const child of children ?? []) {
+      if (child.name?.trim()) childNames.set(child.id, child.name.trim());
+    }
+  }
+
+  const parentNames = new Map<string, string>();
+  if (parentIds.length > 0) {
+    const { data: parents, error: parentError } = await service
+      .from("parents")
+      .select("id, name")
+      .in("id", parentIds);
+
+    if (parentError) {
+      return NextResponse.json({ error: parentError.message }, { status: 500 });
+    }
+
+    for (const parent of parents ?? []) {
+      if (parent.name?.trim()) parentNames.set(parent.id, parent.name.trim());
+    }
+  }
+
+  const requests = (data ?? []).map((request) => ({
+    ...request,
+    submitter_name:
+      request.submitter_role === "child"
+        ? childNames.get(request.child_id) ?? null
+        : parentNames.get(request.user_id) ?? null,
+  }));
+
+  return NextResponse.json({ requests });
 }

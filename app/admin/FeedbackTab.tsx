@@ -6,6 +6,12 @@ function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("ko-KR");
 }
 
+function formatSubmitter(req: { submitter_name?: string | null; submitter_role?: string | null }): string {
+  const role = req.submitter_role === "child" ? "아이" : "부모";
+  const name = req.submitter_name?.trim();
+  return name ? `${name}(${role})` : role;
+}
+
 const thStyle: React.CSSProperties = {
   textAlign: "left",
   padding: "8px 12px",
@@ -146,7 +152,7 @@ export default function FeedbackTab() {
                   >
                     <td style={tdStyle}>{req.request_number || "-"}</td>
                     <td style={tdStyle}>{getCategoryLabel(req.category)}</td>
-                    <td style={tdStyle}>{req.submitter_role === "child" ? "아이" : "부모"}</td>
+                    <td style={tdStyle}>{formatSubmitter(req)}</td>
                     <td style={tdStyle}>
                       <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
                         {req.category === "voc" ? req.body : req.subject}
