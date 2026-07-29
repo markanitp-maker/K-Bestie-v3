@@ -5,6 +5,11 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- 이미 생성된 테이블이 있으면(재적용) NOT NULL 제약을 완화한다 - 승인/거절 완료 시
+-- encrypted_password를 NULL로 비우는데(노출 최소화) 이 제약과 충돌하면 그 UPDATE 자체가
+-- 실패한다.
+ALTER TABLE IF EXISTS public.child_approval_requests ALTER COLUMN encrypted_password DROP NOT NULL;
+
 -- child_profiles: 요청 필드에 성별이 포함되어 있으나 기존 코드베이스 어디에도 gender 컬럼이
 -- 없었다. nullable로 1개만 추가 — 기존 행은 전부 NULL로 남고 그 외 기존 데이터는 무변경.
 ALTER TABLE public.child_profiles
@@ -26,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public.child_approval_requests (
   given_name                TEXT NOT NULL,
   gender                    TEXT,
   username                  TEXT NOT NULL,
-  encrypted_password        BYTEA NOT NULL,
+  encrypted_password        BYTEA, -- 승인/거절 완료 시 NULL로 비워 평문 노출 최소화(생성 시점엔 NOT NULL 상당으로 항상 채워짐)
   grade                     TEXT NOT NULL,
   interests                 TEXT[] NOT NULL DEFAULT '{}',
   guardian_consent          BOOLEAN NOT NULL,
@@ -119,7 +124,7 @@ CREATE OR REPLACE FUNCTION public.create_child_approval_request(
 )
 RETURNS TABLE(success BOOLEAN, reason TEXT, request_id UUID)
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_request_id UUID;
@@ -184,7 +189,7 @@ RETURNS TABLE(
   created_auth_user_id UUID, created_child_id UUID
 )
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_row public.child_approval_requests;
@@ -230,7 +235,7 @@ CREATE OR REPLACE FUNCTION public.admin_record_child_approval_auth_created(
 )
 RETURNS TABLE(success BOOLEAN)
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 BEGIN
   UPDATE public.child_approval_requests
@@ -255,7 +260,7 @@ CREATE OR REPLACE FUNCTION public.admin_finalize_child_approval_success(
 )
 RETURNS TABLE(success BOOLEAN, reason TEXT)
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_family_id UUID;
@@ -297,7 +302,7 @@ CREATE OR REPLACE FUNCTION public.admin_finalize_child_approval_failure(
 )
 RETURNS TABLE(success BOOLEAN, reason TEXT)
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_family_id UUID;
@@ -339,7 +344,7 @@ CREATE OR REPLACE FUNCTION public.admin_reject_child_approval_request(
 )
 RETURNS TABLE(success BOOLEAN, reason TEXT, orphaned_auth_user_id UUID)
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_family_id UUID;
