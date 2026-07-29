@@ -187,7 +187,7 @@ export function MissionConversationLayout({
 
         {/* Top Right Close Button */}
         <div className="absolute top-0 right-0 p-[calc(10px+env(safe-area-inset-top))] z-50">
-          <button onClick={handleCloseClick} disabled={isClosing || closeRequested} className="w-[44px] h-[44px] flex items-center justify-center cursor-pointer disabled:opacity-50 active:scale-95 text-gray-700">
+          <button onClick={handleCloseClick} disabled={isClosing || closeRequested} aria-label="미션 종료" className="w-[44px] h-[44px] flex items-center justify-center cursor-pointer disabled:opacity-50 active:scale-95 text-gray-700">
             <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
@@ -341,7 +341,13 @@ export function MissionConversationLayout({
         {/* Bottom Inputs Area */}
         <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(24px,3.5dvh,36px)+env(safe-area-inset-bottom))]">
           {isTextMode ? (
-            <div className="w-full px-4 flex gap-2">
+            <div
+              className="w-full flex gap-2 box-border"
+              style={{
+                paddingLeft: "max(16px, env(safe-area-inset-left))",
+                paddingRight: "max(16px, env(safe-area-inset-right))",
+              }}
+            >
               <input
                 ref={(el) => { if (el && !isClosing) el.focus(); }}
                 type="text"
@@ -352,7 +358,7 @@ export function MissionConversationLayout({
                 }}
                 placeholder="케이에게 텍스트로 답하기..."
                 disabled={isClosing || entryStatus !== "active"}
-                className="flex-1 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
+                className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
                 maxLength={200}
               />
               <button
@@ -367,7 +373,7 @@ export function MissionConversationLayout({
                 onClick={onToggleTextMode}
                 disabled={isClosing}
                 className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40"
-                aria-label="닫기"
+                aria-label="텍스트 입력창 닫기"
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
