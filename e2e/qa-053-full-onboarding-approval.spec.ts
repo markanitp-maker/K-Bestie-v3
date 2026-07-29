@@ -233,7 +233,7 @@ test("QA-053: 신규 가족 생성부터 관리자 승인과 아이 로그인까
       .getByRole("button", { name: "리포팅 수동 실행", exact: true })
       .click();
     await expect(
-      page.getByText("리포팅 수동 실행", { exact: true })
+      page.getByText("리포팅 수동 실행", { exact: true }).last()
     ).toBeVisible();
     expect((await reportingChildrenResponse).status()).toBe(200);
 
