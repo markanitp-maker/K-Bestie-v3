@@ -10,7 +10,6 @@ import { ParentHomeHeader } from "./components/ParentHomeHeader";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
 import { SkeletonBox } from "@/components/Skeleton";
 import KChatbotWidget from "@/components/KChatbotWidget";
-import { ConversationGuideHeader } from "./components/ConversationGuideHeader";
 import { TodayConversationGuide } from "./components/TodayConversationGuide";
 import { InsightGrid } from "./components/InsightGrid";
 
@@ -758,8 +757,6 @@ export default function ParentHomePage() {
         <ParentHomeHeader />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
-          <ConversationGuideHeader />
-          
           {reportLoading ? (
             <>
               <div className="bg-[#10315B] rounded-[20px] p-5 shadow-sm mt-4 mb-6">
@@ -805,7 +802,7 @@ export default function ParentHomePage() {
           ) : (
             <>
               <TodayConversationGuide guideText={todaysQuote ?? undefined} />
-              <InsightGrid report={latestReport} insights={insightsData} />
+              <InsightGrid report={latestReport} insights={insightsData} view={view} />
             </>
           )}
         </div>
