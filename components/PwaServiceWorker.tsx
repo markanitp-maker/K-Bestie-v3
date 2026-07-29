@@ -3,131 +3,249 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { usePathname } from "next/navigation";
 
+type PwaState =
+  | "idle"
+  | "checking"
+  | "update_available"
+  | "deferred_during_session"
+  | "activating"
+  | "reloading"
+  | "up_to_date"
+  | "error";
+
 export function PwaServiceWorker() {
-  const [showUpdate, setShowUpdate] = useState(false);
+  const [pwaState, setPwaState] = useState<PwaState>("idle");
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
+
   const pathname = usePathname();
-  
   const pathnameRef = useRef(pathname);
+
+  const lastDismissedAt = useRef<number>(0);
+  const DISMISS_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+
   useEffect(() => {
     pathnameRef.current = pathname;
   }, [pathname]);
 
-  // 대화 중인지 확인 (missions, chat 등 대화 관련 경로)
-  const isSafeToUpdate = useCallback(() => {
+  const isCriticalSession = useCallback(() => {
     const currentPath = pathnameRef.current || "";
-    // 대화 세션이 활성화된 경로가 아니면 안전
-    return !(currentPath.includes("/missions") || currentPath.includes("/chat") || currentPath.includes("/freetalk"));
+    return (
+      currentPath.includes("/missions") ||
+      currentPath.includes("/chat") ||
+      currentPath.includes("/freetalk") ||
+      currentPath.includes("/play")
+    );
   }, []);
 
-  const handleUpdate = useCallback(() => {
+  const printDiagnostics = useCallback(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.ready.then((reg) => {
+        const diag = {
+          appBuildId: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "local",
+          swActiveVersion: "unknown",
+          swBuildId: "unknown",
+          swWaitingVersion: "unknown",
+          serviceWorkerState: pwaState,
+          windowInnerWidth: window.innerWidth,
+          visualViewportWidth: window.visualViewport?.width,
+          devicePixelRatio: window.devicePixelRatio,
+          displayMode: window.matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser",
+        };
+
+        if (reg.active) {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = (e) => {
+            diag.swActiveVersion = e.data.swVersion;
+            diag.swBuildId = e.data.buildId;
+            console.log("[PWA Diagnostics]", diag);
+          };
+          reg.active.postMessage({ type: "GET_VERSION" }, [channel.port2]);
+        } else {
+          console.log("[PWA Diagnostics]", diag);
+        }
+      });
+    }
+  }, [pwaState]);
+
+  useEffect(() => {
+    if (pwaState === "update_available" || pwaState === "idle" || pwaState === "deferred_during_session") {
+      printDiagnostics();
+    }
+  }, [pwaState, printDiagnostics]);
+
+  const triggerUpdate = useCallback(() => {
     if (waitingWorker) {
+      setPwaState("activating");
       waitingWorker.postMessage({ type: "SKIP_WAITING" });
-      setShowUpdate(false);
+
+      // If controllerchange doesn't fire within 3 seconds, show error
+      setTimeout(() => {
+        setPwaState((prev) => (prev === "activating" ? "error" : prev));
+      }, 3000);
     }
   }, [waitingWorker]);
 
-  // 경로가 변경되어 안전한 상태가 되면 지연된 업데이트 실행
-  useEffect(() => {
-    if (waitingWorker && isSafeToUpdate()) {
-      handleUpdate();
-    }
-  }, [pathname, waitingWorker, isSafeToUpdate, handleUpdate]);
+  const handleDismiss = () => {
+    lastDismissedAt.current = Date.now();
+    setPwaState("idle");
+  };
 
   useEffect(() => {
-    // 버전 식별자 콘솔 출력 (Vercel 배포 시 자동 주입되는 환경 변수 활용)
-    const commitSha = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "local-or-unknown";
-    console.log(`[PWA] Current build version (commit): ${commitSha}`);
-
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       navigator.serviceWorker
         .register("/sw.js")
         .then((registration) => {
-          registration.addEventListener("updatefound", () => {
+          const handleUpdateFound = () => {
             const newWorker = registration.installing;
             if (newWorker) {
               newWorker.addEventListener("statechange", () => {
                 if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-                  // A new update is available
                   setWaitingWorker(newWorker);
-                  if (isSafeToUpdate()) {
-                    newWorker.postMessage({ type: "SKIP_WAITING" });
-                  } else {
-                    setShowUpdate(true);
-                  }
+                  setPwaState(isCriticalSession() ? "deferred_during_session" : "update_available");
                 }
               });
             }
-          });
+          };
 
-          // Check if there is already a waiting worker
-          if (registration.waiting) {
+          registration.addEventListener("updatefound", handleUpdateFound);
+
+          if (registration.waiting && navigator.serviceWorker.controller) {
             setWaitingWorker(registration.waiting);
-            if (isSafeToUpdate()) {
-              registration.waiting.postMessage({ type: "SKIP_WAITING" });
-            } else {
-              setShowUpdate(true);
-            }
+            setPwaState(isCriticalSession() ? "deferred_during_session" : "update_available");
           }
-          
-          // 앱이 백그라운드에서 포그라운드로 복귀할 때 업데이트 확인
-          const handleVisibilityChange = () => {
-            if (document.visibilityState === "visible") {
-              registration.update();
-              // 복귀 시 대화 중이 아니라면 대기 중인 워커 즉시 활성화
-              if (registration.waiting && isSafeToUpdate()) {
-                registration.waiting.postMessage({ type: "SKIP_WAITING" });
-              }
+
+          const checkUpdate = () => {
+            if (navigator.onLine && registration) {
+              registration.update().then(() => {
+                if (registration.waiting && navigator.serviceWorker.controller) {
+                  setWaitingWorker(registration.waiting);
+                  setPwaState((prev) => {
+                    if (prev === "idle" && Date.now() - lastDismissedAt.current > DISMISS_COOLDOWN_MS) {
+                      return isCriticalSession() ? "deferred_during_session" : "update_available";
+                    }
+                    return prev;
+                  });
+                }
+              }).catch((err) => {
+                console.error("SW update check failed", err);
+              });
             }
           };
+
+          const handleVisibilityChange = () => {
+            if (document.visibilityState === "visible") {
+              checkUpdate();
+            }
+          };
+
+          window.addEventListener("online", checkUpdate);
           document.addEventListener("visibilitychange", handleVisibilityChange);
 
           return () => {
+            window.removeEventListener("online", checkUpdate);
             document.removeEventListener("visibilitychange", handleVisibilityChange);
+            registration.removeEventListener("updatefound", handleUpdateFound);
           };
         })
         .catch((err) => {
           console.error("Service Worker registration failed:", err);
         });
 
-      navigator.serviceWorker.addEventListener("message", (event) => {
-        if (event.data && event.data.type === "UPDATE_AVAILABLE") {
-          navigator.serviceWorker.getRegistration().then((reg) => {
-            if (reg?.waiting) {
-              setWaitingWorker(reg.waiting);
-              if (isSafeToUpdate()) {
-                reg.waiting.postMessage({ type: "SKIP_WAITING" });
-              } else {
-                setShowUpdate(true);
-              }
-            }
-          });
-        }
-      });
-
       let refreshing = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (!refreshing) {
           refreshing = true;
+          setPwaState("reloading");
           window.location.reload();
         }
       });
     }
-  }, [isSafeToUpdate]); // isSafeToUpdate is stable due to useCallback
+  }, [isCriticalSession]);
 
-  if (!showUpdate) return null;
+  useEffect(() => {
+    if (pwaState === "deferred_during_session" && !isCriticalSession()) {
+      setPwaState("update_available");
+    } else if (pwaState === "update_available" && isCriticalSession()) {
+      setPwaState("deferred_during_session");
+    }
+  }, [pathname, pwaState, isCriticalSession]);
 
-  return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white px-4 py-3 rounded-xl shadow-lg border border-gray-200 z-[9999] flex items-center gap-3 w-[90%] max-w-sm">
-      <div className="flex-1 text-xs text-gray-700 font-bold">
-        새 버전이 준비되었습니다. (현재 대화 중이라 대기 중)
-      </div>
-      <button
-        onClick={handleUpdate}
-        className="px-3 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-lg active:scale-95 transition-transform"
+  if (
+    pwaState === "idle" ||
+    pwaState === "checking" ||
+    pwaState === "up_to_date" ||
+    pwaState === "activating" ||
+    pwaState === "reloading"
+  ) {
+    return null;
+  }
+
+  if (pwaState === "deferred_during_session") {
+    return (
+      <div
+        role="alert"
+        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 bg-white px-4 py-3 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-gray-100 z-[9999] flex flex-col gap-1 w-[90%] max-w-sm"
       >
-        즉시 업데이트
-      </button>
+        <div className="text-[var(--color-k-navy)] font-bold text-sm">새로운 버전이 준비됐어요.</div>
+        <div className="text-gray-600 text-xs">현재 대화를 마친 뒤 업데이트할게요.</div>
+      </div>
+    );
+  }
+
+  if (pwaState === "error") {
+    return (
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 bg-white px-4 py-4 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-gray-100 z-[9999] flex flex-col gap-3 w-[90%] max-w-sm"
+      >
+        <div>
+          <div className="text-[var(--color-k-navy)] font-bold text-base mb-1">새 버전을 적용하지 못했어요.</div>
+          <div className="text-gray-600 text-sm break-keep">인터넷 연결을 확인한 뒤 다시 시도해 주세요.</div>
+        </div>
+        <div className="flex gap-2 justify-end mt-1">
+          <button
+            onClick={handleDismiss}
+            className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-bold rounded-lg active:scale-95 transition-transform"
+          >
+            나중에
+          </button>
+          <button
+            onClick={triggerUpdate}
+            className="px-4 py-2 bg-[var(--color-k-orange)] text-white text-sm font-bold rounded-lg active:scale-95 transition-transform"
+          >
+            다시 시도
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // update_available
+  return (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 bg-white px-4 py-4 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] border border-gray-100 z-[9999] flex flex-col gap-3 w-[90%] max-w-sm"
+    >
+      <div>
+        <div className="text-[var(--color-k-navy)] font-bold text-base mb-1">새로운 버전이 준비됐어요.</div>
+        <div className="text-gray-600 text-sm break-keep">최신 기능과 화면을 사용하려면 새로고침해 주세요.</div>
+      </div>
+      <div className="flex gap-2 justify-end mt-1">
+        <button
+          onClick={handleDismiss}
+          className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-bold rounded-lg active:scale-95 transition-transform"
+        >
+          나중에
+        </button>
+        <button
+          onClick={triggerUpdate}
+          className="px-4 py-2 bg-[var(--color-k-orange)] text-white text-sm font-bold rounded-lg active:scale-95 transition-transform flex items-center justify-center min-w-[80px]"
+        >
+          새로고침
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,12 @@
-const CACHE_NAME = "kbestie-shell-v7";
+import { NextResponse } from "next/server";
+
+export async function GET() {
+  const buildId = process.env.NEXT_PUBLIC_DEPLOYMENT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || "local";
+  const CACHE_NAME = `kbestie-shell-${buildId}`;
+
+  const swCode = `
+const CACHE_NAME = "${CACHE_NAME}";
+const BUILD_ID = "${buildId}";
 
 const PRECACHE_ASSETS = [
   "/manifest.json",
@@ -36,6 +44,8 @@ self.addEventListener("activate", (event) => {
           }
         })
       );
+    }).then(() => {
+      return self.clients.claim();
     })
   );
 });
@@ -43,10 +53,9 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
-    self.clients.claim();
   }
   if (event.data && event.data.type === "GET_VERSION" && event.ports && event.ports[0]) {
-    event.ports[0].postMessage({ swVersion: CACHE_NAME });
+    event.ports[0].postMessage({ swVersion: CACHE_NAME, buildId: BUILD_ID });
   }
 });
 
@@ -108,3 +117,13 @@ self.addEventListener("fetch", (event) => {
   // 3. 화이트리스트에 없는 나머지 GET 요청은 네트워크 전용 처리 (캐싱 안 함)
   return;
 });
+`;
+
+  return new NextResponse(swCode, {
+    headers: {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Service-Worker-Allowed": "/",
+    },
+  });
+}

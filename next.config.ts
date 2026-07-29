@@ -21,11 +21,22 @@ async function rewrites() {
     // Dev 초기 세팅 전이나 로컬 개발 중 env 미설정 시 조용히 로컬 구현으로 폴백한다
     // (rewrite 자체를 등록하지 않음) — 배포 환경에서는 반드시 설정돼 있어야 한다.
     console.warn("[next.config] MBTI_UPSTREAM_ORIGIN 미설정 — /play/mbti rewrite 비활성화");
-    return { beforeFiles: [] };
+    return {
+      beforeFiles: [
+        {
+          source: "/sw.js",
+          destination: "/api/pwa/sw",
+        },
+      ],
+    };
   }
 
   return {
     beforeFiles: [
+      {
+        source: "/sw.js",
+        destination: "/api/pwa/sw",
+      },
       {
         source: "/play/mbti",
         destination: `${mbtiUpstreamOrigin}/play/mbti`,
