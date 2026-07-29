@@ -1,0 +1,86 @@
+{
+  "fail_test": {
+    "project": "K-Bestie-v3",
+    "type": "agy",
+    "session": "agy-qa-fail",
+    "start_time": 1785282834.0545483,
+    "log_path": "/tmp/agy-qa-fail.log",
+    "retry_count": 0,
+    "status": "failed",
+    "events": {
+      "start": true,
+      "failed": true
+    },
+    "acked": false
+  },
+  "hang_test": {
+    "project": "K-Bestie-v3",
+    "type": "agy",
+    "session": "agy-hang",
+    "start_time": 1785282257.9501774,
+    "log_path": "/tmp/agy-hang.log",
+    "retry_count": 0,
+    "status": "unresponsive",
+    "events": {
+      "start": true,
+      "unresponsive": true
+    },
+    "acked": false
+  },
+  "tasks": {
+    "agy-042": {
+      "task_id": "042",
+      "project_name": "K-Bestie-v3",
+      "task_type": "agy",
+      "tmux_session": "agy-042",
+      "start_time": 1785283672644,
+      "log_path": "/tmp/agy-042.log",
+      "retry_count": 0,
+      "current_state": "running",
+      "events_reported": {
+        "start": true,
+        "unresponsive": true
+      },
+      "done_time": null,
+      "confirmed": false,
+      "last_activity_time": 1785283672644,
+      "last_mtime": 1785283555022.6033
+    },
+    "agy-hangtest": {
+      "task_id": "hangtest",
+      "project_name": "K-Bestie-v3",
+      "task_type": "agy",
+      "tmux_session": "agy-hangtest",
+      "start_time": 1785283695014,
+      "log_path": "/tmp/agy-hangtest.log",
+      "retry_count": 0,
+      "current_state": "running",
+      "events_reported": {
+        "start": true,
+        "unresponsive": true
+      },
+      "done_time": null,
+      "confirmed": false,
+      "last_activity_time": 1785283723291,
+      "last_mtime": 1785283723258.6033
+    },
+    "agy-qa-failtest": {
+      "task_id": "failtest",
+      "project_name": "K-Bestie-v3",
+      "task_type": "agy-qa",
+      "tmux_session": "agy-qa-failtest",
+      "start_time": 1785283695014,
+      "log_path": "/tmp/agy-qa-failtest.log",
+      "retry_count": 1,
+      "current_state": "failed",
+      "events_reported": {
+        "start": true,
+        "unresponsive": true,
+        "failed": true
+      },
+      "done_time": null,
+      "confirmed": false,
+      "last_activity_time": 1785283695014
+    }
+  }
+}
