@@ -56,8 +56,14 @@ export default function ParentHomePage() {
   const [invitePopupLoading, setInvitePopupLoading] = useState(true);
   const [inviteActionLoading, setInviteActionLoading] = useState(false);
   const [inviteActionError, setInviteActionError] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
 
   useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setCurrentUserEmail(user?.email?.trim().toLowerCase() ?? "");
+    });
+
     const checkPendingInvite = async () => {
       try {
         setInvitePopupLoading(true);
@@ -71,6 +77,9 @@ export default function ParentHomePage() {
               inviterName: data.invite.inviterName,
             });
             setCurrentFamily(data.currentFamily ?? null);
+          } else {
+            setPendingInvite(null);
+            setCurrentFamily(null);
           }
         }
       } catch (err) {
@@ -128,7 +137,7 @@ export default function ParentHomePage() {
     }
   };
 
-  const renderInvitePopup = () => {
+  const renderInvitePopup = (suppressInitialPrompt = false) => {
     if (!pendingInvite) return null;
 
     // 충돌 상태 계산 (다른 보호자가 있는 기존 가족 소속인 경우)
@@ -137,7 +146,7 @@ export default function ParentHomePage() {
     return (
       <>
         {/* 1단계: 초대 팝업 */}
-        {!showConfirmModal && (
+        {!suppressInitialPrompt && !showConfirmModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
             <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4 text-center">
               <div>
@@ -267,43 +276,9 @@ export default function ParentHomePage() {
   const [famName, setFamName] = useState("");
   const [creatingFam, setCreatingFam] = useState(false);
   const [viewState, setViewState] = useState<"select" | "create_family" | "join_family">("select");
-  const [ownerEmail, setOwnerEmail] = useState("");
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [joining, setJoining] = useState(false);
-  const [joinRequestStatus, setJoinRequestStatus] = useState<"loading" | "none" | "pending">("loading");
   const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
 
   const activeChild = children.find((c) => c.id === store.activeChildId) ?? children[0] ?? null;
-
-  const checkJoinRequest = async () => {
-    if (store.activeFamilyId) {
-      setJoinRequestStatus("none");
-      return;
-    }
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setJoinRequestStatus("none");
-        return;
-      }
-      
-      const { data } = await supabase
-        .from("family_join_requests")
-        .select("id, status")
-        .eq("requester_user_id", user.id)
-        .eq("status", "pending")
-        .maybeSingle();
-
-      if (data) {
-        setJoinRequestStatus("pending");
-      } else {
-        setJoinRequestStatus("none");
-      }
-    } catch {
-      setJoinRequestStatus("none");
-    }
-  };
 
   const loadIncomingRequests = async () => {
     if (store.activeFamilyId) return;
@@ -375,55 +350,9 @@ export default function ParentHomePage() {
 
   useEffect(() => {
     if (mounted && !store.activeFamilyId) {
-      checkJoinRequest();
       loadIncomingRequests();
-    } else if (store.activeFamilyId) {
-      setJoinRequestStatus("none");
     }
   }, [mounted, store.activeFamilyId]);
-
-  useEffect(() => {
-    if (joinRequestStatus !== "pending" || store.activeFamilyId) return;
-    const interval = setInterval(async () => {
-      const { syncChildrenFromDB } = await import("@/lib/store");
-      await syncChildrenFromDB();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [joinRequestStatus, store.activeFamilyId]);
-
-  const handleJoinRequestSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ownerEmail.trim()) return;
-    setJoinError(null);
-    setJoining(true);
-
-    try {
-      const res = await fetch("/api/family-join-requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner_email: ownerEmail.trim() }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setJoinRequestStatus("pending");
-      } else {
-        if (res.status === 404) {
-          setJoinError("해당 이메일로 만든 가족을 찾을 수 없어요");
-        } else if (res.status === 403) {
-          setJoinError("이미 보호자가 2명이라 신청할 수 없어요");
-        } else if (res.status === 409) {
-          setJoinError("이미 신청했거나 구성원이에요");
-        } else {
-          setJoinError(data.error || "신청에 실패했습니다.");
-        }
-      }
-    } catch {
-      setJoinError("네트워크 에러가 발생했습니다.");
-    } finally {
-      setJoining(false);
-    }
-  };
 
   const fetchSeqRef = useRef<number>(0);
 
@@ -508,48 +437,6 @@ export default function ParentHomePage() {
 
   // 가족 만들기 / 참여하기 분기 렌더링
   if (!store.activeFamilyId) {
-    if (joinRequestStatus === "loading") {
-      return (
-        <DemoFrame>
-          <div className="h-full flex items-center justify-center" style={{ background: "var(--color-k-background)" }}>
-            <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
-          </div>
-          {renderInvitePopup()}
-        </DemoFrame>
-      );
-    }
-
-    if (joinRequestStatus === "pending") {
-      return (
-        <DemoFrame>
-          <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
-            <ParentHomeHeader />
-            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
-              <p className="text-5xl">⏳</p>
-              <div>
-                <p className="text-base font-bold text-gray-800">가입 신청 대기 중</p>
-                <p className="text-xs mt-1.5 leading-relaxed text-gray-500">
-                  신청이 접수됐어요. 오너의 승인을 기다려주세요.
-                </p>
-              </div>
-              <button
-                onClick={async () => {
-                  const { syncChildrenFromDB } = await import("@/lib/store");
-                  await syncChildrenFromDB();
-                  await checkJoinRequest();
-                }}
-                className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
-                style={{ background: "var(--color-k-navy)" }}
-              >
-                새로고침
-              </button>
-            </div>
-          </div>
-          {renderInvitePopup()}
-        </DemoFrame>
-      );
-    }
-
     return (
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
@@ -609,11 +496,7 @@ export default function ParentHomePage() {
                   가족 만들기
                 </button>
                 <button
-                  onClick={() => {
-                    setViewState("join_family");
-                    setJoinError(null);
-                    setOwnerEmail("");
-                  }}
+                  onClick={() => setViewState("join_family")}
                   className="w-full py-4 rounded-2xl font-bold text-sm bg-white border border-gray-200 text-gray-700 active:scale-[0.98] transition-transform text-center cursor-pointer"
                 >
                   가족 구성원으로 참여하기
@@ -681,29 +564,64 @@ export default function ParentHomePage() {
               <div>
                 <p className="text-base font-bold text-gray-800">가족 구성원으로 참여하기</p>
                 <p className="text-xs mt-1.5 leading-relaxed text-gray-500">
-                  이미 가족을 만든 오너의 이메일 주소를 입력해 참여 신청을 보내세요.
+                  기존 가족 구성원에게 아래 이메일로 초대를 요청해 주세요.
                 </p>
               </div>
-              <form onSubmit={handleJoinRequestSubmit} className="w-full max-w-xs flex flex-col gap-3">
-                <input
-                  type="email"
-                  placeholder="오너의 이메일 주소"
-                  value={ownerEmail}
-                  onChange={(e) => setOwnerEmail(e.target.value)}
-                  className="w-full rounded-2xl px-4 py-3.5 text-sm border border-gray-200 outline-none bg-white text-center"
-                  required
-                />
-                {joinError && (
-                  <p className="text-xs font-semibold text-red-500 mt-1">{joinError}</p>
+              <div className="w-full max-w-xs flex flex-col gap-3">
+                <div className="w-full rounded-2xl px-4 py-3.5 border border-gray-200 bg-white text-center">
+                  <p className="text-[11px] font-semibold text-gray-400 mb-1">내 로그인 이메일</p>
+                  <p className="text-sm font-bold text-gray-800 break-all">
+                    {currentUserEmail || "이메일을 확인하고 있어요..."}
+                  </p>
+                </div>
+
+                {invitePopupLoading ? (
+                  <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-4">
+                    <p className="text-xs font-semibold text-gray-600">도착한 초대를 확인하고 있어요...</p>
+                  </div>
+                ) : pendingInvite ? (
+                  <div className="rounded-2xl border border-sky-100 bg-white px-4 py-4 text-left shadow-sm">
+                    <p className="text-sm font-bold text-gray-800">
+                      {pendingInvite.familyName} 가족에서 초대가 왔어요
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {pendingInvite.inviterName}님이 보호자로 초대했습니다.
+                    </p>
+                    {inviteActionError && (
+                      <p className="text-xs font-semibold text-red-500 mt-2">{inviteActionError}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2 mt-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInviteActionError(null);
+                          setAgreeTransition(false);
+                          setShowConfirmModal(true);
+                        }}
+                        disabled={inviteActionLoading}
+                        className="py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50"
+                        style={{ background: "var(--color-k-navy)" }}
+                      >
+                        수락
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeclinePendingInvite}
+                        disabled={inviteActionLoading}
+                        className="py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-600 disabled:opacity-50"
+                      >
+                        {inviteActionLoading ? "처리 중..." : "거절"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-4">
+                    <p className="text-sm font-bold text-gray-800">아직 도착한 초대가 없어요</p>
+                    <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                      가족 대표가 보호자 설정에서 위 이메일을 초대하면 이곳에서 수락할 수 있어요.
+                    </p>
+                  </div>
                 )}
-                <button
-                  type="submit"
-                  disabled={joining || !ownerEmail.trim()}
-                  className="w-full py-3.5 rounded-2xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
-                  style={{ background: "var(--color-k-navy)" }}
-                >
-                  {joining ? "신청하는 중..." : "신청하기 →"}
-                </button>
                 <button
                   type="button"
                   onClick={() => setViewState("select")}
@@ -711,11 +629,11 @@ export default function ParentHomePage() {
                 >
                   뒤로 가기
                 </button>
-              </form>
+              </div>
             </div>
           )}
         </div>
-        {renderInvitePopup()}
+        {renderInvitePopup(viewState === "join_family")}
       </DemoFrame>
     );
   }
