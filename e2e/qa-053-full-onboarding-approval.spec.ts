@@ -102,6 +102,9 @@ test("QA-053: 신규 가족 생성부터 관리자 승인과 아이 로그인까
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${BASE}/onboarding`, { waitUntil: "networkidle" });
     await expect(page.getByText("내친구 케이에 오신 것을 환영해요")).toBeVisible();
+    // 주입한 Supabase 세션이 최초 요청에서 갱신되면 온보딩 페이지가 한 차례 다시
+    // 로드될 수 있다. 실제 버튼 동작 검증 전에 그 갱신을 끝까지 기다린다.
+    await page.waitForTimeout(1_500);
     await page.getByRole("button", { name: "나중에 할게요 →" }).click();
     await page.waitForURL(/\/parent\/home/, { timeout: 20_000 });
 
