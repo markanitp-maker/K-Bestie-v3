@@ -15,6 +15,10 @@ import { TestModeERunner } from "@/components/TestModeERunner";
 import { TestModeCDRunner } from "@/components/TestModeCDRunner";
 import { TestModeABRunner } from "@/components/TestModeABRunner";
 import { MissionCompletionController, type MissionCompletionState } from "@/lib/mission/missionCompletionFlow";
+import {
+  getMissionRewardPresentation,
+  shouldShowMissionCompletionModal,
+} from "@/lib/mission/missionRewardPresentation";
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
 import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
 import { ChildConversationContext } from "@/lib/mission/ChildConversationContext";
@@ -1428,6 +1432,7 @@ function MissionInner() {
   // X/닫기 동시·연속 클릭을 막지 못한다(같은 렌더 사이클 내 두 클릭 모두 state를 아직
   // "false"로 봄) - 즉시 갱신되는 ref로 동기 잠금한다.
   const rewardCloseLockRef = useRef(false);
+  const rewardPresentation = getMissionRewardPresentation(rewardStatus);
 
   const handleCloseRewardCompletion = useCallback(() => {
     if (rewardCloseLockRef.current || hasClosedRewardModal) return;
@@ -1454,7 +1459,13 @@ function MissionInner() {
   }, [hasClosedRewardModal, voice, router]);
 
   useEffect(() => {
-    if (missionState === "completed" && !hasClosedRewardModal) {
+    if (
+      shouldShowMissionCompletionModal({
+        missionState,
+        completed,
+        hasClosed: hasClosedRewardModal,
+      })
+    ) {
       const sid = sessionIdRef.current;
       let alreadyClosed = false;
       if (sid) {
@@ -1465,11 +1476,9 @@ function MissionInner() {
         setHasClosedRewardModal(true);
         return;
       }
-      if (rewardStatus === "awarded" || rewardStatus === "already_earned" || rewardStatus === "granted") {
-        setIsRewardModalOpen(true);
-      }
+      setIsRewardModalOpen(true);
     }
-  }, [missionState, rewardStatus, hasClosedRewardModal]);
+  }, [missionState, completed, rewardStatus, hasClosedRewardModal]);
 
   useEffect(() => {
     const qpChild = searchParams.get("childId");
@@ -2396,13 +2405,24 @@ function MissionInner() {
               🔑
             </div>
 
-            <h2 id="reward-modal-title" className="text-[24px] font-extrabold text-[var(--color-k-navy)] mb-1" style={{ animation: "rewardSlideUp 0.35s ease-out forwards" }}>
-              <span className="sr-only">황금열쇠 1개 획득. </span>
-              <span aria-hidden="true">황금열쇠 <span style={{ color: "var(--color-k-orange)" }}>+1</span></span>
+            <h2 id="reward-modal-title" className="text-[24px] font-extrabold text-[var(--color-k-navy)] mb-1 text-center" style={{ animation: "rewardSlideUp 0.35s ease-out forwards" }}>
+              {rewardPresentation.title}
+              {rewardPresentation.awarded && (
+                <>
+                  <span className="sr-only"> 황금열쇠 1개 획득.</span>
+                  <span
+                    aria-hidden="true"
+                    className="ml-1"
+                    style={{ color: "var(--color-k-orange)" }}
+                  >
+                    +1
+                  </span>
+                </>
+              )}
             </h2>
 
             <p id="reward-modal-desc" className="text-gray-500 font-medium text-[15px] mb-8 text-center" style={{ animation: "rewardSlideUp 0.4s ease-out forwards" }}>
-              미션을 완료했어요
+              {rewardPresentation.description}
             </p>
 
             <button
