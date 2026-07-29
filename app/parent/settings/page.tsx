@@ -630,6 +630,7 @@ export default function ParentSettingsPage() {
 
     if (!addFamilyName.trim()) { setAddError("성을 입력해주세요."); return; }
     if (!addGivenName.trim()) { setAddError("이름을 입력해주세요."); return; }
+    if (!addChildGender) { setAddError("성별을 선택해주세요."); return; }
     if (!addUsername.trim()) { setAddError("아이디를 입력해주세요."); return; }
     if (addPassword.length < 6) { setAddError("비밀번호는 6자 이상이어야 합니다."); return; }
     if (addChildInterests.length === 0) { setAddError("관심사를 하나 이상 선택해주세요."); return; }
@@ -642,7 +643,7 @@ export default function ParentSettingsPage() {
         password: addPassword,
         familyName: addFamilyName.trim(),
         givenName: addGivenName.trim(),
-        gender: addChildGender || undefined,
+        gender: addChildGender,
         grade: addChildGrade,
         interests: addChildInterests,
         guardian_consent: addChildConsent
@@ -904,13 +905,13 @@ export default function ParentSettingsPage() {
                       className="px-3.5 py-2 text-xs border border-gray-200 rounded-xl outline-none bg-gray-50/50"
                     />
                     <div>
-                      <p className="text-[10px] font-bold text-gray-500 mb-1 px-1">성별 (선택)</p>
+                      <p className="text-[10px] font-bold text-gray-500 mb-1 px-1">성별</p>
                       <div className="grid grid-cols-2 gap-1.5">
                         {[{ v: "male", label: "남자아이" }, { v: "female", label: "여자아이" }].map((opt) => (
                           <button
                             key={opt.v}
                             type="button"
-                            onClick={() => setAddChildGender((prev) => (prev === opt.v ? "" : opt.v))}
+                            onClick={() => setAddChildGender(opt.v)}
                             className={`py-1.5 text-[10px] font-bold rounded-xl border ${
                               addChildGender === opt.v ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-600"
                             }`}

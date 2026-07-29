@@ -57,7 +57,7 @@ export async function POST(
     password: string;
     familyName?: string;
     givenName?: string;
-    gender?: string;
+    gender: string;
     grade: string;
     interests: string[];
     guardian_consent: boolean;
@@ -71,10 +71,10 @@ export async function POST(
   const { username, password, grade, interests, guardian_consent } = body;
   const familyName = body.familyName;
   const givenName = body.givenName;
-  const gender = typeof body.gender === "string" && body.gender.trim() ? body.gender.trim() : null;
+  const gender = typeof body.gender === "string" ? body.gender.trim() : "";
 
-  if (!familyName?.trim() || !givenName?.trim()) {
-    return NextResponse.json({ error: "성과 이름을 입력해주세요" }, { status: 400 });
+  if (!familyName?.trim() || !givenName?.trim() || !["male", "female"].includes(gender)) {
+    return NextResponse.json({ error: "성, 이름, 성별을 모두 입력해주세요" }, { status: 400 });
   }
   if (!username?.trim() || !password || !grade ||
       !Array.isArray(interests) || interests.length === 0) {

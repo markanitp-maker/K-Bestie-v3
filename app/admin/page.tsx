@@ -1070,6 +1070,7 @@ function ChildApprovalRequestsTab() {
   const [requests, setRequests] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [verifications, setVerifications] = useState<Record<string, { beta: boolean; survey: boolean }>>({});
 
   const [rejectModalId, setRejectModalId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -1086,7 +1087,20 @@ function ChildApprovalRequestsTab() {
     fetch("/api/admin/child-approval-requests")
       .then(r => r.json())
       .then(d => {
-        setRequests(Array.isArray(d) ? d : []);
+        const rows = Array.isArray(d) ? d : [];
+        setRequests(rows);
+        setVerifications((current) => {
+          const next = { ...current };
+          for (const row of rows) {
+            if (!next[row.id]) {
+              next[row.id] = {
+                beta: row.beta_verified === true,
+                survey: row.survey_verified === true,
+              };
+            }
+          }
+          return next;
+        });
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -1095,9 +1109,18 @@ function ChildApprovalRequestsTab() {
   useEffect(() => { load(); }, [load]);
 
   const handleApprove = async (id: string) => {
+    const verification = verifications[id];
+    if (!verification?.beta || !verification?.survey) {
+      setResultToast({ type: "error", text: "베타 신청과 설문 완료를 모두 확인해주세요." });
+      return;
+    }
     setActionLoading(id);
     try {
-      const res = await fetch(`/api/admin/child-approval-requests/${id}/approve`, { method: "POST" });
+      const res = await fetch(`/api/admin/child-approval-requests/${id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ betaVerified: true, surveyVerified: true }),
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setResultToast({ type: "success", text: "승인 처리되었습니다. 아이 계정이 생성됐어요." });
@@ -1168,6 +1191,11 @@ function ChildApprovalRequestsTab() {
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {requests.map((req: any) => {
           const isActionable = req.status === "pending" || req.status === "creation_failed";
+          const verification = verifications[req.id] ?? {
+            beta: req.beta_verified === true,
+            survey: req.survey_verified === true,
+          };
+          const verificationComplete = verification.beta && verification.survey;
           return (
             <div key={req.id} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
@@ -1191,6 +1219,36 @@ function ChildApprovalRequestsTab() {
                       거절 사유: {req.rejected_reason}
                     </div>
                   )}
+                  {isActionable && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--color-k-text-secondary)", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={verification.beta}
+                          onChange={(event) =>
+                            setVerifications((current) => ({
+                              ...current,
+                              [req.id]: { ...verification, beta: event.target.checked },
+                            }))
+                          }
+                        />
+                        베타 신청 확인
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--color-k-text-secondary)", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={verification.survey}
+                          onChange={(event) =>
+                            setVerifications((current) => ({
+                              ...current,
+                              [req.id]: { ...verification, survey: event.target.checked },
+                            }))
+                          }
+                        />
+                        설문 완료 확인
+                      </label>
+                    </div>
+                  )}
                 </div>
                 {isActionable && (
                   <div style={{ display: "flex", gap: 8 }}>
@@ -1206,10 +1264,12 @@ function ChildApprovalRequestsTab() {
                     </button>
                     <button
                       onClick={() => handleApprove(req.id)}
-                      disabled={actionLoading === req.id}
+                      disabled={actionLoading === req.id || !verificationComplete}
                       style={{
                         padding: "6px 12px", borderRadius: 8, border: "none",
-                        background: "var(--color-k-navy)", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                        background: "var(--color-k-navy)", color: "white", fontSize: 12, fontWeight: 700,
+                        cursor: verificationComplete ? "pointer" : "not-allowed",
+                        opacity: verificationComplete ? 1 : 0.45,
                       }}
                     >
                       {req.status === "creation_failed" ? (actionLoading === req.id ? "재시도 중..." : "재시도") : (actionLoading === req.id ? "승인 중..." : "승인")}

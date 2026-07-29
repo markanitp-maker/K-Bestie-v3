@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 // 트랜잭션이 아니라 app/api/families/[id]/children/route.ts(구 즉시생성 흐름)와 동일한
 // 보상-트랜잭션 컨벤션으로 처리한다. 재시도 시 이미 생성된 auth 계정/프로필이 있으면 그대로
 // 재사용하고 중복 생성하지 않는다(admin_claim_child_approval_request가 스냅샷으로 반환).
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
@@ -22,12 +22,27 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  let body: { betaVerified?: boolean; surveyVerified?: boolean };
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+  if (body.betaVerified !== true || body.surveyVerified !== true) {
+    return NextResponse.json(
+      { error: "베타 신청과 설문 완료를 모두 확인해주세요." },
+      { status: 400 }
+    );
+  }
+
   const svc = createServiceClient();
 
   // 1. 클레임 + 스냅샷 조회 (동시 처리 방지 - 이미 처리 중/완료된 요청이면 즉시 중단)
   const { data: claimData, error: claimError } = await svc.rpc("admin_claim_child_approval_request", {
     p_request_id: id,
     p_encryption_key: getChildApprovalEncryptionKey(),
+    p_beta_verified: true,
+    p_survey_verified: true,
   });
 
   if (claimError) {
@@ -82,10 +97,20 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: `계정 생성 실패: ${authError.message}` }, { status: 500 });
     }
     authUserId = authData.user.id;
-    await svc.rpc("admin_record_child_approval_auth_created", {
+    const { data: recordData, error: recordError } = await svc.rpc("admin_record_child_approval_auth_created", {
       p_request_id: id,
       p_auth_user_id: authUserId,
     });
+    if (recordError || !recordData?.[0]?.success) {
+      await svc.auth.admin.deleteUser(authUserId);
+      await svc.rpc("admin_finalize_child_approval_failure", {
+        p_request_id: id,
+        p_admin_user_id: adminUser.id,
+        p_admin_email: adminUser.email!,
+        p_reason: "생성된 계정 연결 정보를 저장하지 못했습니다.",
+      });
+      return NextResponse.json({ error: "계정 연결 정보를 저장하지 못했습니다." }, { status: 500 });
+    }
   }
 
   // 3. family_members -> member_accounts -> child_profiles (실패 시 앞 단계만 보상 삭제, auth는 유지)
@@ -166,6 +191,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   if (finalizeError || !finalizeData?.[0]?.success) {
     console.error("[child-approval-requests/approve] finalize error:", finalizeError, finalizeData);
+    await svc.from("child_profiles").delete().eq("id", child.id);
+    await svc.from("member_accounts").delete().eq("id", authUserId);
+    await svc.from("family_members").delete().eq("id", familyMember.id);
+    await svc.rpc("admin_finalize_child_approval_failure", {
+      p_request_id: id,
+      p_admin_user_id: adminUser.id,
+      p_admin_email: adminUser.email!,
+      p_reason: "승인 확정 처리에 실패했습니다.",
+    });
     return NextResponse.json({ error: "승인 확정 처리에 실패했습니다" }, { status: 500 });
   }
 
