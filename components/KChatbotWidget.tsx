@@ -261,8 +261,11 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
     }
   }, [isOpen]);
 
+  const wasOpenRef = useRef(false);
+
   useEffect(() => {
     if (isOpen) {
+      wasOpenRef.current = true;
       document.body.style.overflow = "hidden";
       document.addEventListener("keydown", handleKeyDown);
       // Focus first element
@@ -273,7 +276,10 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
     } else {
       document.body.style.overflow = "";
       document.removeEventListener("keydown", handleKeyDown);
-      triggerRef.current?.focus();
+      if (wasOpenRef.current) {
+        triggerRef.current?.focus();
+        wasOpenRef.current = false;
+      }
     }
     return () => {
       document.body.style.overflow = "";
@@ -445,7 +451,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        className="fixed z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors select-none"
+        className="fixed z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors select-none focus:outline-none focus-visible:outline-3 focus-visible:outline-k-sky-blue focus-visible:outline-offset-2"
         style={getButtonStyles()}
         aria-label="문의하기 열기"
       >
