@@ -369,44 +369,44 @@ export default function ChildPlayPage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "var(--background-page, #FFF9F2)" }}>
-        
-        {/* 헤더 */}
-        <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top,16px)] mt-4 h-[52px] z-10 w-full max-w-[480px] mx-auto bg-white/50 backdrop-blur-sm border-b border-black/5">
-          <Link href="/child/home" className="w-[80px] h-[44px] flex items-center text-sm font-bold" style={{ color: "var(--color-k-navy)" }} aria-label="아이 홈으로 돌아가기">
+
+        {/* 헤더 (046: 56~64px 소형 헤더로 축소, 별도 mt-4 마진 제거) */}
+        <div className="shrink-0 flex items-center justify-between px-4 z-10 w-full max-w-[430px] mx-auto bg-white/50 backdrop-blur-sm border-b border-black/5" style={{ paddingTop: "max(10px, env(safe-area-inset-top))", paddingBottom: "10px" }}>
+          <Link href="/child/home" className="w-[70px] h-[40px] flex items-center text-sm font-bold" style={{ color: "var(--color-k-navy)" }} aria-label="아이 홈으로 돌아가기">
             ← 뒤로
           </Link>
           <h1 className="flex-1 text-center text-base font-bold truncate px-2" style={{ color: "var(--color-k-navy)" }}>
             케이와 놀이
           </h1>
-          <div className="w-[80px] flex justify-end">
-            <button 
+          <div className="w-[70px] flex justify-end">
+            <button
               onClick={handleLogout}
               disabled={isLogoutProcessing}
-              className="w-[44px] h-[44px] flex items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
+              className="w-[40px] h-[40px] flex items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
               aria-label="로그아웃"
             >
-              <LogOut size={20} color="var(--color-k-navy)" />
+              <LogOut size={18} color="var(--color-k-navy)" />
             </button>
           </div>
         </div>
 
-        {/* 메인 스크롤 영역 */}
-        <div className="flex-1 overflow-y-auto w-full max-w-[480px] mx-auto pb-[180px] relative z-10">
-          
-          {/* 황금열쇠 보유 현황 카드 */}
-          <div className="px-4 mt-5">
-            <div className="bg-white rounded-[20px] shadow-sm flex items-center justify-between p-4" style={{ border: "1px solid rgba(226, 91, 18, 0.1)" }}>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🔑</span>
+        {/* 메인 스크롤 영역 (046: 하단 CTA를 자연스러운 흐름 안으로 이동, 큰 고정 pb 제거) */}
+        <div className="flex-1 overflow-y-auto w-full max-w-[430px] mx-auto px-3 relative z-10">
+
+          {/* 황금열쇠 보유 현황 카드 (046: 한 줄형 소형 카드) */}
+          <div className="mt-3">
+            <div className="bg-white rounded-[16px] shadow-sm flex items-center justify-between px-3.5 py-2" style={{ border: "1px solid rgba(226, 91, 18, 0.1)", minHeight: 68 }}>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[22px]">🔑</span>
                 {goldKeyBalance === null ? (
-                  <div className="w-[56px] h-[20px] bg-black/10 rounded animate-pulse" />
+                  <div className="w-[56px] h-[18px] bg-black/10 rounded animate-pulse" />
                 ) : (
-                  <span className="font-bold text-base" style={{ color: "var(--color-k-navy)" }}>열쇠 {goldKeyBalance}개</span>
+                  <span className="font-bold text-[17px]" style={{ color: "var(--color-k-navy)" }}>열쇠 {goldKeyBalance}개</span>
                 )}
               </div>
-              <Link 
-                href="/child/missions" 
-                className="px-4 py-2.5 rounded-[16px] font-bold text-sm text-white shadow-sm transition-transform active:scale-95 flex items-center justify-center min-h-[44px]"
+              <Link
+                href="/child/missions"
+                className="px-3.5 rounded-[14px] font-bold text-[13px] text-white shadow-sm transition-transform active:scale-95 flex items-center justify-center h-[42px]"
                 style={{ background: "var(--color-k-orange, #E25B12)" }}
                 aria-label="미션으로 이동해 황금열쇠 모으기"
               >
@@ -415,38 +415,37 @@ export default function ChildPlayPage() {
             </div>
           </div>
 
-          {/* 열쇠로 열어요 */}
-          <div className="px-4 mt-5">
-            <h2 className="text-lg font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>열쇠로 열어요</h2>
-            <div className="grid grid-cols-2 gap-2.5">
+          {/* 열쇠로 열어요 (046: 카드 소형화, 큰 상태 배지 제거 → 열쇠 필요 수량만 표시, 2줄 설명 추가) */}
+          <div className="mt-4">
+            <h2 className="text-[18px] font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>열쇠로 열어요</h2>
+            <div className="grid grid-cols-2 gap-2">
               {/* 퀴즈마스터 */}
               {(() => {
                 const game = GAMES.find(g => g.id === "quizmaster")!;
+                const locked = goldKeyBalance !== null && goldKeyBalance < game.keys;
                 return (
                   <button
                     key={game.id}
                     onClick={() => handleGameClick(game)}
-                    className="flex flex-col justify-between rounded-[20px] p-4 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5 h-[120px]"
+                    className="flex flex-col rounded-[17px] p-2.5 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5 min-h-[112px] max-h-[138px]"
                     style={{ background: "var(--color-k-info-bg)" }}
                     aria-label={`퀴즈마스터, 황금열쇠 ${game.keys}개 필요`}
                   >
                     <div className="flex justify-between items-start w-full">
-                      <div className="w-[56px] h-[56px] rounded-[16px] flex items-center justify-center text-3xl bg-white shadow-sm">
+                      <div className="w-[44px] h-[44px] rounded-[12px] flex items-center justify-center text-[26px] bg-white shadow-sm shrink-0">
                         {game.icon}
                       </div>
-                      <div className="bg-white px-2.5 py-1 rounded-full text-[13px] font-bold flex items-center gap-1 shadow-sm" style={{ color: "var(--color-k-navy)" }}>
+                      <div className="bg-white px-2 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 shadow-sm shrink-0" style={{ color: "var(--color-k-navy)" }}>
                         {goldKeyBalance === null ? (
-                          <div className="w-[80px] h-[14px] bg-gray-200 rounded animate-pulse" />
-                        ) : goldKeyBalance >= game.keys ? (
-                          <>🔓 시작할 수 있어요</>
+                          <div className="w-[40px] h-[12px] bg-gray-200 rounded animate-pulse" />
                         ) : (
-                          <>🔒 열쇠가 더 필요해요</>
+                          <>{locked ? "🔒" : "🔑"} {game.keys}개 필요</>
                         )}
                       </div>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-[15px] leading-tight" style={{ color: "var(--color-k-navy)" }}>{game.title}</h3>
-                      <p className="text-[13px] font-bold mt-0.5" style={{ color: "var(--color-k-sky-blue)" }}>🔑 {game.keys}개 필요</p>
+                    <div className="mt-1.5">
+                      <h3 className="font-bold text-[15px] leading-[1.25] truncate" style={{ color: "var(--color-k-navy)" }}>{game.title}</h3>
+                      <p className="text-[11px] leading-[1.3] mt-0.5 line-clamp-2" style={{ color: "var(--color-k-text-secondary)" }}>친구들과 퀴즈 대결,<br />1등에 도전해!</p>
                     </div>
                   </button>
                 );
@@ -455,32 +454,30 @@ export default function ChildPlayPage() {
               {/* 오늘의 나 (MBTI) */}
               {(() => {
                 const game = GAMES.find(g => g.id === "mbti")!;
+                const locked = goldKeyBalance !== null && goldKeyBalance < game.keys;
                 return (
                   <button
                     key={game.id}
                     onClick={() => handleGameClick(game)}
-                    className="flex flex-col justify-between rounded-[20px] p-4 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5 h-[130px]"
+                    className="flex flex-col rounded-[17px] p-2.5 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5 min-h-[112px] max-h-[138px]"
                     style={{ background: "var(--color-k-navy-tint)" }}
                     aria-label={`오늘의 나, 황금열쇠 ${game.keys}개 필요`}
                   >
                     <div className="flex justify-between items-start w-full">
-                      <div className="w-[56px] h-[56px] rounded-[16px] flex items-center justify-center text-3xl bg-white shadow-sm">
+                      <div className="w-[44px] h-[44px] rounded-[12px] flex items-center justify-center text-[26px] bg-white shadow-sm shrink-0">
                         {game.icon}
                       </div>
-                      <div className="bg-white px-2.5 py-1 rounded-full text-[13px] font-bold flex items-center gap-1 shadow-sm" style={{ color: "var(--color-k-navy)" }}>
+                      <div className="bg-white px-2 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 shadow-sm shrink-0" style={{ color: "var(--color-k-navy)" }}>
                         {goldKeyBalance === null ? (
-                          <div className="w-[80px] h-[14px] bg-gray-200 rounded animate-pulse" />
-                        ) : goldKeyBalance >= game.keys ? (
-                          <>🔓 시작할 수 있어요</>
+                          <div className="w-[40px] h-[12px] bg-gray-200 rounded animate-pulse" />
                         ) : (
-                          <>🔒 열쇠가 더 필요해요</>
+                          <>{locked ? "🔒" : "🔑"} {game.keys}개 필요</>
                         )}
                       </div>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-[15px] leading-tight" style={{ color: "var(--color-k-navy)" }}>오늘의 나</h3>
-                      <p className="text-[12px] mt-0.5" style={{ color: "var(--color-k-text-secondary)" }}>나의 성향 알아보기</p>
-                      <p className="text-[13px] font-bold mt-0.5" style={{ color: "var(--color-k-orange)" }}>🔑 {game.keys}개 필요</p>
+                    <div className="mt-1.5">
+                      <h3 className="font-bold text-[15px] leading-[1.25] truncate" style={{ color: "var(--color-k-navy)" }}>오늘의 나</h3>
+                      <p className="text-[11px] leading-[1.3] mt-0.5 line-clamp-2" style={{ color: "var(--color-k-text-secondary)" }}>변하는 나의 성격을<br />다시 측정해!</p>
                     </div>
                   </button>
                 );
@@ -488,22 +485,22 @@ export default function ChildPlayPage() {
             </div>
           </div>
 
-          {/* 곧 만나요 */}
-          <div className="px-4 mt-5">
-            <h2 className="text-lg font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>곧 만나요</h2>
-            <div className="grid grid-cols-2 gap-2.5">
+          {/* 곧 만나요 (046: 카드 소형화) */}
+          <div className="mt-4">
+            <h2 className="text-[18px] font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>곧 만나요</h2>
+            <div className="grid grid-cols-2 gap-2">
               {/* 만화책 읽기 */}
               {(() => {
                 const game = GAMES.find(g => g.id === "comic_book")!;
                 return (
                   <div
                     key={game.id}
-                    className="flex flex-col justify-center items-center rounded-[20px] p-3 shadow-sm border border-black/5 opacity-70 h-[90px]"
+                    className="flex flex-col justify-center items-center rounded-[16px] p-2 shadow-sm border border-black/5 opacity-70 min-h-[82px] max-h-[96px]"
                     style={{ background: "var(--color-warm-neutral-100)" }}
                   >
-                    <div className="text-2xl mb-1 grayscale">{game.icon}</div>
-                    <h3 className="font-bold text-[13px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
-                    <div className="bg-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
+                    <div className="text-xl mb-1 grayscale">{game.icon}</div>
+                    <h3 className="font-bold text-[12px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
+                    <div className="bg-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
                       준비 중
                     </div>
                   </div>
@@ -516,12 +513,12 @@ export default function ChildPlayPage() {
                 return (
                   <div
                     key={game.id}
-                    className="flex flex-col justify-center items-center rounded-[20px] p-3 shadow-sm border border-black/5 opacity-70 h-[90px]"
+                    className="flex flex-col justify-center items-center rounded-[16px] p-2 shadow-sm border border-black/5 opacity-70 min-h-[82px] max-h-[96px]"
                     style={{ background: "var(--color-warm-neutral-100)" }}
                   >
-                    <div className="text-2xl mb-1 grayscale">{game.icon}</div>
-                    <h3 className="font-bold text-[13px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
-                    <div className="bg-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
+                    <div className="text-xl mb-1 grayscale">{game.icon}</div>
+                    <h3 className="font-bold text-[12px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
+                    <div className="bg-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
                       준비 중
                     </div>
                   </div>
@@ -530,37 +527,36 @@ export default function ChildPlayPage() {
             </div>
           </div>
 
-        </div>
-
-        {/* 하단 케이 마스코트 영역 (Fixed) */}
-        <div className="absolute bottom-0 w-full max-w-[480px] left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-          <div className="flex items-end justify-between px-4 pb-[env(safe-area-inset-bottom,16px)] w-full relative">
-            <div className="w-[120px] shrink-0 z-10 pointer-events-auto">
-              <Image 
-                src="/Images/mascot/mascot-standing.png" 
-                alt="케이 마스코트" 
+          {/* 하단 케이 마스코트 + 미션 CTA (046: absolute/fixed 제거 - 자연스러운 문서 흐름으로 이동해
+              "곧 만나요"와 CTA 사이의 큰 고정 공백을 제거. 마스코트가 잘리지 않도록 실제 크기로 표시 */}
+          <div className="mt-6 mb-4 grid gap-3 items-end" style={{ gridTemplateColumns: "minmax(90px, 0.8fr) minmax(150px, 1.2fr)" }}>
+            <div className="shrink-0">
+              <Image
+                src="/Images/mascot/mascot-standing.png"
+                alt="케이 마스코트"
                 width={120}
                 height={120}
-                className="w-full h-auto object-contain drop-shadow-md -mb-2"
-                style={{ filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.1))" }}
+                className="object-contain drop-shadow-md"
+                style={{ width: "clamp(90px, 28vw, 120px)", height: "auto", filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.1))" }}
                 priority
               />
             </div>
-            
-            <div className="flex-1 flex flex-col items-end mb-4 ml-[-10px] pointer-events-auto z-20">
-              <div className="relative bg-white px-4 py-3 rounded-2xl rounded-bl-sm border-2 shadow-sm mb-3 text-center max-w-full" style={{ borderColor: "var(--color-k-orange, #E25B12)" }}>
-                <p className="text-[13px] sm:text-sm font-bold" style={{ color: "var(--color-k-navy)" }}>미션 하면 열쇠를 줄게!</p>
+
+            <div className="flex flex-col items-stretch">
+              <div className="relative bg-white px-4 rounded-2xl rounded-bl-sm border-2 shadow-sm mb-2 text-center flex items-center justify-center" style={{ borderColor: "var(--color-k-orange, #E25B12)", minHeight: 44, maxHeight: 48 }}>
+                <p className="text-[13px] font-bold" style={{ color: "var(--color-k-navy)" }}>미션 하면 열쇠를 줄게!</p>
               </div>
-              
-              <Link 
+
+              <Link
                 href="/child/missions"
-                className="text-white font-bold py-3 px-5 rounded-[16px] shadow-md transition-transform active:scale-95 flex items-center min-h-[44px]"
-                style={{ background: "var(--color-k-orange, #E25B12)" }}
+                className="text-white font-bold rounded-[16px] shadow-md transition-transform active:scale-95 flex items-center justify-center text-[15px]"
+                style={{ background: "var(--color-k-orange, #E25B12)", height: 46 }}
               >
                 미션하러 가기 →
               </Link>
             </div>
           </div>
+
         </div>
 
         {/* 1. 이어하기/시작하기 액션 모달 */}
