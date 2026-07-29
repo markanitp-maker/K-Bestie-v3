@@ -23,14 +23,14 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { childId?: string; roundType?: RoundType; confirmRestart?: boolean };
+  let body: { childId?: string; roundType?: RoundType; confirmRestart?: boolean; checkOnly?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { childId, roundType, confirmRestart } = body;
+  const { childId, roundType, confirmRestart, checkOnly } = body;
   if (!childId || !roundType) {
     return NextResponse.json({ error: "childId, roundType required" }, { status: 400 });
   }
@@ -168,6 +168,13 @@ export async function POST(req: NextRequest) {
         .map((qid) => (existingQuestions ?? []).find((q) => q.id === qid))
         .filter(Boolean);
 
+      // 037 §5·§12·§13/codex 지적: 복원할 질문이 실제로 존재하지 않으면(삭제된 문항 등) 빈
+      // 질문 목록으로 이어하기를 성공 처리하지 말고 복원 실패로 보고한다 - 세션은 삭제하지 않는다.
+      if (existingIds.length > 0 && orderedExisting.length === 0) {
+        console.error("[start/route] Resume restore failed: no matching questions found for existing session", { existingSessionId, existingIds });
+        return NextResponse.json({ error: "진행 중인 미션을 불러오지 못했어요", sessionId: existingSessionId }, { status: 500 });
+      }
+
       const progressPercent = (existingProgress.valid_answer_count ?? 0) * (isExistingV2 ? 10 : 20);
       const isCompleted = existingProgress.status === "COMPLETED" || (existingProgress.valid_answer_count ?? 0) >= reqCount;
 
@@ -190,6 +197,10 @@ export async function POST(req: NextRequest) {
         childContext,
       });
     }
+  }
+
+  if (checkOnly) {
+    return NextResponse.json({ resumed: false, checkOnly: true, tier, voiceMode, liveVoiceName, givenName });
   }
 
   if (!childProfile) {
@@ -304,6 +315,79 @@ export async function POST(req: NextRequest) {
   const { error: progErr } = await service.from("mission_progress").insert(progressInsertPayload);
 
   if (!progErr) {
+    // 037 §9: 시작하기 버튼 중복 클릭으로 인한 세션 다중 생성 방지 (Post-verification)
+    // codex 리뷰 지적: PostgREST의 .neq()는 SQL NULL 3치 논리상 status IS NULL인 행(레거시 V1)을
+    // 결과에서 아예 제외한다 - DB 필터 대신 JS에서 직접 비교해(위 todaySessionRow 조회와 동일한
+    // "!== COMPLETED"를 null-안전하게 적용하는 기존 관례) V1 세션도 활성 후보에 포함시킨다.
+    const { data: activeSessionsRaw } = await service
+      .from("chat_sessions")
+      .select("id, started_at, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version)")
+      .eq("child_id", childId)
+      .eq("session_type", "mission")
+      .gte("started_at", startOfDayKst)
+      .lte("started_at", endOfDayKst)
+      .eq("mission_progress.round_type", roundType)
+      .order("started_at", { ascending: true }); // 먼저 생성된 것 우선
+
+    const activeSessions = (activeSessionsRaw ?? []).filter((row) => {
+      const p = Array.isArray(row.mission_progress) ? row.mission_progress[0] : row.mission_progress;
+      return p?.status !== "COMPLETED";
+    });
+
+    // 만약 활성 세션이 2개 이상이고, 지금 방금 만든 세션이 제일 먼저 생성된(최우선) 세션이 아니라면
+    if (activeSessions.length > 1 && activeSessions[0].id !== session.id) {
+      console.warn("[start/route] Concurrency detected. Rolling back the newly created session and reusing the older active session.");
+      await rollbackSession(session.id);
+      
+      const retrySessionRow = activeSessions[0];
+      const retrySessionId = retrySessionRow.id;
+      const retryProgress = Array.isArray(retrySessionRow.mission_progress)
+        ? retrySessionRow.mission_progress[0]
+        : retrySessionRow.mission_progress;
+        
+      if (retryProgress?.status === "SAFETY_PAUSED") {
+        return NextResponse.json(
+          { error: "Mission is safety paused pending review", status: "SAFETY_PAUSED", sessionId: retrySessionId },
+          { status: 423 }
+        );
+      }
+
+      const isRetryV2 = retryProgress?.engine_version === "v2";
+      const retryReqCount = isRetryV2 ? (retryProgress?.required_valid_count ?? 10) : 5;
+
+      const retryIds: string[] = retryProgress?.question_ids ?? [];
+      const { data: retryQuestions } = await service
+        .from("mission_questions")
+        .select("id, question_text, dashboard_area_tag, cycle_type, round_type")
+        .in("id", retryIds);
+
+      const orderedRetry = retryIds
+        .map((qid) => (retryQuestions ?? []).find((q) => q.id === qid))
+        .filter(Boolean);
+
+      const retryPercent = (retryProgress?.valid_answer_count ?? 0) * (isRetryV2 ? 10 : 20);
+      const isRetryCompleted = retryProgress?.status === "COMPLETED" || (retryProgress?.valid_answer_count ?? 0) >= retryReqCount;
+
+      return NextResponse.json({
+        resumed: true,
+        sessionId: retrySessionId,
+        roundType,
+        requiredCount: retryReqCount,
+        progressPercent: retryPercent,
+        completed: isRetryCompleted,
+        engine_version: isRetryV2 ? "v2" : "v1",
+        questionIds: retryIds,
+        questions: orderedRetry,
+        questionStates: retryProgress?.question_states ?? {},
+        validAnswerCount: retryProgress?.valid_answer_count ?? 0,
+        tier,
+        voiceMode,
+        liveVoiceName,
+        givenName,
+        childContext,
+      });
+    }
+
     const { data: childData } = await service.from("child_profiles").select("family_id").eq("id", childId).single();
     
     let cMode = null;

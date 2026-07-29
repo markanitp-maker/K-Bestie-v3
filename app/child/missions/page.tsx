@@ -95,6 +95,7 @@ function MissionInner() {
   // 확인 없이 조용히 새 세션이 만들어지던 문제 수정 — 서버가 requiresConfirmation을 반환하면
   // 이 phase로 멈추고 확인 UI를 보여준다(진행 중/미완료 세션에는 영향 없음).
   const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "confirm_restart_after_completion">("loading");
+  const [entryStatus, setEntryStatus] = useState<"checking" | "ready_to_start" | "ready_to_resume" | "starting" | "resuming" | "active" | "error">("checking");
   // 한 번만 소비되는 플래그(ref) — URL 쿼리에 남기면 이후 재진입 때도 계속 true로
   // 남아 두 번째부터는 확인 없이 넘어가 버리므로, 컴포넌트 상태로만 들고 있다가
   // 이 effect 시작 시 즉시 리셋한다. restartTrigger는 같은 effect를 다시 실행시키기
@@ -1306,10 +1307,11 @@ function MissionInner() {
   const [autoStartFailed, setAutoStartFailed] = useState(false);
   const hasAutoStartedRef = useRef(false);
 
-  // 자동/수동 무관하게 첫 진입 시 무조건 세션 시작 (연결은 해 둬야 대화/history가 보임)
+  // 037: 자동/수동 무관하게 세션 연결은 반드시 시작하기/이어하기 버튼 클릭(active 진입) 이후에만 수행한다
   useEffect(() => {
     if (
       phase === "ready" &&
+      entryStatus === "active" &&
       mode === "voice" &&
       voice.status !== "live" &&
       voice.status !== "connecting" &&
@@ -1318,7 +1320,7 @@ function MissionInner() {
       hasAutoStartedRef.current = true;
       void voice.startSession();
     }
-  }, [phase, mode, voice.status, voice]);
+  }, [phase, entryStatus, mode, voice.status, voice]);
 
   // 세션 상태 감시 및 자동 시작 실패 감지
   useEffect(() => {
@@ -1478,26 +1480,236 @@ function MissionInner() {
     const storedVoiceInputMode = localStorage.getItem(`k_voice_input_mode:${cid}`);
     if (storedVoiceInputMode === "manual") setIsAuto(false);
 
-    let cancelled = false;
-    (async () => {
-      const hour = getKstHour();
-      const qpRound = searchParams.get("roundType") as RoundType | null;
+  }, [searchParams, router]);
+  const fetchSessionData = useCallback(async (cid: string, round: RoundType, confirmRestart: boolean, isCheckOnly: boolean, signal?: AbortSignal) => {
+    try {
+      const res = await fetch("/api/mission/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ childId: cid, roundType: round, confirmRestart, checkOnly: isCheckOnly }),
+        signal
+      });
+      const data = await res.json();
+      logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
+      if (signal?.aborted) return;
 
-      // 운영시간 게이트 on/off — 서버 환경변수 MISSION_TIME_GATE_ENABLED(단일 플래그)로 제어.
-      // 값이 "true"일 때만 기존 제한이 적용되고, 그 외에는 기본적으로 비활성화(시간 무관 진입
-      // 가능)된다. 게이트 로직(getKstHour/currentRound) 자체는 그대로 유지 — 이 스위치는
-      // 적용 여부만 바꾼다. 조회 실패 시에도 기본값(false, 제한 비활성화)으로 안전하게 진행한다.
+      if (!res.ok) {
+        setErrorMsg(data.error ?? "미션을 시작하지 못했어요");
+        setPhase("error");
+        setEntryStatus("error");
+        return;
+      }
+
+      if (data.requiresConfirmation) {
+        setPhase("confirm_restart_after_completion");
+        return;
+      }
+
+      if (isCheckOnly && !data.resumed) {
+        setVoiceMode((data.voiceMode as VoiceMode) ?? "stt_tts");
+        if (typeof data.liveVoiceName === "string" && data.liveVoiceName) {
+          setLiveVoiceName(data.liveVoiceName);
+        }
+        setPhase("ready");
+        setEntryStatus("ready_to_start");
+        return;
+      }
+
+      setSessionId(data.sessionId);
+      sessionIdRef.current = data.sessionId;
+
+      if (navigator.serviceWorker?.controller) {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = (e) => {
+          fetch("/api/client-version", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: data.sessionId,
+              childId: cid,
+              clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
+              swVersion: e.data?.swVersion ?? "unknown",
+            }),
+          }).catch(() => {});
+        };
+        navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" }, [channel.port2]);
+      } else {
+        fetch("/api/client-version", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: data.sessionId,
+            childId: cid,
+            clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
+            swVersion: "no-sw-controller",
+          }),
+        }).catch(() => {});
+      }
+      
+      const qs: MissionQuestion[] = data.questions ?? [];
+      childContextRef.current = data.childContext ?? null;
+
+      if (data.resumed) {
+        const resumedStates: Record<string, QuestionState> = data.questionStates ?? {};
+        questionStatesRef.current = resumedStates;
+        currentIndexRef.current = findResumeIndex(qs, resumedStates);
+        setGauge(data.validAnswerCount ?? 0);
+        setProgressPercent(data.progressPercent ?? 0);
+        setRequiredCount(data.requiredCount ?? 5);
+        setCompleted(data.completed ?? false);
+        setEngineVersion(data.engine_version ?? "v1");
+      } else {
+        if (qs.length > 0) {
+           const isDay = round === "round1_day";
+           const givenName = typeof data.givenName === "string" ? data.givenName : null;
+           const greetingIntro = givenName ? `안녕~ ${appendVocative(givenName)}.` : "안녕~";
+           const memoryGreeting =
+             typeof data.memoryGreeting === "string" && data.memoryGreeting.trim()
+               ? data.memoryGreeting.trim()
+               : null;
+           const greetingText =
+             memoryGreeting ??
+             (isDay
+               ? (Math.random() > 0.5
+                  ? `${greetingIntro} 어제는 잘 잤니?`
+                  : `${greetingIntro} 학교는 잘 다녀왔니?`)
+               : `${greetingIntro} 오늘 하루 어땠니?`);
+
+           qs.unshift({
+             id: "greeting_turn_0",
+             question_text: greetingText,
+             dashboard_area_tag: "greeting",
+             cycle_type: "greeting",
+             round_type: round
+           });
+        }
+        const initStates: Record<string, QuestionState> = {};
+        for (const q of qs) initStates[q.id] = "pending";
+        questionStatesRef.current = initStates;
+        currentIndexRef.current = 0;
+        setProgressPercent(0);
+        setRequiredCount(data.requiredCount ?? 5);
+        setCompleted(false);
+        setEngineVersion(data.engine_version ?? "v1");
+      }
+
+      setQuestions(qs);
+      questionsRef.current = qs;
+      setVoiceMode((data.voiceMode as VoiceMode) ?? "stt_tts");
+      if (typeof data.liveVoiceName === "string" && data.liveVoiceName) {
+        setLiveVoiceName(data.liveVoiceName);
+      }
+
+      try {
+        logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_start" });
+        const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`, { signal });
+        if (msgRes.ok) {
+          const msgData = await msgRes.json();
+          logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_complete", extra: { messageCount: msgData.messages?.length ?? 0 } });
+          const past: Turn[] = (msgData.messages ?? [])
+            .filter((m: any) => m.content && m.content.trim() !== "" && (m.turn_status ? m.turn_status === "finalized" : true))
+            .map((m: any) => ({ role: m.role, text: m.content, displaySequence: m.display_sequence }));
+          pastMessagesRef.current = past;
+        }
+      } catch {}
+      if (signal?.aborted) return;
+
+      // 037 §18/codex 지적: 조회된 기존 세션이 status="COMPLETED"로 명시 갱신되진 않았지만
+      // (레거시 V1 등) valid_answer_count로는 이미 완료 조건을 만족하는 경우, "이어하기" 게이트를
+      // 보여주면 안 된다 - 이미 검증된 "다시 할래요/미션 나가기" 확인 게이트로 동일하게 처리한다.
+      if (isCheckOnly && data.resumed && data.completed) {
+        setPhase("confirm_restart_after_completion");
+        return;
+      }
+
+      setPhase("ready");
+      if (isCheckOnly && data.resumed) {
+        setEntryStatus("ready_to_resume");
+      } else {
+        setEntryStatus("active");
+      }
+    } catch (e: any) {
+      if (signal?.aborted || e.name === "AbortError") return;
+      setErrorMsg((e as Error).message);
+      setPhase("error");
+      setEntryStatus("error");
+    }
+  }, []);
+
+  const isStartingRef = useRef(false);
+  // 037 §21/§22: 조회·시작·이어하기 실패 후 "다시 시도"가 정확히 직전에 하려던
+  // 동작(확인/시작/이어하기)을 그대로 재시도하도록, 실행 직전에 그 재시도 함수 자체를 담아둔다.
+  // 초기값은 마운트 시점의 "확인" 단계 재시도용 - restartTrigger를 증가시켜 마운트 effect를 다시 돈다.
+  const lastAttemptFnRef = useRef<() => void>(() => setRestartTrigger((t) => t + 1));
+  // codex 037 리뷰 지적: 실패 시 entryStatus 자체가 "error"로 덮어써져서, 실패 화면에서
+  // entryStatus를 보고 "시작 실패였는지/이어하기 실패였는지" 구분할 수 없었다 - 별도 ref로 보존한다.
+  const attemptKindRef = useRef<"checking" | "starting" | "resuming">("checking");
+
+  const handleStartMission = () => {
+    if (!childIdRef.current || !roundType) return;
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
+    setEntryStatus("starting");
+    attemptKindRef.current = "starting";
+    lastAttemptFnRef.current = handleStartMission;
+    void fetchSessionData(childIdRef.current, roundType, confirmRestartRef.current, false).finally(() => {
+      isStartingRef.current = false;
+    });
+  };
+
+  const handleResumeMission = () => {
+    if (!childIdRef.current || !roundType) return;
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
+    setEntryStatus("resuming");
+    attemptKindRef.current = "resuming";
+    lastAttemptFnRef.current = handleResumeMission;
+    void fetchSessionData(childIdRef.current, roundType, confirmRestartRef.current, false).finally(() => {
+      isStartingRef.current = false;
+    });
+  };
+
+  const handleRetryAfterError = () => {
+    setPhase("loading");
+    setEntryStatus("checking");
+    lastAttemptFnRef.current();
+  };
+
+  useEffect(() => {
+    const abortController = new AbortController();
+    void (async () => {
+      // 037 QA 실측 확인(agy-qa-037 + 메인 Claude 재현): 이 effect가 childIdRef.current에만
+      // 의존하면, 최초 마운트 시 childId를 설정하는 위 effect(line ~1471)의 setChildId(cid)가
+      // 아직 커밋되지 않은 상태에서(ref는 렌더 시점에만 갱신됨) 이 effect가 같은 커밋에서
+      // 함께 실행돼 childIdRef.current가 여전히 null인 채로 읽혀 "childId is missing" 오류로
+      // 빠지는 실제 회귀가 있었다(쿼리파라미터 없이 홈에서 진입하는 정상 플로우에서 매번 발생).
+      // ref/state 왕복에 의존하지 않도록 위 effect와 동일하게 쿼리파라미터/localStorage에서
+      // 직접 재계산한다.
+      let cid = childIdRef.current
+        ?? searchParams?.get("childId")
+        ?? (typeof window !== "undefined" ? localStorage.getItem("k_child_id") : null);
+      if (!cid) {
+        setPhase("error");
+        setErrorMsg("childId is missing");
+        return;
+      }
+      if (cid !== childIdRef.current) {
+        setChildId(cid);
+        childIdRef.current = cid;
+      }
+
+      const hour = getKstHour();
+      const qpRound = searchParams?.get("roundType") as RoundType | null;
+
       let timeRestrictionsEnabled = false;
       try {
-        const cfgRes = await fetch("/api/config/child-time-restrictions");
+        const cfgRes = await fetch("/api/config/child-time-restrictions", { signal: abortController.signal });
         if (cfgRes.ok) {
           const cfg = await cfgRes.json();
           if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
         }
-      } catch {
-        // 조회 실패 — 기본값(false, 제한 비활성화)으로 안전하게 진행
-      }
-      if (cancelled) return;
+      } catch {}
+      if (abortController.signal.aborted) return;
 
       const round: RoundType | null =
         qpRound ?? currentRound(hour) ?? (!timeRestrictionsEnabled ? "common" : null);
@@ -1507,148 +1719,19 @@ function MissionInner() {
       }
       setRoundType(round);
 
-      try {
-        const confirmRestart = confirmRestartRef.current;
-        confirmRestartRef.current = false; // 한 번만 소비 — 다음 재진입 때 다시 확인받아야 한다
-        const res = await fetch("/api/mission/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ childId: cid, roundType: round, confirmRestart }),
-        });
-        const data = await res.json();
-        logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
-        if (cancelled) return;
-        if (!res.ok) {
-          setErrorMsg(data.error ?? "미션을 시작하지 못했어요");
-          setPhase("error");
-          return;
-        }
-        // 022: 오늘 이미 완료(COMPLETED)한 라운드 — 새 세션을 만들기 전에 확인부터 받는다.
-        if (data.requiresConfirmation) {
-          setPhase("confirm_restart_after_completion");
-          return;
-        }
-        setSessionId(data.sessionId);
-        sessionIdRef.current = data.sessionId;
-
-        if (navigator.serviceWorker?.controller) {
-          const channel = new MessageChannel();
-          channel.port1.onmessage = (e) => {
-            fetch("/api/client-version", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sessionId: data.sessionId,
-                childId: cid,
-                clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
-                swVersion: e.data?.swVersion ?? "unknown",
-              }),
-            }).catch(() => {});
-          };
-          navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" }, [channel.port2]);
-        } else {
-          fetch("/api/client-version", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              sessionId: data.sessionId,
-              childId: cid,
-              clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
-              swVersion: "no-sw-controller",
-            }),
-          }).catch(() => {});
-        }
-        const qs: MissionQuestion[] = data.questions ?? [];
-        childContextRef.current = data.childContext ?? null;
-
-        if (data.resumed) {
-          const resumedStates: Record<string, QuestionState> = data.questionStates ?? {};
-          questionStatesRef.current = resumedStates;
-          currentIndexRef.current = findResumeIndex(qs, resumedStates);
-          setGauge(data.validAnswerCount ?? 0);
-          setProgressPercent(data.progressPercent ?? 0);
-          setRequiredCount(data.requiredCount ?? 5);
-          setCompleted(data.completed ?? false);
-          setEngineVersion(data.engine_version ?? "v1");
-        } else {
-          if (qs.length > 0) {
-             // 012: 인사 문구용 이름은 /api/child/me를 별도로 부르지 않고, 이미 await한
-             // /api/mission/start 응답의 givenName(childProfile.given_name — 케이가 아이를
-             // 부를 때 쓰는 필드, DB 마이그레이션 주석에 명시)을 그대로 재사용한다(claude-review
-             // 지적: /api/child/me의 name은 성이 포함된 전체 표시 이름이라 "김서아야"처럼
-             // 부자연스러워지고, 실패 시 null 가드도 없어 "안녕~ . 어제는..."처럼 문법이
-             // 깨졌었다). 이름을 못 받은 경우엔 호격 문구 자체를 생략해 자연스러운 문장으로
-             // 폴백한다.
-             const isDay = round === "round1_day";
-             const givenName = typeof data.givenName === "string" ? data.givenName : null;
-             const greetingIntro = givenName ? `안녕~ ${appendVocative(givenName)}.` : "안녕~";
-             // 011 A안(2026-07-26): 서버(app/api/mission/start)가 최근 기억과의 연결성이
-             // 높다고 판단했을 때만 memoryGreeting을 내려준다 - 있으면 그걸 그대로 쓰고,
-             // 없으면(대부분의 경우) 기존 day/night 템플릿 인사말로 그대로 폴백한다.
-             const memoryGreeting =
-               typeof data.memoryGreeting === "string" && data.memoryGreeting.trim()
-                 ? data.memoryGreeting.trim()
-                 : null;
-             const greetingText =
-               memoryGreeting ??
-               (isDay
-                 ? (Math.random() > 0.5
-                    ? `${greetingIntro} 어제는 잘 잤니?`
-                    : `${greetingIntro} 학교는 잘 다녀왔니?`)
-                 : `${greetingIntro} 오늘 하루 어땠니?`);
-
-             qs.unshift({
-               id: "greeting_turn_0",
-               question_text: greetingText,
-               dashboard_area_tag: "greeting",
-               cycle_type: "greeting",
-               round_type: round
-             });
-          }
-          const initStates: Record<string, QuestionState> = {};
-          for (const q of qs) initStates[q.id] = "pending";
-          questionStatesRef.current = initStates;
-          currentIndexRef.current = 0;
-          setProgressPercent(0);
-          setRequiredCount(data.requiredCount ?? 5);
-          setCompleted(false);
-          setEngineVersion(data.engine_version ?? "v1");
-        }
-
-        setQuestions(qs);
-        questionsRef.current = qs;
-        setVoiceMode((data.voiceMode as VoiceMode) ?? "stt_tts");
-        if (typeof data.liveVoiceName === "string" && data.liveVoiceName) {
-          setLiveVoiceName(data.liveVoiceName);
-        }
-
-        // 스크롤백용 — 이 세션에 이미 저장된 과거 대화를 불러와 둔다(live 전환 시 채워짐).
-        try {
-          logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_start" });
-          const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`);
-          if (msgRes.ok) {
-            const msgData = await msgRes.json();
-            logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_complete", extra: { messageCount: msgData.messages?.length ?? 0 } });
-            const past: Turn[] = (msgData.messages ?? [])
-              .filter((m: any) => m.content && m.content.trim() !== "" && (m.turn_status ? m.turn_status === "finalized" : true))
-              .map(
-                (m: any) => ({ role: m.role, text: m.content, displaySequence: m.display_sequence })
-              );
-            pastMessagesRef.current = past;
-          }
-        } catch {
-          // 과거 대화 로드 실패해도 미션 진행 자체는 막지 않음
-        }
-
-        setPhase("ready");
-      } catch (e) {
-        if (cancelled) return;
-        setErrorMsg((e as Error).message);
-        setPhase("error");
+      const confirmRestart = confirmRestartRef.current;
+      // We only consume confirmRestartRef when we actually start the mission (checkOnly = false),
+      // BUT if we are coming back from confirm_restart_after_completion, we want to START it directly.
+      if (confirmRestart) {
+        confirmRestartRef.current = false;
+        setEntryStatus("starting");
+        await fetchSessionData(cid, round, true, false, abortController.signal);
+      } else {
+        await fetchSessionData(cid, round, false, true, abortController.signal);
       }
     })();
-    return () => { cancelled = true; };
-  }, [searchParams, router, restartTrigger]);
+    return () => abortController.abort();
+  }, [searchParams, router, restartTrigger, fetchSessionData]);
 
   // Live 모드가 활성화될 때 interactionMode 설정 동기화 (STT/TTS는 setInputMode+setMicEnabled로 동일 개념 적용)
   useEffect(() => {
@@ -2050,18 +2133,30 @@ function MissionInner() {
   }
 
   if (phase === "error") {
+    // 037 §21/§22: 실패 유형별 문구 - 저장된 세션을 삭제/초기화하지 않고 같은 동작을 재시도할 수 있게 한다.
+    const errorTitle =
+      attemptKindRef.current === "starting" ? "미션을 시작하지 못했어요"
+      : attemptKindRef.current === "resuming" ? "진행 중인 미션을 불러오지 못했어요"
+      : "미션 상태를 확인하지 못했어요";
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
         <p className="text-5xl text-red-500">⚠️</p>
-        <p className="text-base font-bold text-red-500">미션을 시작하지 못했어요</p>
-        <p className="text-xs text-gray-500">{errorMsg}</p>
+        <p className="text-base font-bold text-red-500">{errorTitle}</p>
+        <p className="text-xs text-gray-500">잠시 후 다시 시도해 주세요.</p>
+        {errorMsg && <p className="text-[10px] text-gray-400">{errorMsg}</p>}
+        <button
+          onClick={handleRetryAfterError}
+          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          style={{ background: "var(--color-k-orange)" }}
+        >
+          다시 시도
+        </button>
         <button
           onClick={() => {
             setSessionActive(false);
             router.replace("/child/home");
           }}
-          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
-          style={{ background: "var(--color-k-orange)" }}
+          className="w-full max-w-xs py-3 rounded-2xl font-bold text-gray-500 text-sm active:scale-[0.98] transition-transform cursor-pointer"
         >
           홈으로 돌아가기
         </button>
@@ -2210,6 +2305,10 @@ function MissionInner() {
         onSendText={handleSendText}
         isTextMode={mode === "text"}
         onToggleTextMode={() => (mode === "text" ? switchToVoice() : switchToText())}
+        entryStatus={entryStatus}
+        onStartMission={handleStartMission}
+        onResumeMission={handleResumeMission}
+        onExitBeforeStart={handleClose}
       />
 
       {/* 황금열쇠 보상 모달 */}
