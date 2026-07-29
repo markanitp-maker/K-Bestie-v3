@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
+import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 
 // 053: 회원가입 직후 첫 화면. PWA 설치 안내를 먼저 보여준 뒤, "가족 만들기"/
 // "가족 구성원으로 참여하기"로 이어간다. 그 두 버튼과 실제 가족 생성/참여 신청
@@ -25,6 +26,7 @@ export default function OnboardingPage() {
       style={{ background: "var(--color-k-surface)" }}
     >
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm p-6 flex flex-col gap-6 text-center">
+        <KakaoInAppBrowserNotice />
         <div>
           <p className="text-5xl mb-3">📲</p>
           <h1 className="text-lg font-bold" style={{ color: "var(--color-k-text-primary)" }}>

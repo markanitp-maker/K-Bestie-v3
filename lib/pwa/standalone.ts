@@ -27,3 +27,12 @@ export function isIOSDevice(userAgent: string | undefined, hasMSStream = false):
   if (!userAgent) return false;
   return /iPad|iPhone|iPod/.test(userAgent) && !hasMSStream;
 }
+
+/**
+ * 카카오톡 인앱 브라우저 여부를 감지한다.
+ * 카카오 공식 문서에 명시된 User-Agent의 `KAKAOTALK` 표식을 기준으로만 판정한다.
+ */
+export function isKakaoInAppBrowser(userAgent: string | undefined): boolean {
+  if (!userAgent) return false;
+  return /KAKAOTALK/i.test(userAgent);
+}

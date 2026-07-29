@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
 import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
@@ -33,6 +34,7 @@ interface Report {
 }
 
 export default function ParentHomePage() {
+  const router = useRouter();
   const { view } = useDemoView();
   const store = useStore();
   const children = store.children;
@@ -538,6 +540,7 @@ export default function ParentHomePage() {
                   if (res.ok) {
                     const { syncChildrenFromDB } = await import("@/lib/store");
                     await syncChildrenFromDB();
+                    router.push("/parent/settings?open=add-child");
                   }
                 } catch {} finally {
                   setCreatingFam(false);
@@ -664,11 +667,11 @@ export default function ParentHomePage() {
               </p>
             </div>
             <Link
-              href="/onboarding"
+              href="/parent/settings?open=add-child"
               className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm text-center active:scale-[0.98] transition-transform cursor-pointer"
               style={{ background: "var(--color-k-navy)" }}
             >
-              아이 등록 온보딩 가기
+              아이 추가하기
             </Link>
           </div>
           <RealParentNav active="홈" />

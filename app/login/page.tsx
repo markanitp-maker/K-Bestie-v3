@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 
 function LoginContent() {
   const router = useRouter();
@@ -92,6 +93,7 @@ function LoginContent() {
       className="min-h-dvh flex flex-col items-center justify-center px-5 md:max-w-[420px] md:mx-auto w-full py-8"
       style={{ background: "var(--color-k-surface)" }}
     >
+      <KakaoInAppBrowserNotice />
       <div className="text-center mb-8">
         <p className="text-4xl mb-3">🌿</p>
         <h1 className="text-xl font-bold text-gray-900">내친구 케이</h1>
@@ -250,4 +252,3 @@ export default function LoginPage() {
     </Suspense>
   );
 }
-

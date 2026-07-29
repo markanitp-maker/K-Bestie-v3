@@ -211,6 +211,18 @@ export default function ParentSettingsPage() {
   // 아코디언 토글 상태 (기본은 닫힘)
   const [activeMenu, setActiveMenu] = useState<"add_child" | "edit_child" | "family_members" | "account_withdrawal" | null>(null);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("open") === "add-child") {
+      setActiveMenu("add_child");
+      requestAnimationFrame(() => {
+        document.getElementById("add-child-section")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+  }, []);
+
   // 탈퇴 모달 상태
   const [withdrawalStep, setWithdrawalStep] = useState<1 | 2>(1);
   const [withdrawalAgreed, setWithdrawalAgreed] = useState(false);
@@ -856,6 +868,7 @@ export default function ParentSettingsPage() {
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3 md:flex-none md:h-auto md:overflow-visible md:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
           {/* 1. 아이 추가 메뉴 카드 */}
           <div
+            id="add-child-section"
             onClick={() => menuToggle("add_child")}
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
           >

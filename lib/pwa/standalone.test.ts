@@ -4,7 +4,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isStandaloneDisplay, isIOSDevice } from "./standalone.js";
+import {
+  isStandaloneDisplay,
+  isIOSDevice,
+  isKakaoInAppBrowser,
+} from "./standalone.js";
 
 function makeWin(opts: {
   displayModeStandalone?: boolean;
@@ -61,4 +65,22 @@ test("Android/데스크톱 UA는 iOS 아님", () => {
 test("빈 UA / MSStream(IE mobile)은 iOS 아님", () => {
   assert.equal(isIOSDevice(undefined), false);
   assert.equal(isIOSDevice("iPhone", true), false);
+});
+
+test("카카오톡 공식 UA 표식이 있으면 인앱 브라우저로 판정", () => {
+  const iosKakao =
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) Mobile/15E148 Safari/604.1 KAKAOTALK/10.8.2 (INAPP)";
+  const androidKakao =
+    "Mozilla/5.0 (Linux; Android 14; SM-S908N) Chrome/126 Mobile Safari/537.36 KAKAOTALK/10.8.3 (INAPP)";
+  assert.equal(isKakaoInAppBrowser(iosKakao), true);
+  assert.equal(isKakaoInAppBrowser(androidKakao), true);
+});
+
+test("일반 Safari·Chrome은 카카오톡 인앱 브라우저가 아님", () => {
+  assert.equal(
+    isKakaoInAppBrowser("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 Safari/604.1"),
+    false
+  );
+  assert.equal(isKakaoInAppBrowser("Mozilla/5.0 Chrome/126 Mobile Safari/537.36"), false);
+  assert.equal(isKakaoInAppBrowser(undefined), false);
 });

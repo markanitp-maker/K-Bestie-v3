@@ -123,6 +123,7 @@ test("QA-053: 신규 가족 생성부터 관리자 승인과 아이 로그인까
     await page.getByRole("button", { name: "가족 만들기", exact: true }).click();
     await page.getByPlaceholder("예) 서준이네 가족").fill(familyName);
     await page.getByRole("button", { name: "가족 만들기 →" }).click();
+    await page.waitForURL(/\/parent\/settings\?open=add-child/, { timeout: 20_000 });
 
     await expect
       .poll(
@@ -139,8 +140,9 @@ test("QA-053: 신규 가족 생성부터 관리자 승인과 아이 로그인까
       )
       .toBeTruthy();
 
-    await page.goto(`${BASE}/parent/settings`, { waitUntil: "networkidle" });
-    await page.getByText("아이 추가", { exact: true }).click();
+    await expect(page.getByPlaceholder("아이디 (로그인용)")).toBeVisible({
+      timeout: 20_000,
+    });
     await page.getByPlaceholder("성").fill(childFamilyName);
     await page.getByPlaceholder("이름").fill(childGivenName);
     await page.getByPlaceholder("아이디 (로그인용)").fill(childUsername);
