@@ -94,7 +94,10 @@ function MissionInner() {
   // confirm_restart_after_completion(022): 오늘 이미 완료한 라운드에 재진입 시 "다시 할까요?"
   // 확인 없이 조용히 새 세션이 만들어지던 문제 수정 — 서버가 requiresConfirmation을 반환하면
   // 이 phase로 멈추고 확인 UI를 보여준다(진행 중/미완료 세션에는 영향 없음).
-  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "confirm_restart_after_completion">("loading");
+  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "confirm_restart_after_completion" | "locked_completed">("loading");
+  // 031: MISSION_SCHEDULE_ENFORCED(Production 전용) 여부 — 서버(/api/config/child-time-restrictions)가
+  // 계산해 내려준 값을 그대로 저장해 "closed"/완료잠금 화면의 문구 분기에만 쓴다.
+  const [scheduleEnforced, setScheduleEnforced] = useState(false);
   const [entryStatus, setEntryStatus] = useState<"checking" | "ready_to_start" | "ready_to_resume" | "starting" | "resuming" | "active" | "error">("checking");
   // 한 번만 소비되는 플래그(ref) — URL 쿼리에 남기면 이후 재진입 때도 계속 true로
   // 남아 두 번째부터는 확인 없이 넘어가 버리므로, 컴포넌트 상태로만 들고 있다가
@@ -1500,6 +1503,11 @@ function MissionInner() {
         return;
       }
 
+      if (data.locked) {
+        setPhase("locked_completed");
+        return;
+      }
+
       if (data.requiresConfirmation) {
         setPhase("confirm_restart_after_completion");
         return;
@@ -1702,17 +1710,27 @@ function MissionInner() {
       const qpRound = searchParams?.get("roundType") as RoundType | null;
 
       let timeRestrictionsEnabled = false;
+      let cfgActiveRound: RoundType | null = null;
+      let cfgScheduleEnforced = false;
       try {
         const cfgRes = await fetch("/api/config/child-time-restrictions", { signal: abortController.signal });
         if (cfgRes.ok) {
           const cfg = await cfgRes.json();
           if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
+          if (cfg.activeRound === "round1_day" || cfg.activeRound === "round2_night") cfgActiveRound = cfg.activeRound;
+          if (typeof cfg.scheduleEnforced === "boolean") cfgScheduleEnforced = cfg.scheduleEnforced;
         }
       } catch {}
       if (abortController.signal.aborted) return;
+      setScheduleEnforced(cfgScheduleEnforced);
 
-      const round: RoundType | null =
-        qpRound ?? currentRound(hour) ?? (!timeRestrictionsEnabled ? "common" : null);
+      // 031: MISSION_SCHEDULE_ENFORCED가 켜져 있으면(Production) 경계값이 다르므로 클라이언트가
+      // 직접 계산한 currentRound(hour)를 쓰지 않고 서버가 내려준 activeRound를 그대로 쓴다
+      // (process.env.MISSION_SCHEDULE_ENFORCED는 이 클라이언트 번들에서는 항상 undefined로
+      // 치환되어 currentRound(hour) 호출만으로는 Production 실제 경계를 재현할 수 없다).
+      const round: RoundType | null = cfgScheduleEnforced
+        ? (qpRound ?? cfgActiveRound)
+        : (qpRound ?? currentRound(hour) ?? (!timeRestrictionsEnabled ? "common" : null));
       if (!round) {
         setPhase("closed");
         return;
@@ -2078,12 +2096,18 @@ function MissionInner() {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
         <p className="text-5xl">⏰</p>
-        <p className="text-base font-bold text-gray-800">지금은 미션 시간이 아니에요</p>
-        <p className="text-xs text-gray-500 leading-relaxed">
-          1차 미션은 오후 1시~5시,
-          <br />
-          2차 미션은 저녁 7시~밤 12시에 만나요!
-        </p>
+        {scheduleEnforced ? (
+          <p className="text-base font-bold text-gray-800">미션 시간이 아닙니다.</p>
+        ) : (
+          <>
+            <p className="text-base font-bold text-gray-800">지금은 미션 시간이 아니에요</p>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              1차 미션은 오후 1시~5시,
+              <br />
+              2차 미션은 저녁 7시~밤 12시에 만나요!
+            </p>
+          </>
+        )}
         <button
           onClick={() => {
             setSessionActive(false);
@@ -2128,6 +2152,25 @@ function MissionInner() {
             미션 나가기
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (phase === "locked_completed") {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
+        <p className="text-5xl">🔒</p>
+        <p className="text-base font-bold text-gray-800">미션을 이미 완료하였습니다. 다음 미션을 기다리세요.</p>
+        <button
+          onClick={() => {
+            setSessionActive(false);
+            router.replace("/child/home");
+          }}
+          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          style={{ background: "var(--color-k-orange)" }}
+        >
+          홈으로 돌아가기
+        </button>
       </div>
     );
   }

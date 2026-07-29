@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { getKstHour, currentRound } from "@/lib/mission/missionTimeGate";
+import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,8 @@ export async function GET(req: NextRequest) {
   // currentRound: 화면 표시·문항 조회용 기본값(게이트가 닫혀도 "common"으로 폴백).
   // 둘을 분리한 이유: activeRound가 항상 "common"으로 폴백되면 시간 제한 기능(!activeRound
   // 체크)이 절대 발동하지 않는 버그가 생긴다.
-  const activeRound = currentRound(getKstHour());
+  const scheduleEnforced = isMissionScheduleEnforced();
+  const activeRound = currentRound(getKstHour(), scheduleEnforced);
   const roundNow = activeRound ?? "common";
 
   const svc = createServiceClient();
@@ -57,7 +59,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!sessionRow) {
-    return NextResponse.json({ hasMission: false, currentRound: roundNow, activeRound });
+    return NextResponse.json({ hasMission: false, currentRound: roundNow, activeRound, scheduleEnforced });
   }
 
   const progress = Array.isArray(sessionRow.mission_progress) ? sessionRow.mission_progress[0] : sessionRow.mission_progress;
@@ -68,6 +70,7 @@ export async function GET(req: NextRequest) {
     requiredCount: progress?.required_valid_count ?? 10,
     roundType: progress?.round_type,
     currentRound: roundNow,
-    activeRound
+    activeRound,
+    scheduleEnforced
   });
 }

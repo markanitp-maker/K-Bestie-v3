@@ -13,6 +13,8 @@ import { appendVocative } from "@/lib/utils/koreanParticle";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
+import { getKstHour, currentRound } from "@/lib/mission/missionTimeGate";
+import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
 
 export const runtime = "nodejs";
 
@@ -41,6 +43,18 @@ export async function POST(req: NextRequest) {
   }
   if (!VALID_ROUNDS.includes(roundType)) {
     return NextResponse.json({ error: "invalid roundType" }, { status: 400 });
+  }
+
+  // 031: Production 전용 — 클라이언트가 보낸 roundType이 실제 서버 시간 기준 현재
+  // 라운드와 일치하는지 검증한다. 기존에는 이 검증이 없어(클라이언트의 phase="closed"
+  // UI 게이트만 존재) URL 직접 접근·API 직접 호출로 시간 무관하게 시작할 수 있었다.
+  // Dev(scheduleEnforced=false)에서는 이 검증을 생략해 기존 동작을 그대로 유지한다.
+  const scheduleEnforced = isMissionScheduleEnforced();
+  if (scheduleEnforced && roundType !== "common") {
+    const actualRound = currentRound(getKstHour(), true);
+    if (actualRound !== roundType) {
+      return NextResponse.json({ error: "미션 시간이 아닙니다.", scheduleClosed: true }, { status: 403 });
+    }
   }
 
   const consentBlocked = await checkConsentForChild(childId);
@@ -119,6 +133,16 @@ export async function POST(req: NextRequest) {
       : todaySessionRow.mission_progress;
     if (todayProgress?.status !== "COMPLETED") {
       existingSessionRow = todaySessionRow;
+    } else if (scheduleEnforced) {
+      // 031: Production 전용 — 오늘 이 라운드를 이미 완료했으면 confirmRestart 값과
+      // 무관하게 항상 잠금 처리한다(재도전 자체를 허용하지 않음). 클라이언트는 이
+      // 응답을 받으면 "다시 할래요" 선택지 없이 "미션을 이미 완료하였습니다." 안내만
+      // 보여준다.
+      return NextResponse.json({
+        locked: true,
+        alreadyCompletedToday: true,
+        roundType,
+      });
     } else if (confirmRestart !== true) {
       // codex 지적: !confirmRestart는 "false"(문자열) 같은 truthy-지만-boolean-아닌 값이
       // 들어와도 확인 게이트를 우회할 수 있었다 — 정확히 boolean true일 때만 통과시킨다.
