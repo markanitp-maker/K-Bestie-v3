@@ -1,10 +1,21 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
 import { createClient, type Session } from "@supabase/supabase-js";
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL || "https://k-bestie-v3-dev.vercel.app";
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_DEV_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_DEV_ANON_KEY;
-const serviceRoleKey = process.env.SUPABASE_DEV_SERVICE_ROLE_KEY;
+const isProductionQa = process.env.QA_TARGET === "prod";
+const BASE =
+  process.env.PLAYWRIGHT_BASE_URL ||
+  (isProductionQa
+    ? "https://app.k-bestie.com"
+    : "https://k-bestie-v3-dev.vercel.app");
+const supabaseUrl = isProductionQa
+  ? process.env.NEXT_PUBLIC_SUPABASE_URL
+  : process.env.NEXT_PUBLIC_SUPABASE_DEV_URL;
+const anonKey = isProductionQa
+  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  : process.env.NEXT_PUBLIC_SUPABASE_DEV_ANON_KEY;
+const serviceRoleKey = isProductionQa
+  ? process.env.SUPABASE_SERVICE_ROLE_KEY
+  : process.env.SUPABASE_DEV_SERVICE_ROLE_KEY;
 const preservedAdminEmail = "markanitp@gmail.com";
 
 function projectRef(url: string) {
@@ -42,6 +53,10 @@ test("QA-053: 신규 가족 생성부터 관리자 승인과 아이 로그인까
   context,
 }) => {
   test.setTimeout(240_000);
+  test.skip(
+    isProductionQa && process.env.QA_PRODUCTION_E2E !== "RUN",
+    "Production E2E는 QA_PRODUCTION_E2E=RUN 확인이 필요합니다."
+  );
   test.skip(
     !supabaseUrl || !anonKey || !serviceRoleKey,
     "Dev Supabase 검증용 환경변수가 필요합니다."
@@ -262,6 +277,27 @@ test("QA-053: 신규 가족 생성부터 관리자 승인과 아이 로그인까
     await expect(page).toHaveURL(/\/auth\/setup-password/, { timeout: 20_000 });
     await page.getByRole("button", { name: "기존 비밀번호 유지하기" }).click();
     await expect(page).toHaveURL(/\/child\/home/, { timeout: 30_000 });
+
+    const missionPreflight = await page.evaluate(async (childId) => {
+      const response = await fetch("/api/mission/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          childId,
+          roundType: "common",
+          checkOnly: true,
+        }),
+      });
+      return {
+        status: response.status,
+        body: await response.json(),
+      };
+    }, createdChild!.id);
+    expect(missionPreflight.status).toBe(200);
+    expect(missionPreflight.body).toMatchObject({
+      checkOnly: true,
+      tier: 2,
+    });
   } finally {
     // 테스트가 중간에 실패해도 이번 테스트가 만든 행과 계정만 정리한다.
     if (familyId) {
