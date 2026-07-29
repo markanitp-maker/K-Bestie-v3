@@ -39,7 +39,9 @@ export default function OnboardingPage() {
           <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: "var(--color-k-surface)", border: "1px solid var(--color-k-border)" }}>
             {isIOS ? (
               <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-text-secondary)" }}>
-                Safari 하단의 <strong>공유 버튼</strong>을 누른 뒤 <strong>&quot;홈 화면에 추가&quot;</strong>를 선택해주세요.
+                Safari 하단에 <strong>공유 버튼</strong>을 누른 뒤, <strong>&quot;더 보기&quot;</strong> 버튼을 누르세요.
+                <br />
+                맨 아래 <strong>&quot;홈 화면에 추가&quot;</strong>를 선택하시면 됩니다.
               </p>
             ) : installPrompt ? (
               <button
