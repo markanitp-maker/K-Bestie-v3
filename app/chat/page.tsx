@@ -9,6 +9,7 @@ import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -486,9 +487,12 @@ export default function ChatPage() {
       stateText = "대기 중";
   }
 
-  const lastKIndex = transcript.findLastIndex(t => t.role === 'k');
-  let currentQuestionText = lastKIndex >= 0 ? transcript[lastKIndex].text : "케이가 이야기를 준비하고 있어요...";
-  
+  // 048 hotfix: 1·2·3 영역은 화자별 채팅이 아니라 "케이가 실제로 말한 발화"만의
+  // 최근 3단계 타임라인이다(아이 발화는 어디에도 노출하지 않는다). 미션·자유대화가
+  // 동일한 규칙을 쓰도록 공유 selector로 계산한다.
+  const { current: currentKText, previous: prevKText, older: olderKText } = getRecentKUtterances(transcript);
+  let currentQuestionText = currentKText || "케이가 이야기를 준비하고 있어요...";
+
   if (isEnded) {
     // codex 047 리뷰 지적: 기존에는 대화 종료 후 별도 헤더로 "오늘도 이야기해줘서
     // 고마워요"(reportDone) 또는 "대화가 끝났어요" 안내를 보여줬는데, 새 레이아웃으로
@@ -509,15 +513,6 @@ export default function ChatPage() {
       currentQuestionText = "아래 🎤 버튼을 눌러 대화를 시작해 보세요! 🌿";
     }
   }
-
-  // codex 047 리뷰 지적: lastKIndex 이전 구간만 잘라서 prevChildText를 구하면, 아이가
-  // 방금 답한 직후("생각 중" 구간, 아직 다음 케이 응답이 없어 마지막 항목이 child턴인
-  // 경우)에는 그 방금 답변이 lastKIndex보다 뒤에 있어 통째로 걸러져 더 오래된 발화가
-  // 대신 표시됐다 - 위치 제약 없이 각 role의 "가장 최근" 항목을 직접 찾는다.
-  const kTurns = transcript.filter(t => t.role === 'k');
-  const childTurns = transcript.filter(t => t.role === 'child');
-  const prevChildText = childTurns.length > 0 ? childTurns[childTurns.length - 1].text : "";
-  const prevKText = kTurns.length > 1 ? kTurns[kTurns.length - 2].text : "";
 
   if (!mounted) {
     return (
@@ -569,13 +564,9 @@ export default function ChatPage() {
 
           {/* Previous Chat Summary Area (Flexible) */}
           <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink gap-[10px] mb-[12px] min-h-[0] overflow-hidden">
-            {interimChildText ? (
-              <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium italic shrink min-h-0">
-                {interimChildText}
-              </div>
-            ) : prevChildText && (
-              <div className="text-gray-500 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium shrink min-h-0">
-                {prevChildText}
+            {olderKText && (
+              <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium shrink min-h-0">
+                {olderKText}
               </div>
             )}
             {prevKText && (

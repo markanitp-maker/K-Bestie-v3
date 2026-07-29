@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
+import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 
 export interface MissionTranscriptTurn {
   id: string;
@@ -54,7 +55,6 @@ export function MissionConversationLayout({
   progressTotal,
   history,
   activeTurn,
-  interimChildText,
   voiceState,
   isMuted,
   onToggleMute,
@@ -76,10 +76,13 @@ export function MissionConversationLayout({
 }: MissionConversationLayoutProps) {
   // Extract turns
   const allTurns = activeTurn ? [...history, activeTurn] : history;
-  
-  const lastKIndex = allTurns.findLastIndex(t => t.role === 'k');
-  
-  let currentQuestionText = lastKIndex >= 0 ? allTurns[lastKIndex].text : "케이가 질문을 준비하고 있어요...";
+
+  // 048 hotfix: 1·2·3 영역은 화자별 채팅이 아니라 "케이가 실제로 말한 발화"만의
+  // 최근 3단계 타임라인이다(아이 발화는 어디에도 노출하지 않는다). 미션·자유대화가
+  // 동일한 규칙을 쓰도록 공유 selector로 계산한다.
+  const { current: currentKText, previous: prevKText, older: olderKText } = getRecentKUtterances(allTurns);
+
+  let currentQuestionText = currentKText || "케이가 질문을 준비하고 있어요...";
   if (entryStatus === "checking") {
     currentQuestionText = "미션을 확인하고 있어요.";
   } else if (entryStatus === "starting") {
@@ -87,12 +90,6 @@ export function MissionConversationLayout({
   } else if (entryStatus === "resuming") {
     currentQuestionText = "불러오는 중...";
   }
-  
-  const childTurnsBeforeK = allTurns.slice(0, lastKIndex >= 0 ? lastKIndex : allTurns.length).filter(t => t.role === 'child');
-  const prevChildText = childTurnsBeforeK.length > 0 ? childTurnsBeforeK[childTurnsBeforeK.length - 1].text : "";
-
-  const kTurnsBeforeK = allTurns.slice(0, lastKIndex >= 0 ? lastKIndex : allTurns.length).filter(t => t.role === 'k');
-  const prevKText = kTurnsBeforeK.length > 0 ? kTurnsBeforeK[kTurnsBeforeK.length - 1].text : "";
 
   // Map state
   let stateText = "";
@@ -222,13 +219,9 @@ export function MissionConversationLayout({
 
         {/* Previous Chat Summary Area (Flexible) */}
         <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink gap-[10px] mb-[12px] min-h-[0] overflow-hidden">
-          {interimChildText ? (
-            <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium italic shrink min-h-0">
-              {interimChildText}
-            </div>
-          ) : prevChildText && (
-            <div className="text-gray-500 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium shrink min-h-0">
-              {prevChildText}
+          {olderKText && (
+            <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium shrink min-h-0">
+              {olderKText}
             </div>
           )}
           {prevKText && (
