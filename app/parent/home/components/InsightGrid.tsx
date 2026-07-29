@@ -43,7 +43,7 @@ function getCompactSummary(text: string | null | undefined): string {
   return "새로운 이야기가 있어요";
 }
 
-export function InsightGrid({ report, insights }: { report?: Report | null, insights?: any }) {
+export function InsightGrid({ report, insights, view }: { report?: Report | null, insights?: any, view?: "tablet" | "mobile" }) {
   const getStatus = (val?: string, emotionLevel?: string | null, isEmotion?: boolean) => {
     if (!val || val.trim() === "") {
       return { label: "데이터 부족", color: "#9ca3af", dot: "#e5e7eb" };
@@ -72,7 +72,7 @@ export function InsightGrid({ report, insights }: { report?: Report | null, insi
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+    <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
       {cards.map(c => {
         const data = getInsightData(c.field);
         const hasData = data.value && data.value.trim() !== "";
@@ -90,14 +90,14 @@ export function InsightGrid({ report, insights }: { report?: Report | null, insi
         return (
           <div 
             key={c.id} 
-            className="relative bg-white rounded-[18px] p-4 shadow-sm flex flex-col justify-between min-h-[100px]"
+            className="relative bg-white rounded-[18px] p-4 shadow-sm flex flex-col justify-between min-h-[100px] min-w-0"
           >
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <span className="text-base" aria-hidden="true">{c.icon}</span>
-                <span className="text-[11px] font-bold text-gray-500">{c.title}</span>
+                <span className="text-[11px] font-bold text-gray-500 break-keep">{c.title}</span>
               </div>
-              <p className="text-[13px] font-bold text-gray-800 leading-snug">
+              <p className="text-[13px] font-bold text-gray-800 leading-snug break-keep">
                 {displayText}
               </p>
             </div>
