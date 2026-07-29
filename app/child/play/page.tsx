@@ -418,7 +418,7 @@ export default function ChildPlayPage() {
           {/* 열쇠로 열어요 */}
           <div className="px-4 mt-5">
             <h2 className="text-lg font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>열쇠로 열어요</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
               {/* 퀴즈마스터 */}
               {(() => {
                 const game = GAMES.find(g => g.id === "quizmaster")!;
