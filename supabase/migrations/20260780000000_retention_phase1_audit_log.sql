@@ -1,0 +1,13 @@
+-- Phase 1 원천 데이터 감사 결과
+-- [감사 항목 1] 부모 회원가입: family_members(joined_at) 로 산출 가능
+-- [감사 항목 2] 부모 로그인/방문: behavior_events(parent_login, parent_report_view 등) 로 산출 가능
+-- [감사 항목 3] 아이 로그인/방문: behavior_events(child_login, mission_start 등) 로 산출 가능
+-- [감사 항목 4] 미션 시작/유효답변/완료: mission_progress(valid_answer_count, status) 및 behavior_events 로 산출 가능
+-- [감사 항목 5] 자유대화 시작/종료/시간: chat_sessions 및 behavior_events 로 산출 가능
+-- [감사 항목 6] 리포트 조회: behavior_events(parent_report_view) 로 산출 가능
+-- [감사 항목 7] 놀이 시작/완료: k_play_sessions 및 behavior_events, trigger 로 산출 가능
+-- [감사 항목 8] 황금열쇠 획득/사용: gold_key_ledger 로 산출 가능
+--
+-- 결론: 기존 behavior_events 및 원장 테이블들로 필수 리텐션 지표(D1~D14, 코호트, 퍼널) 산출이 100% 가능함.
+-- 따라서 추가적인 이벤트 테이블이나 로깅 로직을 억지로 끼워넣을 필요가 없으며, 현재 DB 스키마 상태로 배포 차단 요소 없음.
+-- (본 마이그레이션 파일은 실행 시점의 동작은 없으며, 감사 완료 문서화를 위해 기록함)
