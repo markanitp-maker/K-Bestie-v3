@@ -221,6 +221,22 @@ test("QA-053: 신규 가족 생성부터 관리자 승인과 아이 로그인까
 
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`${BASE}/admin`, { waitUntil: "networkidle" });
+    await expect(
+      page.getByRole("button", { name: "리포팅 수동 실행", exact: true })
+    ).toBeVisible();
+    const reportingChildrenResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/admin/reporting/children") &&
+        response.request().method() === "GET"
+    );
+    await page
+      .getByRole("button", { name: "리포팅 수동 실행", exact: true })
+      .click();
+    await expect(
+      page.getByText("리포팅 수동 실행", { exact: true })
+    ).toBeVisible();
+    expect((await reportingChildrenResponse).status()).toBe(200);
+
     await page.getByRole("button", { name: "아이 승인 요청", exact: true }).click();
     await expect(
       page.getByText(

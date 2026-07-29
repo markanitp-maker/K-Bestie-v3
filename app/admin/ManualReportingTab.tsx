@@ -113,17 +113,10 @@ export default function ManualReportingTab() {
 
   const selectedChild = children.find(c => c.childId === selectedChildId);
 
-  // Production 완전 비노출(서버가 최종 방어선 - /api/admin/reporting/*는 getSupabaseTarget()
-  // === 'prod'면 403). 이 체크는 반드시 모든 훅 호출 뒤에 와야 한다 - 훅보다 먼저 있으면
-  // React Rules of Hooks 위반(조건부 이른 반환으로 훅이 조건부 호출됨)이다.
-  if (process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod") {
-    return null;
-  }
-
   return (
     <div>
       <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", margin: "24px 0 10px" }}>
-        리포팅 수동 실행 (베타용)
+        리포팅 수동 실행
       </div>
       
       <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16, marginBottom: 20 }}>

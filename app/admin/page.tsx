@@ -1472,7 +1472,6 @@ function AdminDashboard() {
       {/* 왼쪽 사이드바 네비게이션 */}
       <nav style={{ display: "flex", flexDirection: "column", gap: 4, width: 180, flexShrink: 0 }}>
         {ADMIN_NAV_ITEMS.map((item) => {
-          if (item.id === "manual-reporting" && process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod") return null;
           return (
           <button
             key={item.id}

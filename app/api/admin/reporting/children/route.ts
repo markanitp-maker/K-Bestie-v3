@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { getSupabaseTarget } from "@/lib/supabase/env";
 import { isRealCalendarDate } from "@/lib/admin/reportingDateValidation";
 
 export const runtime = "nodejs";
@@ -9,10 +8,6 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   const denied = await requireAdmin();
   if (denied) return denied;
-
-  if (getSupabaseTarget() === "prod") {
-    return NextResponse.json({ error: "Forbidden in prod" }, { status: 403 });
-  }
 
   const businessDate = req.nextUrl.searchParams.get("businessDate");
   if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate) || !isRealCalendarDate(businessDate)) {

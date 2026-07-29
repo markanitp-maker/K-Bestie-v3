@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { getSupabaseTarget } from "@/lib/supabase/env";
 import { runContextCorrectionPipeline } from "@/lib/batch/contextCorrection";
 import { generateDailyReports } from "@/lib/batch/generateDailyReports";
 import { isRealCalendarDate } from "@/lib/admin/reportingDateValidation";
@@ -11,10 +10,6 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   const denied = await requireAdmin();
   if (denied) return denied;
-
-  if (getSupabaseTarget() === "prod") {
-    return NextResponse.json({ error: "Forbidden in prod" }, { status: 403 });
-  }
 
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
