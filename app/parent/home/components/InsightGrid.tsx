@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 
 // Format date relative to local timezone
 function formatRelativeDate(dateString: string | undefined | null): string {
@@ -25,6 +24,23 @@ interface Report {
   id?: string;
   business_date?: string;
   created_at?: string;
+}
+
+function getCompactSummary(text: string | null | undefined): string {
+  if (!text || text.trim() === "") return "";
+  const trimmed = text.trim();
+  if (trimmed.length <= 12) return trimmed;
+  
+  // Try to find a short sentence ending with punctuation or polite endings
+  const sentences = trimmed.split(/(?<=[.!?])\s+|(?<=[다요어음지네])\s+/);
+  const shortSentences = sentences.filter(s => s.trim().length > 0 && s.trim().length <= 12);
+  
+  if (shortSentences.length > 0) {
+    return shortSentences[0].trim();
+  }
+  
+  // If no short sentence can be extracted cleanly, provide a meaningful fallback <= 12 chars
+  return "새로운 이야기가 있어요";
 }
 
 export function InsightGrid({ report, insights }: { report?: Report | null, insights?: any }) {
@@ -61,29 +77,28 @@ export function InsightGrid({ report, insights }: { report?: Report | null, insi
         const data = getInsightData(c.field);
         const hasData = data.value && data.value.trim() !== "";
         const isUnsupported = c.id === 'teacher';
-        const emptyMessage = isUnsupported ? "데이터 분석을 준비 중이에요." : "최근 확인된 이야기가 아직 없어요.";
+        
+        // Use exactly the text requested for empty state
+        const emptyMessage = isUnsupported ? "분석을 준비 중이에요" : "확인된 내용이 없어요";
         
         const status = getStatus(hasData ? data.value : undefined, data.emotion_level, c.isEmotion);
         const dateStr = formatRelativeDate(data.last_observed_at);
         const countStr = data.recent_count > 0 ? `관찰 ${data.recent_count}일 · ` : "";
         
-        const CardWrapper = (hasData && report?.id) ? Link : 'div';
-        const cardProps = (hasData && report?.id) ? { href: `/parent/report/${report.id}` } as any : {};
-        const activeClass = (hasData && report?.id) ? 'active:scale-95 transition-transform cursor-pointer' : '';
+        const displayText = hasData ? getCompactSummary(data.value) : emptyMessage;
 
         return (
-          <CardWrapper 
+          <div 
             key={c.id} 
-            {...cardProps}
-            className={`relative bg-white rounded-[18px] p-4 shadow-sm flex flex-col justify-between min-h-[120px] ${activeClass}`}
+            className="relative bg-white rounded-[18px] p-4 shadow-sm flex flex-col justify-between min-h-[100px]"
           >
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <span className="text-base" aria-hidden="true">{c.icon}</span>
                 <span className="text-[11px] font-bold text-gray-500">{c.title}</span>
               </div>
-              <p className="text-[13px] font-bold text-gray-800 leading-snug line-clamp-3">
-                {hasData ? data.value : emptyMessage}
+              <p className="text-[13px] font-bold text-gray-800 leading-snug">
+                {displayText}
               </p>
             </div>
             <div className="flex items-end justify-between mt-4">
@@ -95,7 +110,7 @@ export function InsightGrid({ report, insights }: { report?: Report | null, insi
                 {hasData ? `${countStr}${dateStr}` : "기록 없음"}
               </div>
             </div>
-          </CardWrapper>
+          </div>
         );
       })}
     </div>

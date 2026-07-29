@@ -90,14 +90,14 @@ emotion_level/emotion_tags는 내부 분류용이며 위 판정 기준의 단어
   "emotion_tags": ["감정 키워드 최대 3개"],
   "parent_guide": "부모님께 드리는 짧은 조언 (40자 이내, 없으면 빈 문자열)",
   "emotion_level": "safe | warning | danger 중 하나",
-  "school_academy_life": "학교·학원 생활 관련 내용 (없으면 \"\")",
-  "peer_friendship": "친구 관계와 또래 생활 관련 내용 (없으면 \"\")",
-  "emotion_hint": "대화에서 드러난 아이의 미세한 감정선, 속마음, 기분 변화 (없으면 \"\")",
-  "interests_preferences": "관심사와 개인 취향 관련 내용 (없으면 \"\")",
-  "study_concerns": "공부 고민 관련 내용 (없으면 \"\")",
-  "digital_content_interests": "디지털 관심사와 콘텐츠 취향 관련 내용 (없으면 \"\")",
-  "future_dreams": "미래·진로·꿈 관련 내용 (없으면 \"\")",
-  "recurring_stories": "반복되는 이야기 관련 내용 (없으면 \"\")"
+  "school_academy_life": "학교·학원 생활 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+  "peer_friendship": "친구 관계와 또래 생활 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+  "emotion_hint": "대화에서 드러난 아이의 미세한 감정선 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+  "interests_preferences": "관심사와 개인 취향 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+  "study_concerns": "공부 고민 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+  "digital_content_interests": "디지털·콘텐츠 취향 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+  "future_dreams": "미래·진로·꿈 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+  "recurring_stories": "반복되는 이야기 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")"
 }
 `.trim();
 
@@ -127,14 +127,14 @@ weekend_activity_recommendation: 대화에서 아이가 직접 언급한 주말 
   "summary_text": "이번 주 전체를 한 문단으로 요약(부모가 1분 내로 읽을 분량, 3~4문장)",
   "detail_text": "이번 주 대화에서 드러난 아이의 상태·변화·반복 패턴을 더 깊이 분석한 상세 서술(문단 여러 개 가능)",
   "detail_dashboard_cards": {
-    "school_academy_life": "학교·학원 생활 관련 내용 (없으면 \"\")",
-    "peer_friendship": "친구 관계와 또래 생활 관련 내용 (없으면 \"\")",
-    "emotion_hint": "대화에서 드러난 아이의 미세한 감정선, 속마음, 기분 변화 (없으면 \"\")",
-    "interests_preferences": "관심사와 개인 취향 관련 내용 (없으면 \"\")",
-    "study_concerns": "공부 고민 관련 내용 (없으면 \"\")",
-    "digital_content_interests": "디지털 관심사와 콘텐츠 취향 관련 내용 (없으면 \"\")",
-    "future_dreams": "미래·진로·꿈 관련 내용 (없으면 \"\")",
-    "recurring_stories": "반복되는 이야기 관련 내용 (없으면 \"\")"
+    "school_academy_life": "학교·학원 생활 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+    "peer_friendship": "친구 관계와 또래 생활 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+    "emotion_hint": "대화에서 드러난 아이의 미세한 감정선 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+    "interests_preferences": "관심사와 개인 취향 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+    "study_concerns": "공부 고민 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+    "digital_content_interests": "디지털·콘텐츠 취향 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+    "future_dreams": "미래·진로·꿈 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")",
+    "recurring_stories": "반복되는 이야기 관련 요약 (공백 포함 최대 12자의 완결된 문장, 없으면 \"\")"
   },
   "mood_average": 1~10 소수점 1자리 숫자,
   "highlights": ["주요 감정·이벤트 키워드 최대 5개"],
