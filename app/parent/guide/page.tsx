@@ -15,6 +15,10 @@ type Message = {
   text: string;
   askChildProposal?: string | null;
   originalQuestion?: string;
+  askChildStatus?: "success" | "error";
+  askChildErrorText?: string;
+  askChildIsLoading?: boolean;
+  askChildRetryable?: boolean;
 };
 
 export default function ParentGuidePage() {
@@ -162,10 +166,12 @@ export default function ParentGuidePage() {
     }
   };
 
-  const handleAskChild = async (originalQuestion: string) => {
+  const handleAskChild = async (originalQuestion: string, msgId: string) => {
     if (!childId) return;
     const requestChildId = childId;
-    setIsLoading(true);
+    
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, askChildIsLoading: true, askChildErrorText: undefined } : m));
+
     try {
       const res = await fetch("/api/parent/k-chat", {
         method: "POST",
@@ -176,30 +182,41 @@ export default function ParentGuidePage() {
       if (childIdRef.current !== requestChildId) return;
 
       if (res.ok) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: "k",
-            text: `다음 대화에서 자연스럽게 물어볼게요! (변환된 질문: "${data.convertedQuestion}")`,
-          }
-        ]);
+        setMessages(prev => prev.map(m => m.id === msgId ? { 
+          ...m, 
+          askChildStatus: "success", 
+          askChildErrorText: undefined,
+          askChildIsLoading: false 
+        } : m));
       } else {
-        throw new Error(data.error);
+        // 명세 §7.2: 재시도 버튼은 500(서버·DB·외부 LLM 장애)일 때만 제공한다.
+        let errorMessage = "지금은 질문을 저장할 수 없어요. 잠시 후 다시 시도해 주세요.";
+        let retryable = true;
+        if (res.status === 400) { errorMessage = "질문 내용을 확인해 주세요."; retryable = false; }
+        if (res.status === 401) { errorMessage = "로그인이 만료됐어요. 다시 로그인해 주세요."; retryable = false; }
+        if (res.status === 403) { errorMessage = "이 아이에게 질문을 등록할 권한이 없어요."; retryable = false; }
+        if (res.status === 409) { errorMessage = "이미 아이에게 물어볼 질문으로 등록되어 있어요."; retryable = false; }
+        if (res.status === 422) { errorMessage = "이 질문은 아이에게 그대로 묻기 어려워요. 아이를 추궁하지 않는 다른 질문으로 물어봐 주세요."; retryable = false; }
+        if (res.status === 429) { errorMessage = "질문 등록이 너무 빠르게 반복됐어요. 잠시 후 다시 시도해 주세요."; retryable = false; }
+
+        setMessages(prev => prev.map(m => m.id === msgId ? {
+          ...m,
+          askChildStatus: "error",
+          askChildErrorText: errorMessage,
+          askChildRetryable: retryable,
+          askChildIsLoading: false
+        } : m));
       }
     } catch (err) {
       console.error("Ask child error:", err);
       if (childIdRef.current !== requestChildId) return;
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: "k",
-          text: "지금은 질문을 저장할 수 없어요.",
-        }
-      ]);
-    } finally {
-      if (childIdRef.current === requestChildId) setIsLoading(false);
+      setMessages(prev => prev.map(m => m.id === msgId ? {
+        ...m,
+        askChildStatus: "error",
+        askChildErrorText: "지금은 질문을 저장할 수 없어요. 잠시 후 다시 시도해 주세요.",
+        askChildRetryable: true,
+        askChildIsLoading: false
+      } : m));
     }
   };
 
@@ -270,19 +287,40 @@ export default function ParentGuidePage() {
               
               {/* 근거 없음 처리용 버튼 영역 */}
               {msg.askChildProposal && msg.role === "k" && (
-                <div className="mt-2 ml-10 flex gap-2">
-                  <button
-                    onClick={() => handleAskChild(msg.originalQuestion || "")}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-full bg-blue-50 text-blue-600 border border-blue-200"
-                  >
-                    아이에게 물어보기
-                  </button>
-                  <button
-                    onClick={handleSkip}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 border border-gray-200"
-                  >
-                    지금은 넘어가기
-                  </button>
+                <div className="mt-2 ml-10 flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleAskChild(msg.originalQuestion || "", msg.id)}
+                      disabled={msg.askChildIsLoading || msg.askChildStatus === "success"}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-full bg-blue-50 text-blue-600 border border-blue-200 disabled:opacity-50"
+                    >
+                      {msg.askChildIsLoading ? "저장 중..." : "아이에게 물어보기"}
+                    </button>
+                    {!msg.askChildStatus && (
+                      <button
+                        onClick={handleSkip}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 border border-gray-200"
+                      >
+                        지금은 넘어가기
+                      </button>
+                    )}
+                  </div>
+                  {msg.askChildStatus === "success" && (
+                    <p className="text-xs text-green-600">아이에게 자연스럽게 물어볼 질문으로 등록했어요.</p>
+                  )}
+                  {msg.askChildStatus === "error" && msg.askChildErrorText && (
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs text-red-500">{msg.askChildErrorText}</p>
+                      {msg.askChildRetryable && (
+                        <button
+                          onClick={() => handleAskChild(msg.originalQuestion || "", msg.id)}
+                          className="text-xs text-blue-500 underline text-left w-fit"
+                        >
+                          다시 시도
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

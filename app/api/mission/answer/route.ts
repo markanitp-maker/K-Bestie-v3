@@ -238,7 +238,23 @@ export async function POST(req: NextRequest) {
       console.error("[mission/answer] Failed to fetch question text:", { sessionId, questionId, err: qDataErr });
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
-    const questionText = qData?.question_text ?? "";
+    let questionText = qData?.question_text ?? "";
+
+    // 부모 질문 주입 여부 확인
+    const { data: activeParentQ } = await service
+      .from("parent_questions")
+      .select("*")
+      .eq("child_id", session.child_id)
+      .eq("status", "mission_confirming")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let isParentQuestion = false;
+    if (activeParentQ) {
+      questionText = activeParentQ.question_text;
+      isParentQuestion = true;
+    }
 
     let classification: string;
     const lowerAns = answerText.trim().toLowerCase();
@@ -255,6 +271,13 @@ export async function POST(req: NextRequest) {
     // 1. SAFETY_SIGNAL 판정 시 즉시 중단 처리 (RPC 호출로 일괄 대체)
     if (classification === "SAFETY_SIGNAL") {
       const reaction = pickReaction(answerText);
+      
+      if (isParentQuestion && activeParentQ) {
+         await service.from("parent_questions").update({
+           status: "declined"
+         }).eq("id", activeParentQ.id);
+      }
+
       const { data: rpcData, error: rpcErr } = await service.rpc("record_v2_safety_pause", {
         p_session_id: sessionId,
         p_child_id: session.child_id,
@@ -305,10 +328,14 @@ export async function POST(req: NextRequest) {
     if (classification === "VALID") {
       newState = "answered";
       answerStatus = "answered";
+
+      if (isParentQuestion && activeParentQ) {
+        await service.from("parent_questions").update({
+          status: "confirmed",
+          child_answer_summary: answerText
+        }).eq("id", activeParentQ.id);
+      }
     } else {
-      // 동일 문항 재도전은 최대 1회까지만 허용한다 - 이 문항에 대해 이전에 이미
-      // 실패(skipped/refused)한 이력이 있으면 이번이 2번째 이상 실패이므로 더 재시도
-      // 하지 않고 즉시 무효 처리한다(REFUSAL/NO_RESPONSE 구분 없이 동일하게 취급).
       const { count: priorFailureCount, error: priorFailureErr } = await service
         .from("mission_question_history")
         .select("id", { count: "exact", head: true })
@@ -321,12 +348,31 @@ export async function POST(req: NextRequest) {
       }
 
       const isRepeatedFailure = (priorFailureCount ?? 0) >= 1;
-      if (isRepeatedFailure) {
-        newState = "refused";
-        answerStatus = "refused";
+
+      if (isParentQuestion && activeParentQ) {
+        const attempts = (activeParentQ.mission_confirm_attempts || 0) + 1;
+        if (attempts >= 2) {
+           await service.from("parent_questions").update({
+             status: "mission_incomplete",
+             mission_confirm_attempts: attempts
+           }).eq("id", activeParentQ.id);
+           newState = "refused";
+           answerStatus = "refused";
+        } else {
+           await service.from("parent_questions").update({
+             mission_confirm_attempts: attempts
+           }).eq("id", activeParentQ.id);
+           newState = "skipped";
+           answerStatus = "skipped";
+        }
       } else {
-        newState = "skipped";
-        answerStatus = "skipped";
+        if (isRepeatedFailure) {
+          newState = "refused";
+          answerStatus = "refused";
+        } else {
+          newState = "skipped";
+          answerStatus = "skipped";
+        }
       }
     }
 
@@ -673,7 +719,20 @@ export async function POST(req: NextRequest) {
   }
 
   // ------------------ 기존 V1 질문엔진 로직 ------------------
-  
+
+  // 부모 질문 주입 여부 확인 (V2와 동일한 규칙 재사용 — respond/route.ts는 엔진 버전과
+  // 무관하게 parent_questions를 주입하므로, V1 세션에서 답변이 들어와도 동일하게
+  // confirmed/declined/mission_incomplete 상태 전이를 반영해야 한다)
+  const { data: activeParentQV1 } = await service
+    .from("parent_questions")
+    .select("*")
+    .eq("child_id", session.child_id)
+    .eq("status", "mission_confirming")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const isParentQuestionV1 = !!activeParentQV1;
+
   // 유효성 판정
   const result = validateAnswer(answerText);
 
@@ -682,13 +741,33 @@ export async function POST(req: NextRequest) {
   if (result.valid) {
     newState = "answered";
     answerStatus = "answered";
+
+    if (isParentQuestionV1 && activeParentQV1) {
+      await service.from("parent_questions").update({
+        status: "confirmed",
+        child_answer_summary: answerText
+      }).eq("id", activeParentQV1.id);
+    }
   } else if (result.refused) {
     newState = "refused";
     answerStatus = "refused";
+
+    if (isParentQuestionV1 && activeParentQV1) {
+       await service.from("parent_questions").update({ status: "declined" }).eq("id", activeParentQV1.id);
+    }
   } else {
     // 무응답/회피/오답 → 완료처리 없이 skipped (전체 순회 후 루프백 대상)
     newState = "skipped";
     answerStatus = "skipped";
+
+    if (isParentQuestionV1 && activeParentQV1) {
+       const attempts = (activeParentQV1.mission_confirm_attempts || 0) + 1;
+       if (attempts >= 2) {
+          await service.from("parent_questions").update({ status: "mission_incomplete", mission_confirm_attempts: attempts }).eq("id", activeParentQV1.id);
+       } else {
+          await service.from("parent_questions").update({ mission_confirm_attempts: attempts }).eq("id", activeParentQV1.id);
+       }
+    }
   }
 
   states[questionId] = newState;

@@ -181,73 +181,66 @@ export async function POST(req: NextRequest) {
 
   let finalNextQuestionText = nextQuestionText;
 
-  // Parent question injection & evaluation
+  // Parent question injection
   let activeQuestion = null;
+
   const { data: qs } = await authService
     .from("parent_questions")
     .select("*")
     .eq("child_id", session.child_id)
-    .in("status", ["ai_generated", "parent_edited", "mission_confirming"])
+    .eq("status", "mission_confirming")
     .order("created_at", { ascending: false })
     .limit(1);
 
   if (qs && qs.length > 0) {
     activeQuestion = qs[0];
+  } else {
+    // Check if we already asked a parent question in this session
+    let alreadyAskedInSession = false;
+    const { data: nonDrafts } = await authService
+      .from("parent_questions")
+      .select("question_text")
+      .eq("child_id", session.child_id)
+      .not("status", "eq", "draft");
+
+    if (nonDrafts) {
+      const kTexts = history.filter(h => h.role === 'k').map(h => h.text);
+      alreadyAskedInSession = nonDrafts.some(q => kTexts.some(kText => kText.includes(q.question_text)));
+    }
+
+    if (!alreadyAskedInSession) {
+      // Atomically select and claim a draft question
+      const { data: drafts } = await authService
+        .from("parent_questions")
+        .select("id")
+        .eq("child_id", session.child_id)
+        .eq("status", "draft")
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      if (drafts && drafts.length > 0) {
+        const { data: updated } = await authService
+          .from("parent_questions")
+          .update({ status: "mission_confirming", mission_confirm_attempts: 1 })
+          .eq("id", drafts[0].id)
+          .eq("status", "draft")
+          .select()
+          .maybeSingle();
+
+        if (updated) {
+          activeQuestion = updated;
+        }
+      }
+    }
   }
 
   if (activeQuestion) {
     if (activeQuestion.status === "mission_confirming") {
-      const childLastTurn = history[history.length - 1];
-      if (childLastTurn && childLastTurn.role === "child") {
-        try {
-          const evalAi = createGenAIClient(missionModel);
-          const evalPrompt = `방금 케이가 아이에게 다음 질문을 했습니다: "${activeQuestion.question_text}"\n아이의 대답: "${childLastTurn.text}"\n\n아이가 질문에 명확히 응답했는지, 거부했는지, 아니면 모호하거나 다른 주제로 넘어갔는지 판정하세요. 반드시 JSON 형식으로만 반환하세요. JSON 외 텍스트 금지.\n형식: {"verdict": "answered" | "refused" | "unclear", "summary": "아이가 대답한 내용의 요약 (answered인 경우에만 작성)"}`;
-          const evalRes = await evalAi.models.generateContent({
-             model: missionModel.modelId, // for accurate analysis
-             contents: [{ role: "user", parts: [{ text: evalPrompt }] }],
-          });
-          const parsed = extractJSON(evalRes.text || "{}");
-          
-          if (parsed.verdict === "answered") {
-            await authService.from("parent_questions").update({
-              status: "confirmed",
-              child_answer_summary: parsed.summary
-            }).eq("id", activeQuestion.id);
-            activeQuestion = null;
-          } else if (parsed.verdict === "refused") {
-            await authService.from("parent_questions").update({
-              status: "declined"
-            }).eq("id", activeQuestion.id);
-            activeQuestion = null;
-          } else {
-            const attempts = (activeQuestion.mission_confirm_attempts || 0) + 1;
-            if (attempts >= 2) {
-              await authService.from("parent_questions").update({
-                status: "mission_incomplete",
-                mission_confirm_attempts: attempts
-              }).eq("id", activeQuestion.id);
-              activeQuestion = null;
-            } else {
-              await authService.from("parent_questions").update({
-                mission_confirm_attempts: attempts
-              }).eq("id", activeQuestion.id);
-              finalNextQuestionText = `방금 물어본 질문("${activeQuestion.question_text}")에 대해 아직 아이가 대답하지 않았으니 부드럽게 다시 한 번 물어보세요.`;
-              activeQuestion.status = "mission_confirming";
-            }
-          }
-        } catch (err) {
-          console.error("Parent question eval error", err);
-        }
+      if (activeQuestion.mission_confirm_attempts > 1) {
+        finalNextQuestionText = `방금 물어본 질문("${activeQuestion.question_text}")에 대해 아직 대답하지 않았으니 부드럽게 다시 한 번 물어보세요.`;
+      } else {
+        finalNextQuestionText = activeQuestion.question_text;
       }
-    }
-    
-    // Inject if ready
-    if (activeQuestion && (activeQuestion.status === "ai_generated" || activeQuestion.status === "parent_edited")) {
-      await authService.from("parent_questions").update({
-        status: "mission_confirming",
-        mission_confirm_attempts: 1
-      }).eq("id", activeQuestion.id);
-      finalNextQuestionText = activeQuestion.question_text;
     }
   }
 
