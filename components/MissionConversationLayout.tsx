@@ -218,14 +218,14 @@ export function MissionConversationLayout({
         <div className="flex-[0.5_1_0%] min-h-[clamp(8px,1.5dvh,24px)] max-[400px]:min-h-[56px]" />
 
         {/* Previous Chat Summary Area (Flexible) */}
-        <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink gap-[10px] mb-[12px] min-h-[0] overflow-hidden">
+        <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink gap-[10px] mb-[12px] min-h-[0]">
           {olderKText && (
-            <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium shrink min-h-0">
+            <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink min-h-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
               {olderKText}
             </div>
           )}
           {prevKText && (
-            <div className="bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] line-clamp-4 text-center shrink min-h-0">
+            <div className="bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink min-h-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
               {prevKText}
             </div>
           )}
@@ -251,9 +251,9 @@ export function MissionConversationLayout({
             <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
           </button>
         ) : (
-          <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col max-h-[clamp(120px,18dvh,160px)] min-h-[70px] shrink">
-            <div className="overflow-y-auto w-full styled-scrollbar pr-1">
-              <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words">
+          <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[70px] shrink">
+            <div className="w-full">
+              <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
                 {currentQuestionText}
               </p>
             </div>
@@ -410,16 +410,6 @@ export function MissionConversationLayout({
           )}
         </div>
         
-        {/* Interim Text absolutely positioned near mic if needed. Leaving out as per requirements focus */}
-        <style dangerouslySetInnerHTML={{__html:`
-          .styled-scrollbar::-webkit-scrollbar {
-            width: 4px;
-          }
-          .styled-scrollbar::-webkit-scrollbar-thumb {
-            background: rgba(224,90,63,0.3);
-            border-radius: 4px;
-          }
-        `}} />
       </div>
     </div>
   );
