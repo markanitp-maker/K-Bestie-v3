@@ -36,12 +36,29 @@ test("QA-053: 가족 참여는 내 이메일 초대 대기 방식만 제공한�
     });
     expect(parentError).toBeNull();
 
+    const { data: signedIn, error: signInError } = await admin.auth.signInWithPassword({
+      email,
+      password,
+    });
+    expect(signInError).toBeNull();
+    expect(signedIn.session).toBeTruthy();
+
+    const projectRef = new URL(supabaseUrl!).hostname.split(".")[0];
+    const encodedSession = `base64-${Buffer.from(
+      JSON.stringify(signedIn.session),
+      "utf8"
+    ).toString("base64url")}`;
+
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
-    await page.getByPlaceholder("아이 아이디를 입력하세요").fill(username);
-    await page.getByPlaceholder("비밀번호를 입력하세요").fill(password);
-    await page.getByRole("button", { name: "로그인", exact: true }).click();
-    await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 15_000 });
+    await page.context().addCookies([
+      {
+        name: `sb-${projectRef}-auth-token`,
+        value: encodedSession,
+        url: BASE,
+        secure: true,
+        sameSite: "Lax",
+      },
+    ]);
     await page.goto(`${BASE}/parent/home`, { waitUntil: "networkidle" });
 
     await expect(
@@ -60,6 +77,12 @@ test("QA-053: 가족 참여는 내 이메일 초대 대기 방식만 제공한�
       page.getByText("기존 가족 구성원에게 아래 이메일로 초대를 요청해 주세요.", { exact: true })
     ).toBeVisible();
     await expect(page.getByText("아직 도착한 초대가 없어요", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(
+        "가족 대표가 보호자를 추가한 뒤, 새로 고침을 하면 초대장을 확인하실 수 있어요.",
+        { exact: true }
+      )
+    ).toBeVisible();
     await expect(page.getByPlaceholder("오너의 이메일 주소")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "신청하기 →", exact: true })).toHaveCount(0);
     await expect(page.getByText("해당 이메일로 만든 가족을 찾을 수 없어요", { exact: true })).toHaveCount(0);

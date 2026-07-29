@@ -629,7 +629,7 @@ export default function ParentHomePage() {
                   <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-4">
                     <p className="text-sm font-bold text-gray-800">아직 도착한 초대가 없어요</p>
                     <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                      가족 대표가 보호자 설정에서 위 이메일을 초대하면 이곳에서 수락할 수 있어요.
+                      가족 대표가 보호자를 추가한 뒤, 새로 고침을 하면 초대장을 확인하실 수 있어요.
                     </p>
                   </div>
                 )}
