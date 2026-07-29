@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "케이",
+    title: "내친구 케이",
   },
 };
 
@@ -49,4 +49,3 @@ export default function RootLayout({
     </html>
   );
 }
-

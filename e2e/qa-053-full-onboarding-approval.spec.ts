@@ -116,6 +116,27 @@ test("QA-053: 신규 가족 생성부터 관리자 승인과 아이 로그인까
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${BASE}/onboarding`, { waitUntil: "networkidle" });
+
+    const pwaIdentity = await page.evaluate(async () => {
+      const manifestResponse = await fetch("/manifest.json", {
+        cache: "no-store",
+      });
+      const manifest = await manifestResponse.json();
+      return {
+        appleTitle:
+          document
+            .querySelector('meta[name="apple-mobile-web-app-title"]')
+            ?.getAttribute("content") ?? null,
+        manifestName: manifest.name ?? null,
+        manifestShortName: manifest.short_name ?? null,
+      };
+    });
+    expect(pwaIdentity).toEqual({
+      appleTitle: "내친구 케이",
+      manifestName: "내친구 케이",
+      manifestShortName: "내친구 케이",
+    });
+
     await expect(page.getByText("내친구 케이에 오신 것을 환영해요")).toBeVisible();
     // 주입한 Supabase 세션이 최초 요청에서 갱신되면 온보딩 페이지가 한 차례 다시
     // 로드될 수 있다. 실제 버튼 동작 검증 전에 그 갱신을 끝까지 기다린다.

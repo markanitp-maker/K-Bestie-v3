@@ -12,7 +12,7 @@ export async function GET() {
   return NextResponse.json(
     {
       name: "내친구 케이",
-      short_name: "케이",
+      short_name: "내친구 케이",
       description: "아이의 마음을 듣는 AI 친구",
       start_url: "/",
       display: "standalone",
