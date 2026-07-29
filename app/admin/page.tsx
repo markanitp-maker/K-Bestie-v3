@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import FeedbackTab from "./FeedbackTab";
 import ManualReportingTab from "./ManualReportingTab";
 import PlanChangeRequestsTab from "./PlanChangeRequestsTab";
@@ -1492,6 +1493,21 @@ function AdminDashboard() {
           </button>
           );
         })}
+        <Link
+          href="/admin/retention"
+          style={{
+            textAlign: "left",
+            padding: "10px 14px",
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 400,
+            background: "transparent",
+            color: "var(--color-k-text-secondary)",
+            textDecoration: "none",
+          }}
+        >
+          사용자 리텐션
+        </Link>
       </nav>
 
       <div style={{ flex: 1, minWidth: 0 }}>
