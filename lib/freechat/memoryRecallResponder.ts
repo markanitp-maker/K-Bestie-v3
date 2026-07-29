@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { createGenAIClient, LEAN_E_MODEL_ID } from "@/app/api/_lib/ai";
+import { createGenAIClient, FREE_CHAT_MODEL_ID } from "@/app/api/_lib/ai";
 import { searchMemoryFacts, formatMemoryFactsForPrompt } from "@/lib/memory/vectorRetrieval";
 
 export async function generateMemoryRecallResponse(
@@ -84,7 +84,7 @@ ${memoryText}
 
     const ai = createGenAIClient({ provider: "vertex" });
     const response = await ai.models.generateContent({
-      model: LEAN_E_MODEL_ID,
+      model: FREE_CHAT_MODEL_ID,
       contents: childQuestion,
       config: {
         systemInstruction,

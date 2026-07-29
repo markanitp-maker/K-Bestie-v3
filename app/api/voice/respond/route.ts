@@ -10,22 +10,63 @@ import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallRespond
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { after } from "next/server";
+import { FREE_CHAT_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
+import {
+  createGenAIClient,
+  FREE_CHAT_MAX_OUTPUT_TOKENS,
+  FREE_CHAT_MODEL_ID,
+} from "@/app/api/_lib/ai";
+import {
+  buildFreeChatContents,
+  isValidFreeChatResponse,
+} from "@/lib/freechat/geminiPolicy";
 
 export const runtime = "nodejs";
 
-// 자유대화는 LLM을 호출하지 않는다 — 앱 자체 규칙 기반 엔진만 사용.
-// 판단 순서: 1) 안전 검사 최우선(lib/freeChatReactions.ts의 pickReaction — category==="safety"면
-//              그 결과를 그대로 사용, safety_events 저장까지 기존 로직 불변)
-//           2) 안전이 아니면 15개 감정/상황 카테고리 반영적 경청 엔진(lib/freechat/reactionEngine.ts,
-//              300여 개 분류 데이터셋 reactionSeed.json 기반)으로 반응 생성.
-// 문장 풀/키워드 편집은 각 파일에서만 한다(이 파일은 로직 변경 불필요).
-//
-// (과거 이력: gemini-flash-lite-latest + FREE_CHAT_SYSTEM_PROMPT로 LLM 호출하던 구조였으나
-//  반영적 경청 규칙 기반 엔진으로 전면 교체. 되돌릴 경우 git history의 이 파일 이전 버전 참고.)
+// 자유대화 응답 순서:
+// 1) 안전 신호는 기존 규칙 엔진이 즉시 처리하고 보호자 이벤트를 기록한다.
+// 2) 저신뢰 음성·앱 모드 질문은 사실성이 중요한 고정 응답을 사용한다.
+// 3) 기억 회상은 저장된 기억만 근거로 Gemini 2.5 Flash Lite가 응답한다.
+// 4) 일반 대화는 Gemini 2.5 Flash Lite가 응답하며, 호출 실패·무효 출력이면 기존
+//    반영적 경청 엔진으로 폴백한다.
 
 const LOW_ASR_CONFIDENCE_THRESHOLD = 0.55;
 
 interface HistoryTurn { role: "child" | "k"; text: string }
+
+function recordLlmUsage(
+  sessionId: string,
+  tokenIn: number,
+  tokenOut: number
+) {
+  after(async () => {
+    try {
+      const ctx = await resolveUsageContext(sessionId);
+      if (!ctx) return;
+      const serviceRole = createServiceClient();
+      const estCostKrw = estimateCost({
+        kind: "llm",
+        tokenIn,
+        tokenOut,
+      });
+      await serviceRole.from("usage_events").insert({
+        child_id: ctx.childId,
+        tier: ctx.tier,
+        voice_mode: ctx.voiceMode,
+        kind: "llm",
+        token_in: tokenIn,
+        token_out: tokenOut,
+        est_cost_krw: estCostKrw,
+        conversation_mode: null,
+      });
+    } catch (err) {
+      console.error(
+        "[voice/respond] usage_events insert failed:",
+        (err as Error).message
+      );
+    }
+  });
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -100,39 +141,20 @@ export async function POST(req: NextRequest) {
   if (isMemoryRecallQuery(childText)) {
     const memoryRes = await generateMemoryRecallResponse(service, session.child_id, childText);
     if (memoryRes && memoryRes.text) {
-      // 기록 남기기 (usage_events) - fire-and-forget
-      after(async () => {
-        try {
-          const ctx = await resolveUsageContext(sessionId);
-          if (!ctx) return;
-          const serviceRole = createServiceClient();
-          const estCostKrw = estimateCost({ kind: "llm", tokenIn: memoryRes.tokenIn, tokenOut: memoryRes.tokenOut });
-          await serviceRole.from("usage_events").insert({
-            child_id: ctx.childId,
-            tier: ctx.tier,
-            voice_mode: ctx.voiceMode,
-            kind: "llm",
-            token_in: memoryRes.tokenIn,
-            token_out: memoryRes.tokenOut,
-            est_cost_krw: estCostKrw,
-            conversation_mode: null, // 자유대화는 A~E에 해당하지 않으므로 null (또는 생략)
-          });
-        } catch (err) {
-          console.error("[voice/respond] usage_events insert failed:", (err as Error).message);
-        }
-      });
+      recordLlmUsage(sessionId, memoryRes.tokenIn, memoryRes.tokenOut);
 
       return NextResponse.json({
         text: memoryRes.text,
         category: "memory_recall",
         flaggedForParent: false,
+        model: FREE_CHAT_MODEL_ID,
       });
     }
     // 기억이 없거나 오류 시 자연스럽게 아래의 반영적 경청 엔진으로 폴백
   }
 
 
-  // 2) 안전이 아니면 15개 카테고리 반영적 경청 엔진으로 반응 생성.
+  // 규칙 엔진 결과는 저신뢰 음성·앱 모드의 정확한 응답 및 Gemini 장애 폴백에 사용한다.
   const recentKTexts = history
     .filter((t): t is HistoryTurn & { role: "k" } => t.role === "k" && !!t.text?.trim())
     .slice(-20)
@@ -143,14 +165,97 @@ export async function POST(req: NextRequest) {
 
   const reflective = generateReflectiveReaction(lastChild.text.trim(), recentKTexts, { isLowConfidenceAsr });
 
-  if (reflective.category === "app_mode_question") {
-    const modeText = body.appMode === "manual" ? "수동" : "자동";
-    reflective.text = `응, 지금은 ${modeText} 모드야.`;
+  if (isLowConfidenceAsr) {
+    return NextResponse.json({
+      text: reflective.text,
+      category: reflective.category,
+      flaggedForParent: false,
+      model: "rule_fallback",
+    });
   }
 
-  return NextResponse.json({
-    text: reflective.text,
-    category: reflective.category,
-    flaggedForParent: false,
-  });
+  if (reflective.category === "app_mode_question") {
+    const modeText = body.appMode === "manual" ? "수동" : "자동";
+    return NextResponse.json({
+      text: `응, 지금은 ${modeText} 모드야.`,
+      category: reflective.category,
+      flaggedForParent: false,
+      model: "rule_fallback",
+    });
+  }
+
+  // 일반 지식·설명 질문에는 모델의 사전지식을 사용하지 않는다. 과거 대화에 대한
+  // 질문은 위의 LLM WIKI 회상 경로에서 먼저 처리되며, 근거가 없거나 그 밖의 질문은
+  // 정답을 지어내지 않고 아이에게 알려달라고 요청한다.
+  if (reflective.category === "direct_question") {
+    return NextResponse.json({
+      text: "그건 잘 모르겠어. 네가 알려줄래?",
+      category: reflective.category,
+      flaggedForParent: false,
+      model: "wiki_only_guard",
+    });
+  }
+
+  try {
+    const ai = createGenAIClient({ provider: "vertex" });
+    const contents = buildFreeChatContents(history);
+    const baseConfig = {
+      systemInstruction: {
+        parts: [{ text: FREE_CHAT_SYSTEM_PROMPT }],
+      },
+      thinkingConfig: { thinkingBudget: 0 },
+      temperature: 0.7,
+      maxOutputTokens: FREE_CHAT_MAX_OUTPUT_TOKENS,
+    };
+    let result = await ai.models.generateContent({
+      model: FREE_CHAT_MODEL_ID,
+      contents,
+      config: baseConfig,
+    });
+    let text = result.text?.trim() ?? "";
+
+    if (!isValidFreeChatResponse(text)) {
+      result = await ai.models.generateContent({
+        model: FREE_CHAT_MODEL_ID,
+        contents,
+        config: {
+          ...baseConfig,
+          systemInstruction: {
+            parts: [
+              {
+                text: `${FREE_CHAT_SYSTEM_PROMPT}\n\n이전 출력이 길이 또는 형식 규칙을 어겼습니다. 반드시 자연스러운 한국어 1~2문장, 60자 이내, 질문 최대 1개로만 다시 답하세요.`,
+              },
+            ],
+          },
+          temperature: 0.4,
+        },
+      });
+      text = result.text?.trim() ?? "";
+    }
+
+    if (!isValidFreeChatResponse(text)) {
+      throw new Error("Gemini response validation failed");
+    }
+
+    recordLlmUsage(
+      sessionId,
+      result.usageMetadata?.promptTokenCount ?? 0,
+      result.usageMetadata?.candidatesTokenCount ?? 0
+    );
+
+    return NextResponse.json({
+      text,
+      category: reflective.category,
+      flaggedForParent: false,
+      model: FREE_CHAT_MODEL_ID,
+    });
+  } catch (err) {
+    console.error("[voice/respond] Gemini fallback:", (err as Error).message);
+    return NextResponse.json({
+      text: reflective.text,
+      category: reflective.category,
+      flaggedForParent: false,
+      model: "rule_fallback",
+    });
+  }
 }

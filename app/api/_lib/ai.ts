@@ -29,6 +29,10 @@ export const LEAN_E_MODEL_ID = "gemini-3.1-flash-lite";
 export const LEAN_E_MAX_OUTPUT_TOKENS = 40;
 export const REACTION_LEAN_MAX_OUTPUT_TOKENS = 40;
 
+// 자유대화 전용 텍스트 응답 모델. 미션 그룹 B 및 Live 음성 모델과 독립적으로 고정한다.
+export const FREE_CHAT_MODEL_ID = "gemini-2.5-flash-lite";
+export const FREE_CHAT_MAX_OUTPUT_TOKENS = 80;
+
 // ── 그룹별 조회(Vertex 전환 스위치) ───────────────────────────
 // 그룹A=리포트·요약 / 그룹B=미션 대화 / 그룹C=라이브 음성.
 export type ProviderId = "vertex";
