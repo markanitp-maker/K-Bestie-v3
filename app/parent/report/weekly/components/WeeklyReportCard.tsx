@@ -1,0 +1,74 @@
+import React from "react";
+import Link from "next/link";
+import { formatWeekRange } from "./CurrentWeekAggregationCard";
+
+export interface WeeklyReportSummary {
+  id: string;
+  week_start: string;
+  week_end: string;
+  summary_text: string;
+  mood_average: number;
+  highlights: string[];
+  summary_state: string;
+}
+
+export function getStateColor(state: string) {
+  if (state === "살펴볼 점이 있어요") return "#F19122"; // K-Mascot Orange
+  if (state === "편안한 한 주였어요") return "#4298D3"; // K-Sky Blue
+  return "#9CA3AF"; // Neutral (평소와 비슷했어요 or 데이터가 아직 적어요)
+}
+
+export function WeeklyReportCard({
+  report,
+  isFeatured = false,
+  isLastWeek = false
+}: {
+  report: WeeklyReportSummary;
+  isFeatured?: boolean;
+  isLastWeek?: boolean;
+}) {
+  const dotColor = getStateColor(report.summary_state);
+
+  return (
+    <Link
+      href={`/parent/report/weekly/${report.id}`}
+      className={`block bg-white rounded-[16px] border border-gray-200 active:scale-[0.99] transition-transform flex flex-col justify-between ${
+        isFeatured ? "p-4 mb-4 shadow-md" : "p-3 shadow-sm h-full min-h-[150px]"
+      }`}
+    >
+      <div>
+        <div className="flex justify-between items-start mb-2">
+          <h2 className="text-[13px] font-bold text-[#10315B]">
+            {formatWeekRange(report.week_start, report.week_end)}
+          </h2>
+          {isFeatured && isLastWeek && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md text-white" style={{ background: "#F19122" }}>
+              지난주
+            </span>
+          )}
+        </div>
+        
+        <p className="text-[12px] font-bold mb-1.5" style={{ color: dotColor }}>
+          ● {report.summary_state}
+        </p>
+        
+        <p className={`text-[#10315B] leading-snug mb-3 ${isFeatured ? "text-[14px] font-bold" : "text-[13px] font-semibold line-clamp-3"}`}>
+          {report.summary_text || "주간 요약이 없습니다."}
+        </p>
+      </div>
+
+      {(report.highlights && report.highlights.length > 0) && (
+        <div className="flex gap-1.5 flex-wrap mt-auto pt-2">
+          {report.highlights.slice(0, 2).map((tag) => (
+            <span
+              key={tag}
+              className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600"
+            >
+              [{tag}]
+            </span>
+          ))}
+        </div>
+      )}
+    </Link>
+  );
+}

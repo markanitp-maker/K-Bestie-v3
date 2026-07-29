@@ -8,112 +8,121 @@ import { ParentHeader } from "@/components/ParentHeader";
 import { SkeletonBox } from "@/components/Skeleton";
 import { useStore } from "@/hooks/useStore";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { CurrentWeekAggregationCard } from "./components/CurrentWeekAggregationCard";
+import { WeeklyReportCard, WeeklyReportSummary } from "./components/WeeklyReportCard";
+import { WeeklyHistoryCalendarSheet } from "./components/WeeklyHistoryCalendarSheet";
 
-interface WeeklySummary {
-  id: string;
+interface CurrentAggregation {
   week_start: string;
   week_end: string;
-  summary_text: string;
-  mood_average: number;
-  highlights: string[];
-  weekend_activity_recommendation: string;
-}
-
-function formatWeekRange(start: string, end: string): string {
-  const s = new Date(start).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-  const e = new Date(end).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-  return `${s} ~ ${e}`;
+  currentDayIndex: number;
+  currentConversationCount: number;
+  expectedCompletionLabel: string;
 }
 
 export default function ParentWeeklyReportPage() {
   const store = useStore();
   const activeChildId = store.activeChildId ?? store.children[0]?.id ?? null;
-  const [weeklies, setWeeklies] = useState<WeeklySummary[]>([]);
+  
+  const [currentAggregation, setCurrentAggregation] = useState<CurrentAggregation | null>(null);
+  const [weeklies, setWeeklies] = useState<WeeklyReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   useEffect(() => {
     if (!activeChildId) {
       setLoading(false);
       return;
     }
+    
+    const controller = new AbortController();
     setLoading(true);
-    fetch(`/api/parent/reports/weekly?childId=${activeChildId}`)
+    
+    fetch(`/api/parent/reports/weekly?childId=${activeChildId}&type=list`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setWeeklies(d?.weeklySummaries ?? []))
+      .then((d) => {
+        if (d) {
+          setCurrentAggregation(d.currentAggregation ?? null);
+          setWeeklies(d.weeklySummaries ?? []);
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
+      
+    return () => controller.abort();
   }, [activeChildId]);
-
-  if (loading) {
-    return (
-      <DemoFrame>
-        <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
-          <ParentHeader />
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <SkeletonBox key={i} className="h-28" />
-            ))}
-          </div>
-        </div>
-      </DemoFrame>
-    );
-  }
 
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         <ParentHeader />
 
-        <div className="flex items-center gap-2 px-4 pt-3">
-          <Link href="/parent/report" className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white text-gray-500">
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1 shrink-0">
+          <Link href="/parent/report" className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white text-gray-500" aria-selected="false" role="tab">
             일간
           </Link>
-          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "var(--color-k-navy)" }}>
+          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "var(--color-k-navy, #10315B)" }} aria-selected="true" role="tab">
             주간
           </span>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
-          {weeklies.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
-              <p className="text-4xl mb-4">📭</p>
-              <p className="text-sm font-semibold text-gray-600">아직 주간 리포트가 없어요</p>
-              <p className="text-xs mt-2 text-gray-400">매주 토요일에 새로 생성돼요</p>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col">
+          {loading ? (
+            <div className="flex flex-col gap-3">
+              <SkeletonBox className="h-24 rounded-[16px]" />
+              <SkeletonBox className="h-32 rounded-[16px]" />
+              <div className="grid grid-cols-2 gap-3 mt-1">
+                <SkeletonBox className="h-40 rounded-[16px]" />
+                <SkeletonBox className="h-40 rounded-[16px]" />
+              </div>
             </div>
           ) : (
-            weeklies.map((w) => (
-              <Link
-                key={w.id}
-                href={`/parent/report/weekly/${w.id}`}
-                className="block bg-white rounded-2xl p-4 active:scale-[0.99] transition-transform shadow-sm"
-              >
-                <p className="text-xs font-bold text-gray-500 mb-2">{formatWeekRange(w.week_start, w.week_end)}</p>
-                <p className="text-sm font-bold text-gray-800 leading-relaxed mb-2">{w.summary_text}</p>
-                <div className="flex gap-1.5 flex-wrap mb-2">
-                  {(w.highlights ?? []).slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{ background: "#fdf1ec", color: "var(--color-k-orange)" }}
-                    >
-                      {tag}
-                    </span>
-                  ))}
+            <>
+              {currentAggregation && <CurrentWeekAggregationCard data={currentAggregation} />}
+              
+              {weeklies.length > 0 ? (
+                <>
+                  <WeeklyReportCard report={weeklies[0]} isFeatured={true} isLastWeek={true} />
+                  
+                  {weeklies.length > 1 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                      {weeklies.slice(1).map(w => (
+                        <WeeklyReportCard key={w.id} report={w} isFeatured={false} />
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-10 bg-white rounded-[16px] shadow-sm border border-gray-100 mb-6">
+                  <p className="text-sm font-semibold text-gray-600 mb-1">아직 완성된 주간 리포트가 없어요.</p>
+                  <p className="text-xs text-gray-400">이번 주 대화가 모이면 확인할 수 있어요.</p>
                 </div>
-                {w.weekend_activity_recommendation && (
-                  <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-navy)" }}>
-                    🎈 {w.weekend_activity_recommendation}
-                  </p>
-                )}
-              </Link>
-            ))
+              )}
+
+              <div className="mt-4 mb-6 flex justify-center">
+                <button
+                  onClick={() => setIsCalendarOpen(true)}
+                  className="flex items-center gap-1 text-[13px] font-bold text-[#10315B] px-4 py-2 active:bg-gray-200 rounded-full transition-colors"
+                >
+                  지난 기록 보기<span className="text-[10px]">⌄</span>
+                </button>
+              </div>
+            </>
           )}
         </div>
 
         <RealParentNav active="리포트" />
       </div>
     
-        <KChatbotWidget appSurface="parent" />
-      </DemoFrame>
+      {activeChildId && (
+        <WeeklyHistoryCalendarSheet
+          childId={activeChildId}
+          isOpen={isCalendarOpen}
+          onClose={() => setIsCalendarOpen(false)}
+        />
+      )}
+      
+      <KChatbotWidget appSurface="parent" />
+    </DemoFrame>
   );
 }
