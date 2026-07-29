@@ -45,6 +45,14 @@ export default function ChatPage() {
   const [micPermission, setMicPermission] = useState<PermissionState | "checking" | "not_needed">("checking");
   const autoStartAttempted = useRef(false);
 
+  // 030: 서버 시간 기준 10분 연속 사용 + 1분 휴식 게이트. usagePhase가 "ready"가 되기
+  // 전에는 음성/텍스트 대화 화면을 아예 렌더링하지 않는다(클라이언트 버튼 비활성화만으로
+  // 처리하지 않기 위함 — 주소창 직접 접근도 이 게이트를 거친다).
+  const [usagePhase, setUsagePhase] = useState<"checking" | "cooldown" | "ready">("checking");
+  const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
+  const usageSessionStartedAtRef = useRef<string | null>(null);
+  const usageSessionEndsAtMsRef = useRef<number | null>(null);
+
   const voiceBubbleRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -141,25 +149,112 @@ export default function ChatPage() {
     setSessionActive(false);
   }, [sayText, stopSession]);
 
-  // 시간 제한 하드 리밋 감지
+  // 030: 서버가 내려준 sessionEndsAt 기준 하드 리밋(음성/텍스트 모드 공통 — 기존에는
+  // status==="live"일 때만 고정 10분 타이머가 걸려 텍스트 전용 사용에는 시간 제한이
+  // 전혀 없었다). usagePhase가 "ready"가 된 시점의 남은 시간만큼만 타이머를 건다(새로고침
+  // 복귀 시 남은 시간이 10분보다 짧을 수 있음).
   useEffect(() => {
-    if (status === "live") {
-      timerRef.current = setTimeout(() => {
-        triggerHardLimitStop("오늘 대화는 여기까지야! 너무 재미있었어, 내일 또 이야기하러 와줘 🌿");
-      }, MAX_SESSION_DURATION_MS);
-    } else {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
+    if (usagePhase !== "ready" || usageSessionEndsAtMsRef.current === null) return;
+    const delay = Math.max(0, usageSessionEndsAtMsRef.current - Date.now());
+    timerRef.current = setTimeout(() => {
+      const cId = childIdRef.current;
+      const startedAt = usageSessionStartedAtRef.current;
+      if (cId && startedAt) {
+        fetch("/api/chat/freechat-usage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId: cId, action: "end", startedAt }),
+        }).catch(() => {});
       }
-    }
+      triggerHardLimitStop("오늘 대화는 여기까지야! 1분 쉬었다가 다시 이야기하러 와줘 🌿");
+      setCooldownRemainingSec(60);
+      setUsagePhase("cooldown");
+    }, delay);
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
     };
-  }, [status, triggerHardLimitStop]);
+  }, [usagePhase, triggerHardLimitStop]);
+
+  // 030: 자유대화 진입 게이트 — childId가 확정되면 서버 상태를 먼저 확인한다.
+  // 휴식 중이면 대화 화면을 렌더링하지 않고 휴식 안내로 전환하고, 그 외에는
+  // start를 호출해(이미 활성 세션이면 그대로 재개) 서버 기준 종료 시각을 받는다.
+  useEffect(() => {
+    if (!childId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const statusRes = await fetch(`/api/chat/freechat-usage?childId=${childId}`);
+        const statusData = await statusRes.json();
+        if (cancelled) return;
+        if (statusData.status === "cooldown") {
+          setCooldownRemainingSec(statusData.remainingCooldownSeconds ?? 60);
+          setUsagePhase("cooldown");
+          return;
+        }
+        const startRes = await fetch("/api/chat/freechat-usage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId, action: "start" }),
+        });
+        const startData = await startRes.json();
+        if (cancelled) return;
+        if (!startData.allowed) {
+          setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 60);
+          setUsagePhase("cooldown");
+          return;
+        }
+        usageSessionStartedAtRef.current = startData.startedAt;
+        usageSessionEndsAtMsRef.current = new Date(startData.sessionEndsAt).getTime();
+        setUsagePhase("ready");
+      } catch (e) {
+        console.error("[freechat-usage] init error:", e);
+        // 서버 상태 확인 자체가 실패하면(네트워크 등) 정상 사용자를 완전히 막지 않고
+        // 클라이언트 기준 10분으로 fail-open — 단, DB 기준 우회 방지가 핵심 목적인
+        // 다중기기/새로고침 우회 시나리오는 서버 응답이 정상일 때만 보장된다.
+        usageSessionEndsAtMsRef.current = Date.now() + MAX_SESSION_DURATION_MS;
+        setUsagePhase("ready");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [childId]);
+
+  // 030: 휴식 카운트다운 — 1초마다 감소, 0이 되면 새로고침 없이 재진입 시도(§5)
+  useEffect(() => {
+    if (usagePhase !== "cooldown") return;
+    if (cooldownRemainingSec <= 0) {
+      const cId = childIdRef.current;
+      if (!cId) return;
+      setUsagePhase("checking");
+      (async () => {
+        try {
+          const startRes = await fetch("/api/chat/freechat-usage", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ childId: cId, action: "start" }),
+          });
+          const startData = await startRes.json();
+          if (startData.allowed) {
+            usageSessionStartedAtRef.current = startData.startedAt;
+            usageSessionEndsAtMsRef.current = new Date(startData.sessionEndsAt).getTime();
+            setUsagePhase("ready");
+          } else {
+            setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 60);
+            setUsagePhase("cooldown");
+          }
+        } catch (e) {
+          console.error("[freechat-usage] cooldown re-check error:", e);
+          setCooldownRemainingSec(1);
+          setUsagePhase("cooldown");
+        }
+      })();
+      return;
+    }
+    const t = setTimeout(() => setCooldownRemainingSec((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [usagePhase, cooldownRemainingSec]);
 
   // 턴 수 제한 하드 리밋 감지
   useEffect(() => {
@@ -437,6 +532,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (
       childId &&
+      usagePhase === "ready" &&
       isAuto &&
       micPermission === "granted" &&
       !autoStartAttempted.current &&
@@ -445,7 +541,7 @@ export default function ChatPage() {
       autoStartAttempted.current = true;
       handleStart();
     }
-  }, [childId, isAuto, micPermission, status, handleStart]);
+  }, [childId, usagePhase, isAuto, micPermission, status, handleStart]);
 
   // 상태 플래그
   const isConnecting = status === "connecting";
@@ -514,11 +610,36 @@ export default function ChatPage() {
     }
   }
 
-  if (!mounted) {
+  if (!mounted || usagePhase === "checking") {
     return (
       <DemoFrame>
         <div className="h-full flex items-center justify-center" style={{ background: "var(--color-k-surface)" }}>
           <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
+        </div>
+      </DemoFrame>
+    );
+  }
+
+  if (usagePhase === "cooldown") {
+    const mm = String(Math.floor(cooldownRemainingSec / 60)).padStart(2, "0");
+    const ss = String(cooldownRemainingSec % 60).padStart(2, "0");
+    return (
+      <DemoFrame>
+        <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]">
+          <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+            <KBestieMascotAnimation state="idle" size={120} />
+            <p className="text-[#3a2f2a] text-[19px] font-bold leading-relaxed">
+              지금은 잠깐 쉬는 시간이야.<br />
+              {cooldownRemainingSec > 0 ? `${mm}:${ss} 뒤에 다시 이야기할 수 있어.` : "이제 다시 이야기할 수 있어."}
+            </p>
+            <button
+              onClick={() => router.replace("/child/home")}
+              className="mt-2 px-6 py-3 rounded-2xl text-sm font-bold text-white cursor-pointer active:scale-95"
+              style={{ background: "var(--color-k-orange)" }}
+            >
+              홈으로 갈래요
+            </button>
+          </div>
         </div>
       </DemoFrame>
     );
