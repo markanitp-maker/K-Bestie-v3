@@ -41,8 +41,17 @@ test("QA-053: 가족 참여는 내 이메일 초대 대기 방식만 제공한�
     await page.getByPlaceholder("아이 아이디를 입력하세요").fill(username);
     await page.getByPlaceholder("비밀번호를 입력하세요").fill(password);
     await page.getByRole("button", { name: "로그인", exact: true }).click();
-    await page.waitForTimeout(1_000);
+    await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 15_000 });
     await page.goto(`${BASE}/parent/home`, { waitUntil: "networkidle" });
+
+    await expect(
+      page.getByText("베타 신청 시 등록한 이메일로 가입하셨다면, 새 가족을 만들어 주세요", {
+        exact: true,
+      })
+    ).toBeVisible();
+    await expect(
+      page.getByText("이미 만들어진 가족이 있다면, 보호자로 참여합니다.", { exact: true })
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "가족 구성원으로 참여하기", exact: true }).click();
 

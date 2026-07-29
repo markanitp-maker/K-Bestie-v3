@@ -487,20 +487,31 @@ export default function ParentHomePage() {
                 </div>
               )}
 
-              <div className="w-full max-w-xs flex flex-col gap-4 mt-2">
-                <button
-                  onClick={() => setViewState("create_family")}
-                  className="w-full py-4 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform text-center cursor-pointer"
-                  style={{ background: "var(--color-k-navy)" }}
-                >
-                  가족 만들기
-                </button>
-                <button
-                  onClick={() => setViewState("join_family")}
-                  className="w-full py-4 rounded-2xl font-bold text-sm bg-white border border-gray-200 text-gray-700 active:scale-[0.98] transition-transform text-center cursor-pointer"
-                >
-                  가족 구성원으로 참여하기
-                </button>
+              <div className="w-full max-w-xs flex flex-col gap-5 mt-2">
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => setViewState("create_family")}
+                    className="w-full py-4 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform text-center cursor-pointer"
+                    style={{ background: "var(--color-k-navy)" }}
+                  >
+                    가족 만들기
+                  </button>
+                  <p className="px-1 text-xs leading-relaxed text-gray-500">
+                    베타 신청 시 등록한 이메일로 가입하셨다면, 새 가족을 만들어 주세요
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => setViewState("join_family")}
+                    className="w-full py-4 rounded-2xl font-bold text-sm bg-white border border-gray-200 text-gray-700 active:scale-[0.98] transition-transform text-center cursor-pointer"
+                  >
+                    가족 구성원으로 참여하기
+                  </button>
+                  <p className="px-1 text-xs leading-relaxed text-gray-500">
+                    이미 만들어진 가족이 있다면, 보호자로 참여합니다.
+                  </p>
+                </div>
               </div>
             </div>
           )}
