@@ -71,7 +71,13 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed.xPercent === "number" && typeof parsed.yPercent === "number" && (parsed.edge === "left" || parsed.edge === "right")) {
-          setPosition(parsed);
+          // 저장 이후 뷰포트가 바뀌었거나(PC 프리뷰 ↔ 실기기) 값 자체가 손상된 경우
+          // 버튼이 화면 밖으로 나가지 않도록 0~1 범위로 clamp한다.
+          setPosition({
+            ...parsed,
+            xPercent: Math.min(1, Math.max(0, parsed.xPercent)),
+            yPercent: Math.min(1, Math.max(0, parsed.yPercent)),
+          });
         }
       }
     } catch (e) {

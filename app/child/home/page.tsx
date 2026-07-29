@@ -245,7 +245,7 @@ export default function ChildHomePage() {
         </div>
         
         {/* Top Action Bar */}
-        <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top)] mt-4 relative z-10 w-full max-w-[480px] mx-auto">
+        <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top)] mt-4 relative z-10 w-full max-w-[430px] mx-auto child-home-content">
           <div className="w-[44px]"></div>
           {/* Mission Event Pill (Hidden as requested: "이 영역은 숨김 처리") */}
           <div className="invisible">
@@ -263,7 +263,7 @@ export default function ChildHomePage() {
           </button>
         </div>
 
-        <div className="flex-1 w-full max-w-[480px] mx-auto px-4 pb-20 flex flex-col relative z-10">
+        <div className="flex-1 w-full max-w-[430px] mx-auto px-4 pb-20 flex flex-col relative z-10 child-home-content">
           
           {/* Mascot Area */}
           <div className="flex flex-col items-center justify-center flex-1 min-h-[160px] relative">
@@ -273,7 +273,7 @@ export default function ChildHomePage() {
               width={205}
               height={205}
               className="object-contain drop-shadow-md z-10"
-              style={{ width: "clamp(150px, 43vw, 205px)", height: "auto" }}
+              style={{ width: "clamp(150px, 56%, 205px)", height: "auto" }}
               priority
             />
             {/* Oval shadow under mascot */}
@@ -281,15 +281,15 @@ export default function ChildHomePage() {
           </div>
 
           {/* Greeting Area */}
-          <div className="flex flex-col items-center text-center mt-6 mb-3">
-            <h1 className="font-brand text-[26px] font-extrabold leading-[1.2]">
+          <div className="flex flex-col items-center text-center mt-4 mb-3">
+            <h1 className="font-brand text-[24px] font-extrabold leading-[1.35]">
               {greetingTitle}<br/>오늘은 뭐 하고 놀까?
             </h1>
           </div>
 
           {/* Status Bubble */}
           <div className="flex justify-center mb-5">
-            <div className="relative bg-white px-4 py-2 rounded-full border border-[var(--color-k-orange)] shadow-sm text-sm font-medium inline-block max-w-[85%] text-center">
+            <div className="relative bg-white px-4 py-2.5 rounded-full border border-[var(--color-k-orange)] shadow-sm text-[15px] font-medium inline-block max-w-[80%] text-center">
               {missionBubble}
               {/* Triangle pointer */}
               <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-[var(--color-k-orange)] transform rotate-45"></div>
@@ -301,15 +301,15 @@ export default function ChildHomePage() {
             {/* Mission Card (Primary) */}
             <Link 
               href={missionUrl}
-              className="flex items-center gap-4 rounded-[24px] px-5 py-5 shadow-sm transition-transform active:scale-[0.98] w-full"
+              className="flex items-center gap-3.5 rounded-[24px] px-4 py-4 shadow-sm transition-transform active:scale-[0.98] w-full"
               style={{ background: "var(--color-k-orange)" }}
             >
-              <div className="w-14 h-14 rounded-[18px] flex items-center justify-center text-3xl shrink-0 bg-white/25">
+              <div className="w-[60px] h-[60px] rounded-[20px] flex items-center justify-center text-[32px] shrink-0 bg-white/25">
                 🎯
               </div>
               <div className="flex-1 text-left min-w-0">
-                <p className="text-white font-bold text-lg">{missionTitle}</p>
-                <p className="text-white/90 text-sm mt-0.5 truncate">{missionDesc}</p>
+                <p className="text-white font-bold text-[19px] leading-snug">{missionTitle}</p>
+                <p className="text-white/90 text-[14px] mt-0.5 truncate">{missionDesc}</p>
               </div>
               {progressText && (
                 <div className="shrink-0 text-[var(--color-k-navy)] font-bold text-[13px] bg-white px-2.5 py-1 rounded-full shadow-sm">
@@ -319,34 +319,34 @@ export default function ChildHomePage() {
             </Link>
 
             {/* Sub Cards (Grid) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               {/* Talk Card */}
               <Link 
                 href="/chat"
-                className="flex items-center gap-4 rounded-[20px] px-4 py-4 shadow-sm transition-transform active:scale-[0.98] w-full"
+                className="flex flex-col items-start gap-2.5 rounded-[20px] px-3.5 py-3.5 shadow-sm transition-transform active:scale-[0.98] w-full"
                 style={{ background: "var(--color-k-mascot-orange)" }}
               >
-                <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl shrink-0 bg-white/30">
+                <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-[22px] shrink-0 bg-white/30">
                   💬
                 </div>
-                <div className="flex-1 text-left min-w-0">
-                  <p className="text-[var(--color-k-navy)] font-bold text-[15px]">대화하기</p>
-                  <p className="text-[var(--color-k-navy)]/90 text-[13px] mt-0.5 truncate">케이랑 이야기 나눠요</p>
+                <div className="flex-1 text-left min-w-0 w-full mt-1">
+                  <p className="text-[var(--color-k-navy)] font-bold text-[16px] leading-tight">대화하기</p>
+                  <p className="text-[var(--color-k-navy)]/80 text-[13px] mt-1 leading-snug line-clamp-2">케이랑 이야기 나눠요</p>
                 </div>
               </Link>
 
               {/* Play Card */}
               <Link 
                 href="/child/play"
-                className="flex items-center gap-4 rounded-[20px] px-4 py-4 shadow-sm transition-transform active:scale-[0.98] w-full"
+                className="flex flex-col items-start gap-2.5 rounded-[20px] px-3.5 py-3.5 shadow-sm transition-transform active:scale-[0.98] w-full"
                 style={{ background: "var(--color-k-sky-blue)" }}
               >
-                <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl shrink-0 bg-white/25">
+                <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-[22px] shrink-0 bg-white/25">
                   🎮
                 </div>
-                <div className="flex-1 text-left min-w-0">
-                  <p className="text-[var(--color-k-navy)] font-bold text-[15px]">케이와 놀이</p>
-                  <p className="text-[var(--color-k-navy)] text-[13px] mt-0.5 truncate">
+                <div className="flex-1 text-left min-w-0 w-full mt-1">
+                  <p className="text-[var(--color-k-navy)] font-bold text-[16px] leading-tight">케이와 놀이</p>
+                  <p className="text-[var(--color-k-navy)]/80 text-[13px] mt-1 leading-snug line-clamp-2">
                     {goldKeyBalance !== null ? `🔑 ${goldKeyBalance}개 보유` : "재미있는 놀이를 해봐요"}
                   </p>
                 </div>
@@ -378,7 +378,7 @@ export default function ChildHomePage() {
         )}
       </div>
 
-      <KChatbotWidget appSurface="child" />
+      <KChatbotWidget appSurface="child" containerMaxWidthPx={430} />
     </DemoFrame>
   );
 }
