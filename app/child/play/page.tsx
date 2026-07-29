@@ -20,12 +20,12 @@ function LogOut({ size = 20, color = "currentColor" }: { size?: number; color?: 
 const GAMES = [
   // comingSoon: 실제 게임 화면이 아직 없는 placeholder 카드 — 클릭해도 황금열쇠 차감/
   // 시작 확인 모달로 이어지면 안 된다(2026-07-27 실사용 손실 발견, 즉시 차단).
-  { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", keys: 2, comingSoon: true },
+  { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", bgLight: "var(--color-k-orange-tint)", keys: 2, comingSoon: true },
   // keys는 화면 표시·부족 판정용 값이다. 실제 차감은 서버가 하므로
   // lib/quiz/handoffToken.ts의 QUIZ_GOLD_KEY_COST와 반드시 같아야 한다(2026-07-27: 1 → 2).
-  { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "#3b82f6", keys: 2, comingSoon: false },
-  { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "#22c55e", keys: 3, comingSoon: false },
-  { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-sky-blue)", keys: 3, comingSoon: true },
+  { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "var(--color-k-sky-blue)", bgLight: "var(--color-k-info-bg)", keys: 2, comingSoon: false },
+  { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "var(--color-k-navy)", bgLight: "var(--color-k-navy-tint)", keys: 3, comingSoon: false },
+  { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-mascot-orange)", bgLight: "var(--color-warm-neutral-100)", keys: 3, comingSoon: true },
 ];
 
 /**
@@ -416,9 +416,9 @@ export default function ChildPlayPage() {
           </div>
 
           {/* 열쇠로 열어요 */}
-          <div className="px-4 mt-8">
-            <h2 className="text-lg font-bold mb-3" style={{ color: "var(--color-k-navy)" }}>열쇠로 열어요</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="px-4 mt-5">
+            <h2 className="text-lg font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>열쇠로 열어요</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {/* 퀴즈마스터 */}
               {(() => {
                 const game = GAMES.find(g => g.id === "quizmaster")!;
@@ -426,17 +426,17 @@ export default function ChildPlayPage() {
                   <button
                     key={game.id}
                     onClick={() => handleGameClick(game)}
-                    className="flex flex-col rounded-[24px] p-5 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5"
-                    style={{ background: "#EBF5FF" }}
+                    className="flex flex-col justify-between rounded-[20px] p-4 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5 h-[120px]"
+                    style={{ background: "var(--color-k-info-bg)" }}
                     aria-label={`퀴즈마스터, 황금열쇠 ${game.keys}개 필요`}
                   >
-                    <div className="flex justify-between items-start w-full mb-4">
-                      <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl bg-white shadow-sm">
+                    <div className="flex justify-between items-start w-full">
+                      <div className="w-[56px] h-[56px] rounded-[16px] flex items-center justify-center text-3xl bg-white shadow-sm">
                         {game.icon}
                       </div>
-                      <div className="bg-white/60 px-2 py-1 rounded-full text-xs font-bold text-blue-700 flex items-center gap-1">
+                      <div className="bg-white px-2.5 py-1 rounded-full text-[13px] font-bold flex items-center gap-1 shadow-sm" style={{ color: "var(--color-k-navy)" }}>
                         {goldKeyBalance === null ? (
-                          <div className="w-[100px] h-[16px] bg-blue-700/10 rounded animate-pulse" />
+                          <div className="w-[80px] h-[14px] bg-gray-200 rounded animate-pulse" />
                         ) : goldKeyBalance >= game.keys ? (
                           <>🔓 시작할 수 있어요</>
                         ) : (
@@ -444,8 +444,10 @@ export default function ChildPlayPage() {
                         )}
                       </div>
                     </div>
-                    <h3 className="font-bold text-base mb-1" style={{ color: "var(--color-k-navy)" }}>{game.title}</h3>
-                    <p className="text-sm font-bold text-blue-600">🔑 {game.keys}개 필요</p>
+                    <div>
+                      <h3 className="font-bold text-[15px] leading-tight" style={{ color: "var(--color-k-navy)" }}>{game.title}</h3>
+                      <p className="text-[13px] font-bold mt-0.5" style={{ color: "var(--color-k-sky-blue)" }}>🔑 {game.keys}개 필요</p>
+                    </div>
                   </button>
                 );
               })()}
@@ -457,17 +459,17 @@ export default function ChildPlayPage() {
                   <button
                     key={game.id}
                     onClick={() => handleGameClick(game)}
-                    className="flex flex-col rounded-[24px] p-5 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5"
-                    style={{ background: "#E8F5E9" }}
+                    className="flex flex-col justify-between rounded-[20px] p-4 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5 h-[130px]"
+                    style={{ background: "var(--color-k-navy-tint)" }}
                     aria-label={`오늘의 나, 황금열쇠 ${game.keys}개 필요`}
                   >
-                    <div className="flex justify-between items-start w-full mb-4">
-                      <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl bg-white shadow-sm">
+                    <div className="flex justify-between items-start w-full">
+                      <div className="w-[56px] h-[56px] rounded-[16px] flex items-center justify-center text-3xl bg-white shadow-sm">
                         {game.icon}
                       </div>
-                      <div className="bg-white/60 px-2 py-1 rounded-full text-xs font-bold text-green-700 flex items-center gap-1">
+                      <div className="bg-white px-2.5 py-1 rounded-full text-[13px] font-bold flex items-center gap-1 shadow-sm" style={{ color: "var(--color-k-navy)" }}>
                         {goldKeyBalance === null ? (
-                          <div className="w-[100px] h-[16px] bg-green-700/10 rounded animate-pulse" />
+                          <div className="w-[80px] h-[14px] bg-gray-200 rounded animate-pulse" />
                         ) : goldKeyBalance >= game.keys ? (
                           <>🔓 시작할 수 있어요</>
                         ) : (
@@ -475,9 +477,11 @@ export default function ChildPlayPage() {
                         )}
                       </div>
                     </div>
-                    <h3 className="font-bold text-base mb-1" style={{ color: "var(--color-k-navy)" }}>오늘의 나</h3>
-                    <p className="text-sm text-green-800 mb-1 opacity-80">나의 성향 알아보기</p>
-                    <p className="text-sm font-bold text-green-700">🔑 {game.keys}개 필요</p>
+                    <div>
+                      <h3 className="font-bold text-[15px] leading-tight" style={{ color: "var(--color-k-navy)" }}>오늘의 나</h3>
+                      <p className="text-[12px] mt-0.5" style={{ color: "var(--color-k-text-secondary)" }}>나의 성향 알아보기</p>
+                      <p className="text-[13px] font-bold mt-0.5" style={{ color: "var(--color-k-orange)" }}>🔑 {game.keys}개 필요</p>
+                    </div>
                   </button>
                 );
               })()}
@@ -485,29 +489,24 @@ export default function ChildPlayPage() {
           </div>
 
           {/* 곧 만나요 */}
-          <div className="px-4 mt-8">
-            <h2 className="text-lg font-bold mb-3" style={{ color: "var(--color-k-navy)" }}>곧 만나요</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="px-4 mt-5">
+            <h2 className="text-lg font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>곧 만나요</h2>
+            <div className="grid grid-cols-2 gap-2.5">
               {/* 만화책 읽기 */}
               {(() => {
                 const game = GAMES.find(g => g.id === "comic_book")!;
                 return (
-                  <button
-                    type="button"
+                  <div
                     key={game.id}
-                    onClick={() => handleGameClick(game)}
-                    className="flex flex-col rounded-[24px] p-5 shadow-sm text-left border border-black/5 opacity-70 bg-gray-100 cursor-default"
+                    className="flex flex-col justify-center items-center rounded-[20px] p-3 shadow-sm border border-black/5 opacity-70 h-[90px]"
+                    style={{ background: "var(--color-warm-neutral-100)" }}
                   >
-                    <div className="flex justify-between items-start w-full mb-4">
-                      <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl bg-white/50 grayscale">
-                        {game.icon}
-                      </div>
-                      <div className="bg-gray-200 px-2 py-1 rounded-full text-xs font-bold text-gray-600">
-                        준비 중
-                      </div>
+                    <div className="text-2xl mb-1 grayscale">{game.icon}</div>
+                    <h3 className="font-bold text-[13px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
+                    <div className="bg-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
+                      준비 중
                     </div>
-                    <h3 className="font-bold text-base mb-1 text-gray-600">{game.title}</h3>
-                  </button>
+                  </div>
                 );
               })()}
 
@@ -515,22 +514,17 @@ export default function ChildPlayPage() {
               {(() => {
                 const game = GAMES.find(g => g.id === "hairstyle")!;
                 return (
-                  <button
-                    type="button"
+                  <div
                     key={game.id}
-                    onClick={() => handleGameClick(game)}
-                    className="flex flex-col rounded-[24px] p-5 shadow-sm text-left border border-black/5 opacity-70 bg-gray-100 cursor-default"
+                    className="flex flex-col justify-center items-center rounded-[20px] p-3 shadow-sm border border-black/5 opacity-70 h-[90px]"
+                    style={{ background: "var(--color-warm-neutral-100)" }}
                   >
-                    <div className="flex justify-between items-start w-full mb-4">
-                      <div className="w-12 h-12 rounded-[16px] flex items-center justify-center text-2xl bg-white/50 grayscale">
-                        {game.icon}
-                      </div>
-                      <div className="bg-gray-200 px-2 py-1 rounded-full text-xs font-bold text-gray-600">
-                        준비 중
-                      </div>
+                    <div className="text-2xl mb-1 grayscale">{game.icon}</div>
+                    <h3 className="font-bold text-[13px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
+                    <div className="bg-white px-2 py-0.5 rounded-full text-[11px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
+                      준비 중
                     </div>
-                    <h3 className="font-bold text-base mb-1 text-gray-600">{game.title}</h3>
-                  </button>
+                  </div>
                 );
               })()}
             </div>
@@ -573,7 +567,7 @@ export default function ChildPlayPage() {
         {showActionModal && selectedGame && !showFinalConfirm && !showGameScreen && !showInsufficientModal && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-40 p-5">
             <div className="bg-white rounded-[28px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-200">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl mb-4" style={{ background: `${selectedGame.bg}20` }}>
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-4xl mb-4" style={{ background: selectedGame.bgLight || selectedGame.bg }}>
                 {selectedGame.icon}
               </div>
               
