@@ -487,25 +487,28 @@ export default function ParentSettingsPage() {
   };
 
   // 요금제 변경 요청 실제 생성 — 부모가 확인 다이얼로그(또는 "저장하고 진행")를 통해
-  // 명시적으로 동의한 뒤에만 호출한다. 현재 요금제는 여기서도 바뀌지 않는다(관리자 승인 시에만 반영).
+  // 요금제 변경 즉시 적용 (관리자 승인 불필요)
   const requestPlanChange = async (tier: number) => {
     if (!editChild) return;
     setPlanRequestSubmitting(true);
     setPlanRequestError(null);
     try {
-      const res = await fetch(`/api/child/${editChild.id}/plan-change-request`, {
+      const res = await fetch(`/api/child/${editChild.id}/plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requestedTier: tier }),
+        body: JSON.stringify({ tier }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setPlanRequestError(data.error || "요금제 변경 요청을 생성하지 못했어요.");
-        await refreshPlanRequest(editChild.id);
+        setPlanRequestError(data.error || "요금제 변경에 실패했어요.");
         return;
       }
+      
+      // 즉시 UI 업데이트
+      setEditOriginalTier(tier);
       setShowPlanAccepted({ requestedTier: tier, currentTier: editOriginalTier });
-      await refreshPlanRequest(editChild.id);
+      
+      setEditChild(prev => prev ? { ...prev, tier } : null);
     } catch {
       setPlanRequestError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해 주세요.");
     } finally {
@@ -514,11 +517,15 @@ export default function ParentSettingsPage() {
     }
   };
 
-  // 요금제 카드 클릭 — §9/§10: 현재 요금제 재선택은 무시, 대기 중 요청이 있으면 무시,
-  // 프로필 미저장 변경이 있으면 먼저 저장 게이트를 띄운다.
+  // 요금제 카드 클릭
   const handlePlanCardClick = (tier: number) => {
+    if (planRequestSubmitting) return; // codex 044 리뷰: 처리 중 다른 플랜 재선택으로 병렬 요청 방지
     if (tier === editOriginalTier) return;
-    if (planRequest?.status === "pending") return;
+    if (tier === 3 && process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod") return; // Production Premium 차단
+    // codex 044 리뷰: planRequest는 관리자 승인이 필요했던 구 플랜변경요청 흐름의 잔존값이다.
+    // 044는 Care Start/Insight 간 변경을 승인 없이 즉시 반영하도록 바뀌었으므로, 실제 사용
+    // 이력 조회 결과 실사용자에게 남아있던 오래된 pending 요청 하나가 이 체크 때문에 신규
+    // self-service 변경 자체를 조용히 막고 있었다(사용자에게 안내조차 없음) - 제거한다.
     setPendingPlanTier(tier);
     if (isChildProfileDirty()) {
       setShowUnsavedGate(true);
@@ -1493,43 +1500,23 @@ export default function ParentSettingsPage() {
                 <div className="grid grid-cols-3 gap-1">
                   {CARE_PLANS.map((p) => {
                     const isCurrent = p.tier === editOriginalTier;
-                    const isPendingRequested = planRequest?.status === "pending" && planRequest.requested_tier === p.tier;
+                    const isPremiumProd = p.tier === 3 && process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod";
                     return (
                       <button
                         key={p.tier}
                         onClick={() => handlePlanCardClick(p.tier)}
-                        disabled={isCurrent || (planRequest?.status === "pending" && !isPendingRequested)}
+                        disabled={isCurrent || isPremiumProd || planRequestSubmitting}
                         className={`py-1.5 px-1 text-[9px] font-bold border rounded-lg flex flex-col items-center gap-0.5 ${
-                          isCurrent || isPendingRequested ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                        } ${isCurrent ? "cursor-default" : "cursor-pointer"} disabled:opacity-60`}
+                          isCurrent ? "bg-[var(--color-k-navy)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
+                        } ${isCurrent || isPremiumProd ? "cursor-default" : "cursor-pointer"} disabled:opacity-60`}
                       >
                         <span>{p.label}</span>
                         {isCurrent && <span className="text-[7px] font-normal opacity-80">현재 이용 중</span>}
-                        {isPendingRequested && <span className="text-[7px] font-normal opacity-80">승인 대기 중</span>}
+                        {isPremiumProd && !isCurrent && <span className="text-[7px] font-normal opacity-80 text-gray-400">준비 중</span>}
                       </button>
                     );
                   })}
                 </div>
-                {planRequest?.status === "pending" && (
-                  <div className="mt-1.5 flex items-center justify-between gap-2 bg-orange-50 border border-orange-200/70 rounded-lg px-2 py-1.5">
-                    <p className="text-[9px] text-[var(--color-k-orange)] font-bold">
-                      {CARE_PLANS.find((p) => p.tier === planRequest.requested_tier)?.label ?? ""} 변경 요청 · 관리자 확인 중
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleCancelPlanRequest}
-                      disabled={cancellingPlanRequest}
-                      className="text-[9px] text-gray-400 underline cursor-pointer disabled:opacity-50 shrink-0"
-                    >
-                      요청 취소
-                    </button>
-                  </div>
-                )}
-                {planRequest?.status === "rejected" && (
-                  <p className="mt-1.5 text-[9px] text-red-500">
-                    변경 요청이 승인되지 않았어요.{planRequest.review_note ? ` (${planRequest.review_note})` : ""}
-                  </p>
-                )}
                 {planRequestError && (
                   <p className="mt-1.5 text-[9px] text-red-500">{planRequestError}</p>
                 )}
@@ -1819,21 +1806,20 @@ export default function ParentSettingsPage() {
           </div>
         )}
 
-        {/* §9 요금제 변경 확인 다이얼로그 — "변경 요청"을 눌러야만 요청이 생성된다. */}
+        {/* §9 요금제 변경 확인 다이얼로그 */}
         {showPlanConfirm && editChild && pendingPlanTier !== null && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" aria-modal="true" role="dialog">
             <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
               <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
-                요금제 변경을 요청할까요?
-              </p>
-              <p className="text-xs leading-relaxed text-gray-500 mb-2">
-                현재 요금제: {CARE_PLANS.find((p) => p.tier === editOriginalTier)?.label}<br />
-                변경 요청: {CARE_PLANS.find((p) => p.tier === pendingPlanTier)?.label}
+                {CARE_PLANS.find((p) => p.tier === pendingPlanTier)?.label}로 변경하시겠습니까?
               </p>
               <p className="text-xs leading-relaxed text-gray-500 mb-4">
-                관리자 승인 후 변경된 요금제가 적용됩니다.
-                {pendingPlanTier < editOriginalTier && (
-                  <> 승인되면 {formatRetentionLabel(pendingPlanTier as Tier)} 초과 데이터는 1개월 후 완전 파기돼요. 1개월 안에 다시 요금제를 올리면 복구할 수 있어요.</>
+                {pendingPlanTier === 2 ? (
+                  "변경 즉시 Care Insight 기능을 이용할 수 있습니다."
+                ) : pendingPlanTier === 1 ? (
+                  "변경하면 Care Insight 전용 기능의 이용이 제한될 수 있습니다. 기존에 생성된 데이터는 현재 데이터 보존 정책에 따라 처리됩니다."
+                ) : (
+                  "변경 즉시 Care Premium 기능을 이용할 수 있습니다."
                 )}
               </p>
               <div className="flex gap-2">
@@ -1845,7 +1831,7 @@ export default function ParentSettingsPage() {
                   disabled={planRequestSubmitting}
                   className="flex-1 py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer disabled:opacity-50"
                 >
-                  변경 요청
+                  변경하기
                 </button>
                 <button
                   onClick={() => { setShowPlanConfirm(false); setPendingPlanTier(null); }}
@@ -1894,22 +1880,22 @@ export default function ParentSettingsPage() {
           </div>
         )}
 
-        {/* §14 요금제 변경 요청 접수 화면 */}
+        {/* §14 요금제 변경 완료 화면 */}
         {showPlanAccepted && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" aria-modal="true" role="dialog">
             <div className="bg-white rounded-2xl p-5 max-w-xs w-full">
               <p className="text-sm font-bold mb-2" style={{ color: "var(--color-k-text-primary)" }}>
-                요금제 변경 요청이 접수되었어요
+                {CARE_PLANS.find((p) => p.tier === showPlanAccepted.requestedTier)?.label}로 변경되었습니다
               </p>
               <p className="text-xs leading-relaxed text-gray-500 mb-3">
-                현재 관리자가 요청 내용을 확인하고 있습니다.<br />
-                승인되면 선택한 요금제가 적용됩니다.
+                {showPlanAccepted.requestedTier === 2 ? (
+                  "새로운 플랜 기능을 지금부터 이용할 수 있습니다."
+                ) : showPlanAccepted.requestedTier === 1 ? (
+                  "일부 리포트 및 장기 인사이트 기능 이용이 제한될 수 있습니다."
+                ) : (
+                  "프리미엄 기능이 활성화되었습니다."
+                )}
               </p>
-              <div className="text-xs text-gray-600 bg-gray-50 rounded-xl p-3 mb-4 flex flex-col gap-1">
-                <div className="flex justify-between"><span className="text-gray-400">현재 요금제</span><span className="font-bold">{CARE_PLANS.find((p) => p.tier === showPlanAccepted.currentTier)?.label}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">요청한 요금제</span><span className="font-bold">{CARE_PLANS.find((p) => p.tier === showPlanAccepted.requestedTier)?.label}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">현재 상태</span><span className="font-bold text-[var(--color-k-orange)]">관리자 확인 중</span></div>
-              </div>
               <button
                 onClick={() => { setShowPlanAccepted(null); setEditChild(null); }}
                 className="w-full py-2 bg-[var(--color-k-navy)] text-white text-[10px] font-bold rounded-lg cursor-pointer"

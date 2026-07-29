@@ -845,6 +845,21 @@ function BetaApplicationsTab() {
   const [requests, setRequests] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  
+  // Custom Modal states
+  const [rejectModalUserId, setRejectModalUserId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [approveModalUserId, setApproveModalUserId] = useState<string | null>(null);
+  const [approveSelectedTier, setApproveSelectedTier] = useState<number>(2);
+  const [resultToast, setResultToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const isProd = process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod";
+
+  useEffect(() => {
+    if (!resultToast) return;
+    const t = setTimeout(() => setResultToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [resultToast]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -859,54 +874,61 @@ function BetaApplicationsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleAction = async (userId: string, action: "approve" | "reject") => {
-    let reason = "";
-    let tier: number | null = null;
-    if (action === "reject") {
-      const input = window.prompt("거절 사유를 입력하세요 (선택):");
-      if (input === null) return;
-      reason = input;
-    } else {
-      const planLabel = window.prompt(
-        "승인할 플랜을 입력하세요.\n1 = Care Start\n2 = Care Insight\n3 = Care Premium"
-      );
-      if (planLabel === null) return;
-      const parsed = Number(planLabel.trim());
-      if (![1, 2, 3].includes(parsed)) {
-        alert("1, 2, 3 중 하나를 입력해 주세요.");
-        return;
-      }
-      tier = parsed;
-      if (!window.confirm(`베타 신청을 승인하시겠습니까? (플랜: ${["", "Care Start", "Care Insight", "Care Premium"][tier]})`)) return;
-    }
-
+  const execAction = async (userId: string, action: "approve" | "reject", payload: any) => {
     setActionLoading(userId);
     try {
       const url = `/api/admin/beta-applications/${userId}/${action}`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(action === "reject" ? { reason } : { tier })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
-        alert("처리되었습니다.");
+        setResultToast({ type: "success", text: "처리되었습니다." });
         load();
       } else {
         const d = await res.json().catch(() => ({}));
-        alert(d.error || "처리 실패");
+        setResultToast({ type: "error", text: d.error || "처리 실패" });
       }
     } catch (err) {
-      alert("오류 발생");
+      setResultToast({ type: "error", text: "오류 발생" });
     } finally {
       setActionLoading(null);
     }
   };
 
-  if (loading && !requests) return <EmptyState text="불러오는 중..." />;
-  if (!requests || requests.length === 0) return <EmptyState text="베타 신청 내역이 없습니다." />;
+  const handleApproveConfirm = () => {
+    if (!approveModalUserId) return;
+    execAction(approveModalUserId, "approve", { tier: approveSelectedTier });
+    setApproveModalUserId(null);
+  };
+
+  const handleRejectConfirm = () => {
+    if (!rejectModalUserId) return;
+    execAction(rejectModalUserId, "reject", { reason: rejectReason });
+    setRejectModalUserId(null);
+    setRejectReason("");
+  };
+
+  const toast = resultToast && (
+    <div
+      style={{
+        position: "fixed", top: 16, right: 16, zIndex: 100,
+        padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+        background: resultToast.type === "success" ? "var(--color-k-navy)" : "var(--color-k-danger)",
+        color: "white", boxShadow: "var(--shadow-k-card)",
+      }}
+    >
+      {resultToast.text}
+    </div>
+  );
+
+  if (loading && !requests) return <>{toast}<EmptyState text="불러오는 중..." /></>;
+  if (!requests || requests.length === 0) return <>{toast}<EmptyState text="베타 신청 내역이 없습니다." /></>;
 
   return (
     <div>
+      {toast}
       <SectionTitle>베타 신청 관리</SectionTitle>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {requests.map(req => {
@@ -931,7 +953,10 @@ function BetaApplicationsTab() {
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
-                    onClick={() => handleAction(req.user_id, "reject")}
+                    onClick={() => {
+                      setRejectModalUserId(req.user_id);
+                      setRejectReason("");
+                    }}
                     disabled={actionLoading === req.user_id}
                     style={{
                       padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-k-danger)",
@@ -941,7 +966,10 @@ function BetaApplicationsTab() {
                     거절
                   </button>
                   <button
-                    onClick={() => handleAction(req.user_id, "approve")}
+                    onClick={() => {
+                      setApproveModalUserId(req.user_id);
+                      setApproveSelectedTier(2); // 기본 플랜 Care Insight
+                    }}
                     disabled={actionLoading === req.user_id}
                     style={{
                       padding: "6px 12px", borderRadius: 8, border: "none",
@@ -956,6 +984,84 @@ function BetaApplicationsTab() {
           );
         })}
       </div>
+
+      {approveModalUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="text-lg font-bold text-[var(--color-k-navy)] mb-4">플랜 승인</h3>
+            <p className="text-sm text-gray-600 mb-4">승인할 플랜을 선택하세요.</p>
+            <div className="flex flex-col gap-2 mb-6">
+              {[
+                { tier: 1, label: "Care Start" },
+                { tier: 2, label: "Care Insight (기본)" },
+                { tier: 3, label: "Care Premium", disabled: isProd }
+              ].map(plan => (
+                <label key={plan.tier} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer ${approveSelectedTier === plan.tier ? 'border-[var(--color-k-navy)] bg-blue-50' : 'border-gray-200 hover:bg-gray-50'} ${plan.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                  <input
+                    type="radio"
+                    name="approvePlanTier"
+                    value={plan.tier}
+                    checked={approveSelectedTier === plan.tier}
+                    onChange={() => setApproveSelectedTier(plan.tier)}
+                    disabled={plan.disabled}
+                    className="w-4 h-4 text-[var(--color-k-navy)]"
+                  />
+                  <div className="flex-1">
+                    <div className="font-bold text-[15px]">{plan.label}</div>
+                    {plan.disabled && <div className="text-xs text-gray-500 mt-1">준비 중</div>}
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setApproveModalUserId(null)}
+                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleApproveConfirm}
+                className="flex-1 py-3 bg-[var(--color-k-navy)] text-white font-bold rounded-xl"
+              >
+                승인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rejectModalUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="text-lg font-bold text-[var(--color-k-navy)] mb-4">가입 거절</h3>
+            <p className="text-sm text-gray-600 mb-4">거절 사유를 입력하세요 (선택)</p>
+            <textarea
+              className="w-full p-3 border border-gray-200 rounded-xl mb-6 h-24 resize-none focus:outline-none focus:border-[var(--color-k-navy)]"
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              placeholder="사유 입력..."
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setRejectModalUserId(null);
+                  setRejectReason("");
+                }}
+                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleRejectConfirm}
+                className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl"
+              >
+                거절
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -82,9 +82,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "가족 정보가 필요합니다" }, { status: 400 });
   }
 
+  // codex 044 리뷰 지적: child_profiles.tier가 실제 기능 게이팅의 단일 기준인데
+  // (20260712300000_child_profiles_tier.sql), 신규 자녀 생성 시 이를 지정하지 않아
+  // 컬럼 기본값(1=Care Start)으로 고정돼 부모의 승인 플랜(parents.tier, 신규 승인자는
+  // 044에서 기본값 Care Insight=2)이 자녀에게 전혀 반영되지 않는 문제가 있었다.
+  // 자녀 생성 시점의 부모 tier를 그대로 상속시켜 단일 기준을 맞춘다.
+  let inheritedTier = 1;
+  if (user) {
+    const { data: parentRow } = await svc
+      .from("parents")
+      .select("tier")
+      .eq("id", user.id)
+      .maybeSingle();
+    inheritedTier = parentRow?.tier ?? 1;
+  }
+
   const { data, error } = await svc
     .from("child_profiles")
-    .insert({ family_id: resolvedFamilyId, name: name.trim(), grade, interests })
+    .insert({ family_id: resolvedFamilyId, name: name.trim(), grade, interests, tier: inheritedTier })
     .select("id")
     .single();
 
