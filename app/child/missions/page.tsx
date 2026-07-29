@@ -2437,12 +2437,21 @@ function MissionRouteGate() {
   }
   // 일반 계정 미션은 기존 그대로(DemoFrame) — 회귀 없음.
   return (
-    <>
-      <MissionInner />
-      <div className="absolute top-0 right-0">
-        <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={480} />
+    <DemoFrame>
+      <div className="mission-frame-wrapper relative w-full h-full">
+        <style dangerouslySetInnerHTML={{ __html: `
+          .mission-frame-wrapper [class*="h-[100dvh]"],
+          .mission-frame-wrapper [class*="min-h-[100dvh]"] {
+            height: 100% !important;
+            min-height: 100% !important;
+          }
+        `}} />
+        <MissionInner />
+        <div className="absolute top-0 right-0">
+          <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={480} />
+        </div>
       </div>
-    </>
+    </DemoFrame>
   );
 }
 
