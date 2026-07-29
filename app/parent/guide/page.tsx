@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
@@ -37,6 +37,8 @@ export default function ParentGuidePage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const sendInFlightRef = useRef(false);
+  const lastVoiceTranscriptRef = useRef("");
 
   const {
     isSttSupported,
@@ -96,16 +98,6 @@ export default function ParentGuidePage() {
     return () => controller.abort();
   }, [childId]);
 
-  // STT 텍스트 반영
-  useEffect(() => {
-    if (transcript) {
-      setInputText((prev) => {
-        const base = prev.replace(interimTranscript, "").trim();
-        return base ? base + " " + transcript : transcript;
-      });
-    }
-  }, [transcript]);
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -119,14 +111,13 @@ export default function ParentGuidePage() {
     if (nearBottom) scrollToBottom();
   }, [messages, isLoading, interimTranscript]);
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (isListening) stopListening();
-
-    const textToSend = inputText.trim();
-    if (!textToSend || !childId) return;
+  const sendMessage = useCallback(async (rawText: string) => {
+    const textToSend = rawText.trim();
+    if (!textToSend || !childId || sendInFlightRef.current) return;
     const requestChildId = childId;
 
+    sendInFlightRef.current = true;
+    stopListening();
     setInputText("");
 
     const userMsgId = Date.now().toString();
@@ -162,8 +153,32 @@ export default function ParentGuidePage() {
         { id: (Date.now() + 1).toString(), role: "k", text: "지금은 케이가 답변을 준비하지 못했어요. 잠시 후 다시 시도해 주세요." }
       ]);
     } finally {
+      sendInFlightRef.current = false;
       if (childIdRef.current === requestChildId) setIsLoading(false);
     }
+  }, [childId, stopListening]);
+
+  // 최종 음성 인식 결과는 입력창에 머물게 하지 않고 즉시 채팅으로 전송한다.
+  // 동일한 final 이벤트가 브라우저에서 반복 전달되어도 한 번만 전송한다.
+  useEffect(() => {
+    const finalText = transcript.replace(/\s+/g, " ").trim();
+    if (!finalText) {
+      lastVoiceTranscriptRef.current = "";
+      return;
+    }
+    // 모바일 브라우저는 한 번의 발화를 여러 final 조각으로 나눠 전달할 수 있다.
+    // 인식이 완전히 끝난 뒤 누적된 문장 전체를 한 번만 전송한다.
+    if (isListening) return;
+    if (finalText === lastVoiceTranscriptRef.current) return;
+
+    lastVoiceTranscriptRef.current = finalText;
+    setInputText("");
+    void sendMessage(finalText);
+  }, [transcript, isListening, sendMessage]);
+
+  const handleSendMessage = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    void sendMessage(inputText);
   };
 
   const handleAskChild = async (originalQuestion: string, msgId: string) => {
@@ -385,6 +400,7 @@ export default function ParentGuidePage() {
                 type="button"
                 onClick={isListening ? stopListening : startListening}
                 disabled={!isSttSupported || isLoading || !childId}
+                aria-label={isListening ? "음성 입력 중지" : "음성으로 질문하기"}
                 className={`w-11 h-11 rounded-full flex items-center justify-center text-white shrink-0 shadow-sm transition-colors
                   ${!isSttSupported ? "bg-gray-300" : isListening ? "bg-red-500" : "bg-[var(--color-k-navy)]"}`}
               >
