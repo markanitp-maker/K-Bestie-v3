@@ -83,32 +83,32 @@ export function MissionConversationLayout({
   switch (voiceState) {
     case "listening":
     case "no_input":
-      stateText = "듣는 중";
-      StateIcon = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>;
+      stateText = "듣고 있어";
+      StateIcon = <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>;
       break;
     case "thinking":
       stateText = "생각 중";
-      StateIcon = <div className="flex gap-0.5"><div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"0ms"}}/><div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"150ms"}}/><div className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"300ms"}}/></div>;
+      StateIcon = <div className="flex gap-1"><div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"0ms"}}/><div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"150ms"}}/><div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"300ms"}}/></div>;
       break;
     case "speaking":
       stateText = "말하는 중";
-      StateIcon = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+      StateIcon = <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
       break;
     case "connecting":
       stateText = "연결 중";
-      StateIcon = <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin motion-reduce:animate-none" />;
+      StateIcon = <div className="w-5 h-5 border-[2.5px] border-gray-300 border-t-gray-600 rounded-full animate-spin motion-reduce:animate-none" />;
       break;
     case "reconnecting":
       stateText = "다시 연결 중";
-      StateIcon = <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin motion-reduce:animate-none" />;
+      StateIcon = <div className="w-5 h-5 border-[2.5px] border-gray-300 border-t-gray-600 rounded-full animate-spin motion-reduce:animate-none" />;
       break;
     case "error":
       stateText = "연결 오류";
-      StateIcon = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+      StateIcon = <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
       break;
     default:
       stateText = "대기 중";
-      StateIcon = <div className="w-2 h-2 rounded-full bg-gray-300" />;
+      StateIcon = <div className="w-2.5 h-2.5 rounded-full bg-gray-400" />;
       break;
   }
 
@@ -184,27 +184,27 @@ export function MissionConversationLayout({
         <div className="flex-[0.5_1_0%] min-h-[clamp(8px,1.5dvh,24px)] max-[400px]:min-h-[56px]" />
 
         {/* Previous Chat Summary Area (Flexible) */}
-        <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink gap-[clamp(6px,1dvh,12px)] mb-[clamp(8px,1.5dvh,16px)] min-h-[0] overflow-hidden">
+        <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink gap-[10px] mb-[12px] min-h-[0] overflow-hidden">
           {interimChildText ? (
-            <div className="text-gray-400 text-[clamp(12px,1.5dvh,14px)] text-center max-w-[85%] line-clamp-2 font-medium italic shrink min-h-0">
+            <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium italic shrink min-h-0">
               {interimChildText}
             </div>
           ) : prevChildText && (
-            <div className="text-gray-500 text-[clamp(12px,1.5dvh,14px)] text-center max-w-[85%] line-clamp-2 font-medium shrink min-h-0">
+            <div className="text-gray-500 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] line-clamp-2 font-medium shrink min-h-0">
               {prevChildText}
             </div>
           )}
           {prevKText && (
-            <div className="bg-white/70 backdrop-blur-md px-[clamp(14px,3vw,18px)] py-[clamp(8px,1.2dvh,14px)] rounded-[16px] text-[13px] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] line-clamp-2 text-center shrink min-h-0">
+            <div className="bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] line-clamp-4 text-center shrink min-h-0">
               {prevKText}
             </div>
           )}
         </div>
 
         {/* Current Question Bubble */}
-        <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[15px] py-[14px] flex flex-col max-h-[clamp(120px,18dvh,160px)] min-h-[70px] shrink">
+        <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col max-h-[clamp(120px,18dvh,160px)] min-h-[70px] shrink">
           <div className="overflow-y-auto w-full styled-scrollbar pr-1">
-            <p className="text-left text-[#3a2f2a] text-[16px] font-[650] leading-[1.45] whitespace-pre-wrap break-words">
+            <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words">
               {currentQuestionText}
             </p>
           </div>
@@ -214,27 +214,33 @@ export function MissionConversationLayout({
         </div>
 
         {/* Spacer between bubble and mascot */}
-        <div className="flex-[1_1_0%] min-h-[clamp(12px,2dvh,42px)]" />
+        <div className="flex-[1_1_0%] min-h-[clamp(24px,3dvh,34px)]" />
 
         {/* Mascot Area & Side Cards */}
-        <div className="relative z-10 flex items-end justify-between px-[clamp(16px,4vw,24px)] w-full h-[clamp(140px,20dvh,170px)] shrink min-h-[110px]">
+        <div className="relative z-10 flex flex-row items-center justify-center gap-[clamp(6px,2vw,12px)] px-[16px] w-full shrink min-h-[140px]">
           
           {/* Left Mute Card */}
-          <button onClick={onToggleMute} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(54px,14vw,64px)] h-[clamp(62px,16vw,76px)] shadow-sm mb-[clamp(16px,3dvh,36px)] active:scale-95 cursor-pointer">
-            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-lg mb-1">{isMuted ? '🔇' : '🔊'}</div>
-            <span className="text-[10px] font-extrabold text-gray-600">{isMuted ? '소리 꺼짐' : '소리 켜짐'}</span>
+          <button onClick={onToggleMute} disabled={isClosing} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            <div className="w-[clamp(34px,9vw,44px)] h-[clamp(34px,9vw,44px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5">
+              {isMuted ? (
+                <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+              ) : (
+                <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+              )}
+            </div>
+            <span className="text-[clamp(15px,4vw,18px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{isMuted ? '소리 꺼짐' : '소리 켜짐'}</span>
           </button>
 
           {/* Mascot & Platform */}
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-0 flex flex-col items-center justify-end h-full w-[clamp(130px,36vw,160px)]">
+          <div className="relative flex flex-col items-center justify-end h-[clamp(130px,18dvh,160px)]">
              {/* Halo */}
-             <div className="absolute bottom-[20px] w-[120px] h-[120px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
+             <div className="absolute top-[10%] w-[120px] h-[120px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
              {/* Mascot */}
-             <div className="relative z-10 w-full flex justify-center items-end pb-[clamp(16px,3dvh,26px)]">
-               <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={116} className="!w-[clamp(78px,24vw,112px)] !h-[clamp(78px,24vw,112px)]" />
+             <div className="relative z-10 flex justify-center items-end pb-[clamp(16px,2.5dvh,24px)]">
+               <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={116} className="!w-[clamp(100px,29vw,130px)] !h-auto object-contain" />
              </div>
              {/* Platform */}
-             <div className="absolute bottom-0 w-[clamp(120px,32vw,140px)] h-[clamp(24px,4.5dvh,36px)] pointer-events-none">
+             <div className="absolute bottom-0 w-[clamp(135px,38vw,175px)] h-[clamp(24px,4.5dvh,36px)] pointer-events-none">
                {/* Top oval */}
                <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
                {/* Side cylinder */}
@@ -245,16 +251,16 @@ export function MissionConversationLayout({
           </div>
 
           {/* Right State Card */}
-          <div className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(54px,14vw,64px)] h-[clamp(62px,16vw,76px)] shadow-sm mb-[clamp(16px,3dvh,36px)]">
-             <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-gray-700 mb-1">
+          <div className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm">
+             <div className="w-[clamp(34px,9vw,44px)] h-[clamp(34px,9vw,44px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5">
                {StateIcon}
              </div>
-             <span className="text-[10px] font-extrabold text-gray-600">{stateText}</span>
+             <span className="text-[clamp(15px,4vw,18px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
           </div>
         </div>
 
         {/* Auto/Manual Mode Toggles */}
-        <div className="relative z-20 flex justify-center gap-2 mt-[clamp(2px,0.5dvh,8px)] h-[clamp(44px,6dvh,48px)] shrink-0">
+        <div className="relative z-20 flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
            <button onClick={() => onChangeMode('auto')} disabled={isClosing} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
              자동
              {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
@@ -266,14 +272,14 @@ export function MissionConversationLayout({
         </div>
 
         {/* Spacer between mode and mic */}
-        <div className="flex-[0.8_1_0%] min-h-[clamp(12px,2dvh,30px)]" />
+        <div className="flex-[0.8_1_0%] min-h-[clamp(20px,3dvh,28px)]" />
 
         {/* Bottom Inputs Area */}
-        <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(16px,4dvh,40px)+env(safe-area-inset-bottom))]">
+        <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(24px,3.5dvh,36px)+env(safe-area-inset-bottom))]">
           {isTextMode ? (
             <div className="w-full px-4 flex gap-2">
               <input
-                ref={(el) => el?.focus()}
+                ref={(el) => { if (el && !isClosing) el.focus(); }}
                 type="text"
                 value={textInput}
                 onChange={(e) => onChangeTextInput(e.target.value)}
@@ -281,7 +287,8 @@ export function MissionConversationLayout({
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSendText(); }
                 }}
                 placeholder="케이에게 텍스트로 답하기..."
-                className="flex-1 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors"
+                disabled={isClosing}
+                className="flex-1 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
                 maxLength={200}
               />
               <button
@@ -294,7 +301,8 @@ export function MissionConversationLayout({
               </button>
               <button
                 onClick={onToggleTextMode}
-                className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200"
+                disabled={isClosing}
+                className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40"
                 aria-label="닫기"
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>

@@ -122,6 +122,11 @@ function MissionInner() {
   // completing부터 이미 100% 취급(마이크·입력 비활성화) — completed와의 차이는 "종료 발화가
   // 아직 재생 중인지"뿐이다.
   const [missionState, setMissionState] = useState<MissionCompletionState>("active");
+  const [rewardStatus, setRewardStatus] = useState<string>("none");
+  const [isRewardModalOpen, setIsRewardModalOpen] = useState(false);
+  const [hasClosedRewardModal, setHasClosedRewardModal] = useState(false);
+  const rewardCloseXBtnRef = useRef<HTMLButtonElement | null>(null);
+  const rewardCloseBottomBtnRef = useRef<HTMLButtonElement | null>(null);
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
   // 요금제(tier)별 음성 방식 — /api/mission/start 응답으로 확정됨. 확정 전까지 null(로딩).
@@ -652,7 +657,14 @@ function MissionInner() {
 
           // setCompleted는 발화 완료 후 상태 전이 시에 호출되도록 위임
           if (data.completed) {
-            const rwStatus = data.rewardStatus ?? "none";
+            // 035 codex 리뷰 지적: V2 질문엔진에서만 서버가 rewardStatus 필드를 내려준다 -
+            // V1(레거시) 세션은 이 필드 자체가 응답에 없어 항상 "none"으로 떨어져 보상
+            // 모달이 절대 뜨지 않았다. V1 완료 경로는 서버 지급 로직을 이번 범위에서
+            // 건드리지 않고(035 §20 기존 로직 미변경), 완료=지급 성공으로 간주하는
+            // 클라이언트 판정만 보강한다(V1은 애초에 완료·지급이 원자적으로 처리되던 구조).
+            const isLegacyV1 = (data.engine_version ?? "v1") !== "v2";
+            const rwStatus = data.rewardStatus ?? (isLegacyV1 ? "awarded" : "none");
+            setRewardStatus(rwStatus);
             if (rwStatus === "awarded" || rwStatus === "already_earned" || rwStatus === "granted") {
               missionClosingLineRef.current = "오늘 미션을 모두 완료했어! 황금열쇠를 받았어. 다음에 또 보자!";
             } else {
@@ -1407,6 +1419,53 @@ function MissionInner() {
     router.replace("/child/home");
   }, [voice, router]);
 
+  // 035 codex 리뷰 지적: React state(hasClosedRewardModal)만으로는 재렌더 전에 발생하는
+  // X/닫기 동시·연속 클릭을 막지 못한다(같은 렌더 사이클 내 두 클릭 모두 state를 아직
+  // "false"로 봄) - 즉시 갱신되는 ref로 동기 잠금한다.
+  const rewardCloseLockRef = useRef(false);
+
+  const handleCloseRewardCompletion = useCallback(() => {
+    if (rewardCloseLockRef.current || hasClosedRewardModal) return;
+    rewardCloseLockRef.current = true;
+    setHasClosedRewardModal(true);
+    setIsRewardModalOpen(false);
+
+    // 035 codex 리뷰 지적: hasClosedRewardModal이 컴포넌트 메모리 상태뿐이라 새로고침·
+    // 재마운트 시 초기화돼 같은 세션에 재진입하면 보상 모달이 다시 뜰 수 있었다.
+    // 세션ID 기준으로 sessionStorage에 "이미 닫음"을 남겨 재진입 시에도 유지한다.
+    const sid = sessionIdRef.current;
+    if (sid) {
+      try { sessionStorage.setItem(`k_reward_modal_closed:${sid}`, "1"); } catch {}
+    }
+
+    // 완료 세션 종료 처리 및 입력 방어 정리
+    voice.stopSession();
+    setSessionActive(false);
+    if (liveRef.current) liveRef.current.lockNow();
+
+    // 아이 홈 이동 후 최신 갱신
+    router.replace("/child/home");
+    router.refresh();
+  }, [hasClosedRewardModal, voice, router]);
+
+  useEffect(() => {
+    if (missionState === "completed" && !hasClosedRewardModal) {
+      const sid = sessionIdRef.current;
+      let alreadyClosed = false;
+      if (sid) {
+        try { alreadyClosed = sessionStorage.getItem(`k_reward_modal_closed:${sid}`) === "1"; } catch {}
+      }
+      if (alreadyClosed) {
+        rewardCloseLockRef.current = true;
+        setHasClosedRewardModal(true);
+        return;
+      }
+      if (rewardStatus === "awarded" || rewardStatus === "already_earned" || rewardStatus === "granted") {
+        setIsRewardModalOpen(true);
+      }
+    }
+  }, [missionState, rewardStatus, hasClosedRewardModal]);
+
   useEffect(() => {
     const qpChild = searchParams.get("childId");
     const stored = typeof window !== "undefined" ? localStorage.getItem("k_child_id") : null;
@@ -2132,7 +2191,7 @@ function MissionInner() {
 
       <MissionConversationLayout
         onClose={handleClose}
-        isClosing={isDone}
+        isClosing={isDone || isRewardModalOpen}
         progressCurrent={gauge}
         progressTotal={requiredCount}
         history={allTurns as any}
@@ -2144,7 +2203,7 @@ function MissionInner() {
         isAuto={isAuto}
         onChangeMode={handleModeChange}
         isRecording={isRecording}
-        isMicDisabled={isButtonBlocked}
+        isMicDisabled={isButtonBlocked || isRewardModalOpen}
         onMicClick={handleCentralButtonClick}
         textInput={textInput}
         onChangeTextInput={setTextInput}
@@ -2152,6 +2211,83 @@ function MissionInner() {
         isTextMode={mode === "text"}
         onToggleTextMode={() => (mode === "text" ? switchToVoice() : switchToText())}
       />
+
+      {/* 황금열쇠 보상 모달 */}
+      {isRewardModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-auto"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.45)" }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reward-modal-title"
+          aria-describedby="reward-modal-desc"
+          onKeyDown={(e) => {
+            // 035 codex 리뷰 지적: Focus Trap 부재 - X버튼(먼저)↔하단 닫기버튼(나중) 두
+            // 개만 포커스 가능한 요소이므로 Tab/Shift+Tab을 여기서 직접 순환시킨다.
+            // claude-review 재지적: shiftKey만으로 타겟을 고정하면 이미 타겟 위에 포커스가
+            // 있을 때 자기 자신으로 재포커스되어 순환이 멈춘다 - 현재 포커스를 확인해 반대
+            // 버튼으로 토글해야 실제로 두 버튼 사이를 순환한다.
+            if (e.key !== "Tab") return;
+            e.preventDefault();
+            const onX = document.activeElement === rewardCloseXBtnRef.current;
+            const target = onX ? rewardCloseBottomBtnRef.current : rewardCloseXBtnRef.current;
+            target?.focus();
+          }}
+        >
+          <div className="w-[90%] max-w-[340px] bg-white rounded-[24px] shadow-lg p-6 flex flex-col items-center relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <button
+              ref={rewardCloseXBtnRef}
+              onClick={handleCloseRewardCompletion}
+              aria-label="보상 화면 닫기"
+              className="absolute top-4 right-4 w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-gray-100 active:scale-95 text-gray-500 cursor-pointer"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            {/* 이 프로젝트에 공식 황금열쇠 PNG/SVG 자산이 없다(전수 확인 - public/ 검색 0건).
+                app/child/play·home 등 앱 전체가 황금열쇠를 이미 🔑 이모지로 일관 표시하므로
+                (035 codex 리뷰가 지적한) 임의 커스텀 SVG 대신 그 기존 관례를 그대로 따른다. */}
+            <div className="w-[90px] h-[90px] mt-2 mb-4 bg-yellow-50 rounded-full flex items-center justify-center text-[48px]" style={{ animation: "rewardScaleIn 0.35s ease-out forwards" }} aria-hidden="true">
+              🔑
+            </div>
+
+            <h2 id="reward-modal-title" className="text-[24px] font-extrabold text-[var(--color-k-navy)] mb-1" style={{ animation: "rewardSlideUp 0.35s ease-out forwards" }}>
+              <span className="sr-only">황금열쇠 1개 획득. </span>
+              <span aria-hidden="true">황금열쇠 <span style={{ color: "var(--color-k-orange)" }}>+1</span></span>
+            </h2>
+
+            <p id="reward-modal-desc" className="text-gray-500 font-medium text-[15px] mb-8 text-center" style={{ animation: "rewardSlideUp 0.4s ease-out forwards" }}>
+              미션을 완료했어요
+            </p>
+
+            <button
+              ref={rewardCloseBottomBtnRef}
+              autoFocus
+              onClick={handleCloseRewardCompletion}
+              className="w-full max-w-[140px] h-[48px] rounded-full text-white font-bold text-[16px] shadow-sm active:scale-95 transition-transform cursor-pointer"
+              style={{ backgroundColor: "var(--color-k-navy)" }}
+            >
+              닫기
+            </button>
+          </div>
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes rewardScaleIn {
+              from { transform: scale(0.85); opacity: 0; }
+              to { transform: scale(1); opacity: 1; }
+            }
+            @keyframes rewardSlideUp {
+              from { transform: translateY(10px); opacity: 0; }
+              to { transform: translateY(0); opacity: 1; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .w-[90px], h2, p { animation: none !important; }
+            }
+          `}} />
+        </div>
+      )}
     </>
   );
 }

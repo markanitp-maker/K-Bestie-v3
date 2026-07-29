@@ -191,7 +191,16 @@ test("8초 fallback: 음성은 시작됐지만 turnComplete/audioDrained가 끝�
   assert.equal(calls.closingAudioTimeout, 0); // 2.5초 폴백은 음성 시작으로 취소됨
 
   clock.advance(1);
+  // 8초 시점엔 완료 문구는 즉시 뜨지만, 트레일링 오디오를 위한 700ms 유예 동안은
+  // 아직 세션을 끊지 않는다(claude-review 지적: 재생 중이던 오디오를 즉시 자르지 않음).
   assert.equal(calls.showCompletionText, 1);
+  assert.equal(calls.closeSession, 0);
+  assert.equal(controller.getState(), "completing");
+
+  clock.advance(699);
+  assert.equal(calls.closeSession, 0);
+
+  clock.advance(1);
   assert.equal(calls.closeSession, 1);
   assert.equal(calls.grantReward, 1);
   assert.equal(controller.getState(), "completed");

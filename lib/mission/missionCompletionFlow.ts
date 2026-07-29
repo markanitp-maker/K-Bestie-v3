@@ -176,14 +176,26 @@ export class MissionCompletionController {
     this.complete();
   }
 
+  /** claude-review 지적(2026-07-28): closingAudioStarted=true인 채로 8초 안에
+   *  turnComplete/audioDrained가 둘 다 오지 않는 경우, 종료 발화 오디오가 여전히 재생
+   *  중일 수 있다. 예전에는 onCloseSession()을 즉시 실행해 재생 중인 오디오를 그 자리에서
+   *  끊어버렸다(teardown()이 스케줄된 오디오 소스를 동기적으로 stop()) — 아이가 케이의
+   *  마지막 인사말을 중간에 잘려서 듣고 곧바로 보상 모달을 보게 되는 문제. 정상 경로
+   *  (finishClosing)와 동일한 CLOSE_DELAY_MS 유예를 둬 트레일링 오디오가 조금이라도 더
+   *  이어지게 한 뒤에만 세션을 끊는다 — 8초 안전망 자체의 존재 이유(무한 대기 방지)는
+   *  그대로 유지된다. */
   private forceFinish(reason: string): void {
     this.fallbackTimer = null;
     if (this.closingFinished) return; // 정상 경로가 이미 처리 중/완료 — fallback 무시
     this.closingFinished = true;
     this.cb.onLog("mission_closing_finished", { reason });
     this.cb.onShowCompletionText();
-    this.cb.onCloseSession();
-    this.complete();
+
+    this.closeTimer = this.setTimerFn(() => {
+      this.closeTimer = null;
+      this.cb.onCloseSession();
+      this.complete();
+    }, CLOSE_DELAY_MS);
   }
 
   private complete(): void {
