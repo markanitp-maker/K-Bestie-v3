@@ -281,6 +281,165 @@ function MissionInner() {
     setShowRetryButton(!!showRetryButtonNow);
   }, [setTurnPhase]);
 
+  const roundTypeRef = useRef<RoundType | null>(null);
+  roundTypeRef.current = roundType;
+  const sttTtsStopSpeakingRef = useRef<(() => void) | undefined>(undefined);
+
+  const forcedExpiryHandledRef = useRef(false);
+  const handleForcedExpiry = useCallback(async () => {
+    if (forcedExpiryHandledRef.current) return;
+
+    // 1. Stop live mic & STT
+    try {
+      sttSetMicEnabledRef.current?.(false);
+      sttCancelFinalizeRef.current?.();
+    } catch {}
+
+    // Delay liveRef.current?.lockNow() until server confirmation
+
+    // 2. Stop non-live WebAudio TTS via stopSpeaking API
+    try {
+      sttTtsStopSpeakingRef.current?.();
+    } catch {}
+
+    // 3. Stop DOM audio & speechSynthesis
+    try {
+      window.speechSynthesis?.cancel();
+      if (typeof window !== "undefined") {
+        const audioElements = document.querySelectorAll("audio");
+        audioElements.forEach((a) => {
+          a.pause();
+          a.currentTime = 0;
+        });
+      }
+    } catch {}
+
+    resetToIdle(false);
+
+    // 4. Call server endpoint to invoke atomic force-end RPC with bounded retry/keepalive strategy
+    let isTerminal = false;
+    let isNotExpired = false;
+
+    if (sessionIdRef.current) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetch("/api/mission/force-end", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: sessionIdRef.current }),
+            keepalive: true,
+          });
+          const data = await res.json().catch(() => ({}));
+          
+          if (data.status === "NOT_EXPIRED") {
+            isNotExpired = true;
+            break;
+          }
+          if (data.status === "FORCE_ENDED" || data.status === "ALREADY_ENDED") {
+            isTerminal = true;
+            break;
+          }
+        } catch (err) {
+          console.error(`[handleForcedExpiry] force-end attempt ${attempt + 1} failed:`, err);
+        }
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
+        }
+      }
+    } else {
+      isTerminal = false;
+    }
+
+    if (isNotExpired) {
+      // Server returned NOT_EXPIRED: resume session
+      try { liveRef.current?.unlockAudio?.(); } catch {}
+      if (isAutoRef.current && missionStateRef.current === "active") {
+        sttSetMicEnabledRef.current?.(true);
+      }
+      setErrorMsg("");
+      setShowRetryButton(false);
+      return;
+    }
+
+    if (!isTerminal) {
+      // All attempts failed: set retryable error state instead of permanent lock
+      try { liveRef.current?.unlockAudio?.(); } catch {}
+      setErrorMsg("연결 문제로 미션 종료 확인에 실패했어요. 다시 시도해 주세요.");
+      setShowRetryButton(true);
+      return;
+    }
+
+    // 5. Durable forced expiry confirmed by server
+    try { liveRef.current?.lockNow(); } catch {}
+    forcedExpiryHandledRef.current = true;
+    setErrorMsg("미션 시간이 끝났어요");
+    setPhase("closed");
+    setEntryStatus("error");
+  }, [resetToIdle]);
+
+  useEffect(() => {
+    let timerId: NodeJS.Timeout | null = null;
+
+    const checkAndScheduleExpiry = () => {
+      if (forcedExpiryHandledRef.current) return;
+
+      const nowUtc = Date.now();
+      const kstNow = new Date(nowUtc + 9 * 3600000);
+      const rType = roundTypeRef.current || (currentRound(kstNow.getUTCHours()) === "round2_night" ? "round2_night" : "round1_day");
+
+      let boundaryMs = 0;
+      if (rType === "round2_night") {
+        // Mission II / Night round: expires at 00:00 KST next day
+        const bDate = new Date(Date.UTC(
+          kstNow.getUTCFullYear(),
+          kstNow.getUTCMonth(),
+          kstNow.getUTCDate() + 1,
+          0 - 9, // 00:00 KST next day = 15:00 UTC today
+          0, 0, 0
+        ));
+        boundaryMs = bDate.getTime();
+      } else {
+        // Mission I / Day round (default): expires at 17:50 KST today
+        const bDate = new Date(Date.UTC(
+          kstNow.getUTCFullYear(),
+          kstNow.getUTCMonth(),
+          kstNow.getUTCDate(),
+          17 - 9, // 17:50 KST = 08:50 UTC today
+          50, 0, 0
+        ));
+        boundaryMs = bDate.getTime();
+      }
+
+      if (nowUtc >= boundaryMs) {
+        void handleForcedExpiry();
+        return;
+      }
+
+      const delay = Math.max(100, boundaryMs - nowUtc);
+      if (timerId) clearTimeout(timerId);
+      timerId = setTimeout(() => {
+        void handleForcedExpiry();
+      }, delay);
+    };
+
+    checkAndScheduleExpiry();
+
+    const handleRecheck = () => {
+      if (document.visibilityState === "visible" || document.hasFocus()) {
+        checkAndScheduleExpiry();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleRecheck);
+    window.addEventListener("focus", handleRecheck);
+
+    return () => {
+      if (timerId) clearTimeout(timerId);
+      document.removeEventListener("visibilitychange", handleRecheck);
+      window.removeEventListener("focus", handleRecheck);
+    };
+  }, [handleForcedExpiry]);
+
   // 011 2차: 일시적 인식 실패/timeout/fallback 공용 처리 — 이 턴에서 아직 조용한 재시도를
   // 안 써봤으면(recoveryAttemptedRef=false) 문구·배너 없이 한 번 더 기회를 준다(마이크를
   // 다시 열고 조용히 대기). 이미 한 번 써봤는데 또 실패했으면 그때만 재시도 버튼을 띄운다.
@@ -324,9 +483,18 @@ function MissionInner() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current, displaySequence, turnId }),
     })
-      .then(res => { if (!res.ok) console.error("[saveMessage] failed", { status: res.status, turnId, role }); })
+      .then(async res => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 403 || data.code === "MISSION_EXPIRED" || data.expired || data.status === "FORCE_ENDED") {
+            handleForcedExpiry();
+          } else {
+            console.error("[saveMessage] failed", { status: res.status, turnId, role });
+          }
+        }
+      })
       .catch(err => console.error("[saveMessage] network error", { turnId, role, message: err.message }));
-  }, []);
+  }, [handleForcedExpiry]);
 
   const pickNextIndex = useCallback((states: Record<string, QuestionState>): number => {
     const qs = questionsRef.current;
@@ -591,6 +759,11 @@ function MissionInner() {
           });
           if (!res.ok) {
             if (currentEpoch !== answerEpochRef.current) return;
+            const errData = await res.json().catch(() => ({}));
+            if (res.status === 403 || errData.code === "MISSION_EXPIRED" || errData.expired || errData.status === "FORCE_ENDED" || errData.scheduleClosed) {
+              handleForcedExpiry();
+              return;
+            }
             if (res.status === 423) {
               if (manualTimeoutRef.current) {
                 clearTimeout(manualTimeoutRef.current);
@@ -821,7 +994,39 @@ function MissionInner() {
           const reactionText = await reactionResultPromise!;
           if (currentEpoch !== answerEpochRef.current) return;
           lastReactionRef.current = reactionText;
-          respondText = `${reactionText} ${nextQ.question_text}`;
+          let parentQuestionText: string | null = null;
+          try {
+            const parentQuestionRes = await fetch("/api/mission/respond", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sessionId: sessionIdRef.current,
+                history: getTranscriptRef.current?.() ?? [],
+                nextQuestionText: nextQ.question_text,
+                childTurnId,
+                childContext: childContextRef.current ?? undefined,
+                parentQuestionOnly: true,
+              }),
+              signal: apiAbortControllerRef.current?.signal,
+            });
+            if (parentQuestionRes.ok) {
+              const parentQuestionData = await parentQuestionRes.json();
+              parentQuestionText =
+                typeof parentQuestionData.text === "string"
+                  ? parentQuestionData.text
+                  : null;
+            } else {
+              const errData = await parentQuestionRes.json().catch(() => ({}));
+              if (parentQuestionRes.status === 403 || errData.code === "MISSION_EXPIRED" || errData.code === "PERSISTENCE_FAILURE" || errData.expired || errData.status === "FORCE_ENDED" || errData.status === "PERSISTENCE_FAILURE") {
+                handleForcedExpiry();
+                return;
+              }
+            }
+          } catch (error) {
+            if ((error as Error)?.name === "AbortError") throw error;
+            console.error("[mission] parent question lookup failed", error);
+          }
+          respondText = `${reactionText} ${parentQuestionText ?? nextQ.question_text}`;
         } else {
           try {
             logVoiceEvent({ ts: Date.now(), eventType: "respond_request" });
@@ -843,6 +1048,11 @@ function MissionInner() {
               if (respondData.text) respondText = respondData.text;
             } else {
               if (currentEpoch !== answerEpochRef.current) return;
+              const errData = await respondRes.json().catch(() => ({}));
+              if (respondRes.status === 403 || errData.code === "MISSION_EXPIRED" || errData.expired || errData.status === "FORCE_ENDED") {
+                handleForcedExpiry();
+                return;
+              }
               if (manualTimeoutRef.current) {
                 clearTimeout(manualTimeoutRef.current);
                 manualTimeoutRef.current = null;
@@ -1012,6 +1222,7 @@ function MissionInner() {
   });
   sttSetMicEnabledRef.current = sttTts.setMicEnabled;
   sttCancelFinalizeRef.current = sttTts.cancelFinalize;
+  sttTtsStopSpeakingRef.current = sttTts.stopSpeaking;
   const live = useGeminiLive({
     onTurnComplete: handleTurnComplete,
     voiceName: liveVoiceName,
@@ -1506,6 +1717,10 @@ function MissionInner() {
       if (signal?.aborted) return;
 
       if (!res.ok) {
+        if (res.status === 403 || data.code === "MISSION_EXPIRED" || data.scheduleClosed || data.expired || data.status === "FORCE_ENDED") {
+          handleForcedExpiry();
+          return;
+        }
         setErrorMsg(data.error ?? "미션을 시작하지 못했어요");
         setPhase("error");
         setEntryStatus("error");
@@ -1651,7 +1866,7 @@ function MissionInner() {
       setPhase("error");
       setEntryStatus("error");
     }
-  }, []);
+  }, [handleForcedExpiry]);
 
   const isStartingRef = useRef(false);
   // 037 §21/§22: 조회·시작·이어하기 실패 후 "다시 시도"가 정확히 직전에 하려던
@@ -2105,18 +2320,12 @@ function MissionInner() {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
         <p className="text-5xl">⏰</p>
-        {scheduleEnforced ? (
-          <p className="text-base font-bold text-gray-800">미션 시간이 아닙니다.</p>
-        ) : (
-          <>
-            <p className="text-base font-bold text-gray-800">지금은 미션 시간이 아니에요</p>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              1차 미션은 오후 1시~5시,
-              <br />
-              2차 미션은 저녁 7시~밤 12시에 만나요!
-            </p>
-          </>
-        )}
+        <p className="text-base font-bold text-gray-800">{errorMsg || "미션 시간이 끝났어요"}</p>
+        <p className="text-xs text-gray-500 leading-relaxed">
+          1차 미션은 오전 10시~오후 5시 50분,
+          <br />
+          2차 미션은 오후 6시~밤 12시에 만나요!
+        </p>
         <button
           onClick={() => {
             setSessionActive(false);
@@ -2260,6 +2469,10 @@ function MissionInner() {
         <div className="flex gap-2 w-full">
           <button
             onClick={() => {
+              if (errorMsg === "연결 문제로 미션 종료 확인에 실패했어요. 다시 시도해 주세요.") {
+                handleForcedExpiry();
+                return;
+              }
               recoveryAttemptedRef.current = false;
               setShowRetryButton(false);
               if (!isLiveMode && isAuto && missionStateRef.current === "active") {

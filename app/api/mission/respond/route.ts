@@ -9,6 +9,7 @@ import { checkConsentForSession } from "@/lib/plan/consentGuard";
 import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
 export const runtime = "nodejs";
 
@@ -83,7 +84,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { sessionId?: string; history?: HistoryTurn[]; nextQuestionText?: string; childTurnId?: string; childContext?: any };
+  let body: {
+    sessionId?: string;
+    history?: HistoryTurn[];
+    nextQuestionText?: string;
+    childTurnId?: string;
+    childContext?: any;
+    parentQuestionOnly?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -131,6 +139,15 @@ export async function POST(req: NextRequest) {
   if (!authCheck.allowed) {
     console.error("[mission/respond] Forbidden", { sessionId: body.sessionId, childTurnId });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const sessionCheck = await assertMissionSessionActive(authService, body.sessionId);
+  if (!sessionCheck.allowed) {
+    console.error("[mission/respond] Session not active or expired", { sessionId: body.sessionId, childTurnId });
+    return NextResponse.json(
+      { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired },
+      { status: sessionCheck.expired ? 403 : 423 }
+    );
   }
 
   // C. 순서 강제: 직전 메시지가 k인지 확인
@@ -181,52 +198,128 @@ export async function POST(req: NextRequest) {
 
   let finalNextQuestionText = nextQuestionText;
 
-  // Parent question injection
-  let activeQuestion = null;
+  // Parent question injection. ai_generated/parent_edited are the canonical
+  // ready states; mission_confirming means a question has been claimed.
+  let activeQuestion: Record<string, any> | null = null;
+  const kTexts = history.filter((turn) => turn.role === "k").map((turn) => turn.text);
 
-  const { data: qs } = await authService
+  const { data: activeRows, error: activeQueryError } = await authService
     .from("parent_questions")
     .select("*")
     .eq("child_id", session.child_id)
     .eq("status", "mission_confirming")
-    .order("created_at", { ascending: false })
+    .order("last_delivered_at", { ascending: false, nullsFirst: false })
     .limit(1);
 
-  if (qs && qs.length > 0) {
-    activeQuestion = qs[0];
-  } else {
-    // Check if we already asked a parent question in this session
-    let alreadyAskedInSession = false;
-    const { data: nonDrafts } = await authService
+  if (activeQueryError) {
+    console.error("[mission/respond] active parent question query failed", {
+      childId: session.child_id,
+      error: activeQueryError.message,
+    });
+  }
+
+  const claimedElsewhere = activeRows?.[0] ?? null;
+  if (
+    claimedElsewhere &&
+    kTexts.some((text) => text.includes(claimedElsewhere.question_text))
+  ) {
+    // The question is already present in this mission transcript. If it is
+    // still active here, the previous answer/connection did not finish the
+    // lifecycle. Close it without repeating the same question immediately.
+    const { error: recoveryError } = await authService
+      .from("parent_questions")
+      .update({
+        status: "mission_incomplete",
+        mission_confirm_attempts: Math.min(
+          2,
+          (claimedElsewhere.mission_confirm_attempts ?? 0) + 1,
+        ),
+      })
+      .eq("id", claimedElsewhere.id)
+      .eq("status", "mission_confirming");
+    if (recoveryError) {
+      console.error("[mission/respond] stale parent question recovery failed", {
+        childId: session.child_id,
+        questionId: claimedElsewhere.id,
+        error: recoveryError.message,
+      });
+    }
+  } else if (!claimedElsewhere) {
+    const { data: knownQuestions, error: knownQuestionsError } = await authService
       .from("parent_questions")
       .select("question_text")
       .eq("child_id", session.child_id)
       .not("status", "eq", "draft");
 
-    if (nonDrafts) {
-      const kTexts = history.filter(h => h.role === 'k').map(h => h.text);
-      alreadyAskedInSession = nonDrafts.some(q => kTexts.some(kText => kText.includes(q.question_text)));
+    if (knownQuestionsError) {
+      console.error("[mission/respond] parent question history query failed", {
+        childId: session.child_id,
+        error: knownQuestionsError.message,
+      });
     }
 
+    const alreadyAskedInSession = (knownQuestions ?? []).some((question) =>
+      kTexts.some((text) => text.includes(question.question_text)),
+    );
+
     if (!alreadyAskedInSession) {
-      // Atomically select and claim a draft question
-      const { data: drafts } = await authService
+      let { data: readyRows, error: readyQueryError } = await authService
         .from("parent_questions")
-        .select("id")
+        .select("id, status, delivered_count")
         .eq("child_id", session.child_id)
-        .eq("status", "draft")
+        .in("status", ["ai_generated", "parent_edited"])
         .order("created_at", { ascending: true })
         .limit(1);
 
-      if (drafts && drafts.length > 0) {
-        const { data: updated } = await authService
+      if (readyQueryError) {
+        console.error("[mission/respond] ready parent question query failed", {
+          childId: session.child_id,
+          error: readyQueryError.message,
+        });
+      }
+
+      // Compatibility for K-Chat rows created by the previous release. A draft
+      // carrying both K-Chat snapshot fields has already completed conversion.
+      if (!readyRows?.length) {
+        const legacyResult = await authService
           .from("parent_questions")
-          .update({ status: "mission_confirming", mission_confirm_attempts: 1 })
-          .eq("id", drafts[0].id)
+          .select("id, status, delivered_count")
+          .eq("child_id", session.child_id)
           .eq("status", "draft")
+          .not("parent_id", "is", null)
+          .not("original_question_text", "is", null)
+          .order("created_at", { ascending: true })
+          .limit(1);
+        readyRows = legacyResult.data;
+        readyQueryError = legacyResult.error;
+      }
+
+      const candidate = readyRows?.[0];
+      if (candidate && !readyQueryError) {
+        const deliveredCount = candidate.delivered_count ?? 0;
+        // Compare-and-set makes the claim exclusive even if two mission
+        // sessions selected the same oldest row at the same time.
+        const { data: updated, error: claimError } = await authService
+          .from("parent_questions")
+          .update({
+            status: "mission_confirming",
+            mission_confirm_attempts: 0,
+            delivered_count: deliveredCount + 1,
+            last_delivered_at: new Date().toISOString(),
+          })
+          .eq("id", candidate.id)
+          .eq("status", candidate.status)
+          .eq("delivered_count", deliveredCount)
           .select()
           .maybeSingle();
 
+        if (claimError) {
+          console.error("[mission/respond] parent question claim failed", {
+            childId: session.child_id,
+            questionId: candidate.id,
+            error: claimError.message,
+          });
+        }
         if (updated) {
           activeQuestion = updated;
         }
@@ -236,12 +329,27 @@ export async function POST(req: NextRequest) {
 
   if (activeQuestion) {
     if (activeQuestion.status === "mission_confirming") {
-      if (activeQuestion.mission_confirm_attempts > 1) {
+      if (activeQuestion.mission_confirm_attempts > 0) {
         finalNextQuestionText = `방금 물어본 질문("${activeQuestion.question_text}")에 대해 아직 대답하지 않았으니 부드럽게 다시 한 번 물어보세요.`;
       } else {
         finalNextQuestionText = activeQuestion.question_text;
       }
     }
+  }
+
+  if (body.parentQuestionOnly) {
+    const text = activeQuestion?.question_text ?? null;
+    if (text && childTurnId) setCachedRespond(childTurnId, text);
+    console.log("[mission/respond] parent-question-only done", {
+      sessionId: body.sessionId,
+      childTurnId,
+      claimed: !!text,
+      durationMs: Date.now() - startedAt,
+    });
+    return NextResponse.json({
+      text,
+      parentQuestionId: activeQuestion?.id ?? null,
+    });
   }
 
   if (contents.length === 0) {

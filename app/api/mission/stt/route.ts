@@ -8,6 +8,7 @@ import { checkConsentForSession } from "@/lib/plan/consentGuard";
 import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
 // LINEAR16/16kHz/mono 고정 인코딩 기준 — 1초 = 16000 샘플 * 2바이트
 const PCM16_BYTES_PER_SEC = 16000 * 2;
@@ -80,6 +81,15 @@ export async function POST(req: NextRequest) {
   if (!authCheck.allowed) {
     console.error("[mission/stt] Forbidden", { sessionId: body.sessionId, childTurnId: body.childTurnId });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const sessionCheck = await assertMissionSessionActive(authService, body.sessionId);
+  if (!sessionCheck.allowed) {
+    console.error("[mission/stt] Session not active or expired", { sessionId: body.sessionId, childTurnId: body.childTurnId });
+    return NextResponse.json(
+      { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired },
+      { status: sessionCheck.expired ? 403 : 423 }
+    );
   }
 
   if (body.sessionId && body.childTurnId) {

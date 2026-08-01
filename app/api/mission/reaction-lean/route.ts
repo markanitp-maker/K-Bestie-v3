@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
+import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
 export const runtime = "nodejs";
 
@@ -49,6 +50,14 @@ ${knownContextMsg}
       const approvalBlocked = await checkApprovalForChild(child.childId);
       if (approvalBlocked) return { ok: false, status: 403, res: approvalBlocked };
       
+      if (sessionId) {
+        const sessionCheck = await assertMissionSessionActive(svc, sessionId);
+        if (!sessionCheck.allowed) {
+          const payload = JSON.stringify({ error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired });
+          return { ok: false, status: sessionCheck.expired ? 403 : 403, res: new Response(payload, { status: sessionCheck.expired ? 403 : 423, headers: { "Content-Type": "application/json" } }) };
+        }
+      }
+
       return { ok: true };
     })();
 

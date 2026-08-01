@@ -15,6 +15,7 @@ import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 import { getKstHour, currentRound } from "@/lib/mission/missionTimeGate";
 import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
+import { getMissionPhase, assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
 export const runtime = "nodejs";
 
@@ -161,6 +162,14 @@ export async function POST(req: NextRequest) {
 
   if (existingSessionRow) {
     const existingSessionId = existingSessionRow.id;
+    const sessionCheck = await assertMissionSessionActive(service, existingSessionId);
+    if (!sessionCheck.allowed) {
+      return NextResponse.json(
+        { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, scheduleClosed: true, expired: sessionCheck.expired },
+        { status: sessionCheck.expired ? 403 : 423 }
+      );
+    }
+
     // select() 결과로 배열 형태로 내려오거나 단일 객체로 내려옴(has one)
     const existingProgress = Array.isArray(existingSessionRow.mission_progress)
       ? existingSessionRow.mission_progress[0]
@@ -283,10 +292,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No eligible questions" }, { status: 409 });
   }
 
+  // 022 Phase 2A: 미션 시작 시 서버가 KST 유효 시간과 실제 미션 종류를 검증하여 mission_phase(1 또는 2)를 확정 저장한다.
+  const mission_phase = getMissionPhase(roundType);
+  if (mission_phase === null) {
+    return NextResponse.json({ error: "현재 미션을 시작할 수 있는 시간이 아닙니다.", scheduleClosed: true }, { status: 403 });
+  }
+
   // 미션 세션 생성 (session_type='mission')
   const { data: session, error: sessErr } = await service
     .from("chat_sessions")
-    .insert({ child_id: childId, session_type: "mission" })
+    .insert({ child_id: childId, session_type: "mission", mission_phase })
     .select("id")
     .single();
 

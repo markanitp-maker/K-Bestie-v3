@@ -6,6 +6,7 @@ import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { classifyAnswer } from "@/lib/questions/answer-classifier";
 import { pickReaction } from "@/lib/freeChatReactions";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
 export const runtime = "nodejs";
 
@@ -100,6 +101,14 @@ export async function POST(req: NextRequest) {
 
   const approvalBlocked = await checkApprovalForChild(session.child_id);
   if (approvalBlocked) return approvalBlocked;
+
+  const sessionCheck = await assertMissionSessionActive(service, sessionId);
+  if (!sessionCheck.allowed) {
+    console.error("[mission/answer-lean] Mission session not active or expired", { sessionId, status: sessionCheck.status });
+    const resPayload = { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired };
+    if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+    return NextResponse.json(resPayload, { status: sessionCheck.expired ? 403 : 423 });
+  }
 
   const { data: statusRow, error: statusErr } = await service
     .from("mission_progress")

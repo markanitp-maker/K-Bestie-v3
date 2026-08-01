@@ -14,6 +14,7 @@ import { normalizeConversationMode } from "@/lib/plan/conversationMode";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
 import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
 export const runtime = "nodejs";
 
@@ -246,6 +247,15 @@ export async function POST(req: NextRequest) {
   if (!authCheck.allowed) {
     console.error("[mission/respond-lean] Forbidden", { sessionId, childTurnId });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const sessionCheck = await assertMissionSessionActive(authService, sessionId);
+  if (!sessionCheck.allowed) {
+    console.error("[mission/respond-lean] Session not active or expired", { sessionId, childTurnId });
+    return NextResponse.json(
+      { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired },
+      { status: sessionCheck.expired ? 403 : 423 }
+    );
   }
 
   // K/child 순서가드: 직전 chat_messages가 role='k'면 409 Conflict 반환

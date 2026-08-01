@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveTestChild } from "@/lib/child/testAccount";
+import { getMissionPhase } from "@/app/api/_lib/missionUtils";
 
 export const runtime = "nodejs";
 
@@ -108,10 +109,12 @@ export async function POST(req: Request) {
     });
   }
 
-  // 4. 신규 세션 생성 (demo_mode=true — 정식 리포트 제외)
+  // 022 Phase 2A: test-mission(항상 common 라운드)도 KST 시간에 따라 mission_phase 부여 (테스트 계정이므로 isTestAccount=true 전달)
+  const mission_phase = getMissionPhase('common', true);
+
   const { data: session, error: sessErr } = await svc
     .from("chat_sessions")
-    .insert({ child_id: childId, session_type: "mission", demo_mode: true, test_mode: mode })
+    .insert({ child_id: childId, session_type: "mission", demo_mode: true, test_mode: mode, mission_phase })
     .select("id")
     .single();
   if (sessErr || !session) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,11 @@ export async function POST(req: NextRequest) {
     const authCheck = await requireChildAccess(authService, user.id, session.child_id);
     if (!authCheck.allowed) {
       return NextResponse.json({ ok: false }, { status: 403 });
+    }
+
+    const sessionCheck = await assertMissionSessionActive(authService, sessionId);
+    if (!sessionCheck.allowed) {
+      return NextResponse.json({ ok: false, error: sessionCheck.error, code: sessionCheck.code }, { status: 403 });
     }
 
     const { error } = await authService.from("turn_timing_events").insert({
