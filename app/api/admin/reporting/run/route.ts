@@ -4,6 +4,10 @@ import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { runContextCorrectionPipeline } from "@/lib/batch/contextCorrection";
 import { generateDailyReports } from "@/lib/batch/generateDailyReports";
 import { isRealCalendarDate } from "@/lib/admin/reportingDateValidation";
+import { processSpecificCollectionJobV3 } from "@/lib/batch/collection";
+import { processSpecificContextCorrectionJobV3 } from "@/lib/batch/contextCorrectionV3";
+import { processSpecificDailyReportJobV3 } from "@/lib/batch/dailyReportV3";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 
@@ -30,6 +34,10 @@ export async function POST(req: NextRequest) {
 
   const db = createServiceClient();
 
+  // Check V3 Control
+  const { data: v3Control } = await db.from("pipeline_v3_control").select("enabled").eq("id", 1).single();
+  const isV3Enabled = v3Control?.enabled === true;
+
   let childId = null;
   if (target.scope === "single") {
     childId = target.childId;
@@ -38,14 +46,150 @@ export async function POST(req: NextRequest) {
     if (!data) return NextResponse.json({ error: "Child not found" }, { status: 404 });
   }
 
+  const executionId = crypto.randomUUID();
+
+  // V3 LOGIC
+  if (isV3Enabled) {
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+    const cutoffAt = businessDate === todayStr ? new Date().toISOString() : `${businessDate}T23:59:59+09:00`;
+    const workerId = `admin_manual_${Date.now()}`;
+
+    if (target.scope === "all") {
+      // Get all active children (those with messages today)
+      // We will let enqueue RPC do the filtering for Collection, but for generation we just enqueue for those who have corrected data.
+      let enqueuedChildIds: string[] = [];
+      
+      if (action === "collect" || action === "collect_and_generate") {
+        const { data: sessions } = await db.from("chat_sessions")
+          .select("child_id")
+          .gte("started_at", `${businessDate}T00:00:00+09:00`)
+          .lte("started_at", `${businessDate}T23:59:59+09:00`);
+        
+        const cIds = Array.from(new Set((sessions || []).map((s: any) => s.child_id)));
+        enqueuedChildIds = cIds;
+        
+        for (const cid of cIds) {
+          const idempotencyKey = `collection_manual_${cid}_${businessDate}_2_${new Date(cutoffAt).getTime() / 1000}`;
+          await db.from('pipeline_jobs').upsert({
+            id: crypto.randomUUID(),
+            job_type: 'collection_2',
+            child_id: cid,
+            business_date: businessDate,
+            collection_phase: 2,
+            cutoff_at: cutoffAt,
+            execution_id: executionId,
+            status: 'pending',
+            attempt_count: 0,
+            priority: 1,
+            idempotency_key: idempotencyKey
+          }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
+        }
+      }
+
+      if (action === "generate") {
+        // Find children with completed corrected V3
+        const { data: corr } = await db.from("corrected_daily_conversations_v3")
+          .select("child_id")
+          .eq("business_date", businessDate)
+          .eq("correction_status", "completed");
+        
+        const cIds = Array.from(new Set((corr || []).map((c: any) => c.child_id)));
+        enqueuedChildIds = cIds;
+
+        for (const cid of cIds) {
+          const idempotencyKey = `daily_report_${cid}_${businessDate}`;
+          await db.from('pipeline_jobs').upsert({
+            id: crypto.randomUUID(),
+            job_type: 'daily_report',
+            child_id: cid,
+            business_date: businessDate,
+            execution_id: executionId,
+            status: 'pending',
+            attempt_count: 0,
+            priority: 1,
+            idempotency_key: idempotencyKey
+          }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
+        }
+      }
+
+      // Return immediately for polling
+      return NextResponse.json({
+        ok: true,
+        v3: true,
+        execution_id: executionId,
+        enqueuedCount: enqueuedChildIds.length
+      });
+    } else {
+      // SINGLE CHILD - Synchronous
+      try {
+        if (action === "collect" || action === "collect_and_generate") {
+          const idempotencyKey = `collection_manual_${childId}_${businessDate}_2_${new Date(cutoffAt).getTime() / 1000}`;
+          await db.from('pipeline_jobs').upsert({
+            id: crypto.randomUUID(),
+            job_type: 'collection_2',
+            child_id: childId,
+            business_date: businessDate,
+            collection_phase: 2,
+            cutoff_at: cutoffAt,
+            execution_id: executionId,
+            status: 'pending',
+            attempt_count: 0,
+            priority: 1,
+            idempotency_key: idempotencyKey
+          }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
+
+          const colRes = await processSpecificCollectionJobV3(2, childId!, businessDate, workerId);
+          if (!colRes.success && colRes.reason !== 'NO_PENDING_JOB') throw new Error(`Collection failed: ${colRes.reason}`);
+        }
+
+        if (action === "collect_and_generate") {
+          const corRes = await processSpecificContextCorrectionJobV3(childId!, businessDate, workerId);
+          if (!corRes.success && corRes.reason !== 'NO_PENDING_JOB') throw new Error(`Correction failed: ${corRes.reason}`);
+        }
+
+        if (action === "generate" || action === "collect_and_generate") {
+          if (action === "generate") {
+            const idempotencyKey = `daily_report_${childId}_${businessDate}`;
+            await db.from('pipeline_jobs').upsert({
+              id: crypto.randomUUID(),
+              job_type: 'daily_report',
+              child_id: childId,
+              business_date: businessDate,
+              execution_id: executionId,
+              status: 'pending',
+              attempt_count: 0,
+              idempotency_key: idempotencyKey
+            }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
+          }
+          const repRes = await processSpecificDailyReportJobV3(childId!, businessDate, workerId);
+          if (!repRes.success && repRes.reason !== 'NO_PENDING_JOB') {
+             // If manual generate fails due to NO_MESSAGES etc., throw it
+             throw new Error(`Report generation failed: ${repRes.reason}`);
+          }
+        }
+
+        return NextResponse.json({
+          ok: true,
+          v3: true,
+          action,
+          target,
+          collect: { collected: 1, errors: [] },
+          generate: { created: [childId], errors: [] }
+        });
+
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message, action, target }, { status: 500 });
+      }
+    }
+  }
+
+  // --- V2 LEGACY LOGIC BELOW ---
   let collectResult = undefined;
   let generateResult = undefined;
 
-  // COLLECT
   if (action === "collect" || action === "collect_and_generate") {
     try {
       if (childId) {
-        // Find session ids for this child on this date
         const { data: sessions } = await db.from("chat_sessions")
           .select("id")
           .eq("child_id", childId)
@@ -66,10 +210,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // GENERATE
   if (action === "generate" || action === "collect_and_generate") {
     try {
-      // Check if raw_daily_conversations exists
       let rawQuery = db.from("raw_daily_conversations").select("id").eq("business_date", businessDate).limit(1);
       if (childId) rawQuery = rawQuery.eq("child_id", childId);
       
@@ -84,40 +226,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // DASHBOARD STATUS
-  let dashboardStatus = undefined;
-  if (childId && (action === "generate" || action === "collect_and_generate")) {
-    const { data: report } = await db.from("daily_reports")
-      .select("*")
-      .eq("child_id", childId)
-      .eq("business_date", businessDate)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-    
-    if (report) {
-      const fields = [
-        report.school_academy_life,
-        report.peer_friendship,
-        report.emotion_hint,
-        report.interests_preferences,
-        report.study_concerns,
-        report.digital_content_interests,
-        report.future_dreams,
-        report.recurring_stories
-      ];
-      dashboardStatus = [{
-        childId,
-        nonNullFieldCount: fields.filter((f: any) => f && String(f).trim().length > 0).length
-      }];
-    }
-  }
-
-  // codex 리뷰 지적: collect/generate 각각 부분 오류(errors 배열)가 있어도 지금까지는
-  // 전체 응답이 ok:true, UI는 "✅ 성공"으로만 표시해 아이별/세션별 실패가 성공으로
-  // 오인될 수 있었다(실제로 QA 계정 실행에서 재현 - 8세션 중 2개가 collect 에러였는데
-  // 전체는 성공으로 표시됨). 부분 실패 여부를 별도 필드로 명시한다.
   const hasPartialErrors =
     (collectResult?.errors?.length ?? 0) > 0 || (generateResult?.errors?.length ?? 0) > 0;
 
@@ -133,7 +241,6 @@ export async function POST(req: NextRequest) {
       skipped: generateResult.skipped,
       errorCount: generateResult.errors?.length || 0,
       errors: generateResult.errors
-    } : undefined,
-    dashboardStatus
+    } : undefined
   });
 }

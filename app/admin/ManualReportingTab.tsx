@@ -98,15 +98,46 @@ export default function ManualReportingTab() {
       });
 
       const data = await res.json();
-      setRunResult(data);
+      
+      if (data.v3 && data.execution_id) {
+        // Poll for status
+        const executionId = data.execution_id;
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/admin/reporting/status?execution_id=${executionId}`);
+            const statusData = await statusRes.json();
+            
+            if (statusData.ok) {
+              setRunResult({ ...data, statuses: statusData.statuses });
+              
+              // Check if all finished
+              const allFinished = statusData.statuses.every((s: any) => {
+                const cDone = !s.collection || ["완료", "실패"].includes(s.collection);
+                const corDone = !s.correction || ["완료", "실패"].includes(s.correction);
+                const rDone = !s.report || ["완료", "실패"].includes(s.report);
+                return cDone && corDone && rDone;
+              });
 
-      if (data.ok) {
-        if (scope === "single") loadChildren();
-        if (scope === "all") loadSummary();
+              if (allFinished) {
+                clearInterval(pollInterval);
+                setRunning(false);
+                loadSummary();
+              }
+            }
+          } catch (e) {
+            console.error("Poll error", e);
+          }
+        }, 2000);
+      } else {
+        setRunResult(data);
+        if (data.ok) {
+          if (scope === "single") loadChildren();
+          if (scope === "all") loadSummary();
+        }
+        setRunning(false);
       }
     } catch (e: any) {
       setRunResult({ ok: false, error: e.message });
-    } finally {
       setRunning(false);
     }
   };
@@ -330,6 +361,40 @@ export default function ManualReportingTab() {
                       {runResult.dashboardStatus.map((s: any, i: number) => (
                         <div key={i}>- 아이 {s.childId}: {s.nonNullFieldCount}/8 항목 작성됨</div>
                       ))}
+                    </div>
+                  )}
+                  {runResult.v3 && runResult.statuses && (
+                    <div style={{ marginTop: 12 }}>
+                      <strong>[V3 처리 상태]</strong><br/>
+                      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
+                        <thead>
+                          <tr>
+                            <th style={thStyle}>아이 ID</th>
+                            <th style={thStyle}>수집</th>
+                            <th style={thStyle}>수집보정</th>
+                            <th style={thStyle}>리포트</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {runResult.statuses.map((s: any, i: number) => (
+                            <tr key={i}>
+                              <td style={tdStyle}>{s.childId.substring(0, 8)}...</td>
+                              <td style={tdStyle}>
+                                {s.collection || "-"}
+                                {s.collectionError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.collectionError}</div>}
+                              </td>
+                              <td style={tdStyle}>
+                                {s.correction || "-"}
+                                {s.correctionError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.correctionError}</div>}
+                              </td>
+                              <td style={tdStyle}>
+                                {s.report || "-"}
+                                {s.reportError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.reportError}</div>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </>
