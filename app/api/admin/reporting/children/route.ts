@@ -21,23 +21,19 @@ export async function GET(req: NextRequest) {
   const results = await Promise.allSettled([
     db.from("child_profiles").select("id, name"),
     db.from("chat_sessions").select("child_id, session_type").gte("started_at", `${businessDate}T00:00:00+09:00`).lte("started_at", `${businessDate}T23:59:59+09:00`),
-    db.from("raw_daily_conversations").select("child_id").eq("business_date", businessDate),
+    db.from("corrected_daily_conversations_v3").select("child_id").eq("business_date", businessDate),
     db.from("daily_reports").select("*").eq("business_date", businessDate).is("deleted_at", null)
   ]);
 
-  const childrenRes = results[0].status === "fulfilled" ? results[0].value : { error: new Error("child_profiles 조회 실패(요청 자체가 거부됨)"), data: [] };
-  const sessionRes = results[1].status === "fulfilled" ? results[1].value : { error: new Error("chat_sessions 조회 실패(요청 자체가 거부됨)"), data: [] };
-  const rawRes = results[2].status === "fulfilled" ? results[2].value : { error: new Error("raw_daily_conversations 조회 실패(요청 자체가 거부됨)"), data: [] };
-  const reportRes = results[3].status === "fulfilled" ? results[3].value : { error: new Error("daily_reports 조회 실패(요청 자체가 거부됨)"), data: [] };
+  const childrenRes = results[0].status === "fulfilled" ? results[0].value : { error: new Error("child_profiles 조회 실패"), data: [] };
+  const sessionRes = results[1].status === "fulfilled" ? results[1].value : { error: new Error("chat_sessions 조회 실패"), data: [] };
+  const rawRes = results[2].status === "fulfilled" ? results[2].value : { error: new Error("corrected_daily_conversations_v3 조회 실패"), data: [] };
+  const reportRes = results[3].status === "fulfilled" ? results[3].value : { error: new Error("daily_reports 조회 실패"), data: [] };
 
-  // codex 리뷰 지적: Promise.allSettled는 네트워크/요청 레벨 실패만 status:'rejected'로
-  // 잡는다 - Supabase 쿼리 자체가 fulfilled 상태로 돌아오면서 내부 error 필드에 실패를
-  // 담는 경우(예: 권한/문법 오류)는 그동안 무시되어 "0건/X"로 조용히 표시되고 있었다.
-  // 네 응답 모두 fulfilled 여부와 무관하게 error 필드까지 확인한다.
   for (const [label, res] of [
     ["child_profiles", childrenRes],
     ["chat_sessions", sessionRes],
-    ["raw_daily_conversations", rawRes],
+    ["corrected_daily_conversations_v3", rawRes],
     ["daily_reports", reportRes],
   ] as const) {
     if (res.error) {
@@ -61,10 +57,6 @@ export async function GET(req: NextRequest) {
 
   const rawByChild = new Set((rawRes.data || []).map((r: any) => r.child_id));
 
-  // codex 리뷰 지적: 이 마이그레이션 이전에 세션당 리포트를 만들던 구조 때문에 같은
-  // child_id+business_date에 레거시 중복 행이 남아있을 수 있다(하드 UNIQUE 제약 없음).
-  // 정렬 없이 배열 순서대로 덮어쓰면 가장 최근 리포트를 보장하지 못해 오래된 행의
-  // N/8·생성시각이 표시될 수 있으므로, created_at 기준으로 각 아이의 최신 행만 남긴다.
   const reportsByChild = new Map<string, any>();
   for (const r of reportRes.data || []) {
     const existing = reportsByChild.get(r.child_id);

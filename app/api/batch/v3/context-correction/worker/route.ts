@@ -1,0 +1,64 @@
+import { NextResponse } from "next/server";
+import { runContextCorrectionWorkerV3 } from "@/lib/batch/contextCorrectionV3";
+import { randomUUID } from "crypto";
+
+export const runtime = "nodejs";
+
+export async function POST(req: Request) {
+  try {
+    const authHeader = req.headers.get("authorization");
+    if (!process.env.CRON_SECRET || !authHeader || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    let limit = 10;
+    let executionId: string | undefined = undefined;
+    try {
+      const body = await req.json();
+      if (body.limit !== undefined) {
+        if (typeof body.limit !== 'number' || !Number.isInteger(body.limit) || body.limit < 1 || body.limit > 50) {
+          return NextResponse.json({ error: "Invalid limit. Must be an integer between 1 and 50." }, { status: 400 });
+        }
+        limit = body.limit;
+      }
+      if (body.executionId !== undefined) {
+        if (typeof body.executionId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.executionId)) {
+          return NextResponse.json({ error: "Invalid executionId. Must be a valid UUID string." }, { status: 400 });
+        }
+        executionId = body.executionId;
+      }
+    } catch {
+      // ignore
+    }
+
+    const workerId = `worker_corr_${randomUUID()}`;
+    let totalClaimed = 0;
+    let totalCompleted = 0;
+    let totalFailed = 0;
+    const allErrors: any[] = [];
+    const maxIterations = 20;
+
+    for (let i = 0; i < maxIterations; i++) {
+      const res = await runContextCorrectionWorkerV3(limit, workerId, executionId);
+      totalClaimed += res.claimed;
+      totalCompleted += res.completed;
+      totalFailed += res.failed;
+      if (res.errors?.length) allErrors.push(...res.errors);
+      if (res.claimed === 0) break;
+    }
+
+    return NextResponse.json({
+      success: true,
+      workerId,
+      result: {
+        claimed: totalClaimed,
+        completed: totalCompleted,
+        failed: totalFailed,
+        errors: allErrors,
+      },
+    });
+  } catch (error: any) {
+    console.error("[ContextCorrectionV3Worker API Error]", error);
+    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+  }
+}

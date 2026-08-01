@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("ko-KR");
@@ -31,10 +31,19 @@ export default function ManualReportingTab() {
 
   const [summary, setSummary] = useState<any>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
-  const [forceRegenerate, setForceRegenerate] = useState(false);
 
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<any>(null);
+
+  const runAbortControllerRef = useRef<AbortController | null>(null);
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      runAbortControllerRef.current?.abort();
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+  }, []);
 
   const loadChildren = useCallback(() => {
     if (scope !== "single") return;
@@ -86,48 +95,114 @@ export default function ManualReportingTab() {
     setRunning(true);
     setRunResult(null);
 
+    if (runAbortControllerRef.current) runAbortControllerRef.current.abort();
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    
+    const controller = new AbortController();
+    runAbortControllerRef.current = controller;
+
     try {
+      const fetchWithTimeout = async (url: string, options: RequestInit, ms: number = 30000) => {
+        const timeoutController = new AbortController();
+        let isTimeout = false;
+        const id = setTimeout(() => {
+          isTimeout = true;
+          timeoutController.abort();
+        }, ms);
+        
+        const onParentAbort = () => timeoutController.abort();
+        controller.signal.addEventListener("abort", onParentAbort);
+        
+        try {
+          const res = await fetch(url, { ...options, signal: timeoutController.signal });
+          return res;
+        } catch (e: any) {
+          if (isTimeout) throw new Error("Request timed out");
+          throw e;
+        } finally {
+          clearTimeout(id);
+          controller.signal.removeEventListener("abort", onParentAbort);
+        }
+      };
+
       const target = scope === "single"
         ? { scope: "single", childId: selectedChildId }
-        : { scope: "all", forceRegenerate };
+        : { scope: "all" };
 
-      const res = await fetch("/api/admin/reporting/run", {
+      const res = await fetchWithTimeout("/api/admin/reporting/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ businessDate: date, action, target })
       });
 
       const data = await res.json();
+      if (controller.signal.aborted) return;
       
       if (data.v3 && data.execution_id) {
-        // Poll for status
+        if (data.completed) {
+          setRunResult(data);
+          setRunning(false);
+          return;
+        }
+
         const executionId = data.execution_id;
-        const pollInterval = setInterval(async () => {
+        const targetCount = data.targetCount ?? (scope === "single" ? 1 : 0);
+        
+        let errorCount = 0;
+        const startTime = Date.now();
+        const MAX_TIME = 10 * 60 * 1000;
+
+        const poll = async () => {
+          if (controller.signal.aborted) return;
+          if (Date.now() - startTime > MAX_TIME) {
+            setRunResult({ ok: false, error: "Polling timed out after 10 minutes." });
+            setRunning(false);
+            return;
+          }
+          if (errorCount >= 5) {
+            setRunResult({ ok: false, error: "Too many polling failures. Please check server logs." });
+            setRunning(false);
+            return;
+          }
+
           try {
-            const statusRes = await fetch(`/api/admin/reporting/status?execution_id=${executionId}`);
+            const statusRes = await fetchWithTimeout("/api/admin/reporting/pulse", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ executionId, action, targetCount }),
+            });
             const statusData = await statusRes.json();
             
-            if (statusData.ok) {
-              setRunResult({ ...data, statuses: statusData.statuses });
-              
-              // Check if all finished
-              const allFinished = statusData.statuses.every((s: any) => {
-                const cDone = !s.collection || ["완료", "실패"].includes(s.collection);
-                const corDone = !s.correction || ["완료", "실패"].includes(s.correction);
-                const rDone = !s.report || ["완료", "실패"].includes(s.report);
-                return cDone && corDone && rDone;
-              });
+            if (controller.signal.aborted) return;
 
-              if (allFinished) {
-                clearInterval(pollInterval);
+            if (statusData.ok) {
+              errorCount = 0;
+              setRunResult({
+                ...data,
+                partialFailure: statusData.partialFailure,
+                statuses: statusData.statuses,
+                memory: statusData.summary?.memory || data.memory,
+                report: statusData.summary?.report || data.report
+              });
+              
+              if (statusData.isComplete) {
                 setRunning(false);
                 loadSummary();
+                return;
               }
+            } else {
+              errorCount++;
             }
-          } catch (e) {
+          } catch (e: any) {
+            if (e.name === 'AbortError') return;
             console.error("Poll error", e);
+            errorCount++;
           }
-        }, 2000);
+          if (!controller.signal.aborted) {
+            pollTimerRef.current = setTimeout(poll, 2000);
+          }
+        };
+        pollTimerRef.current = setTimeout(poll, 2000);
       } else {
         setRunResult(data);
         if (data.ok) {
@@ -137,6 +212,7 @@ export default function ManualReportingTab() {
         setRunning(false);
       }
     } catch (e: any) {
+      if (e.name === 'AbortError') return;
       setRunResult({ ok: false, error: e.message });
       setRunning(false);
     }
@@ -274,13 +350,6 @@ export default function ManualReportingTab() {
             <div style={{ fontSize: 13, color: "var(--color-k-danger)" }}>요약 정보 로드 실패</div>
           )}
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
-              <input type="checkbox" checked={forceRegenerate} onChange={e => setForceRegenerate(e.target.checked)} />
-              강제 재생성 표시 (응답에만 반영)
-            </label>
-          </div>
-
           <div style={{ display: "flex", gap: 8 }}>
             <button
               disabled={running}
@@ -334,35 +403,18 @@ export default function ManualReportingTab() {
                       </div>
                     )}
                   </div>
-                  {runResult.collect && (
-                    <div style={{ marginBottom: 8 }}>
-                      <strong>[수집(보정)]</strong><br/>
-                      - 새로 수집된 턴: {runResult.collect.collected}건<br/>
-                      - 상태: 보정 {runResult.collect.corrected}건, 유지 {runResult.collect.unchanged}건, 불확실 {runResult.collect.uncertain}건, 반려 {runResult.collect.rejected}건<br/>
-                      {runResult.collect.errors && runResult.collect.errors.length > 0 && (
-                        <div style={{ color: "var(--color-k-danger)" }}>- 수집 에러: {runResult.collect.errors.length}건</div>
-                      )}
-                    </div>
-                  )}
-                  {runResult.generate && (
-                    <div style={{ marginBottom: 8 }}>
-                      <strong>[리포트 생성]</strong><br/>
-                      - 생성/갱신됨: {runResult.generate.created?.length || 0}건<br/>
-                      - 건너뜀(대화없음): {runResult.generate.skipped?.length || 0}건<br/>
-                      - 에러: {runResult.generate.errorCount}건<br/>
-                      {runResult.generate.errors?.map((e: any, i: number) => (
-                        <div key={i} style={{ color: "var(--color-k-danger)", fontSize: 12 }}>- {e.sessionId}: {e.error}</div>
-                      ))}
-                    </div>
-                  )}
-                  {runResult.dashboardStatus && runResult.dashboardStatus.length > 0 && (
-                    <div>
-                      <strong>[생성된 리포트 N/8 상태]</strong><br/>
-                      {runResult.dashboardStatus.map((s: any, i: number) => (
-                        <div key={i}>- 아이 {s.childId}: {s.nonNullFieldCount}/8 항목 작성됨</div>
-                      ))}
-                    </div>
-                  )}
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>[Memory Batch]</strong><br/>
+                    - 성공: {runResult.memory?.success ?? 0}명<br/>
+                    - 건너뜀: {runResult.memory?.skipped ?? 0}명<br/>
+                    - 실패: {runResult.memory?.failed ?? 0}명
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <strong>[리포트 생성]</strong><br/>
+                    - 생성/갱신: {runResult.report?.created ?? 0}건<br/>
+                    - 건너뜀(대화 없음): {runResult.report?.skipped ?? 0}건<br/>
+                    - 에러: {runResult.report?.failed ?? 0}건
+                  </div>
                   {runResult.v3 && runResult.statuses && (
                     <div style={{ marginTop: 12 }}>
                       <strong>[V3 처리 상태]</strong><br/>
@@ -372,6 +424,7 @@ export default function ManualReportingTab() {
                             <th style={thStyle}>아이 ID</th>
                             <th style={thStyle}>수집</th>
                             <th style={thStyle}>수집보정</th>
+                            <th style={thStyle}>메모리</th>
                             <th style={thStyle}>리포트</th>
                           </tr>
                         </thead>
@@ -380,12 +433,16 @@ export default function ManualReportingTab() {
                             <tr key={i}>
                               <td style={tdStyle}>{s.childId.substring(0, 8)}...</td>
                               <td style={tdStyle}>
-                                {s.collection || "-"}
+                                {s.collection2 || s.collection || "-"}
                                 {s.collectionError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.collectionError}</div>}
                               </td>
                               <td style={tdStyle}>
                                 {s.correction || "-"}
                                 {s.correctionError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.correctionError}</div>}
+                              </td>
+                              <td style={tdStyle}>
+                                {s.memory || "-"}
+                                {s.memoryError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.memoryError}</div>}
                               </td>
                               <td style={tdStyle}>
                                 {s.report || "-"}

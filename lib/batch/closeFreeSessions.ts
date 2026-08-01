@@ -23,7 +23,7 @@ export async function closeFreeSessions(targetDate: string): Promise<CloseResult
   const { data: sessions, error: fetchErr } = await db
     .from("chat_sessions")
     .select("id, started_at")
-    .eq("session_type", "free")
+    .eq("session_type", "free_chat")
     .is("ended_at", null)
     .lte("started_at", `${targetDate}T23:59:59+09:00`);
 

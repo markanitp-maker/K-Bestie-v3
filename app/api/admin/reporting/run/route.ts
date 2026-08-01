@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { runContextCorrectionPipeline } from "@/lib/batch/contextCorrection";
-import { generateDailyReports } from "@/lib/batch/generateDailyReports";
 import { isRealCalendarDate } from "@/lib/admin/reportingDateValidation";
-import { processSpecificCollectionJobV3 } from "@/lib/batch/collection";
-import { processSpecificContextCorrectionJobV3 } from "@/lib/batch/contextCorrectionV3";
-import { processSpecificDailyReportJobV3 } from "@/lib/batch/dailyReportV3";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
@@ -35,212 +30,254 @@ export async function POST(req: NextRequest) {
   const db = createServiceClient();
 
   // Check V3 Control
-  const { data: v3Control } = await db.from("pipeline_v3_control").select("enabled").eq("id", 1).single();
-  const isV3Enabled = v3Control?.enabled === true;
+  const { data: v3Control, error: ctrlErr } = await db
+    .from("pipeline_v3_control")
+    .select("enabled")
+    .eq("id", 1)
+    .single();
 
-  let childId = null;
+  if (ctrlErr) {
+    return NextResponse.json({ error: `Control check error: ${ctrlErr.message}` }, { status: 500 });
+  }
+  
+  if (v3Control?.enabled !== true) {
+    return NextResponse.json({ error: "V3 pipeline is currently disabled" }, { status: 503 });
+  }
+
+  // 1. Snapshot explicit target set directly from child_profiles
+  let targetChildren: { id: string }[] = [];
   if (target.scope === "single") {
-    childId = target.childId;
-    if (!childId) return NextResponse.json({ error: "Missing childId" }, { status: 400 });
-    const { data } = await db.from("child_profiles").select("id").eq("id", childId).single();
-    if (!data) return NextResponse.json({ error: "Child not found" }, { status: 404 });
+    const childId = target.childId;
+    if (!childId || typeof childId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(childId)) {
+      return NextResponse.json({ error: "Invalid or missing childId UUID" }, { status: 400 });
+    }
+    const { data: child, error: childErr } = await db
+      .from("child_profiles")
+      .select("id")
+      .eq("id", childId)
+      .single();
+    if (childErr || !child) {
+      return NextResponse.json({ error: `Child lookup error: ${childErr?.message || "Child not found"}` }, { status: 404 });
+    }
+    targetChildren = [child];
+  } else {
+    const { data: allChildren, error: allChildErr } = await db
+      .from("child_profiles")
+      .select("id");
+    if (allChildErr) {
+      return NextResponse.json({ error: `Query children error: ${allChildErr.message}` }, { status: 500 });
+    }
+    targetChildren = allChildren || [];
+  }
+
+  const targetCount = targetChildren.length;
+  if (targetCount === 0) {
+    return NextResponse.json({
+      ok: true,
+      v3: true,
+      execution_id: crypto.randomUUID(),
+      action,
+      target,
+      targetCount: 0,
+      completed: true,
+      summary: "No targets found for the selected scope."
+    });
+  }
+
+  let p_cutoff_at: string | undefined;
+  if (action === "collect" || action === "collect_and_generate") {
+    const nowUtc = new Date();
+    const selectedDate = new Date(businessDate + "T00:00:00+09:00");
+    const selectedNextDate = new Date(selectedDate.getTime() + 24 * 3600000);
+    const phase2Start = new Date(selectedDate.getTime() + 17 * 3600000 + 55 * 60000); // 17:55 KST
+
+    if (nowUtc.getTime() >= selectedNextDate.getTime()) {
+      p_cutoff_at = selectedNextDate.toISOString();
+    } else if (nowUtc.getTime() >= phase2Start.getTime()) {
+      p_cutoff_at = nowUtc.toISOString();
+    } else {
+      return NextResponse.json({ error: "Cannot run Phase II collection before the window begins (17:55 KST)" }, { status: 409 });
+    }
   }
 
   const executionId = crypto.randomUUID();
+  const nowIso = new Date().toISOString();
 
-  // V3 LOGIC
-  if (isV3Enabled) {
-    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
-    const cutoffAt = businessDate === todayStr ? new Date().toISOString() : `${businessDate}T23:59:59+09:00`;
-    const workerId = `admin_manual_${Date.now()}`;
+  // Determine required stages per action
+  const stagesToSnapshot: { job_type: string; collection_phase?: number }[] = [];
+  if (action === "collect") {
+    stagesToSnapshot.push({ job_type: "collection_2", collection_phase: 2 });
+  } else if (action === "generate") {
+    stagesToSnapshot.push({ job_type: "memory_batch" }, { job_type: "daily_report" });
+  } else if (action === "collect_and_generate") {
+    stagesToSnapshot.push(
+      { job_type: "collection_2", collection_phase: 2 },
+      { job_type: "context_correction" },
+      { job_type: "memory_batch" },
+      { job_type: "daily_report" }
+    );
+  }
 
-    if (target.scope === "all") {
-      // Get all active children (those with messages today)
-      // We will let enqueue RPC do the filtering for Collection, but for generation we just enqueue for those who have corrected data.
-      let enqueuedChildIds: string[] = [];
-      
-      if (action === "collect" || action === "collect_and_generate") {
-        const { data: sessions } = await db.from("chat_sessions")
-          .select("child_id")
-          .gte("started_at", `${businessDate}T00:00:00+09:00`)
-          .lte("started_at", `${businessDate}T23:59:59+09:00`);
-        
-        const cIds = Array.from(new Set((sessions || []).map((s: any) => s.child_id)));
-        enqueuedChildIds = cIds;
-        
-        for (const cid of cIds) {
-          const idempotencyKey = `collection_manual_${cid}_${businessDate}_2_${new Date(cutoffAt).getTime() / 1000}`;
-          await db.from('pipeline_jobs').upsert({
-            id: crypto.randomUUID(),
-            job_type: 'collection_2',
-            child_id: cid,
-            business_date: businessDate,
-            collection_phase: 2,
-            cutoff_at: cutoffAt,
-            execution_id: executionId,
-            status: 'pending',
-            attempt_count: 0,
-            priority: 1,
-            idempotency_key: idempotencyKey
-          }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
-        }
-      }
-
-      if (action === "generate") {
-        // Find children with completed corrected V3
-        const { data: corr } = await db.from("corrected_daily_conversations_v3")
-          .select("child_id")
-          .eq("business_date", businessDate)
-          .eq("correction_status", "completed");
-        
-        const cIds = Array.from(new Set((corr || []).map((c: any) => c.child_id)));
-        enqueuedChildIds = cIds;
-
-        for (const cid of cIds) {
-          const idempotencyKey = `daily_report_${cid}_${businessDate}`;
-          await db.from('pipeline_jobs').upsert({
-            id: crypto.randomUUID(),
-            job_type: 'daily_report',
-            child_id: cid,
-            business_date: businessDate,
-            execution_id: executionId,
-            status: 'pending',
-            attempt_count: 0,
-            priority: 1,
-            idempotency_key: idempotencyKey
-          }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
-        }
-      }
-
-      // Return immediately for polling
-      return NextResponse.json({
-        ok: true,
-        v3: true,
+  // 2. Snapshot deterministic execution items BEFORE enqueue
+  const snapshotItems: any[] = [];
+  for (const c of targetChildren) {
+    for (const stage of stagesToSnapshot) {
+      const item_key = stage.job_type === "collection_2" ? "collection_2" : stage.job_type;
+      snapshotItems.push({
         execution_id: executionId,
-        enqueuedCount: enqueuedChildIds.length
+        child_id: c.id,
+        business_date: businessDate,
+        job_type: stage.job_type,
+        collection_phase: stage.collection_phase || null,
+        status: "pending",
+        item_key,
+        created_at: nowIso,
+        updated_at: nowIso,
       });
-    } else {
-      // SINGLE CHILD - Synchronous
-      try {
-        if (action === "collect" || action === "collect_and_generate") {
-          const idempotencyKey = `collection_manual_${childId}_${businessDate}_2_${new Date(cutoffAt).getTime() / 1000}`;
-          await db.from('pipeline_jobs').upsert({
-            id: crypto.randomUUID(),
-            job_type: 'collection_2',
-            child_id: childId,
-            business_date: businessDate,
-            collection_phase: 2,
-            cutoff_at: cutoffAt,
-            execution_id: executionId,
-            status: 'pending',
-            attempt_count: 0,
-            priority: 1,
-            idempotency_key: idempotencyKey
-          }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
-
-          const colRes = await processSpecificCollectionJobV3(2, childId!, businessDate, workerId);
-          if (!colRes.success && colRes.reason !== 'NO_PENDING_JOB') throw new Error(`Collection failed: ${colRes.reason}`);
-        }
-
-        if (action === "collect_and_generate") {
-          const corRes = await processSpecificContextCorrectionJobV3(childId!, businessDate, workerId);
-          if (!corRes.success && corRes.reason !== 'NO_PENDING_JOB') throw new Error(`Correction failed: ${corRes.reason}`);
-        }
-
-        if (action === "generate" || action === "collect_and_generate") {
-          if (action === "generate") {
-            const idempotencyKey = `daily_report_${childId}_${businessDate}`;
-            await db.from('pipeline_jobs').upsert({
-              id: crypto.randomUUID(),
-              job_type: 'daily_report',
-              child_id: childId,
-              business_date: businessDate,
-              execution_id: executionId,
-              status: 'pending',
-              attempt_count: 0,
-              idempotency_key: idempotencyKey
-            }, { onConflict: 'idempotency_key', ignoreDuplicates: true });
-          }
-          const repRes = await processSpecificDailyReportJobV3(childId!, businessDate, workerId);
-          if (!repRes.success && repRes.reason !== 'NO_PENDING_JOB') {
-             // If manual generate fails due to NO_MESSAGES etc., throw it
-             throw new Error(`Report generation failed: ${repRes.reason}`);
-          }
-        }
-
-        return NextResponse.json({
-          ok: true,
-          v3: true,
-          action,
-          target,
-          collect: { collected: 1, errors: [] },
-          generate: { created: [childId], errors: [] }
-        });
-
-      } catch (e: any) {
-        return NextResponse.json({ error: e.message, action, target }, { status: 500 });
-      }
     }
   }
 
-  // --- V2 LEGACY LOGIC BELOW ---
-  let collectResult = undefined;
-  let generateResult = undefined;
+  if (snapshotItems.length > 0) {
+    const { error: snapErr } = await db.from("pipeline_execution_items").upsert(snapshotItems, { onConflict: "execution_id,child_id,item_key" });
+    if (snapErr) {
+      return NextResponse.json({ error: `Failed to snapshot execution items: ${snapErr.message}` }, { status: 500 });
+    }
+  }
 
-  if (action === "collect" || action === "collect_and_generate") {
-    try {
-      if (childId) {
-        const { data: sessions } = await db.from("chat_sessions")
-          .select("id")
-          .eq("child_id", childId)
-          .gte("started_at", `${businessDate}T00:00:00+09:00`)
-          .lte("started_at", `${businessDate}T23:59:59+09:00`);
+  // 3. Process Action per Target
+  for (const c of targetChildren) {
+    if (action === "collect" || action === "collect_and_generate") {
+      // Pass explicit as-of-now cutoff so manual collection is immediately claimable!
+      const { error: colErr } = await db.rpc("enqueue_collection_jobs_v3", {
+        p_collection_phase: 2,
+        p_business_date: businessDate,
+        p_execution_id: executionId,
+        p_child_id: c.id,
+        p_cutoff_at: p_cutoff_at,
+      });
+
+      if (colErr) {
+        // Enqueue error => mark FAILED with actual code/summary
+        const { error: colFailErr } = await db.from("pipeline_execution_items").update({
+          status: "failed",
+          outcome: "FAILED",
+          error_code: "ENQUEUE_FAILED",
+          error_summary: colErr.message,
+          completed_at: nowIso,
+          updated_at: nowIso,
+        }).eq("execution_id", executionId).eq("child_id", c.id).eq("item_key", "collection_2").not("status", "in", '("completed","failed")');
         
-        const sessionIds = (sessions || []).map((s: any) => s.id);
-        if (sessionIds.length > 0) {
-          collectResult = await runContextCorrectionPipeline(businessDate, sessionIds);
-        } else {
-          collectResult = { collected: 0, corrected: 0, unchanged: 0, uncertain: 0, rejected: 0, errors: [] };
+        if (colFailErr) {
+          return NextResponse.json({ error: `Failed to record collection error for execution ${executionId}: ${colFailErr.message}` }, { status: 500 });
+        }
+        
+        if (action === "collect_and_generate") {
+          const { error: dsFailErr } = await db.from("pipeline_execution_items").update({
+            status: "failed",
+            outcome: "UPSTREAM_FAILED",
+            error_code: "COLLECTION_ENQUEUE_FAILED",
+            error_summary: "Collection enqueue failed, downstream cancelled.",
+            completed_at: nowIso,
+            updated_at: nowIso,
+          }).eq("execution_id", executionId).eq("child_id", c.id).in("job_type", ["context_correction", "memory_batch", "daily_report"]).not("status", "in", '("completed","failed")');
+          if (dsFailErr) {
+            return NextResponse.json({ error: `Failed to record downstream errors for execution ${executionId}: ${dsFailErr.message}` }, { status: 500 });
+          }
+        }
+      }
+    }
+
+    if (action === "generate") {
+      // Check if corrected_daily_conversations_v3 is present
+      const { data: corr, error: corrErr } = await db
+        .from("corrected_daily_conversations_v3")
+        .select("id")
+        .eq("child_id", c.id)
+        .eq("business_date", businessDate)
+        .or("status.eq.completed,correction_status.eq.completed")
+        .maybeSingle();
+
+      if (corrErr) {
+        // DB error on lookup => mark FAILED, NEVER NO_CONVERSATION
+        const { error: memRepFailErr } = await db.from("pipeline_execution_items").update({
+          status: "failed",
+          outcome: "FAILED",
+          error_code: "DB_LOOKUP_ERROR",
+          error_summary: corrErr.message,
+          completed_at: nowIso,
+          updated_at: nowIso,
+        }).eq("execution_id", executionId).eq("child_id", c.id).in("job_type", ["memory_batch", "daily_report"]).not("status", "in", '("completed","failed")');
+        if (memRepFailErr) {
+          return NextResponse.json({ error: `Failed to record db lookup error for execution ${executionId}: ${memRepFailErr.message}` }, { status: 500 });
+        }
+        continue;
+      }
+
+      if (!corr) {
+        // Absent corrected V3 => Mark Memory and Report both NO_CONVERSATION completed so polling terminates
+        const { error: noConvErr } = await db.from("pipeline_execution_items").update({
+          status: "completed",
+          outcome: "NO_CONVERSATION",
+          error_summary: "NO_CONVERSATION",
+          completed_at: nowIso,
+          updated_at: nowIso,
+        }).eq("execution_id", executionId).eq("child_id", c.id).in("job_type", ["memory_batch", "daily_report"]).not("status", "in", '("completed","failed")');
+        if (noConvErr) {
+          return NextResponse.json({ error: `Failed to record NO_CONVERSATION for execution ${executionId}: ${noConvErr.message}` }, { status: 500 });
         }
       } else {
-        collectResult = await runContextCorrectionPipeline(businessDate);
+        // Present corrected V3 => Enqueue Memory only; Report is created by Memory terminal transition
+        const { error: memErr } = await db.rpc("enqueue_memory_batch_job_v3", {
+          p_child_id: c.id,
+          p_business_date: businessDate,
+          p_execution_id: executionId,
+        });
+
+        if (memErr) {
+          // Record memory enqueue failure
+          const { error: memFailErr } = await db.from("pipeline_execution_items").update({
+            status: "failed",
+            outcome: "FAILED",
+            error_code: "MEMORY_ENQUEUE_FAILED",
+            error_summary: memErr.message,
+            completed_at: nowIso,
+            updated_at: nowIso,
+          }).eq("execution_id", executionId).eq("child_id", c.id).eq("item_key", "memory_batch").not("status", "in", '("completed","failed")');
+          if (memFailErr) {
+            return NextResponse.json({ error: `Failed to record memory enqueue error for execution ${executionId}: ${memFailErr.message}` }, { status: 500 });
+          }
+
+          // Independently enqueue Report if Memory enqueue fails
+          const { error: repErr } = await db.rpc("enqueue_daily_report_job_v3", {
+            p_child_id: c.id,
+            p_business_date: businessDate,
+            p_execution_id: executionId,
+          });
+
+          if (repErr) {
+            const { error: repFailErr } = await db.from("pipeline_execution_items").update({
+              status: "failed",
+              outcome: "FAILED",
+              error_code: "REPORT_ENQUEUE_FAILED",
+              error_summary: repErr.message,
+              completed_at: nowIso,
+              updated_at: nowIso,
+            }).eq("execution_id", executionId).eq("child_id", c.id).eq("item_key", "daily_report").not("status", "in", '("completed","failed")');
+            if (repFailErr) {
+              return NextResponse.json({ error: `Failed to record report enqueue error for execution ${executionId}: ${repFailErr.message}` }, { status: 500 });
+            }
+          }
+        }
       }
-    } catch (e: any) {
-      return NextResponse.json({ error: `Collect error: ${e.message}`, action, businessDate, target }, { status: 500 });
     }
   }
-
-  if (action === "generate" || action === "collect_and_generate") {
-    try {
-      let rawQuery = db.from("raw_daily_conversations").select("id").eq("business_date", businessDate).limit(1);
-      if (childId) rawQuery = rawQuery.eq("child_id", childId);
-      
-      const { data: rawData } = await rawQuery;
-      if (!rawData || rawData.length === 0) {
-        return NextResponse.json({ error: "먼저 즉시 대화 수집을 실행해 주세요. (수집된 대화 없음)", action, businessDate, target }, { status: 400 });
-      }
-
-      generateResult = await generateDailyReports(businessDate, childId || undefined);
-    } catch (e: any) {
-      return NextResponse.json({ error: `Generate error: ${e.message}`, action, businessDate, target, collect: collectResult }, { status: 500 });
-    }
-  }
-
-  const hasPartialErrors =
-    (collectResult?.errors?.length ?? 0) > 0 || (generateResult?.errors?.length ?? 0) > 0;
 
   return NextResponse.json({
     ok: true,
-    partialFailure: hasPartialErrors,
-    businessDate,
+    v3: true,
+    execution_id: executionId,
     action,
     target,
-    collect: collectResult,
-    generate: generateResult ? {
-      created: generateResult.created,
-      skipped: generateResult.skipped,
-      errorCount: generateResult.errors?.length || 0,
-      errors: generateResult.errors
-    } : undefined
+    targetCount,
   });
 }
