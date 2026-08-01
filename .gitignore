@@ -64,10 +64,23 @@ requests/_blocked.md
 requests/_dashboard.md
 
 
-.vercel
-.env*
+# Secret env files — precise rules preserving example/template files
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+.env.staging.local
+.env.*
+!.env.example
+!.env.template
 
-.vercel
+temp_prod_link*/
+
 test-results/
 playwright-report/
 
@@ -76,3 +89,19 @@ playwright-report/
 .claude/kim-bridge/inbox/
 .claude/kim-bridge/archive/
 .claude/kim-bridge/state.json
+
+# QA & Credentials artifacts — 절대 커밋 금지
+qa_session_info.json
+env_dev.txt
+env_preview.txt
+env_prod*.txt
+temp-creds*.json
+.supabase_prod_tmp/
+.vercel_prod_tmp/
+vercel_env_k_bestie_v3_dev.txt
+scratch_dev/
+scratch_none/
+scratch_prod/
+scratch_v3/
+
+

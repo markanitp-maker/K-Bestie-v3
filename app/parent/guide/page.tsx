@@ -19,6 +19,7 @@ type Message = {
   askChildErrorText?: string;
   askChildIsLoading?: boolean;
   askChildRetryable?: boolean;
+  askChildQuestionText?: string;
 };
 
 export default function ParentGuidePage() {
@@ -38,6 +39,7 @@ export default function ParentGuidePage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sendInFlightRef = useRef(false);
+  const askChildInFlightRef = useRef(new Set<string>());
   const lastVoiceTranscriptRef = useRef("");
 
   const {
@@ -183,6 +185,8 @@ export default function ParentGuidePage() {
 
   const handleAskChild = async (originalQuestion: string, msgId: string) => {
     if (!childId) return;
+    if (askChildInFlightRef.current.has(msgId)) return;
+    askChildInFlightRef.current.add(msgId);
     const requestChildId = childId;
     
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, askChildIsLoading: true, askChildErrorText: undefined } : m));
@@ -196,12 +200,13 @@ export default function ParentGuidePage() {
       const data = await res.json();
       if (childIdRef.current !== requestChildId) return;
 
-      if (res.ok) {
+      if (res.ok && typeof data.convertedQuestion === "string" && data.convertedQuestion.trim()) {
         setMessages(prev => prev.map(m => m.id === msgId ? { 
           ...m, 
           askChildStatus: "success", 
           askChildErrorText: undefined,
-          askChildIsLoading: false 
+          askChildIsLoading: false,
+          askChildQuestionText: data.convertedQuestion,
         } : m));
       } else {
         // 명세 §7.2: 재시도 버튼은 500(서버·DB·외부 LLM 장애)일 때만 제공한다.
@@ -232,6 +237,8 @@ export default function ParentGuidePage() {
         askChildRetryable: true,
         askChildIsLoading: false
       } : m));
+    } finally {
+      askChildInFlightRef.current.delete(msgId);
     }
   };
 
@@ -321,7 +328,9 @@ export default function ParentGuidePage() {
                     )}
                   </div>
                   {msg.askChildStatus === "success" && (
-                    <p className="text-xs text-green-600">아이에게 자연스럽게 물어볼 질문으로 등록했어요.</p>
+                    <p className="text-xs text-green-600 leading-relaxed">
+                      아이에게 물어볼 질문으로 등록했어요. “{msg.askChildQuestionText}” 다음 적절한 대화에서 케이가 자연스럽게 물어볼게요.
+                    </p>
                   )}
                   {msg.askChildStatus === "error" && msg.askChildErrorText && (
                     <div className="flex flex-col gap-1">

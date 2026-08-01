@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
+import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
 export const runtime = "nodejs";
 
@@ -146,11 +147,20 @@ export async function POST(req: NextRequest) {
 
   // mode: 기존 session_type 재사용(추가 쿼리 없음). 자유대화는 라이브가 없으므로
   // voice_mode를 클라이언트 입력과 무관하게 항상 stt_tts로 서버가 클램프한다.
-  const mode: "mission" | "free" = session.session_type === "mission" ? "mission" : "free";
+  const mode: "mission" | "free_chat" = session.session_type === "mission" ? "mission" : "free_chat";
   const voiceMode: "stt_tts" | "live" =
-    mode === "free" ? "stt_tts" : bodyVoiceMode === "live" ? "live" : "stt_tts";
+    mode === "free_chat" ? "stt_tts" : bodyVoiceMode === "live" ? "live" : "stt_tts";
 
   if (mode === "mission") {
+    const sessionCheck = await assertMissionSessionActive(service, sessionId);
+    if (!sessionCheck.allowed) {
+      console.error("[chat/messages] mission session active check failed", { sessionId, turnId, status: sessionCheck.status });
+      return NextResponse.json(
+        { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired },
+        { status: sessionCheck.expired ? 403 : 423 }
+      );
+    }
+
     if (typeof displaySequence !== "number" || !Number.isInteger(displaySequence)) {
       console.error("[chat/messages] invalid displaySequence", { sessionId, turnId, displaySequence });
       return NextResponse.json({ error: "displaySequence must be a valid integer for mission messages" }, { status: 400 });
