@@ -304,14 +304,20 @@ JSON 스키마:
       // 정규화 키 (해시) - 중복 방지
       const normalizationKey = `ask_child_${child_id}_${crypto.createHash('md5').update(trimmedQuestion).digest('hex')}`;
       
-      const { error: insertErr } = await serviceClient.from("parent_questions").insert({
-        child_id,
-        parent_id: user.id,
-        original_question_text: trimmedQuestion,
-        question_text: convertedQuestion,
-        status: 'draft',
-        request_idempotency_key: normalizationKey, // UNIQUE constraint
-      });
+      const { data: queuedQuestion, error: insertErr } = await serviceClient
+        .from("parent_questions")
+        .insert({
+          child_id,
+          parent_id: user.id,
+          original_question_text: trimmedQuestion,
+          question_text: convertedQuestion,
+          // ai_generated is the existing lifecycle's ready-to-deliver state.
+          // draft is reserved for questions that have not finished conversion yet.
+          status: "ai_generated",
+          request_idempotency_key: normalizationKey, // UNIQUE constraint
+        })
+        .select("id, question_text, status")
+        .single();
       
       // 이미 같은 원 질문이 존재할 수 있음
       if (insertErr) {
@@ -322,7 +328,21 @@ JSON 스키마:
         return NextResponse.json({ error: "Failed to save question" }, { status: 500 });
       }
 
-      return NextResponse.json({ ok: true, convertedQuestion });
+      if (!queuedQuestion || queuedQuestion.status !== "ai_generated") {
+        console.error("parent_questions ready-state transition failed", {
+          childId: child_id,
+          questionId: queuedQuestion?.id,
+          status: queuedQuestion?.status,
+        });
+        return NextResponse.json({ error: "Failed to queue question" }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        questionId: queuedQuestion.id,
+        status: queuedQuestion.status,
+        convertedQuestion: queuedQuestion.question_text,
+      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
