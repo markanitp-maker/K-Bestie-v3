@@ -61,6 +61,7 @@ requests/_done/
 requests/_failed/
 requests/_log.md
 requests/_blocked.md
+requests/_dashboard.md
 
 
 .vercel
