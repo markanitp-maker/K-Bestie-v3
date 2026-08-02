@@ -88,7 +88,13 @@ ${messageContext}
 \`\`\`
 `;
 
-  // Explicit responseSchema for structured Gemini output (No responseMimeType)
+  // Explicit responseSchema for structured Gemini output. Gemini requires
+  // responseMimeType: "application/json" whenever responseSchema is set — without
+  // it the SDK defaults to text/plain, which the API rejects with 400
+  // INVALID_ARGUMENT ("Response_schema with a response mime type 'text/plain' is
+  // unsupported"). 2026-08-02 Production 실사용에서 이 조합 누락으로 Context
+  // Correction이 매번 PERMANENT_ERROR로 실패하던 것을 확인·수정(lib/questions/
+  // answer-classifier.ts의 기존 동작 패턴과 동일하게 맞춤).
   const responseSchema = {
     type: "ARRAY",
     items: {
@@ -118,6 +124,7 @@ ${messageContext}
     contents: prompt,
     config: {
       responseSchema,
+      responseMimeType: "application/json",
       systemInstruction: "반드시 JSON 배열 형식으로만 응답하라. 여분의 텍스트 금지.",
       maxOutputTokens: 8192,
       thinkingConfig: { thinkingLevel: 'LOW' as any },

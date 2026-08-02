@@ -160,6 +160,10 @@ async function processSingleReportJob(
     contents: prompt,
     config: {
       responseSchema,
+      // Gemini requires responseMimeType: "application/json" whenever responseSchema
+      // is set — 2026-08-02 Production 실사용에서 이 누락으로 Context Correction과
+      // 동일한 400 INVALID_ARGUMENT("text/plain" unsupported)가 재현됨을 확인.
+      responseMimeType: "application/json",
       maxOutputTokens: reportModel.maxOutputTokens ?? 8192,
       thinkingConfig: { thinkingLevel: 'MEDIUM' as any },
     },
