@@ -18,10 +18,25 @@ import {
 } from "@/app/api/_lib/ai";
 import {
   buildFreeChatContents,
-  isValidFreeChatResponse,
+  validateFreeChatResponse,
+  normalizeFreeChatResponse
 } from "@/lib/freechat/geminiPolicy";
 
 export const runtime = "nodejs";
+
+// 047 QA 리뷰 지적([복잡]): direct_question/저신뢰ASR/Gemini 예외 폴백 등 규칙 엔진 응답은
+// validateFreeChatResponse/normalizeFreeChatResponse를 거치지 않아, 자유대화에서도
+// "그건 잘 모르겠어. 네가 알려줄래?"류 질문형 문장이 그대로 노출되고 있었다(원본 버그
+// 리포트가 지적한 것과 동일 유형). 자유대화(session_type==="free_chat")로 나가는 모든
+// 응답 경로가 반드시 이 함수를 거치도록 통일한다 — 검증 실패 시 고정 안전 폴백으로
+// 대체하고, 미션 등 자유대화가 아닌 세션에는 전혀 영향을 주지 않는다.
+function finalizeFreeChatText(text: string, sessionType: string | null | undefined): string {
+  if (sessionType !== "free_chat") return text;
+  if (!validateFreeChatResponse(text)) {
+    return normalizeFreeChatResponse(text);
+  }
+  return text;
+}
 
 // 자유대화 응답 순서:
 // 1) 안전 신호는 기존 규칙 엔진이 즉시 처리하고 보호자 이벤트를 기록한다.
@@ -92,7 +107,7 @@ export async function POST(req: NextRequest) {
   const service = createServiceClient();
   const { data: session } = await service
     .from("chat_sessions")
-    .select("child_id")
+    .select("child_id, session_type")
     .eq("id", sessionId)
     .maybeSingle();
   if (!session?.child_id) {
@@ -167,7 +182,7 @@ export async function POST(req: NextRequest) {
 
   if (isLowConfidenceAsr) {
     return NextResponse.json({
-      text: reflective.text,
+      text: finalizeFreeChatText(reflective.text, session.session_type),
       category: reflective.category,
       flaggedForParent: false,
       model: "rule_fallback",
@@ -177,7 +192,7 @@ export async function POST(req: NextRequest) {
   if (reflective.category === "app_mode_question") {
     const modeText = body.appMode === "manual" ? "수동" : "자동";
     return NextResponse.json({
-      text: `응, 지금은 ${modeText} 모드야.`,
+      text: finalizeFreeChatText(`응, 지금은 ${modeText} 모드야.`, session.session_type),
       category: reflective.category,
       flaggedForParent: false,
       model: "rule_fallback",
@@ -189,7 +204,7 @@ export async function POST(req: NextRequest) {
   // 정답을 지어내지 않고 아이에게 알려달라고 요청한다.
   if (reflective.category === "direct_question") {
     return NextResponse.json({
-      text: "그건 잘 모르겠어. 네가 알려줄래?",
+      text: finalizeFreeChatText("그건 잘 모르겠어. 네가 알려줄래?", session.session_type),
       category: reflective.category,
       flaggedForParent: false,
       model: "wiki_only_guard",
@@ -214,27 +229,29 @@ export async function POST(req: NextRequest) {
     });
     let text = result.text?.trim() ?? "";
 
-    if (!isValidFreeChatResponse(text)) {
-      result = await ai.models.generateContent({
-        model: FREE_CHAT_MODEL_ID,
-        contents,
-        config: {
-          ...baseConfig,
-          systemInstruction: {
-            parts: [
-              {
-                text: `${FREE_CHAT_SYSTEM_PROMPT}\n\n이전 출력이 길이 또는 형식 규칙을 어겼습니다. 반드시 자연스러운 한국어 1~2문장, 60자 이내, 질문 최대 1개로만 다시 답하세요.`,
-              },
-            ],
+    if (session.session_type === "free_chat") {
+      if (!validateFreeChatResponse(text)) {
+        result = await ai.models.generateContent({
+          model: FREE_CHAT_MODEL_ID,
+          contents,
+          config: {
+            ...baseConfig,
+            systemInstruction: {
+              parts: [
+                {
+                  text: `${FREE_CHAT_SYSTEM_PROMPT}\n\n이전 출력이 길이 또는 형식 규칙을 어겼습니다. 반드시 자연스러운 한국어 1줄, 30자 이내, 질문 없이 공감만으로 다시 답하세요.`,
+                },
+              ],
+            },
+            temperature: 0.4,
           },
-          temperature: 0.4,
-        },
-      });
-      text = result.text?.trim() ?? "";
-    }
-
-    if (!isValidFreeChatResponse(text)) {
-      throw new Error("Gemini response validation failed");
+        });
+        text = result.text?.trim() ?? "";
+      }
+      text = normalizeFreeChatResponse(text);
+    } else {
+      // If used outside of free_chat, just return text as is (or apply some minimal fallback if empty)
+      if (!text) text = "응, 듣고 있어.";
     }
 
     recordLlmUsage(
@@ -252,7 +269,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[voice/respond] Gemini fallback:", (err as Error).message);
     return NextResponse.json({
-      text: reflective.text,
+      text: finalizeFreeChatText(reflective.text, session.session_type),
       category: reflective.category,
       flaggedForParent: false,
       model: "rule_fallback",

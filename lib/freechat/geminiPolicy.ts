@@ -16,6 +16,7 @@ const PROMPT_LEAK_PATTERNS = [
   /시스템\s*프롬프트/,
   /내부\s*규칙/,
   /라고\s*말하면\s*돼/,
+  /제미나이|Gemini|GPT|Claude|AI\s*모델/i,
 ];
 
 export function buildFreeChatContents(
@@ -46,13 +47,38 @@ export function buildFreeChatContents(
     }));
 }
 
-export function isValidFreeChatResponse(text: string | null | undefined): boolean {
+export function validateFreeChatResponse(text: string | null | undefined): boolean {
   const trimmed = text?.trim() ?? "";
-  if (!trimmed || trimmed.length > 60) return false;
+  if (!trimmed || trimmed.length > 30) return false;
+  
   const lines = trimmed.split(/\r?\n/).filter((line) => line.trim());
   if (lines.length > 2) return false;
-  const sentenceEndings = trimmed.match(/[.!?。！？]+/g) ?? [];
-  if (sentenceEndings.length > 2) return false;
+  
+  if (/[?？]/.test(trimmed)) return false;
+
+  if (/(왜|뭐|어디|언제|누구|알려줄래|말해줄래|해볼래|하고 싶어)/.test(trimmed)) return false;
+  if (/(까|니|어때)[.!?\s]*$/.test(trimmed)) return false;
+
+  if (/(또는|아니면|혹은)/.test(trimmed)) return false;
+
   if (PROMPT_LEAK_PATTERNS.some((pattern) => pattern.test(trimmed))) return false;
-  return (trimmed.match(/[?？]/g) ?? []).length <= 1;
+  
+  return true;
+}
+
+export function normalizeFreeChatResponse(text: string | null | undefined): string {
+  if (validateFreeChatResponse(text)) {
+    return text!.trim();
+  }
+  
+  const trimmed = text?.trim() ?? "";
+  const sentences = trimmed.split(/(?<=[.!?])\s+/);
+  for (const sentence of sentences) {
+    const s = sentence.trim();
+    if (s && validateFreeChatResponse(s)) {
+      return s;
+    }
+  }
+  
+  return "응, 네 이야기 잘 듣고 있어.";
 }

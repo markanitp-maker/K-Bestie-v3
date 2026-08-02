@@ -7,6 +7,25 @@ import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
+import { getLlmModel } from "@/lib/llm/modelRouter";
+
+function isFallbackableError(err: any): boolean {
+  const errMsg = (err?.message || String(err)).toLowerCase();
+  if (
+    errMsg.includes("400") ||
+    errMsg.includes("401") ||
+    errMsg.includes("403") ||
+    errMsg.includes("404") ||
+    errMsg.includes("safety") ||
+    errMsg.includes("blocked") ||
+    errMsg.includes("validation") ||
+    errMsg.includes("invalid") ||
+    errMsg.includes("schema")
+  ) {
+    return false;
+  }
+  return true;
+}
 
 export const runtime = "nodejs";
 
@@ -68,42 +87,46 @@ ${knownContextMsg}
 
     const ai = createGenAIClient({ provider: "vertex" });
 
-    const responseStream = await ai.models.generateContentStream({
-      model: LEAN_E_MODEL_ID,
-      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      config: {
-        systemInstruction,
-        maxOutputTokens: REACTION_LEAN_MAX_OUTPUT_TOKENS,
-        temperature: 0.3,
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    });
-
     let tokenIn = 0;
     let tokenOut = 0;
+    let textResult = "";
+
+    const doGenerate = async (isFallback: boolean) => {
+      const currentModelId = isFallback ? getLlmModel("missionReactionFallback") : getLlmModel("missionReaction");
+      const res = await ai.models.generateContent({
+        model: currentModelId,
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        config: {
+          systemInstruction,
+          maxOutputTokens: REACTION_LEAN_MAX_OUTPUT_TOKENS,
+          temperature: 0.3,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      });
+      if (res.usageMetadata) {
+        tokenIn = res.usageMetadata.promptTokenCount ?? tokenIn;
+        tokenOut = res.usageMetadata.candidatesTokenCount ?? tokenOut;
+      }
+      return res.text || "";
+    };
+
+    try {
+      textResult = await doGenerate(false);
+    } catch (e: any) {
+      if (isFallbackableError(e)) {
+        console.warn(`[mission/reaction-lean] fallback to Flash. Reason: ${e?.message || String(e)}`);
+        textResult = await doGenerate(true);
+      } else {
+        throw e;
+      }
+    }
 
     const stream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder();
-        let errored = false;
-        try {
-          for await (const chunk of responseStream) {
-            if (chunk.text) {
-              controller.enqueue(encoder.encode(chunk.text));
-            }
-            if (chunk.usageMetadata) {
-              tokenIn = chunk.usageMetadata.promptTokenCount ?? tokenIn;
-              tokenOut = chunk.usageMetadata.candidatesTokenCount ?? tokenOut;
-            }
-          }
-        } catch (e) {
-          errored = true;
-          controller.error(e);
-        } finally {
-          // controller.error()를 이미 호출했으면 컨트롤러가 errored 상태라 close()를 또 부르면
-          // "Invalid state" 예외가 난다 — 에러 경로에서는 close()를 호출하지 않는다.
-          if (!errored) controller.close();
+      start(controller) {
+        if (textResult) {
+          controller.enqueue(new TextEncoder().encode(textResult));
         }
+        controller.close();
       }
     });
 
