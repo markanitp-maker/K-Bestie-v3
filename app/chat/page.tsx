@@ -12,8 +12,7 @@ import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
 
-const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
-const MAX_SESSION_TURNS = 20; // 20턴
+const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 네트워크 실패 시 fail-open 폴백 전용(서버 응답을 못 받았을 때만 사용)
 
 const getCurrentKSTWindow = () => {
   const now = new Date();
@@ -46,9 +45,11 @@ export default function ChatPage() {
   const [micPermission, setMicPermission] = useState<PermissionState | "checking" | "not_needed">("checking");
   const autoStartAttempted = useRef(false);
 
-  // 030: 서버 시간 기준 10분 연속 사용 + 1분 휴식 게이트. usagePhase가 "ready"가 되기
-  // 전에는 음성/텍스트 대화 화면을 아예 렌더링하지 않는다(클라이언트 버튼 비활성화만으로
-  // 처리하지 않기 위함 — 주소창 직접 접근도 이 게이트를 거친다).
+  // 자유대화 사용 정책(서버 권위): 운영 계정 기준 하루 최대 3세션·하루 총 30분·세션 종료
+  // 후 5분 휴식(supabase freechat_usage_state RPC가 KST 기준으로 계산). Dev/Preview
+  // 배포이거나 is_test_account=true 계정은 반복 QA를 위해 전부 우회한다(서버 판단).
+  // usagePhase가 "ready"가 되기 전에는 음성/텍스트 대화 화면을 아예 렌더링하지 않는다
+  // (클라이언트 버튼 비활성화만으로 처리하지 않기 위함 — 주소창 직접 접근도 이 게이트를 거친다).
   const [usagePhase, setUsagePhase] = useState<"checking" | "cooldown" | "ready">("checking");
   const [dailyLimitReached, setDailyLimitReached] = useState(false);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
@@ -151,25 +152,34 @@ export default function ChatPage() {
     setSessionActive(false);
   }, [sayText, stopSession]);
 
-  // 030: 서버가 내려준 sessionEndsAt 기준 하드 리밋(음성/텍스트 모드 공통 — 기존에는
-  // status==="live"일 때만 고정 10분 타이머가 걸려 텍스트 전용 사용에는 시간 제한이
-  // 전혀 없었다). usagePhase가 "ready"가 된 시점의 남은 시간만큼만 타이머를 건다(새로고침
-  // 복귀 시 남은 시간이 10분보다 짧을 수 있음).
+  // 서버가 내려준 sessionEndsAt(하루 남은 시간 예산 기준) 하드 리밋 — 음성/텍스트
+  // 모드 공통. usagePhase가 "ready"가 된 시점의 남은 시간만큼만 타이머를 건다.
   useEffect(() => {
     if (usagePhase !== "ready" || usageSessionEndsAtMsRef.current === null) return;
     const delay = Math.max(0, usageSessionEndsAtMsRef.current - Date.now());
-    timerRef.current = setTimeout(() => {
+    timerRef.current = setTimeout(async () => {
       const cId = childIdRef.current;
       const startedAt = usageSessionStartedAtRef.current;
+      triggerHardLimitStop("오늘 대화는 여기까지야! 5분 쉬었다가 다시 이야기하러 와줘 🌿");
       if (cId && startedAt) {
-        fetch("/api/chat/freechat-usage", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ childId: cId, action: "end", startedAt }),
-        }).catch(() => {});
+        try {
+          const res = await fetch("/api/chat/freechat-usage", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ childId: cId, action: "end", startedAt }),
+          });
+          const endData = await res.json();
+          if (endData?.dailyLimitReached) {
+            setDailyLimitReached(true);
+            return;
+          }
+          setCooldownRemainingSec(endData?.remainingCooldownSeconds ?? 300);
+        } catch {
+          setCooldownRemainingSec(300);
+        }
+      } else {
+        setCooldownRemainingSec(300);
       }
-      triggerHardLimitStop("오늘 대화는 여기까지야! 1분 쉬었다가 다시 이야기하러 와줘 🌿");
-      setCooldownRemainingSec(60);
       setUsagePhase("cooldown");
     }, delay);
     return () => {
@@ -180,9 +190,10 @@ export default function ChatPage() {
     };
   }, [usagePhase, triggerHardLimitStop]);
 
-  // 030: 자유대화 진입 게이트 — childId가 확정되면 서버 상태를 먼저 확인한다.
-  // 휴식 중이면 대화 화면을 렌더링하지 않고 휴식 안내로 전환하고, 그 외에는
-  // start를 호출해(이미 활성 세션이면 그대로 재개) 서버 기준 종료 시각을 받는다.
+  // 자유대화 진입 게이트 — childId가 확정되면 서버 상태를 먼저 확인한다. 하루 한도
+  // (3세션/30분)를 이미 다 썼으면 dailyLimitReached 화면으로, 휴식 중이면 대화 화면을
+  // 렌더링하지 않고 휴식 안내로 전환하고, 그 외에는 start를 호출해(이미 활성 세션이면
+  // 그대로 재개) 서버 기준 종료 시각을 받는다.
   useEffect(() => {
     if (!childId) return;
     let cancelled = false;
@@ -191,8 +202,12 @@ export default function ChatPage() {
         const statusRes = await fetch(`/api/chat/freechat-usage?childId=${childId}`);
         const statusData = await statusRes.json();
         if (cancelled) return;
+        if (statusData.dailyLimitReached) {
+          setDailyLimitReached(true);
+          return;
+        }
         if (statusData.status === "cooldown") {
-          setCooldownRemainingSec(statusData.remainingCooldownSeconds ?? 60);
+          setCooldownRemainingSec(statusData.remainingCooldownSeconds ?? 300);
           setUsagePhase("cooldown");
           return;
         }
@@ -204,7 +219,11 @@ export default function ChatPage() {
         const startData = await startRes.json();
         if (cancelled) return;
         if (!startData.allowed) {
-          setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 60);
+          if (startData.dailyLimitReached) {
+            setDailyLimitReached(true);
+            return;
+          }
+          setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 300);
           setUsagePhase("cooldown");
           return;
         }
@@ -223,7 +242,7 @@ export default function ChatPage() {
     return () => { cancelled = true; };
   }, [childId]);
 
-  // 030: 휴식 카운트다운 — 1초마다 감소, 0이 되면 새로고침 없이 재진입 시도(§5)
+  // 휴식 카운트다운 — 1초마다 감소, 0이 되면 새로고침 없이 재진입 시도
   useEffect(() => {
     if (usagePhase !== "cooldown") return;
     if (cooldownRemainingSec <= 0) {
@@ -242,8 +261,10 @@ export default function ChatPage() {
             usageSessionStartedAtRef.current = startData.startedAt;
             usageSessionEndsAtMsRef.current = new Date(startData.sessionEndsAt).getTime();
             setUsagePhase("ready");
+          } else if (startData.dailyLimitReached) {
+            setDailyLimitReached(true);
           } else {
-            setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 60);
+            setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 300);
             setUsagePhase("cooldown");
           }
         } catch (e) {
@@ -257,16 +278,6 @@ export default function ChatPage() {
     const t = setTimeout(() => setCooldownRemainingSec((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [usagePhase, cooldownRemainingSec]);
-
-  // 턴 수 제한 하드 리밋 감지
-  useEffect(() => {
-    if (status === "live") {
-      const childTurns = transcript.filter((t) => t.role === "child").length;
-      if (childTurns >= MAX_SESSION_TURNS) {
-        triggerHardLimitStop("오늘 대화는 여기까지야! 다음에 더 재미있는 이야기 많이 들려줘 👋");
-      }
-    }
-  }, [transcript, status, triggerHardLimitStop]);
 
   // 페이지 이탈 시 세션 마감 연동 로직 제거됨
 
@@ -410,20 +421,6 @@ export default function ChatPage() {
     setReportError(null);
 
     await restoreSession(childId);
-
-    // 이미 이 대화(같은 business_date+conversation_window)에서 하루 턴 한도를 다 쓴
-    // 세션을 재개하는 경우 — 예전에는 여기서 그대로 live로 붙였다가 턴수 하드리밋
-    // effect가 즉시 재발동해 "오늘 대화는 여기까지야"가 매번 다시 뜨고 세션이 곧바로
-    // 종료됐다. 아이 입장에선 마이크를 눌러도 아무것도 안 되는 것처럼 보였다
-    // (2026-08-02 자유대화 무응답 재보고로 확인). live 연결 자체를 시도하지 않고
-    // 바로 한도 안내 화면으로 전환한다.
-    const restoredChildTurns = restoredTranscriptRef.current.filter((t) => t.role === "child").length;
-    if (restoredChildTurns >= MAX_SESSION_TURNS) {
-      seedTranscript(restoredTranscriptRef.current);
-      setDailyLimitReached(true);
-      setSessionActive(false);
-      return;
-    }
 
     setSessionActive(true);
     await startSession();

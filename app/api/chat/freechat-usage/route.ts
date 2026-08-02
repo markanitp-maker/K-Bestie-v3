@@ -9,6 +9,9 @@ interface UsageStateRow {
   started_at: string | null;
   session_ends_at: string | null;
   cooldown_until: string | null;
+  daily_session_count: number;
+  daily_used_seconds: number;
+  daily_limit_reached: boolean;
 }
 
 function toResponsePayload(row: UsageStateRow) {
@@ -27,7 +30,20 @@ function toResponsePayload(row: UsageStateRow) {
     remainingCooldownSeconds: row.status === "cooldown" && cooldownUntil
       ? Math.max(0, Math.ceil((cooldownUntil - now) / 1000))
       : 0,
+    dailySessionCount: row.daily_session_count,
+    dailyUsedSeconds: row.daily_used_seconds,
+    dailyLimitReached: row.daily_limit_reached,
   };
+}
+
+/** 자유대화 하루 3회·30분 상한과 세션 종료 후 5분 휴식은 운영 계정 정책이다.
+ *  Dev/Preview 배포이거나 해당 아이 계정이 is_test_account=true면 반복 QA를 위해
+ *  전부 우회한다(서버가 판단 — 클라이언트가 보낼 수 있는 값이 아니다). */
+async function resolveTestBypass(childId: string): Promise<boolean> {
+  if (process.env.VERCEL_ENV !== "production") return true;
+  const service = createServiceClient();
+  const { data } = await service.from("child_profiles").select("is_test_account").eq("id", childId).maybeSingle();
+  return data?.is_test_account === true;
 }
 
 export async function GET(req: NextRequest) {
@@ -42,7 +58,10 @@ export async function GET(req: NextRequest) {
   if (!authCheck.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const service = createServiceClient();
-  const { data, error } = await service.rpc("get_freechat_usage_state", { p_child_id: childId }).single();
+  const isTestBypass = await resolveTestBypass(childId);
+  const { data, error } = await service
+    .rpc("get_freechat_usage_state", { p_child_id: childId, p_is_test_bypass: isTestBypass })
+    .single();
   if (error || !data) {
     console.error("[freechat-usage] get state rpc error:", error);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
@@ -72,9 +91,12 @@ export async function POST(req: NextRequest) {
   if (!authCheck.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const service = createServiceClient();
+  const isTestBypass = await resolveTestBypass(childId);
 
   if (action === "start") {
-    const { data, error } = await service.rpc("start_freechat_session", { p_child_id: childId }).single();
+    const { data, error } = await service
+      .rpc("start_freechat_session", { p_child_id: childId, p_is_test_bypass: isTestBypass })
+      .single();
     if (error || !data) {
       console.error("[freechat-usage] start rpc error:", error);
       return NextResponse.json({ error: "Database error" }, { status: 500 });
@@ -88,18 +110,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "startedAt required for end" }, { status: 400 });
   }
   const { data, error } = await service
-    .rpc("end_freechat_session", { p_child_id: childId, p_started_at: body.startedAt })
+    .rpc("end_freechat_session", { p_child_id: childId, p_started_at: body.startedAt, p_is_test_bypass: isTestBypass })
     .single();
   if (error || !data) {
     console.error("[freechat-usage] end rpc error:", error);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
-  const row = data as { status: string; cooldown_until: string | null };
+  const row = data as {
+    status: string;
+    cooldown_until: string | null;
+    daily_session_count: number;
+    daily_used_seconds: number;
+    daily_limit_reached: boolean;
+  };
   return NextResponse.json({
     status: row.status,
     cooldownUntil: row.cooldown_until,
     remainingCooldownSeconds: row.status === "cooldown" && row.cooldown_until
       ? Math.max(0, Math.ceil((new Date(row.cooldown_until).getTime() - Date.now()) / 1000))
       : 0,
+    dailySessionCount: row.daily_session_count,
+    dailyUsedSeconds: row.daily_used_seconds,
+    dailyLimitReached: row.daily_limit_reached,
   });
 }
