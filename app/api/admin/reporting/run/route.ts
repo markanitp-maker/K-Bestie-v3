@@ -86,18 +86,21 @@ export async function POST(req: NextRequest) {
 
   let p_cutoff_at: string | undefined;
   if (action === "collect" || action === "collect_and_generate") {
+    // 관리자 수동 실행(execution_mode=manual, 이 라우트 자체가 그 전용 경로 —
+    // requireAdmin()으로 서버에서 관리자 권한을 이미 검증했다)은 자동 Cron의
+    // 17:55/23:55 KST 스케줄과 무관하게 대표님이 선택한 날짜·대상을 시간 제한
+    // 없이 즉시 수집할 수 있어야 한다. 실제 자동 Cron 경로(app/api/batch/v3/
+    // collection/enqueue/route.ts, BATCH_SECRET 인증)는 이 시간 제한을 자체
+    // 코드로 강제하지 않고 Vercel Cron 스케줄 자체로만 통제하므로, 여기 있던
+    // 17:55 이전 차단은 자동 경로 로직 재사용이 아니라 잘못 복제된 별도 규칙이었다
+    // — 지금까지 그날 첫 수동 실행 시도가 항상 이 오탐으로 막혀 있었다.
+    // cutoff는 enqueue_collection_jobs_v3 RPC의 p_cutoff_at <= now() 제약과
+    // 맞춰 "선택 날짜가 이미 지났으면 자정, 아직 진행 중이면 지금"으로 잡는다.
     const nowUtc = new Date();
     const selectedDate = new Date(businessDate + "T00:00:00+09:00");
     const selectedNextDate = new Date(selectedDate.getTime() + 24 * 3600000);
-    const phase2Start = new Date(selectedDate.getTime() + 17 * 3600000 + 55 * 60000); // 17:55 KST
 
-    if (nowUtc.getTime() >= selectedNextDate.getTime()) {
-      p_cutoff_at = selectedNextDate.toISOString();
-    } else if (nowUtc.getTime() >= phase2Start.getTime()) {
-      p_cutoff_at = nowUtc.toISOString();
-    } else {
-      return NextResponse.json({ error: "Cannot run Phase II collection before the window begins (17:55 KST)" }, { status: 409 });
-    }
+    p_cutoff_at = (nowUtc.getTime() >= selectedNextDate.getTime() ? selectedNextDate : nowUtc).toISOString();
   }
 
   const executionId = crypto.randomUUID();
