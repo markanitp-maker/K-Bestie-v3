@@ -25,7 +25,7 @@ import {
   REPORT_PROMPT_TEMPLATE,
   WEEKLY_REPORT_PROMPT_TEMPLATE,
 } from "../../../app/api/_lib/prompts.ts";
-import { getActiveReportModel } from "../../../app/api/_lib/reportModel.ts";
+import { getLlmModel, type LlmModelRole } from "../../../lib/llm/modelRouter.ts";
 import { sanitizeReportJson } from "../../../app/api/_lib/reportSafetyGuard.ts";
 
 function extractJSON(text: string) {
@@ -54,22 +54,10 @@ interface GroupAModelResolved {
   maxOutputTokens: number;
 }
 
-/** 그룹A(리포트·요약) provider/model을 provider_switch_settings에서 조회.
- *  조회 실패/미실행 시 기존 getActiveReportModel() 기반 Vertex로 안전하게 폴백. */
-async function resolveGroupAModel(db: SupabaseClient): Promise<GroupAModelResolved> {
-  const fallback = getActiveReportModel();
-  try {
-    const { data } = await db
-      .from("provider_switch_settings")
-      .select("provider, model_id")
-      .eq("group", "A")
-      .maybeSingle();
-    const provider = (data?.provider as ProviderId | undefined) ?? "vertex";
-    const modelId = data?.model_id ?? fallback.modelId;
-    return { provider, modelId, maxOutputTokens: fallback.maxOutputTokens };
-  } catch {
-    return { provider: "vertex", modelId: fallback.modelId, maxOutputTokens: fallback.maxOutputTokens };
-  }
+/** 그룹A(리포트·요약) provider/model을 modelRouter에서 조회. */
+async function resolveGroupAModel(db: SupabaseClient, role: LlmModelRole): Promise<GroupAModelResolved> {
+  const modelId = getLlmModel(role);
+  return { provider: "vertex", modelId, maxOutputTokens: 8192 };
 }
 
 
@@ -204,7 +192,7 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
   const childIds = candidateChildIds.filter((id) => !withdrawnIds.has(id));
   if (!childIds.length) return result;
 
-  const reportModel = await resolveGroupAModel(db);
+  const reportModel = await resolveGroupAModel(db, "dailyReport");
 
   for (const childId of childIds) {
     try {
@@ -219,7 +207,8 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
           turn_order,
           corrected_daily_conversations (
             corrected_text,
-            report_eligible
+            report_eligible,
+            created_at
           )
         `)
         .eq("child_id", childId)
@@ -349,7 +338,7 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
       // 앞으로는 더 늘지 않는다.
       const { data: existingRows, error: existingOneErr } = await db
         .from("daily_reports")
-        .select("id")
+        .select("id, generation_version, source_data_updated_at")
         .eq("child_id", childId)
         .eq("business_date", targetDate)
         .is("deleted_at", null)
@@ -359,20 +348,51 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
       const existing = existingRows?.[0] ?? null;
 
       let reportId: string;
-      if (existing) {
-        const { error: updErr } = await db.from("daily_reports").update(reportFields).eq("id", existing.id);
-        if (updErr) throw new Error(updErr.message);
-        reportId = existing.id;
+      // corrected_daily_conversations에는 updated_at이 없다(INSERT 전용 파이프라인 —
+      // 20260745000000 원본 스키마 확인, updated_at을 쓰던 20260781000000 리팩터는
+      // 20260801110000_revert_20260781.sql로 즉시 되돌려져 원본 스키마가 그대로 live다).
+      // created_at이 이 보정 행이 확정된 시각이라 "원본 데이터가 최종 갱신된 시각"의
+      // 올바른 대체 근거다. 이 관계는 PostgREST 카디널리티에 따라 배열 또는 단일 객체로
+      // 올 수 있어(위 233/247행과 동일한 정규화 필요 — 배열로만 가정하면 단일 객체로 온
+      // 경우 undefined가 되어 아래 stale-data 보호가 조용히 무력화된다) 정규화한다.
+      // validConversations는 child_id+targetDate의 raw_daily_conversations 행 여러 개일
+      // 수 있으므로 마지막 항목 하나가 아니라 전체 중 가장 최신 created_at을 사용한다.
+      const sourceDataUpdatedAt = validConversations.reduce((latest: string | null, c: any) => {
+        const corr = Array.isArray(c.corrected_daily_conversations)
+          ? c.corrected_daily_conversations[0]
+          : c.corrected_daily_conversations;
+        const correctedAt = corr?.created_at;
+        if (!correctedAt) return latest;
+        if (!latest || new Date(correctedAt) > new Date(latest)) return correctedAt;
+        return latest;
+      }, null as string | null) || new Date().toISOString();
+
+      // Check data recency
+      if (existing && existing.source_data_updated_at && new Date(sourceDataUpdatedAt) < new Date(existing.source_data_updated_at)) {
+         // Skip overwriting newer data
+         reportId = existing.id;
       } else {
-        const { data: inserted, error: insertErr } = await db
-          .from("daily_reports")
-          .insert(reportFields)
-          .select("id")
-          .single();
-        if (insertErr) throw new Error(insertErr.message);
-        reportId = inserted.id;
+        const payload = {
+          ...reportFields,
+          generation_source: "scheduled",
+          generation_version: (existing?.generation_version || 0) + 1,
+          source_data_updated_at: sourceDataUpdatedAt
+        };
+        if (existing) {
+          const { error: updErr } = await db.from("daily_reports").update(payload).eq("id", existing.id);
+          if (updErr) throw new Error(updErr.message);
+          reportId = existing.id;
+        } else {
+          const { data: inserted, error: insertErr } = await db
+            .from("daily_reports")
+            .insert(payload)
+            .select("id")
+            .single();
+          if (insertErr) throw new Error(insertErr.message);
+          reportId = inserted.id;
+        }
+        result.created.push(reportId);
       }
-      result.created.push(reportId);
 
       // 리포트가 실제로 성공적으로 만들어진 뒤에만 소비 시각을 찍는다(LLM/삽입 실패 시
       // report_generated_at이 찍히면 리포트 없이 원본만 7일 뒤 삭제되는 사고로 이어진다).
@@ -519,7 +539,7 @@ export async function generateWeeklySummary(
   }
 
   const weekRange = `${weekStart} ~ ${weekEnd}`;
-  const reportModel = await resolveGroupAModel(db);
+  const reportModel = await resolveGroupAModel(db, "weeklyReport");
 
   for (const [childId, sessionIds] of sessionsByChild) {
     try {
@@ -636,7 +656,7 @@ export async function generateMemorySummaries(
   if (fetchErr) throw new Error(`generateMemorySummaries: 보정 대화 조회 실패 — ${fetchErr.message}`);
   if (!convs?.length) return result;
 
-  const reportModel = await resolveGroupAModel(db);
+  const reportModel = await resolveGroupAModel(db, "supabaseBatchReport");
 
   for (const conv of convs) {
     try {
@@ -866,7 +886,7 @@ export async function generateMemoryFacts(db: SupabaseClient, targetDate: string
   if (fetchErr) throw new Error(`generateMemoryFacts: 대상 보정 대화 조회 실패 — ${fetchErr.message}`);
   if (!convs?.length) return result;
 
-  const reportModel = await resolveGroupAModel(db);
+  const reportModel = await resolveGroupAModel(db, "supabaseBatchReport");
 
   for (const conv of convs) {
     const childId = conv.child_id;
