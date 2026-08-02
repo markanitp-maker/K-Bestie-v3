@@ -200,6 +200,9 @@ export default function ChildPlayPage() {
       alert("로그인 정보가 필요합니다. 다시 로그인해주세요.");
       return;
     }
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
+
     setSelectedGame(game);
     setResumeCheckLoading(true);
     setShowActionModal(true);
@@ -218,6 +221,7 @@ export default function ChildPlayPage() {
       setResumeAttemptId(null);
     } finally {
       setResumeCheckLoading(false);
+      actionLockRef.current = false;
     }
   };
 
@@ -226,6 +230,7 @@ export default function ChildPlayPage() {
     
     actionLockRef.current = true;
     setIsStarting(true);
+    let navigatingAway = false;
     
     // 퀴즈마스터는 클릭 즉시 전체화면 로딩 셸을 표시하기 위해 모달을 닫음
     if (selectedGame.id === "quizmaster") {
@@ -241,7 +246,9 @@ export default function ChildPlayPage() {
 
         if (result.ok) {
           setShowActionModal(false);
+          navigatingAway = true;
           window.location.assign("/play/mbti");
+          return;
         } else if (result.reason === "insufficient_balance") {
           setIsStarting(false);
           actionLockRef.current = false;
@@ -271,7 +278,9 @@ export default function ChildPlayPage() {
           // 게이트가 켜지면 /play/quiz는 인앱 Next.js 라우트가 아니라 독립 Quiz
           // 배포로 리버스 프록시되는 경로가 되므로, router.push는 존재하지 않는
           // RSC 페이로드를 기대하다 실패한다.
+          navigatingAway = true;
           window.location.assign("/play/quiz");
+          return;
         } else {
           alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
         }
@@ -311,8 +320,10 @@ export default function ChildPlayPage() {
     } catch (e) {
       alert("오류가 발생했습니다.");
     } finally {
-      setIsStarting(false);
-      actionLockRef.current = false;
+      if (!navigatingAway) {
+        setIsStarting(false);
+        actionLockRef.current = false;
+      }
     }
   };
 
@@ -321,6 +332,7 @@ export default function ChildPlayPage() {
     
     actionLockRef.current = true;
     setIsStarting(true);
+    let navigatingAway = false;
     
     if (selectedGame.id === "quizmaster") {
       setShowActionModal(false);
@@ -335,7 +347,9 @@ export default function ChildPlayPage() {
         });
         if (res.ok) {
           setShowActionModal(false);
+          navigatingAway = true;
           window.location.assign("/play/mbti");
+          return;
         } else {
           alert("이어하기 처리에 실패했습니다.");
         }
@@ -358,9 +372,14 @@ export default function ChildPlayPage() {
           return;
         }
         writeQuizSessionHandoff({ token: "", childId, attemptId: resumeAttemptId });
+        navigatingAway = true;
         window.location.assign(`/play/quiz?resume=${encodeURIComponent(resumeAttemptId)}`);
+        return;
       } finally {
-        // location.assign 후에는 복구하지 않음 (페이지 전환)
+        if (!navigatingAway) {
+          setIsStarting(false);
+          actionLockRef.current = false;
+        }
       }
     } else {
       setShowActionModal(false);
@@ -740,7 +759,8 @@ export default function ChildPlayPage() {
         )}
 
       </div>
-    
+        <link rel="preconnect" href={process.env.NEXT_PUBLIC_QUIZ_UPSTREAM_ORIGIN || "https://k-bestie-quiz-dev.vercel.app"} />
+        <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_QUIZ_UPSTREAM_ORIGIN || "https://k-bestie-quiz-dev.vercel.app"} />
         <KChatbotWidget appSurface="child" />
       </DemoFrame>
   );
