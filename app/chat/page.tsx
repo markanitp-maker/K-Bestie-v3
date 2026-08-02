@@ -12,7 +12,7 @@ import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
 
-const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 네트워크 실패 시 fail-open 폴백 전용(서버 응답을 못 받았을 때만 사용)
+const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 세션당 최대 10분(서버 권위, 이 값은 네트워크 실패 시 fail-open 폴백에만 사용)
 
 const getCurrentKSTWindow = () => {
   const now = new Date();
@@ -45,13 +45,13 @@ export default function ChatPage() {
   const [micPermission, setMicPermission] = useState<PermissionState | "checking" | "not_needed">("checking");
   const autoStartAttempted = useRef(false);
 
-  // 자유대화 사용 정책(서버 권위): 운영 계정 기준 하루 최대 3세션·하루 총 30분·세션 종료
-  // 후 5분 휴식(supabase freechat_usage_state RPC가 KST 기준으로 계산). Dev/Preview
-  // 배포이거나 is_test_account=true 계정은 반복 QA를 위해 전부 우회한다(서버 판단).
+  // 자유대화 사용 정책(서버 권위, 확정): 하루 이용 횟수·하루 총 이용시간·아이 발화
+  // 턴수 제한 없음 — 세션당 최대 10분, 실제로 10분을 다 채워 자연 종료된 경우에만
+  // 1분 휴식(조기 종료는 휴식 없음). 휴식 만료 즉시 재진입 가능. Dev/Preview 배포이거나
+  // is_test_account=true 계정은 반복 QA를 위해 세션 시간·휴식을 전부 우회한다(서버 판단).
   // usagePhase가 "ready"가 되기 전에는 음성/텍스트 대화 화면을 아예 렌더링하지 않는다
   // (클라이언트 버튼 비활성화만으로 처리하지 않기 위함 — 주소창 직접 접근도 이 게이트를 거친다).
   const [usagePhase, setUsagePhase] = useState<"checking" | "cooldown" | "ready">("checking");
-  const [dailyLimitReached, setDailyLimitReached] = useState(false);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
   const usageSessionStartedAtRef = useRef<string | null>(null);
   const usageSessionEndsAtMsRef = useRef<number | null>(null);
@@ -160,7 +160,7 @@ export default function ChatPage() {
     timerRef.current = setTimeout(async () => {
       const cId = childIdRef.current;
       const startedAt = usageSessionStartedAtRef.current;
-      triggerHardLimitStop("오늘 대화는 여기까지야! 5분 쉬었다가 다시 이야기하러 와줘 🌿");
+      triggerHardLimitStop("오늘 대화는 여기까지야! 1분 쉬었다가 다시 이야기하러 와줘 🌿");
       if (cId && startedAt) {
         try {
           const res = await fetch("/api/chat/freechat-usage", {
@@ -168,17 +168,15 @@ export default function ChatPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ childId: cId, action: "end", startedAt }),
           });
+          if (!res.ok) throw new Error(`end request failed: ${res.status}`);
           const endData = await res.json();
-          if (endData?.dailyLimitReached) {
-            setDailyLimitReached(true);
-            return;
-          }
-          setCooldownRemainingSec(endData?.remainingCooldownSeconds ?? 300);
-        } catch {
-          setCooldownRemainingSec(300);
+          setCooldownRemainingSec(endData?.remainingCooldownSeconds ?? 60);
+        } catch (e) {
+          console.error("[freechat-usage] end request error:", e);
+          setCooldownRemainingSec(60);
         }
       } else {
-        setCooldownRemainingSec(300);
+        setCooldownRemainingSec(60);
       }
       setUsagePhase("cooldown");
     }, delay);
@@ -190,24 +188,23 @@ export default function ChatPage() {
     };
   }, [usagePhase, triggerHardLimitStop]);
 
-  // 자유대화 진입 게이트 — childId가 확정되면 서버 상태를 먼저 확인한다. 하루 한도
-  // (3세션/30분)를 이미 다 썼으면 dailyLimitReached 화면으로, 휴식 중이면 대화 화면을
-  // 렌더링하지 않고 휴식 안내로 전환하고, 그 외에는 start를 호출해(이미 활성 세션이면
-  // 그대로 재개) 서버 기준 종료 시각을 받는다.
+  // 자유대화 진입 게이트 — childId가 확정되면 서버 상태를 먼저 확인한다. 휴식 중이면
+  // 대화 화면을 렌더링하지 않고 휴식 안내로 전환하고, 그 외에는 start를 호출해(이미
+  // 활성 세션이면 그대로 재개) 서버 기준 종료 시각을 받는다. GET/POST 응답이 실패
+  // (500 등)하면 그 오류 바디를 절대 "휴식 중"으로 오인하지 않는다 — 응답 status가
+  // ok가 아니면 예외로 던져 fail-open 경로로 보낸다(서버 오류를 가짜 휴식 화면으로
+  // 잘못 표시했던 실제 Production 장애의 재발 방지).
   useEffect(() => {
     if (!childId) return;
     let cancelled = false;
     (async () => {
       try {
         const statusRes = await fetch(`/api/chat/freechat-usage?childId=${childId}`);
+        if (!statusRes.ok) throw new Error(`usage status check failed: ${statusRes.status}`);
         const statusData = await statusRes.json();
         if (cancelled) return;
-        if (statusData.dailyLimitReached) {
-          setDailyLimitReached(true);
-          return;
-        }
         if (statusData.status === "cooldown") {
-          setCooldownRemainingSec(statusData.remainingCooldownSeconds ?? 300);
+          setCooldownRemainingSec(statusData.remainingCooldownSeconds ?? 60);
           setUsagePhase("cooldown");
           return;
         }
@@ -216,14 +213,11 @@ export default function ChatPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ childId, action: "start" }),
         });
+        if (!startRes.ok) throw new Error(`usage start failed: ${startRes.status}`);
         const startData = await startRes.json();
         if (cancelled) return;
         if (!startData.allowed) {
-          if (startData.dailyLimitReached) {
-            setDailyLimitReached(true);
-            return;
-          }
-          setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 300);
+          setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 60);
           setUsagePhase("cooldown");
           return;
         }
@@ -232,9 +226,9 @@ export default function ChatPage() {
         setUsagePhase("ready");
       } catch (e) {
         console.error("[freechat-usage] init error:", e);
-        // 서버 상태 확인 자체가 실패하면(네트워크 등) 정상 사용자를 완전히 막지 않고
-        // 클라이언트 기준 10분으로 fail-open — 단, DB 기준 우회 방지가 핵심 목적인
-        // 다중기기/새로고침 우회 시나리오는 서버 응답이 정상일 때만 보장된다.
+        // 서버 상태 확인 자체가 실패하면(네트워크·서버 오류 등) 정상 사용자를 완전히
+        // 막지 않고 클라이언트 기준 10분으로 fail-open — 절대 가짜 휴식 화면을 보여주지
+        // 않는다. 단, 다중기기/새로고침 우회 방지는 서버 응답이 정상일 때만 보장된다.
         usageSessionEndsAtMsRef.current = Date.now() + MAX_SESSION_DURATION_MS;
         setUsagePhase("ready");
       }
@@ -256,15 +250,14 @@ export default function ChatPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ childId: cId, action: "start" }),
           });
+          if (!startRes.ok) throw new Error(`cooldown re-check failed: ${startRes.status}`);
           const startData = await startRes.json();
           if (startData.allowed) {
             usageSessionStartedAtRef.current = startData.startedAt;
             usageSessionEndsAtMsRef.current = new Date(startData.sessionEndsAt).getTime();
             setUsagePhase("ready");
-          } else if (startData.dailyLimitReached) {
-            setDailyLimitReached(true);
           } else {
-            setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 300);
+            setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 60);
             setUsagePhase("cooldown");
           }
         } catch (e) {
@@ -628,29 +621,6 @@ export default function ChatPage() {
       <DemoFrame>
         <div className="h-full flex items-center justify-center" style={{ background: "var(--color-k-surface)" }}>
           <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
-        </div>
-      </DemoFrame>
-    );
-  }
-
-  if (dailyLimitReached) {
-    return (
-      <DemoFrame>
-        <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]">
-          <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
-            <KBestieMascotAnimation state="idle" size={120} />
-            <p className="text-[#3a2f2a] text-[19px] font-bold leading-relaxed">
-              오늘 대화는 여기까지야!<br />
-              다음에 더 재미있는 이야기 많이 들려줘 👋
-            </p>
-            <button
-              onClick={() => router.replace("/child/home")}
-              className="mt-2 px-6 py-3 rounded-2xl text-sm font-bold text-white cursor-pointer active:scale-95"
-              style={{ background: "var(--color-k-orange)" }}
-            >
-              홈으로 갈래요
-            </button>
-          </div>
         </div>
       </DemoFrame>
     );

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { getSupabaseTarget } from "@/lib/supabase/env";
 
 export const runtime = "nodejs";
 
@@ -9,9 +10,6 @@ interface UsageStateRow {
   started_at: string | null;
   session_ends_at: string | null;
   cooldown_until: string | null;
-  daily_session_count: number;
-  daily_used_seconds: number;
-  daily_limit_reached: boolean;
 }
 
 function toResponsePayload(row: UsageStateRow) {
@@ -30,17 +28,18 @@ function toResponsePayload(row: UsageStateRow) {
     remainingCooldownSeconds: row.status === "cooldown" && cooldownUntil
       ? Math.max(0, Math.ceil((cooldownUntil - now) / 1000))
       : 0,
-    dailySessionCount: row.daily_session_count,
-    dailyUsedSeconds: row.daily_used_seconds,
-    dailyLimitReached: row.daily_limit_reached,
   };
 }
 
-/** 자유대화 하루 3회·30분 상한과 세션 종료 후 5분 휴식은 운영 계정 정책이다.
- *  Dev/Preview 배포이거나 해당 아이 계정이 is_test_account=true면 반복 QA를 위해
- *  전부 우회한다(서버가 판단 — 클라이언트가 보낼 수 있는 값이 아니다). */
+/** 자유대화 세션당 10분·자연 종료 후 1분 휴식은 운영 계정 정책이다. Dev/Preview
+ *  배포이거나 해당 아이 계정이 is_test_account=true면 반복 QA를 위해 전부 우회한다
+ *  (서버가 판단 — 클라이언트가 보낼 수 있는 값이 아니다).
+ *  주의: VERCEL_ENV는 k-bestie-v3-dev/k-bestie-v3 두 프로젝트 모두 `vercel --prod`로
+ *  배포하므로 항상 "production"이라 Dev/Prod 구분에 쓸 수 없다 — 대신 이 저장소가
+ *  이미 쓰고 있는 NEXT_PUBLIC_SUPABASE_TARGET(dev/prod, 프로젝트별로 다르게 설정됨)로
+ *  판단한다. */
 async function resolveTestBypass(childId: string): Promise<boolean> {
-  if (process.env.VERCEL_ENV !== "production") return true;
+  if (getSupabaseTarget() !== "prod") return true;
   const service = createServiceClient();
   const { data } = await service.from("child_profiles").select("is_test_account").eq("id", childId).maybeSingle();
   return data?.is_test_account === true;
@@ -116,21 +115,12 @@ export async function POST(req: NextRequest) {
     console.error("[freechat-usage] end rpc error:", error);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
-  const row = data as {
-    status: string;
-    cooldown_until: string | null;
-    daily_session_count: number;
-    daily_used_seconds: number;
-    daily_limit_reached: boolean;
-  };
+  const row = data as { status: string; cooldown_until: string | null };
   return NextResponse.json({
     status: row.status,
     cooldownUntil: row.cooldown_until,
     remainingCooldownSeconds: row.status === "cooldown" && row.cooldown_until
       ? Math.max(0, Math.ceil((new Date(row.cooldown_until).getTime() - Date.now()) / 1000))
       : 0,
-    dailySessionCount: row.daily_session_count,
-    dailyUsedSeconds: row.daily_used_seconds,
-    dailyLimitReached: row.daily_limit_reached,
   });
 }
