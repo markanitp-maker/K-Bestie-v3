@@ -92,9 +92,13 @@ export function validateAnswer(text: string): ValidateResult {
   // 이해 실패 / 설명 요청 → 무효 + needsClarification 플래그
   // (모르겠어 등도 일단 한 번 설명 기회를 주도록 evasive보다 우선 처리)
   const stripped = normalized.replace(/[.!?~…\s]/g, "");
+  // 문장 어디에 있어도 매칭하되(끝에 오는 "질문이 어려워" 같은 경우도 잡아야 하므로
+  // startsWith만으로는 부족), 전체 발화 길이가 트리거 문구와 비슷할 때만 매칭한다 —
+  // 그래야 "이따가 다시 놀이터 갈 거야"처럼 트리거 단어가 무관한 긴 문장에 우연히
+  // 섞여 있는 유효한 답변까지 오분류하지 않는다.
   const needsClarification = CLARIFICATION_PHRASES.some((p) => {
     const np = normalize(p).replace(/\s/g, "");
-    return stripped === np || stripped.startsWith(np) || stripped.includes(np);
+    return stripped === np || (stripped.includes(np) && stripped.length <= np.length + 4);
   });
   if (needsClarification) {
     return { valid: false, reason: "clarification_needed", needsClarification: true };

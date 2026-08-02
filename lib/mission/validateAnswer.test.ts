@@ -63,3 +63,20 @@ test("validateAnswer: '싫어' (거절)", () => {
   assert.equal(res.reason, "evasive");
   assert.equal(res.refused, true);
 });
+
+// claude-review-048 지적: CLARIFICATION_PHRASES의 무제한 includes()가 "다시"/"모르겠" 같은
+// 흔한 단어를 문장 중간에서도 매칭해 실제로는 유효한 답변을 오분류했다(수정 후 회귀 테스트).
+test("validateAnswer: 트리거 단어가 문장 중간에 있는 유효 답변(다시)은 오분류하지 않는다", () => {
+  const res = validateAnswer("이따가 다시 놀이터 갈 거야");
+  assert.equal(res.valid, true);
+});
+
+test("validateAnswer: 트리거 단어가 문장 중간에 있는 유효 답변(모르겠)은 오분류하지 않는다", () => {
+  const res = validateAnswer("정확힌 모르겠지만 재밌었어");
+  assert.equal(res.valid, true);
+});
+
+test("validateAnswer: 트리거 단어가 문장 중간에 있는 유효 답변(이해)은 오분류하지 않는다", () => {
+  const res = validateAnswer("이해심이 많은 친구가 도와줬어");
+  assert.equal(res.valid, true);
+});

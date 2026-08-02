@@ -175,7 +175,13 @@ clarification_text의 형식 예: "오늘 학교에서 있었던 일 중 제일 
     const rawResult = await generateWithRetry(prompt);
     const parsed = extractJSON(rawResult);
     if (parsed.classification === "VALID" || parsed.classification === "NO_RESPONSE" || parsed.classification === "CLARIFICATION_NEEDED") {
-      return { classification: parsed.classification, clarificationText: parsed.clarification_text };
+      // clarification_text가 responseSchema에서 required가 아니라 모델이 생략할 수 있다 —
+      // 비어 있으면 원래 질문을 그대로 반복하는 조용한 기능 무력화 대신 일반 안내 문구로 대체한다.
+      const clarificationText =
+        parsed.classification === "CLARIFICATION_NEEDED" && !parsed.clarification_text
+          ? "조금 더 쉽게 설명해줄게. 방금 물어본 걸 다시 한번 말해줄래?"
+          : parsed.clarification_text;
+      return { classification: parsed.classification, clarificationText };
     }
     return { classification: "VALID" }; // 기본 폴백
   } catch (err) {
