@@ -655,7 +655,7 @@ export default function ChatPage() {
             </div>
           </div>
         )}
-        <div className="w-full max-w-[480px] h-[100dvh] flex flex-col relative shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+        <div className="w-full max-w-[480px] min-w-0 box-border h-[100dvh] flex flex-col relative shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
           
           {/* Decorations */}
           <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden">
@@ -679,7 +679,7 @@ export default function ChatPage() {
           </div>
 
           {/* Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-          <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-end overflow-hidden z-20 px-[clamp(16px,4vw,24px)] pt-[calc(64px+env(safe-area-inset-top))] pb-[clamp(28px,4dvh,44px)]">
+          <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-end overflow-hidden z-20 px-[clamp(16px,4vw,24px)] pt-[calc(64px+env(safe-area-inset-top))] pb-[clamp(4px,1dvh,10px)]">
             {olderKText && (
               <div className="mt-auto mb-[10px] text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
                 {olderKText}
@@ -690,7 +690,7 @@ export default function ChatPage() {
                 {prevKText}
               </div>
             )}
-            <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} mb-auto relative w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[70px] shrink-0 h-auto overflow-visible`}>
+            <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[70px] shrink-0 h-auto overflow-visible`}>
               <div className="w-full">
                 <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
                   {currentQuestionText}
@@ -749,13 +749,13 @@ export default function ChatPage() {
           </div>
 
           {/* Spacer between mode and mic */}
-          <div className="flex-[0.8_1_0%] min-h-[clamp(20px,3dvh,28px)]" />
+          <div className="h-[clamp(16px,2.5dvh,24px)] w-full shrink-0" />
 
           {/* Bottom Inputs Area */}
-          <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(24px,3.5dvh,36px)+env(safe-area-inset-bottom))]">
+          <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(54px,8dvh,66px)+env(safe-area-inset-bottom))]">
             {mode === "text" ? (
               <div
-                className="w-full flex gap-2 box-border"
+                className="w-full min-w-0 flex gap-2 box-border"
                 style={{
                   paddingLeft: "max(16px, env(safe-area-inset-left))",
                   paddingRight: "max(16px, env(safe-area-inset-right))",
@@ -771,7 +771,7 @@ export default function ChatPage() {
                   }}
                   placeholder="케이에게 텍스트로 답하기..."
                   disabled={isConnecting || isEnded}
-                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-k-orange)] focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
+                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[16px] font-medium text-gray-800 shadow-sm border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-k-orange)] focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
                   maxLength={200}
                 />
                 <button

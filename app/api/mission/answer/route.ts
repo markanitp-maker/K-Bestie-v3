@@ -210,10 +210,11 @@ export async function POST(req: NextRequest) {
     updated_at?: string | null;
     required_valid_count?: number | null;
     engine_version?: string | null;
+    clarification_counts?: Record<string, number> | null;
   }
 
   // 2) 나머지 필드 조회 — required_valid_count, engine_version 상시 포함
-  const fields = "session_id, valid_answer_count, question_ids, question_states, required_valid_count, engine_version";
+  const fields = "session_id, valid_answer_count, question_ids, question_states, required_valid_count, engine_version, clarification_counts";
 
   // 진행상태 로드
   const { data: progress, error: progErr } = (await service
@@ -334,6 +335,7 @@ export async function POST(req: NextRequest) {
     if (activeParentQ) questionText = activeParentQ.question_text;
 
     let classification: string;
+    let clarificationText: string | undefined = undefined;
     const lowerAns = answerText.trim().toLowerCase();
     const cleanAns = lowerAns.replace(/\s+|[.!?]/g, "");
     if (!cleanAns) {
@@ -341,9 +343,42 @@ export async function POST(req: NextRequest) {
     } else if (/^(몰라|모르겠어|안해|싫어|응|아니|네|아니요|웅|응응)$/.test(cleanAns)) {
       classification = "VALID";
     } else {
-      classification = await classifyAnswer(questionText, answerText);
+      const clsResult = await classifyAnswer(questionText, answerText);
+      classification = clsResult.classification;
+      clarificationText = clsResult.clarificationText;
     }
     console.log("[mission/answer] classify", { sessionId, questionId, classification });
+
+    if (classification === "CLARIFICATION_NEEDED") {
+      const counts = progress.clarification_counts || {};
+      const currentCount = counts[questionId] || 0;
+      
+      if (currentCount >= 1) {
+        classification = "NO_RESPONSE"; // fallback to failure if already clarified once
+      } else {
+        counts[questionId] = 1;
+        await service.from("mission_progress").update({ clarification_counts: counts }).eq("session_id", sessionId);
+        
+        const resPayload = {
+          valid: false,
+          reason: "clarification_needed",
+          refused: false,
+          previousState: prevState,
+          questionState: "clarification_required" as const,
+          clarificationText: clarificationText,
+          validAnswerCount: progress.valid_answer_count ?? 0,
+          progressPercent: (progress.valid_answer_count ?? 0) * 10,
+          requiredCount: requiredCount,
+          completed: false,
+          engine_version: "v2",
+          questionStates: { ...states, [questionId]: "clarification_required" as const },
+        };
+        
+        console.log("[mission/answer] clarification required", { sessionId, questionId });
+        if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+        return NextResponse.json(resPayload);
+      }
+    }
 
     // 1. SAFETY_SIGNAL 판정 시 즉시 중단 처리 (RPC 호출로 일괄 대체)
     if (classification === "SAFETY_SIGNAL") {

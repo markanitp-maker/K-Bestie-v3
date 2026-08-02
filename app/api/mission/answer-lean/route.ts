@@ -360,7 +360,8 @@ export async function POST(req: NextRequest) {
   after(async () => {
     try {
       // 2차 감사/안전망 백그라운드 LLM 판정
-      const bgClass = await classifyAnswer(questionText, answerText);
+      const bgClassResult = await classifyAnswer(questionText, answerText);
+      const bgClass = bgClassResult.classification;
       if (bgClass === "SAFETY_SIGNAL") {
         // 빠른 키워드 검사가 놓친 경우 차선 안전망으로 사후 안전 일시정지 기록
         const safetyRx = pickReaction(answerText);

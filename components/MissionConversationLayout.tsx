@@ -169,7 +169,7 @@ export function MissionConversationLayout({
 
   return (
     <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "hidden" }}>
-      <div className="w-full max-w-[480px] min-w-0 h-[100dvh] relative grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+      <div className="w-full max-w-[480px] min-w-0 h-[100dvh] relative box-border grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
         
         {/* Decorations */}
         <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden z-0">
@@ -357,7 +357,7 @@ export function MissionConversationLayout({
                   }}
                   placeholder="케이에게 텍스트로 답하기..."
                   disabled={isClosing || entryStatus !== "active"}
-                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
+                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[16px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
                   maxLength={200}
                 />
                 <button

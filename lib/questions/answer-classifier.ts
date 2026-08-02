@@ -6,7 +6,13 @@ export type AnswerClassification =
   | "VALID"
   | "REFUSAL"
   | "NO_RESPONSE"
-  | "SAFETY_SIGNAL";
+  | "SAFETY_SIGNAL"
+  | "CLARIFICATION_NEEDED";
+
+export type AnswerClassificationResult = {
+  classification: AnswerClassification;
+  clarificationText?: string;
+};
 
 function extractJSON(text: string) {
   try {
@@ -84,11 +90,11 @@ async function generateWithRetry(prompt: string): Promise<string> {
 export async function classifyAnswer(
   questionText: string,
   answerText: string
-): Promise<AnswerClassification> {
+): Promise<AnswerClassificationResult> {
   // 1. SAFETY_SIGNAL 검사 (기존 안전 감지 로직 재사용)
   const reaction = pickReaction(answerText);
   if (reaction.category === "safety" || reaction.flaggedForParent) {
-    return "SAFETY_SIGNAL";
+    return { classification: "SAFETY_SIGNAL" };
   }
 
   // 2. NO_RESPONSE 검사 (비어있거나 타임아웃 신호)
@@ -99,7 +105,7 @@ export async function classifyAnswer(
     trimmed.toLowerCase() === "no_response" ||
     trimmed.toLowerCase() === "timeout";
   if (isTimeout) {
-    return "NO_RESPONSE";
+    return { classification: "NO_RESPONSE" };
   }
 
   // 3. REFUSAL 검사 (회피 표현 키워드가 답변의 전부이거나 답변이 매우 짧고 이 표현을 포함하는 경우)
@@ -135,39 +141,44 @@ export async function classifyAnswer(
     return cleanText === cleanKw || (cleanText.includes(cleanKw) && trimmed.length <= 10);
   });
   if (isEvasive) {
-    return "REFUSAL";
+    return { classification: "REFUSAL" };
   }
 
   if (cleanText === "없어") {
-    return "VALID";
+    return { classification: "VALID" };
   }
 
   // 4. VALID 검사 (Gemma-4-31b-it 호출)
   const prompt = `질문: ${JSON.stringify(questionText)}
 아이의 답변: ${JSON.stringify(answerText)}
 
-초등학교 저학년 아이가 위 질문에 대답한 내용입니다. 다음 기준에 따라 VALID(유효한 답변) 또는 NO_RESPONSE(무관한 발화/인식 불가)로 분류해주세요.
+초등학교 저학년 아이가 위 질문에 대답한 내용입니다. 다음 기준에 따라 VALID(유효한 답변), NO_RESPONSE(무관한 발화/인식 불가), 또는 CLARIFICATION_NEEDED(질문 이해 실패)로 분류해주세요.
 
 - VALID: "재미있었어", "좋았어", "응", "아니" 등 짧고 단순하더라도 질문의 의미에 대응하는 답변인 경우. 문장 완성도나 구체적인 상세 설명을 요구하지 마세요.
 - NO_RESPONSE: STT 인식 실패로 인한 의미 없는 단어 나열이거나, 질문과 완전히 무관한 딴소리를 하는 경우.
+- CLARIFICATION_NEEDED: 아이가 "무슨 말인지 모르겠어", "어려워", "이해 안 가", "무슨 뜻이야?" 등 질문의 의미를 파악하지 못해 대답을 할 수 없음을 나타내는 발화인 경우.
+
+분류 결과가 "CLARIFICATION_NEEDED"인 경우, 원래 질문의 의미를 바꾸지 않으면서 초등학생이 이해할 수 있도록 쉬운 말로 풀어서 설명하는 문장(clarification_text)을 추가로 생성하세요.
+clarification_text의 형식 예: "오늘 학교에서 있었던 일 중 제일 생각나는 일을 말해달라는 뜻이야. 오늘 뭐가 제일 기억나?"
 
 반드시 아래 JSON 형식으로만 응답하세요. 다른 설명이나 텍스트는 절대 포함하지 마십시오.
 
 {
-  "classification": "VALID" | "NO_RESPONSE",
-  "reason": "분류 이유 요약"
+  "classification": "VALID" | "NO_RESPONSE" | "CLARIFICATION_NEEDED",
+  "reason": "분류 이유 요약",
+  "clarification_text": "설명 문장 (CLARIFICATION_NEEDED인 경우에만 포함)"
 }
 `;
 
   try {
     const rawResult = await generateWithRetry(prompt);
     const parsed = extractJSON(rawResult);
-    if (parsed.classification === "VALID" || parsed.classification === "NO_RESPONSE") {
-      return parsed.classification;
+    if (parsed.classification === "VALID" || parsed.classification === "NO_RESPONSE" || parsed.classification === "CLARIFICATION_NEEDED") {
+      return { classification: parsed.classification, clarificationText: parsed.clarification_text };
     }
-    return "VALID"; // 기본 폴백
+    return { classification: "VALID" }; // 기본 폴백
   } catch (err) {
     console.error("[answer-classifier] Gemma 분류 실패, VALID로 폴백:", err);
-    return "VALID";
+    return { classification: "VALID" };
   }
 }

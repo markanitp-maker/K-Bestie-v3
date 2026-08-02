@@ -42,7 +42,7 @@ interface MissionQuestion {
   round_type: RoundType;
 }
 
-type QuestionState = "pending" | "answered" | "skipped" | "refused";
+type QuestionState = "pending" | "answered" | "skipped" | "refused" | "clarification_required";
 
 
 
@@ -499,6 +499,7 @@ function MissionInner() {
   const pickNextIndex = useCallback((states: Record<string, QuestionState>): number => {
     const qs = questionsRef.current;
     const cur = currentIndexRef.current;
+    if (qs[cur] && states[qs[cur].id] === "clarification_required") return cur;
     for (let i = cur + 1; i < qs.length; i++) {
       if ((states[qs[i].id] ?? "pending") === "pending") return i;
     }
@@ -511,6 +512,9 @@ function MissionInner() {
   // 세션 이어하기 시 "지금 답해야 할 질문"의 인덱스를 처음부터 찾는다(pickNextIndex는
   // currentIndexRef 이후만 훑으므로 재개 시점엔 맞지 않음).
   function findResumeIndex(qs: MissionQuestion[], states: Record<string, QuestionState>): number {
+    for (let i = 0; i < qs.length; i++) {
+      if (states[qs[i].id] === "clarification_required") return i;
+    }
     for (let i = 0; i < qs.length; i++) {
       if ((states[qs[i].id] ?? "pending") === "pending") return i;
     }
@@ -990,7 +994,9 @@ function MissionInner() {
         }
 
         let respondText: string | undefined;
-        if (!isLive) {
+        if (data?.clarificationText) {
+          respondText = data.clarificationText;
+        } else if (!isLive) {
           const reactionText = await reactionResultPromise!;
           if (currentEpoch !== answerEpochRef.current) return;
           lastReactionRef.current = reactionText;
