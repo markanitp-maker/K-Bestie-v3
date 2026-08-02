@@ -27,6 +27,25 @@ export const EVASIVE_PHRASES: readonly string[] = [
   "없음",
 ];
 
+/** 질문 이해 실패/설명 요청 문구 (회피보다 우선 검사) */
+export const CLARIFICATION_PHRASES: readonly string[] = [
+  "무슨 말",
+  "무슨 뜻",
+  "잘 모르겠",
+  "모르겠", // "모르겠어", "몰라"도 기회를 줌
+  "몰라",
+  "이해", // "이해가 안돼", "이해 안가" 등
+  "어려워",
+  "다시",
+  "쉽게",
+  "뭐라고",
+  "잘 못 들",
+  "그게 뭐",
+  "어떻게 말",
+  "뭘 말",
+  "뭔 말",
+];
+
 /** 명확한 거절 문구 (해당 질문 중단 → 상태 'refused' 처리에 참고) */
 export const REFUSAL_PHRASES: readonly string[] = [
   "싫어",
@@ -40,9 +59,11 @@ export const REFUSAL_PHRASES: readonly string[] = [
 export interface ValidateResult {
   valid: boolean;
   /** 무효/거절 사유 (선택) */
-  reason?: "evasive" | "too_short" | "empty";
+  reason?: "evasive" | "too_short" | "empty" | "clarification_needed";
   /** 명확한 거절 여부 (호출부에서 질문 상태를 'refused'로 처리할지 판단) */
   refused?: boolean;
+  /** 설명/재질문이 필요한 경우 */
+  needsClarification?: boolean;
 }
 
 const MIN_MEANINGFUL_LENGTH = 2;
@@ -68,8 +89,18 @@ export function validateAnswer(text: string): ValidateResult {
     return { valid: false, reason: "evasive", refused: true };
   }
 
-  // 회피성 문구 → 무효 (공백/문장부호 제거 후 회피 문구만 남으면 회피로 간주)
+  // 이해 실패 / 설명 요청 → 무효 + needsClarification 플래그
+  // (모르겠어 등도 일단 한 번 설명 기회를 주도록 evasive보다 우선 처리)
   const stripped = normalized.replace(/[.!?~…\s]/g, "");
+  const needsClarification = CLARIFICATION_PHRASES.some((p) => {
+    const np = normalize(p).replace(/\s/g, "");
+    return stripped === np || stripped.startsWith(np) || stripped.includes(np);
+  });
+  if (needsClarification) {
+    return { valid: false, reason: "clarification_needed", needsClarification: true };
+  }
+
+  // 회피성 문구 → 무효 (공백/문장부호 제거 후 회피 문구만 남으면 회피로 간주)
   const isEvasive = EVASIVE_PHRASES.some((p) => {
     const np = normalize(p).replace(/\s/g, "");
     return stripped === np || stripped.startsWith(np) && stripped.length <= np.length + 2;

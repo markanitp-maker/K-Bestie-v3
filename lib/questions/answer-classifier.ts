@@ -59,8 +59,9 @@ async function generateWithRetry(prompt: string): Promise<string> {
             responseSchema: {
               type: "OBJECT",
               properties: {
-                classification: { type: "STRING", enum: ["VALID", "NO_RESPONSE"] },
-                reason: { type: "STRING" }
+                classification: { type: "STRING", enum: ["VALID", "NO_RESPONSE", "CLARIFICATION_NEEDED"] },
+                reason: { type: "STRING" },
+                clarification_text: { type: "STRING" }
               },
               required: ["classification", "reason"]
             },
