@@ -154,6 +154,7 @@ export async function POST(request: Request) {
             .from("feedback_request_attachments")
             .update({ feedback_request_id: existing.id })
             .eq("upload_session_id", insertPayload.idempotency_key)
+            .eq("user_id", user.id)
             .is("feedback_request_id", null)
             .neq("upload_status", "deleted");
 
@@ -169,6 +170,7 @@ export async function POST(request: Request) {
         .from("feedback_request_attachments")
         .update({ feedback_request_id: insertData.id })
         .eq("upload_session_id", idempotencyKey)
+        .eq("user_id", user.id)
         .is("feedback_request_id", null)
         .neq("upload_status", "deleted");
     }
