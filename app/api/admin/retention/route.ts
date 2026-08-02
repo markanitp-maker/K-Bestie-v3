@@ -66,16 +66,28 @@ export async function GET(req: NextRequest) {
 
   const service = createServiceClient();
 
+  const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
+
   // 1. Fetch valid children (exclude test accounts)
   const { data: childProfiles, error: childErr } = await service
     .from("child_profiles")
-    .select("id, name, is_test_account");
+    .select("id, name, is_internal_test, family_id");
   if (childErr) {
     return NextResponse.json({ error: `child_profiles 조회 실패: ${childErr.message}` }, { status: 500 });
   }
-  const validChildrenMap = new Map(
-    (childProfiles || []).filter(c => !c.is_test_account).map(c => [c.id, c.name])
-  );
+
+  const testFamilyIds = !includeTestAccounts ? await import("@/lib/admin/retentionFilter").then(m => m.getTestFamilyIds(service)) : new Set<string>();
+
+  const validChildrenMap = new Map();
+  for (const c of (childProfiles || [])) {
+    if (includeTestAccounts) {
+      validChildrenMap.set(c.id, c.name);
+    } else {
+      if (!c.is_internal_test && (!c.family_id || !testFamilyIds.has(c.family_id))) {
+        validChildrenMap.set(c.id, c.name);
+      }
+    }
+  }
 
   // 2. Fetch sessions in range [from - 7d, to] — 소프트 삭제(deleted_at 존재)된 세션은 제외.
   const { data: sessionsData, error: sessionsErr } = await service

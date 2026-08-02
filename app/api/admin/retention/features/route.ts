@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { getOffsetDateStr } from "@/lib/analytics/kstDate";
 
@@ -13,25 +14,7 @@ export async function GET(req: NextRequest) {
   const service = createServiceClient();
 
   // Test accounts exclusion
-  let childProfiles: any[] = [];
-  let cpOffset = 0;
-  while (true) {
-    const { data, error } = await service.from("child_profiles").select("id, family_id, is_test_account").range(cpOffset, cpOffset + 999);
-    if (error) return NextResponse.json({ error: `child_profiles 조회 실패: ${error.message}` }, { status: 500 });
-    if (!data || data.length === 0) break;
-    childProfiles.push(...data);
-    if (data.length < 1000) break;
-    cpOffset += 1000;
-  }
-  
-  const testFamilyIds = new Set<string>();
-  if (!includeTestAccounts && childProfiles) {
-    for (const c of childProfiles) {
-      if (c.is_test_account && c.family_id) {
-        testFamilyIds.add(c.family_id);
-      }
-    }
-  }
+  const testFamilyIds = !includeTestAccounts ? await getTestFamilyIds(service) : new Set<string>();
 
   // Fetch all behavior_events
   let allEvents: any[] = [];
@@ -40,10 +23,6 @@ export async function GET(req: NextRequest) {
     let q = service.from("behavior_events")
       .select("event_name, actor_type, actor_id, child_id, family_id, session_id, feature, conversation_mode, play_type, occurred_at")
       .range(eOffset, eOffset + 999);
-      
-    if (!includeTestAccounts) {
-      q = q.eq("is_test_account", false);
-    }
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: `behavior_events 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;

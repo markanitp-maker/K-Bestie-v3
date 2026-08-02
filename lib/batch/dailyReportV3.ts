@@ -62,7 +62,8 @@ async function processSingleReportJob(
   job: any,
   workerId: string,
   reportModel: any,
-  ai: any
+  ai: any,
+  executionSource: "manual" | "scheduled"
 ): Promise<"completed" | "skipped"> {
   // 1. Fetch corrected_daily_conversations_v3
   const { data: corrConv, error: corrErr } = await db
@@ -201,6 +202,9 @@ async function processSingleReportJob(
     p_child_id: job.child_id,
     p_business_date: job.business_date,
     p_report_payload: reportFields,
+    p_generation_source: executionSource,
+    p_source_data_updated_at: corrConv.updated_at || new Date().toISOString(),
+    p_model_version: getLlmModel("dailyReport"),
   });
 
   if (completeErr) throw new Error(`COMPLETE_FAIL: ${completeErr.message}`);
@@ -208,7 +212,12 @@ async function processSingleReportJob(
   return "completed";
 }
 
-export async function processDailyReportJobsV3(limit: number, workerId: string, executionId?: string): Promise<DailyReportResultV3> {
+export async function processDailyReportJobsV3(
+  limit: number,
+  workerId: string,
+  executionId?: string,
+  executionSource: "manual" | "scheduled" = "scheduled"
+): Promise<DailyReportResultV3> {
   const db = createServiceClient();
   const result: DailyReportResultV3 = { completed: 0, skipped: 0, failed: 0, errors: [] };
 
@@ -231,7 +240,7 @@ export async function processDailyReportJobsV3(limit: number, workerId: string, 
 
   for (const job of claimedJobs) {
     try {
-      const outcome = await processSingleReportJob(db, job, workerId, reportModel, ai);
+      const outcome = await processSingleReportJob(db, job, workerId, reportModel, ai, executionSource);
       if (outcome === "completed") {
         result.completed++;
       } else {

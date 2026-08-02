@@ -17,11 +17,30 @@ export async function aggregateExecutionStatus(
 ): Promise<AggregateState> {
   const { data: execItems, error: execErr } = await db
     .from("pipeline_execution_items")
-    .select("child_id, job_type, collection_phase, status, outcome, error_code, error_summary, completed_at, item_key")
+    .select("child_id, job_type, collection_phase, status, outcome, error_code, error_summary, completed_at, item_key, business_date")
     .eq("execution_id", executionId);
 
   if (execErr) {
     throw new Error(`Failed to query execution items: ${execErr.message}`);
+  }
+
+  let businessDate = "";
+  if (execItems && execItems.length > 0) {
+    businessDate = execItems[0].business_date;
+  }
+
+  const { data: reports } = await db
+    .from("daily_reports")
+    .select("child_id, created_at, updated_at, generation_source, generation_version")
+    .eq("business_date", businessDate)
+    .is("deleted_at", null);
+
+  const reportByChild = new Map<string, any>();
+  for (const r of reports || []) {
+    const existing = reportByChild.get(r.child_id);
+    if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
+      reportByChild.set(r.child_id, r);
+    }
   }
 
   const statusByChild = new Map<string, any>();
@@ -98,7 +117,18 @@ export async function aggregateExecutionStatus(
     }
   }
 
-  const statuses = Array.from(statusByChild.values());
+  const statuses = Array.from(statusByChild.values()).map(s => {
+    const r = reportByChild.get(s.childId);
+    if (r) {
+      return {
+        ...s,
+        lastReportGeneratedAt: r.updated_at || r.created_at,
+        generationSource: r.generation_source,
+        generationVersion: r.generation_version
+      };
+    }
+    return s;
+  });
   const isTerminal = (st?: string) => st === "completed" || st === "failed";
 
   let isComplete = false;

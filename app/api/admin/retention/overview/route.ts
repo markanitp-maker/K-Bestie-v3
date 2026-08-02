@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { getOffsetDateStr } from "@/lib/analytics/kstDate";
 
@@ -55,21 +56,14 @@ export async function GET(req: NextRequest) {
   let childProfiles: any[] = [];
   let cpOffset = 0;
   while (true) {
-    const { data, error } = await service.from("child_profiles").select("id, family_id, is_test_account").range(cpOffset, cpOffset + 999);
+    const { data, error } = await service.from("child_profiles").select("id, family_id, is_internal_test").range(cpOffset, cpOffset + 999);
     if (error) return NextResponse.json({ error: `child_profiles 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
     childProfiles.push(...data);
     if (data.length < 1000) break;
     cpOffset += 1000;
   }
-  const testFamilyIds = new Set<string>();
-  if (!includeTestAccounts && childProfiles) {
-    for (const c of childProfiles) {
-      if (c.is_test_account && c.family_id) {
-        testFamilyIds.add(c.family_id);
-      }
-    }
-  }
+  const testFamilyIds = !includeTestAccounts ? await getTestFamilyIds(service) : new Set<string>();
 
   const validChildIds = new Set<string>();
   if (childProfiles) {
@@ -77,7 +71,7 @@ export async function GET(req: NextRequest) {
       if (includeTestAccounts) {
         validChildIds.add(c.id);
       } else {
-        if (!c.is_test_account && (!c.family_id || !testFamilyIds.has(c.family_id))) {
+        if (!c.is_internal_test && (!c.family_id || !testFamilyIds.has(c.family_id))) {
           validChildIds.add(c.id);
         }
       }
@@ -108,10 +102,6 @@ export async function GET(req: NextRequest) {
       .gte("occurred_at", prevFromIso)
       .lte("occurred_at", toIso)
       .range(eOffset, eOffset + 999);
-    
-    if (!includeTestAccounts) {
-      q = q.eq("is_test_account", false);
-    }
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: `behavior_events 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
@@ -355,7 +345,7 @@ export async function GET(req: NextRequest) {
     todayActivity,
     meta: {
       testAccountsExcluded: !includeTestAccounts,
-      testFamilyExclusionRule: "child_profiles.is_test_account=true인 아이가 하나라도 있는 가족 전체(부모 활동 포함) 제외",
+      testFamilyExclusionRule: "is_internal_test=true인 부모 또는 아이가 하나라도 있는 가족 전체(부모 활동 포함) 제외",
       generatedAt: new Date().toISOString()
     }
   });

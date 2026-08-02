@@ -254,6 +254,24 @@ export default function AdminRetentionPage() {
             />
             내부 테스트 계정 포함
           </label>
+
+          <div style={{ flex: 1 }} />
+
+          <a
+            href={`/api/admin/retention/export?period=${period}&includeTestAccounts=${includeTestAccounts}`}
+            download
+            style={{
+              padding: "6px 14px",
+              borderRadius: 8,
+              background: "var(--color-k-text-primary)",
+              color: "white",
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            CSV 다운로드
+          </a>
         </div>
 
         {error && (

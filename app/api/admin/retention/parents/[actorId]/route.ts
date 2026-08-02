@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { toKSTDateStr, getOffsetDateStr } from "@/lib/analytics/kstDate";
 
@@ -10,6 +11,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ acto
   if (denied) return denied;
 
   const { actorId } = await params;
+  const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
   const service = createServiceClient();
 
   const nowKST = new Date();
@@ -42,8 +44,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ acto
   }
 
   const isTestFamily = childData?.some(c => c.is_test_account);
-  if (isTestFamily) {
+  if (!includeTestAccounts && isTestFamily) {
     return NextResponse.json({ error: "not_found" }, { status: 404 }); // 404 for test accounts
+  }
+
+  if (!includeTestAccounts) {
+    const testFamilyIds = await getTestFamilyIds(service);
+    if (testFamilyIds.has(familyId)) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
   }
 
   const connectedChildren = childData?.map(c => c.id) || [];

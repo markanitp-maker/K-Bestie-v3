@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     const maxIterations = 20;
 
     for (let i = 0; i < maxIterations; i++) {
-      const res = await processDailyReportJobsV3(limit, workerId, executionId);
+      const res = await processDailyReportJobsV3(limit, workerId, executionId, "scheduled");
       totalCompleted += res.completed;
       totalSkipped += res.skipped;
       totalFailed += res.failed;

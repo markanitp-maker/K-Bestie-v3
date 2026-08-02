@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const childProfiles: any[] = [];
   let cpOffset = 0;
   while (true) {
-    const { data, error } = await service.from("child_profiles").select("id, family_id, is_test_account").order("id").range(cpOffset, cpOffset + 999);
+    const { data, error } = await service.from("child_profiles").select("id, family_id, is_internal_test").order("id").range(cpOffset, cpOffset + 999);
     if (error) return NextResponse.json({ error: `child_profiles 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
     childProfiles.push(...data);
@@ -32,14 +32,7 @@ export async function GET(req: NextRequest) {
     cpOffset += 1000;
   }
 
-  const testFamilyIds = new Set<string>();
-  if (!includeTestAccounts) {
-    for (const c of childProfiles) {
-      if (c.is_test_account && c.family_id) {
-        testFamilyIds.add(c.family_id);
-      }
-    }
-  }
+  const testFamilyIds = !includeTestAccounts ? await import("@/lib/admin/retentionFilter").then(m => m.getTestFamilyIds(service)) : new Set<string>();
 
   // 2. Fetch family_members
   const familyMembers: any[] = [];
@@ -79,9 +72,6 @@ export async function GET(req: NextRequest) {
       .order("occurred_at").order("id")
       .range(eOffset, eOffset + 999);
     
-    if (!includeTestAccounts) {
-      q = q.eq("is_test_account", false);
-    }
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: `behavior_events 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;

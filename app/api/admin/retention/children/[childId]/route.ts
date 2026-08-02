@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { toKSTDateStr, getOffsetDateStr } from "@/lib/analytics/kstDate";
 
@@ -10,6 +11,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chil
   if (denied) return denied;
 
   const { childId } = await params;
+  const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
   const service = createServiceClient();
 
   const nowKST = new Date();
@@ -20,16 +22,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chil
 
   // 1. Fetch child_profile
   const { data: childData, error: childError } = await service.from("child_profiles")
-    .select("id, family_id, is_test_account, grade")
+    .select("id, family_id, is_test_account, is_internal_test, grade")
     .eq("id", childId)
     .single();
 
-  if (childError || !childData || childData.is_test_account) {
+  if (childError || !childData) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  if (!includeTestAccounts) {
+    const testFamilyIds = await getTestFamilyIds(service);
+    if (
+      childData.is_test_account ||
+      childData.is_internal_test ||
+      (childData.family_id && testFamilyIds.has(childData.family_id))
+    ) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+  }
+
   // 2. Check if family is test family
-  if (childData.family_id) {
+  if (!includeTestAccounts && childData.family_id) {
     const { data: siblingsData, error: siblingsError } = await service.from("child_profiles")
       .select("id, is_test_account")
       .eq("family_id", childData.family_id);

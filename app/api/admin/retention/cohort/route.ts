@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { toKSTDateStr, getOffsetDateStr } from "@/lib/analytics/kstDate";
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
   const childProfiles: any[] = [];
   let cpOffset = 0;
   while (true) {
-    const { data, error } = await service.from("child_profiles").select("id, family_id, is_test_account, created_at").order("id").range(cpOffset, cpOffset + 999);
+    const { data, error } = await service.from("child_profiles").select("id, family_id, is_internal_test, created_at").order("id").range(cpOffset, cpOffset + 999);
     if (error) return NextResponse.json({ error: `child_profiles 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
     childProfiles.push(...data);
@@ -59,21 +60,14 @@ export async function GET(req: NextRequest) {
     fmOffset += 1000;
   }
 
-  const testFamilyIds = new Set<string>();
-  if (!includeTestAccounts) {
-    for (const c of childProfiles) {
-      if (c.is_test_account && c.family_id) {
-        testFamilyIds.add(c.family_id);
-      }
-    }
-  }
+  const testFamilyIds = !includeTestAccounts ? await getTestFamilyIds(service) : new Set<string>();
 
   const validChildren = new Map<string, { familyId: string | null; createdAt: string }>();
   for (const c of childProfiles) {
     if (includeTestAccounts) {
       validChildren.set(c.id, { familyId: c.family_id, createdAt: c.created_at });
     } else {
-      if (!c.is_test_account && (!c.family_id || !testFamilyIds.has(c.family_id))) {
+      if (!c.is_internal_test && (!c.family_id || !testFamilyIds.has(c.family_id))) {
         validChildren.set(c.id, { familyId: c.family_id, createdAt: c.created_at });
       }
     }
@@ -105,10 +99,6 @@ export async function GET(req: NextRequest) {
       .select("id, event_name, actor_type, actor_id, family_id, child_id, occurred_at")
       .order("occurred_at").order("id")
       .range(eOffset, eOffset + 999);
-    
-    if (!includeTestAccounts) {
-      q = q.eq("is_test_account", false);
-    }
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: `behavior_events 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;

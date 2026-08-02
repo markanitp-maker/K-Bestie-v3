@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 
 export const runtime = "nodejs";
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
   let childProfiles: any[] = [];
   let cpOffset = 0;
   while (true) {
-    const { data, error } = await service.from("child_profiles").select("id, family_id, is_test_account").range(cpOffset, cpOffset + 999);
+    const { data, error } = await service.from("child_profiles").select("id, family_id, is_internal_test").range(cpOffset, cpOffset + 999);
     if (error) return NextResponse.json({ error: `child_profiles 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
     childProfiles.push(...data);
@@ -25,14 +26,7 @@ export async function GET(req: NextRequest) {
     cpOffset += 1000;
   }
   
-  const testFamilyIds = new Set<string>();
-  if (!includeTestAccounts && childProfiles) {
-    for (const c of childProfiles) {
-      if (c.is_test_account && c.family_id) {
-        testFamilyIds.add(c.family_id);
-      }
-    }
-  }
+  const testFamilyIds = !includeTestAccounts ? await getTestFamilyIds(service) : new Set<string>();
 
   // Fetch all families
   let allFamilies: any[] = [];
@@ -75,10 +69,6 @@ export async function GET(req: NextRequest) {
         "mission_start", "freechat_start", "play_start"
       ])
       .range(eOffset, eOffset + 999);
-      
-    if (!includeTestAccounts) {
-      q = q.eq("is_test_account", false);
-    }
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: `behavior_events 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
@@ -103,7 +93,7 @@ export async function GET(req: NextRequest) {
   const families = allFamilies.map(f => {
     const fMembers = familyMembers.filter(fm => fm.family_id === f.id);
     const parentCount = fMembers.length;
-    const childCount = childProfiles.filter(cp => cp.family_id === f.id && (!cp.is_test_account || includeTestAccounts)).length;
+    const childCount = childProfiles.filter(cp => cp.family_id === f.id && (!cp.is_internal_test || includeTestAccounts)).length;
     
     const fEvents = allEvents.filter(e => e.family_id === f.id);
     const parentEvents = fEvents.filter(e => parentEventNames.includes(e.event_name));

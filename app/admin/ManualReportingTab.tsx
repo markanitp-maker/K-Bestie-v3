@@ -270,7 +270,7 @@ export default function ManualReportingTab() {
                   <th style={thStyle}>이름</th>
                   <th style={thStyle}>세션 (미션/자유)</th>
                   <th style={thStyle}>대화수집</th>
-                  <th style={thStyle}>리포트상태</th>
+                  <th style={thStyle}>리포트(생성/버전)</th>
                   <th style={thStyle}>N/8</th>
                 </tr>
               </thead>
@@ -288,7 +288,18 @@ export default function ManualReportingTab() {
                       <td style={tdStyle}>{c.name}</td>
                       <td style={tdStyle}>{c.missionSessionCount} / {c.freeChatSessionCount}</td>
                       <td style={tdStyle}>{c.collected ? "O" : "X"}</td>
-                      <td style={tdStyle}>{c.reportExists ? (c.lastReportGeneratedAt ? formatDateTime(c.lastReportGeneratedAt).substring(0, 16) : "O") : "X"}</td>
+                      <td style={tdStyle}>
+                        {c.reportExists ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <span>{c.lastReportGeneratedAt ? formatDateTime(c.lastReportGeneratedAt).substring(0, 16) : "O"}</span>
+                            {(c.generationSource || c.generationVersion) && (
+                              <span style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>
+                                {c.generationSource === "scheduled" ? "정기" : "수동"} (v{c.generationVersion || 1})
+                              </span>
+                            )}
+                          </div>
+                        ) : "X"}
+                      </td>
                       <td style={tdStyle}>{c.dashboardFieldCount ?? "-"}</td>
                     </tr>
                   ))
@@ -447,6 +458,13 @@ export default function ManualReportingTab() {
                               <td style={tdStyle}>
                                 {s.report || "-"}
                                 {s.reportError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.reportError}</div>}
+                                {(s.generationSource || s.generationVersion) && (
+                                  <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 4 }}>
+                                    <div>생성: {s.lastReportGeneratedAt ? formatDateTime(s.lastReportGeneratedAt).substring(0, 16) : "-"}</div>
+                                    <div>방식: {s.generationSource === "scheduled" ? "정기 생성" : "수동 생성"}</div>
+                                    <div>버전: v{s.generationVersion || 1}</div>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           ))}

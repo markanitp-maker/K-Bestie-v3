@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 
 export const runtime = "nodejs";
@@ -26,13 +27,14 @@ export async function GET(
   if (!family) return NextResponse.json({ error: "Family not found" }, { status: 404 });
 
   // Check if family has any test accounts
-  const { data: familyChildren, error: fcErr } = await service.from("child_profiles").select("id, grade, is_test_account").eq("family_id", familyId);
-  if (fcErr) return NextResponse.json({ error: `child_profiles 조회 실패: ${fcErr.message}` }, { status: 500 });
-  
-  if (!includeTestAccounts && familyChildren?.some(c => c.is_test_account)) {
+  const testFamilyIds = !includeTestAccounts ? await getTestFamilyIds(service) : new Set<string>();
+  if (!includeTestAccounts && testFamilyIds.has(familyId)) {
     return NextResponse.json({ error: "Test family" }, { status: 404 });
   }
 
+  const { data: familyChildren, error: fcErr } = await service.from("child_profiles").select("id, grade").eq("family_id", familyId);
+  if (fcErr) return NextResponse.json({ error: `child_profiles 조회 실패: ${fcErr.message}` }, { status: 500 });
+  
   const children = familyChildren || [];
   const childIds = children.map(c => c.id);
 

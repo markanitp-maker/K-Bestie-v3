@@ -73,6 +73,8 @@ export async function GET(req: NextRequest) {
     
     let dashboardFieldCount = null;
     let lastReportGeneratedAt = null;
+    let generationSource = null;
+    let generationVersion = null;
     if (r) {
       const fields = [
         r.school_academy_life,
@@ -85,7 +87,9 @@ export async function GET(req: NextRequest) {
         r.recurring_stories
       ];
       dashboardFieldCount = fields.filter((f: any) => f && String(f).trim().length > 0).length;
-      lastReportGeneratedAt = r.created_at;
+      lastReportGeneratedAt = r.updated_at || r.created_at;
+      generationSource = r.generation_source;
+      generationVersion = r.generation_version;
     }
 
     return {
@@ -96,7 +100,9 @@ export async function GET(req: NextRequest) {
       collected,
       reportExists,
       dashboardFieldCount,
-      lastReportGeneratedAt
+      lastReportGeneratedAt,
+      generationSource,
+      generationVersion
     };
   });
 

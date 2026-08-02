@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      await processDailyReportJobsV3(10, workerId, executionId);
+      await processDailyReportJobsV3(10, workerId, executionId, "manual");
     } catch (e) {
       console.error("[Pulse Report Error]", e);
     }
