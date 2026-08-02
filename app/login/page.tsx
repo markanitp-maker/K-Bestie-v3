@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 
@@ -95,31 +96,22 @@ function LoginContent() {
     >
       <KakaoInAppBrowserNotice />
       <div className="text-center mb-8">
-        <p className="text-4xl mb-3">🌿</p>
+        <div className="relative w-[112px] h-[112px] mx-auto mb-3">
+          <Image
+            src="/Images/mascot/mascot-standing.png"
+            alt="내친구 케이 마스코트"
+            fill
+            priority
+            className="object-contain"
+          />
+        </div>
         <h1 className="text-xl font-bold text-gray-900">내친구 케이</h1>
         <p className="text-sm mt-1" style={{ color: "var(--color-k-text-secondary)" }}>
           아이의 마음을 함께 돌봐요
         </p>
       </div>
 
-      <div className="w-full flex gap-2.5 mb-4">
-        <Link
-          href="/demo"
-          className="flex-1 text-center py-3 rounded-xl font-bold text-sm text-white transition-transform active:scale-[0.98]"
-          style={{ background: "var(--color-k-orange)" }}
-        >
-          데모 체험하기
-        </Link>
-        <a
-          href="#real-login"
-          className="flex-1 text-center py-3 rounded-xl font-bold text-sm transition-transform active:scale-[0.98] border"
-          style={{ background: "white", color: "var(--color-k-navy)", borderColor: "var(--color-k-navy)" }}
-        >
-          실제 사용하기
-        </a>
-      </div>
-
-      <div id="real-login" className="w-full flex flex-col gap-6 bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-white/50">
+      <div className="w-full flex flex-col gap-6 bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-white/50">
         {error && (
           <div
             className="rounded-xl px-4 py-3 text-xs font-medium text-center"
