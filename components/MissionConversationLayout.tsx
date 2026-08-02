@@ -169,7 +169,7 @@ export function MissionConversationLayout({
 
   return (
     <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "hidden" }}>
-      <div className="w-full max-w-[480px] h-[100dvh] relative grid grid-rows-[auto_minmax(0,1fr)_auto_auto] shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+      <div className="w-full max-w-[480px] min-w-0 h-[100dvh] relative grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
         
         {/* Decorations */}
         <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden z-0">
@@ -189,9 +189,9 @@ export function MissionConversationLayout({
         </div>
 
         {/* Grid Row 1: Top Area */}
-        <div className="relative z-10 flex flex-col shrink-0 w-full">
+        <div className="relative z-10 flex flex-col shrink-0 w-full min-w-0 max-w-full">
           {/* Pill Progress Bar */}
-          <div className="mt-[calc(54px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] h-[44px] bg-white rounded-full shadow-sm flex items-center px-4 relative z-10 shrink-0">
+          <div className="mt-[calc(54px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] min-w-0 h-[44px] bg-white rounded-full shadow-sm flex items-center px-4 relative z-10 shrink-0">
             <div className="flex w-full justify-between gap-1.5 h-full py-2.5">
               {Array.from({length: progressTotal}).map((_, i) => {
                 const isFilled = i < progressCurrent;
@@ -213,37 +213,23 @@ export function MissionConversationLayout({
           <div className="h-[clamp(8px,1.5dvh,24px)] max-[400px]:h-[56px] w-full shrink-0" />
         </div>
 
-        {/* Grid Row 2: 지난대화 + 현재발화를 하나의 유연한 행으로 묶는다(054 QA 리뷰 지적 —
-            둘을 별도 auto 행으로 나누면 지난대화가 없는 첫 턴 + 최대 길이 현재발화 + 짧은
-            기기(iPhone SE 등) 조합에서 두 행 합이 뷰포트를 넘어 overflow:hidden에 하단
-            마이크 버튼이 잘리는 회귀가 있었다. 둘 다 flex-shrink 기본값(1)이라 엄밀한
-            순차 우선순위는 아니고 base-size 비례로 동시에 줄어들지만, 지난대화는 보통
-            내용이 적거나 없어 실질적으로 거의 다 흡수하고, 남는 부족분만 현재발화
-            말풍선으로 넘어가 내부 스크롤(overflow-y-auto)로 흡수된다 — 현재발화가 뷰포트
-            밖으로 밀려나는 대신 항상 화면 안에서 스크롤 가능하게 유지됨(054 2차 리뷰 지적:
-            주석과 실제 동작(비례 축소) 불일치 수정). */}
-        <div className="relative z-10 flex flex-col justify-end items-center min-h-0 overflow-hidden w-full h-full">
-          {/* Previous Chat Summary Area */}
-          <div className="relative z-10 px-[clamp(16px,4vw,24px)] w-full flex flex-col justify-end min-h-0 overflow-hidden mb-[12px]">
-            {/* Top fade out for older text when cut off */}
-            <div className="absolute top-0 left-0 w-full h-[24px] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
+        {/* Grid Row 2: Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
+        <div className="relative z-10 flex flex-col items-center justify-end min-h-0 overflow-hidden w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pb-[clamp(24px,3dvh,34px)]">
+          {/* Top fade out for older text when cut off */}
+          <div className="absolute top-0 left-0 w-full h-[24px] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
 
-            <div className="flex flex-col items-center justify-end gap-[10px] w-full min-h-0">
-              {olderKText && (
-                <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
-                  {olderKText}
-                </div>
-              )}
-              {prevKText && (
-                <div className="bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
-                  {prevKText}
-                </div>
-              )}
+          {olderKText && (
+            <div className="mt-auto mb-[10px] text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+              {olderKText}
             </div>
-          </div>
+          )}
+          {prevKText && (
+            <div className={`${!olderKText ? 'mt-auto' : ''} mb-[12px] bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0`} style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+              {prevKText}
+            </div>
+          )}
 
-          {/* Current Question Bubble or Start/Resume Button */}
-          <div className="relative z-20 flex flex-col items-center w-full min-h-0 shrink">
+          <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} mb-auto relative z-20 flex flex-col items-center w-full min-w-0 max-w-full shrink-0`}>
             {entryStatus === "ready_to_start" || entryStatus === "ready_to_resume" ? (
               <button
                 onClick={entryStatus === "ready_to_start" ? onStartMission : onResumeMission}
@@ -263,9 +249,9 @@ export function MissionConversationLayout({
                 <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
               </button>
             ) : (
-              <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col max-h-[35dvh] min-h-0">
-                <div className="w-full overflow-y-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                  <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
+              <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-w-0">
+                <div className="w-full min-w-0">
+                  <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     {currentQuestionText}
                   </p>
                 </div>
@@ -275,14 +261,11 @@ export function MissionConversationLayout({
               </div>
             )}
           </div>
-
-          {/* Spacer between bubble and mascot */}
-          <div className="h-[clamp(24px,3dvh,34px)] w-full shrink-0" />
         </div>
 
         {/* Grid Row 3: Mascot Area & Side Cards */}
-        <div className="relative z-10 flex flex-row items-center justify-center gap-[clamp(6px,2vw,12px)] px-[16px] w-full shrink-0 min-h-[140px]">
-          
+        <div className="relative z-10 flex flex-row items-center justify-center gap-[clamp(6px,2vw,12px)] px-[16px] w-full shrink-0 min-h-[140px] min-w-0 max-w-full">
+
           {/* Left Mute Card */}
           <button onClick={onToggleMute} disabled={isClosing} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
             <div className="w-[clamp(34px,9vw,44px)] h-[clamp(34px,9vw,44px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5">
@@ -316,7 +299,7 @@ export function MissionConversationLayout({
 
           {/* Right State Card */}
           <div
-            className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm"
+            className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-w-0 min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm"
             aria-live="polite"
             aria-busy={entryStatus === "checking" || entryStatus === "starting" || entryStatus === "resuming"}
           >
@@ -332,7 +315,7 @@ export function MissionConversationLayout({
         </div>
 
         {/* Grid Row 4: Bottom Area */}
-        <div className="relative z-20 flex flex-col shrink-0 w-full">
+        <div className="relative z-20 flex flex-col shrink-0 w-full min-w-0 max-w-full">
           {/* Auto/Manual Mode Toggles */}
           <div className="flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
              <button onClick={() => onChangeMode('auto')} disabled={isClosing || entryStatus !== "active"} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
@@ -349,10 +332,10 @@ export function MissionConversationLayout({
           <div className="h-[clamp(20px,3dvh,28px)] w-full shrink-0" />
 
           {/* Bottom Inputs Area */}
-          <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(24px,3.5dvh,36px)+env(safe-area-inset-bottom))]">
+          <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center pb-[calc(clamp(24px,3.5dvh,36px)+env(safe-area-inset-bottom))]">
             {isTextMode ? (
               <div
-                className="w-full flex gap-2 box-border"
+                className="w-full min-w-0 flex gap-2 box-border"
                 style={{
                   paddingLeft: "max(16px, env(safe-area-inset-left))",
                   paddingRight: "max(16px, env(safe-area-inset-right))",
