@@ -210,25 +210,31 @@ export function MissionConversationLayout({
           </div>
 
           {/* Spacer above conversation */}
-          <div className="h-[clamp(8px,1.5dvh,24px)] max-[400px]:h-[56px] w-full shrink-0" />
+          <div className="h-[10px] w-full shrink-0" />
         </div>
 
         {/* Grid Row 2: Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-        <div className="relative z-10 flex flex-col items-center justify-end min-h-0 overflow-hidden w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pb-[clamp(24px,3dvh,34px)]">
+        <div className="relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pb-[15px]">
           {/* Top fade out for older text when cut off */}
           <div className="absolute top-0 left-0 w-full h-[24px] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
 
-          {olderKText && (
-            <div className="mt-auto mb-[10px] text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
-              {olderKText}
-            </div>
-          )}
-          {prevKText && (
-            <div className={`${!olderKText ? 'mt-auto' : ''} mb-[12px] bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0`} style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
-              {prevKText}
+          {/* History Container (clips overflow) */}
+          {(olderKText || prevKText) && (
+            <div className="mt-auto flex flex-col justify-end items-center min-h-0 overflow-hidden w-full shrink mb-[12px]">
+              {olderKText && (
+                <div className="mb-[10px] text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  {olderKText}
+                </div>
+              )}
+              {prevKText && (
+                <div className="bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  {prevKText}
+                </div>
+              )}
             </div>
           )}
 
+          {/* Current Bubble (never clips) */}
           <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} mb-auto relative z-20 flex flex-col items-center w-full min-w-0 max-w-full shrink-0`}>
             {entryStatus === "ready_to_start" || entryStatus === "ready_to_resume" ? (
               <button
