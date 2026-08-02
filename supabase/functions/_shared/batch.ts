@@ -701,7 +701,12 @@ ${transcriptText}
         required: ["daily_summary", "long_term_facts"],
       };
 
-      const text = await callReportModel(reportModel, prompt, reportModel.maxOutputTokens, responseSchema);
+      // reportModel.maxOutputTokens(1024)는 리포트 본문용 값인데, 여기선 daily_summary+
+      // long_term_facts 배열까지 함께 담는 JSON이라 잘릴 수 있다 — 같은 파일의
+      // EXTRACTION_MAX_OUTPUT_TOKENS(아래 선언, "1024로는 다중 fact JSON이 잘림" 실측 기록)와
+      // 동일한 원인으로 2026-08-02 Production에서 실제로 "JSON 파싱 실패"(중간에 끊긴
+      // 문자열)가 재현돼 여기도 같은 값으로 맞춘다.
+      const text = await callReportModel(reportModel, prompt, EXTRACTION_MAX_OUTPUT_TOKENS, responseSchema);
 
       let parsed: {
         daily_summary?: string;
@@ -776,7 +781,11 @@ const EMBEDDING_DIMENSIONS = 768;
 const REINFORCEMENT_SIMILARITY_THRESHOLD = 0.92; // 설계 문서 §9 — 튜닝 대상, 확정값 아님
 const TRAIT_PATTERN_SELF_STATEMENT_CONFIDENCE = 0.85; // 설계 문서 §9 — 튜닝 대상
 const EXTRACTION_PROMPT_VERSION = "extraction-v1";
-const EXTRACTION_MAX_OUTPUT_TOKENS = 4096; // 실측: 1024로는 다중 fact+entity+relation JSON이 잘림
+// 실측: 1024로는 다중 fact+entity+relation JSON이 잘림(과거 기록). 2026-08-02 Production에서
+// 대화량이 많은 아이 대상 generateMemoryFacts 호출이 4096으로도 잘리는 것을 추가로 확인해
+// 8192로 올림 — 이 값은 lib/batch/contextCorrectionV3.ts·dailyReportV3.ts가 동일 유형의
+// 구조화 JSON 추출에 이미 8192를 쓰고 있어 안전성이 검증된 값이다.
+const EXTRACTION_MAX_OUTPUT_TOKENS = 8192;
 
 /** gemini-embedding-001(Vertex) 호출 — memory_facts.content(추출 요약)만 임베딩한다.
  *  절대 원문(대화 발췌)을 임베딩하지 않는다(원본 삭제 후 역복원 경로 차단, 설계 문서 §2-4). */
