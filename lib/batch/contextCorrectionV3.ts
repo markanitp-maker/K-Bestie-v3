@@ -10,13 +10,125 @@ interface CorrectionResult {
   errors: any[];
 }
 
+const CHUNK_SIZE = 25;
+
+const CORRECTION_RESPONSE_SCHEMA = {
+  type: "ARRAY",
+  items: {
+    type: "OBJECT",
+    properties: {
+      source_message_id: { type: "STRING" },
+      content: { type: "STRING" },
+      correction_metadata: {
+        type: "OBJECT",
+        properties: {
+          changed: { type: "BOOLEAN" },
+          correction_reason: { type: "STRING" },
+          confidence: { type: "NUMBER" },
+        },
+        required: ["changed", "correction_reason", "confidence"],
+      },
+    },
+    required: ["source_message_id", "content", "correction_metadata"],
+  },
+};
+
+function buildChunkPrompt(chunk: any[]) {
+  const messageContext = chunk
+    .map((m: any) => `[${m.section}] ${m.role === "child" ? "아이" : "캐릭터"}: ${m.original_content} (ID: ${m.source_message_id})`)
+    .join("\n");
+
+  return `당신은 아이의 발화를 자연스럽게 보정하는 AI입니다.
+아래 대화 기록을 읽고, 아이의 발화 중 STT 인식오류나 불완전한 문장을 자연스럽게 복원하세요.
+캐릭터의 발화는 그대로 유지하고 아이의 발화만 보정합니다.
+의미를 새로 만들거나 사건·감정·사실을 추가하지 마세요. 확신이 없으면 원문을 유지하세요.
+이 구간은 하루 전체 대화 중 일부입니다. 여기 없는 메시지는 신경쓰지 말고, 아래 목록의 메시지만 빠짐없이 반환하세요.
+
+[대화 구간]
+${messageContext}
+
+출력은 반드시 아래 목록과 동일한 개수의 배열 구조인 JSON 형식이어야 합니다.
+\`\`\`json
+[
+  {
+    "source_message_id": "원본메시지ID",
+    "content": "보정된(또는 원본) 텍스트",
+    "correction_metadata": {
+      "changed": true/false,
+      "correction_reason": "보정 이유 또는 없음",
+      "confidence": 0.0
+    }
+  }
+]
+\`\`\`
+`;
+}
+
+// 하루 전체를 한 번에 Gemini에 보내면 메시지가 많은 날(수십~수백 개) 응답이
+// 잘리거나 일부 메시지가 누락돼 예전에는 전체 개수 불일치로 PERMANENT_ERROR
+// 처리했다(2026-08-02 Production 장애: 윤도원 68개 메시지 중 일부 누락으로
+// MESSAGE_COUNT_MISMATCH 영구 실패). 이제는 CHUNK_SIZE 단위로 나눠 각 구간을
+// 독립적으로 보정하고, source_message_id로 병합한다 — 어느 chunk가 실패하거나
+// 일부 메시지를 반환하지 않아도 그 메시지만 원문 fallback으로 채우고 나머지는
+// 정상 처리해 전체 Job을 절대 영구 실패시키지 않는다.
+async function correctChunk(
+  ai: ReturnType<typeof createGenAIClient>,
+  modelId: string,
+  chunk: any[],
+  inputIds: Set<string>
+): Promise<Map<string, { content: string; correction_metadata: any }>> {
+  const prompt = buildChunkPrompt(chunk);
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelId,
+        contents: prompt,
+        config: {
+          responseSchema: CORRECTION_RESPONSE_SCHEMA,
+          responseMimeType: "application/json",
+          systemInstruction: "반드시 JSON 배열 형식으로만 응답하라. 여분의 텍스트 금지.",
+          maxOutputTokens: 8192,
+          thinkingConfig: { thinkingLevel: "LOW" as any },
+        },
+      });
+
+      const text = response.text || "";
+      const correctedJson = extractJSON(text);
+      if (!Array.isArray(correctedJson)) {
+        throw new Error("JSON_PARSE_ERROR");
+      }
+
+      const result = new Map<string, { content: string; correction_metadata: any }>();
+      for (const c of correctedJson) {
+        const id = c?.source_message_id;
+        // Gemini가 이 chunk에 없던 ID를 반환하면 무시(마스킹)
+        if (typeof id !== "string" || !inputIds.has(id)) continue;
+        // 같은 ID가 중복 반환되면 먼저 나온 한 건만 사용
+        if (result.has(id)) continue;
+        if (typeof c.content !== "string" || c.content.trim() === "") continue;
+        result.set(id, {
+          content: c.content,
+          correction_metadata: c.correction_metadata || { changed: false, correction_reason: "none", confidence: 1.0 },
+        });
+      }
+      return result;
+    } catch {
+      if (attempt === 0) continue; // JSON 파싱 실패 등은 1회 재시도
+    }
+  }
+  // 재시도 후에도 실패하면 이 chunk의 메시지는 전부 원문 fallback으로 처리
+  // (호출부에서 correctedMap에 없는 ID는 자동으로 원문을 사용한다)
+  return new Map();
+}
+
 async function processSingleCorrectionJob(
   db: ReturnType<typeof createServiceClient>,
   job: any,
   workerId: string,
   modelId: string
 ) {
-  const PROMPT_VERSION = "v3.0.1";
+  const PROMPT_VERSION = "v3.1.0";
 
   // 1. Fetch Raw Data
   const { data: rawConvs, error: rawErr } = await db
@@ -59,126 +171,40 @@ async function processSingleCorrectionJob(
 
   filteredMessages.sort((a: any, b: any) => a.display_sequence - b.display_sequence);
 
-  // 2. Build Prompt
-  const messageContext = filteredMessages
-    .map((m: any) => `[${m.section}] ${m.role === "child" ? "아이" : "캐릭터"}: ${m.original_content} (ID: ${m.source_message_id})`)
-    .join("\n");
-
-  const prompt = `당신은 아이의 발화를 자연스럽게 보정하는 AI입니다. 
-아래 대화 기록을 읽고, 아이의 발화 중 STT 인식오류나 불완전한 문장을 자연스럽게 복원하세요.
-캐릭터의 발화는 그대로 유지하고 아이의 발화만 보정합니다.
-의미를 새로 만들거나 사건·감정·사실을 추가하지 마세요. 확신이 없으면 원문을 유지하세요.
-
-[하루 전체 대화]
-${messageContext}
-
-출력은 반드시 원본과 동일한 개수의 배열 구조인 JSON 형식이어야 합니다.
-\`\`\`json
-[
-  {
-    "source_message_id": "원본메시지ID",
-    "content": "보정된(또는 원본) 텍스트",
-    "correction_metadata": {
-      "changed": true/false,
-      "correction_reason": "보정 이유 또는 없음",
-      "confidence": 0.0
-    }
-  }
-]
-\`\`\`
-`;
-
-  // Explicit responseSchema for structured Gemini output. Gemini requires
-  // responseMimeType: "application/json" whenever responseSchema is set — without
-  // it the SDK defaults to text/plain, which the API rejects with 400
-  // INVALID_ARGUMENT ("Response_schema with a response mime type 'text/plain' is
-  // unsupported"). 2026-08-02 Production 실사용에서 이 조합 누락으로 Context
-  // Correction이 매번 PERMANENT_ERROR로 실패하던 것을 확인·수정(lib/questions/
-  // answer-classifier.ts의 기존 동작 패턴과 동일하게 맞춤).
-  const responseSchema = {
-    type: "ARRAY",
-    items: {
-      type: "OBJECT",
-      properties: {
-        source_message_id: { type: "STRING" },
-        content: { type: "STRING" },
-        correction_metadata: {
-          type: "OBJECT",
-          properties: {
-            changed: { type: "BOOLEAN" },
-            correction_reason: { type: "STRING" },
-            confidence: { type: "NUMBER" },
-          },
-          required: ["changed", "correction_reason", "confidence"],
-        },
-      },
-      required: ["source_message_id", "content", "correction_metadata"],
-    },
-  };
-
-  // 3. Call Gemini via @google/genai SDK
+  // 2. Chunk + correct
+  const inputIds = new Set(filteredMessages.map((m: any) => m.source_message_id));
   const aiConfig = await getModelForGroup("A");
   const ai = createGenAIClient(aiConfig);
-  const response = await ai.models.generateContent({
-    model: modelId,
-    contents: prompt,
-    config: {
-      responseSchema,
-      responseMimeType: "application/json",
-      systemInstruction: "반드시 JSON 배열 형식으로만 응답하라. 여분의 텍스트 금지.",
-      maxOutputTokens: 8192,
-      thinkingConfig: { thinkingLevel: 'LOW' as any },
-    },
-  });
 
-  const text = response.text || "";
-  let correctedJson: any[] = [];
-  try {
-    correctedJson = extractJSON(text);
-  } catch {
-    throw new Error("JSON_PARSE_ERROR");
-  }
-
-  if (!correctedJson || !Array.isArray(correctedJson)) {
-    throw new Error("JSON_PARSE_ERROR");
-  }
-
-  // 4. Strict Validation
-  if (correctedJson.length !== filteredMessages.length) {
-    throw new Error("MESSAGE_COUNT_MISMATCH");
-  }
-
-  const inputIds = new Set(filteredMessages.map((m: any) => m.source_message_id));
-  const outputIds = new Set(correctedJson.map((m: any) => m.source_message_id));
-
-  if (inputIds.size !== outputIds.size) {
-    throw new Error("DUPLICATE_OR_MISSING_IDS");
-  }
-
-  for (const id of outputIds) {
-    if (!inputIds.has(id)) {
-      throw new Error("UNKNOWN_ID_FOUND");
+  const correctedMap = new Map<string, { content: string; correction_metadata: any }>();
+  for (let i = 0; i < filteredMessages.length; i += CHUNK_SIZE) {
+    const chunk = filteredMessages.slice(i, i + CHUNK_SIZE);
+    const chunkResult = await correctChunk(ai, modelId, chunk, inputIds);
+    for (const [id, val] of chunkResult) {
+      correctedMap.set(id, val);
     }
   }
 
+  // 3. Merge — source_message_id 기준, 누락 메시지는 원문 fallback (항상
+  // filteredMessages와 동일한 개수·순서를 보장하므로 count mismatch 자체가
+  // 구조적으로 발생할 수 없다)
   const finalMessages = filteredMessages.map((orig: any) => {
-    const corr = correctedJson.find((c: any) => c.source_message_id === orig.source_message_id);
-    if (!corr || typeof corr.content !== "string" || corr.content.trim() === "") {
-      throw new Error("EMPTY_CONTENT_FOUND");
-    }
+    const corr = correctedMap.get(orig.source_message_id);
     return {
       source_message_id: orig.source_message_id,
       session_id: orig.session_id,
       role: orig.role,
-      content: corr.content,
+      content: corr ? corr.content : orig.original_content,
       original_created_at: orig.created_at,
       section: orig.section,
       display_sequence: orig.display_sequence,
-      correction_metadata: corr.correction_metadata || { changed: false, correction_reason: "none", confidence: 1.0 },
+      correction_metadata: corr
+        ? corr.correction_metadata
+        : { changed: false, correction_reason: "gemini_missing_fallback", confidence: 0 },
     };
   });
 
-  // 5. Atomic Save via complete_context_correction_job_v3 RPC
+  // 4. Atomic Save via complete_context_correction_job_v3 RPC
   const { error: completeErr } = await db.rpc("complete_context_correction_job_v3", {
     p_job_id: job.id,
     p_claimed_by: workerId,
@@ -229,7 +255,6 @@ export async function runContextCorrectionWorkerV3(limit: number, workerId?: str
   }
   result.claimed = jobs.length;
 
-  const aiConfig = await getModelForGroup("A");
   const MODEL_NAME = getLlmModel("contextCorrection");
 
   for (const job of jobs) {
