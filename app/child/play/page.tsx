@@ -226,6 +226,7 @@ export default function ChildPlayPage() {
         // 넘어가는 이동이라 Next.js 클라이언트 라우터가 이어서 처리할 수 없다.
         const result = await startTicketBasedPlay(childId, "mbti");
 
+        if (result.ok) {
           setShowActionModal(false);
           navigatingAway = true;
           router.push("/child/play/mbti");
