@@ -10,6 +10,7 @@ import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
+import { AppTopHeader } from "@/components/AppTopHeader";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -49,6 +50,7 @@ export default function ChatPage() {
   // 전에는 음성/텍스트 대화 화면을 아예 렌더링하지 않는다(클라이언트 버튼 비활성화만으로
   // 처리하지 않기 위함 — 주소창 직접 접근도 이 게이트를 거친다).
   const [usagePhase, setUsagePhase] = useState<"checking" | "cooldown" | "ready">("checking");
+  const [dailyLimitReached, setDailyLimitReached] = useState(false);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
   const usageSessionStartedAtRef = useRef<string | null>(null);
   const usageSessionEndsAtMsRef = useRef<number | null>(null);
@@ -406,10 +408,24 @@ export default function ChatPage() {
     if (!childId) return;
     setReportDone(false);
     setReportError(null);
-    setSessionActive(true);
 
     await restoreSession(childId);
 
+    // 이미 이 대화(같은 business_date+conversation_window)에서 하루 턴 한도를 다 쓴
+    // 세션을 재개하는 경우 — 예전에는 여기서 그대로 live로 붙였다가 턴수 하드리밋
+    // effect가 즉시 재발동해 "오늘 대화는 여기까지야"가 매번 다시 뜨고 세션이 곧바로
+    // 종료됐다. 아이 입장에선 마이크를 눌러도 아무것도 안 되는 것처럼 보였다
+    // (2026-08-02 자유대화 무응답 재보고로 확인). live 연결 자체를 시도하지 않고
+    // 바로 한도 안내 화면으로 전환한다.
+    const restoredChildTurns = restoredTranscriptRef.current.filter((t) => t.role === "child").length;
+    if (restoredChildTurns >= MAX_SESSION_TURNS) {
+      seedTranscript(restoredTranscriptRef.current);
+      setDailyLimitReached(true);
+      setSessionActive(false);
+      return;
+    }
+
+    setSessionActive(true);
     await startSession();
     seedTranscript(restoredTranscriptRef.current);
 
@@ -620,6 +636,29 @@ export default function ChatPage() {
     );
   }
 
+  if (dailyLimitReached) {
+    return (
+      <DemoFrame>
+        <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]">
+          <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+            <KBestieMascotAnimation state="idle" size={120} />
+            <p className="text-[#3a2f2a] text-[19px] font-bold leading-relaxed">
+              오늘 대화는 여기까지야!<br />
+              다음에 더 재미있는 이야기 많이 들려줘 👋
+            </p>
+            <button
+              onClick={() => router.replace("/child/home")}
+              className="mt-2 px-6 py-3 rounded-2xl text-sm font-bold text-white cursor-pointer active:scale-95"
+              style={{ background: "var(--color-k-orange)" }}
+            >
+              홈으로 갈래요
+            </button>
+          </div>
+        </div>
+      </DemoFrame>
+    );
+  }
+
   if (usagePhase === "cooldown") {
     const mm = String(Math.floor(cooldownRemainingSec / 60)).padStart(2, "0");
     const ss = String(cooldownRemainingSec % 60).padStart(2, "0");
@@ -667,15 +706,13 @@ export default function ChatPage() {
             <div className="absolute top-[75%] left-[15%] w-8 h-8 bg-white/40 rounded-full blur-[1px]" />
           </div>
 
-          {/* Top Right Close Button */}
-          <div className="absolute top-0 right-0 p-[calc(10px+env(safe-area-inset-top))] z-50">
-            <button onClick={() => {
+          {/* 공통 헤더 */}
+          <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
+            <AppTopHeader title="대화" onBack={() => {
                   if (isLive) stopSession();
                   setSessionActive(false);
                   router.replace("/child/home");
-                }} aria-label="자유대화 종료" className="w-[44px] h-[44px] flex items-center justify-center cursor-pointer active:scale-95 text-gray-700">
-              <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
+            }} />
           </div>
 
           {/* Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
