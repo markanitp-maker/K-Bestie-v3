@@ -10,6 +10,7 @@ import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
+import { AppTopHeader } from "@/components/AppTopHeader";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -49,6 +50,7 @@ export default function ChatPage() {
   // 전에는 음성/텍스트 대화 화면을 아예 렌더링하지 않는다(클라이언트 버튼 비활성화만으로
   // 처리하지 않기 위함 — 주소창 직접 접근도 이 게이트를 거친다).
   const [usagePhase, setUsagePhase] = useState<"checking" | "cooldown" | "ready">("checking");
+  const [dailyLimitReached, setDailyLimitReached] = useState(false);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
   const usageSessionStartedAtRef = useRef<string | null>(null);
   const usageSessionEndsAtMsRef = useRef<number | null>(null);
@@ -406,10 +408,24 @@ export default function ChatPage() {
     if (!childId) return;
     setReportDone(false);
     setReportError(null);
-    setSessionActive(true);
 
     await restoreSession(childId);
 
+    // 이미 이 대화(같은 business_date+conversation_window)에서 하루 턴 한도를 다 쓴
+    // 세션을 재개하는 경우 — 예전에는 여기서 그대로 live로 붙였다가 턴수 하드리밋
+    // effect가 즉시 재발동해 "오늘 대화는 여기까지야"가 매번 다시 뜨고 세션이 곧바로
+    // 종료됐다. 아이 입장에선 마이크를 눌러도 아무것도 안 되는 것처럼 보였다
+    // (2026-08-02 자유대화 무응답 재보고로 확인). live 연결 자체를 시도하지 않고
+    // 바로 한도 안내 화면으로 전환한다.
+    const restoredChildTurns = restoredTranscriptRef.current.filter((t) => t.role === "child").length;
+    if (restoredChildTurns >= MAX_SESSION_TURNS) {
+      seedTranscript(restoredTranscriptRef.current);
+      setDailyLimitReached(true);
+      setSessionActive(false);
+      return;
+    }
+
+    setSessionActive(true);
     await startSession();
     seedTranscript(restoredTranscriptRef.current);
 
@@ -620,6 +636,29 @@ export default function ChatPage() {
     );
   }
 
+  if (dailyLimitReached) {
+    return (
+      <DemoFrame>
+        <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]">
+          <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+            <KBestieMascotAnimation state="idle" size={120} />
+            <p className="text-[#3a2f2a] text-[19px] font-bold leading-relaxed">
+              오늘 대화는 여기까지야!<br />
+              다음에 더 재미있는 이야기 많이 들려줘 👋
+            </p>
+            <button
+              onClick={() => router.replace("/child/home")}
+              className="mt-2 px-6 py-3 rounded-2xl text-sm font-bold text-white cursor-pointer active:scale-95"
+              style={{ background: "var(--color-k-orange)" }}
+            >
+              홈으로 갈래요
+            </button>
+          </div>
+        </div>
+      </DemoFrame>
+    );
+  }
+
   if (usagePhase === "cooldown") {
     const mm = String(Math.floor(cooldownRemainingSec / 60)).padStart(2, "0");
     const ss = String(cooldownRemainingSec % 60).padStart(2, "0");
@@ -667,32 +706,30 @@ export default function ChatPage() {
             <div className="absolute top-[75%] left-[15%] w-8 h-8 bg-white/40 rounded-full blur-[1px]" />
           </div>
 
-          {/* Top Right Close Button */}
-          <div className="absolute top-0 right-0 p-[calc(10px+env(safe-area-inset-top))] z-50">
-            <button onClick={() => {
+          {/* 공통 헤더 */}
+          <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
+            <AppTopHeader title="대화" onBack={() => {
                   if (isLive) stopSession();
                   setSessionActive(false);
                   router.replace("/child/home");
-                }} aria-label="자유대화 종료" className="w-[44px] h-[44px] flex items-center justify-center cursor-pointer active:scale-95 text-gray-700">
-              <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
+            }} />
           </div>
 
           {/* Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-          <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-end overflow-hidden z-20 px-[clamp(16px,4vw,24px)] pt-[calc(64px+env(safe-area-inset-top))] pb-[clamp(4px,1dvh,10px)]">
+          <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-end overflow-hidden z-20 px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[clamp(38px,6.5dvh,48px)]">
             {olderKText && (
-              <div className="mt-auto mb-[10px] text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
+              <div className="mb-[clamp(10px,2vw,14px)] text-gray-400 text-[clamp(14px,4vw,16px)] leading-[1.45] text-center max-w-[80%] font-medium shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
                 {olderKText}
               </div>
             )}
             {prevKText && (
-              <div className={`${!olderKText ? 'mt-auto' : ''} mb-[12px] bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0 h-auto overflow-visible`} style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
+              <div className="mb-[clamp(10px,1.6dvh,14px)] bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4.5vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[75%] text-center shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
                 {prevKText}
               </div>
             )}
-            <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[70px] shrink-0 h-auto overflow-visible`}>
+            <div className="relative w-[clamp(240px,78.9vw,270px)] max-w-[79%] bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[65px] shrink-0 h-auto overflow-visible">
               <div className="w-full">
-                <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
+                <p className="text-left text-[#3a2f2a] text-[clamp(17px,5.1vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
                   {currentQuestionText}
                 </p>
               </div>
@@ -703,36 +740,37 @@ export default function ChatPage() {
           </div>
 
           {/* Mascot Area & Side Cards */}
-          <div className="relative z-10 free-chat-mascot-group w-full shrink min-h-[140px]">
+          <div className="relative w-full shrink-0 h-[clamp(145px,22.6dvh,160px)]">
             
-            {/* Mascot & Platform */}
-            <div className="relative flex flex-col items-center justify-end h-[clamp(130px,18dvh,160px)]">
+            {/* Mascot & Platform - Centered strictly */}
+            <div className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
                {/* Halo */}
-               <div className="absolute top-[10%] w-[120px] h-[120px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
+               <div className="absolute top-[5%] w-[150px] h-[150px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
+               
                {/* Mascot */}
-               <div className="relative z-10 flex justify-center items-end pb-[clamp(16px,2.5dvh,24px)]">
-                 <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={116} className="!w-[clamp(100px,29vw,130px)] !h-auto object-contain" />
+               <div className="relative z-10 flex justify-center items-end pb-[clamp(38px,6.2dvh,46px)]">
+                 <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={140} className="!w-[clamp(115px,39.2vw,145px)] !h-[clamp(115px,39.2vw,145px)] object-contain" />
                </div>
+               
                {/* Platform */}
-               <div className="absolute bottom-0 w-[clamp(135px,38vw,175px)] h-[clamp(24px,4.5dvh,36px)] pointer-events-none">
-                 {/* Top oval */}
+               <div className="absolute bottom-0 w-[clamp(145px,50.9vw,185px)] h-[clamp(38px,6.1dvh,46px)] pointer-events-none">
                  <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
-                 {/* Side cylinder */}
                  <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
-                 {/* Shadow on platform */}
                  <div className="absolute top-[15%] left-[15%] w-[70%] h-[35%] bg-black/5 rounded-[100%] z-10 blur-sm" />
                </div>
             </div>
 
-            {/* Right State Card */}
-            <div
-              className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(66px,18vw,84px)] min-h-[clamp(76px,20vw,96px)] py-[10px] shadow-sm"
-              aria-live="polite"
-            >
-               <div className="w-[clamp(34px,9vw,44px)] h-[clamp(34px,9vw,44px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5">
-                 {StateIcon}
-               </div>
-               <span className="text-[clamp(14px,3.5vw,17px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
+            {/* Right State Card - Independent Absolute Overlay */}
+            <div className="absolute right-[clamp(24px,8.7vw,36px)] top-[clamp(24px,4.1dvh,32px)]">
+              <div
+                className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(58px,19.5vw,72px)] h-[clamp(76px,12dvh,86px)] py-[10px] shadow-sm pointer-events-auto"
+                aria-live="polite"
+              >
+                 <div className="w-[clamp(30px,8.5vw,38px)] h-[clamp(30px,8.5vw,38px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5 shrink-0">
+                   {StateIcon}
+                 </div>
+                 <span className="text-[clamp(12px,3.6vw,14px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
+              </div>
             </div>
           </div>
 
@@ -866,16 +904,6 @@ export default function ChatPage() {
               </div>
             )}
           </div>
-          
-          <style dangerouslySetInnerHTML={{__html:`
-            .free-chat-mascot-group {
-              display: grid;
-              grid-template-columns: auto auto;
-              align-items: center;
-              justify-content: center;
-              gap: clamp(8px, 2.5vw, 14px);
-            }
-          `}} />
         </div>
         
         {/* 047 QA 실측: topOffsetPx가 너무 작아 문의 위젯이 상단 X(자유대화 종료) 버튼과

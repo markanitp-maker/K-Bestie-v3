@@ -402,10 +402,10 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
     if (!position) {
       return {
         ...baseStyle,
-        top: `calc(${topOffsetPx + pcMockupPaddingTopPx}px + env(safe-area-inset-top))`,
+        top: "auto",
         right: defaultRight,
         left: "auto",
-        bottom: "auto",
+        bottom: `calc(90px + env(safe-area-inset-bottom))`,
         transform: "translateY(0)",
       };
     }

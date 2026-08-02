@@ -103,6 +103,11 @@ scratch_dev/
 scratch_none/
 scratch_prod/
 scratch_v3/
+scratch_*/
+reports/
+.claude/kim-bridge-agent-poc/
+vercel_prod.log
+dev_diff.sql
 
 
 .env*

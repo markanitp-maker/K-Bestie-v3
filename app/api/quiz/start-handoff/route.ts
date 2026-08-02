@@ -47,12 +47,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "childId required" }, { status: 400 });
   }
 
-  const { allowed } = await requireChildAccess(supabase, user.id, childId);
-  if (!allowed) {
+  const { allowed, child } = await requireChildAccess(supabase, user.id, childId);
+  if (!allowed || !child) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const result = await createQuizHandoffToken(childId);
+  const result = await createQuizHandoffToken(childId, user.id, child.grade);
 
   if (!result.ok) {
     const status =

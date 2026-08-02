@@ -135,9 +135,10 @@ export async function POST(req: NextRequest) {
     question_states: Record<string, QuestionState> | null;
     required_valid_count?: number | null;
     engine_version?: string | null;
+    clarification_counts?: Record<string, number> | null;
   }
 
-  const fields = "session_id, valid_answer_count, question_ids, question_states, required_valid_count, engine_version";
+  const fields = "session_id, valid_answer_count, question_ids, question_states, required_valid_count, engine_version, clarification_counts";
   const { data: progress, error: progErr } = (await service
     .from("mission_progress")
     .select(fields)
@@ -274,11 +275,16 @@ export async function POST(req: NextRequest) {
 
   // 2. 안전 신호가 아니면 validateAnswer(answerText)로 빠른 동기 유효성 판정
   const valRes = validateAnswer(answerText);
-  let classification: "VALID" | "REFUSAL" | "NO_RESPONSE";
-  let newState: QuestionState;
-  let answerStatus: "answered" | "skipped" | "refused";
+  let classification: "VALID" | "REFUSAL" | "NO_RESPONSE" | "CLARIFICATION_NEEDED";
+  let newState: QuestionState = "skipped";
+  let answerStatus: "answered" | "skipped" | "refused" = "skipped";
+  let clarificationText: string | undefined = undefined;
 
-  if (valRes.valid) {
+  if (valRes.needsClarification) {
+    classification = "CLARIFICATION_NEEDED";
+    const bgClassResult = await classifyAnswer(questionText, answerText);
+    clarificationText = bgClassResult.clarificationText;
+  } else if (valRes.valid) {
     classification = "VALID";
     newState = "answered";
     answerStatus = "answered";
@@ -290,6 +296,39 @@ export async function POST(req: NextRequest) {
     classification = "NO_RESPONSE";
     newState = "skipped";
     answerStatus = "skipped";
+  }
+
+  if (classification === "CLARIFICATION_NEEDED") {
+    const counts = progress.clarification_counts || {};
+    const currentCount = counts[questionId] || 0;
+    
+    if (currentCount >= 1) {
+      classification = "NO_RESPONSE"; // fallback to failure if already clarified once
+      newState = "skipped";
+      answerStatus = "skipped";
+    } else {
+      counts[questionId] = 1;
+      await service.from("mission_progress").update({ clarification_counts: counts }).eq("session_id", sessionId);
+      
+      const resPayload = {
+        valid: false,
+        reason: "clarification_needed",
+        refused: false,
+        previousState: prevState,
+        questionState: "clarification_required" as const,
+        clarificationText: clarificationText,
+        validAnswerCount: progress.valid_answer_count ?? 0,
+        progressPercent: (progress.valid_answer_count ?? 0) * 10,
+        requiredCount: requiredCount,
+        completed: false,
+        engine_version: "v2",
+        questionStates: { ...states, [questionId]: "clarification_required" as const },
+      };
+      
+      console.log("[mission/answer-lean] clarification required", { sessionId, questionId });
+      if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+      return NextResponse.json(resPayload);
+    }
   }
 
   // record_v2_mission_answer RPC 호출
@@ -360,7 +399,8 @@ export async function POST(req: NextRequest) {
   after(async () => {
     try {
       // 2차 감사/안전망 백그라운드 LLM 판정
-      const bgClass = await classifyAnswer(questionText, answerText);
+      const bgClassResult = await classifyAnswer(questionText, answerText);
+      const bgClass = bgClassResult.classification;
       if (bgClass === "SAFETY_SIGNAL") {
         // 빠른 키워드 검사가 놓친 경우 차선 안전망으로 사후 안전 일시정지 기록
         const safetyRx = pickReaction(answerText);

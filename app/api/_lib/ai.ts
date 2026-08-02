@@ -12,7 +12,6 @@ import {
 } from "./reportModel";
 import { getActiveGcaiProfile, getGcaiEnvKeys } from "./gcaiProfiles";
 import { getLlmModel, type LlmModelRole } from "@/lib/llm/modelRouter";
-import { createServiceClient } from "@/lib/supabase/server";
 
 export type ProviderId = "vertex";
 export type ModelGroup = "A" | "B" | "C";
@@ -29,47 +28,12 @@ function roleForGroup(group: ModelGroup): LlmModelRole {
   return "missionGeneral";
 }
 
-// request-scoped에 가까운 짧은 TTL 메모 — 매 호출 DB 왕복 없이도 스위치 변경이 수 초 내 반영됨.
-// (Vercel 서버리스 인스턴스가 재활용되는 동안에만 유효 — 인스턴스마다 독립 캐시라 안전)
-const SWITCH_TTL_MS = 10_000;
-const switchCache = new Map<ModelGroup, { config: GroupModelConfig; expiresAt: number }>();
-
-/** 그룹(A/B/C)의 현재 provider+model을 조회한다.
- *  1순위: DB(provider_switch_settings) — app/api/admin/provider-switch/route.ts에서
- *  관리자가 즉시 전환 가능한 설정. 045 리팩터로 한 차례 이 조회가 통째로 빠져
- *  관리자 스위치 UI가 있어도 실제로는 무시되는 회귀가 있었다(재수정).
- *  2순위(DB 미설정/조회 실패): 045에서 확정한 중앙 Model Router 기본값(getLlmModel). */
 export async function getModelForGroup(group: ModelGroup): Promise<GroupModelConfig> {
-  const cached = switchCache.get(group);
-  if (cached && cached.expiresAt > Date.now()) return cached.config;
-
-  const fallback: GroupModelConfig = {
+  return {
     group,
     provider: "vertex",
     modelId: getLlmModel(roleForGroup(group)),
   };
-
-  try {
-    const service = createServiceClient();
-    const { data } = await service
-      .from("provider_switch_settings")
-      .select("provider, model_id")
-      .eq("group", group)
-      .maybeSingle();
-
-    const provider = ((data as { provider?: string } | null)?.provider as ProviderId) ?? fallback.provider;
-    if (provider !== "vertex") {
-      throw new Error(`Unsupported provider from DB: ${provider}. Only vertex is allowed.`);
-    }
-
-    const modelId = (data as { model_id?: string } | null)?.model_id ?? fallback.modelId;
-    const config: GroupModelConfig = { group, provider, modelId };
-    switchCache.set(group, { config, expiresAt: Date.now() + SWITCH_TTL_MS });
-    return config;
-  } catch {
-    // provider_switch_settings 조회 실패(테이블 미실행 등) — 안전하게 중앙 Router 기본값 유지
-    return fallback;
-  }
 }
 // 하위 호환을 위해 여기서 재수출한다.
 export { type ReportModelConfig, REPORT_MODELS, getActiveReportModel, getReportModel };

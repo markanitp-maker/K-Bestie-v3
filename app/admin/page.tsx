@@ -15,7 +15,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
-import type { ProviderId, ModelGroup } from "@/app/api/_lib/ai";
+
 import { MODE_LABELS, ALL_MODE_BUCKETS, type ModeBucket } from "@/lib/plan/conversationMode";
 
 
@@ -538,13 +538,13 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "ai-config" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests";
+type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests";
 
 const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
   { id: "revenue", label: "매출·가입자 상세" },
   { id: "cost", label: "나갈 돈 · 비용 상세" },
-  { id: "ai-config", label: "AI 설정" },
+  { id: "llm-status", label: "LLM 사용 현황" },
   { id: "account-restore", label: "계정 복구 승인" },
   { id: "feedback", label: "문의·건의·버그 접수" },
   { id: "beta-applications", label: "베타 신청 관리" },
@@ -553,162 +553,92 @@ const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "child-approval-requests", label: "아이 승인 요청" },
 ];
 
-interface ProviderSwitchRow {
-  group: ModelGroup;
-  provider: ProviderId;
-  model_id: string;
-  updated_at: string;
-  updated_by: string | null;
-}
+function LlmStatusTab() {
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState(false);
 
-const GROUP_LABEL: Record<ModelGroup, string> = {
-  A: "그룹A · 리포트·요약",
-  B: "그룹B · 미션 대화",
-  C: "그룹C · 라이브 음성",
-};
-
-// 그룹별로 스위치 가능한 모델 후보 — ai.ts의 레지스트리와 맞춰둔다.
-const MODEL_OPTIONS: Record<ModelGroup, { provider: ProviderId; modelId: string; label: string }[]> = {
-  A: [
-    { provider: "vertex", modelId: "gemini-3.6-flash", label: "Vertex · gemini-3.6-flash (레거시 표시)" },
-  ],
-  B: [
-    { provider: "vertex", modelId: "gemini-3.5-flash", label: "Vertex · gemini-3.5-flash (레거시 표시)" },
-  ],
-  C: [
-    { provider: "vertex", modelId: "gemini-live-2.5-flash-native-audio", label: "Vertex · gemini-live-2.5-flash-native-audio (레거시 표시)" },
-  ],
-};
-
-function ProviderSwitchTab() {
-  const [rows, setRows] = useState<ProviderSwitchRow[] | null>(null);
-  const [modelRoles, setModelRoles] = useState<any[] | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [savingGroup, setSavingGroup] = useState<ModelGroup | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setRows(null);
-    setLoadFailed(false);
-    fetch("/api/admin/provider-switch")
-      .then((r) => r.json())
-      .then((d) => setRows(d.settings ?? []))
-      .catch(() => setLoadFailed(true));
-      
-    fetch("/api/admin/llm-models")
-      .then((r) => r.json())
-      .then((d) => setModelRoles(d.models ?? []))
-      .catch(() => {});
+  useEffect(() => {
+    fetch("/api/admin/llm-status")
+      .then((res) => res.json())
+      .then((d) => setData(d))
+      .catch(() => setError(true));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  if (error) return <EmptyState text="데이터를 불러오지 못했습니다." />;
+  if (!data) return <EmptyState text="불러오는 중..." />;
 
-  const handleChange = async (group: ModelGroup, provider: ProviderId, modelId: string) => {
-    setSavingGroup(group);
-    setErrorMsg(null);
-    try {
-      const res = await fetch("/api/admin/provider-switch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ group, provider, modelId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error ?? "저장 실패");
-        return;
-      }
-      load();
-    } catch {
-      setErrorMsg("저장 요청 실패");
-    } finally {
-      setSavingGroup(null);
-    }
-  };
-
-  if (loadFailed) return <EmptyState text="설정을 불러오지 못했어요." />;
-  if (!rows) return <EmptyState text="불러오는 중..." />;
+  const { summary, entries } = data;
 
   return (
-    <div>
-      <SectionTitle>AI 프로바이더 스위치 (레거시)</SectionTitle>
-      <div style={{ fontSize: 13, color: "var(--color-k-danger)", marginBottom: 12, fontWeight: "bold", background: "var(--color-k-danger-bg)", padding: "10px", borderRadius: "8px" }}>
-        이 스위치는 레거시이며 더 이상 실제 호출 모델에 영향을 주지 않습니다. 실제 모델은 아래 역할별 매핑을 따릅니다.
-      </div>
-      {errorMsg && <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginBottom: 10 }}>{errorMsg}</div>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {(["A", "B", "C"] as ModelGroup[]).map((group) => {
-          const row = rows.find((r) => r.group === group);
-          const current = row ? `${row.provider}::${row.model_id}` : "";
-          return (
-            <div key={group} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 8 }}>{GROUP_LABEL[group]}</div>
-              <select
-                value={current}
-                disabled={savingGroup === group}
-                onChange={(e) => {
-                  const [provider, modelId] = e.target.value.split("::") as [ProviderId, string];
-                  handleChange(group, provider, modelId);
-                }}
-                style={{
-                  width: "100%",
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: "1px solid var(--color-k-border)",
-                  fontSize: 13,
-                  color: "var(--color-k-text-primary)",
-                  background: "var(--color-k-background)",
-                }}
-              >
-                {MODEL_OPTIONS[group].map((opt) => (
-                  <option key={`${opt.provider}::${opt.modelId}`} value={`${opt.provider}::${opt.modelId}`}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              {row?.updated_by && (
-                <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 6 }}>
-                  마지막 변경: {row.updated_by} · {formatDateTime(row.updated_at)}
-                </div>
-              )}
-            </div>
-          );
-        })}
+    <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+      <div>
+        <SectionTitle>LLM 사용 현황 요약</SectionTitle>
+        <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 13, color: "var(--color-k-text-primary)" }}>
+            <div><strong>환경:</strong> {summary.environment}</div>
+            <div><strong>배포 커밋:</strong> {summary.commitSha.substring(0, 7)}</div>
+            <div><strong>마지막 빌드:</strong> {summary.buildTime}</div>
+            <div><strong>마지막 확인:</strong> {formatDateTime(summary.lastCheckTime)}</div>
+            <div><strong>등록 기능 수:</strong> {summary.total}개</div>
+            <div><strong>정상:</strong> <span style={{ color: "var(--color-k-success, #1a9c5c)" }}>{summary.normal}개</span></div>
+            <div><strong>미설정:</strong> <span style={{ color: "var(--color-k-danger)" }}>{summary.missing}개</span></div>
+            <div><strong>설정 불일치:</strong> <span style={{ color: "var(--color-k-danger)" }}>{summary.mismatch}개</span></div>
+          </div>
+        </div>
       </div>
 
-      <div style={{ marginTop: 32 }}>
-        <SectionTitle>역할별 모델 매핑 (현재 적용됨)</SectionTitle>
+      <div>
+        <SectionTitle>기능별 모델 적용 현황</SectionTitle>
         <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
             <thead>
               <tr>
-                <th style={thStyle}>역할명 (설명)</th>
-                <th style={thStyle}>현재 적용 모델</th>
-                <th style={thStyle}>환경변수 강제 적용</th>
+                <th style={thStyle}>기능명 (유형/플랫폼)</th>
+                <th style={thStyle}>실제 적용 모델</th>
+                <th style={thStyle}>기본값 / 환경변수</th>
+                <th style={thStyle}>호출부 / 리전</th>
+                <th style={thStyle}>상태</th>
               </tr>
             </thead>
             <tbody>
-              {modelRoles ? modelRoles.map((r) => (
-                <tr key={r.role}>
+              {entries.map((r: any) => (
+                <tr key={r.id}>
                   <td style={tdStyle}>
-                    <div style={{ fontWeight: 600 }}>{r.description}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{r.role}</div>
+                    <div style={{ fontWeight: 600 }}>{r.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>
+                      {r.featureType} · {r.platform}
+                    </div>
                   </td>
                   <td style={tdStyle}>
-                    <span style={{ fontWeight: 600, color: r.isOverridden ? "var(--color-k-navy)" : "inherit" }}>
-                      {r.effectiveModel}
+                    <span style={{ fontWeight: 600, color: "var(--color-k-navy)" }}>{r.effectiveModel}</span>
+                    {r.apiMethod && <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>{r.apiMethod}</div>}
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ fontSize: 12 }}>{r.defaultModel}</div>
+                    {r.envKey && <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>{r.envKey}</div>}
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ fontSize: 12 }}>{r.internalPath}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>{r.region}</div>
+                  </td>
+                  <td style={tdStyle}>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color:
+                          r.status === "정상" || r.status === "기본값 사용"
+                            ? "var(--color-k-success, #1a9c5c)"
+                            : r.status === "확인 불가"
+                            ? "var(--color-k-text-secondary)"
+                            : "var(--color-k-danger)",
+                      }}
+                    >
+                      {r.status}
                     </span>
-                  </td>
-                  <td style={tdStyle}>
-                    {r.isOverridden ? (
-                      <span style={{ color: "var(--color-k-success, #1a9c5c)", fontWeight: 600 }}>O ({r.envKey})</span>
-                    ) : (
-                      <span style={{ color: "var(--color-k-text-secondary)" }}>기본값 사용</span>
-                    )}
+                    {r.warningReason && <div style={{ fontSize: 11, color: "var(--color-k-danger)", marginTop: 2 }}>{r.warningReason}</div>}
                   </td>
                 </tr>
-              )) : (
-                <tr><td colSpan={3} style={{ ...tdStyle, textAlign: "center" }}>불러오는 중...</td></tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
@@ -1574,9 +1504,9 @@ function AdminDashboard() {
       </nav>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        {page === "ai-config" ? (
+        {page === "llm-status" ? (
           <>
-            <ProviderSwitchTab />
+            <LlmStatusTab />
             <GCAIProfileSection />
           </>
         ) : page === "account-restore" ? (

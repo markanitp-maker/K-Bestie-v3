@@ -34,34 +34,18 @@ export type CreateQuizHandoffResult =
       reason: "child_not_found" | "invalid_grade" | "insufficient_balance" | "internal_error";
     };
 
-export async function createQuizHandoffToken(childId: string): Promise<CreateQuizHandoffResult> {
+export async function createQuizHandoffToken(
+  childId: string,
+  userId: string,
+  rawGrade: number | string | null
+): Promise<CreateQuizHandoffResult> {
   const supabase = createServiceClient();
-
-  const { data: child, error: childErr } = await supabase
-    .from("child_profiles")
-    .select("id, grade, member_id")
-    .eq("id", childId)
-    .maybeSingle();
-
-  if (childErr || !child) {
-    return { ok: false, reason: "child_not_found" };
-  }
 
   // 010 "grade 규칙": 클라이언트가 보낸 값이 아니라 서버에서 조회한 실제 프로필 값만
   // 쓰고, 값이 없거나 1~6 범위를 벗어나면 기본 학년을 임의 적용하지 않고 시작을 차단한다.
-  const grade = parseGrade(child.grade);
+  const grade = parseGrade(rawGrade);
   if (grade === null || grade < 1 || grade > 6) {
     return { ok: false, reason: "invalid_grade" };
-  }
-
-  const { data: member, error: memberErr } = await supabase
-    .from("family_members")
-    .select("user_id")
-    .eq("id", child.member_id)
-    .maybeSingle();
-
-  if (memberErr || !member) {
-    return { ok: false, reason: "child_not_found" };
   }
 
   const consumeResult = await consumeKeys(childId, QUIZ_GOLD_KEY_COST);
@@ -74,7 +58,7 @@ export async function createQuizHandoffToken(childId: string): Promise<CreateQui
 
   const { error: insertErr } = await supabase.from("quiz_handoff_tokens").insert({
     token,
-    user_id: member.user_id,
+    user_id: userId,
     status: "pending",
     expires_at: expiresAt,
     child_id: childId,

@@ -1,21 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { AppTopHeader } from "@/components/AppTopHeader";
 
-function LogOut({ size = 20, color = "currentColor" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
-    </svg>
-  );
-}
+
 
 const GAMES = [
   // comingSoon: 실제 게임 화면이 아직 없는 placeholder 카드 — 클릭해도 황금열쇠 차감/
@@ -100,6 +94,7 @@ async function startTicketBasedPlay(
 }
 
 export default function ChildPlayPage() {
+  const router = useRouter();
   const [childId, setChildId] = useState<string | null>(null);
   const [goldKeyBalance, setGoldKeyBalance] = useState<number | null>(null);
 
@@ -131,18 +126,10 @@ export default function ChildPlayPage() {
   const [showGameScreen, setShowGameScreen] = useState(false);
   const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
 
-  const handleLogout = async () => {
-    if (isLogoutProcessing) return;
-    if (window.confirm("로그아웃할까요?")) {
-      setIsLogoutProcessing(true);
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      localStorage.removeItem("k_child_id");
-      localStorage.removeItem("login_role");
-      window.location.href = "/login?role=child";
-    }
-  };
+  // 로딩 중 중복 클릭 방지
+  const actionLockRef = useRef(false);
+
+
 
   useEffect(() => {
     let active = true;
@@ -179,6 +166,11 @@ export default function ChildPlayPage() {
     return () => { active = false; };
   }, [childId, refetchBalance]);
 
+  useEffect(() => {
+    // 010: 퀴즈마스터 프록시 경로 미리 가져오기
+    router.prefetch("/play/quiz");
+  }, [router]);
+
   const handleGameClick = async (game: typeof GAMES[0]) => {
     // 아직 실제 게임 화면이 없는 placeholder(만화책/헤어스타일) — 황금열쇠 차감/시작
     // 확인 모달로 절대 이어지지 않게 여기서 즉시 종료한다(예약 API 호출 자체를 막음).
@@ -190,6 +182,9 @@ export default function ChildPlayPage() {
       alert("로그인 정보가 필요합니다. 다시 로그인해주세요.");
       return;
     }
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
+
     setSelectedGame(game);
     setResumeCheckLoading(true);
     setShowActionModal(true);
@@ -208,12 +203,21 @@ export default function ChildPlayPage() {
       setResumeAttemptId(null);
     } finally {
       setResumeCheckLoading(false);
+      actionLockRef.current = false;
     }
   };
 
   const handleStart = async () => {
-    if (!childId || !selectedGame) return;
+    if (!childId || !selectedGame || actionLockRef.current) return;
+    
+    actionLockRef.current = true;
     setIsStarting(true);
+    let navigatingAway = false;
+    
+    // 퀴즈마스터는 클릭 즉시 전체화면 로딩 셸을 표시하기 위해 모달을 닫음
+    if (selectedGame.id === "quizmaster") {
+      setShowActionModal(false);
+    }
     try {
       if (selectedGame.id === "mbti") {
         // 딥 인터뷰 확정(.omc/specs/deep-interview-mbti-platform-connection.md ①②③):
@@ -222,11 +226,13 @@ export default function ChildPlayPage() {
         // 넘어가는 이동이라 Next.js 클라이언트 라우터가 이어서 처리할 수 없다.
         const result = await startTicketBasedPlay(childId, "mbti");
 
-        if (result.ok) {
           setShowActionModal(false);
-          window.location.assign("/play/mbti");
+          navigatingAway = true;
+          router.push("/child/play/mbti");
+          return;
         } else if (result.reason === "insufficient_balance") {
           setIsStarting(false);
+          actionLockRef.current = false;
           setShowActionModal(false);
           setShowInsufficientModal(true);
           return;
@@ -242,18 +248,16 @@ export default function ChildPlayPage() {
         
         if (res.status === 402) {
           setIsStarting(false);
+          actionLockRef.current = false;
           setShowActionModal(false);
           setShowInsufficientModal(true);
           return;
         } else if (res.ok) {
           const { token } = await res.json();
-          setShowActionModal(false);
           writeQuizSessionHandoff({ token, childId });
-          // MBTI와 동일한 이유로 하드 내비게이션이다(계획 Phase 5.4): quiz_proxy
-          // 게이트가 켜지면 /play/quiz는 인앱 Next.js 라우트가 아니라 독립 Quiz
-          // 배포로 리버스 프록시되는 경로가 되므로, router.push는 존재하지 않는
-          // RSC 페이로드를 기대하다 실패한다.
-          window.location.assign("/play/quiz");
+          navigatingAway = true;
+          router.push("/child/play/quizmaster");
+          return;
         } else {
           alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
         }
@@ -268,6 +272,7 @@ export default function ChildPlayPage() {
           setShowFinalConfirm(true);
         } else if (res.status === 402) {
           setIsStarting(false);
+          actionLockRef.current = false;
           setShowActionModal(false);
           setShowInsufficientModal(true);
           return;
@@ -292,14 +297,25 @@ export default function ChildPlayPage() {
     } catch (e) {
       alert("오류가 발생했습니다.");
     } finally {
-      setIsStarting(false);
+      if (!navigatingAway) {
+        setIsStarting(false);
+        actionLockRef.current = false;
+      }
     }
   };
 
   const handleResume = async () => {
-    if (!childId || !selectedGame) return;
+    if (!childId || !selectedGame || actionLockRef.current) return;
+    
+    actionLockRef.current = true;
+    setIsStarting(true);
+    let navigatingAway = false;
+    
+    if (selectedGame.id === "quizmaster") {
+      setShowActionModal(false);
+    }
+
     if (selectedGame.id === "mbti") {
-      setIsStarting(true);
       try {
         const res = await fetch("/api/play/execution-ticket", {
           method: "POST",
@@ -308,7 +324,9 @@ export default function ChildPlayPage() {
         });
         if (res.ok) {
           setShowActionModal(false);
+          navigatingAway = true;
           window.location.assign("/play/mbti");
+          return;
         } else {
           alert("이어하기 처리에 실패했습니다.");
         }
@@ -316,27 +334,35 @@ export default function ChildPlayPage() {
         alert("오류가 발생했습니다.");
       } finally {
         setIsStarting(false);
+        actionLockRef.current = false;
       }
     } else if (selectedGame.id === "quizmaster") {
       // 재차감 없는 이어하기(계획 Phase 5.1): start-handoff(황금열쇠 차감)를 호출하지
       // 않는다. claim(순수 재인증) 호출도 여기서 하지 않는다 — Quiz 앱이 자기 세션으로
       // 소유권을 확인한 뒤 자기 쪽 claim 엔드포인트를 호출하는 것이 주경로다.
       // K-Bestie는 attemptId만 넘기고(쿼리 + sessionStorage) 하드 내비게이션한다.
-      setIsStarting(true);
       try {
         if (!resumeAttemptId) {
           alert("이어서 진행할 놀이를 찾지 못했어요. 다시 시도해주세요.");
+          setIsStarting(false);
+          actionLockRef.current = false;
           return;
         }
-        setShowActionModal(false);
         writeQuizSessionHandoff({ token: "", childId, attemptId: resumeAttemptId });
-        window.location.assign(`/play/quiz?resume=${encodeURIComponent(resumeAttemptId)}`);
+        navigatingAway = true;
+        router.push(`/child/play/quizmaster?resume=${encodeURIComponent(resumeAttemptId)}`);
+        return;
       } finally {
-        setIsStarting(false);
+        if (!navigatingAway) {
+          setIsStarting(false);
+          actionLockRef.current = false;
+        }
       }
     } else {
       setShowActionModal(false);
       setShowGameScreen(true);
+      setIsStarting(false);
+      actionLockRef.current = false;
     }
   };
 
@@ -370,25 +396,8 @@ export default function ChildPlayPage() {
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "var(--background-page, #FFF9F2)" }}>
 
-        {/* 헤더 (046: 56~64px 소형 헤더로 축소, 별도 mt-4 마진 제거) */}
-        <div className="shrink-0 flex items-center justify-between px-4 z-10 w-full max-w-[430px] mx-auto bg-white/50 backdrop-blur-sm border-b border-black/5" style={{ paddingTop: "max(10px, env(safe-area-inset-top))", paddingBottom: "10px" }}>
-          <Link href="/child/home" className="w-[70px] h-[40px] flex items-center text-sm font-bold" style={{ color: "var(--color-k-navy)" }} aria-label="아이 홈으로 돌아가기">
-            ← 뒤로
-          </Link>
-          <h1 className="flex-1 text-center text-base font-bold truncate px-2" style={{ color: "var(--color-k-navy)" }}>
-            케이와 놀이
-          </h1>
-          <div className="w-[70px] flex justify-end">
-            <button
-              onClick={handleLogout}
-              disabled={isLogoutProcessing}
-              className="w-[40px] h-[40px] flex items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
-              aria-label="로그아웃"
-            >
-              <LogOut size={18} color="var(--color-k-navy)" />
-            </button>
-          </div>
-        </div>
+        {/* 공통 헤더 */}
+        <AppTopHeader title="케이와 놀이" />
 
         {/* 메인 스크롤 영역 (046: 하단 CTA를 자연스러운 흐름 안으로 이동, 큰 고정 pb 제거) */}
         <div className="flex-1 overflow-y-auto w-full max-w-[430px] mx-auto px-3 relative z-10">
@@ -693,8 +702,25 @@ export default function ChildPlayPage() {
           </div>
         )}
 
+        {/* 4. 퀴즈마스터 즉각 로딩 셸 (클릭 시 1초 이내 시각적 피드백 제공) */}
+        {isStarting && selectedGame?.id === "quizmaster" && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-200" style={{ background: "var(--background-page, #FFF9F2)" }}>
+            <Image
+              src="/Images/mascot/mascot-standing.png"
+              alt="케이 마스코트"
+              width={80}
+              height={80}
+              className="object-contain animate-bounce drop-shadow-sm mb-5"
+              priority
+            />
+            <p className="text-xl font-bold text-gray-800 mb-2">퀴즈를 준비하고 있어요!</p>
+            <p className="text-sm text-gray-500">잠시만 기다려주세요...</p>
+          </div>
+        )}
+
       </div>
-    
+        <link rel="preconnect" href={process.env.NEXT_PUBLIC_QUIZ_UPSTREAM_ORIGIN || "https://k-bestie-quiz-dev.vercel.app"} />
+        <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_QUIZ_UPSTREAM_ORIGIN || "https://k-bestie-quiz-dev.vercel.app"} />
         <KChatbotWidget appSurface="child" />
       </DemoFrame>
   );
