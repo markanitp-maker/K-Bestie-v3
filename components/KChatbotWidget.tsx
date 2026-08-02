@@ -28,7 +28,19 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
   const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [resultMessage, setResultMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  type AttachmentState = {
+    client_id: string;
+    file: File;
+    previewUrl: string;
+    status: "processing" | "uploading" | "uploaded" | "failed";
+    server_id?: string;
+    error_message?: string;
+  };
+  const [attachments, setAttachments] = useState<AttachmentState[]>([]);
+
 
   const pathname = usePathname();
   const modalRef = useRef<HTMLDivElement>(null);
@@ -288,12 +300,21 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
   }, [isOpen, handleKeyDown]);
 
   const closeModal = () => {
-    if (content.trim() !== "" || subject.trim() !== "") {
+    if (content.trim() !== "" || subject.trim() !== "" || attachments.length > 0) {
       if (!confirm(appSurface === "child" ? "작성하던 내용이 사라져. 정말 닫을까?" : "작성 중인 내용이 삭제됩니다. 정말 닫으시겠습니까?")) {
         return;
       }
     }
     setIsOpen(false);
+    
+    // Clean up orphans
+    attachments.forEach(att => {
+      if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
+      if (att.status === "uploaded" && att.server_id) {
+        fetch(`/api/support/attachments?id=${att.server_id}`, { method: "DELETE" }).catch(() => {});
+      }
+    });
+    
     resetForm();
   };
 
@@ -302,15 +323,148 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
     setSubject("");
     setContent("");
     setResultMessage(null);
+    setAttachments([]);
     // 다음번 제출은 완전히 새 시도이므로 새 idempotency key를 발급한다(이번 제출과
     // 겹치지 않게). 실패 후 재시도(폼 유지, resetForm 미호출)는 기존 값을 그대로 써서
     // 서버가 같은 시도로 인식하도록 한다.
     idempotencyKeyRef.current = crypto.randomUUID();
   };
 
+
+  // --- ATTACHMENT HELPERS ---
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+    e.target.value = ""; // reset input
+
+    if (attachments.length + files.length > 3) {
+      alert("이미지는 최대 3장까지 첨부할 수 있어요.");
+      return;
+    }
+
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert("이미지는 한 장당 10MB 이하만 첨부할 수 있어요.");
+        continue;
+      }
+      
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+      if (!allowedTypes.includes(file.type)) {
+        alert("지원하지 않는 파일 형식입니다.");
+        continue;
+      }
+
+      const client_id = crypto.randomUUID();
+      const previewUrl = URL.createObjectURL(file);
+      
+      const newAtt: AttachmentState = {
+        client_id,
+        file,
+        previewUrl,
+        status: "processing"
+      };
+      
+      setAttachments(prev => [...prev, newAtt]);
+      
+      // Process and upload
+      processAndUpload(newAtt);
+    }
+  };
+
+  const processAndUpload = async (att: AttachmentState) => {
+    try {
+      // 1. Process image (resize, compress, strip EXIF)
+      const processedFile = await processImage(att.file);
+      
+      setAttachments(prev => prev.map(a => a.client_id === att.client_id ? { ...a, status: "uploading" } : a));
+      
+      // 2. Upload
+      const formData = new FormData();
+      formData.append("file", processedFile);
+      formData.append("upload_session_id", idempotencyKeyRef.current);
+      formData.append("display_order", "0"); // Not strictly ordered in this simple implementation, or we can use index
+
+      const res = await fetch("/api/support/attachments", {
+        method: "POST",
+        body: formData
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      
+      setAttachments(prev => prev.map(a => a.client_id === att.client_id ? { ...a, status: "uploaded", server_id: data.attachment.id } : a));
+      
+    } catch (err) {
+      console.error(err);
+      setAttachments(prev => prev.map(a => a.client_id === att.client_id ? { ...a, status: "failed", error_message: "업로드 실패" } : a));
+    }
+  };
+
+  const processImage = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > 2048 || height > 2048) {
+          if (width > height) {
+            height = Math.round(height * (2048 / width));
+            width = 2048;
+          } else {
+            width = Math.round(width * (2048 / height));
+            height = 2048;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(file);
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => {
+          if (!blob) return resolve(file);
+          resolve(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), { type: "image/jpeg" }));
+        }, "image/jpeg", 0.85);
+      };
+      img.onerror = () => reject(new Error("Image decode failed"));
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  const handleDeleteAttachment = async (client_id: string) => {
+    const att = attachments.find(a => a.client_id === client_id);
+    if (!att) return;
+    
+    // Remove from state immediately for better UX
+    setAttachments(prev => prev.filter(a => a.client_id !== client_id));
+    URL.revokeObjectURL(att.previewUrl);
+    
+    if (att.status === "uploaded" && att.server_id) {
+      try {
+        await fetch(`/api/support/attachments?id=${att.server_id}`, { method: "DELETE" });
+      } catch (err) {
+        console.error("Failed to delete attachment from server", err);
+      }
+    }
+  };
+  
+  const handleRetryAttachment = (client_id: string) => {
+    const att = attachments.find(a => a.client_id === client_id);
+    if (!att) return;
+    setAttachments(prev => prev.map(a => a.client_id === client_id ? { ...a, status: "processing", error_message: undefined } : a));
+    processAndUpload(att);
+  };
+  
+  const isSubmitDisabled = isSubmitting || attachments.some(a => a.status === "processing" || a.status === "uploading" || a.status === "failed");
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitDisabled) {
+      if (attachments.some(a => a.status === "failed")) {
+        alert("업로드 실패한 이미지가 있습니다. 삭제하거나 다시 시도해 주세요.");
+      }
+      return;
+    }
 
     if (category !== "voc" && subject.trim().length < 2) {
       alert(appSurface === "child" ? "제목을 2글자 이상 적어줘!" : "제목을 2자 이상 입력해 주세요.");
@@ -360,6 +514,11 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
       });
       setSubject("");
       setContent("");
+      // 제출 성공한 첨부파일은 이미 feedback_request_id로 연결됐으므로, 이후 닫기
+      // 버튼(closeModal)이 "미저장 콘텐츠"로 오인해 서버에서 삭제하지 않도록 목록만
+      // 비운다(서버 DELETE 호출 없이 상태만 초기화 - resetForm과 달리 idempotency
+      // key는 여기서 새로 발급하지 않는다. 성공 화면의 "확인" 버튼이 resetForm으로 처리).
+      setAttachments([]);
     } catch (err) {
       console.error(err);
       setResultMessage({
@@ -583,6 +742,67 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
                     />
                   </div>
 
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-sm font-bold text-gray-700">이미지 첨부 (선택)</label>
+                    <p className="text-xs text-gray-500">
+                      {appSurface === "child" 
+                        ? "문제 화면이나 보여주고 싶은 사진이 있으면 올려줘. 이름이나 얼굴 같은 개인정보가 보이지 않는지 먼저 확인해 줘."
+                        : "문제 화면이나 관련 이미지를 첨부할 수 있습니다. 개인정보가 포함되지 않았는지 확인해 주세요."}
+                    </p>
+                    
+                    {attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-3 mt-2">
+                        {attachments.map((att, idx) => (
+                          <div key={att.client_id} className="relative w-20 h-20 bg-gray-100 rounded-lg border border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center group">
+                            <img src={att.previewUrl} alt={`첨부 ${idx + 1}`} className="w-full h-full object-cover" />
+                            
+                            {(att.status === "processing" || att.status === "uploading") && (
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              </div>
+                            )}
+                            
+                            {att.status === "failed" && (
+                              <div className="absolute inset-0 bg-red-500/80 flex flex-col items-center justify-center">
+                                <span className="text-white text-xs font-bold mb-1">실패</span>
+                                <button type="button" onClick={() => handleRetryAttachment(att.client_id)} className="bg-white text-red-500 text-[10px] px-2 py-1 rounded shadow">재시도</button>
+                              </div>
+                            )}
+                            
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAttachment(att.client_id)}
+                              className="absolute top-1 right-1 w-5 h-5 bg-black/60 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              aria-label="삭제"
+                            >
+                              ✕
+                            </button>
+                            
+                            <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 rounded">
+                              {idx + 1}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {attachments.length < 3 && (
+                      <div className="mt-1">
+                        <label className="inline-flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold py-2.5 px-4 rounded-xl cursor-pointer transition-colors border border-gray-200">
+                          {attachments.length > 0 ? "이미지 추가" : (appSurface === "child" ? "사진 선택" : "사진 선택")}
+                          <input 
+                            type="file" 
+                            accept="image/jpeg,image/png,image/webp,image/heic,image/heif" 
+                            multiple 
+                            onChange={handleFileSelect} 
+                            className="hidden" 
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+
                   {resultMessage?.type === "error" && (
                     <div className="text-red-500 text-sm font-medium p-2 bg-red-50 rounded-lg">
                       {resultMessage.text}
@@ -591,10 +811,10 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
 
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitDisabled}
                     className="bg-k-orange hover:opacity-90 text-white font-bold py-3.5 rounded-xl disabled:opacity-50 transition-colors mt-2"
                   >
-                    {isSubmitting ? "제출 중..." : "제출하기"}
+                    {isSubmitting ? "제출 중..." : attachments.some(a => a.status === "processing" || a.status === "uploading") ? "이미지 처리 중..." : "제출하기"}
                   </button>
                 </form>
               )}

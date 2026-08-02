@@ -131,9 +131,11 @@ export async function POST(request: Request) {
       status: "open"
     };
 
-    const { error: insertErr } = await serviceClient
+    const { data: insertData, error: insertErr } = await serviceClient
       .from("support_requests")
-      .insert(insertPayload);
+      .insert(insertPayload)
+      .select("id")
+      .single();
 
     if (insertErr) {
       // 23505 = unique_violation. idempotency_key 유니크 제약에 걸린 경우 - 연타나
@@ -143,15 +145,34 @@ export async function POST(request: Request) {
       if (insertErr.code === "23505" && insertPayload.idempotency_key) {
         const { data: existing } = await serviceClient
           .from("support_requests")
-          .select("request_number")
+          .select("id, request_number")
           .eq("idempotency_key", insertPayload.idempotency_key)
           .maybeSingle();
         if (existing?.request_number) {
+          // Check if attachments need linking even on idempotent retry just in case
+          await serviceClient
+            .from("feedback_request_attachments")
+            .update({ feedback_request_id: existing.id })
+            .eq("upload_session_id", insertPayload.idempotency_key)
+            .eq("user_id", user.id)
+            .is("feedback_request_id", null)
+            .neq("upload_status", "deleted");
+
           return NextResponse.json({ ok: true, request_number: existing.request_number });
         }
       }
       console.error("[api/support] insert error:", insertErr);
       return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    if (idempotencyKey) {
+      await serviceClient
+        .from("feedback_request_attachments")
+        .update({ feedback_request_id: insertData.id })
+        .eq("upload_session_id", idempotencyKey)
+        .eq("user_id", user.id)
+        .is("feedback_request_id", null)
+        .neq("upload_status", "deleted");
     }
 
     return NextResponse.json({ ok: true, request_number });
