@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import { formatWeekRange } from "./CurrentWeekAggregationCard";
 
 export interface WeeklyReportSummary {
@@ -21,18 +20,20 @@ export function getStateColor(state: string) {
 export function WeeklyReportCard({
   report,
   isFeatured = false,
-  isLastWeek = false
+  isLastWeek = false,
+  onClick
 }: {
   report: WeeklyReportSummary;
   isFeatured?: boolean;
   isLastWeek?: boolean;
+  onClick?: (e: React.MouseEvent, id: string) => void;
 }) {
   const dotColor = getStateColor(report.summary_state);
 
   return (
-    <Link
-      href={`/parent/report/weekly/${report.id}`}
-      className={`block bg-white rounded-[16px] border border-gray-200 active:scale-[0.99] transition-transform flex flex-col justify-between ${
+    <button
+      onClick={(e) => onClick?.(e, report.id)}
+      className={`block w-full text-left bg-white rounded-[16px] border border-gray-200 active:scale-[0.99] transition-transform flex flex-col justify-between ${
         isFeatured ? "p-4 mb-4 shadow-md" : "p-3 shadow-sm h-full min-h-[150px]"
       }`}
     >
@@ -69,6 +70,6 @@ export function WeeklyReportCard({
           ))}
         </div>
       )}
-    </Link>
+    </button>
   );
 }

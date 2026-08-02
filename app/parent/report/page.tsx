@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { ReportDetailModal } from "@/components/ReportDetailModal";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
@@ -74,6 +75,17 @@ export default function ParentReportPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const lastClickedCardRef = useRef<HTMLElement | null>(null);
+
+  const handleOpenModal = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    lastClickedCardRef.current = e.currentTarget as HTMLElement;
+    setSelectedReportId(id);
+    setModalOpen(true);
+  };
 
   useEffect(() => {
     if (!activeChildId) {
@@ -187,10 +199,10 @@ export default function ParentReportPage() {
         const rel = formatRelative(item.date);
         
         renderedList.push(
-          <Link
+          <button
             key={`report-${item.date}`}
-            href={`/parent/report/${item.report.id}`}
-            className="block bg-white rounded-[16px] p-[16px] active:scale-[0.99] transition-transform shadow-sm border border-gray-200 mb-3"
+            onClick={(e) => handleOpenModal(e, item.report.id)}
+            className="block w-full text-left bg-white rounded-[16px] p-[16px] active:scale-[0.99] transition-transform shadow-sm border border-gray-200 mb-3"
           >
             <p className="text-[12px] text-gray-500 mb-2 sm:hidden">
               {formatDateShort(item.date)} · {rel}
@@ -207,7 +219,7 @@ export default function ParentReportPage() {
                 {item.report.summary_line}
               </p>
             )}
-          </Link>
+          </button>
         );
       } else if (item.type === 'gap') {
         const m = getMonthHeading(item.dates[0].date); // Most recent date in gap
@@ -322,6 +334,14 @@ export default function ParentReportPage() {
         />
       )}
       
+      <ReportDetailModal 
+        isOpen={modalOpen} 
+        onClose={() => setModalOpen(false)} 
+        reportId={selectedReportId} 
+        reportType="daily"
+        childId={activeChildId}
+        returnFocusRef={lastClickedCardRef}
+      />
       <KChatbotWidget appSurface="parent" />
     </DemoFrame>
   );

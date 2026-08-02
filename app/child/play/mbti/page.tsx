@@ -42,7 +42,9 @@ export default function MbtiWrapperPage() {
             src="/play/mbti" 
             className="w-full h-full border-none"
             onLoad={handleIframeLoad}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            // 2026-08-03: 퀴즈마스터와 동일한 sandbox 제약(상위 프레임 탐색 불가)이
+            // MBTI에도 있으면 같은 부류의 UX 문제가 재현될 수 있어 예방적으로 함께 추가.
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
           />
         </div>
       </div>
