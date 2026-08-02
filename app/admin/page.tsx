@@ -570,10 +570,10 @@ const GROUP_LABEL: Record<ModelGroup, string> = {
 // 그룹별로 스위치 가능한 모델 후보 — ai.ts의 레지스트리와 맞춰둔다.
 const MODEL_OPTIONS: Record<ModelGroup, { provider: ProviderId; modelId: string; label: string }[]> = {
   A: [
-    { provider: "vertex", modelId: "gemini-2.5-flash", label: "Vertex · gemini-3.5-flash (레거시 표시)" },
+    { provider: "vertex", modelId: "gemini-3.6-flash", label: "Vertex · gemini-3.6-flash (레거시 표시)" },
   ],
   B: [
-    { provider: "vertex", modelId: "gemini-2.5-flash", label: "Vertex · gemini-3.5-flash (레거시 표시)" },
+    { provider: "vertex", modelId: "gemini-3.5-flash", label: "Vertex · gemini-3.5-flash (레거시 표시)" },
   ],
   C: [
     { provider: "vertex", modelId: "gemini-live-2.5-flash-native-audio", label: "Vertex · gemini-live-2.5-flash-native-audio (레거시 표시)" },

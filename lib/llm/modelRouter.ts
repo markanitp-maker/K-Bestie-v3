@@ -43,12 +43,27 @@ export const LLM_ENV_KEYS: Record<LlmModelRole, string> = {
 };
 
 /**
+ * 런타임 환경(Node.js 또는 Deno)에 맞게 환경변수를 가져온다.
+ */
+function getEnvValue(key: string): string | undefined {
+  if (typeof process !== "undefined" && process.env) {
+    return process.env[key];
+  }
+  // @ts-ignore
+  if (typeof Deno !== "undefined" && Deno.env) {
+    // @ts-ignore
+    return Deno.env.get(key);
+  }
+  return undefined;
+}
+
+/**
  * 기능 역할에 맞는 LLM 모델 ID를 반환한다.
  * 환경변수가 지정되어 있으면 우선 사용하고, 없으면 확정된 기본 모델을 반환한다.
  */
 export function getLlmModel(role: LlmModelRole): string {
   const envKey = LLM_ENV_KEYS[role];
-  const envValue = process.env[envKey];
+  const envValue = getEnvValue(envKey);
   
   if (envValue && envValue.trim() !== "") {
     return envValue.trim();
@@ -63,13 +78,13 @@ export function getLlmModel(role: LlmModelRole): string {
  */
 export function validateModelRouterConfiguration(): void {
   const overrides = Object.entries(LLM_ENV_KEYS).filter(([role, key]) => {
-    const val = process.env[key];
+    const val = getEnvValue(key);
     return val && val.trim() !== "";
   });
   
   if (overrides.length > 0) {
     for (const [, key] of overrides) {
-      const val = process.env[key]?.trim() || "";
+      const val = getEnvValue(key)?.trim() || "";
       // 간단한 유효성 검증: HTTP URL이 들어오거나 모델 명명규칙에 안맞게 너무 짧은 경우 등
       if (val.includes("http://") || val.includes("https://") || val.length < 5) {
         console.warn(`[ModelRouter] Warning: Invalid model ID in ${key}: ${val}. This may cause errors.`);

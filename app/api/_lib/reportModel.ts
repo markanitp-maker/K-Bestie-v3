@@ -13,23 +13,30 @@ export interface ReportModelConfig {
 
 // ── 리포트(요약) 모델 등록부 ─────────────────────────────────
 export const REPORT_MODELS: Record<string, ReportModelConfig> = {
-  // JSON 모드 안정 지원 — 리포트 생성 기본값
-  "gemini-2.5-flash": {
-    modelId: "gemini-2.5-flash",
-    maxOutputTokens: 1024,
+  "gemini-3.6-flash": {
+    modelId: "gemini-3.6-flash",
+    maxOutputTokens: 8192, // 충분한 토큰
   },
-  // Gemma 계열 (JSON 모드 불안정 — 필요 시 프롬프트 튜닝 필요)
+  "gemini-3.5-flash": {
+    modelId: "gemini-3.5-flash",
+    maxOutputTokens: 8192,
+  },
+
   "gemma-4-31b-it": {
     modelId: "gemma-4-31b-it",
-    maxOutputTokens: 1024,
+    maxOutputTokens: 8192,
   },
 };
 
-// 여기만 바꾸면 전체 적용
-export const ACTIVE_REPORT_MODEL_ID = "gemini-2.5-flash";
+export function getReportModel(modelId: string): ReportModelConfig {
+  const config = REPORT_MODELS[modelId];
+  if (!config) {
+    return { modelId, maxOutputTokens: 8192 };
+  }
+  return config;
+}
 
 export function getActiveReportModel(): ReportModelConfig {
-  const config = REPORT_MODELS[ACTIVE_REPORT_MODEL_ID];
-  if (!config) throw new Error(`Unknown report model: ${ACTIVE_REPORT_MODEL_ID}`);
-  return config;
+  // 기본적으로 구버전 호환성을 위해 gemini-3.6-flash 반환 (실제로는 batch.ts에서 명시적으로 role 기반으로 가져옴)
+  return getReportModel("gemini-3.6-flash");
 }

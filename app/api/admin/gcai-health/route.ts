@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/requireAdmin';
 import { getGcaiEnvKeys, type GcaiProfile } from '@/app/api/_lib/gcaiProfiles';
-import { getModelForGroup, VERTEX_LIVE_VOICE_MODEL_ID } from '@/app/api/_lib/ai';
 import { getLlmModel } from '@/lib/llm/modelRouter';
 import { createServiceClient } from '@/lib/supabase/server';
 import { GoogleGenAI } from '@google/genai';
@@ -47,42 +46,49 @@ export async function GET(request: Request) {
 
   const keyJson = process.env[envKeys.GCP_VERTEX_SA_KEY_JSON]!;
   const project = process.env[envKeys.GOOGLE_CLOUD_PROJECT]!;
-  const location = process.env[envKeys.GOOGLE_CLOUD_LOCATION] || 'us-central1';
+  const locationText = 'global';
+  const locationLive = process.env[envKeys.GOOGLE_CLOUD_LOCATION] || 'us-central1';
 
-  let ai: GoogleGenAI | null = null;
+  let aiText: GoogleGenAI | null = null;
+  let aiLive: GoogleGenAI | null = null;
   let aiInitError: Error | null = null;
   try {
     const credentials = JSON.parse(keyJson);
-    ai = new GoogleGenAI({
+    aiText = new GoogleGenAI({
       vertexai: true,
       project,
-      location,
+      location: locationText,
+      googleAuthOptions: { credentials }
+    });
+    aiLive = new GoogleGenAI({
+      vertexai: true,
+      project,
+      location: locationLive,
       googleAuthOptions: { credentials }
     });
   } catch (e: any) {
     aiInitError = new Error('Invalid GCP_VERTEX_SA_KEY_JSON format');
   }
 
-  const checkTextModel = async (groupId: 'A' | 'B') => {
-    if (aiInitError || !ai) throw aiInitError;
-    const modelConfig = await getModelForGroup(groupId);
-    const res = await ai.models.generateContent({
+  const checkTextModel = async () => {
+    if (aiInitError || !aiText) throw aiInitError;
+    const res = await aiText.models.generateContent({
       model: getLlmModel("adminTextHealth"),
       contents: 'ping',
-      config: { maxOutputTokens: 32, thinkingConfig: { thinkingLevel: 'MINIMAL' as any } }
+      config: { maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'MINIMAL' as any } }
     });
     return res;
   };
 
   await Promise.allSettled([
-    runCheck('groupA', () => checkTextModel('A')),
-    runCheck('groupB', () => checkTextModel('B')),
+    runCheck('groupA', () => checkTextModel()),
+    runCheck('groupB', () => checkTextModel()),
     runCheck('groupC', async () => {
-      if (aiInitError || !ai) throw aiInitError;
-      const res = await ai.models.generateContent({
+      if (aiInitError || !aiLive) throw aiInitError;
+      const res = await aiLive.models.generateContent({
         model: getLlmModel("adminLiveHealth"),
         contents: 'ping',
-        config: { maxOutputTokens: 32, thinkingConfig: { thinkingLevel: 'MINIMAL' as any } }
+        config: { maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'MINIMAL' as any } }
       });
       return res;
     }),
