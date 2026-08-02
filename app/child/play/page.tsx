@@ -7,16 +7,9 @@ import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { AppTopHeader } from "@/components/AppTopHeader";
 
-function LogOut({ size = 20, color = "currentColor" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
-    </svg>
-  );
-}
+
 
 const GAMES = [
   // comingSoon: 실제 게임 화면이 아직 없는 placeholder 카드 — 클릭해도 황금열쇠 차감/
@@ -136,18 +129,7 @@ export default function ChildPlayPage() {
   // 로딩 중 중복 클릭 방지
   const actionLockRef = useRef(false);
 
-  const handleLogout = async () => {
-    if (isLogoutProcessing) return;
-    if (window.confirm("로그아웃할까요?")) {
-      setIsLogoutProcessing(true);
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      localStorage.removeItem("k_child_id");
-      localStorage.removeItem("login_role");
-      window.location.href = "/login?role=child";
-    }
-  };
+
 
   useEffect(() => {
     let active = true;
@@ -244,10 +226,9 @@ export default function ChildPlayPage() {
         // 넘어가는 이동이라 Next.js 클라이언트 라우터가 이어서 처리할 수 없다.
         const result = await startTicketBasedPlay(childId, "mbti");
 
-        if (result.ok) {
           setShowActionModal(false);
           navigatingAway = true;
-          window.location.assign("/play/mbti");
+          router.push("/child/play/mbti");
           return;
         } else if (result.reason === "insufficient_balance") {
           setIsStarting(false);
@@ -274,12 +255,8 @@ export default function ChildPlayPage() {
         } else if (res.ok) {
           const { token } = await res.json();
           writeQuizSessionHandoff({ token, childId });
-          // MBTI와 동일한 이유로 하드 내비게이션이다(계획 Phase 5.4): quiz_proxy
-          // 게이트가 켜지면 /play/quiz는 인앱 Next.js 라우트가 아니라 독립 Quiz
-          // 배포로 리버스 프록시되는 경로가 되므로, router.push는 존재하지 않는
-          // RSC 페이로드를 기대하다 실패한다.
           navigatingAway = true;
-          window.location.assign("/play/quiz");
+          router.push("/child/play/quizmaster");
           return;
         } else {
           alert("퀴즈마스터를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
@@ -373,7 +350,7 @@ export default function ChildPlayPage() {
         }
         writeQuizSessionHandoff({ token: "", childId, attemptId: resumeAttemptId });
         navigatingAway = true;
-        window.location.assign(`/play/quiz?resume=${encodeURIComponent(resumeAttemptId)}`);
+        router.push(`/child/play/quizmaster?resume=${encodeURIComponent(resumeAttemptId)}`);
         return;
       } finally {
         if (!navigatingAway) {
@@ -419,25 +396,8 @@ export default function ChildPlayPage() {
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "var(--background-page, #FFF9F2)" }}>
 
-        {/* 헤더 (046: 56~64px 소형 헤더로 축소, 별도 mt-4 마진 제거) */}
-        <div className="shrink-0 flex items-center justify-between px-4 z-10 w-full max-w-[430px] mx-auto bg-white/50 backdrop-blur-sm border-b border-black/5" style={{ paddingTop: "max(10px, env(safe-area-inset-top))", paddingBottom: "10px" }}>
-          <Link href="/child/home" className="w-[70px] h-[40px] flex items-center text-sm font-bold" style={{ color: "var(--color-k-navy)" }} aria-label="아이 홈으로 돌아가기">
-            ← 뒤로
-          </Link>
-          <h1 className="flex-1 text-center text-base font-bold truncate px-2" style={{ color: "var(--color-k-navy)" }}>
-            케이와 놀이
-          </h1>
-          <div className="w-[70px] flex justify-end">
-            <button
-              onClick={handleLogout}
-              disabled={isLogoutProcessing}
-              className="w-[40px] h-[40px] flex items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
-              aria-label="로그아웃"
-            >
-              <LogOut size={18} color="var(--color-k-navy)" />
-            </button>
-          </div>
-        </div>
+        {/* 공통 헤더 */}
+        <AppTopHeader title="케이와 놀이" />
 
         {/* 메인 스크롤 영역 (046: 하단 CTA를 자연스러운 흐름 안으로 이동, 큰 고정 pb 제거) */}
         <div className="flex-1 overflow-y-auto w-full max-w-[430px] mx-auto px-3 relative z-10">
