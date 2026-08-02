@@ -134,25 +134,38 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
   /** 사용자에게 보이는 원래 경로. 로그인 리다이렉트의 `from`으로 쓴다. */
   const publicPath = `${QUIZ_PROXY_PATH_PREFIX}${suffix}`;
 
-  // ── 2. K-Bestie 인증 세션 필수 ─────────────────────────────────────────────
+  // 성능: `_next/static/*`는 콘텐츠 해시가 붙은 불변 자산이라 요청자와 무관하게
+  // 항상 같은 바이트를 반환한다(사용자별 데이터 없음). 퀴즈 첫 화면 로드 시 이런
+  // 정적 청크가 수십 개씩 이 프록시를 거치는데, 매 요청마다 K-Bestie 세션을
+  // Supabase Auth API로 왕복 검증하면(요청당 수백 ms) 그 비용이 그대로 누적돼
+  // "클릭 후 10초" 체감 지연의 상당 부분을 차지했다(계측 확인). 아래 내부 시크릿
+  // 검증(§3)과 쿠키 allowlist는 정적 자산 경로에도 동일하게 그대로 적용되므로
+  // "raw 업스트림 URL을 최종 사용자가 직접 못 쓰게 한다"는 보안 속성은 유지된다 —
+  // 여기서 생략하는 것은 오직 "이 브라우저가 K-Bestie에 로그인돼 있는가"라는,
+  // 이 특정 응답 바이트에는 영향을 주지 않는 검사뿐이다.
+  const isImmutableAssetPath = publicPath.startsWith(`${QUIZ_PROXY_PATH_PREFIX}/_next/static/`);
+
+  // ── 2. K-Bestie 인증 세션 필수(불변 정적 자산 제외) ────────────────────────
   // 게이트 쿠키는 롤아웃 스위치일 뿐이므로, 업스트림으로 나가기 전에 실제 세션을
   // 확인한다(대표 결정 task #45-b).
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    // 문서 내비게이션은 /login으로, 서브리소스(_next/*·API)는 401로 — 기존 middleware가
-    // 쓰는 것과 같은 분기다. 에셋/XHR 요청에 HTML 로그인 페이지를 돌려주면 안 된다.
-    const wantsHtml = (request.headers.get("accept") ?? "").includes("text/html");
-    if (wantsHtml) {
-      const loginUrl = request.nextUrl.clone();
-      loginUrl.pathname = "/login";
-      loginUrl.search = "";
-      loginUrl.searchParams.set("from", `${publicPath}${search}`);
-      return NextResponse.redirect(loginUrl);
+  if (!isImmutableAssetPath) {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      // 문서 내비게이션은 /login으로, 서브리소스(_next/*·API)는 401로 — 기존 middleware가
+      // 쓰는 것과 같은 분기다. 에셋/XHR 요청에 HTML 로그인 페이지를 돌려주면 안 된다.
+      const wantsHtml = (request.headers.get("accept") ?? "").includes("text/html");
+      if (wantsHtml) {
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = "/login";
+        loginUrl.search = "";
+        loginUrl.searchParams.set("from", `${publicPath}${search}`);
+        return NextResponse.redirect(loginUrl);
+      }
+      return new NextResponse("Unauthorized", { status: 401 });
     }
-    return new NextResponse("Unauthorized", { status: 401 });
   }
 
   // ── 3. 업스트림 설정(둘 다 fail-closed) ────────────────────────────────────
@@ -295,8 +308,7 @@ async function proxyToQuizUpstream(request: NextRequest): Promise<Response> {
 
   // 아이별 진행상태가 CDN에 캐시돼 다른 사용자에게 새어나가지 않도록, 불변 정적 자산
   // 외에는 업스트림 Cache-Control을 신뢰하지 않고 강제로 private/no-store로 덮는다.
-  const isImmutableAsset = publicPath.startsWith(`${QUIZ_PROXY_PATH_PREFIX}/_next/static/`);
-  if (!isImmutableAsset) {
+  if (!isImmutableAssetPath) {
     responseHeaders.set("cache-control", "private, no-store");
   }
 
