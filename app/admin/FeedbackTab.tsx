@@ -156,6 +156,11 @@ export default function FeedbackTab() {
                     <td style={tdStyle}>
                       <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
                         {req.category === "voc" ? req.body : req.subject}
+                        {req.attachments && req.attachments.filter((a: any) => a.upload_status === "uploaded").length > 0 && (
+                          <span style={{ marginLeft: 8, fontSize: 11, background: '#e5e7eb', padding: '2px 6px', borderRadius: 4 }}>
+                            이미지 {req.attachments.filter((a: any) => a.upload_status === "uploaded").length}장
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td style={tdStyle}>{formatDateTime(req.created_at)}</td>
@@ -202,6 +207,30 @@ function FeedbackDetail({ req, onUpdate }: { req: any; onUpdate: (status: string
           <div style={{ fontWeight: 700, marginBottom: 4 }}>제목: {req.subject}</div>
           <div style={{ whiteSpace: "pre-wrap" }}>{req.body}</div>
         </div>
+
+        {req.attachments && req.attachments.filter((a: any) => a.upload_status === "uploaded").length > 0 && (
+          <div style={{ marginTop: 8, padding: 12, background: "white", borderRadius: 8, border: "1px solid var(--color-k-border)" }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>첨부 이미지</div>
+            <div style={{ display: "flex", gap: 12, overflowX: "auto" }}>
+              {req.attachments.filter((a: any) => a.upload_status === "uploaded").map((a: any, idx: number) => {
+                const downloadName = `FB-${(req.request_number || 'UNKNOWN').replace('REQ-', '')}-${idx + 1}.${a.stored_filename.split('.').pop()}`;
+                const downloadUrl = `${a.signed_url}&download=${downloadName}`;
+                return (
+                  <div key={a.id} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 100 }}>
+                    <a href={a.signed_url} target="_blank" rel="noreferrer" style={{ display: "block" }}>
+                      <img src={a.signed_url} alt={a.original_filename} style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 8, border: "1px solid var(--color-k-border)" }} />
+                    </a>
+                    <a href={downloadUrl} download={downloadName} style={{ fontSize: 11, color: "var(--color-k-navy)", textAlign: "center", textDecoration: "underline" }}>다운로드</a>
+                    <div style={{ fontSize: 10, color: "var(--color-k-text-secondary)", textAlign: "center" }}>
+                      {a.mime_type.split('/')[1]?.toUpperCase()} • {(a.file_size / 1024).toFixed(1)} KB
+                      {a.width && a.height ? ` • ${a.width}x${a.height}` : ""}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       <div style={{ width: 300, display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
