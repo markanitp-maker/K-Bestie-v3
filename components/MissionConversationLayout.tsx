@@ -168,12 +168,11 @@ export function MissionConversationLayout({
   }, [progressCurrent, lastProgress]);
 
   return (
-    <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "auto" }}>
-      <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col relative shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+    <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "hidden" }}>
+      <div className="w-full max-w-[480px] h-[100dvh] relative grid grid-rows-[auto_minmax(0,1fr)_auto_auto] shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
         
         {/* Decorations */}
-        <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden">
-          {/* Simple CSS shapes for decorations as per requirement not to use heavy canvas */}
+        <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden z-0">
           <div className="absolute top-[10%] left-[10%] w-16 h-8 bg-white rounded-full blur-[2px]" />
           <div className="absolute top-[20%] right-[15%] w-12 h-6 bg-white rounded-full blur-[2px]" />
           <div className="absolute top-[15%] left-[50%] w-2 h-2 bg-yellow-200 rounded-full blur-[1px]" />
@@ -189,85 +188,100 @@ export function MissionConversationLayout({
           </button>
         </div>
 
-        {/* Pill Progress Bar */}
-        <div className="mt-[calc(54px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] h-[44px] bg-white rounded-full shadow-sm flex items-center px-4 relative z-10 shrink-0">
-          <div className="flex w-full justify-between gap-1.5 h-full py-2.5">
-            {Array.from({length: progressTotal}).map((_, i) => {
-              const isFilled = i < progressCurrent;
-              const isAnimating = i === scaleStar;
-              return (
-                <div key={i} className="flex-1 relative flex items-center justify-center">
-                  <div 
-                    className={`w-full h-full rounded-full transition-colors duration-300 ${isFilled ? 'bg-[var(--color-k-orange)]' : 'bg-[#D5ECFF]'}`} 
-                    style={{ transform: isAnimating ? 'scale(1.3)' : 'scale(1)', transition: 'transform 150ms ease-out, background-color 300ms' }}
-                  />
-                  {isFilled && <div className="absolute inset-0 rounded-full border border-yellow-300/50" />}
+        {/* Grid Row 1: Top Area */}
+        <div className="relative z-10 flex flex-col shrink-0 w-full">
+          {/* Pill Progress Bar */}
+          <div className="mt-[calc(54px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] h-[44px] bg-white rounded-full shadow-sm flex items-center px-4 relative z-10 shrink-0">
+            <div className="flex w-full justify-between gap-1.5 h-full py-2.5">
+              {Array.from({length: progressTotal}).map((_, i) => {
+                const isFilled = i < progressCurrent;
+                const isAnimating = i === scaleStar;
+                return (
+                  <div key={i} className="flex-1 relative flex items-center justify-center">
+                    <div 
+                      className={`w-full h-full rounded-full transition-colors duration-300 ${isFilled ? 'bg-[var(--color-k-orange)]' : 'bg-[#D5ECFF]'}`} 
+                      style={{ transform: isAnimating ? 'scale(1.3)' : 'scale(1)', transition: 'transform 150ms ease-out, background-color 300ms' }}
+                    />
+                    {isFilled && <div className="absolute inset-0 rounded-full border border-yellow-300/50" />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Spacer above conversation */}
+          <div className="h-[clamp(8px,1.5dvh,24px)] max-[400px]:h-[56px] w-full shrink-0" />
+        </div>
+
+        {/* Grid Row 2: 지난대화 + 현재발화를 하나의 유연한 행으로 묶는다(054 QA 리뷰 지적 —
+            둘을 별도 auto 행으로 나누면 지난대화가 없는 첫 턴 + 최대 길이 현재발화 + 짧은
+            기기(iPhone SE 등) 조합에서 두 행 합이 뷰포트를 넘어 overflow:hidden에 하단
+            마이크 버튼이 잘리는 회귀가 있었다. 둘 다 flex-shrink 기본값(1)이라 엄밀한
+            순차 우선순위는 아니고 base-size 비례로 동시에 줄어들지만, 지난대화는 보통
+            내용이 적거나 없어 실질적으로 거의 다 흡수하고, 남는 부족분만 현재발화
+            말풍선으로 넘어가 내부 스크롤(overflow-y-auto)로 흡수된다 — 현재발화가 뷰포트
+            밖으로 밀려나는 대신 항상 화면 안에서 스크롤 가능하게 유지됨(054 2차 리뷰 지적:
+            주석과 실제 동작(비례 축소) 불일치 수정). */}
+        <div className="relative z-10 flex flex-col justify-end items-center min-h-0 overflow-hidden w-full h-full">
+          {/* Previous Chat Summary Area */}
+          <div className="relative z-10 px-[clamp(16px,4vw,24px)] w-full flex flex-col justify-end min-h-0 overflow-hidden mb-[12px]">
+            {/* Top fade out for older text when cut off */}
+            <div className="absolute top-0 left-0 w-full h-[24px] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
+
+            <div className="flex flex-col items-center justify-end gap-[10px] w-full min-h-0">
+              {olderKText && (
+                <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
+                  {olderKText}
                 </div>
-              );
-            })}
+              )}
+              {prevKText && (
+                <div className="bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
+                  {prevKText}
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Current Question Bubble or Start/Resume Button */}
+          <div className="relative z-20 flex flex-col items-center w-full min-h-0 shrink">
+            {entryStatus === "ready_to_start" || entryStatus === "ready_to_resume" ? (
+              <button
+                onClick={entryStatus === "ready_to_start" ? onStartMission : onResumeMission}
+                disabled={isClosing}
+                aria-label={
+                  entryStatus === "ready_to_start"
+                    ? "새 미션 시작하기"
+                    : `진행 중인 미션 이어하기, 현재 진행률 ${progressCurrent}단계 중 ${progressTotal}단계`
+                }
+                className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] flex flex-col justify-center items-center min-h-[88px] shrink-0 cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                <div className="text-[var(--color-k-navy)] text-[clamp(22px,6vw,26px)] font-[700]">
+                  {entryStatus === "ready_to_start" ? "시작하기" : "이어하기"}
+                </div>
+                {/* Triangle tail */}
+                <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
+                <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
+              </button>
+            ) : (
+              <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col max-h-[35dvh] min-h-0">
+                <div className="w-full overflow-y-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                  <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
+                    {currentQuestionText}
+                  </p>
+                </div>
+                {/* Triangle tail */}
+                <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
+                <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
+              </div>
+            )}
+          </div>
+
+          {/* Spacer between bubble and mascot */}
+          <div className="h-[clamp(24px,3dvh,34px)] w-full shrink-0" />
         </div>
 
-        {/* Spacer above conversation */}
-        {/* max-[400px] 플로어: 이 화면 상단에는 KChatbotWidget(문의 버튼, topOffsetPx=104
-            + 높이 약 40px)이 fixed로 우상단에 떠 있다. 좁은 화면(≤400px)에서 dvh 기반
-            clamp 최솟값(8px)까지 줄어들면 진행률 바 하단(98px)+8px=106px에서 바로 이전
-            대화 영역이 시작돼 문의 버튼(104~144px)과 겹친다. 문의 버튼은 이 컴포넌트가
-            모르는 별도 fixed 오버레이라 여기서 폭을 줄이는 대신 세로 여백을 그 버튼
-            높이만큼 확보한다(033 QA에서 실측 겹침 확인). */}
-        <div className="flex-[0.5_1_0%] min-h-[clamp(8px,1.5dvh,24px)] max-[400px]:min-h-[56px]" />
-
-        {/* Previous Chat Summary Area (Flexible) */}
-        <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink-0 gap-[10px] mb-[12px]">
-          {olderKText && (
-            <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
-              {olderKText}
-            </div>
-          )}
-          {prevKText && (
-            <div className="bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
-              {prevKText}
-            </div>
-          )}
-        </div>
-
-        {/* Current Question Bubble or Start/Resume Button */}
-        {entryStatus === "ready_to_start" || entryStatus === "ready_to_resume" ? (
-          <button
-            onClick={entryStatus === "ready_to_start" ? onStartMission : onResumeMission}
-            disabled={isClosing}
-            aria-label={
-              entryStatus === "ready_to_start"
-                ? "새 미션 시작하기"
-                : `진행 중인 미션 이어하기, 현재 진행률 ${progressCurrent}단계 중 ${progressTotal}단계`
-            }
-            className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] flex flex-col justify-center items-center min-h-[88px] shrink-0 h-auto overflow-visible cursor-pointer active:scale-95 disabled:opacity-50"
-          >
-            <div className="text-[var(--color-k-navy)] text-[clamp(22px,6vw,26px)] font-[700]">
-              {entryStatus === "ready_to_start" ? "시작하기" : "이어하기"}
-            </div>
-            {/* Triangle tail */}
-            <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
-            <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
-          </button>
-        ) : (
-          <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[70px] shrink-0 h-auto overflow-visible">
-            <div className="w-full">
-              <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
-                {currentQuestionText}
-              </p>
-            </div>
-            {/* Triangle tail */}
-            <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
-            <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
-          </div>
-        )}
-
-        {/* Spacer between bubble and mascot */}
-        <div className="flex-[1_1_0%] min-h-[clamp(24px,3dvh,34px)]" />
-
-        {/* Mascot Area & Side Cards */}
-        <div className="relative z-10 flex flex-row items-center justify-center gap-[clamp(6px,2vw,12px)] px-[16px] w-full shrink min-h-[140px]">
+        {/* Grid Row 3: Mascot Area & Side Cards */}
+        <div className="relative z-10 flex flex-row items-center justify-center gap-[clamp(6px,2vw,12px)] px-[16px] w-full shrink-0 min-h-[140px]">
           
           {/* Left Mute Card */}
           <button onClick={onToggleMute} disabled={isClosing} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
@@ -311,103 +325,107 @@ export function MissionConversationLayout({
              </div>
              <span className="text-[clamp(15px,4vw,18px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
           </div>
-        </div>
-        {entryStatus !== "active" && (
-          <span className="sr-only">미션을 시작한 뒤 음성 입력을 사용할 수 있습니다</span>
-        )}
 
-        {/* Auto/Manual Mode Toggles */}
-        <div className="relative z-20 flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
-           <button onClick={() => onChangeMode('auto')} disabled={isClosing || entryStatus !== "active"} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
-             자동
-             {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
-           </button>
-           <button onClick={() => onChangeMode('manual')} disabled={isClosing || entryStatus !== "active"} aria-pressed={!isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${!isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
-             수동
-             {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
-           </button>
+          {entryStatus !== "active" && (
+            <span className="sr-only">미션을 시작한 뒤 음성 입력을 사용할 수 있습니다</span>
+          )}
         </div>
 
-        {/* Spacer between mode and mic */}
-        <div className="flex-[0.8_1_0%] min-h-[clamp(20px,3dvh,28px)]" />
+        {/* Grid Row 4: Bottom Area */}
+        <div className="relative z-20 flex flex-col shrink-0 w-full">
+          {/* Auto/Manual Mode Toggles */}
+          <div className="flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
+             <button onClick={() => onChangeMode('auto')} disabled={isClosing || entryStatus !== "active"} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+               자동
+               {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
+             </button>
+             <button onClick={() => onChangeMode('manual')} disabled={isClosing || entryStatus !== "active"} aria-pressed={!isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${!isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+               수동
+               {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
+             </button>
+          </div>
 
-        {/* Bottom Inputs Area */}
-        <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(24px,3.5dvh,36px)+env(safe-area-inset-bottom))]">
-          {isTextMode ? (
-            <div
-              className="w-full flex gap-2 box-border"
-              style={{
-                paddingLeft: "max(16px, env(safe-area-inset-left))",
-                paddingRight: "max(16px, env(safe-area-inset-right))",
-              }}
-            >
-              <input
-                ref={(el) => { if (el && !isClosing) el.focus(); }}
-                type="text"
-                value={textInput}
-                onChange={(e) => onChangeTextInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSendText(); }
+          {/* Spacer between mode and mic */}
+          <div className="h-[clamp(20px,3dvh,28px)] w-full shrink-0" />
+
+          {/* Bottom Inputs Area */}
+          <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(24px,3.5dvh,36px)+env(safe-area-inset-bottom))]">
+            {isTextMode ? (
+              <div
+                className="w-full flex gap-2 box-border"
+                style={{
+                  paddingLeft: "max(16px, env(safe-area-inset-left))",
+                  paddingRight: "max(16px, env(safe-area-inset-right))",
                 }}
-                placeholder="케이에게 텍스트로 답하기..."
-                disabled={isClosing || entryStatus !== "active"}
-                className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
-                maxLength={200}
-              />
-              <button
-                onClick={onSendText}
-                disabled={!textInput.trim() || isClosing || entryStatus !== "active"}
-                className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center text-white disabled:opacity-40 cursor-pointer shadow-md bg-[var(--color-k-orange)] active:scale-95"
-                aria-label="전송"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-              </button>
-              <button
-                onClick={onToggleTextMode}
-                disabled={isClosing}
-                className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40"
-                aria-label="텍스트 입력창 닫기"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              </button>
-            </div>
-          ) : (
-            <div className="w-full flex items-center justify-center h-[clamp(72px,11vw,82px)] relative">
-              {/* Keyboard Button */}
-              <button 
-                onClick={onToggleTextMode}
-                disabled={isClosing || entryStatus !== "active"}
-                className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(44px,11vw,54px)] h-[clamp(44px,11vw,54px)] bg-white/80 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-sm border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" 
-                aria-label="텍스트로 답하기"
-              >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
-              </button>
-
-              {/* Main Mic Button */}
-              <div className="relative flex items-center justify-center">
-                {isRecording && (
-                  <>
-                    <div className="absolute w-[clamp(90px,13vw,100px)] h-[clamp(90px,13vw,100px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
-                    <div className="absolute w-[clamp(108px,16vw,120px)] h-[clamp(108px,16vw,120px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
-                  </>
-                )}
-                <button 
-                  onClick={onMicClick} 
-                  disabled={isMicDisabled || entryStatus !== "active"} 
-                  className={`w-[clamp(72px,11vw,82px)] h-[clamp(72px,11vw,82px)] rounded-[50%] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 ${(isMicDisabled || entryStatus !== "active") ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-[var(--color-k-orange)]'}`}
-                  aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
+                <input
+                  ref={(el) => { if (el && !isClosing) el.focus(); }}
+                  type="text"
+                  value={textInput}
+                  onChange={(e) => onChangeTextInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSendText(); }
+                  }}
+                  placeholder="케이에게 텍스트로 답하기..."
+                  disabled={isClosing || entryStatus !== "active"}
+                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
+                  maxLength={200}
+                />
+                <button
+                  onClick={onSendText}
+                  disabled={!textInput.trim() || isClosing || entryStatus !== "active"}
+                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center text-white disabled:opacity-40 cursor-pointer shadow-md bg-[var(--color-k-orange)] active:scale-95"
+                  aria-label="전송"
                 >
-                  {isRecording ? (
-                    <div className="w-[24px] h-[24px] rounded-sm bg-white" />
-                  ) : (isMicDisabled || entryStatus !== "active") ? (
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
-                  ) : (
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-                  )}
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+                <button
+                  onClick={onToggleTextMode}
+                  disabled={isClosing}
+                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40"
+                  aria-label="텍스트 입력창 닫기"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="w-full flex items-center justify-center h-[clamp(72px,11vw,82px)] relative">
+                {/* Keyboard Button */}
+                <button 
+                  onClick={onToggleTextMode}
+                  disabled={isClosing || entryStatus !== "active"}
+                  className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(44px,11vw,54px)] h-[clamp(44px,11vw,54px)] bg-white/80 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-sm border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" 
+                  aria-label="텍스트로 답하기"
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
+                </button>
+
+                {/* Main Mic Button */}
+                <div className="relative flex items-center justify-center">
+                  {isRecording && (
+                    <>
+                      <div className="absolute w-[clamp(90px,13vw,100px)] h-[clamp(90px,13vw,100px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
+                      <div className="absolute w-[clamp(108px,16vw,120px)] h-[clamp(108px,16vw,120px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
+                    </>
+                  )}
+                  <button 
+                    onClick={onMicClick} 
+                    disabled={isMicDisabled || entryStatus !== "active"} 
+                    className={`w-[clamp(72px,11vw,82px)] h-[clamp(72px,11vw,82px)] rounded-[50%] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 ${(isMicDisabled || entryStatus !== "active") ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-[var(--color-k-orange)]'}`}
+                    aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
+                  >
+                    {isRecording ? (
+                      <div className="w-[24px] h-[24px] rounded-sm bg-white" />
+                    ) : (isMicDisabled || entryStatus !== "active") ? (
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+                    ) : (
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         
       </div>
