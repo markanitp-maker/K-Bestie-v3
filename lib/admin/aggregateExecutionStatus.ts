@@ -70,7 +70,11 @@ export async function aggregateExecutionStatus(
       else if (isSkipped) uiStatus = "건너뜀";
       else uiStatus = "완료";
     } else if (item.status === "failed") {
-      uiStatus = "실패";
+      // UPSTREAM_FAILED: 이 단계 자체가 실패한 게 아니라 앞단(수집/수집보정)
+      // 실패로 대기 중단된 것이므로, 동일하게 "실패"로만 보이면 어느 단계가
+      // 진짜 원인인지 관리자가 구분할 수 없다(2026-08-02 Production 장애
+      // 보고에서 지적된 문제).
+      uiStatus = item.outcome === "UPSTREAM_FAILED" ? "대기 — 앞단 실패" : "실패";
     } else if (item.status === "retry_wait") {
       uiStatus = "재시도 대기";
     }
