@@ -326,7 +326,7 @@ export default function ChildPlayPage() {
         if (res.ok) {
           setShowActionModal(false);
           navigatingAway = true;
-          window.location.assign("/play/mbti");
+          router.push("/child/play/mbti");
           return;
         } else {
           alert("이어하기 처리에 실패했습니다.");
