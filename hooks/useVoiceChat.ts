@@ -41,6 +41,11 @@ const POLL_INTERVAL_MS = 1300;       // 중간 자막 갱신 주기
 const SILENCE_MS_TO_FINALIZE = 900;  // 이만큼 조용하면 발화 종료로 판단
 const RMS_SILENCE_THRESHOLD = 0.012; // 이 이하 진폭은 무음으로 간주
 const CHUNK_MS = 128;                // processor 콜백 1회당 대략적 시간(16kHz, 2048 샘플)
+// 배경 소음·에코 등으로 RMS가 무음 임계값 아래로 절대 안 떨어지면 silenceMsRef가 누적되지
+// 않아 finalizeChildTurn()이 영원히 안 불려 화면이 "듣고 있어"에 무한정 멈춘다(2026-08-02
+// Production 자동모드 무반응 실사용 보고로 확인). 이 시간을 넘겨 계속 "말하는 중"으로
+// 판정되면 무음 감지와 무관하게 강제로 발화를 확정한다(수동 모드에는 적용 안 함).
+const MAX_UTTERANCE_MS = 10000;
 
 function encodePCM16Base64(chunks: Uint8Array[]): string {
   let total = 0;
@@ -103,6 +108,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const chunksRef = useRef<Uint8Array[]>([]);
   const hasSpeechRef = useRef(false);
   const silenceMsRef = useRef(0);
+  const speechStartedAtRef = useRef(0);
   const sttBusyRef = useRef(false);
   // 자유대화 respondText() 진행 중(케이 반응 생성 중) 플래그 — 이 동안은 새 녹음을 시작하거나
   // 무음감지로 자동 finalize가 발생하지 않도록 막는다(speakingRef와 동일한 가드 패턴 재사용).
@@ -174,6 +180,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     chunksRef.current = [];
     hasSpeechRef.current = false;
     silenceMsRef.current = 0;
+    speechStartedAtRef.current = 0;
     setInterimChildText("");
     if (chunks.length === 0) {
       if (onEmptyAudioRef.current) onEmptyAudioRef.current();
@@ -221,6 +228,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     chunksRef.current = [];
     hasSpeechRef.current = false;
     silenceMsRef.current = 0;
+    speechStartedAtRef.current = 0;
     setInterimChildText("");
 
     try {
@@ -265,9 +273,15 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         if (rms >= RMS_SILENCE_THRESHOLD) {
           if (!hasSpeechRef.current) {
             onSpeechBeginRef.current?.();
+            speechStartedAtRef.current = Date.now();
           }
           hasSpeechRef.current = true;
           silenceMsRef.current = 0;
+          if (inputModeRef.current !== "manual" && Date.now() - speechStartedAtRef.current >= MAX_UTTERANCE_MS) {
+            onSpeechEndRef.current?.();
+            logVoiceEvent({ ts: Date.now(), eventType: "max_utterance_forced_finalize" });
+            void finalizeChildTurn();
+          }
         } else {
           silenceMsRef.current += CHUNK_MS;
           if (hasSpeechRef.current && silenceMsRef.current >= SILENCE_MS_TO_FINALIZE && inputModeRef.current !== "manual") {
@@ -327,6 +341,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     chunksRef.current = [];
     hasSpeechRef.current = false;
     silenceMsRef.current = 0;
+    speechStartedAtRef.current = 0;
     speakingRef.current = false;
     setIsSpeaking(false);
     respondingRef.current = false;
