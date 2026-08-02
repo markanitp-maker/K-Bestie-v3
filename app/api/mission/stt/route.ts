@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   const authService = createServiceClient();
   const { data: session } = await authService
     .from("chat_sessions")
-    .select("child_id")
+    .select("child_id, session_type")
     .eq("id", body.sessionId)
     .single();
   if (!session) {
@@ -83,13 +83,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const sessionCheck = await assertMissionSessionActive(authService, body.sessionId);
-  if (!sessionCheck.allowed) {
-    console.error("[mission/stt] Session not active or expired", { sessionId: body.sessionId, childTurnId: body.childTurnId });
-    return NextResponse.json(
-      { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired },
-      { status: sessionCheck.expired ? 403 : 423 }
-    );
+  // 이 엔드포인트는 미션 대화뿐 아니라 자유대화(session_type: "free_chat")의 STT도 함께
+  // 처리한다(useVoiceChat 훅이 공용). 미션 전용 활성 상태 검사는 실제 미션 세션에만 적용한다
+  // — 자유대화 세션에 적용하면 session_type 불일치로 매번 거부되어 자유대화 STT가 전면 막힌다.
+  if (session.session_type === "mission") {
+    const sessionCheck = await assertMissionSessionActive(authService, body.sessionId);
+    if (!sessionCheck.allowed) {
+      console.error("[mission/stt] Session not active or expired", { sessionId: body.sessionId, childTurnId: body.childTurnId });
+      return NextResponse.json(
+        { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired },
+        { status: sessionCheck.expired ? 403 : 423 }
+      );
+    }
   }
 
   if (body.sessionId && body.childTurnId) {
