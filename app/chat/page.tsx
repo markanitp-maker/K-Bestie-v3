@@ -647,7 +647,7 @@ export default function ChatPage() {
 
   return (
     <DemoFrame>
-      <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "auto" }}>
+      <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "hidden" }}>
         {wakeLockWarning && (
           <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
@@ -655,7 +655,7 @@ export default function ChatPage() {
             </div>
           </div>
         )}
-        <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col relative shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+        <div className="w-full max-w-[480px] h-[100dvh] flex flex-col relative shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
           
           {/* Decorations */}
           <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden">
@@ -678,39 +678,29 @@ export default function ChatPage() {
             </button>
           </div>
 
-          {/* Spacer above conversation. 
-              권장 간격: 상단 Safe Area → 문의·종료 (8~12px), 문의·종료 → 직전 아이 발화 (36~56px)
-          */}
-          <div className="flex-[0.5_1_0%] min-h-[clamp(36px,5dvh,56px)] max-[400px]:min-h-[56px]" />
-
-          {/* Previous Chat Summary Area (Flexible) */}
-          <div className="flex flex-col items-center justify-end z-10 px-[clamp(16px,4vw,24px)] w-full shrink-0 gap-[10px] mb-[12px]">
+          {/* Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
+          <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-end overflow-hidden z-20 px-[clamp(16px,4vw,24px)] pt-[calc(64px+env(safe-area-inset-top))] pb-[clamp(28px,4dvh,44px)]">
             {olderKText && (
-              <div className="text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
+              <div className="mt-auto mb-[10px] text-gray-400 text-[clamp(14px,3.8vw,16px)] leading-[1.45] text-center max-w-[85%] font-medium shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
                 {olderKText}
               </div>
             )}
             {prevKText && (
-              <div className="bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
+              <div className={`${!olderKText ? 'mt-auto' : ''} mb-[12px] bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[82%] text-center shrink-0 h-auto overflow-visible`} style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
                 {prevKText}
               </div>
             )}
-          </div>
-
-          {/* Current Question Bubble */}
-          <div className="relative z-20 w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[70px] shrink-0 h-auto overflow-visible">
-            <div className="w-full">
-              <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
-                {currentQuestionText}
-              </p>
+            <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} mb-auto relative w-[clamp(84%,86%,88%)] max-w-[88%] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[70px] shrink-0 h-auto overflow-visible`}>
+              <div className="w-full">
+                <p className="text-left text-[#3a2f2a] text-[clamp(17px,4.7vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
+                  {currentQuestionText}
+                </p>
+              </div>
+              {/* Triangle tail */}
+              <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
+              <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
             </div>
-            {/* Triangle tail */}
-            <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
-            <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
           </div>
-
-          {/* Spacer between bubble and mascot */}
-          <div className="flex-[1_1_0%] min-h-[clamp(28px,4dvh,44px)]" />
 
           {/* Mascot Area & Side Cards */}
           <div className="relative z-10 free-chat-mascot-group w-full shrink min-h-[140px]">
