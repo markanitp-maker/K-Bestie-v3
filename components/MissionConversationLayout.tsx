@@ -214,7 +214,7 @@ export function MissionConversationLayout({
         </div>
 
         {/* Grid Row 2: Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-        <div className="relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pb-[15px]">
+        <div className="relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pb-[clamp(4px,1dvh,10px)]">
           {/* Top fade out for older text when cut off */}
           <div className="absolute top-0 left-0 w-full h-[24px] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
 
@@ -235,7 +235,7 @@ export function MissionConversationLayout({
           )}
 
           {/* Current Bubble (never clips) */}
-          <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} mb-auto relative z-20 flex flex-col items-center w-full min-w-0 max-w-full shrink-0`}>
+          <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 flex flex-col items-center w-full min-w-0 max-w-full shrink-0`}>
             {entryStatus === "ready_to_start" || entryStatus === "ready_to_resume" ? (
               <button
                 onClick={entryStatus === "ready_to_start" ? onStartMission : onResumeMission}
@@ -338,7 +338,7 @@ export function MissionConversationLayout({
           <div className="h-[clamp(20px,3dvh,28px)] w-full shrink-0" />
 
           {/* Bottom Inputs Area */}
-          <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center pb-[calc(clamp(24px,3.5dvh,36px)+env(safe-area-inset-bottom))]">
+          <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center pb-[calc(clamp(54px,8dvh,66px)+env(safe-area-inset-bottom))]">
             {isTextMode ? (
               <div
                 className="w-full min-w-0 flex gap-2 box-border"
