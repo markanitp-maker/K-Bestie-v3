@@ -48,7 +48,15 @@ function QuizmasterWrapperContent() {
           src={iframeSrc} 
           className="w-full h-full border-none"
           onLoad={handleIframeLoad}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          // 2026-08-03: 퀴즈마스터 완료 후 "닫기" 클릭 시 메인 놀이 화면으로 나가지 못하고
+          // 퀴즈마스터 내부 화면으로 되돌아가는 신고 조사 중 발견 — 이 sandbox에
+          // allow-top-navigation류 권한이 전혀 없어, 퀴즈 앱이 완료 후 "닫기"에서
+          // 상위 프레임(window.top) 이동을 시도해도 브라우저가 조용히 차단하고 퀴즈 앱은
+          // 자신의 내부 라우팅(이전 화면)으로만 폴백했을 것으로 추정된다(같은 조사에서
+          // MBTI 쪽은 CSP frame-ancestors로 확인된 것과 동일한 클래스의 sandbox 제약
+          // 문제). 실사용자 조작(클릭)에 한해서만 상위 탐색을 허용해 무단 리다이렉트
+          // 위험 없이 이 경로를 열어준다.
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
         />
       </div>
     </div>

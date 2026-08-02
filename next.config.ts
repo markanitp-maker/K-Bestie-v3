@@ -1,26 +1,29 @@
 import type { NextConfig } from "next";
 
 /**
- * MBTI 놀이: Next.js Multi-Zones rewrite (딥 인터뷰 확정,
- * .omc/specs/deep-interview-mbti-platform-connection.md ②)
+ * MBTI 놀이: 예전에는 여기서 next.config.ts `rewrites()`(Multi-Zones)로
+ * `/play/mbti`를 `MBTI_UPSTREAM_ORIGIN`으로 직접 프록시했다. 2026-08-03
+ * Production 장애(빈 화면/연결 실패)로 확인된 근본 원인: MBTI 업스트림 응답이
+ * `Content-Security-Policy: frame-ancestors 'none'`을 내려보내는데, 단순
+ * rewrite는 업스트림 응답 헤더를 그대로 통과시킬 뿐 제어할 수 없어(quiz-proxy
+ * 도입 당시와 동일한 제약, app/api/quiz-proxy/[[...path]]/route.ts 주석 참고)
+ * 이 프레임 차단 헤더를 제거·override할 방법이 없었다 — K-Bestie 자신의 iframe
+ * 래퍼(app/child/play/mbti/page.tsx)가 자기 자신을 감싸려다 CSP에 의해 매번
+ * 조용히 차단됐다(브라우저 콘솔에만 에러가 남고 사용자에게는 빈 화면으로만 보임).
  *
- * `/play/mbti` 및 그 하위 모든 경로(정적 자산·API 포함)를 독립 MBTI Vercel 배포로
- * 프록시한다. 실제 upstream 도메인은 `MBTI_UPSTREAM_ORIGIN`(서버 전용 env, NEXT_PUBLIC_
- * 접두사 없음)에만 존재하고 브라우저에는 절대 노출되지 않는다 — rewrite는 서버/엣지
- * 레벨에서 일어나므로 브라우저 주소창·Network 탭에는 항상 플랫폼 도메인만 보인다.
- *
- * `beforeFiles`로 지정하는 이유: K-Bestie-v3 내부에 기존 로컬 구현(`app/play/mbti/**`)이
- * 검증 기간 동안 아직 남아있다. `beforeFiles`가 아니면 Next.js는 파일시스템 라우트를
- * 먼저 매칭시켜 로컬 구현이 rewrite보다 우선하므로, 독립 MBTI로 전환됐는지 확인할 수
- * 없다. `beforeFiles`는 파일시스템 라우트보다 먼저 실행돼 항상 독립 MBTI로 보낸다.
- * 로컬 구현을 삭제한 뒤에도(딥 인터뷰 Round 8-2 확인 대상) 이 설정은 그대로 유지한다.
+ * 수정: rewrite를 제거하고 app/play/mbti/[[...path]]/route.ts Route Handler로
+ * 교체했다 — quiz-proxy와 동일하게 응답 헤더를 allowlist로 재조립해
+ * content-security-policy를 비롯한 위험 헤더를 전달하지 않는다. sw.js rewrite만
+ * 유지한다.
  */
-async function rewrites() {
-  const mbtiUpstreamOrigin = process.env.MBTI_UPSTREAM_ORIGIN;
-  if (!mbtiUpstreamOrigin) {
-    // Dev 초기 세팅 전이나 로컬 개발 중 env 미설정 시 조용히 로컬 구현으로 폴백한다
-    // (rewrite 자체를 등록하지 않음) — 배포 환경에서는 반드시 설정돼 있어야 한다.
-    console.warn("[next.config] MBTI_UPSTREAM_ORIGIN 미설정 — /play/mbti rewrite 비활성화");
+const nextConfig: NextConfig = {
+  output: "standalone",
+  // ai.k-bestie.com → 192.168.200.222:3000 포트포워딩 시 HMR WebSocket 허용
+  allowedDevOrigins: ["ai.k-bestie.com", "192.168.200.222"],
+  env: {
+    NEXT_PUBLIC_DEPLOYMENT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || "local",
+  },
+  async rewrites() {
     return {
       beforeFiles: [
         {
@@ -29,34 +32,7 @@ async function rewrites() {
         },
       ],
     };
-  }
-
-  return {
-    beforeFiles: [
-      {
-        source: "/sw.js",
-        destination: "/api/pwa/sw",
-      },
-      {
-        source: "/play/mbti",
-        destination: `${mbtiUpstreamOrigin}/play/mbti`,
-      },
-      {
-        source: "/play/mbti/:path*",
-        destination: `${mbtiUpstreamOrigin}/play/mbti/:path*`,
-      },
-    ],
-  };
-}
-
-const nextConfig: NextConfig = {
-  output: "standalone",
-  // ai.k-bestie.com → 192.168.200.222:3000 포트포워딩 시 HMR WebSocket 허용
-  allowedDevOrigins: ["ai.k-bestie.com", "192.168.200.222"],
-  env: {
-    NEXT_PUBLIC_DEPLOYMENT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || "local",
   },
-  rewrites,
 };
 
 export default nextConfig;
