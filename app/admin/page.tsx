@@ -570,18 +570,19 @@ const GROUP_LABEL: Record<ModelGroup, string> = {
 // 그룹별로 스위치 가능한 모델 후보 — ai.ts의 레지스트리와 맞춰둔다.
 const MODEL_OPTIONS: Record<ModelGroup, { provider: ProviderId; modelId: string; label: string }[]> = {
   A: [
-    { provider: "vertex", modelId: "gemini-2.5-flash", label: "Vertex · gemini-2.5-flash" },
+    { provider: "vertex", modelId: "gemini-2.5-flash", label: "Vertex · gemini-3.5-flash (레거시 표시)" },
   ],
   B: [
-    { provider: "vertex", modelId: "gemini-2.5-flash", label: "Vertex · gemini-2.5-flash" },
+    { provider: "vertex", modelId: "gemini-2.5-flash", label: "Vertex · gemini-3.5-flash (레거시 표시)" },
   ],
   C: [
-    { provider: "vertex", modelId: "gemini-live-2.5-flash-native-audio", label: "Vertex · gemini-live-2.5-flash-native-audio (Cloud Run 릴레이 경유)" },
+    { provider: "vertex", modelId: "gemini-live-2.5-flash-native-audio", label: "Vertex · gemini-live-2.5-flash-native-audio (레거시 표시)" },
   ],
 };
 
 function ProviderSwitchTab() {
   const [rows, setRows] = useState<ProviderSwitchRow[] | null>(null);
+  const [modelRoles, setModelRoles] = useState<any[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [savingGroup, setSavingGroup] = useState<ModelGroup | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -593,6 +594,11 @@ function ProviderSwitchTab() {
       .then((r) => r.json())
       .then((d) => setRows(d.settings ?? []))
       .catch(() => setLoadFailed(true));
+      
+    fetch("/api/admin/llm-models")
+      .then((r) => r.json())
+      .then((d) => setModelRoles(d.models ?? []))
+      .catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -624,9 +630,9 @@ function ProviderSwitchTab() {
 
   return (
     <div>
-      <SectionTitle>AI 프로바이더 스위치 (Vertex 전용)</SectionTitle>
-      <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginBottom: 12 }}>
-        변경은 다음 호출부터 즉시 반영돼요. 단, 그룹C(라이브 음성)는 이미 연결된 세션이 끝날 때까지 기존 설정이 유지돼요.
+      <SectionTitle>AI 프로바이더 스위치 (레거시)</SectionTitle>
+      <div style={{ fontSize: 13, color: "var(--color-k-danger)", marginBottom: 12, fontWeight: "bold", background: "var(--color-k-danger-bg)", padding: "10px", borderRadius: "8px" }}>
+        이 스위치는 레거시이며 더 이상 실제 호출 모델에 영향을 주지 않습니다. 실제 모델은 아래 역할별 매핑을 따릅니다.
       </div>
       {errorMsg && <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginBottom: 10 }}>{errorMsg}</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -667,6 +673,45 @@ function ProviderSwitchTab() {
             </div>
           );
         })}
+      </div>
+
+      <div style={{ marginTop: 32 }}>
+        <SectionTitle>역할별 모델 매핑 (현재 적용됨)</SectionTitle>
+        <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={thStyle}>역할명 (설명)</th>
+                <th style={thStyle}>현재 적용 모델</th>
+                <th style={thStyle}>환경변수 강제 적용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {modelRoles ? modelRoles.map((r) => (
+                <tr key={r.role}>
+                  <td style={tdStyle}>
+                    <div style={{ fontWeight: 600 }}>{r.description}</div>
+                    <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{r.role}</div>
+                  </td>
+                  <td style={tdStyle}>
+                    <span style={{ fontWeight: 600, color: r.isOverridden ? "var(--color-k-navy)" : "inherit" }}>
+                      {r.effectiveModel}
+                    </span>
+                  </td>
+                  <td style={tdStyle}>
+                    {r.isOverridden ? (
+                      <span style={{ color: "var(--color-k-success, #1a9c5c)", fontWeight: 600 }}>O ({r.envKey})</span>
+                    ) : (
+                      <span style={{ color: "var(--color-k-text-secondary)" }}>기본값 사용</span>
+                    )}
+                  </td>
+                </tr>
+              )) : (
+                <tr><td colSpan={3} style={{ ...tdStyle, textAlign: "center" }}>불러오는 중...</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -819,18 +864,36 @@ function GCAIProfileSection() {
                   </button>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flexDirection: "column", marginTop: 12 }}>
                 {["groupA", "groupB", "groupC", "stt", "tts"].map(svc => {
                   const check = p.last_health_check_result?.[svc];
                   let color = "var(--color-k-text-secondary)";
-                  let label = svc.toUpperCase();
+                  let bg = "white";
+                  let label = svc === "groupA" ? "TEXT A" : svc === "groupB" ? "TEXT B" : svc === "groupC" ? "LIVE C" : svc.toUpperCase();
                   if (check) {
-                    if (check.status === "ok") color = "var(--color-k-success, #1a9c5c)";
-                    else if (check.status === "fail") color = "var(--color-k-danger)";
+                    if (check.status === "ok") {
+                      color = "var(--color-k-success, #1a9c5c)";
+                      bg = "var(--color-k-success-bg)";
+                    } else if (check.status === "fail") {
+                      color = "var(--color-k-danger)";
+                      bg = "var(--color-k-danger-bg)";
+                    }
                   }
                   return (
-                    <div key={svc} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: "white", border: `1px solid ${color}`, color }}>
-                      {label}
+                    <div key={svc} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, background: bg, border: `1px solid ${color}`, color, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600 }}>{label}</span>
+                      {check ? (
+                        <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                          <div>
+                            <span style={{ fontWeight: 700 }}>{check.status === "ok" ? "OK" : "FAIL"}</span>
+                            {check.ms !== undefined && <span style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginLeft: 6 }}>{check.ms}ms</span>}
+                          </div>
+                          {check.modelVersion && <div style={{ fontSize: 10, color: "var(--color-k-text-secondary)" }}>{check.modelVersion}</div>}
+                          {check.status === "fail" && check.detail && <div style={{ fontSize: 11, color: "var(--color-k-danger)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={check.detail}>{check.detail}</div>}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 11 }}>미확인</span>
+                      )}
                     </div>
                   );
                 })}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { MISSION_CHAT_SYSTEM_PROMPT, WEEKEND_QUESTION_PROMPT } from "@/app/api/_lib/prompts";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { normalizeConversationMode } from "@/lib/plan/conversationMode";
@@ -50,6 +51,24 @@ const PROMPT_LEAK_PATTERNS = [
 ];
 function containsPromptLeak(text: string): boolean {
   return PROMPT_LEAK_PATTERNS.some((re) => re.test(text));
+}
+
+function isFallbackableError(err: any): boolean {
+  const errMsg = (err?.message || String(err)).toLowerCase();
+  if (
+    errMsg.includes("400") ||
+    errMsg.includes("401") ||
+    errMsg.includes("403") ||
+    errMsg.includes("404") ||
+    errMsg.includes("safety") ||
+    errMsg.includes("blocked") ||
+    errMsg.includes("validation") ||
+    errMsg.includes("invalid") ||
+    errMsg.includes("schema")
+  ) {
+    return false;
+  }
+  return true;
 }
 
 // childTurnId 기준 짧은 TTL 인메모리 캐시 — 클라이언트 쪽 레이스로 같은 아이 턴에 대해
@@ -378,14 +397,46 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
       }).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
     }
 
-    const result = await ai.models.generateContent({
-      model: missionModel.modelId,
-      contents,
-      config: {
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        maxOutputTokens: missionModel.maxOutputTokens ?? 1024,
-      },
-    });
+    let reaction = "";
+    let tokenIn: number | undefined;
+    let tokenOut: number | undefined;
+    let didFallback = false;
+
+    const attemptGeneration = async (isFallback: boolean, customInstruction?: string) => {
+      const currentModelId = isFallback ? getLlmModel("missionReactionFallback") : getLlmModel("missionReaction");
+      const currentAi = isFallback ? createGenAIClient(await getModelForGroup("B")) : ai;
+      const instructionText = customInstruction || systemInstruction;
+      
+      const res = await currentAi.models.generateContent({
+        model: currentModelId,
+        contents,
+        config: {
+          systemInstruction: { parts: [{ text: instructionText }] },
+          maxOutputTokens: missionModel.maxOutputTokens ?? 1024,
+          thinkingConfig: { thinkingLevel: 'MINIMAL' as any },
+        },
+      });
+      
+      const text = (res.text ?? "").trim();
+      if (!text) throw new Error("Empty response body");
+      
+      tokenIn = res.usageMetadata?.promptTokenCount ?? tokenIn;
+      tokenOut = res.usageMetadata?.candidatesTokenCount ?? tokenOut;
+      return text;
+    };
+
+    try {
+      reaction = await attemptGeneration(false);
+    } catch (err: any) {
+      if (isFallbackableError(err)) {
+        console.warn(`[mission/respond] model fallback to Flash. Reason: ${err?.message || String(err)}`);
+        didFallback = true;
+        reaction = await attemptGeneration(true);
+      } else {
+        console.error(`[mission/respond] non-fallbackable error: ${err?.message || String(err)}`);
+        throw err;
+      }
+    }
 
     if (body.sessionId && childTurnId) {
       const sId = body.sessionId;
@@ -396,8 +447,6 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
       ]).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
     }
 
-    let reaction = (result.text ?? "").trim();
-
     const isInvalid = (t: string) => {
       if (!t || containsPromptLeak(t)) return true;
       const qCount = (t.match(/\?/g) ?? []).length;
@@ -407,15 +456,10 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
     if (isInvalid(reaction)) {
       console.warn("[mission/respond] length/question/leak limit exceeded, retrying once...");
       try {
-        const retryResult = await ai.models.generateContent({
-          model: missionModel.modelId,
-          contents,
-          config: {
-            systemInstruction: { parts: [{ text: systemInstruction + "\n\n(경고: 이전 리액션에 물음표가 있거나 너무 깁니다. 반드시 15자 이내로 짧게, 물음표 없이 출력하세요.)" }] },
-            maxOutputTokens: missionModel.maxOutputTokens ?? 1024,
-          },
-        });
-        reaction = (retryResult.text ?? "").trim();
+        reaction = await attemptGeneration(
+          didFallback, 
+          systemInstruction + "\n\n(경고: 이전 리액션에 물음표가 있거나 너무 깁니다. 반드시 15자 이내로 짧게, 물음표 없이 출력하세요.)"
+        );
       } catch (err) {
         console.error("[mission/respond] retry failed", err);
       }
@@ -438,9 +482,6 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
       withinCharLimit: reaction.length <= 15,
       withinQuestionLimit: questionMarkCount === 0,
     });
-
-    const tokenIn = result.usageMetadata?.promptTokenCount;
-    const tokenOut = result.usageMetadata?.candidatesTokenCount;
     if (tokenIn != null && tokenOut != null && body.sessionId) {
       const sessionId = body.sessionId;
       after(async () => {

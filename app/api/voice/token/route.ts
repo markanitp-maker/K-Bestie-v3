@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getModelForGroup, VERTEX_LIVE_VOICE_MODEL_ID } from "@/app/api/_lib/ai";
+import { getModelForGroup } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { K_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
 import { createClient } from "@/lib/supabase/server";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       mode: "relay",
       wsUrl: parsed.toString(),
-      model: VERTEX_LIVE_VOICE_MODEL_ID,
+      model: getLlmModel("premiumLiveVoice"),
     });
   } catch (error) {
     console.error("[Voice Token] Failed to parse relay URL or mint ticket");

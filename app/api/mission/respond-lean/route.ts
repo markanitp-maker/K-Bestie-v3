@@ -8,6 +8,7 @@ import {
   LEAN_E_MAX_OUTPUT_TOKENS,
   GroupModelConfig,
 } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { normalizeConversationMode } from "@/lib/plan/conversationMode";
@@ -30,6 +31,24 @@ const PROMPT_LEAK_PATTERNS = [
 ];
 function containsPromptLeak(text: string): boolean {
   return PROMPT_LEAK_PATTERNS.some((re) => re.test(text));
+}
+
+function isFallbackableError(err: any): boolean {
+  const errMsg = (err?.message || String(err)).toLowerCase();
+  if (
+    errMsg.includes("400") ||
+    errMsg.includes("401") ||
+    errMsg.includes("403") ||
+    errMsg.includes("404") ||
+    errMsg.includes("safety") ||
+    errMsg.includes("blocked") ||
+    errMsg.includes("validation") ||
+    errMsg.includes("invalid") ||
+    errMsg.includes("schema")
+  ) {
+    return false;
+  }
+  return true;
 }
 
 const respondCache = new Map<string, { text: string; ts: number }>();
@@ -80,11 +99,11 @@ ${MISSION_CHAT_SYSTEM_PROMPT}
 예: "우와, 정말 재밌었겠다!", "그렇구나!", "대단한데!"
 `.trim();
 
-  let modelUsed = LEAN_E_MODEL_ID;
+  let modelUsed = getLlmModel("missionLean");
   const leanConfig: GroupModelConfig = {
     group: "B",
     provider: "vertex",
-    modelId: LEAN_E_MODEL_ID,
+    modelId: getLlmModel("missionLean"),
   };
 
   const ai = createGenAIClient(leanConfig);
@@ -97,67 +116,81 @@ ${MISSION_CHAT_SYSTEM_PROMPT}
     }).then(({ error }) => { if (error) console.error("[mission/respond-lean] timing err", error.message); }, (e: unknown) => console.error("[mission/respond-lean] timing exc", e));
   }
 
-  let responseStream: AsyncIterable<{ text?: string; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }>;
-  try {
-    try {
-      responseStream = await ai.models.generateContentStream({
-        model: LEAN_E_MODEL_ID,
-        contents,
-        config: {
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          maxOutputTokens: LEAN_E_MAX_OUTPUT_TOKENS,
-          thinkingConfig: { thinkingBudget: 0 } as any,
-        },
-      });
-    } catch {
-      responseStream = await ai.models.generateContentStream({
-        model: LEAN_E_MODEL_ID,
-        contents,
-        config: {
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          maxOutputTokens: LEAN_E_MAX_OUTPUT_TOKENS,
-        },
-      });
-    }
-  } catch (leanErr) {
-    const errMsg = (leanErr as Error)?.message || String(leanErr);
-    console.warn("[mission/respond-lean] model fallback to group B", errMsg);
-    const fallbackGroupB = await getModelForGroup("B");
-    modelUsed = fallbackGroupB.modelId;
-    const fallbackAi = createGenAIClient(fallbackGroupB);
-    responseStream = await fallbackAi.models.generateContentStream({
-      model: fallbackGroupB.modelId,
-      contents,
-      config: {
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        maxOutputTokens: LEAN_E_MAX_OUTPUT_TOKENS,
-      },
-    });
-  }
-
   let fullText = "";
-  let isFirstChunk = true;
   let tokenIn: number | undefined;
   let tokenOut: number | undefined;
 
-  for await (const chunk of responseStream) {
-    if (isFirstChunk) {
-      isFirstChunk = false;
-      if (sessionId && childTurnId) {
-        createServiceClient().from("turn_timing_events").insert({
-          session_id: sessionId,
-          turn_id: childTurnId,
-          event_name: "vertex_first_chunk",
-        }).then(({ error }) => { if (error) console.error("[mission/respond-lean] timing err", error.message); }, (e: unknown) => console.error("[mission/respond-lean] timing exc", e));
+  const attemptGeneration = async (isFallback: boolean) => {
+    const currentModelId = isFallback ? getLlmModel("missionLeanFallback") : getLlmModel("missionLean");
+    if (isFallback) {
+      modelUsed = currentModelId;
+    }
+    
+    let currentAi = ai;
+    if (isFallback) {
+      const fallbackGroupB = await getModelForGroup("B");
+      currentAi = createGenAIClient(fallbackGroupB);
+    }
+
+    let responseStream: AsyncIterable<{ text?: string; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }>;
+    try {
+      responseStream = await currentAi.models.generateContentStream({
+        model: currentModelId,
+        contents,
+        config: {
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          maxOutputTokens: LEAN_E_MAX_OUTPUT_TOKENS,
+          thinkingConfig: { thinkingLevel: 'MINIMAL' as any },
+        },
+      });
+    } catch {
+      responseStream = await currentAi.models.generateContentStream({
+        model: currentModelId,
+        contents,
+        config: {
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          maxOutputTokens: LEAN_E_MAX_OUTPUT_TOKENS,
+          thinkingConfig: { thinkingLevel: 'MINIMAL' as any },
+        },
+      });
+    }
+
+    let tempText = "";
+    let isFirstChunk = true;
+    for await (const chunk of responseStream) {
+      if (isFirstChunk) {
+        isFirstChunk = false;
+        if (sessionId && childTurnId && !isFallback) {
+          createServiceClient().from("turn_timing_events").insert({
+            session_id: sessionId,
+            turn_id: childTurnId,
+            event_name: "vertex_first_chunk",
+          }).then(({ error }) => { if (error) console.error("[mission/respond-lean] timing err", error.message); }, (e: unknown) => console.error("[mission/respond-lean] timing exc", e));
+        }
+      }
+      if (chunk.text) tempText += chunk.text;
+      if (chunk.usageMetadata) {
+        if (chunk.usageMetadata.promptTokenCount != null) tokenIn = chunk.usageMetadata.promptTokenCount;
+        if (chunk.usageMetadata.candidatesTokenCount != null) tokenOut = chunk.usageMetadata.candidatesTokenCount;
       }
     }
 
-    const text = chunk.text || "";
-    if (text) fullText += text;
+    if (!tempText.trim()) {
+      throw new Error("Empty response body");
+    }
+    
+    fullText = tempText;
+  };
 
-    if (chunk.usageMetadata) {
-      if (chunk.usageMetadata.promptTokenCount != null) tokenIn = chunk.usageMetadata.promptTokenCount;
-      if (chunk.usageMetadata.candidatesTokenCount != null) tokenOut = chunk.usageMetadata.candidatesTokenCount;
+  try {
+    await attemptGeneration(false);
+  } catch (err: any) {
+    if (isFallbackableError(err)) {
+      console.warn(`[mission/respond-lean] model fallback to Flash. Reason: ${err?.message || String(err)}`);
+      await attemptGeneration(true);
+    } else {
+      console.error(`[mission/respond-lean] non-fallbackable error: ${err?.message || String(err)}`);
+      throw err;
     }
   }
 

@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { extractJSON } from "@/app/api/_lib/utils";
 
 const REPORT_PROMPT_TEMPLATE = `
@@ -155,11 +156,12 @@ async function processSingleReportJob(
   };
 
   const genResult = await ai.models.generateContent({
-    model: reportModel.modelId,
+    model: getLlmModel("dailyReport"),
     contents: prompt,
     config: {
       responseSchema,
-      maxOutputTokens: reportModel.maxOutputTokens,
+      maxOutputTokens: reportModel.maxOutputTokens ?? 8192,
+      thinkingConfig: { thinkingLevel: 'MEDIUM' as any },
     },
   });
 

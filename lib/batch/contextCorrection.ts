@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { extractJSON } from "@/app/api/_lib/utils";
 
 export async function runContextCorrectionPipeline(targetDate: string, specificSessionIds?: string[]) {
@@ -100,9 +101,9 @@ ${fullContext}
 `;
 
       const response = await ai.models.generateContent({
-        model: "gemma-4-31b-it",
+        model: getLlmModel("contextCorrection"),
         contents: prompt,
-        config: { systemInstruction: "반드시 JSON 형식으로만 응답하라. 여분의 텍스트 금지." }
+        config: { systemInstruction: "반드시 JSON 형식으로만 응답하라. 여분의 텍스트 금지.", maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: 'LOW' as any } }
       });
 
       const text = response.text || "";

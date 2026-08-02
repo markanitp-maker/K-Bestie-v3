@@ -4,6 +4,7 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   type ReportModelConfig,
@@ -22,15 +23,15 @@ export { type ReportModelConfig, REPORT_MODELS, ACTIVE_REPORT_MODEL_ID, getActiv
 // Vertex Live 릴레이(Cloud Run, services/vertex-live-relay) 전용 모델 ID.
 // AI Studio Live와 인증/연결 방식이 완전히 달라(서버 릴레이 필요) /api/voice/token이 
 // provider="vertex"일 때 이 값을 그대로 반환한다.
-export const VERTEX_LIVE_VOICE_MODEL_ID = "gemini-live-2.5-flash-native-audio";
+export const VERTEX_LIVE_VOICE_MODEL_ID = getLlmModel("premiumLiveVoice");
 
 // Mode E lean 전용 STT+LLM 텍스트 채팅 미션 모델 및 maxOutputTokens
-export const LEAN_E_MODEL_ID = "gemini-3.1-flash-lite";
+export const LEAN_E_MODEL_ID = getLlmModel("missionLean");
 export const LEAN_E_MAX_OUTPUT_TOKENS = 40;
 export const REACTION_LEAN_MAX_OUTPUT_TOKENS = 40;
 
 // 자유대화 전용 텍스트 응답 모델. 미션 그룹 B 및 Live 음성 모델과 독립적으로 고정한다.
-export const FREE_CHAT_MODEL_ID = "gemini-2.5-flash-lite";
+export const FREE_CHAT_MODEL_ID = getLlmModel("freechatMemoryRecall");
 export const FREE_CHAT_MAX_OUTPUT_TOKENS = 80;
 
 // ── 그룹별 조회(Vertex 전환 스위치) ───────────────────────────

@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient, type GroupModelConfig } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { WEEKLY_REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
 import { sanitizeReportJson } from "@/app/api/_lib/reportSafetyGuard";
 import type { GoogleGenAI } from "@google/genai";
@@ -65,7 +66,7 @@ async function mapChunkSummary(ai: GoogleGenAI, modelId: string, chunk: string):
         text: `다음은 아이와 AI 친구 케이의 대화 원문 일부입니다. 아이의 상태·관심사·감정·주말 희망사항과 관련된 내용을 놓치지 않고 5~8문장으로 압축 요약해줘(다른 설명 없이 요약문만):\n\n${chunk}`,
       }],
     }],
-    config: { maxOutputTokens: 512 },
+    config: { maxOutputTokens: 2048, thinkingConfig: { thinkingLevel: 'MEDIUM' as any } },
   });
   return (result.text ?? "").trim();
 }
@@ -84,7 +85,7 @@ async function reduceToWeeklyReport(
   const result = await ai.models.generateContent({
     model: modelId,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: { responseMimeType: "application/json", maxOutputTokens: 2048 },
+    config: { responseMimeType: "application/json", maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: 'MEDIUM' as any } },
   });
 
   const text = (result.text ?? "").trim();
@@ -218,10 +219,10 @@ export async function generateWeeklySummary(
 
       let report: WeeklyReportJson;
       try {
-        report = await analyzeWeekTranscript(ai, reportModel.modelId, weekRange, transcriptText);
+        report = await analyzeWeekTranscript(ai, getLlmModel("weeklyReport"), weekRange, transcriptText);
       } catch (analyzeErr) {
         console.error(`[generateWeeklySummary] 청크 맵-리듀스도 실패:`, (analyzeErr as Error).message);
-        report = await fallbackFromDailyReports(db, ai, reportModel.modelId, childId, weekStart, weekEnd, weekRange);
+        report = await fallbackFromDailyReports(db, ai, getLlmModel("weeklyReport"), childId, weekStart, weekEnd, weekRange);
       }
 
       const moodAverage = Math.max(1, Math.min(10, Math.round((report.mood_average ?? 5) * 10) / 10));

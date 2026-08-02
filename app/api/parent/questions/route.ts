@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { filterParentQuestion } from "@/lib/plan/parentQuestionFilter";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { checkAndDeductQuota } from "@/lib/plan/parentQuestionQuota";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
@@ -162,9 +163,9 @@ export async function POST(req: NextRequest) {
     const ai = createGenAIClient(aiModel);
     const systemInstruction = `부모님이 아이에게 물어보고 싶은 질문을 작성했습니다. 이 질문을 6~8세 아이의 눈높이에 맞게 다정하고 부드러운 케이의 말투로 1~2문장으로 자연스럽게 다듬어주세요. 결과는 반드시 JSON 형식으로만 응답하고, JSON 외의 텍스트는 절대 포함하지 마세요. {"rewritten": "다듬어진 질문"}`;
     const result = await ai.models.generateContent({
-      model: aiModel.modelId,
+      model: getLlmModel("parentQuestionGeneration"),
       contents: [{ role: "user", parts: [{ text: questionText.trim() }] }],
-      config: { systemInstruction: { parts: [{ text: systemInstruction }] } }
+      config: { systemInstruction: { parts: [{ text: systemInstruction }] }, maxOutputTokens: 1024, thinkingConfig: { thinkingLevel: 'LOW' as any } }
     });
     
     if (result.text) {

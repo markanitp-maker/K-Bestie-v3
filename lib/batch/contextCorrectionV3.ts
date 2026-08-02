@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { extractJSON } from "@/app/api/_lib/utils";
 
 interface CorrectionResult {
@@ -118,6 +119,8 @@ ${messageContext}
     config: {
       responseSchema,
       systemInstruction: "반드시 JSON 배열 형식으로만 응답하라. 여분의 텍스트 금지.",
+      maxOutputTokens: 8192,
+      thinkingConfig: { thinkingLevel: 'LOW' as any },
     },
   });
 
@@ -220,7 +223,7 @@ export async function runContextCorrectionWorkerV3(limit: number, workerId?: str
   result.claimed = jobs.length;
 
   const aiConfig = await getModelForGroup("A");
-  const MODEL_NAME = aiConfig.modelId;
+  const MODEL_NAME = getLlmModel("contextCorrection");
 
   for (const job of jobs) {
     try {

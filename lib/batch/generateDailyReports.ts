@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { extractJSON } from "@/app/api/_lib/utils";
 
 const REPORT_PROMPT_TEMPLATE = `
@@ -89,9 +90,9 @@ export async function generateDailyReports(targetDate: string, onlyChildId?: str
       const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
 
       const genResult = await ai.models.generateContent({
-        model: reportModel.modelId,
+        model: getLlmModel("dailyReport"),
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: { maxOutputTokens: reportModel.maxOutputTokens }
+        config: { maxOutputTokens: reportModel.maxOutputTokens ?? 8192, thinkingConfig: { thinkingLevel: 'MEDIUM' as any } }
       });
 
       let report: any;

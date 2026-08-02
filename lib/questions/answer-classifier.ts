@@ -1,5 +1,6 @@
 import { pickReaction } from "@/lib/freeChatReactions";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 
 export type AnswerClassification =
   | "VALID"
@@ -43,7 +44,7 @@ async function generateWithRetry(prompt: string): Promise<string> {
     try {
       const response = await Promise.race([
         ai.models.generateContent({
-          model: modelConfig.modelId,
+          model: getLlmModel("childAnswerClassification"),
           contents: prompt,
           config: {
             responseMimeType: "application/json",
@@ -57,6 +58,8 @@ async function generateWithRetry(prompt: string): Promise<string> {
               },
               required: ["classification", "reason"]
             },
+            maxOutputTokens: 1024,
+            thinkingConfig: { thinkingLevel: 'LOW' as any }
           },
         }),
         new Promise<never>((_, reject) =>

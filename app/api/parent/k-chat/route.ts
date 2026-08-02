@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { GoogleGenAI } from "@google/genai";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { searchMemoryFacts, formatMemoryFactsForPrompt } from "@/lib/memory/vectorRetrieval";
 import * as crypto from "crypto";
 
@@ -155,12 +156,14 @@ JSON 스키마:
       let aiResponseText = "";
       try {
         const response = await ai.models.generateContent({
-          model: config.modelId,
+          model: getLlmModel("parentMemoryQuery"),
           contents: trimmedQuestion,
           config: {
             // 프로젝트 규칙(§5): responseMimeType 사용 금지 - 시스템 프롬프트의
             // JSON 스키마 지시 + 아래 extractJSON 파싱으로 대체한다.
             systemInstruction: systemPrompt,
+            maxOutputTokens: 1024,
+            thinkingConfig: { thinkingLevel: 'MINIMAL' as any }
           }
         });
         aiResponseText = response.text || "";
@@ -257,10 +260,12 @@ JSON 스키마:
       let aiResponseText = "";
       try {
         const response = await ai.models.generateContent({
-          model: config.modelId,
+          model: getLlmModel("parentQuestionGeneration"),
           contents: trimmedQuestion,
           config: {
             systemInstruction: askChildSystemPrompt,
+            maxOutputTokens: 1024,
+            thinkingConfig: { thinkingLevel: 'LOW' as any }
           }
         });
         aiResponseText = response.text || "";
