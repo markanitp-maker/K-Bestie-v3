@@ -10,7 +10,6 @@ import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
-import { AppTopHeader } from "@/components/AppTopHeader";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -706,13 +705,15 @@ export default function ChatPage() {
             <div className="absolute top-[75%] left-[15%] w-8 h-8 bg-white/40 rounded-full blur-[1px]" />
           </div>
 
-          {/* 공통 헤더 */}
-          <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
-            <AppTopHeader title="대화" onBack={() => {
+          {/* Top Right Close Button */}
+          <div className="absolute top-0 right-0 p-[calc(10px+env(safe-area-inset-top))] z-50">
+            <button onClick={() => {
                   if (isLive) stopSession();
                   setSessionActive(false);
                   router.replace("/child/home");
-            }} />
+                }} aria-label="자유대화 종료" className="w-[44px] h-[44px] flex items-center justify-center cursor-pointer active:scale-95 text-gray-700">
+              <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
           </div>
 
           {/* Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
