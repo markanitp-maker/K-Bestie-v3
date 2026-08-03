@@ -1,25 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminKpiCard, AdminKpiGrid } from "@/components/admin/shell/AdminKpiCard";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("ko-KR");
 }
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "8px 12px",
-  fontSize: 12,
-  color: "var(--color-k-text-secondary)",
-  borderBottom: "1px solid var(--color-k-border)",
-};
-const tdStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  fontSize: 13,
-  color: "var(--color-k-text-primary)",
-  borderBottom: "1px solid var(--color-k-border)",
-  verticalAlign: "top",
-};
 
 export default function ManualReportingTab() {
   const [date, setDate] = useState(() => new Date().toLocaleDateString("en-CA")); // YYYY-MM-DD
@@ -220,30 +207,98 @@ export default function ManualReportingTab() {
 
   const selectedChild = children.find(c => c.childId === selectedChildId);
 
+  const columns: AdminDataTableColumn<any>[] = [
+    { key: "select", header: "선택", render: (c) => (
+      <input type="radio" checked={selectedChildId === c.childId} readOnly style={{ cursor: "pointer" }} />
+    )},
+    { key: "name", header: "이름", render: (c) => c.name },
+    { key: "sessions", header: "세션 (미션/자유)", render: (c) => `${c.missionSessionCount} / ${c.freeChatSessionCount}` },
+    { key: "collected", header: "대화수집", render: (c) => c.collected ? "O" : "X" },
+    { key: "report", header: "리포트(생성/버전)", render: (c) => (
+      c.reportExists ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span>{c.lastReportGeneratedAt ? formatDateTime(c.lastReportGeneratedAt).substring(0, 16) : "O"}</span>
+          {(c.generationSource || c.generationVersion) && (
+            <span style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)" }}>
+              {c.generationSource === "scheduled" ? "정기" : "수동"} (v{c.generationVersion || 1})
+            </span>
+          )}
+        </div>
+      ) : "X"
+    )},
+    { key: "dashboardFieldCount", header: "N/8", render: (c) => c.dashboardFieldCount ?? "-" }
+  ];
+
+  const resultColumns: AdminDataTableColumn<any>[] = [
+    { key: "child", header: "아이", render: (s) => {
+      if (s.isDeleted) return <span style={{ color: "var(--admin-text-secondary)", fontStyle: "italic" }}>삭제된 아이 ({s.maskedChildId})</span>;
+      if (s.childName && s.loginId) return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontWeight: 600 }}>{s.childName}</span>
+          <span style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", wordBreak: "break-all" }}>{s.loginId}</span>
+        </div>
+      );
+      if (s.childName) return <span style={{ fontWeight: 600 }}>{s.childName}</span>;
+      if (s.loginId) return <span style={{ wordBreak: "break-all" }}>{s.loginId}</span>;
+      return <span style={{ color: "var(--admin-text-secondary)" }}>{s.maskedChildId}</span>;
+    }},
+    { key: "collection", header: "수집", render: (s) => (
+      <>
+        {s.collection2 || s.collection || "-"}
+        {s.collectionError && <div style={{ color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)" }}>{s.collectionError}</div>}
+      </>
+    )},
+    { key: "correction", header: "수집보정", render: (s) => (
+      <>
+        {s.correction || "-"}
+        {s.correctionError && <div style={{ color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)" }}>{s.correctionError}</div>}
+      </>
+    )},
+    { key: "memory", header: "메모리", render: (s) => (
+      <>
+        {s.memory || "-"}
+        {s.memoryError && <div style={{ color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)" }}>{s.memoryError}</div>}
+      </>
+    )},
+    { key: "report", header: "리포트", render: (s) => (
+      <>
+        {s.report || "-"}
+        {s.reportError && <div style={{ color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)" }}>{s.reportError}</div>}
+        {(s.generationSource || s.generationVersion) && (
+          <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: "var(--admin-space-4)" }}>
+            <div>생성: {s.lastReportGeneratedAt ? formatDateTime(s.lastReportGeneratedAt).substring(0, 16) : "-"}</div>
+            <div>방식: {s.generationSource === "scheduled" ? "정기 생성" : "수동 생성"}</div>
+            <div>버전: v{s.generationVersion || 1}</div>
+          </div>
+        )}
+      </>
+    )}
+  ];
+
   return (
-    <div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", margin: "24px 0 10px" }}>
+    <div style={{ width: "100%" }}>
+      <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", color: "var(--admin-text-primary)", marginBottom: "var(--admin-space-12)" }}>
         리포팅 수동 실행
-      </div>
+      </h2>
       
-      <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16, marginBottom: 20 }}>
-        <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 16 }}>
-          <label style={{ fontSize: 13, fontWeight: 600 }}>대상 날짜</label>
+      <div style={{ background: "var(--admin-surface)", borderRadius: 12, border: "1px solid var(--admin-border)", padding: "var(--admin-space-16)", marginBottom: "var(--admin-space-20)" }}>
+        <div style={{ display: "flex", gap: "var(--admin-space-16)", alignItems: "center", marginBottom: "var(--admin-space-16)" }}>
+          <label style={{ fontSize: "var(--admin-text-sm)", fontWeight: 600 }}>대상 날짜</label>
           <input
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
-            style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--color-k-border)", fontSize: 13 }}
+            style={{ padding: "var(--admin-space-6) var(--admin-space-10)", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: "var(--admin-text-sm)", background: "var(--admin-bg)", color: "var(--admin-text-primary)" }}
           />
         </div>
         
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <label style={{ fontSize: 13, fontWeight: 600 }}>실행 대상</label>
-          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+        <div style={{ display: "flex", gap: "var(--admin-space-16)", alignItems: "center" }}>
+          <label style={{ fontSize: "var(--admin-text-sm)", fontWeight: 600 }}>실행 대상</label>
+          <label style={{ display: "flex", alignItems: "center", gap: "var(--admin-space-4)", fontSize: "var(--admin-text-sm)", cursor: "pointer", color: "var(--admin-text-primary)" }}>
             <input type="radio" name="scope" checked={scope === "single"} onChange={() => setScope("single")} />
             특정 아이 1명
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, cursor: "pointer" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "var(--admin-space-4)", fontSize: "var(--admin-text-sm)", cursor: "pointer", color: "var(--admin-text-primary)" }}>
             <input type="radio" name="scope" checked={scope === "all"} onChange={() => setScope("all")} />
             전체 아이
           </label>
@@ -251,82 +306,48 @@ export default function ManualReportingTab() {
       </div>
 
       {scope === "single" && (
-        <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16, marginBottom: 20 }}>
-          <div style={{ marginBottom: 16 }}>
+        <div style={{ background: "var(--admin-surface)", borderRadius: 12, border: "1px solid var(--admin-border)", padding: "var(--admin-space-16)", marginBottom: "var(--admin-space-20)" }}>
+          <div style={{ marginBottom: "var(--admin-space-16)" }}>
             <input
               type="text"
               placeholder="이름 또는 ID로 검색..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--color-k-border)", width: "100%", maxWidth: 300, fontSize: 13 }}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-12)", borderRadius: 8, border: "1px solid var(--admin-border)", width: "100%", maxWidth: 300, fontSize: "var(--admin-text-sm)", background: "var(--admin-bg)", color: "var(--admin-text-primary)" }}
             />
           </div>
 
-          <div style={{ overflowX: "auto", maxHeight: 300, border: "1px solid var(--color-k-border)", borderRadius: 8, marginBottom: 16 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead style={{ position: "sticky", top: 0, background: "var(--color-k-background)" }}>
-                <tr>
-                  <th style={thStyle}>선택</th>
-                  <th style={thStyle}>이름</th>
-                  <th style={thStyle}>세션 (미션/자유)</th>
-                  <th style={thStyle}>대화수집</th>
-                  <th style={thStyle}>리포트(생성/버전)</th>
-                  <th style={thStyle}>N/8</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadingChildren && children.length === 0 ? (
-                  <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center" }}>검색 중...</td></tr>
-                ) : children.length === 0 ? (
-                  <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center" }}>결과가 없습니다.</td></tr>
-                ) : (
-                  children.map(c => (
-                    <tr key={c.childId} onClick={() => setSelectedChildId(c.childId)} style={{ cursor: "pointer", background: selectedChildId === c.childId ? "var(--color-k-navy-tint)" : undefined }}>
-                      <td style={tdStyle}>
-                        <input type="radio" checked={selectedChildId === c.childId} readOnly />
-                      </td>
-                      <td style={tdStyle}>{c.name}</td>
-                      <td style={tdStyle}>{c.missionSessionCount} / {c.freeChatSessionCount}</td>
-                      <td style={tdStyle}>{c.collected ? "O" : "X"}</td>
-                      <td style={tdStyle}>
-                        {c.reportExists ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                            <span>{c.lastReportGeneratedAt ? formatDateTime(c.lastReportGeneratedAt).substring(0, 16) : "O"}</span>
-                            {(c.generationSource || c.generationVersion) && (
-                              <span style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>
-                                {c.generationSource === "scheduled" ? "정기" : "수동"} (v{c.generationVersion || 1})
-                              </span>
-                            )}
-                          </div>
-                        ) : "X"}
-                      </td>
-                      <td style={tdStyle}>{c.dashboardFieldCount ?? "-"}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div style={{ marginBottom: "var(--admin-space-16)" }}>
+            <AdminDataTable
+              columns={columns}
+              data={children}
+              isLoading={loadingChildren}
+              keyExtractor={(c) => c.childId || Math.random().toString()}
+              emptyMessage={search ? "검색 결과가 없습니다." : "아이를 검색해주세요."}
+              onRowClick={(c) => setSelectedChildId(c.childId)}
+              expandedRowIds={selectedChildId ? new Set([selectedChildId]) : new Set()}
+            />
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: "var(--admin-space-8)" }}>
             <button
               disabled={!selectedChildId || running}
               onClick={() => handleRun("collect")}
-              style={{ padding: "8px 16px", borderRadius: 8, background: "white", border: "1px solid var(--color-k-navy)", color: "var(--color-k-navy)", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
             >
               즉시 대화 수집
             </button>
             <button
               disabled={!selectedChildId || running || !selectedChild?.collected}
               onClick={() => handleRun("generate")}
-              style={{ padding: "8px 16px", borderRadius: 8, background: "white", border: "1px solid var(--color-k-navy)", color: "var(--color-k-navy)", fontWeight: 600, cursor: (!selectedChildId || running || !selectedChild?.collected) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running || !selectedChild?.collected) ? 0.5 : 1 }}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: (!selectedChildId || running || !selectedChild?.collected) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running || !selectedChild?.collected) ? 0.5 : 1 }}
             >
               즉시 리포트 생성
             </button>
             <button
               disabled={!selectedChildId || running}
               onClick={() => handleRun("collect_and_generate")}
-              style={{ padding: "8px 16px", borderRadius: 8, background: "var(--color-k-navy)", border: "none", color: "white", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-primary)", border: "none", color: "white", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
             >
               수집 후 리포트 즉시 생성
             </button>
@@ -335,51 +356,44 @@ export default function ManualReportingTab() {
       )}
 
       {scope === "all" && (
-        <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16, marginBottom: 20 }}>
+        <div style={{ background: "var(--admin-surface)", borderRadius: 12, border: "1px solid var(--admin-border)", padding: "var(--admin-space-16)", marginBottom: "var(--admin-space-20)" }}>
           {loadingSummary && !summary ? (
-            <div style={{ fontSize: 13 }}>요약 정보 불러오는 중...</div>
+            <div style={{ fontSize: "var(--admin-text-sm)", color: "var(--admin-text-secondary)" }}>요약 정보 불러오는 중...</div>
           ) : summary ? (
-            <div style={{ marginBottom: 16, display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ background: "var(--color-k-surface)", padding: 12, borderRadius: 8, minWidth: 120 }}>
-                <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>가입 전체 아이</div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{summary.totalChildren}명</div>
-              </div>
-              <div style={{ background: "var(--color-k-surface)", padding: 12, borderRadius: 8, minWidth: 120 }}>
-                <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>수집된 대화 있음</div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{summary.hasValidConversation}명</div>
-              </div>
-              <div style={{ background: "var(--color-k-surface)", padding: 12, borderRadius: 8, minWidth: 120 }}>
-                <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>리포트 존재</div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{summary.reportExists}명</div>
-              </div>
-              <div style={{ background: "var(--color-k-surface)", padding: 12, borderRadius: 8, minWidth: 120, borderLeft: summary.reportMissing > 0 ? "4px solid var(--color-k-danger)" : undefined }}>
-                <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>대화O 리포트X (누락)</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: summary.reportMissing > 0 ? "var(--color-k-danger)" : undefined }}>{summary.reportMissing}명</div>
-              </div>
+            <div style={{ marginBottom: "var(--admin-space-16)" }}>
+              <AdminKpiGrid>
+                <AdminKpiCard title="가입 전체 아이" value={`${summary.totalChildren}명`} />
+                <AdminKpiCard title="수집된 대화 있음" value={`${summary.hasValidConversation}명`} />
+                <AdminKpiCard title="리포트 존재" value={`${summary.reportExists}명`} />
+                <AdminKpiCard 
+                  title="대화O 리포트X (누락)" 
+                  value={<span style={{ color: summary.reportMissing > 0 ? "var(--admin-danger)" : "inherit" }}>{summary.reportMissing}명</span>} 
+                />
+              </AdminKpiGrid>
             </div>
           ) : (
-            <div style={{ fontSize: 13, color: "var(--color-k-danger)" }}>요약 정보 로드 실패</div>
+            <div style={{ fontSize: "var(--admin-text-sm)", color: "var(--admin-danger)" }}>요약 정보 로드 실패</div>
           )}
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: "var(--admin-space-8)" }}>
             <button
               disabled={running}
               onClick={() => handleRun("collect")}
-              style={{ padding: "8px 16px", borderRadius: 8, background: "white", border: "1px solid var(--color-k-navy)", color: "var(--color-k-navy)", fontWeight: 600, cursor: running ? "not-allowed" : "pointer", opacity: running ? 0.5 : 1 }}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: running ? "not-allowed" : "pointer", opacity: running ? 0.5 : 1 }}
             >
               전체 대화 수집
             </button>
             <button
               disabled={running}
               onClick={() => handleRun("generate")}
-              style={{ padding: "8px 16px", borderRadius: 8, background: "white", border: "1px solid var(--color-k-navy)", color: "var(--color-k-navy)", fontWeight: 600, cursor: running ? "not-allowed" : "pointer", opacity: running ? 0.5 : 1 }}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: running ? "not-allowed" : "pointer", opacity: running ? 0.5 : 1 }}
             >
               전체 리포트 생성
             </button>
             <button
               disabled={running}
               onClick={() => handleRun("collect_and_generate")}
-              style={{ padding: "8px 16px", borderRadius: 8, background: "var(--color-k-navy)", border: "none", color: "white", fontWeight: 600, cursor: running ? "not-allowed" : "pointer", opacity: running ? 0.5 : 1 }}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-primary)", border: "none", color: "white", fontWeight: 600, cursor: running ? "not-allowed" : "pointer", opacity: running ? 0.5 : 1 }}
             >
               전체 수집 후 생성
             </button>
@@ -389,109 +403,53 @@ export default function ManualReportingTab() {
 
       {/* 실행 결과 표시 */}
       {(running || runResult) && (
-        <div style={{ background: "var(--color-k-navy-tint)", borderRadius: 12, padding: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-navy)", marginBottom: 8 }}>
+        <div style={{ background: "var(--admin-focus)", borderRadius: 12, padding: "var(--admin-space-16)", border: "1px solid var(--admin-border)" }}>
+          <div style={{ fontSize: "var(--admin-text-sm)", fontWeight: "var(--admin-weight-bold)", color: "var(--admin-text-primary)", marginBottom: "var(--admin-space-8)" }}>
             실행 결과
           </div>
           {running ? (
-            <div style={{ fontSize: 13 }}>실행 중입니다. 잠시만 기다려 주세요...</div>
+            <div style={{ fontSize: "var(--admin-text-sm)", color: "var(--admin-text-secondary)" }}>실행 중입니다. 잠시만 기다려 주세요...</div>
           ) : runResult ? (
-            <div style={{ fontSize: 13, whiteSpace: "pre-wrap", background: "white", padding: 12, borderRadius: 8, border: "1px solid var(--color-k-border)" }}>
+            <div style={{ fontSize: "var(--admin-text-sm)", whiteSpace: "pre-wrap", background: "var(--admin-bg)", padding: "var(--admin-space-12)", borderRadius: 8, border: "1px solid var(--admin-border)", color: "var(--admin-text-primary)" }}>
               {!runResult.ok ? (
-                <div style={{ color: "var(--color-k-danger)", fontWeight: 600 }}>에러: {runResult.error}</div>
+                <div style={{ color: "var(--admin-danger)", fontWeight: 600 }}>에러: {runResult.error}</div>
               ) : (
                 <>
-                  <div style={{ marginBottom: 8 }}>
+                  <div style={{ marginBottom: "var(--admin-space-8)" }}>
                     {runResult.partialFailure ? (
-                      <strong style={{ color: "var(--color-k-danger)" }}>⚠️ 일부 실패</strong>
+                      <strong style={{ color: "var(--admin-danger)" }}>⚠️ 일부 실패</strong>
                     ) : (
-                      <strong>✅ 성공</strong>
+                      <strong style={{ color: "var(--admin-success)" }}>✅ 성공</strong>
                     )}
                     {" "}(동작: {runResult.action})
                     {runResult.partialFailure && (
-                      <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginTop: 4 }}>
+                      <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-danger)", marginTop: "var(--admin-space-4)" }}>
                         아래 수집/생성 에러 목록을 확인하세요 - 일부 세션·아이는 처리되지 않았을 수 있습니다.
                       </div>
                     )}
                   </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>[Memory Batch]</strong><br/>
+                  <div style={{ marginBottom: "var(--admin-space-8)" }}>
+                    <strong style={{ fontWeight: "var(--admin-weight-bold)" }}>[Memory Batch]</strong><br/>
                     - 성공: {runResult.memory?.success ?? 0}명<br/>
                     - 건너뜀: {runResult.memory?.skipped ?? 0}명<br/>
                     - 실패: {runResult.memory?.failed ?? 0}명
                   </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <strong>[리포트 생성]</strong><br/>
+                  <div style={{ marginBottom: "var(--admin-space-8)" }}>
+                    <strong style={{ fontWeight: "var(--admin-weight-bold)" }}>[리포트 생성]</strong><br/>
                     - 생성/갱신: {runResult.report?.created ?? 0}건<br/>
                     - 건너뜀(대화 없음): {runResult.report?.skipped ?? 0}건<br/>
                     - 에러: {runResult.report?.failed ?? 0}건
                   </div>
                   {runResult.v3 && runResult.statuses && (
-                    <div style={{ marginTop: 12 }}>
-                      <strong>[V3 처리 상태]</strong><br/>
-                      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
-                        <thead>
-                          <tr>
-                            <th style={thStyle}>아이</th>
-                            <th style={thStyle}>수집</th>
-                            <th style={thStyle}>수집보정</th>
-                            <th style={thStyle}>메모리</th>
-                            <th style={thStyle}>리포트</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {runResult.statuses.map((s: any, i: number) => {
-                            let displayName: React.ReactNode;
-                            if (s.isDeleted) {
-                              displayName = <span style={{ color: "var(--color-k-text-secondary)", fontStyle: "italic" }}>삭제된 아이 ({s.maskedChildId})</span>;
-                            } else if (s.childName && s.loginId) {
-                              displayName = (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                  <span style={{ fontWeight: 600 }}>{s.childName}</span>
-                                  <span style={{ fontSize: 11, color: "var(--color-k-text-secondary)", wordBreak: "break-all" }}>{s.loginId}</span>
-                                </div>
-                              );
-                            } else if (s.childName) {
-                              displayName = <span style={{ fontWeight: 600 }}>{s.childName}</span>;
-                            } else if (s.loginId) {
-                              displayName = <span style={{ wordBreak: "break-all" }}>{s.loginId}</span>;
-                            } else {
-                              displayName = <span style={{ color: "var(--color-k-text-secondary)" }}>{s.maskedChildId}</span>;
-                            }
-
-                            return (
-                              <tr key={i}>
-                                <td style={{ ...tdStyle, maxWidth: 150 }}>
-                                  {displayName}
-                                </td>
-                                <td style={tdStyle}>
-                                {s.collection2 || s.collection || "-"}
-                                {s.collectionError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.collectionError}</div>}
-                              </td>
-                              <td style={tdStyle}>
-                                {s.correction || "-"}
-                                {s.correctionError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.correctionError}</div>}
-                              </td>
-                              <td style={tdStyle}>
-                                {s.memory || "-"}
-                                {s.memoryError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.memoryError}</div>}
-                              </td>
-                              <td style={tdStyle}>
-                                {s.report || "-"}
-                                {s.reportError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.reportError}</div>}
-                                {(s.generationSource || s.generationVersion) && (
-                                  <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 4 }}>
-                                    <div>생성: {s.lastReportGeneratedAt ? formatDateTime(s.lastReportGeneratedAt).substring(0, 16) : "-"}</div>
-                                    <div>방식: {s.generationSource === "scheduled" ? "정기 생성" : "수동 생성"}</div>
-                                    <div>버전: v{s.generationVersion || 1}</div>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                          })}
-                        </tbody>
-                      </table>
+                    <div style={{ marginTop: "var(--admin-space-12)" }}>
+                      <strong style={{ fontWeight: "var(--admin-weight-bold)" }}>[V3 처리 상태]</strong><br/>
+                      <div style={{ marginTop: "var(--admin-space-8)" }}>
+                        <AdminDataTable
+                          columns={resultColumns}
+                          data={runResult.statuses}
+                          keyExtractor={(s: any) => s.childId || s.maskedChildId || s.loginId || Math.random().toString()}
+                        />
+                      </div>
                     </div>
                   )}
                 </>

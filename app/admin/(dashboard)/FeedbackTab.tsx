@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
+import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("ko-KR");
@@ -12,29 +15,14 @@ function formatSubmitter(req: { submitter_name?: string | null; submitter_role?:
   return name ? `${name}(${role})` : role;
 }
 
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "8px 12px",
-  fontSize: 12,
-  color: "var(--color-k-text-secondary)",
-  borderBottom: "1px solid var(--color-k-border)",
-};
-const tdStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  fontSize: 13,
-  color: "var(--color-k-text-primary)",
-  borderBottom: "1px solid var(--color-k-border)",
-  verticalAlign: "top",
-};
-
 export default function FeedbackTab() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Filters
-  const [category, setCategory] = useState<string>("");
-  const [status, setStatus] = useState<string>("");
-  const [role, setRole] = useState<string>("");
+  const [category, setCategory] = useState<string>("all");
+  const [status, setStatus] = useState<string>("all");
+  const [role, setRole] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -42,9 +30,9 @@ export default function FeedbackTab() {
   const load = useCallback(() => {
     setLoading(true);
     const query = new URLSearchParams();
-    if (category) query.set("category", category);
-    if (status) query.set("status", status);
-    if (role) query.set("role", role);
+    if (category && category !== "all") query.set("category", category);
+    if (status && status !== "all") query.set("status", status);
+    if (role && role !== "all") query.set("role", role);
     if (search) query.set("search", search);
 
     fetch(`/api/admin/support-requests?${query.toString()}`)
@@ -92,99 +80,95 @@ export default function FeedbackTab() {
     return s;
   };
 
-  return (
-    <div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", margin: "24px 0 10px" }}>
-        문의·건의·버그 접수 목록
-      </div>
+  const getStatusVariant = (s: string) => {
+    if (s === "open" || s === "received") return "warning";
+    if (s === "in_progress" || s === "reviewing") return "info";
+    if (s === "resolved") return "success";
+    if (s === "closed") return "neutral";
+    return "neutral";
+  };
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-        <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--color-k-border)", fontSize: 13 }}>
-          <option value="">모든 유형</option>
-          <option value="voc">문의</option>
-          <option value="feature">건의</option>
-          <option value="bug">버그</option>
-        </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--color-k-border)", fontSize: 13 }}>
-          <option value="">모든 상태</option>
-          <option value="open">접수됨 (open)</option>
-          <option value="in_progress">확인 중 (in_progress)</option>
-          <option value="resolved">처리 완료 (resolved)</option>
-          <option value="closed">종료 (closed)</option>
-        </select>
-        <select value={role} onChange={(e) => setRole(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--color-k-border)", fontSize: 13 }}>
-          <option value="">모든 접수자</option>
-          <option value="child">아이</option>
-          <option value="parent">부모</option>
-        </select>
-        <input
-          type="text"
-          placeholder="검색어 (접수번호, 내용)"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--color-k-border)", fontSize: 13, minWidth: 200 }}
+  const columns: AdminDataTableColumn<any>[] = [
+    { key: "request_number", header: "접수번호", render: (req) => req.request_number || "-" },
+    { key: "category", header: "유형", render: (req) => getCategoryLabel(req.category) },
+    { key: "submitter", header: "접수자", render: (req) => formatSubmitter(req) },
+    { key: "summary", header: "제목/내용 요약", render: (req) => (
+      <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
+        {req.category === "voc" ? req.body : req.subject}
+        {req.attachments && req.attachments.filter((a: any) => a.upload_status === "uploaded").length > 0 && (
+          <span style={{ marginLeft: "var(--admin-space-8)", fontSize: "var(--admin-text-xs)", background: "var(--admin-surface)", padding: "2px 6px", borderRadius: 4, border: "1px solid var(--admin-border)" }}>
+            이미지 {req.attachments.filter((a: any) => a.upload_status === "uploaded").length}장
+          </span>
+        )}
+      </div>
+    )},
+    { key: "created_at", header: "접수일", render: (req) => formatDateTime(req.created_at) },
+    { key: "status", header: "상태", render: (req) => (
+      <AdminStatusBadge text={getStatusLabel(req.status)} variant={getStatusVariant(req.status)} />
+    )}
+  ];
+
+  return (
+    <div style={{ width: "100%" }}>
+      <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", color: "var(--admin-text-primary)", marginBottom: "var(--admin-space-12)" }}>
+        문의·건의·버그 접수 목록
+      </h2>
+
+      <AdminFilterBar
+        searchNode={
+          <input
+            type="text"
+            placeholder="검색어 (접수번호, 내용)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              width: "100%",
+              minWidth: 240,
+              padding: "var(--admin-space-8) var(--admin-space-12)",
+              fontSize: "var(--admin-text-sm)",
+              borderRadius: 8,
+              border: "1px solid var(--admin-border)",
+            }}
+          />
+        }
+        filterNodes={[
+          <select key="category" value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: "var(--admin-space-6) var(--admin-space-10)", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: "var(--admin-text-sm)", background: "var(--admin-surface)", color: "var(--admin-text-primary)" }}>
+            <option value="all">모든 유형</option>
+            <option value="voc">문의</option>
+            <option value="feature">건의</option>
+            <option value="bug">버그</option>
+          </select>,
+          <select key="status" value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "var(--admin-space-6) var(--admin-space-10)", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: "var(--admin-text-sm)", background: "var(--admin-surface)", color: "var(--admin-text-primary)" }}>
+            <option value="all">모든 상태</option>
+            <option value="open">접수됨 (open)</option>
+            <option value="in_progress">확인 중 (in_progress)</option>
+            <option value="resolved">처리 완료 (resolved)</option>
+            <option value="closed">종료 (closed)</option>
+          </select>,
+          <select key="role" value={role} onChange={(e) => setRole(e.target.value)} style={{ padding: "var(--admin-space-6) var(--admin-space-10)", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: "var(--admin-text-sm)", background: "var(--admin-surface)", color: "var(--admin-text-primary)" }}>
+            <option value="all">모든 접수자</option>
+            <option value="child">아이</option>
+            <option value="parent">부모</option>
+          </select>
+        ]}
+      />
+
+      <div style={{ marginTop: "var(--admin-space-16)" }}>
+        <AdminDataTable
+          columns={columns}
+          data={requests}
+          isLoading={loading}
+          keyExtractor={(req) => req.id}
+          emptyMessage="조건에 맞는 접수가 없습니다."
+          onRowClick={(req) => setExpandedId(expandedId === req.id ? null : req.id)}
+          expandedRowIds={expandedId ? new Set([expandedId]) : new Set()}
+          expandedRowRender={(req) => (
+            <div style={{ padding: "var(--admin-space-16)", background: "var(--admin-focus)" }}>
+              <FeedbackDetail req={req} onUpdate={(status, note) => handleUpdate(req.id, status, note)} />
+            </div>
+          )}
         />
       </div>
-
-      {loading ? (
-        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-k-text-secondary)", fontSize: 13 }}>불러오는 중...</div>
-      ) : requests.length === 0 ? (
-        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-k-text-secondary)", fontSize: 13 }}>조건에 맞는 접수가 없습니다.</div>
-      ) : (
-        <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={thStyle}>접수번호</th>
-                <th style={thStyle}>유형</th>
-                <th style={thStyle}>접수자</th>
-                <th style={thStyle}>제목/내용 요약</th>
-                <th style={thStyle}>접수일</th>
-                <th style={thStyle}>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((req) => (
-                <React.Fragment key={req.id}>
-                  <tr
-                    onClick={() => setExpandedId(expandedId === req.id ? null : req.id)}
-                    style={{ cursor: "pointer", background: expandedId === req.id ? "var(--color-k-navy-tint)" : undefined }}
-                  >
-                    <td style={tdStyle}>{req.request_number || "-"}</td>
-                    <td style={tdStyle}>{getCategoryLabel(req.category)}</td>
-                    <td style={tdStyle}>{formatSubmitter(req)}</td>
-                    <td style={tdStyle}>
-                      <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
-                        {req.category === "voc" ? req.body : req.subject}
-                        {req.attachments && req.attachments.filter((a: any) => a.upload_status === "uploaded").length > 0 && (
-                          <span style={{ marginLeft: 8, fontSize: 11, background: '#e5e7eb', padding: '2px 6px', borderRadius: 4 }}>
-                            이미지 {req.attachments.filter((a: any) => a.upload_status === "uploaded").length}장
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={tdStyle}>{formatDateTime(req.created_at)}</td>
-                    <td style={tdStyle}>
-                      <span style={{ padding: "2px 6px", borderRadius: 4, background: req.status === "open" ? "#fef3c7" : "#e0e7ff", fontSize: 11 }}>
-                        {getStatusLabel(req.status)}
-                      </span>
-                    </td>
-                  </tr>
-                  {expandedId === req.id && (
-                    <tr>
-                      <td colSpan={6} style={{ padding: 0, borderBottom: "1px solid var(--color-k-border)" }}>
-                        <div style={{ padding: 16, background: "var(--color-k-navy-tint)", borderRadius: 12, margin: "0 0 12px", animation: "hbAccordionIn 0.18s ease" }}>
-                          <FeedbackDetail req={req} onUpdate={(status, note) => handleUpdate(req.id, status, note)} />
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
@@ -194,34 +178,34 @@ function FeedbackDetail({ req, onUpdate }: { req: any; onUpdate: (status: string
   const [note, setNote] = useState(req.admin_note || "");
 
   return (
-    <div style={{ display: "flex", gap: 24, fontSize: 13, color: "var(--color-k-text-primary)" }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-        <div><b>접수 화면:</b> {req.current_route || "-"}</div>
-        <div><b>환경:</b> {req.environment || "-"} / <b>앱 버전:</b> {req.app_version || "-"}</div>
-        <div><b>기기 정보:</b> {req.device_info ? JSON.stringify(req.device_info) : "-"}</div>
-        <div><b>접수자 ID:</b> {req.user_id}</div>
-        <div><b>아이 ID:</b> {req.child_id || "없음"}</div>
-        <div><b>보호자 ID:</b> {req.guardian_id || "없음"}</div>
+    <div style={{ display: "flex", gap: "var(--admin-space-24)", fontSize: "var(--admin-text-sm)", color: "var(--admin-text-primary)" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--admin-space-8)" }}>
+        <div><b style={{ fontWeight: "var(--admin-weight-bold)" }}>접수 화면:</b> {req.current_route || "-"}</div>
+        <div><b style={{ fontWeight: "var(--admin-weight-bold)" }}>환경:</b> {req.environment || "-"} / <b style={{ fontWeight: "var(--admin-weight-bold)" }}>앱 버전:</b> {req.app_version || "-"}</div>
+        <div><b style={{ fontWeight: "var(--admin-weight-bold)" }}>기기 정보:</b> {req.device_info ? JSON.stringify(req.device_info) : "-"}</div>
+        <div><b style={{ fontWeight: "var(--admin-weight-bold)" }}>접수자 ID:</b> {req.user_id}</div>
+        <div><b style={{ fontWeight: "var(--admin-weight-bold)" }}>아이 ID:</b> {req.child_id || "없음"}</div>
+        <div><b style={{ fontWeight: "var(--admin-weight-bold)" }}>보호자 ID:</b> {req.guardian_id || "없음"}</div>
         
-        <div style={{ marginTop: 8, padding: 12, background: "white", borderRadius: 8, border: "1px solid var(--color-k-border)" }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>제목: {req.subject}</div>
+        <div style={{ marginTop: "var(--admin-space-8)", padding: "var(--admin-space-12)", background: "var(--admin-bg)", borderRadius: 8, border: "1px solid var(--admin-border)" }}>
+          <div style={{ fontWeight: "var(--admin-weight-bold)", marginBottom: "var(--admin-space-4)" }}>제목: {req.subject}</div>
           <div style={{ whiteSpace: "pre-wrap" }}>{req.body}</div>
         </div>
 
         {req.attachments && req.attachments.filter((a: any) => a.upload_status === "uploaded").length > 0 && (
-          <div style={{ marginTop: 8, padding: 12, background: "white", borderRadius: 8, border: "1px solid var(--color-k-border)" }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>첨부 이미지</div>
-            <div style={{ display: "flex", gap: 12, overflowX: "auto" }}>
+          <div style={{ marginTop: "var(--admin-space-8)", padding: "var(--admin-space-12)", background: "var(--admin-bg)", borderRadius: 8, border: "1px solid var(--admin-border)" }}>
+            <div style={{ fontWeight: "var(--admin-weight-bold)", marginBottom: "var(--admin-space-8)" }}>첨부 이미지</div>
+            <div style={{ display: "flex", gap: "var(--admin-space-12)", overflowX: "auto" }}>
               {req.attachments.filter((a: any) => a.upload_status === "uploaded").map((a: any, idx: number) => {
                 const downloadName = `FB-${(req.request_number || 'UNKNOWN').replace('REQ-', '')}-${idx + 1}.${a.stored_filename.split('.').pop()}`;
                 const downloadUrl = `${a.signed_url}&download=${downloadName}`;
                 return (
-                  <div key={a.id} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 100 }}>
+                  <div key={a.id} style={{ display: "flex", flexDirection: "column", gap: "var(--admin-space-4)", minWidth: 100 }}>
                     <a href={a.signed_url} target="_blank" rel="noreferrer" style={{ display: "block" }}>
-                      <img src={a.signed_url} alt={a.original_filename} style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 8, border: "1px solid var(--color-k-border)" }} />
+                      <img src={a.signed_url} alt={a.original_filename} style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 8, border: "1px solid var(--admin-border)" }} />
                     </a>
-                    <a href={downloadUrl} download={downloadName} style={{ fontSize: 11, color: "var(--color-k-navy)", textAlign: "center", textDecoration: "underline" }}>다운로드</a>
-                    <div style={{ fontSize: 10, color: "var(--color-k-text-secondary)", textAlign: "center" }}>
+                    <a href={downloadUrl} download={downloadName} style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-primary)", textAlign: "center", textDecoration: "underline" }}>다운로드</a>
+                    <div style={{ fontSize: 10, color: "var(--admin-text-secondary)", textAlign: "center" }}>
                       {a.mime_type.split('/')[1]?.toUpperCase()} • {(a.file_size / 1024).toFixed(1)} KB
                       {a.width && a.height ? ` • ${a.width}x${a.height}` : ""}
                     </div>
@@ -232,10 +216,10 @@ function FeedbackDetail({ req, onUpdate }: { req: any; onUpdate: (status: string
           </div>
         )}
       </div>
-      <div style={{ width: 300, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ width: 300, display: "flex", flexDirection: "column", gap: "var(--admin-space-12)" }}>
         <div>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>상태 변경</div>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "100%", padding: "6px 10px", borderRadius: 8, border: "1px solid var(--color-k-border)", fontSize: 13 }}>
+          <div style={{ fontWeight: "var(--admin-weight-bold)", marginBottom: "var(--admin-space-4)" }}>상태 변경</div>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "100%", padding: "var(--admin-space-6) var(--admin-space-10)", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: "var(--admin-text-sm)", background: "var(--admin-bg)", color: "var(--admin-text-primary)" }}>
             <option value="open">접수됨 (open)</option>
             <option value="in_progress">확인 중 (in_progress)</option>
             <option value="resolved">처리 완료 (resolved)</option>
@@ -243,17 +227,17 @@ function FeedbackDetail({ req, onUpdate }: { req: any; onUpdate: (status: string
           </select>
         </div>
         <div>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>관리자 메모</div>
+          <div style={{ fontWeight: "var(--admin-weight-bold)", marginBottom: "var(--admin-space-4)" }}>관리자 메모</div>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            style={{ width: "100%", height: 100, padding: "8px", borderRadius: 8, border: "1px solid var(--color-k-border)", fontSize: 13, resize: "none" }}
+            style={{ width: "100%", height: 100, padding: "var(--admin-space-8)", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: "var(--admin-text-sm)", background: "var(--admin-bg)", color: "var(--admin-text-primary)", resize: "none" }}
             placeholder="내부 처리 메모를 남기세요."
           />
         </div>
         <button
           onClick={() => onUpdate(status, note)}
-          style={{ width: "100%", padding: "8px", borderRadius: 8, border: "none", background: "var(--color-k-navy)", color: "white", fontWeight: 700, cursor: "pointer" }}
+          style={{ width: "100%", padding: "var(--admin-space-8)", borderRadius: 8, border: "none", background: "var(--admin-primary)", color: "white", fontWeight: "var(--admin-weight-bold)", cursor: "pointer" }}
         >
           저장하기
         </button>
