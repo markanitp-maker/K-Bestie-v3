@@ -13,6 +13,8 @@ import { SkeletonBox } from "@/components/Skeleton";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { TodayConversationGuide } from "./components/TodayConversationGuide";
 import { InsightGrid } from "./components/InsightGrid";
+import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementModal";
+import { ParentMissionEventStatus } from "@/components/events/ParentMissionEventStatus";
 
 interface Report {
   id: string;
@@ -686,6 +688,7 @@ export default function ParentHomePage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
+        <AppEventAnnouncementModal />
         <ParentHomeHeader />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
@@ -734,6 +737,7 @@ export default function ParentHomePage() {
           ) : (
             <>
               <TodayConversationGuide guideText={todaysQuote ?? undefined} />
+              <ParentMissionEventStatus />
               <InsightGrid report={latestReport} insights={insightsData} view={view} />
             </>
           )}

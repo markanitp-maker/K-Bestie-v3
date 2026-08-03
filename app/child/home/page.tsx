@@ -5,6 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementModal";
+import MissionOnboardingCard from "@/components/events/MissionOnboardingCard";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { appendVocative } from "@/lib/utils/koreanParticle";
 
@@ -237,7 +239,8 @@ export default function ChildHomePage() {
     <DemoFrame>
       <div className="relative h-full flex flex-col overflow-y-auto overflow-x-hidden w-full text-[var(--color-k-navy)]"
            style={{ background: "linear-gradient(180deg, #BFE8FF 0%, #EAF7FF 38%, #FFF9F2 75%, #FFF7E9 100%)" }}>
-        
+        <AppEventAnnouncementModal />
+
         {/* Background Clouds (decorative) */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-50 flex items-start justify-between pt-24 px-4 z-0">
            <div className="w-16 h-8 bg-white rounded-full blur-[2px] opacity-80" style={{ transform: "scale(1.5)" }} />
@@ -286,6 +289,8 @@ export default function ChildHomePage() {
               {greetingTitle}<br/>오늘은 뭐 하고 놀까?
             </h1>
           </div>
+
+          <MissionOnboardingCard />
 
           {/* Status Bubble */}
           <div className="flex justify-center mb-5">
