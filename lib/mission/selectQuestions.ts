@@ -82,6 +82,7 @@ interface QuestionRow {
   round_type: RoundType;
   applicable_grades: number[];
   question_text: string;
+  clinical_status?: string;
 }
 
 function filterIdentityQuestions(q: QuestionRow, context?: ChildConversationContext): boolean {
@@ -582,11 +583,18 @@ export async function selectFixedMissionQuestions(
   const service = createServiceClient();
   const { data: allActiveRaw, error: qErr } = await service
     .from("mission_questions")
-    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades, question_text")
+    .select("id, cycle_type, dashboard_area_tag, round_type, applicable_grades, question_text, clinical_status")
     .eq("is_active", true);
 
   if (qErr || !allActiveRaw) return [];
-  const allActive = allActiveRaw as QuestionRow[];
+  const allActiveUnfiltered = allActiveRaw as QuestionRow[];
+
+  // P0(065~070) 실측 발견: 이 함수가 clinical_status를 전혀 확인하지 않아,
+  // 미승인(PENDING_REVIEW) 문항까지 출제 후보에 포함되고 있었다(관리자 승인
+  // 프로세스와 무관하게 활성화만 되면 바로 출제됨). 활성 + 승인(APPROVED) 문항만
+  // 이 함수의 전체 후보 풀로 삼는다 — 요청서 §"미승인·비활성·구버전 질문은 어떤
+  // fallback 경로에서도 출제하지 않는다" 반영.
+  const allActive = allActiveUnfiltered.filter((q) => q.clinical_status === "APPROVED");
 
   // 1차 후보: 학년 + 라운드 일치
   const candidates = allActive.filter((q) =>
@@ -651,7 +659,23 @@ export async function selectFixedMissionQuestions(
       return shuffle(available)[0].id;
     }
 
-    available = filterEx(allActive.filter((q) => q.dashboard_area_tag === tag));
+    // P0(065~070) 실측 발견: 이 4단계 완화가 학년 조건 없이 전체 활성 문항에서
+    // 태그만 맞춰 찾고 있었다 — 학년별 질문지 도입 후에는 이 경로로 다른 학년
+    // 문항이 새어나갈 수 있다("다른 학년 출제 금지" 요건 위반). candidatesRelaxRound와
+    // 동일하게 학년 조건을 유지한 채 태그만 다시 검색한다(사실상 3단계와 동일 결과이나
+    // 명시적으로 남겨 완화 단계를 추적 가능하게 함).
+    available = filterEx(candidatesRelaxRound.filter((q) => q.dashboard_area_tag === tag));
+    if (available.length > 0) {
+      const notRecentlyAsked = available.filter((q) => !lastAskedAt.has(q.id));
+      if (notRecentlyAsked.length > 0) return shuffle(notRecentlyAsked)[0].id;
+      return shuffle(available)[0].id;
+    }
+
+    // 5단계(신규): 해당 태그에 이 학년 문항이 아예 없는 경우(예: 저학년 질문지에
+    // "공부 고민"/"미래·진로" 영역이 콘텐츠 설계상 없음) — 다른 학년으로 새지 않고
+    // 같은 학년의 승인된 다른 태그 문항으로 대체한다(태그 다양성보다 학년 정확성을
+    // 우선). RESERVE 채우기(716번째 줄 부근)와 동일한 철학.
+    available = filterEx(candidatesRelaxRound);
     if (available.length > 0) {
       const notRecentlyAsked = available.filter((q) => !lastAskedAt.has(q.id));
       if (notRecentlyAsked.length > 0) return shuffle(notRecentlyAsked)[0].id;
