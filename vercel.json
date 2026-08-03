@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/events/mission-onboarding/finalize",
-      "schedule": "0 * * * *"
+      "schedule": "5 15 * * *"
     }
   ]
 }

@@ -4,6 +4,7 @@ import { resolveChildForUser } from "@/lib/child/testAccount";
 import { APP_EVENTS_ANNOUNCEMENT_KEY, APP_EVENTS_ANNOUNCEMENT_VERSION } from "@/lib/events/announcementConfig";
 import { getAppEventEnvironment } from "@/lib/events/environment";
 import { missionOnboardingRewardTier } from "@/lib/events/rewardTier";
+import { lazyFinalizeIfDue } from "@/lib/events/missionOnboardingRead";
 
 export const runtime = "nodejs";
 
@@ -37,12 +38,21 @@ export async function GET() {
     }
 
     if (audience === "child") {
-      const { data: event } = await service
+      const { data: eventRaw } = await service
         .from("child_mission_onboarding_events")
-        .select("status, mission_completed_count, current_reward_amount, ends_at")
+        .select("id, status, mission_completed_count, current_reward_amount, ends_at")
         .eq("environment", environment)
         .eq("child_id", childInfo!.childId)
         .maybeSingle();
+
+      if (eventRaw) await lazyFinalizeIfDue(service, eventRaw.id, eventRaw.ends_at, eventRaw.status);
+      const { data: event } = eventRaw
+        ? await service
+            .from("child_mission_onboarding_events")
+            .select("status, mission_completed_count, current_reward_amount, ends_at")
+            .eq("id", eventRaw.id)
+            .single()
+        : { data: null };
 
       return NextResponse.json({
         shouldShow: true,

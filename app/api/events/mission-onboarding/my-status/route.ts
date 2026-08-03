@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveChildForUser } from "@/lib/child/testAccount";
 import { getAppEventEnvironment } from "@/lib/events/environment";
 import { missionOnboardingRewardTier } from "@/lib/events/rewardTier";
+import { lazyFinalizeIfDue } from "@/lib/events/missionOnboardingRead";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export async function GET() {
   if (childInfo) {
     const { data: event } = await service
       .from("child_mission_onboarding_events")
-      .select("status, mission_completed_count, current_reward_amount, final_reward_amount, final_mission_count, started_at, ends_at, completed_at")
+      .select("id, status, mission_completed_count, current_reward_amount, final_reward_amount, final_mission_count, started_at, ends_at, completed_at")
       .eq("environment", environment)
       .eq("child_id", childInfo.childId)
       .maybeSingle();
@@ -30,15 +31,23 @@ export async function GET() {
       return NextResponse.json({ audience: "child", missionEvent: { status: "not_started" } });
     }
 
+    await lazyFinalizeIfDue(service, event.id, event.ends_at, event.status);
+    const { data: freshEvent } = await service
+      .from("child_mission_onboarding_events")
+      .select("status, mission_completed_count, current_reward_amount, final_reward_amount, final_mission_count, started_at, ends_at, completed_at")
+      .eq("id", event.id)
+      .single();
+    const current = freshEvent ?? event;
+
     const tiers = [10, 30, 50, 60];
-    const next = tiers.find((t) => event.mission_completed_count < t);
+    const next = tiers.find((t) => current.mission_completed_count < t);
     const nextTierRemaining = next
-      ? { nextTier: missionOnboardingRewardTier(next), remaining: next - event.mission_completed_count }
+      ? { nextTier: missionOnboardingRewardTier(next), remaining: next - current.mission_completed_count }
       : null;
 
     return NextResponse.json({
       audience: "child",
-      missionEvent: { ...event, nextTierRemaining },
+      missionEvent: { ...current, nextTierRemaining },
     });
   }
 
@@ -48,10 +57,12 @@ export async function GET() {
   const { data: events } = childIds.length
     ? await service
         .from("child_mission_onboarding_events")
-        .select("child_id, status, mission_completed_count, current_reward_amount, final_reward_amount, started_at, ends_at")
+        .select("id, child_id, status, mission_completed_count, current_reward_amount, final_reward_amount, started_at, ends_at")
         .eq("environment", environment)
         .in("child_id", childIds)
     : { data: [] };
+
+  await Promise.all((events ?? []).map((e) => lazyFinalizeIfDue(service, e.id, e.ends_at, e.status)));
 
   const eventByChild = new Map((events ?? []).map((e) => [e.child_id, e]));
   const summaries = (children ?? []).map((c) => ({
