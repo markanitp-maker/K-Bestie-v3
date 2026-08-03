@@ -1,10 +1,10 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import FeedbackTab from "./FeedbackTab";
 import ManualReportingTab from "./ManualReportingTab";
 import PlanChangeRequestsTab from "./PlanChangeRequestsTab";
+import { RetentionEmbed } from "@/components/admin/RetentionEmbed";
 import {
   ResponsiveContainer,
   LineChart,
@@ -538,7 +538,7 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests";
+type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention";
 
 const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
@@ -551,6 +551,7 @@ const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "manual-reporting", label: "리포팅 수동 실행" },
   { id: "plan-change-requests", label: "요금제 변경 요청" },
   { id: "child-approval-requests", label: "아이 승인 요청" },
+  { id: "retention", label: "사용자 리텐션" },
 ];
 
 function LlmStatusTab() {
@@ -1486,21 +1487,6 @@ function AdminDashboard() {
           </button>
           );
         })}
-        <Link
-          href="/admin/retention"
-          style={{
-            textAlign: "left",
-            padding: "10px 14px",
-            borderRadius: 10,
-            fontSize: 13,
-            fontWeight: 400,
-            background: "transparent",
-            color: "var(--color-k-text-secondary)",
-            textDecoration: "none",
-          }}
-        >
-          사용자 리텐션
-        </Link>
       </nav>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1521,6 +1507,8 @@ function AdminDashboard() {
           <PlanChangeRequestsTab />
         ) : page === "child-approval-requests" ? (
           <ChildApprovalRequestsTab />
+        ) : page === "retention" ? (
+          <RetentionEmbed />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
@@ -1704,10 +1692,17 @@ function AdminDashboard() {
             {page === "cost" && (
               <div>
                 {data.reconciliation ? (
-                  <div style={{
+                  <div className="hb-recon-cards" style={{
                     display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 14,
                     ...(data.reconciliation.warning ? { border: "2px solid var(--color-k-danger)", padding: 12, borderRadius: 16 } : {})
                   }}>
+                    <style jsx>{`
+                      @media (max-width: 640px) {
+                        .hb-recon-cards {
+                          grid-template-columns: 1fr !important;
+                        }
+                      }
+                    `}</style>
                     {data.reconciliation.warning && (
                       <div style={{ gridColumn: "1 / -1", color: "var(--color-k-danger)", fontWeight: 700, marginBottom: -4 }}>
                         ⚠️ 실제 비용이 내부 추정보다 10% 이상 큽니다

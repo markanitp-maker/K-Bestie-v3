@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
+import { RetentionWidgetErrorBoundary } from "@/components/admin/RetentionWidgetErrorBoundary";
+
+// requests/064 — /admin(사이드바) iframe에서 로드될 때 ?embed=1로 접근한다.
+// 이 페이지 자체의 헤더(내친구 케이 상단바는 app/admin/layout.tsx가 그리는 별개의
+// 것이라 그대로 두고, 이 파일이 직접 그리는 "사용자 리텐션 대시보드" 제목+"←
+// 관리자 홈" 링크만) 부모 프레임과 중복되므로 embed 모드에서 숨긴다. 직접
+// /admin/retention으로 접근(embed 파라미터 없음)하면 기존과 동일하게 전체 표시.
+const EMBED_HEIGHT_MESSAGE_TYPE = "k-bestie-retention-embed-height";
 
 type Period = "7d" | "14d" | "30d" | "month" | "all";
 
@@ -40,49 +49,124 @@ const thStyle = { padding: "12px 16px", fontSize: 13, color: "var(--color-k-text
 const tdStyle = { padding: "12px 16px", fontSize: 14, color: "var(--color-k-text-primary)", borderBottom: "1px solid var(--color-k-border)" };
 const linkStyle = { color: "var(--color-k-navy)", textDecoration: "none", fontWeight: 600 };
 
-function DrillDownSection({ includeTestAccounts }: { includeTestAccounts: boolean }) {
-  const [activeTab, setActiveTab] = useState<"families" | "children" | "parents">("parents");
-  const [listData, setListData] = useState<any>(null);
+type Scope = "all" | "parent" | "child";
+type DrillDownRowType = "all" | "parent" | "child" | "families";
+
+function retainCell(v: boolean | null | undefined) {
+  return v === true ? "✅" : v === false ? "❌" : "-";
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const isRecent = status.includes("오늘") || status.includes("3일");
+  return (
+    <span style={{
+      padding: "4px 8px", borderRadius: 4, fontSize: 12, fontWeight: 600,
+      background: isRecent ? "var(--color-k-navy-tint)" : "var(--color-k-border)",
+      color: isRecent ? "var(--color-k-navy)" : "var(--color-k-text-secondary)"
+    }}>
+      {status || "-"}
+    </span>
+  );
+}
+
+// requests/062 §15 — 로그인 아이디가 길면 말줄임, hover 시 전체 로그인 아이디(전체
+// UUID는 절대 아님) 확인 가능. 이름/로그인ID 둘 다 없으면 마스킹 UUID만 표시.
+function IdentityCell({ name, loginId, maskedId }: { name?: string | null; loginId?: string | null; maskedId?: string }) {
+  if (!name && !loginId) return <span style={{ color: "var(--color-k-text-secondary)" }}>{maskedId ?? "-"}</span>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, maxWidth: 200 }}>
+      {name && <span style={{ fontWeight: 600 }}>{name}</span>}
+      {loginId && (
+        <span title={loginId} style={{ fontSize: 11, color: "var(--color-k-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {loginId}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includeTestAccounts: boolean }) {
+  const [showFamilies, setShowFamilies] = useState(false);
+  const [listType, setListType] = useState<DrillDownRowType>("all");
+  const [listData, setListData] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // scope 탭을 바꾸면 가족 상세 오버라이드는 해제하고 scope 기준 뷰로 되돌아간다.
+  useEffect(() => { setShowFamilies(false); }, [scope]);
+
   useEffect(() => {
+    // requests/061과 동일한 패턴 — fetch 시점 값을 고정하고 cancelled 플래그로
+    // 늦게 도착한 응답이 최신 상태를 덮어쓰지 않게 막는다.
+    const requestedType: DrillDownRowType = showFamilies ? "families" : scope;
+    let cancelled = false;
     setLoading(true);
-    fetch(`/api/admin/retention/${activeTab}?includeTestAccounts=${includeTestAccounts}`)
-      .then(res => res.json())
-      .then(d => {
-        if (activeTab === "families") setListData(d.families || []);
-        if (activeTab === "children") setListData(d.children || []);
-        if (activeTab === "parents") setListData(d.parents || []);
-        setLoading(false);
-      })
-      .catch(() => {
-        setListData([]);
-        setLoading(false);
-      });
-  }, [activeTab, includeTestAccounts]);
+
+    const load = async () => {
+      try {
+        if (requestedType === "families") {
+          const res = await fetch(`/api/admin/retention/families?includeTestAccounts=${includeTestAccounts}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const d = await res.json();
+          if (cancelled) return;
+          setListType("families");
+          setListData(d.families ?? []);
+        } else if (requestedType === "all") {
+          const [pRes, cRes] = await Promise.all([
+            fetch(`/api/admin/retention/parents?includeTestAccounts=${includeTestAccounts}`),
+            fetch(`/api/admin/retention/children?includeTestAccounts=${includeTestAccounts}`),
+          ]);
+          if (!pRes.ok || !cRes.ok) throw new Error("HTTP error");
+          const [pD, cD] = await Promise.all([pRes.json(), cRes.json()]);
+          if (cancelled) return;
+          const merged = [
+            ...(pD.parents ?? []).map((p: any) => ({ ...p, userType: "parent" as const })),
+            ...(cD.children ?? []).map((c: any) => ({ ...c, userType: "child" as const })),
+          ];
+          setListType("all");
+          setListData(merged);
+        } else {
+          const endpoint = requestedType === "parent" ? "parents" : "children";
+          const res = await fetch(`/api/admin/retention/${endpoint}?includeTestAccounts=${includeTestAccounts}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const d = await res.json();
+          if (cancelled) return;
+          setListType(requestedType);
+          setListData(requestedType === "parent" ? (d.parents ?? []) : (d.children ?? []));
+        }
+      } catch {
+        if (!cancelled) {
+          setListType(requestedType);
+          setListData([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [scope, showFamilies, includeTestAccounts]);
+
+  const title = showFamilies ? "가족 상세" : scope === "all" ? "전체 상세 (부모+아이)" : scope === "parent" ? "부모 상세" : "아이 상세";
 
   return (
     <div style={{ marginTop: 40 }}>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)", marginBottom: 16 }}>사용자별 상세 드릴다운</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {(["parents", "children", "families"] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 999,
-              border: activeTab === tab ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
-              background: activeTab === tab ? "var(--color-k-navy)" : "white",
-              color: activeTab === tab ? "white" : "var(--color-k-text-secondary)",
-              fontSize: 14,
-              fontWeight: activeTab === tab ? 700 : 400,
-              cursor: "pointer",
-            }}
-          >
-            {tab === "families" ? "가족 상세" : tab === "children" ? "아이 상세" : "부모 상세"}
-          </button>
-        ))}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)" }}>사용자별 상세 드릴다운 — {title}</div>
+        <button
+          onClick={() => setShowFamilies(v => !v)}
+          style={{
+            padding: "6px 14px",
+            borderRadius: 999,
+            border: showFamilies ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
+            background: showFamilies ? "var(--color-k-navy)" : "white",
+            color: showFamilies ? "white" : "var(--color-k-text-secondary)",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {showFamilies ? "◀ scope 기준으로" : "가족 상세 보기"}
+        </button>
       </div>
 
       <div style={{ background: "var(--color-k-background)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--shadow-k-card)" }}>
@@ -95,26 +179,37 @@ function DrillDownSection({ includeTestAccounts }: { includeTestAccounts: boolea
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", whiteSpace: "nowrap" }}>
               <thead style={{ background: "var(--color-k-navy-tint)" }}>
                 <tr>
-                  {activeTab === "families" && (
+                  {listType === "families" && (
                     <>
-                      <th style={thStyle}>가족 ID</th>
+                      <th style={thStyle}>가족</th>
                       <th style={thStyle}>생성일</th>
+                      <th style={thStyle}>부모/아이 수</th>
+                      <th style={thStyle}>동시 활성(7일)</th>
                     </>
                   )}
-                  {activeTab === "children" && (
+                  {listType === "all" && (
                     <>
-                      <th style={thStyle}>아이 ID</th>
+                      <th style={thStyle}>유형</th>
+                      <th style={thStyle}>사용자</th>
+                      <th style={thStyle}>활성 일수</th>
+                      <th style={thStyle}>D1/D3/D7</th>
+                    </>
+                  )}
+                  {listType === "child" && (
+                    <>
+                      <th style={thStyle}>아이</th>
                       <th style={thStyle}>학년</th>
                       <th style={thStyle}>활성 일수</th>
                       <th style={thStyle}>미션/자유대화/놀이 수</th>
-                      <th style={thStyle}>D1/D7 재방문</th>
+                      <th style={thStyle}>D1/D3/D7</th>
                     </>
                   )}
-                  {activeTab === "parents" && (
+                  {listType === "parent" && (
                     <>
-                      <th style={thStyle}>부모 ID</th>
+                      <th style={thStyle}>부모</th>
                       <th style={thStyle}>가입일</th>
                       <th style={thStyle}>로그인/리포트/대화거리 뷰</th>
+                      <th style={thStyle}>D1/D3/D7</th>
                       <th style={thStyle}>상태</th>
                     </>
                   )}
@@ -123,35 +218,38 @@ function DrillDownSection({ includeTestAccounts }: { includeTestAccounts: boolea
               <tbody>
                 {listData.map((item: any, i: number) => (
                   <tr key={i}>
-                    {activeTab === "families" && (
+                    {listType === "families" && (
                       <>
-                        <td style={tdStyle}>{item.id}</td>
-                        <td style={tdStyle}>{new Date(item.created_at || item.createdAt).toLocaleDateString()}</td>
+                        <td style={tdStyle}><IdentityCell name={item.representativeParentName} loginId={item.representativeLoginId} maskedId={item.maskedId} /></td>
+                        <td style={tdStyle}>{new Date(item.createdAt).toLocaleDateString()}</td>
+                        <td style={tdStyle}>{item.parentCount} / {item.childCount}</td>
+                        <td style={tdStyle}>{item.dualActive7d ? "✅" : "-"}</td>
                       </>
                     )}
-                    {activeTab === "children" && (
+                    {listType === "all" && (
                       <>
-                        <td style={tdStyle}>{item.childId}</td>
+                        <td style={tdStyle}>{item.userType === "parent" ? "부모" : "아이"}</td>
+                        <td style={tdStyle}><IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /></td>
+                        <td style={tdStyle}>{item.activeDaysTotal ?? 0}일</td>
+                        <td style={tdStyle}>{retainCell(item.d1Retained)} / {retainCell(item.d3Retained)} / {retainCell(item.d7Retained)}</td>
+                      </>
+                    )}
+                    {listType === "child" && (
+                      <>
+                        <td style={tdStyle}><IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /></td>
                         <td style={tdStyle}>{item.grade}</td>
                         <td style={tdStyle}>{item.activeDaysTotal}일</td>
                         <td style={tdStyle}>{item.missionCount} / {item.freechatCount} / {item.playCount}</td>
-                        <td style={tdStyle}>{(item.d1Retained ? "✅" : (item.d1Retained===false?"❌":"-"))} / {(item.d7Retained ? "✅" : (item.d7Retained===false?"❌":"-"))}</td>
+                        <td style={tdStyle}>{retainCell(item.d1Retained)} / {retainCell(item.d3Retained)} / {retainCell(item.d7Retained)}</td>
                       </>
                     )}
-                    {activeTab === "parents" && (
+                    {listType === "parent" && (
                       <>
-                        <td style={tdStyle}>{item.actorId}</td>
+                        <td style={tdStyle}><IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /></td>
                         <td style={tdStyle}>{new Date(item.joinedAt).toLocaleDateString()}</td>
                         <td style={tdStyle}>{item.visitCount} / {item.reportViewCount} / {item.topicViewCount}</td>
-                        <td style={tdStyle}>
-                          <span style={{ 
-                            padding: "4px 8px", borderRadius: 4, fontSize: 12, fontWeight: 600,
-                            background: item.status.includes("오늘") || item.status.includes("3일") ? "var(--color-k-navy-tint)" : "var(--color-k-border)",
-                            color: item.status.includes("오늘") || item.status.includes("3일") ? "var(--color-k-navy)" : "var(--color-k-text-secondary)"
-                           }}>
-                            {item.status}
-                          </span>
-                        </td>
+                        <td style={tdStyle}>{retainCell(item.d1Retained)} / {retainCell(item.d3Retained)} / {retainCell(item.d7Retained)}</td>
+                        <td style={tdStyle}><StatusBadge status={item.status ?? ""} /></td>
                       </>
                     )}
                   </tr>
@@ -165,8 +263,35 @@ function DrillDownSection({ includeTestAccounts }: { includeTestAccounts: boolea
   );
 }
 
-export default function AdminRetentionPage() {
+const CHILD_FEATURES = new Set(["mission", "freechat", "play"]);
+const PARENT_FEATURES = new Set(["daily_report", "conversation_topic"]);
+
+function AdminRetentionContent() {
+  const searchParams = useSearchParams();
+  const embed = searchParams.get("embed") === "1";
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // requests/064 — embed 모드에서만 콘텐츠 높이를 부모(app/admin/page.tsx의
+  // iframe 래퍼)에 postMessage로 보고한다. 부모가 iframe height를 이 값에 맞춰
+  // 갱신하면 iframe 자체는 내부 스크롤 없이(overflow hidden) 항상 콘텐츠 전체가
+  // 보이고, 스크롤은 바깥 /admin 페이지 하나에서만 발생해 이중 스크롤이 없다.
+  useEffect(() => {
+    if (!embed || !rootRef.current) return;
+    const el = rootRef.current;
+    const report = () => {
+      window.parent.postMessage(
+        { type: EMBED_HEIGHT_MESSAGE_TYPE, height: el.scrollHeight },
+        window.location.origin
+      );
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [embed]);
+
   const [period, setPeriod] = useState<Period>("7d");
+  const [scope, setScope] = useState<Scope>("all");
   const [includeTestAccounts, setIncludeTestAccounts] = useState(false);
   const [overview, setOverview] = useState<any>(null);
   const [cohort, setCohort] = useState<any>(null);
@@ -178,10 +303,10 @@ export default function AdminRetentionPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    
+
     Promise.all([
       fetch(`/api/admin/retention/overview?period=${period}&includeTestAccounts=${includeTestAccounts}`).then(r => r.ok ? r.json() : Promise.reject("overview error")),
-      fetch(`/api/admin/retention/cohort?unit=child&cohortBasis=registration&includeTestAccounts=${includeTestAccounts}`).then(r => r.ok ? r.json() : Promise.reject("cohort error")),
+      fetch(`/api/admin/retention/cohort?unit=${scope}&cohortBasis=registration&includeTestAccounts=${includeTestAccounts}`).then(r => r.ok ? r.json() : Promise.reject("cohort error")),
       fetch(`/api/admin/retention/features?includeTestAccounts=${includeTestAccounts}`).then(r => r.ok ? r.json() : Promise.reject("features error"))
     ]).then(([o, c, f]) => {
       if (!cancelled) {
@@ -198,27 +323,53 @@ export default function AdminRetentionPage() {
     });
 
     return () => { cancelled = true; };
-  }, [period, includeTestAccounts]);
+  }, [period, scope, includeTestAccounts]);
 
   const featureChartData = useMemo(() => {
     if (!features?.features) return [];
-    return features.features.map((f: any) => ({
-      name: f.feature === 'mission' ? '미션' : f.feature === 'freechat' ? '자유대화' : f.feature === 'play' ? '놀이' : f.feature === 'daily_report' ? '일일 리포트' : '대화거리',
-      진입: f.startCount,
-      완료: f.completeCount || 0
-    }));
-  }, [features]);
+    return features.features
+      .filter((f: any) => scope === "all" || (scope === "child" && CHILD_FEATURES.has(f.feature)) || (scope === "parent" && PARENT_FEATURES.has(f.feature)))
+      .map((f: any) => ({
+        name: f.feature === 'mission' ? '미션' : f.feature === 'freechat' ? '자유대화' : f.feature === 'play' ? '놀이' : f.feature === 'daily_report' ? '일일 리포트' : '대화거리',
+        진입: f.startCount,
+        완료: f.completeCount || 0
+      }));
+  }, [features, scope]);
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--color-k-surface, #fafaf8)", paddingBottom: 64 }}>
-      <header style={{ background: "var(--color-k-background)", padding: "16px 20px", borderBottom: "1px solid var(--color-k-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)" }}>사용자 리텐션 대시보드</h1>
-          <Link href="/admin" style={{ fontSize: 13, color: "var(--color-k-navy)", textDecoration: "none" }}>← 관리자 홈</Link>
-        </div>
-      </header>
+    <div ref={rootRef} style={{ minHeight: embed ? undefined : "100vh", background: "var(--color-k-surface, #fafaf8)", paddingBottom: embed ? 24 : 64 }}>
+      {!embed && (
+        <header style={{ background: "var(--color-k-background)", padding: "16px 20px", borderBottom: "1px solid var(--color-k-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)" }}>사용자 리텐션 대시보드</h1>
+            <Link href="/admin" style={{ fontSize: 13, color: "var(--color-k-navy)", textDecoration: "none" }}>← 관리자 홈</Link>
+          </div>
+        </header>
+      )}
 
-      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 20px" }}>
+      <main style={{ maxWidth: 1440, margin: "0 auto", padding: embed ? "4px 4px 0" : "24px 20px" }}>
+        {/* requests/063 §3 — 전체/부모/아이 리텐션 scope 탭. 기본값 전체 */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {([["all", "전체 리텐션"], ["parent", "부모 리텐션"], ["child", "아이 리텐션"]] as const).map(([s, label]) => (
+            <button
+              key={s}
+              onClick={() => setScope(s)}
+              style={{
+                padding: "8px 18px",
+                borderRadius: 999,
+                border: scope === s ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
+                background: scope === s ? "var(--color-k-navy)" : "white",
+                color: scope === s ? "white" : "var(--color-k-text-secondary)",
+                fontSize: 14,
+                fontWeight: scope === s ? 700 : 500,
+                cursor: "pointer",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Filters */}
         <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap", alignItems: "center", background: "var(--color-k-background)", padding: "16px 24px", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -258,7 +409,7 @@ export default function AdminRetentionPage() {
           <div style={{ flex: 1 }} />
 
           <a
-            href={`/api/admin/retention/export?period=${period}&includeTestAccounts=${includeTestAccounts}`}
+            href={`/api/admin/retention/export?scope=${scope}&includeTestAccounts=${includeTestAccounts}`}
             download
             style={{
               padding: "6px 14px",
@@ -285,58 +436,85 @@ export default function AdminRetentionPage() {
         ) : overview && cohort ? (
           <>
             {/* KPI Cards */}
+            <RetentionWidgetErrorBoundary label="핵심 지표">
             <div style={{ marginBottom: 40 }}>
               <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "var(--color-k-text-primary)" }}>사용자 규모 및 리텐션 핵심 지표</h2>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-                <MetricCard 
-                  label="승인 부모 수 (기간 내 활성)" 
-                  value={`${overview.kpis.activeParents.value}명`} 
-                  deltaPct={overview.kpis.activeParents.deltaPct}
-                  actualString={`전체 방문 ${overview.kpis.visitingParents.value}명 중 실사용`}
-                />
-                <MetricCard 
-                  label="활성 아이 수" 
-                  value={`${overview.kpis.activeChildren.value}명`} 
-                  deltaPct={overview.kpis.activeChildren.deltaPct}
-                  actualString={`전체 로그인 ${overview.kpis.visitingChildren.value}명 중 활동`}
-                />
-                <MetricCard 
-                  label="가족 동시 활성 (부모+아이)" 
-                  value={`${overview.kpis.dualActivationFamilies.value}가족`} 
+                {/* requests/063 §14 — scope별 UI 문구. 활성 사용자 수는 scope에 따라
+                    전체(부모+아이 독립 합산)/부모만/아이만으로 갈아끼운다. */}
+                {scope === "all" && (
+                  <MetricCard
+                    label="전체 활성 사용자 수"
+                    value={`${overview.kpis.activeParents.value + overview.kpis.activeChildren.value}명`}
+                    actualString={`부모 ${overview.kpis.activeParents.value}명 + 아이 ${overview.kpis.activeChildren.value}명 (독립 합산, 가족 dedupe 없음)`}
+                  />
+                )}
+                {scope === "parent" && (
+                  <MetricCard
+                    label="활성 부모 수"
+                    value={`${overview.kpis.activeParents.value}명`}
+                    deltaPct={overview.kpis.activeParents.deltaPct}
+                    actualString={`전체 방문 ${overview.kpis.visitingParents.value}명 중 실사용`}
+                  />
+                )}
+                {scope === "child" && (
+                  <MetricCard
+                    label="활성 아이 수"
+                    value={`${overview.kpis.activeChildren.value}명`}
+                    deltaPct={overview.kpis.activeChildren.deltaPct}
+                    actualString={`전체 로그인 ${overview.kpis.visitingChildren.value}명 중 활동`}
+                  />
+                )}
+                <MetricCard
+                  label="가족 동시 활성 (부모+아이)"
+                  value={`${overview.kpis.dualActivationFamilies.value}가족`}
                   deltaPct={overview.kpis.dualActivationFamilies.deltaPct}
+                  sub="참고용 보조 카드 (리텐션 scope 계산에 미포함)"
                 />
-                
-                {/* Cohort D-Retention from overview or cohort summary */}
-                <MetricCard 
-                  label="D1 리텐션 (가입 코호트)" 
-                  value={pct(cohort.summary.d1.rate)} 
+
+                {/* Cohort D-Retention — cohort API가 scope(unit)에 맞춰 이미 계산해 옴 */}
+                <MetricCard
+                  label={`${scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} D1 리텐션 (가입 코호트)`}
+                  value={pct(cohort.summary.d1.rate)}
                   actualString={`대상 ${cohort.summary.d1.denominator}명 중 ${cohort.summary.d1.numerator}명`}
                 />
-                <MetricCard 
-                  label="D3 리텐션" 
-                  value={pct(cohort.summary.d3.rate)} 
+                <MetricCard
+                  label={`${scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} D3 리텐션`}
+                  value={pct(cohort.summary.d3.rate)}
                   actualString={`대상 ${cohort.summary.d3.denominator}명 중 ${cohort.summary.d3.numerator}명`}
                 />
-                <MetricCard 
-                  label="D7 리텐션" 
-                  value={pct(cohort.summary.d7.rate)} 
+                <MetricCard
+                  label={`${scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} D7 리텐션`}
+                  value={pct(cohort.summary.d7.rate)}
                   actualString={`대상 ${cohort.summary.d7.denominator}명 중 ${cohort.summary.d7.numerator}명`}
                 />
-                <MetricCard 
-                  label="2주차 지속률 (W2)" 
-                  value={pct(cohort.summary.w2.rate)} 
+                <MetricCard
+                  label={`${scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} 2주차 지속률 (W2)`}
+                  value={pct(cohort.summary.w2.rate)}
                   actualString={`대상 ${cohort.summary.w2.denominator}명 중 ${cohort.summary.w2.numerator}명`}
                   sub="가입 후 2주차(8~14일) 내 1회 이상 핵심 활동"
                 />
-                <MetricCard 
-                  label="미션 완료율" 
-                  value={pct(overview.kpis.totalSessions.value > 0 ? overview.kpis.missionCompletes.value / overview.kpis.missionStarts.value : 0)} 
-                  actualString={`시작 ${overview.kpis.missionStarts.value}회 중 완료 ${overview.kpis.missionCompletes.value}회`}
-                />
+
+                {scope === "parent" && (
+                  <MetricCard
+                    label="리포트 조회 부모 수"
+                    value={`${overview.kpis.reportViewingParents.value}명`}
+                    deltaPct={overview.kpis.reportViewingParents.deltaPct}
+                  />
+                )}
+                {(scope === "all" || scope === "child") && (
+                  <MetricCard
+                    label="미션 완료율"
+                    value={pct(overview.kpis.missionStarts.value > 0 ? overview.kpis.missionCompletes.value / overview.kpis.missionStarts.value : 0)}
+                    actualString={`시작 ${overview.kpis.missionStarts.value}회 중 완료 ${overview.kpis.missionCompletes.value}회`}
+                  />
+                )}
               </div>
             </div>
+            </RetentionWidgetErrorBoundary>
 
             {/* Daily Trend Chart */}
+            <RetentionWidgetErrorBoundary label="일별 활성 사용자 추이(DAU)">
             <div style={{ marginBottom: 40, background: "var(--color-k-background)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)" }}>
               <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 24, color: "var(--color-k-text-primary)" }}>일별 활성 사용자 추이 (DAU)</h2>
               <div style={{ height: 300, width: "100%" }}>
@@ -347,15 +525,21 @@ export default function AdminRetentionPage() {
                     <YAxis tick={{ fontSize: 12, fill: "var(--color-k-text-secondary)" }} axisLine={false} tickLine={false} />
                     <RechartsTooltip contentStyle={{ borderRadius: 8, border: "none", boxShadow: "var(--shadow-k-card)" }} />
                     <Legend wrapperStyle={{ fontSize: 13, paddingTop: 16 }} />
-                    <Line type="monotone" dataKey="activeParents" name="부모 실활성" stroke="var(--color-k-primary)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-primary)" }} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="activeChildren" name="아이 실활성" stroke="var(--color-k-navy)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-navy)" }} activeDot={{ r: 6 }} />
+                    {(scope === "all" || scope === "parent") && (
+                      <Line type="monotone" dataKey="activeParents" name="부모 실활성" stroke="var(--color-k-primary)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-primary)" }} activeDot={{ r: 6 }} />
+                    )}
+                    {(scope === "all" || scope === "child") && (
+                      <Line type="monotone" dataKey="activeChildren" name="아이 실활성" stroke="var(--color-k-navy)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-navy)" }} activeDot={{ r: 6 }} />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
+            </RetentionWidgetErrorBoundary>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 40 }}>
               {/* Funnel Chart */}
+              <RetentionWidgetErrorBoundary label="핵심 행동 퍼널 전환">
               <div style={{ background: "var(--color-k-background)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)" }}>
                 <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 24, color: "var(--color-k-text-primary)" }}>핵심 행동 퍼널 전환</h2>
                 <div style={{ height: 300, width: "100%" }}>
@@ -372,10 +556,12 @@ export default function AdminRetentionPage() {
                   </ResponsiveContainer>
                 </div>
               </div>
+              </RetentionWidgetErrorBoundary>
 
               {/* Cohort Table */}
+              <RetentionWidgetErrorBoundary label="가입 코호트 리텐션">
               <div style={{ background: "var(--color-k-background)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)", overflowX: "auto" }}>
-                <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--color-k-text-primary)" }}>가입 코호트 리텐션 (아이 기준)</h2>
+                <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--color-k-text-primary)" }}>가입 코호트 리텐션 ({scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} 기준)</h2>
                 <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center", fontSize: 13 }}>
                   <thead>
                     <tr>
@@ -409,12 +595,23 @@ export default function AdminRetentionPage() {
                   </tbody>
                 </table>
               </div>
+              </RetentionWidgetErrorBoundary>
             </div>
 
-            <DrillDownSection includeTestAccounts={includeTestAccounts} />
+            <RetentionWidgetErrorBoundary label="사용자별 상세 드릴다운">
+              <DrillDownSection scope={scope} includeTestAccounts={includeTestAccounts} />
+            </RetentionWidgetErrorBoundary>
           </>
         ) : null}
       </main>
     </div>
+  );
+}
+
+export default function AdminRetentionPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--color-k-text-secondary)" }}>불러오는 중...</div>}>
+      <AdminRetentionContent />
+    </Suspense>
   );
 }

@@ -60,7 +60,7 @@ export default function FamilyDetailPage({ params }: { params: Promise<{ familyI
         </div>
       </header>
 
-      <main id="export-area" style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 20px", background: "var(--color-k-surface, #fafaf8)" }}>
+      <main id="export-area" style={{ maxWidth: 1300, margin: "0 auto", padding: "24px 20px", background: "var(--color-k-surface, #fafaf8)" }}>
         <div style={{ background: "var(--color-k-background)", padding: 24, borderRadius: 16, boxShadow: "var(--shadow-k-card)", marginBottom: 24 }}>
           <h2 style={{ fontSize: 20, margin: "0 0 16px 0", color: "var(--color-k-text-primary)" }}>가족 정보 ({familyId})</h2>
           <div style={{ fontSize: 14, color: "var(--color-k-text-secondary)" }}>생성일: {new Date(data.createdAt).toLocaleString()}</div>

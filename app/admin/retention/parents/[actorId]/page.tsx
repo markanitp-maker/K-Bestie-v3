@@ -60,7 +60,7 @@ export default function ParentDetailPage({ params }: { params: Promise<{ actorId
         </div>
       </header>
 
-      <main id="export-area" style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 20px", background: "var(--color-k-surface, #fafaf8)" }}>
+      <main id="export-area" style={{ maxWidth: 1300, margin: "0 auto", padding: "24px 20px", background: "var(--color-k-surface, #fafaf8)" }}>
         <div style={{ background: "var(--color-k-background)", padding: 24, borderRadius: 16, boxShadow: "var(--shadow-k-card)", marginBottom: 24 }}>
           <h2 style={{ fontSize: 20, margin: "0 0 16px 0", color: "var(--color-k-text-primary)" }}>부모 정보 ({actorId})</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, fontSize: 14, color: "var(--color-k-text-primary)" }}>

@@ -12,7 +12,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           내친구 케이 — 관리자
         </h1>
       </header>
-      <main style={{ maxWidth: 960, margin: "0 auto", padding: "24px" }}>{children}</main>
+      <main style={{ maxWidth: 1440, margin: "0 auto", padding: "24px" }}>{children}</main>
     </div>
   );
 }

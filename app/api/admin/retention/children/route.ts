@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { toKSTDateStr, getOffsetDateStr } from "@/lib/analytics/kstDate";
+import { toDisplayFields } from "@/lib/admin/retentionDisplay";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   const childProfiles: any[] = [];
   let cpOffset = 0;
   while (true) {
-    const { data, error } = await service.from("child_profiles").select("id, family_id, is_internal_test, grade").order("id").range(cpOffset, cpOffset + 999);
+    const { data, error } = await service.from("child_profiles").select("id, family_id, is_internal_test, grade, name, member_id").order("id").range(cpOffset, cpOffset + 999);
     if (error) return NextResponse.json({ error: `child_profiles 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
     childProfiles.push(...data);
@@ -31,7 +32,8 @@ export async function GET(req: NextRequest) {
     cpOffset += 1000;
   }
 
-  const testFamilyIds = !includeTestAccounts ? await import("@/lib/admin/retentionFilter").then(m => m.getTestFamilyIds(service)) : new Set<string>();
+  const allTestFamilyIds = await import("@/lib/admin/retentionFilter").then(m => m.getTestFamilyIds(service));
+  const testFamilyIds = !includeTestAccounts ? allTestFamilyIds : new Set<string>();
 
   const validChildren = [];
   for (const c of childProfiles) {
@@ -42,6 +44,29 @@ export async function GET(req: NextRequest) {
         validChildren.push(c);
       }
     }
+  }
+
+  // 이름·로그인 아이디 조인(child_profiles.member_id → family_members.id → family_members.user_id
+  // → member_accounts.id). child_profiles.member_id는 family_members 행의 PK를 가리키지
+  // member_accounts.id(실제 auth uid)를 직접 가리키지 않는다 — 승인 시점 실제 insert 순서
+  // (app/api/admin/child-approval-requests/[id]/approve/route.ts)를 보면
+  // family_members.insert({user_id: authUserId}) → familyMember.id 로 member_accounts.insert({id: authUserId})
+  // → child_profiles.insert({member_id: familyMember.id}) 순이라, member_id를 member_accounts.id로
+  // 바로 조회하면 항상 매칭에 실패해 로그인 아이디가 비어 보이는 버그가 있었다. family_members를
+  // 한 단계 거쳐 실제 auth uid를 구한 뒤 member_accounts를 조회한다.
+  const memberRowIds = Array.from(new Set(validChildren.map(c => c.member_id).filter(Boolean)));
+  const authUserIdByMemberRowId = new Map<string, string>();
+  if (memberRowIds.length > 0) {
+    const { data: fmRows } = await service.from("family_members").select("id, user_id").eq("role", "child").in("id", memberRowIds);
+    for (const fm of fmRows || []) {
+      if (fm.user_id) authUserIdByMemberRowId.set(fm.id, fm.user_id);
+    }
+  }
+  const authUserIds = Array.from(new Set(Array.from(authUserIdByMemberRowId.values())));
+  const usernameMap = new Map<string, string>();
+  if (authUserIds.length > 0) {
+    const { data: memberData } = await service.from("member_accounts").select("id, username").in("id", authUserIds);
+    for (const m of memberData || []) usernameMap.set(m.id, m.username);
   }
 
   // 2. Fetch behavior_events for children
@@ -65,17 +90,23 @@ export async function GET(req: NextRequest) {
   // 3. Process metrics
   const childStats = new Map<string, any>();
   for (const c of validChildren) {
+    const authUserId = c.member_id ? authUserIdByMemberRowId.get(c.member_id) : undefined;
+    const username = authUserId ? usernameMap.get(authUserId) : undefined;
     childStats.set(c.id, {
       childId: c.id,
       familyId: c.family_id,
       grade: c.grade || "알 수 없음",
+      ...toDisplayFields(c.id, c.name, username),
+      isTestAccount: allTestFamilyIds.has(c.family_id) || !!c.is_internal_test,
       lastVisitAt: null,
       activeDaysTotal: 0,
       missionCount: 0,
       freechatCount: 0,
       playCount: 0,
       d1Retained: null,
+      d3Retained: null,
       d7Retained: null,
+      w2Retained: null,
       _firstMeaningfulDate: null,
       _meaningfulDates: new Set<string>(),
       _loginDates: new Set<string>()
@@ -116,16 +147,31 @@ export async function GET(req: NextRequest) {
     if (stats._firstMeaningfulDate) {
       const firstStr = stats._firstMeaningfulDate;
       const d1Str = getOffsetDateStr(firstStr, 1);
+      const d3Str = getOffsetDateStr(firstStr, 3);
       const d7Str = getOffsetDateStr(firstStr, 7);
 
       if (ms(d1Str) <= todayMs) {
         stats.d1Retained = stats._meaningfulDates.has(d1Str);
       }
+      if (ms(d3Str) <= todayMs) {
+        stats.d3Retained = stats._meaningfulDates.has(d3Str);
+      }
       if (ms(d7Str) <= todayMs) {
         stats.d7Retained = stats._meaningfulDates.has(d7Str);
       }
+
+      const w2StartStr = getOffsetDateStr(firstStr, 8);
+      const w2EndStr = getOffsetDateStr(firstStr, 14);
+      if (ms(w2EndStr) <= todayMs) {
+        let visited = false;
+        for (const d of stats._meaningfulDates as Set<string>) {
+          if (ms(d) >= ms(w2StartStr) && ms(d) <= ms(w2EndStr)) { visited = true; break; }
+        }
+        stats.w2Retained = visited;
+      }
     }
 
+    stats.firstActiveDate = stats._firstMeaningfulDate;
     delete stats._firstMeaningfulDate;
     delete stats._meaningfulDates;
     delete stats._loginDates;
