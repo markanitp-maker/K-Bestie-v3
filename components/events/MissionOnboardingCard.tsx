@@ -42,7 +42,7 @@ export default function MissionOnboardingCard() {
 
   return (
     <div
-      className="w-full max-w-[430px] mx-auto rounded-[20px] p-4 mb-3 shadow-sm"
+      className="w-full max-w-[430px] mx-auto rounded-[20px] px-4 py-3 mb-2 shadow-sm"
       style={{ background: "linear-gradient(135deg, #FFF3E0 0%, #FFE8CC 100%)", border: "1px solid rgba(255,159,69,0.25)" }}
     >
       <p className="text-sm font-bold" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
@@ -50,20 +50,19 @@ export default function MissionOnboardingCard() {
       </p>
 
       {data.status === "not_started" && (
-        <>
-          <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <p className="text-xs leading-relaxed flex-1 min-w-0" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
             첫 미션을 완료하면 30일 이벤트가 시작돼요.
-            <br />
             30일 동안 최대 60번의 미션에 도전해 보세요.
           </p>
           <Link
             href="/child/missions"
-            className="inline-block mt-3 px-4 py-2 rounded-xl text-xs font-bold text-white"
+            className="shrink-0 px-3 py-2 rounded-xl text-xs font-bold text-white whitespace-nowrap"
             style={{ background: "var(--color-k-orange, #FF9F45)" }}
           >
             미션 시작하기
           </Link>
-        </>
+        </div>
       )}
 
       {(data.status === "active" || data.status === "max_completed") && (

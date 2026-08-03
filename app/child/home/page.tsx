@@ -269,14 +269,14 @@ export default function ChildHomePage() {
         <div className="flex-1 w-full max-w-[430px] mx-auto px-4 pb-20 flex flex-col relative z-10 child-home-content">
           
           {/* Mascot Area */}
-          <div className="flex flex-col items-center justify-center flex-1 min-h-[160px] relative">
+          <div className="flex flex-col items-center justify-center relative" style={{ height: '160px' }}>
             <Image
               src="/Images/mascot/mascot-standing.png"
               alt="케이 마스코트"
               width={205}
               height={205}
               className="object-contain drop-shadow-md z-10"
-              style={{ width: "clamp(150px, 56%, 205px)", height: "auto" }}
+              style={{ width: "clamp(120px, 42%, 164px)", height: "auto" }}
               priority
             />
             {/* Oval shadow under mascot */}
@@ -284,7 +284,7 @@ export default function ChildHomePage() {
           </div>
 
           {/* Greeting Area */}
-          <div className="flex flex-col items-center text-center mt-4 mb-3">
+          <div className="flex flex-col items-center text-center mt-2 mb-2">
             <h1 className="font-brand text-[24px] font-extrabold leading-[1.35]">
               {greetingTitle}<br/>오늘은 뭐 하고 놀까?
             </h1>
@@ -293,7 +293,7 @@ export default function ChildHomePage() {
           <MissionOnboardingCard />
 
           {/* Status Bubble */}
-          <div className="flex justify-center mb-5">
+          <div className="flex justify-center mb-3">
             <div className="relative bg-white px-4 py-2.5 rounded-full border border-[var(--color-k-orange)] shadow-sm text-[15px] font-medium inline-block max-w-[80%] text-center">
               {missionBubble}
               {/* Triangle pointer */}
@@ -306,14 +306,14 @@ export default function ChildHomePage() {
             {/* Mission Card (Primary) */}
             <Link 
               href={missionUrl}
-              className="flex items-center gap-3.5 rounded-[24px] px-4 py-4 shadow-sm transition-transform active:scale-[0.98] w-full"
+              className="flex items-center gap-3 rounded-[22px] px-4 py-3 shadow-sm transition-transform active:scale-[0.98] w-full"
               style={{ background: "var(--color-k-orange)" }}
             >
-              <div className="w-[60px] h-[60px] rounded-[20px] flex items-center justify-center text-[32px] shrink-0 bg-white/25">
+              <div className="w-[52px] h-[52px] rounded-[18px] flex items-center justify-center text-[28px] shrink-0 bg-white/25">
                 🎯
               </div>
               <div className="flex-1 text-left min-w-0">
-                <p className="text-white font-bold text-[19px] leading-snug">{missionTitle}</p>
+                <p className="text-white font-bold text-[17px] leading-snug">{missionTitle}</p>
                 <p className="text-white/90 text-[14px] mt-0.5 truncate">{missionDesc}</p>
               </div>
               {progressText && (
