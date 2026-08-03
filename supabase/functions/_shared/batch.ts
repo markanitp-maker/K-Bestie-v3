@@ -803,9 +803,12 @@ const TRAIT_PATTERN_SELF_STATEMENT_CONFIDENCE = 0.85; // 설계 문서 §9 — �
 const EXTRACTION_PROMPT_VERSION = "extraction-v1";
 // 실측: 1024로는 다중 fact+entity+relation JSON이 잘림(과거 기록). 2026-08-02 Production에서
 // 대화량이 많은 아이 대상 generateMemoryFacts 호출이 4096으로도 잘리는 것을 추가로 확인해
-// 8192로 올림 — 이 값은 lib/batch/contextCorrectionV3.ts·dailyReportV3.ts가 동일 유형의
-// 구조화 JSON 추출에 이미 8192를 쓰고 있어 안전성이 검증된 값이다.
-const EXTRACTION_MAX_OUTPUT_TOKENS = 8192;
+// 8192로 올렸으나(001/002-critical.md 복구 작업 중), 82개/68개 메시지인 날(안서아/윤도원)에서
+// 8192로도 여전히 JSON 파싱 실패가 재현돼 16384로 재상향(2026-08-03). fact당
+// source_excerpt+evidence_summary+entities+relations가 모두 포함되는 verbose한 스키마라
+// 발화량이 많은 날은 더 큰 여유가 필요하다. 이후에도 특정 날짜가 계속 잘리면 다음은
+// lib/batch/contextCorrectionV3.ts와 동일하게 chunk 분할을 고려한다.
+const EXTRACTION_MAX_OUTPUT_TOKENS = 16384;
 
 /** gemini-embedding-001(Vertex) 호출 — memory_facts.content(추출 요약)만 임베딩한다.
  *  절대 원문(대화 발췌)을 임베딩하지 않는다(원본 삭제 후 역복원 경로 차단, 설계 문서 §2-4). */
@@ -841,6 +844,23 @@ function toPgVectorLiteral(values: number[]): string {
   return `[${values.join(",")}]`;
 }
 
+// P0 긴급수정(안서현 부모-케이 장애) — idempotency_key는 반드시 "내용"에 종속돼야
+// 한다. 예전에는 그날 Gemini 응답 배열의 순번(factIndex)을 썼는데, 동일 날짜
+// 재실행/재시도/동시실행 시 순번은 유지되지만 그 자리에 오는 실제 내용은 실행마다
+// 달라질 수 있어(LLM 비결정성), 완전히 다른 의미의 Fact가 이전 실행과 같은 키를
+// 갖게 돼 uq_memory_facts_idempotency_key 위반으로 배치 전체가 죽었다. 내용 해시
+// 기반으로 바꾸면 "같은 내용 재추출"만 같은 키가 되고(안전하게 재사용), 의미가
+// 다른 Fact는 절대 충돌하지 않는다.
+async function stableContentKey(content: string): Promise<string> {
+  const normalized = content.trim().toLowerCase();
+  const bytes = new TextEncoder().encode(normalized);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 20);
+}
+
 interface ExtractedFact {
   fact_type: "interest" | "friend" | "family" | "dream" | "event" | "trait" | "pattern";
   subject?: string | null;
@@ -859,6 +879,7 @@ export interface MemoryFactBatchResult {
   factsCreated: number;
   factsReinforced: number;
   factsPromoted: number;
+  factsSkippedDuplicate: number;
   skipped: string[];
   errors: { childId: string; error: string }[];
   entityRelationWarnings: { childId: string; warning: string }[];
@@ -868,7 +889,7 @@ const TRAIT_PATTERN_TYPES = new Set(["trait", "pattern"]);
 
 export async function generateMemoryFacts(db: SupabaseClient, targetDate: string, targetChildId?: string): Promise<MemoryFactBatchResult> {
   const result: MemoryFactBatchResult = {
-    childrenProcessed: [], factsCreated: 0, factsReinforced: 0, factsPromoted: 0, skipped: [], errors: [],
+    childrenProcessed: [], factsCreated: 0, factsReinforced: 0, factsPromoted: 0, factsSkippedDuplicate: 0, skipped: [], errors: [],
     entityRelationWarnings: [],
   };
 
@@ -1099,51 +1120,44 @@ ${transcriptText}
           initialStatus = isConfidentSelfStatement ? "active" : "candidate";
         }
 
-        const { data: insertedFact, error: insertErr } = await db
-          .from("memory_facts")
-          .insert({
-            child_id: childId,
-            fact_type: rawFact.fact_type,
-            subject: rawFact.subject ?? null,
-            content: rawFact.content,
-            confidence: rawFact.confidence ?? 0.5,
-            importance: rawFact.importance ?? 0.5,
-            status: initialStatus,
-            source_type: sessionType === "mission" ? "mission" : "free_chat",
-            source_date: targetDate,
-            session_type: sessionType,
-            model_version: reportModel.modelId,
-            prompt_version: EXTRACTION_PROMPT_VERSION,
-            pipeline_version: "v3",
-            idempotency_key: `memory_batch_${childId}_${targetDate}_${rawFact.fact_type}_${factIndex}`,
-            backfill_status: "normal"
-          })
-          .select("id")
-          .single();
-        if (insertErr) throw new Error(`fact 저장 실패: ${insertErr.message}`);
-        const factId = insertedFact.id;
+        // P0 긴급수정 — idempotency_key를 내용 해시 기반으로 생성하고, Fact·Evidence·
+        // Embedding·History 4개 INSERT를 단일 RPC(트랜잭션)로 묶어 부분 실패로 고아
+        // Fact(evidence/embedding 없음)가 남거나, 동시 실행/재시도 시 유니크 제약
+        // 위반으로 배치 전체가 죽는 문제를 없앤다. 충돌 시(동일 내용 재추출) RPC가
+        // 기존 fact_id를 그대로 반환해 중복을 만들지 않는다.
+        const contentKey = await stableContentKey(rawFact.content);
+        const idempotencyKey = `memory_batch_${childId}_${targetDate}_${rawFact.fact_type}_${contentKey}`;
 
-        const { error: evInsertErr } = await db.from("memory_evidence").insert({
-          memory_fact_id: factId,
-          evidence_summary: rawFact.evidence_summary,
-          source_text: rawFact.source_excerpt ?? null,
-          source_date: targetDate,
+        const { data: factRpcRows, error: factRpcErr } = await db.rpc("create_memory_fact_with_evidence", {
+          p_idempotency_key: idempotencyKey,
+          p_child_id: childId,
+          p_fact_type: rawFact.fact_type,
+          p_subject: rawFact.subject ?? null,
+          p_content: rawFact.content,
+          p_confidence: rawFact.confidence ?? 0.5,
+          p_importance: rawFact.importance ?? 0.5,
+          p_status: initialStatus,
+          p_source_type: sessionType === "mission" ? "mission" : "free_chat",
+          p_source_date: targetDate,
+          p_session_type: sessionType,
+          p_model_version: reportModel.modelId,
+          p_prompt_version: EXTRACTION_PROMPT_VERSION,
+          p_pipeline_version: "v3",
+          p_evidence_summary: rawFact.evidence_summary,
+          p_source_text: rawFact.source_excerpt ?? null,
+          p_embedding: embeddingLiteral,
+          p_embedding_model: EMBEDDING_MODEL,
         });
-        if (evInsertErr) throw new Error(`evidence 저장 실패: ${evInsertErr.message}`);
-
-        const { error: embErr } = await db.from("memory_embeddings").insert({
-          memory_fact_id: factId,
-          child_id: childId,
-          embedding: embeddingLiteral,
-          model: EMBEDDING_MODEL,
-        });
-        if (embErr) throw new Error(`embedding 저장 실패: ${embErr.message}`);
-
-        await db.from("memory_history").insert({
-          memory_id: factId,
-          action: "created",
-          after_value: { fact_type: rawFact.fact_type, status: initialStatus },
-        });
+        if (factRpcErr) throw new Error(`fact 저장 실패: ${factRpcErr.message}`);
+        const factRpcResult = Array.isArray(factRpcRows) ? factRpcRows[0] : factRpcRows;
+        const factId = factRpcResult?.fact_id;
+        if (!factId) throw new Error("fact 저장 실패: RPC가 fact_id를 반환하지 않음");
+        if (!factRpcResult.was_new) {
+          // 동시 실행/재시도로 동일 내용의 Fact가 이미 존재 — entity/relation은 아래에서
+          // 계속 upsert(멱등적)하되 evidence/embedding/history 중복 생성은 RPC 내부에서
+          // 이미 막았으므로 여기서는 추가 작업 없음.
+          result.factsSkippedDuplicate = (result.factsSkippedDuplicate ?? 0) + 1;
+        }
 
         // Entity/Relation — 이름 기준으로 upsert(같은 아이 안에서 중복 방지, §2-1 유니크 인덱스).
         const entityIdByName = new Map<string, string>();
@@ -1193,7 +1207,7 @@ ${transcriptText}
           }
         }
 
-        result.factsCreated++;
+        if (factRpcResult.was_new) result.factsCreated++;
       }
 
       result.childrenProcessed.push(childId);
