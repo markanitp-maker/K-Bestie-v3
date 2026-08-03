@@ -564,8 +564,8 @@ function LlmStatusTab() {
     <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
       <div>
         <SectionTitle>LLM 사용 현황 요약</SectionTitle>
-        <div style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 13, color: "var(--color-k-text-primary)" }}>
+        <div style={{ background: "var(--admin-surface)", borderRadius: 12, border: "1px solid var(--admin-border)", padding: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: "var(--admin-text-sm)", color: "var(--admin-text-primary)" }}>
             <div><strong>환경:</strong> {summary.environment}</div>
             <div><strong>배포 커밋:</strong> {summary.commitSha.substring(0, 7)}</div>
             <div><strong>마지막 빌드:</strong> {summary.buildTime}</div>
@@ -580,59 +580,49 @@ function LlmStatusTab() {
 
       <div>
         <SectionTitle>기능별 모델 적용 현황</SectionTitle>
-        <div style={{ overflowX: "auto", background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
-            <thead>
-              <tr>
-                <th style={thStyle}>기능명 (유형/플랫폼)</th>
-                <th style={thStyle}>실제 적용 모델</th>
-                <th style={thStyle}>기본값 / 환경변수</th>
-                <th style={thStyle}>호출부 / 리전</th>
-                <th style={thStyle}>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((r: any) => (
-                <tr key={r.id}>
-                  <td style={tdStyle}>
-                    <div style={{ fontWeight: 600 }}>{r.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>
-                      {r.featureType} · {r.platform}
-                    </div>
-                  </td>
-                  <td style={tdStyle}>
-                    <span style={{ fontWeight: 600, color: "var(--color-k-navy)" }}>{r.effectiveModel}</span>
-                    {r.apiMethod && <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>{r.apiMethod}</div>}
-                  </td>
-                  <td style={tdStyle}>
-                    <div style={{ fontSize: 12 }}>{r.defaultModel}</div>
-                    {r.envKey && <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>{r.envKey}</div>}
-                  </td>
-                  <td style={tdStyle}>
-                    <div style={{ fontSize: 12 }}>{r.internalPath}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)", marginTop: 2 }}>{r.region}</div>
-                  </td>
-                  <td style={tdStyle}>
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        color:
-                          r.status === "정상" || r.status === "기본값 사용"
-                            ? "var(--color-k-success, #1a9c5c)"
-                            : r.status === "확인 불가"
-                            ? "var(--color-k-text-secondary)"
-                            : "var(--color-k-danger)",
-                      }}
-                    >
-                      {r.status}
-                    </span>
-                    {r.warningReason && <div style={{ fontSize: 11, color: "var(--color-k-danger)", marginTop: 2 }}>{r.warningReason}</div>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <AdminDataTable
+          columns={[
+            { key: "name", header: "기능명 (유형/플랫폼)", render: (r: any) => (
+              <>
+                <div style={{ fontWeight: 600 }}>{r.name}</div>
+                <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.featureType} · {r.platform}</div>
+              </>
+            )},
+            { key: "model", header: "실제 적용 모델", render: (r: any) => (
+              <>
+                <span style={{ fontWeight: 600, color: "var(--admin-focus)" }}>{r.effectiveModel}</span>
+                {r.apiMethod && <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.apiMethod}</div>}
+              </>
+            )},
+            { key: "default", header: "기본값 / 환경변수", render: (r: any) => (
+              <>
+                <div style={{ fontSize: "var(--admin-text-sm)" }}>{r.defaultModel}</div>
+                {r.envKey && <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.envKey}</div>}
+              </>
+            )},
+            { key: "path", header: "호출부 / 리전", render: (r: any) => (
+              <>
+                <div style={{ fontSize: "var(--admin-text-sm)" }}>{r.internalPath}</div>
+                <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.region}</div>
+              </>
+            )},
+            { key: "status", header: "상태", render: (r: any) => (
+              <>
+                <AdminStatusBadge
+                  text={r.status}
+                  variant={
+                    r.status === "정상" || r.status === "기본값 사용" ? "success" :
+                    r.status === "확인 불가" ? "neutral" :
+                    "danger"
+                  }
+                />
+                {r.warningReason && <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--color-k-danger)", marginTop: 2 }}>{r.warningReason}</div>}
+              </>
+            )}
+          ]}
+          data={entries}
+          keyExtractor={(r: any) => r.id}
+        />
       </div>
     </div>
   );
