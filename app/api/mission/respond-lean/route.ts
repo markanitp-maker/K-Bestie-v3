@@ -16,6 +16,8 @@ import { checkConsentForSession } from "@/lib/plan/consentGuard";
 import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
+import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
+import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
 
 export const runtime = "nodejs";
 
@@ -244,6 +246,7 @@ export async function POST(req: NextRequest) {
   }
 
   const history = Array.isArray(body.history) ? body.history : [];
+  const lastChildTurn = [...history].reverse().find((t) => t.role === "child" && t.text?.trim());
   const nextQuestionText = typeof body.nextQuestionText === "string" ? body.nextQuestionText.trim() : "";
   const childTurnId = typeof body.childTurnId === "string" ? body.childTurnId : null;
 
@@ -329,23 +332,43 @@ export async function POST(req: NextRequest) {
     contents.push({ role: "user", parts: [{ text: nextQuestionText }] });
   }
 
+  // 기억 회상(Memory Recall) 질의 감지 — respond/route.ts와 동일 원칙. 성공하면
+  // 리액션 생성을 완전히 건너뛰고 저장된 기억 기반 답변을 그대로 반환한다.
+  let memoryRecallResult: LeanResult | null = null;
+  if (lastChildTurn?.text && isMemoryRecallQuery(lastChildTurn.text)) {
+    const memoryRes = await generateMemoryRecallResponse(authService, session.child_id, lastChildTurn.text);
+    if (memoryRes && memoryRes.text) {
+      memoryRecallResult = {
+        reaction: memoryRes.text,
+        tokenIn: memoryRes.tokenIn,
+        tokenOut: memoryRes.tokenOut,
+        modelUsed: "memory_recall",
+      };
+    }
+  }
+
   let resultPromise: Promise<LeanResult>;
   // isOwner: 이 요청이 실제로 LLM 호출을 시작시켰는지 여부. in-flight를 공유만 하는 요청은
   // usage_events를 기록하지 않는다 — 안 그러면 동시요청 수만큼 실제 1회 LLM 비용이 중복 집계된다.
   let isOwner = false;
-  const existingInflight = childTurnId ? inflightMap.get(childTurnId) : undefined;
-  if (existingInflight) {
-    resultPromise = existingInflight;
-  } else {
+  if (memoryRecallResult) {
     isOwner = true;
-    const promise = generateLeanReaction({ contents, sessionId, childTurnId });
-    if (childTurnId) {
-      inflightMap.set(childTurnId, promise);
-      promise.finally(() => {
-        if (inflightMap.get(childTurnId) === promise) inflightMap.delete(childTurnId);
-      }).catch(() => {});
+    resultPromise = Promise.resolve(memoryRecallResult);
+  } else {
+    const existingInflight = childTurnId ? inflightMap.get(childTurnId) : undefined;
+    if (existingInflight) {
+      resultPromise = existingInflight;
+    } else {
+      isOwner = true;
+      const promise = generateLeanReaction({ contents, sessionId, childTurnId });
+      if (childTurnId) {
+        inflightMap.set(childTurnId, promise);
+        promise.finally(() => {
+          if (inflightMap.get(childTurnId) === promise) inflightMap.delete(childTurnId);
+        }).catch(() => {});
+      }
+      resultPromise = promise;
     }
-    resultPromise = promise;
   }
 
   let result: LeanResult;

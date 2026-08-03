@@ -11,6 +11,8 @@ import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
+import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
+import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
 
 export const runtime = "nodejs";
 
@@ -119,6 +121,7 @@ export async function POST(req: NextRequest) {
   }
 
   const history = Array.isArray(body.history) ? body.history : [];
+  const lastChildTurn = [...history].reverse().find((t) => t.role === "child" && t.text?.trim());
   const nextQuestionText = typeof body.nextQuestionText === "string" ? body.nextQuestionText.trim() : "";
   const childTurnId = typeof body.childTurnId === "string" ? body.childTurnId : null;
   const childContext = body.childContext;
@@ -401,6 +404,21 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
     let tokenIn: number | undefined;
     let tokenOut: number | undefined;
     let didFallback = false;
+    let usedMemoryRecall = false;
+
+    // 기억 회상(Memory Recall) 질의 감지 — 아이의 마지막 발화가 "저번에 내가 말한 거
+    // 기억나?" 류 회상형 질문이면, 리액션 생성 대신 저장된 기억 기반 답변으로 대체한다.
+    // 실패/기억 없음이면 아래의 일반 리액션 생성으로 자연스럽게 폴백한다. 다음 질문
+    // (finalNextQuestionText)은 그대로 이어붙이므로 미션 진행 흐름에는 영향이 없다.
+    if (lastChildTurn?.text && isMemoryRecallQuery(lastChildTurn.text)) {
+      const memoryRes = await generateMemoryRecallResponse(authService, session.child_id, lastChildTurn.text);
+      if (memoryRes && memoryRes.text) {
+        reaction = memoryRes.text;
+        tokenIn = memoryRes.tokenIn;
+        tokenOut = memoryRes.tokenOut;
+        usedMemoryRecall = true;
+      }
+    }
 
     const attemptGeneration = async (isFallback: boolean, customInstruction?: string) => {
       const currentModelId = isFallback ? getLlmModel("missionReactionFallback") : getLlmModel("missionReaction");
@@ -425,48 +443,50 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
       return text;
     };
 
-    try {
-      reaction = await attemptGeneration(false);
-    } catch (err: any) {
-      if (isFallbackableError(err)) {
-        console.warn(`[mission/respond] model fallback to Flash. Reason: ${err?.message || String(err)}`);
-        didFallback = true;
-        reaction = await attemptGeneration(true);
-      } else {
-        console.error(`[mission/respond] non-fallbackable error: ${err?.message || String(err)}`);
-        throw err;
-      }
-    }
-
-    if (body.sessionId && childTurnId) {
-      const sId = body.sessionId;
-      const tId = childTurnId;
-      createServiceClient().from("turn_timing_events").insert([
-        { session_id: sId, turn_id: tId, event_name: "vertex_first_chunk" },
-        { session_id: sId, turn_id: tId, event_name: "vertex_complete" }
-      ]).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
-    }
-
-    const isInvalid = (t: string) => {
-      if (!t || containsPromptLeak(t)) return true;
-      const qCount = (t.match(/\?/g) ?? []).length;
-      return t.length > 15 || qCount > 0;
-    };
-
-    if (isInvalid(reaction)) {
-      console.warn("[mission/respond] length/question/leak limit exceeded, retrying once...");
+    if (!usedMemoryRecall) {
       try {
-        reaction = await attemptGeneration(
-          didFallback, 
-          systemInstruction + "\n\n(경고: 이전 리액션에 물음표가 있거나 너무 깁니다. 반드시 15자 이내로 짧게, 물음표 없이 출력하세요.)"
-        );
-      } catch (err) {
-        console.error("[mission/respond] retry failed", err);
+        reaction = await attemptGeneration(false);
+      } catch (err: any) {
+        if (isFallbackableError(err)) {
+          console.warn(`[mission/respond] model fallback to Flash. Reason: ${err?.message || String(err)}`);
+          didFallback = true;
+          reaction = await attemptGeneration(true);
+        } else {
+          console.error(`[mission/respond] non-fallbackable error: ${err?.message || String(err)}`);
+          throw err;
+        }
       }
-      
+
+      if (body.sessionId && childTurnId) {
+        const sId = body.sessionId;
+        const tId = childTurnId;
+        createServiceClient().from("turn_timing_events").insert([
+          { session_id: sId, turn_id: tId, event_name: "vertex_first_chunk" },
+          { session_id: sId, turn_id: tId, event_name: "vertex_complete" }
+        ]).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
+      }
+
+      const isInvalid = (t: string) => {
+        if (!t || containsPromptLeak(t)) return true;
+        const qCount = (t.match(/\?/g) ?? []).length;
+        return t.length > 15 || qCount > 0;
+      };
+
       if (isInvalid(reaction)) {
-        console.warn("[mission/respond] retry failed validation, falling back to safe text");
-        reaction = "그렇구나!";
+        console.warn("[mission/respond] length/question/leak limit exceeded, retrying once...");
+        try {
+          reaction = await attemptGeneration(
+            didFallback,
+            systemInstruction + "\n\n(경고: 이전 리액션에 물음표가 있거나 너무 깁니다. 반드시 15자 이내로 짧게, 물음표 없이 출력하세요.)"
+          );
+        } catch (err) {
+          console.error("[mission/respond] retry failed", err);
+        }
+
+        if (isInvalid(reaction)) {
+          console.warn("[mission/respond] retry failed validation, falling back to safe text");
+          reaction = "그렇구나!";
+        }
       }
     }
 

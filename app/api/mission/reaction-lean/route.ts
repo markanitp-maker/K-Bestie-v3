@@ -8,6 +8,8 @@ import { estimateCost } from "@/lib/plan/pricing";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 import { getLlmModel } from "@/lib/llm/modelRouter";
+import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
+import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
 
 function isFallbackableError(err: any): boolean {
   const errMsg = (err?.message || String(err)).toLowerCase();
@@ -58,17 +60,17 @@ ${knownContextMsg}
     const userPrompt = `질문: "${questionText}"\n아이의 답변: "${answerText}"`;
 
     // 인증/테스트계정 확인 및 승인 확인 (Gemini 호출 전에 대기)
-    const authResult = await (async (): Promise<{ ok: true } | { ok: false; status: 401 | 403; res?: Response }> => {
+    const authResult = await (async (): Promise<{ ok: true; childId: string } | { ok: false; status: 401 | 403; res?: Response }> => {
       const supabase = await createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return { ok: false, status: 401 };
       const svc = createServiceClient();
       const child = await resolveChildForUser(svc, user.id);
       if (!child) return { ok: false, status: 403 };
-      
+
       const approvalBlocked = await checkApprovalForChild(child.childId);
       if (approvalBlocked) return { ok: false, status: 403, res: approvalBlocked };
-      
+
       if (sessionId) {
         const sessionCheck = await assertMissionSessionActive(svc, sessionId);
         if (!sessionCheck.allowed) {
@@ -77,7 +79,7 @@ ${knownContextMsg}
         }
       }
 
-      return { ok: true };
+      return { ok: true, childId: child.childId };
     })();
 
     if (!authResult.ok) {
@@ -90,6 +92,21 @@ ${knownContextMsg}
     let tokenIn = 0;
     let tokenOut = 0;
     let textResult = "";
+
+    // 기억 회상(Memory Recall) 질의 감지 — 아이의 답변 자체가 "저번에 내가 말한 거
+    // 기억나?" 류 회상형 질문이면(스크립트 질문에 답 대신 되묻는 경우), 일반 리액션
+    // 생성 대신 저장된 기억 기반 답변으로 대체한다. 실패/기억 없음이면 아래의 일반
+    // 리액션 생성으로 그대로 폴백한다.
+    let usedMemoryRecall = false;
+    if (isMemoryRecallQuery(answerText)) {
+      const memoryRes = await generateMemoryRecallResponse(createServiceClient(), authResult.childId, answerText);
+      if (memoryRes && memoryRes.text) {
+        textResult = memoryRes.text;
+        tokenIn = memoryRes.tokenIn;
+        tokenOut = memoryRes.tokenOut;
+        usedMemoryRecall = true;
+      }
+    }
 
     const doGenerate = async (isFallback: boolean) => {
       const currentModelId = isFallback ? getLlmModel("missionReactionFallback") : getLlmModel("missionReaction");
@@ -110,14 +127,16 @@ ${knownContextMsg}
       return res.text || "";
     };
 
-    try {
-      textResult = await doGenerate(false);
-    } catch (e: any) {
-      if (isFallbackableError(e)) {
-        console.warn(`[mission/reaction-lean] fallback to Flash. Reason: ${e?.message || String(e)}`);
-        textResult = await doGenerate(true);
-      } else {
-        throw e;
+    if (!usedMemoryRecall) {
+      try {
+        textResult = await doGenerate(false);
+      } catch (e: any) {
+        if (isFallbackableError(e)) {
+          console.warn(`[mission/reaction-lean] fallback to Flash. Reason: ${e?.message || String(e)}`);
+          textResult = await doGenerate(true);
+        } else {
+          throw e;
+        }
       }
     }
 
