@@ -1,98 +1,201 @@
 /**
- * 퀴즈마스터 내부 리더보드 조회 API 클라이언트 (K-Bestie 서버 → Quizmaster 서버).
- * requests/request_kbestie_app_events.md §11.1, .omc/specs/deep-interview-kbestie-app-events.md §7.
+ * 퀴즈 리더보드 조회 — 직접 DB 조회 방식 (2026-08-04 대표 지시로 HTTP API 방식에서 전환).
+ * requests/request_kbestie_app_events.md §11, .omc/specs/deep-interview-kbestie-app-events.md §7.
  *
- * 기존 /play/quiz 프록시(app/api/quiz-proxy/[[...path]]/route.ts)와 동일한 서버간
- * 공유 시크릿(QUIZ_INTERNAL_AUTH_SECRET → x-quiz-proxy-auth 헤더, QUIZ_UPSTREAM_ORIGIN)을
- * 재사용한다. 이 호출은 브라우저를 거치지 않고 K-Bestie 서버가 직접 수행하며, 사용자
- * 쿠키는 전달하지 않는다(순수 서버간 조회).
+ * K-Bestie-v3와 퀴즈마스터는 Dev/Prod 각각 동일한 물리 Supabase 프로젝트를 공유한다
+ * (실측 확인: service_role로 quiz_monthly_leaderboard_aggregates/quiz_leaderboard/
+ * quiz_leaderboard_final_snapshots/quiz_leaderboard_final_entries 전부 직접 조회 성공).
+ * 이 사실을 근거로 별도 HTTP 리더보드 조회 API와 quiz.leaderboard.finalized.v1 웹훅
+ * 수신 API를 중복 구현하지 않는다 — 퀴즈마스터가 쓴 테이블을 K-Bestie가 그대로 읽는다.
+ *
+ * - 마감 전(진행 중): quiz_monthly_leaderboard_aggregates(실제 아이, 이번 period만,
+ *   is_eligible=true) + quiz_leaderboard(is_seed_user=true 더미, 월과 무관하게 고정
+ *   점수 유지 — 퀴즈마스터 스펙 §2.4)를 병합해 정렬한다.
+ * - 마감 후: 퀴즈마스터가 이미 확정한 quiz_leaderboard_final_snapshots/
+ *   quiz_leaderboard_final_entries를 그대로 읽는다(K-Bestie가 다시 계산하지 않음).
+ *
+ * 정렬: 월 누적점수 DESC → 월 누적 풀이시간 ASC → 최종점수 도달시각 ASC(NULLS LAST)
+ *       → child_id ASC (퀴즈마스터 스펙 §2.3과 동일 4키 결정적 정렬).
  */
+
+import { createServiceClient } from "@/lib/supabase/server";
+import { getAppEventEnvironment } from "@/lib/events/environment";
 
 export interface QuizLeaderboardEntry {
   rank: number;
   childId: string;
   score: number;
-  correctCount: number;
-  completedQuizCount: number;
-  lastActivityAt: string;
-  estimatedRewardAmount: number;
-  isSeedUser?: boolean;
-  rewardEligible?: boolean;
+  correctCount: number | null;
+  completedQuizCount: number | null;
+  isSeedUser: boolean;
+  rewardEligible: boolean;
+  rewardAmount?: number;
 }
 
 export interface QuizLeaderboardResponse {
   period: string;
-  status: "active" | "finalized" | string;
+  status: "active" | "finalized";
   asOf: string;
   scoringVersion: string;
+  finalizedAt?: string;
   entries: QuizLeaderboardEntry[];
-  nextCursor: string | null;
 }
-
-import { getAppEventEnvironment } from "@/lib/events/environment";
 
 export type QuizLeaderboardResult =
   | { ok: true; data: QuizLeaderboardResponse }
-  | { ok: false; error: string; lastKnownGoodAt?: string };
+  | { ok: false; error: string };
 
-const REQUEST_TIMEOUT_MS = 8_000;
 const VALID_PERIODS = new Set(["2026-08", "2026-09", "2026-10"]);
+const REWARD_BY_RANK: Record<number, number> = { 1: 5000, 2: 3000, 3: 1000 };
 
-/** 서버간 조회 실패 시 마지막 정상 조회 시각을 보여주기 위한 인메모리 캐시.
- *  서버리스 인스턴스별로만 유효한 best-effort 캐시다(기존 respondCache와 동일 원칙). */
-const lastGoodCache = new Map<string, { data: QuizLeaderboardResponse; at: string }>();
+type MergedRow = {
+  childId: string;
+  score: number;
+  cumulativeTime: number;
+  finalScoreAchievedAt: string | null;
+  correctCount: number | null;
+  completedQuizCount: number | null;
+  isSeedUser: boolean;
+  rewardEligible: boolean;
+};
 
-export async function fetchQuizLeaderboard(
-  period: string,
-  opts: { limit?: number; cursor?: string } = {}
-): Promise<QuizLeaderboardResult> {
+function sortEntries(rows: MergedRow[]): MergedRow[] {
+  return [...rows].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (a.cumulativeTime !== b.cumulativeTime) return a.cumulativeTime - b.cumulativeTime;
+    const aT = a.finalScoreAchievedAt ? new Date(a.finalScoreAchievedAt).getTime() : Number.POSITIVE_INFINITY;
+    const bT = b.finalScoreAchievedAt ? new Date(b.finalScoreAchievedAt).getTime() : Number.POSITIVE_INFINITY;
+    if (aT !== bT) return aT - bT;
+    return a.childId < b.childId ? -1 : a.childId > b.childId ? 1 : 0;
+  });
+}
+
+export async function fetchQuizLeaderboard(period: string): Promise<QuizLeaderboardResult> {
   if (!VALID_PERIODS.has(period)) {
     return { ok: false, error: "invalid_period" };
   }
 
-  const upstreamOrigin = process.env.QUIZ_UPSTREAM_ORIGIN?.replace(/\/+$/, "");
-  const internalSecret = process.env.QUIZ_INTERNAL_AUTH_SECRET;
-  if (!upstreamOrigin || !internalSecret) {
-    console.error("[quizLeaderboardClient] QUIZ_UPSTREAM_ORIGIN/QUIZ_INTERNAL_AUTH_SECRET 미설정");
-    return fallbackToLastGood(period, "not_configured");
-  }
-
   const environment = getAppEventEnvironment();
-  const url = new URL("/internal/events/leaderboard", upstreamOrigin);
-  url.searchParams.set("period", period);
-  url.searchParams.set("limit", String(opts.limit ?? 100));
-  if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
+  const db = createServiceClient();
 
   try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "x-quiz-proxy-auth": internalSecret,
-        "x-environment": environment,
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    // 1) 이미 마감 확정된 달이면 퀴즈마스터의 확정 스냅샷을 그대로 읽는다.
+    const { data: snapshot, error: snapshotErr } = await db
+      .from("quiz_leaderboard_final_snapshots")
+      .select("id, finalized_at, scoring_version")
+      .eq("environment", environment)
+      .eq("period_key", period)
+      .maybeSingle();
 
-    if (!res.ok) {
-      console.error("[quizLeaderboardClient] upstream non-2xx:", res.status);
-      return fallbackToLastGood(period, `upstream_${res.status}`);
+    if (snapshotErr) {
+      console.error("[quizLeaderboardClient] final_snapshots query failed:", snapshotErr.message);
+      return { ok: false, error: "db_error" };
     }
 
-    const data = (await res.json()) as QuizLeaderboardResponse;
-    lastGoodCache.set(period, { data, at: new Date().toISOString() });
-    return { ok: true, data };
-  } catch (err) {
-    const isTimeout = err instanceof Error && err.name === "TimeoutError";
-    console.error("[quizLeaderboardClient] request failed:", isTimeout ? "timeout" : (err as Error).message);
-    return fallbackToLastGood(period, isTimeout ? "timeout" : "request_failed");
-  }
-}
+    if (snapshot) {
+      const { data: entries, error: entriesErr } = await db
+        .from("quiz_leaderboard_final_entries")
+        .select("rank, child_id, score, correct_count, incorrect_count, completed_quiz_count, reward_amount")
+        .eq("snapshot_id", snapshot.id)
+        .order("rank");
 
-function fallbackToLastGood(period: string, error: string): QuizLeaderboardResult {
-  const cached = lastGoodCache.get(period);
-  if (cached) {
-    return { ok: false, error, lastKnownGoodAt: cached.at };
+      if (entriesErr) {
+        console.error("[quizLeaderboardClient] final_entries query failed:", entriesErr.message);
+        return { ok: false, error: "db_error" };
+      }
+
+      return {
+        ok: true,
+        data: {
+          period,
+          status: "finalized",
+          asOf: snapshot.finalized_at,
+          finalizedAt: snapshot.finalized_at,
+          scoringVersion: snapshot.scoring_version,
+          entries: (entries ?? []).map((e) => ({
+            rank: e.rank,
+            childId: e.child_id,
+            score: e.score,
+            correctCount: e.correct_count,
+            completedQuizCount: e.completed_quiz_count,
+            isSeedUser: false, // 확정 스냅샷은 실제 아이 TOP3만 포함(퀴즈마스터 스펙 §2.9)
+            rewardEligible: true,
+            rewardAmount: e.reward_amount,
+          })),
+        },
+      };
+    }
+
+    // 2) 아직 진행 중 — 실제 아이 월간 집계 + 더미(quiz_leaderboard.is_seed_user) 병합.
+    const [realResult, dummyResult] = await Promise.allSettled([
+      db
+        .from("quiz_monthly_leaderboard_aggregates")
+        .select("child_id, score, correct_count, completed_quiz_count, cumulative_time, final_score_achieved_at, scoring_version")
+        .eq("environment", environment)
+        .eq("period_key", period)
+        .eq("is_eligible", true),
+      db
+        .from("quiz_leaderboard")
+        .select("child_id, cumulative_score, cumulative_time, completed_attempts")
+        .eq("is_seed_user", true),
+    ]);
+
+    if (realResult.status === "rejected" || realResult.value.error) {
+      const msg = realResult.status === "rejected" ? realResult.reason : realResult.value.error?.message;
+      console.error("[quizLeaderboardClient] monthly aggregates query failed:", msg);
+      return { ok: false, error: "db_error" };
+    }
+    if (dummyResult.status === "rejected" || dummyResult.value.error) {
+      const msg = dummyResult.status === "rejected" ? dummyResult.reason : dummyResult.value.error?.message;
+      console.error("[quizLeaderboardClient] dummy rows query failed:", msg);
+      return { ok: false, error: "db_error" };
+    }
+
+    const realRows: MergedRow[] = (realResult.value.data ?? []).map((r) => ({
+      childId: r.child_id,
+      score: r.score,
+      cumulativeTime: r.cumulative_time,
+      finalScoreAchievedAt: r.final_score_achieved_at,
+      correctCount: r.correct_count,
+      completedQuizCount: r.completed_quiz_count,
+      isSeedUser: false,
+      rewardEligible: true,
+    }));
+    const dummyRows: MergedRow[] = (dummyResult.value.data ?? []).map((d) => ({
+      childId: d.child_id,
+      score: d.cumulative_score,
+      cumulativeTime: d.cumulative_time,
+      finalScoreAchievedAt: null,
+      correctCount: null,
+      completedQuizCount: d.completed_attempts,
+      isSeedUser: true,
+      rewardEligible: false,
+    }));
+
+    const sorted = sortEntries([...realRows, ...dummyRows]);
+    const scoringVersion = realResult.value.data?.[0]?.scoring_version ?? "v1-10pt-per-question";
+
+    return {
+      ok: true,
+      data: {
+        period,
+        status: "active",
+        asOf: new Date().toISOString(),
+        scoringVersion,
+        entries: sorted.map((r, i) => ({
+          rank: i + 1,
+          childId: r.childId,
+          score: r.score,
+          correctCount: r.correctCount,
+          completedQuizCount: r.completedQuizCount,
+          isSeedUser: r.isSeedUser,
+          rewardEligible: r.rewardEligible,
+          rewardAmount: !r.isSeedUser && i < 3 ? REWARD_BY_RANK[i + 1] : 0,
+        })),
+      },
+    };
+  } catch (err) {
+    console.error("[quizLeaderboardClient] unexpected error:", (err as Error).message);
+    return { ok: false, error: "unexpected_error" };
   }
-  return { ok: false, error };
 }

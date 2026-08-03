@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getAppEventEnvironment } from "@/lib/events/environment";
+import { syncQuizRewardFulfillments } from "@/lib/events/quizRewardSync";
 
 export const runtime = "nodejs";
 
-// 미션 30일 온보딩 이벤트 종료 확정 — Vercel Cron(정기) + 관리자 수동 재실행(지연평가 백스톱)
-// 양쪽에서 호출 가능한 멱등 엔드포인트. finalize_mission_onboarding_event RPC 자체가
-// 이미 completed인 이벤트는 그대로 반환하므로 여러 번 호출해도 안전하다(요청서 §10.2).
+// 이벤트 시스템 일일 정산 — Vercel Cron(매일 00:05 KST, Hobby 플랜 제약으로 하루 1회) +
+// 관리자 수동 재실행 양쪽에서 호출 가능한 멱등 엔드포인트.
+// 1) 미션 30일 온보딩 이벤트 종료 확정(finalize_mission_onboarding_event RPC, 이미
+//    completed인 이벤트는 그대로 반환하므로 재호출 안전 — 요청서 §10.2).
+// 2) 퀴즈마스터가 확정한 quiz_leaderboard_final_snapshots/entries를 읽어
+//    event_reward_fulfillments를 동기화(2026-08-04 결정 — 웹훅 대신 직접 DB 동기화).
 function isAuthorized(req: NextRequest): boolean {
   const configuredSecrets = [process.env.BATCH_SECRET, process.env.CRON_SECRET].filter(
     (s): s is string => typeof s === "string" && s.trim().length > 0
@@ -41,7 +45,9 @@ async function runFinalize() {
     }
   }
 
-  return { environment, scanned: dueEvents?.length ?? 0, results };
+  const quizSync = await syncQuizRewardFulfillments(service);
+
+  return { environment, scanned: dueEvents?.length ?? 0, results, quizSync };
 }
 
 export async function POST(req: NextRequest) {
