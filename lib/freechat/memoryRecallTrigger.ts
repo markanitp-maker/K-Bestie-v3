@@ -23,5 +23,17 @@ export function isMemoryRecallQuery(text: string): boolean {
     return true;
   }
 
+  // 4. (2026-08-03 확장) 인용/전언 표현 + 의문형 — "기억"/"저번에" 같은 명시적
+  // 키워드 없이도 "~라고 했지?", "~다고 한 게 뭐였지?"처럼 이전에 말한 내용을
+  // 되묻는 자연스러운 질문형을 잡는다(requests/064 E2E에서 실측 발견: 지시서
+  // 자체의 예시 질문 절반이 기존 키워드 게이트를 통과하지 못함). "다고/라고" +
+  // "했/한" 조합은 "이전에 말한 것을 회상"하는 신호로 비교적 안전하다 —
+  // "~하는 법 알려줘"류 방법 질문과는 문형이 다르고, 위 1번 제외 키워드로도
+  // 이미 걸러진다.
+  const reportedSpeechPattern = /(다고|라고)(했|한)/;
+  if (reportedSpeechPattern.test(normalized) && isQuestion) {
+    return true;
+  }
+
   return false;
 }
