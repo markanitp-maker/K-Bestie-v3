@@ -412,7 +412,7 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
     // (finalNextQuestionText)은 그대로 이어붙이므로 미션 진행 흐름에는 영향이 없다.
     if (lastChildTurn?.text && isMemoryRecallQuery(lastChildTurn.text)) {
       const memoryRes = await generateMemoryRecallResponse(authService, session.child_id, lastChildTurn.text);
-      if (memoryRes && memoryRes.text) {
+      if (memoryRes && memoryRes.text && !containsPromptLeak(memoryRes.text)) {
         reaction = memoryRes.text;
         tokenIn = memoryRes.tokenIn;
         tokenOut = memoryRes.tokenOut;
@@ -457,15 +457,6 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
         }
       }
 
-      if (body.sessionId && childTurnId) {
-        const sId = body.sessionId;
-        const tId = childTurnId;
-        createServiceClient().from("turn_timing_events").insert([
-          { session_id: sId, turn_id: tId, event_name: "vertex_first_chunk" },
-          { session_id: sId, turn_id: tId, event_name: "vertex_complete" }
-        ]).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
-      }
-
       const isInvalid = (t: string) => {
         if (!t || containsPromptLeak(t)) return true;
         const qCount = (t.match(/\?/g) ?? []).length;
@@ -488,6 +479,18 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
           reaction = "그렇구나!";
         }
       }
+    }
+
+    // vertex_request는 회상/일반 생성 분기 이전에 무조건 기록되므로, 완료 이벤트도
+    // 두 분기 모두에서 대칭적으로 남긴다(review 지적: 비대칭 시 회상 응답 턴이
+    // 지연시간 집계에서 영구 미완료로 보일 수 있음).
+    if (body.sessionId && childTurnId) {
+      const sId = body.sessionId;
+      const tId = childTurnId;
+      createServiceClient().from("turn_timing_events").insert([
+        { session_id: sId, turn_id: tId, event_name: "vertex_first_chunk" },
+        { session_id: sId, turn_id: tId, event_name: "vertex_complete" }
+      ]).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
     }
 
     const text = `${reaction} ${finalNextQuestionText}`;

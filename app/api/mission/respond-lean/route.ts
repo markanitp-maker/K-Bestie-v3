@@ -332,35 +332,36 @@ export async function POST(req: NextRequest) {
     contents.push({ role: "user", parts: [{ text: nextQuestionText }] });
   }
 
-  // 기억 회상(Memory Recall) 질의 감지 — respond/route.ts와 동일 원칙. 성공하면
-  // 리액션 생성을 완전히 건너뛰고 저장된 기억 기반 답변을 그대로 반환한다.
-  let memoryRecallResult: LeanResult | null = null;
-  if (lastChildTurn?.text && isMemoryRecallQuery(lastChildTurn.text)) {
-    const memoryRes = await generateMemoryRecallResponse(authService, session.child_id, lastChildTurn.text);
-    if (memoryRes && memoryRes.text) {
-      memoryRecallResult = {
-        reaction: memoryRes.text,
-        tokenIn: memoryRes.tokenIn,
-        tokenOut: memoryRes.tokenOut,
-        modelUsed: "memory_recall",
-      };
+  // 기억 회상(Memory Recall) 감지·생성 자체를 in-flight 공유 대상 프라미스 안으로
+  // 옮긴다 — 동일 childTurnId로 거의 동시에 두 번 호출돼도(클라이언트 레이스) 회상
+  // 생성이 딱 한 번만 실행되도록 하기 위함(review 지적: 감지를 in-flight 체크보다
+  // 먼저 실행하면 이 가드를 우회해 Vertex 호출·usage_events가 중복된다).
+  const attemptMemoryRecallOrReaction = async (): Promise<LeanResult> => {
+    if (lastChildTurn?.text && isMemoryRecallQuery(lastChildTurn.text)) {
+      const memoryRes = await generateMemoryRecallResponse(authService, session.child_id, lastChildTurn.text);
+      if (memoryRes && memoryRes.text && !containsPromptLeak(memoryRes.text)) {
+        return {
+          reaction: memoryRes.text,
+          tokenIn: memoryRes.tokenIn,
+          tokenOut: memoryRes.tokenOut,
+          modelUsed: "memory_recall",
+        };
+      }
     }
-  }
+    return generateLeanReaction({ contents, sessionId, childTurnId });
+  };
 
   let resultPromise: Promise<LeanResult>;
   // isOwner: 이 요청이 실제로 LLM 호출을 시작시켰는지 여부. in-flight를 공유만 하는 요청은
   // usage_events를 기록하지 않는다 — 안 그러면 동시요청 수만큼 실제 1회 LLM 비용이 중복 집계된다.
   let isOwner = false;
-  if (memoryRecallResult) {
-    isOwner = true;
-    resultPromise = Promise.resolve(memoryRecallResult);
-  } else {
+  {
     const existingInflight = childTurnId ? inflightMap.get(childTurnId) : undefined;
     if (existingInflight) {
       resultPromise = existingInflight;
     } else {
       isOwner = true;
-      const promise = generateLeanReaction({ contents, sessionId, childTurnId });
+      const promise = attemptMemoryRecallOrReaction();
       if (childTurnId) {
         inflightMap.set(childTurnId, promise);
         promise.finally(() => {

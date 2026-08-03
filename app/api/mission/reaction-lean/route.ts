@@ -11,6 +11,19 @@ import { getLlmModel } from "@/lib/llm/modelRouter";
 import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
 import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
 
+// respond/route.ts, respond-lean/route.ts와 동일 패턴 — 기억 회상 답변에 프롬프트/
+// 시스템 지시가 새어나온 흔적이 있는지 검사한다.
+const PROMPT_LEAK_PATTERNS = [
+  /\[[^\]]*\]/,
+  /라고\s*말하면\s*돼/,
+  /시스템\s*지시/,
+  /현재\s*물어봐야\s*할/,
+  /목표\s*질문/,
+];
+function containsPromptLeak(text: string): boolean {
+  return PROMPT_LEAK_PATTERNS.some((re) => re.test(text));
+}
+
 function isFallbackableError(err: any): boolean {
   const errMsg = (err?.message || String(err)).toLowerCase();
   if (
@@ -100,7 +113,7 @@ ${knownContextMsg}
     let usedMemoryRecall = false;
     if (isMemoryRecallQuery(answerText)) {
       const memoryRes = await generateMemoryRecallResponse(createServiceClient(), authResult.childId, answerText);
-      if (memoryRes && memoryRes.text) {
+      if (memoryRes && memoryRes.text && !containsPromptLeak(memoryRes.text)) {
         textResult = memoryRes.text;
         tokenIn = memoryRes.tokenIn;
         tokenOut = memoryRes.tokenOut;
