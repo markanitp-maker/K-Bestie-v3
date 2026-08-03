@@ -4,6 +4,10 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import FeedbackTab from "./FeedbackTab";
 import ManualReportingTab from "./ManualReportingTab";
 import PlanChangeRequestsTab from "./PlanChangeRequestsTab";
+import EventsOverviewTab from "./EventsOverviewTab";
+import MissionOnboardingEventsTab from "./MissionOnboardingEventsTab";
+import QuizLeaderboardEventsTab from "./QuizLeaderboardEventsTab";
+import RewardFulfillmentsTab from "./RewardFulfillmentsTab";
 import { RetentionEmbed } from "@/components/admin/RetentionEmbed";
 import {
   ResponsiveContainer,
@@ -1543,6 +1547,14 @@ function AdminDashboard() {
           <ChildApprovalRequestsTab />
         ) : page === "retention" ? (
           <RetentionEmbed />
+        ) : page === "events-overview" ? (
+          <EventsOverviewTab />
+        ) : page === "events-mission-onboarding" ? (
+          <MissionOnboardingEventsTab />
+        ) : page === "events-quiz-leaderboard" ? (
+          <QuizLeaderboardEventsTab />
+        ) : page === "events-reward-fulfillments" ? (
+          <RewardFulfillmentsTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}

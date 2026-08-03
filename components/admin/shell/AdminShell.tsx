@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Menu, X } from "lucide-react";
 
-export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention";
+export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-reward-fulfillments";
 
 export const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
@@ -17,6 +17,10 @@ export const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "plan-change-requests", label: "요금제 변경 요청" },
   { id: "child-approval-requests", label: "아이 승인 요청" },
   { id: "retention", label: "사용자 리텐션" },
+  { id: "events-overview", label: "이벤트 현황" },
+  { id: "events-mission-onboarding", label: "미션 이벤트" },
+  { id: "events-quiz-leaderboard", label: "퀴즈 리더보드" },
+  { id: "events-reward-fulfillments", label: "상품권 지급 관리" },
 ];
 
 export interface AdminShellProps {
