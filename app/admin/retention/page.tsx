@@ -526,7 +526,7 @@ function AdminRetentionContent() {
                     <RechartsTooltip contentStyle={{ borderRadius: 8, border: "none", boxShadow: "var(--shadow-k-card)" }} />
                     <Legend wrapperStyle={{ fontSize: 13, paddingTop: 16 }} />
                     {(scope === "all" || scope === "parent") && (
-                      <Line type="monotone" dataKey="activeParents" name="부모 실활성" stroke="var(--color-k-primary)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-primary)" }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="activeParents" name="부모 실활성" stroke="var(--color-k-orange)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-orange)" }} activeDot={{ r: 6 }} />
                     )}
                     {(scope === "all" || scope === "child") && (
                       <Line type="monotone" dataKey="activeChildren" name="아이 실활성" stroke="var(--color-k-navy)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-navy)" }} activeDot={{ r: 6 }} />
