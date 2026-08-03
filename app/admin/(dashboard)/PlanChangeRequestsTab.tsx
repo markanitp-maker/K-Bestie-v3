@@ -189,8 +189,8 @@ export default function PlanChangeRequestsTab() {
                   onClick={() => handleReject(row)}
                   disabled={actionLoading === row.id}
                   style={{
-                    padding: "var(--admin-space-6) var(--admin-space-12)", borderRadius: 8, border: "1px solid var(--color-k-danger)",
-                    background: "white", color: "var(--color-k-danger)", fontSize: "var(--admin-text-xs)", fontWeight: "var(--admin-weight-bold)", cursor: "pointer",
+                    padding: "var(--admin-space-6) var(--admin-space-12)", borderRadius: 8, border: "1px solid var(--admin-danger)",
+                    background: "white", color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)", fontWeight: "var(--admin-weight-bold)", cursor: "pointer",
                   }}
                 >
                   거절

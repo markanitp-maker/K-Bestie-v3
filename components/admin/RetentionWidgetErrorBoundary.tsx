@@ -33,12 +33,12 @@ export class RetentionWidgetErrorBoundary extends React.Component<Props, State> 
       return (
         <div
           style={{
-            background: "var(--color-k-background)",
+            background: "var(--admin-surface)",
             borderRadius: 12,
-            boxShadow: "var(--shadow-k-card)",
+            border: "1px solid var(--admin-border)",
             padding: 24,
             textAlign: "center",
-            color: "var(--color-k-text-secondary)",
+            color: "var(--admin-text-secondary)",
           }}
         >
           <p style={{ fontWeight: 700, marginBottom: 4 }}>{this.props.label}을(를) 표시하지 못했습니다.</p>
@@ -49,9 +49,9 @@ export class RetentionWidgetErrorBoundary extends React.Component<Props, State> 
               marginTop: 12,
               padding: "6px 16px",
               borderRadius: 999,
-              border: "1px solid var(--color-k-navy)",
+              border: "1px solid var(--admin-primary)",
               background: "white",
-              color: "var(--color-k-navy)",
+              color: "var(--admin-primary)",
               fontSize: 13,
               fontWeight: 600,
               cursor: "pointer",
