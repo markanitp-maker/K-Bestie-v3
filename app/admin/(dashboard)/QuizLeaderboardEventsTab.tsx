@@ -10,6 +10,7 @@ interface EntryRow {
   rank: number;
   childId?: string;
   child_id?: string;
+  childName?: string | null;
   score: number;
   correctCount?: number;
   correct_count?: number;
@@ -52,6 +53,7 @@ export default function QuizLeaderboardEventsTab() {
   const entries = (data?.entries ?? []).map((e) => ({
     rank: e.rank,
     childId: e.childId ?? e.child_id ?? "",
+    childName: e.childName ?? null,
     score: e.score,
     correctCount: e.correctCount ?? e.correct_count ?? 0,
     completedQuizCount: e.completedQuizCount ?? e.completed_quiz_count ?? 0,
@@ -109,7 +111,10 @@ export default function QuizLeaderboardEventsTab() {
           <AdminDataTable
             columns={[
               { key: "rank", header: "순위", render: (r) => r.rank },
-              { key: "child", header: "아이", render: (r) => (r.isSeedUser ? `${r.childId.slice(0, 8)} (더미)` : r.childId.slice(0, 8)) },
+              { key: "child", header: "아이", render: (r) => {
+                const label = r.childName ?? r.childId.slice(0, 8);
+                return r.isSeedUser ? `${label} (더미)` : label;
+              } },
               { key: "score", header: "점수", render: (r) => r.score },
               { key: "correct", header: "정답 수", render: (r) => r.correctCount },
               { key: "completed", header: "완료 세션 수", render: (r) => r.completedQuizCount },

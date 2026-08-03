@@ -24,6 +24,7 @@ import { getAppEventEnvironment } from "@/lib/events/environment";
 export interface QuizLeaderboardEntry {
   rank: number;
   childId: string;
+  childName: string | null;
   score: number;
   correctCount: number | null;
   completedQuizCount: number | null;
@@ -50,6 +51,7 @@ const REWARD_BY_RANK: Record<number, number> = { 1: 5000, 2: 3000, 3: 1000 };
 
 type MergedRow = {
   childId: string;
+  childName: string | null;
   score: number;
   cumulativeTime: number;
   finalScoreAchievedAt: string | null;
@@ -58,6 +60,16 @@ type MergedRow = {
   isSeedUser: boolean;
   rewardEligible: boolean;
 };
+
+async function fetchChildNames(
+  db: ReturnType<typeof createServiceClient>,
+  childIds: string[]
+): Promise<Map<string, string>> {
+  const uniqueIds = [...new Set(childIds)];
+  if (uniqueIds.length === 0) return new Map();
+  const { data } = await db.from("child_profiles").select("id, name").in("id", uniqueIds);
+  return new Map((data ?? []).map((c) => [c.id, c.name as string]));
+}
 
 function sortEntries(rows: MergedRow[]): MergedRow[] {
   return [...rows].sort((a, b) => {
@@ -104,6 +116,9 @@ export async function fetchQuizLeaderboard(period: string): Promise<QuizLeaderbo
         return { ok: false, error: "db_error" };
       }
 
+      const finalChildIds = (entries ?? []).map((e) => e.child_id);
+      const nameByChildId = await fetchChildNames(db, finalChildIds);
+
       return {
         ok: true,
         data: {
@@ -115,6 +130,7 @@ export async function fetchQuizLeaderboard(period: string): Promise<QuizLeaderbo
           entries: (entries ?? []).map((e) => ({
             rank: e.rank,
             childId: e.child_id,
+            childName: nameByChildId.get(e.child_id) ?? null,
             score: e.score,
             correctCount: e.correct_count,
             completedQuizCount: e.completed_quiz_count,
@@ -136,7 +152,7 @@ export async function fetchQuizLeaderboard(period: string): Promise<QuizLeaderbo
         .eq("is_eligible", true),
       db
         .from("quiz_leaderboard")
-        .select("child_id, cumulative_score, cumulative_time, completed_attempts")
+        .select("child_id, name, cumulative_score, cumulative_time, completed_attempts")
         .eq("is_seed_user", true),
     ]);
 
@@ -151,8 +167,12 @@ export async function fetchQuizLeaderboard(period: string): Promise<QuizLeaderbo
       return { ok: false, error: "db_error" };
     }
 
+    const realChildIds = (realResult.value.data ?? []).map((r) => r.child_id);
+    const realNameByChildId = await fetchChildNames(db, realChildIds);
+
     const realRows: MergedRow[] = (realResult.value.data ?? []).map((r) => ({
       childId: r.child_id,
+      childName: realNameByChildId.get(r.child_id) ?? null,
       score: r.score,
       cumulativeTime: r.cumulative_time,
       finalScoreAchievedAt: r.final_score_achieved_at,
@@ -163,6 +183,7 @@ export async function fetchQuizLeaderboard(period: string): Promise<QuizLeaderbo
     }));
     const dummyRows: MergedRow[] = (dummyResult.value.data ?? []).map((d) => ({
       childId: d.child_id,
+      childName: d.name ?? null,
       score: d.cumulative_score,
       cumulativeTime: d.cumulative_time,
       finalScoreAchievedAt: null,
@@ -185,6 +206,7 @@ export async function fetchQuizLeaderboard(period: string): Promise<QuizLeaderbo
         entries: sorted.map((r, i) => ({
           rank: i + 1,
           childId: r.childId,
+          childName: r.childName,
           score: r.score,
           correctCount: r.correctCount,
           completedQuizCount: r.completedQuizCount,
