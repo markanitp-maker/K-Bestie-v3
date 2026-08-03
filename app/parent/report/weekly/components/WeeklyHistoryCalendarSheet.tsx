@@ -1,16 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import { WeeklyReportSummary, getStateColor } from "./WeeklyReportCard";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 interface WeeklyHistoryCalendarSheetProps {
   childId: string;
   isOpen: boolean;
   onClose: () => void;
+  onSelectReport: (reportId: string) => void;
 }
 
-export function WeeklyHistoryCalendarSheet({ childId, isOpen, onClose }: WeeklyHistoryCalendarSheetProps) {
-  const router = useRouter();
+export function WeeklyHistoryCalendarSheet({ childId, isOpen, onClose, onSelectReport }: WeeklyHistoryCalendarSheetProps) {
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [weeklies, setWeeklies] = useState<WeeklyReportSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -188,10 +186,7 @@ export function WeeklyHistoryCalendarSheet({ childId, isOpen, onClose }: WeeklyH
                   return (
                     <button
                       key={w.weekStart}
-                      onClick={() => {
-                        onClose();
-                        router.push(`/parent/report/weekly/${report.id}`);
-                      }}
+                      onClick={() => onSelectReport(report.id)}
                       className="group grid grid-cols-7 items-center border border-gray-200 rounded-[12px] py-2 hover:bg-[#f0f9ff] hover:border-[#bae6fd] hover:shadow-sm transition-all focus:outline-none focus:bg-[#f0f9ff] focus:border-[#bae6fd] focus:ring-1 focus:ring-[#bae6fd]"
                       aria-label={`${year}년 ${month}월 ${dates[0].day}일부터 ${dates[6].day}일까지, 주간 리포트 있음, ${report.summary_state}`}
                     >

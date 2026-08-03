@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
 
 interface CalendarMetadata {
   report_id: string;
@@ -16,6 +15,7 @@ interface ReportHistoryCalendarSheetProps {
   childId: string;
   isOpen: boolean;
   onClose: () => void;
+  onSelectReport: (reportId: string) => void;
   initialMonthStr?: string; // "YYYY-MM"
 }
 
@@ -23,10 +23,9 @@ export function ReportHistoryCalendarSheet({
   childId,
   isOpen,
   onClose,
+  onSelectReport,
   initialMonthStr,
 }: ReportHistoryCalendarSheetProps) {
-  const router = useRouter();
-
   // 현재 KST 기준 월 계산
   const getKstNow = () => {
     const d = new Date();
@@ -209,9 +208,10 @@ export function ReportHistoryCalendarSheet({
     }
   }
 
+  // requests/021 — 전체 화면 이동 대신 목록 카드와 동일한 상세 모달을 연다.
+  // 달력 닫기와 모달 열기 순서(§9)는 부모(ParentReportPage)가 책임진다.
   const handleDateClick = (report: CalendarMetadata) => {
-    onClose();
-    router.push(`/parent/report/${report.report_id}`);
+    onSelectReport(report.report_id);
   };
 
   return (

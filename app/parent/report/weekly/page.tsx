@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { ReportDetailModal } from "@/components/ReportDetailModal";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
@@ -28,6 +29,28 @@ export default function ParentWeeklyReportPage() {
   const [weeklies, setWeeklies] = useState<WeeklyReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const lastClickedCardRef = useRef<HTMLElement | null>(null);
+  const calendarTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const handleOpenModal = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    lastClickedCardRef.current = e.currentTarget as HTMLElement;
+    setSelectedReportId(id);
+    setModalOpen(true);
+  };
+
+  // requests/021 §9 — 달력 바텀시트를 먼저 닫고 다음 프레임에서 상세 모달을 연다.
+  const handleSelectReportFromCalendar = (reportId: string) => {
+    setIsCalendarOpen(false);
+    lastClickedCardRef.current = calendarTriggerRef.current;
+    requestAnimationFrame(() => {
+      setSelectedReportId(reportId);
+      setModalOpen(true);
+    });
+  };
 
   useEffect(() => {
     if (!activeChildId) {
@@ -82,12 +105,12 @@ export default function ParentWeeklyReportPage() {
               
               {weeklies.length > 0 ? (
                 <>
-                  <WeeklyReportCard report={weeklies[0]} isFeatured={true} isLastWeek={true} />
+                  <WeeklyReportCard report={weeklies[0]} isFeatured={true} isLastWeek={true} onClick={handleOpenModal} />
                   
                   {weeklies.length > 1 && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
                       {weeklies.slice(1).map(w => (
-                        <WeeklyReportCard key={w.id} report={w} isFeatured={false} />
+                        <WeeklyReportCard key={w.id} report={w} isFeatured={false} onClick={handleOpenModal} />
                       ))}
                     </div>
                   )}
@@ -101,6 +124,7 @@ export default function ParentWeeklyReportPage() {
 
               <div className="mt-4 mb-6 flex justify-center">
                 <button
+                  ref={calendarTriggerRef}
                   onClick={() => setIsCalendarOpen(true)}
                   className="flex items-center gap-1 text-[13px] font-bold text-[#10315B] px-4 py-2 active:bg-gray-200 rounded-full transition-colors"
                 >
@@ -119,9 +143,18 @@ export default function ParentWeeklyReportPage() {
           childId={activeChildId}
           isOpen={isCalendarOpen}
           onClose={() => setIsCalendarOpen(false)}
+          onSelectReport={handleSelectReportFromCalendar}
         />
       )}
       
+      <ReportDetailModal 
+        isOpen={modalOpen} 
+        onClose={() => setModalOpen(false)} 
+        reportId={selectedReportId} 
+        reportType="weekly"
+        childId={activeChildId}
+        returnFocusRef={lastClickedCardRef}
+      />
       <KChatbotWidget appSurface="parent" />
     </DemoFrame>
   );
