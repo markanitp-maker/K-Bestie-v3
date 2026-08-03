@@ -52,8 +52,73 @@ export async function aggregateExecutionStatus(
   const allChildIds = new Set<string>();
   (execItems || []).forEach((item: any) => allChildIds.add(item.child_id));
 
-  for (const childId of allChildIds) {
-    statusByChild.set(childId, { childId });
+  const childIdsArray = Array.from(allChildIds);
+
+  let profiles: any[] = [];
+  if (childIdsArray.length > 0) {
+    // child_profiles에는 deleted_at(소프트 삭제) 컬럼이 없다(2026-08-03 실측 확인 —
+    // 하드 삭제만 존재). 대신 pipeline_execution_items에 child_id가 남아있는데
+    // child_profiles에서 매칭되는 행이 없으면(하드 삭제됨) 이를 "삭제된 아이" 신호로
+    // 사용한다(requests/061 §7 fallback).
+    const { data } = await db
+      .from("child_profiles")
+      .select("id, name, member_id")
+      .in("id", childIdsArray);
+    if (data) profiles = data;
+  }
+
+  // child_profiles.member_id는 family_members.id(행 PK)를 가리키지 member_accounts.id
+  // (실제 auth uid)를 직접 가리키지 않는다 — family_members를 한 단계 거쳐 실제 auth uid를
+  // 구한 뒤 member_accounts를 조회해야 한다(app/api/admin/retention/children/route.ts와
+  // 동일 버그·동일 수정, 근거는 app/api/admin/child-approval-requests/[id]/approve/route.ts
+  // 의 실제 insert 순서).
+  const memberRowIdsToFetch = Array.from(new Set(profiles.map(p => p.member_id).filter(Boolean)));
+  const authUserIdByMemberRowId = new Map<string, string>();
+  if (memberRowIdsToFetch.length > 0) {
+    const { data: fmRows } = await db
+      .from("family_members")
+      .select("id, user_id")
+      .eq("role", "child")
+      .in("id", memberRowIdsToFetch);
+    for (const fm of fmRows || []) {
+      if (fm.user_id) authUserIdByMemberRowId.set(fm.id, fm.user_id);
+    }
+  }
+
+  const authUserIds = Array.from(new Set(Array.from(authUserIdByMemberRowId.values())));
+  let members: any[] = [];
+  if (authUserIds.length > 0) {
+    const { data } = await db
+      .from("member_accounts")
+      .select("id, username")
+      .in("id", authUserIds);
+    if (data) members = data;
+  }
+
+  const memberMap = new Map<string, string>();
+  for (const m of members) {
+    memberMap.set(m.id, m.username);
+  }
+
+  const profileMap = new Map<string, any>();
+  for (const p of profiles) {
+    const authUserId = p.member_id ? authUserIdByMemberRowId.get(p.member_id) : undefined;
+    const username = authUserId ? memberMap.get(authUserId) : undefined;
+    profileMap.set(p.id, {
+      name: p.name,
+      loginId: username || undefined,
+    });
+  }
+
+  for (const childId of childIdsArray) {
+    const p = profileMap.get(childId);
+    statusByChild.set(childId, {
+      childId,
+      childName: p?.name,
+      loginId: p?.loginId,
+      isDeleted: !p, // child_profiles에 매칭 행이 없으면 하드 삭제된 아이로 간주
+      maskedChildId: `${childId.substring(0, 8)}...`
+    });
   }
 
   for (const item of execItems || []) {
@@ -70,7 +135,11 @@ export async function aggregateExecutionStatus(
       else if (isSkipped) uiStatus = "건너뜀";
       else uiStatus = "완료";
     } else if (item.status === "failed") {
-      uiStatus = "실패";
+      // UPSTREAM_FAILED: 이 단계 자체가 실패한 게 아니라 앞단(수집/수집보정)
+      // 실패로 대기 중단된 것이므로, 동일하게 "실패"로만 보이면 어느 단계가
+      // 진짜 원인인지 관리자가 구분할 수 없다(2026-08-02 Production 장애
+      // 보고에서 지적된 문제).
+      uiStatus = item.outcome === "UPSTREAM_FAILED" ? "대기 — 앞단 실패" : "실패";
     } else if (item.status === "retry_wait") {
       uiStatus = "재시도 대기";
     }
