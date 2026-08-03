@@ -22,6 +22,8 @@ export interface AdminDataTableProps<T> {
   onRowClick?: (row: T) => void;
   emptyMessage?: string;
   emptyDescription?: string;
+  expandedRowRender?: (row: T) => React.ReactNode;
+  expandedRowIds?: Set<string>;
 }
 
 export function AdminDataTable<T>({
@@ -35,6 +37,8 @@ export function AdminDataTable<T>({
   onRowClick,
   emptyMessage = "현재 표시할 항목이 없습니다.",
   emptyDescription,
+  expandedRowRender,
+  expandedRowIds = new Set(),
 }: AdminDataTableProps<T>) {
   if (error) {
     return <AdminErrorState onRetry={onRetry} error={typeof error === "string" ? error : (error as Error).message} />;
@@ -104,25 +108,35 @@ export function AdminDataTable<T>({
         </thead>
         <tbody>
           {data.map((row, i) => (
-            <tr
-              key={keyExtractor(row)}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
-              tabIndex={onRowClick ? 0 : undefined}
-              onKeyDown={onRowClick ? (e) => { if (e.key === "Enter") onRowClick(row); } : undefined}
-              style={{
-                height: rowHeight,
-                borderBottom: i === data.length - 1 ? "none" : "1px solid var(--admin-border)",
-                cursor: onRowClick ? "pointer" : "default",
-                background: "var(--admin-surface)"
-              }}
-              className="admin-table-row"
-            >
-              {columns.map((col) => (
-                <td key={col.key} style={{ padding: `${paddingV} ${paddingH}`, color: "var(--admin-text-primary)" }}>
-                  {col.render(row)}
-                </td>
-              ))}
-            </tr>
+            <React.Fragment key={keyExtractor(row)}>
+              <tr
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onKeyDown={onRowClick ? (e) => { if (e.key === "Enter") onRowClick(row); } : undefined}
+                style={{
+                  height: rowHeight,
+                  borderBottom: (i === data.length - 1 && !expandedRowRender) ? "none" : "1px solid var(--admin-border)",
+                  cursor: onRowClick ? "pointer" : "default",
+                  background: expandedRowIds.has(keyExtractor(row)) ? "var(--admin-focus)" : "var(--admin-surface)"
+                }}
+                className="admin-table-row"
+              >
+                {columns.map((col) => (
+                  <td key={col.key} style={{ padding: `${paddingV} ${paddingH}`, color: "var(--admin-text-primary)" }}>
+                    {col.render(row)}
+                  </td>
+                ))}
+              </tr>
+              {expandedRowRender && expandedRowIds.has(keyExtractor(row)) && (
+                <tr>
+                  <td colSpan={columns.length} style={{ padding: 0, borderBottom: i === data.length - 1 ? "none" : "1px solid var(--admin-border)" }}>
+                    <div style={{ animation: "hbAccordionIn 0.18s ease" }}>
+                      {expandedRowRender(row)}
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </React.Fragment>
           ))}
         </tbody>
       </table>

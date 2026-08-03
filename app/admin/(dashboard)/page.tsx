@@ -17,8 +17,12 @@ import {
 } from "recharts";
 
 import { MODE_LABELS, ALL_MODE_BUCKETS, type ModeBucket } from "@/lib/plan/conversationMode";
-
-
+import { AdminShell, type AdminPageId } from "@/components/admin/shell/AdminShell";
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { AdminKpiCard } from "@/components/admin/shell/AdminKpiCard";
+import { AdminEmptyState } from "@/components/admin/shell/AdminEmptyState";
+import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
 interface ChatMessageRow {
   session_id: string;
   role: "child" | "k";
@@ -538,21 +542,7 @@ function ChildRightPanel({
   );
 }
 
-type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention";
-
-const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
-  { id: "overview", label: "전체 현황" },
-  { id: "revenue", label: "매출·가입자 상세" },
-  { id: "cost", label: "나갈 돈 · 비용 상세" },
-  { id: "llm-status", label: "LLM 사용 현황" },
-  { id: "account-restore", label: "계정 복구 승인" },
-  { id: "feedback", label: "문의·건의·버그 접수" },
-  { id: "beta-applications", label: "베타 신청 관리" },
-  { id: "manual-reporting", label: "리포팅 수동 실행" },
-  { id: "plan-change-requests", label: "요금제 변경 요청" },
-  { id: "child-approval-requests", label: "아이 승인 요청" },
-  { id: "retention", label: "사용자 리텐션" },
-];
+// AdminPageId and ADMIN_NAV_ITEMS are imported from AdminShell
 
 function LlmStatusTab() {
   const [data, setData] = useState<any>(null);
@@ -918,67 +908,89 @@ function BetaApplicationsTab() {
     </div>
   );
 
-  if (loading && !requests) return <>{toast}<EmptyState text="불러오는 중..." /></>;
-  if (!requests || requests.length === 0) return <>{toast}<EmptyState text="베타 신청 내역이 없습니다." /></>;
+  // Handle empty state gracefully by DataTable.
+  // We can just keep the toast rendered.
+
+  const columns: AdminDataTableColumn<any>[] = [
+    {
+      key: "name",
+      header: "이름",
+      render: (req) => <div style={{ fontWeight: 600 }}>{req.name || "정보 미입력"}</div>,
+    },
+    {
+      key: "created_at",
+      header: "신청일",
+      render: (req) => {
+        if (!req.created_at || req.created_at.startsWith("1970-01-01")) return <span style={{ color: "var(--admin-text-secondary)" }}>신청일 미확인</span>;
+        return formatDateTime(req.created_at);
+      },
+    },
+    {
+      key: "phone",
+      header: "연락처",
+      render: (req) => req.phone || <span style={{ color: "var(--admin-text-secondary)" }}>정보 미입력</span>,
+    },
+    {
+      key: "age_group",
+      header: "연령대",
+      render: (req) => req.age_group || <span style={{ color: "var(--admin-text-secondary)" }}>정보 미입력</span>,
+    },
+    {
+      key: "referral_source",
+      header: "유입 경로",
+      render: (req) => (
+        <div>
+          <div>{req.referral_source || <span style={{ color: "var(--admin-text-secondary)" }}>정보 미입력</span>}</div>
+          {req.motivation && <div style={{ fontSize: "12px", color: "var(--admin-text-secondary)", marginTop: "4px" }}>동기: {req.motivation}</div>}
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      header: "상태",
+      render: (req) => <AdminStatusBadge variant="warning" text="대기 중" />,
+    },
+    {
+      key: "actions",
+      header: "액션",
+      render: (req) => (
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setRejectModalUserId(req.user_id); setRejectReason(""); }}
+            disabled={actionLoading === req.user_id}
+            style={{
+              padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--admin-danger)",
+              background: "white", color: "var(--admin-danger)", fontSize: "12px", fontWeight: 700, cursor: "pointer"
+            }}
+          >
+            거절
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setApproveModalUserId(req.user_id); setApproveSelectedTier(2); }}
+            disabled={actionLoading === req.user_id}
+            style={{
+              padding: "6px 12px", borderRadius: "8px", border: "none",
+              background: "var(--admin-primary)", color: "white", fontSize: "12px", fontWeight: 700, cursor: "pointer"
+            }}
+          >
+            승인
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div>
       {toast}
-      <SectionTitle>베타 신청 관리</SectionTitle>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {requests.map(req => {
-          return (
-            <div key={req.user_id} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 4 }}>
-                    이름: {req.name || "미상"}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>
-                    신청일: {formatDateTime(req.created_at)}<br />
-                    전화번호: {req.phone || "없음"}<br />
-                    연령대: {req.age_group || "미상"}<br />
-                    알게 된 경로: {req.referral_source || "미상"}<br />
-                  </div>
-                  {req.motivation && (
-                    <div style={{ fontSize: 12, color: "var(--color-k-text-primary)", marginTop: 8, background: "var(--color-k-surface)", padding: "6px 10px", borderRadius: 6 }}>
-                      신청 동기: {req.motivation}
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => {
-                      setRejectModalUserId(req.user_id);
-                      setRejectReason("");
-                    }}
-                    disabled={actionLoading === req.user_id}
-                    style={{
-                      padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-k-danger)",
-                      background: "white", color: "var(--color-k-danger)", fontSize: 12, fontWeight: 700, cursor: "pointer"
-                    }}
-                  >
-                    거절
-                  </button>
-                  <button
-                    onClick={() => {
-                      setApproveModalUserId(req.user_id);
-                      setApproveSelectedTier(2); // 기본 플랜 Care Insight
-                    }}
-                    disabled={actionLoading === req.user_id}
-                    style={{
-                      padding: "6px 12px", borderRadius: 8, border: "none",
-                      background: "var(--color-k-navy)", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer"
-                    }}
-                  >
-                    승인
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <AdminPageHeader title="베타 신청 관리" description="가입을 대기 중인 베타 신청자 목록입니다." />
+      <AdminDataTable
+        columns={columns}
+        data={requests || []}
+        keyExtractor={(req) => req.user_id}
+        isLoading={loading}
+        emptyMessage="베타 신청 내역이 없습니다."
+      />
 
       {approveModalUserId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog">
@@ -1066,6 +1078,7 @@ function ChildApprovalRequestsTab() {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [verifications, setVerifications] = useState<Record<string, { beta: boolean; survey: boolean }>>({});
+  const [activeTab, setActiveTab] = useState<"pending" | "completed">("pending");
 
   const [rejectModalId, setRejectModalId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -1169,8 +1182,7 @@ function ChildApprovalRequestsTab() {
     </div>
   );
 
-  if (loading && !requests) return <>{toast}<EmptyState text="불러오는 중..." /></>;
-  if (!requests || requests.length === 0) return <>{toast}<EmptyState text="아이 승인 요청이 없습니다." /></>;
+  // Handle empty state gracefully by DataTable.
 
   const STATUS_LABEL: Record<string, string> = {
     pending: "승인 대기",
@@ -1179,103 +1191,184 @@ function ChildApprovalRequestsTab() {
     approved: "승인 완료",
   };
 
+  const filteredRequests = (requests || []).filter((req: any) => {
+    if (activeTab === "pending") return req.status === "pending" || req.status === "creation_failed";
+    return req.status === "approved" || req.status === "rejected";
+  });
+
+  const columns: AdminDataTableColumn<any>[] = [
+    {
+      key: "child",
+      header: "아이",
+      render: (req) => <div style={{ fontWeight: 600 }}>{req.family_name}{req.given_name}</div>,
+    },
+    {
+      key: "grade",
+      header: "학년",
+      render: (req) => req.grade,
+    },
+    {
+      key: "requested_at",
+      header: "요청일",
+      render: (req) => formatDateTime(req.requested_at),
+    },
+    {
+      key: "requester",
+      header: "요청자",
+      render: (req) => req.requester_email,
+    },
+    {
+      key: "family_creator",
+      header: "가족 생성자",
+      render: (req) => req.family_creator_email,
+    },
+    {
+      key: "interests",
+      header: "관심사",
+      render: (req) => {
+        const list = req.interests || [];
+        if (list.length === 0) return <span style={{ color: "var(--admin-text-secondary)" }}>없음</span>;
+        if (list.length <= 3) return list.map((i: string) => `[${i}]`).join(" ");
+        return `${list.slice(0, 3).map((i: string) => `[${i}]`).join(" ")} +${list.length - 3}`;
+      },
+    },
+    {
+      key: "status",
+      header: "상태",
+      render: (req) => {
+        const isActionable = req.status === "pending" || req.status === "creation_failed";
+        const verification = verifications[req.id] ?? { beta: req.beta_verified === true, survey: req.survey_verified === true };
+        const verificationComplete = verification.beta && verification.survey;
+        
+        let statusBadge;
+        if (req.status === "pending") statusBadge = <AdminStatusBadge variant="warning" text={STATUS_LABEL[req.status]} />;
+        else if (req.status === "creation_failed") statusBadge = <AdminStatusBadge variant="danger" text={STATUS_LABEL[req.status]} />;
+        else if (req.status === "rejected") statusBadge = <AdminStatusBadge variant="neutral" text={STATUS_LABEL[req.status]} />;
+        else if (req.status === "approved") statusBadge = <AdminStatusBadge variant="success" text={STATUS_LABEL[req.status]} />;
+
+        if (!isActionable) {
+          return (
+            <div>
+              {statusBadge}
+              {req.status === "rejected" && req.rejected_reason && <div style={{ fontSize: "11px", color: "var(--admin-text-secondary)", marginTop: "4px" }}>사유: {req.rejected_reason}</div>}
+            </div>
+          );
+        }
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div>{statusBadge}</div>
+            {req.status === "creation_failed" && req.failure_reason && (
+              <div style={{ fontSize: "11px", color: "var(--admin-danger)", marginTop: "4px" }}>{req.failure_reason}</div>
+            )}
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--admin-text-secondary)", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={verification.beta}
+                onChange={(event) =>
+                  setVerifications((current) => ({
+                    ...current,
+                    [req.id]: { ...verification, beta: event.target.checked },
+                  }))
+                }
+              />
+              베타 신청 확인
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--admin-text-secondary)", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={verification.survey}
+                onChange={(event) =>
+                  setVerifications((current) => ({
+                    ...current,
+                    [req.id]: { ...verification, survey: event.target.checked },
+                  }))
+                }
+              />
+              설문 완료 확인
+            </label>
+          </div>
+        );
+      },
+    },
+  ];
+
+  if (activeTab === "pending") {
+    columns.push({
+      key: "actions",
+      header: "액션",
+      render: (req) => {
+        const verification = verifications[req.id] ?? { beta: req.beta_verified === true, survey: req.survey_verified === true };
+        const verificationComplete = verification.beta && verification.survey;
+
+        return (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => { setRejectModalId(req.id); setRejectReason(""); }}
+              disabled={actionLoading === req.id}
+              style={{
+                padding: "6px 12px", borderRadius: 8, border: "1px solid var(--admin-danger)",
+                background: "white", color: "var(--admin-danger)", fontSize: 12, fontWeight: 700, cursor: "pointer"
+              }}
+            >
+              거절
+            </button>
+            <button
+              onClick={() => handleApprove(req.id)}
+              disabled={actionLoading === req.id || !verificationComplete}
+              style={{
+                padding: "6px 12px", borderRadius: 8, border: "none",
+                background: "var(--admin-primary)", color: "white", fontSize: 12, fontWeight: 700,
+                cursor: verificationComplete ? "pointer" : "not-allowed",
+                opacity: verificationComplete ? 1 : 0.45,
+              }}
+            >
+              {req.status === "creation_failed" ? (actionLoading === req.id ? "재시도 중..." : "재시도") : (actionLoading === req.id ? "승인 중..." : "승인")}
+            </button>
+          </div>
+        );
+      }
+    });
+  }
+
   return (
     <div>
       {toast}
-      <SectionTitle>아이 승인 요청 관리</SectionTitle>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {requests.map((req: any) => {
-          const isActionable = req.status === "pending" || req.status === "creation_failed";
-          const verification = verifications[req.id] ?? {
-            beta: req.beta_verified === true,
-            survey: req.survey_verified === true,
-          };
-          const verificationComplete = verification.beta && verification.survey;
-          return (
-            <div key={req.id} style={{ background: "var(--color-k-background)", borderRadius: 12, boxShadow: "var(--shadow-k-card)", padding: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-k-text-primary)", marginBottom: 4 }}>
-                    {req.family_name}{req.given_name} ({req.grade}) — {STATUS_LABEL[req.status] ?? req.status}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)" }}>
-                    요청일: {formatDateTime(req.requested_at)}<br />
-                    요청자: {req.requester_email}<br />
-                    가족 생성자: {req.family_creator_email}<br />
-                    관심사: {(req.interests || []).join(", ") || "없음"}
-                  </div>
-                  {req.status === "creation_failed" && req.failure_reason && (
-                    <div style={{ fontSize: 12, color: "var(--color-k-danger)", marginTop: 8, background: "#fee2e2", padding: "6px 10px", borderRadius: 6 }}>
-                      실패 사유: {req.failure_reason}
-                    </div>
-                  )}
-                  {req.status === "rejected" && req.rejected_reason && (
-                    <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginTop: 8, background: "var(--color-k-surface)", padding: "6px 10px", borderRadius: 6 }}>
-                      거절 사유: {req.rejected_reason}
-                    </div>
-                  )}
-                  {isActionable && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--color-k-text-secondary)", cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={verification.beta}
-                          onChange={(event) =>
-                            setVerifications((current) => ({
-                              ...current,
-                              [req.id]: { ...verification, beta: event.target.checked },
-                            }))
-                          }
-                        />
-                        베타 신청 확인
-                      </label>
-                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--color-k-text-secondary)", cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={verification.survey}
-                          onChange={(event) =>
-                            setVerifications((current) => ({
-                              ...current,
-                              [req.id]: { ...verification, survey: event.target.checked },
-                            }))
-                          }
-                        />
-                        설문 완료 확인
-                      </label>
-                    </div>
-                  )}
-                </div>
-                {isActionable && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      onClick={() => { setRejectModalId(req.id); setRejectReason(""); }}
-                      disabled={actionLoading === req.id}
-                      style={{
-                        padding: "6px 12px", borderRadius: 8, border: "1px solid var(--color-k-danger)",
-                        background: "white", color: "var(--color-k-danger)", fontSize: 12, fontWeight: 700, cursor: "pointer"
-                      }}
-                    >
-                      거절
-                    </button>
-                    <button
-                      onClick={() => handleApprove(req.id)}
-                      disabled={actionLoading === req.id || !verificationComplete}
-                      style={{
-                        padding: "6px 12px", borderRadius: 8, border: "none",
-                        background: "var(--color-k-navy)", color: "white", fontSize: 12, fontWeight: 700,
-                        cursor: verificationComplete ? "pointer" : "not-allowed",
-                        opacity: verificationComplete ? 1 : 0.45,
-                      }}
-                    >
-                      {req.status === "creation_failed" ? (actionLoading === req.id ? "재시도 중..." : "재시도") : (actionLoading === req.id ? "승인 중..." : "승인")}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <AdminPageHeader title="아이 승인 요청 관리" description="가족 생성자가 아이 추가를 요청한 내역입니다." />
+      
+      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+        <button
+          onClick={() => setActiveTab("pending")}
+          style={{
+            padding: "8px 16px", borderRadius: "8px", border: activeTab === "pending" ? "1px solid var(--admin-primary)" : "1px solid var(--admin-border)",
+            background: activeTab === "pending" ? "var(--admin-focus)" : "var(--admin-surface)",
+            color: activeTab === "pending" ? "var(--admin-primary)" : "var(--admin-text-secondary)",
+            fontSize: "13px", fontWeight: activeTab === "pending" ? 700 : 400, cursor: "pointer"
+          }}
+        >
+          대기 중인 요청
+        </button>
+        <button
+          onClick={() => setActiveTab("completed")}
+          style={{
+            padding: "8px 16px", borderRadius: "8px", border: activeTab === "completed" ? "1px solid var(--admin-primary)" : "1px solid var(--admin-border)",
+            background: activeTab === "completed" ? "var(--admin-focus)" : "var(--admin-surface)",
+            color: activeTab === "completed" ? "var(--admin-primary)" : "var(--admin-text-secondary)",
+            fontSize: "13px", fontWeight: activeTab === "completed" ? 700 : 400, cursor: "pointer"
+          }}
+        >
+          처리 완료
+        </button>
       </div>
+
+      <AdminDataTable
+        columns={columns}
+        data={filteredRequests}
+        keyExtractor={(req) => req.id}
+        isLoading={loading}
+        emptyMessage="해당 상태의 아이 승인 요청이 없습니다."
+        density="comfortable"
+      />
 
       {rejectModalId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog">
@@ -1463,33 +1556,8 @@ function AdminDashboard() {
   const closeChildPanel = () => setSelectedChildUser(null);
 
   return (
-    <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-      {/* 왼쪽 사이드바 네비게이션 */}
-      <nav style={{ display: "flex", flexDirection: "column", gap: 4, width: 180, flexShrink: 0 }}>
-        {ADMIN_NAV_ITEMS.map((item) => {
-          return (
-          <button
-            key={item.id}
-            onClick={() => setPage(item.id)}
-            style={{
-              textAlign: "left",
-              padding: "10px 14px",
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: page === item.id ? 700 : 400,
-              border: "none",
-              background: page === item.id ? "var(--color-k-navy-tint)" : "transparent",
-              color: page === item.id ? "var(--color-k-navy)" : "var(--color-k-text-secondary)",
-              cursor: "pointer",
-            }}
-          >
-            {item.label}
-          </button>
-          );
-        })}
-      </nav>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <AdminShell activeMenuId={page} onMenuChange={setPage}>
+      <div style={{ minWidth: 0 }}>
         {page === "llm-status" ? (
           <>
             <LlmStatusTab />
@@ -2011,7 +2079,7 @@ function AdminDashboard() {
       </div>
 
       <ChildRightPanel selected={selectedChildUser} onClose={closeChildPanel} />
-    </div>
+    </AdminShell>
   );
 }
 
@@ -2174,13 +2242,5 @@ function SafetyTab({ childId }: { childId: string }) {
 }
 
 export default function AdminPage() {
-  return (
-    <div>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)", marginBottom: 4 }}>회사 전체 현황</div>
-      <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", marginBottom: 20 }}>
-        아이를 선택하지 않아도 항상 전체 기준으로 보여요. 왼쪽 탭에서 매출·비용 상세로 바로 이동할 수 있어요.
-      </div>
-      <AdminDashboard />
-    </div>
-  );
+  return <AdminDashboard />;
 }

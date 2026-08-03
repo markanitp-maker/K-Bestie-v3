@@ -432,7 +432,7 @@ export default function ManualReportingTab() {
                       <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
                         <thead>
                           <tr>
-                            <th style={thStyle}>아이 ID</th>
+                            <th style={thStyle}>아이</th>
                             <th style={thStyle}>수집</th>
                             <th style={thStyle}>수집보정</th>
                             <th style={thStyle}>메모리</th>
@@ -440,10 +440,31 @@ export default function ManualReportingTab() {
                           </tr>
                         </thead>
                         <tbody>
-                          {runResult.statuses.map((s: any, i: number) => (
-                            <tr key={i}>
-                              <td style={tdStyle}>{s.childId.substring(0, 8)}...</td>
-                              <td style={tdStyle}>
+                          {runResult.statuses.map((s: any, i: number) => {
+                            let displayName: React.ReactNode;
+                            if (s.isDeleted) {
+                              displayName = <span style={{ color: "var(--color-k-text-secondary)", fontStyle: "italic" }}>삭제된 아이 ({s.maskedChildId})</span>;
+                            } else if (s.childName && s.loginId) {
+                              displayName = (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                  <span style={{ fontWeight: 600 }}>{s.childName}</span>
+                                  <span style={{ fontSize: 11, color: "var(--color-k-text-secondary)", wordBreak: "break-all" }}>{s.loginId}</span>
+                                </div>
+                              );
+                            } else if (s.childName) {
+                              displayName = <span style={{ fontWeight: 600 }}>{s.childName}</span>;
+                            } else if (s.loginId) {
+                              displayName = <span style={{ wordBreak: "break-all" }}>{s.loginId}</span>;
+                            } else {
+                              displayName = <span style={{ color: "var(--color-k-text-secondary)" }}>{s.maskedChildId}</span>;
+                            }
+
+                            return (
+                              <tr key={i}>
+                                <td style={{ ...tdStyle, maxWidth: 150 }}>
+                                  {displayName}
+                                </td>
+                                <td style={tdStyle}>
                                 {s.collection2 || s.collection || "-"}
                                 {s.collectionError && <div style={{ color: "var(--color-k-danger)", fontSize: 11 }}>{s.collectionError}</div>}
                               </td>
@@ -467,7 +488,8 @@ export default function ManualReportingTab() {
                                 )}
                               </td>
                             </tr>
-                          ))}
+                          );
+                          })}
                         </tbody>
                       </table>
                     </div>
