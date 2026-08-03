@@ -3,6 +3,9 @@
 import { useEffect, useState, useMemo, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { AdminDataTable } from "@/components/admin/shell/AdminDataTable";
+import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
+import { AdminKpiCard, AdminKpiGrid } from "@/components/admin/shell/AdminKpiCard";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 import { RetentionWidgetErrorBoundary } from "@/components/admin/RetentionWidgetErrorBoundary";
 
@@ -29,25 +32,25 @@ function formatDuration(sec: number): string {
 
 function MetricCard({ label, value, sub, deltaPct, actualString }: { label: string; value: string; sub?: string; deltaPct?: number | null; actualString?: string }) {
   return (
-    <div style={{ background: "var(--color-k-background)", borderRadius: 14, boxShadow: "var(--shadow-k-card)", padding: "18px 22px", display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ fontSize: 13, color: "var(--color-k-text-secondary)", fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: "clamp(20px, 2.5vw, 32px)", fontWeight: 800, color: "var(--color-k-text-primary)" }}>
+    <div style={{ background: "var(--admin-surface)", borderRadius: 14, boxShadow: "var(--shadow-k-card)", padding: "18px 22px", display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ fontSize: 13, color: "var(--admin-text-secondary)", fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: "clamp(20px, 2.5vw, 32px)", fontWeight: 800, color: "var(--admin-text-primary)" }}>
         {value}
         {deltaPct !== undefined && deltaPct !== null && (
-          <span style={{ fontSize: 14, marginLeft: 8, color: deltaPct > 0 ? "var(--color-k-navy)" : deltaPct < 0 ? "var(--color-k-danger)" : "var(--color-k-text-secondary)" }}>
+          <span style={{ fontSize: 14, marginLeft: 8, color: deltaPct > 0 ? "var(--admin-primary)" : deltaPct < 0 ? "var(--admin-danger)" : "var(--admin-text-secondary)" }}>
             {deltaPct > 0 ? "▲" : deltaPct < 0 ? "▼" : "-"}{Math.abs(deltaPct)}%
           </span>
         )}
       </div>
-      {actualString && <div style={{ fontSize: 12, color: "var(--color-k-text-secondary)", fontWeight: 500 }}>{actualString}</div>}
-      {sub && <div style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{sub}</div>}
+      {actualString && <div style={{ fontSize: 12, color: "var(--admin-text-secondary)", fontWeight: 500 }}>{actualString}</div>}
+      {sub && <div style={{ fontSize: 11, color: "var(--admin-text-secondary)" }}>{sub}</div>}
     </div>
   );
 }
 
-const thStyle = { padding: "12px 16px", fontSize: 13, color: "var(--color-k-text-secondary)", borderBottom: "1px solid var(--color-k-border)", fontWeight: 600, textAlign: "left" as const };
-const tdStyle = { padding: "12px 16px", fontSize: 14, color: "var(--color-k-text-primary)", borderBottom: "1px solid var(--color-k-border)" };
-const linkStyle = { color: "var(--color-k-navy)", textDecoration: "none", fontWeight: 600 };
+const thStyle = { padding: "12px 16px", fontSize: 13, color: "var(--admin-text-secondary)", borderBottom: "1px solid var(--admin-border)", fontWeight: 600, textAlign: "left" as const };
+const tdStyle = { padding: "12px 16px", fontSize: 14, color: "var(--admin-text-primary)", borderBottom: "1px solid var(--admin-border)" };
+const linkStyle = { color: "var(--admin-primary)", textDecoration: "none", fontWeight: 600 };
 
 type Scope = "all" | "parent" | "child";
 type DrillDownRowType = "all" | "parent" | "child" | "families";
@@ -61,8 +64,8 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span style={{
       padding: "4px 8px", borderRadius: 4, fontSize: 12, fontWeight: 600,
-      background: isRecent ? "var(--color-k-navy-tint)" : "var(--color-k-border)",
-      color: isRecent ? "var(--color-k-navy)" : "var(--color-k-text-secondary)"
+      background: isRecent ? "var(--admin-primary-tint)" : "var(--admin-border)",
+      color: isRecent ? "var(--admin-primary)" : "var(--admin-text-secondary)"
     }}>
       {status || "-"}
     </span>
@@ -72,12 +75,12 @@ function StatusBadge({ status }: { status: string }) {
 // requests/062 §15 — 로그인 아이디가 길면 말줄임, hover 시 전체 로그인 아이디(전체
 // UUID는 절대 아님) 확인 가능. 이름/로그인ID 둘 다 없으면 마스킹 UUID만 표시.
 function IdentityCell({ name, loginId, maskedId }: { name?: string | null; loginId?: string | null; maskedId?: string }) {
-  if (!name && !loginId) return <span style={{ color: "var(--color-k-text-secondary)" }}>{maskedId ?? "-"}</span>;
+  if (!name && !loginId) return <span style={{ color: "var(--admin-text-secondary)" }}>{maskedId ?? "-"}</span>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2, maxWidth: 200 }}>
       {name && <span style={{ fontWeight: 600 }}>{name}</span>}
       {loginId && (
-        <span title={loginId} style={{ fontSize: 11, color: "var(--color-k-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span title={loginId} style={{ fontSize: 11, color: "var(--admin-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {loginId}
         </span>
       )}
@@ -151,15 +154,15 @@ function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includ
   return (
     <div style={{ marginTop: 40 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div style={{ fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)" }}>사용자별 상세 드릴다운 — {title}</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "var(--admin-text-primary)" }}>사용자별 상세 드릴다운 — {title}</div>
         <button
           onClick={() => setShowFamilies(v => !v)}
           style={{
             padding: "6px 14px",
             borderRadius: 999,
-            border: showFamilies ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
-            background: showFamilies ? "var(--color-k-navy)" : "white",
-            color: showFamilies ? "white" : "var(--color-k-text-secondary)",
+            border: showFamilies ? "1px solid var(--admin-primary)" : "1px solid var(--admin-border)",
+            background: showFamilies ? "var(--admin-primary)" : "white",
+            color: showFamilies ? "white" : "var(--admin-text-secondary)",
             fontSize: 13,
             fontWeight: 600,
             cursor: "pointer",
@@ -169,93 +172,42 @@ function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includ
         </button>
       </div>
 
-      <div style={{ background: "var(--color-k-background)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--shadow-k-card)" }}>
+      <div style={{ background: "var(--admin-surface)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--shadow-k-card)" }}>
         {loading ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--color-k-text-secondary)" }}>불러오는 중...</div>
+          <div style={{ padding: 24, textAlign: "center", color: "var(--admin-text-secondary)" }}>불러오는 중...</div>
         ) : !listData || listData.length === 0 ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--color-k-text-secondary)" }}>데이터가 없습니다.</div>
+          <div style={{ padding: 24, textAlign: "center", color: "var(--admin-text-secondary)" }}>데이터가 없습니다.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", whiteSpace: "nowrap" }}>
-              <thead style={{ background: "var(--color-k-navy-tint)" }}>
-                <tr>
-                  {listType === "families" && (
-                    <>
-                      <th style={thStyle}>가족</th>
-                      <th style={thStyle}>생성일</th>
-                      <th style={thStyle}>부모/아이 수</th>
-                      <th style={thStyle}>동시 활성(7일)</th>
-                    </>
-                  )}
-                  {listType === "all" && (
-                    <>
-                      <th style={thStyle}>유형</th>
-                      <th style={thStyle}>사용자</th>
-                      <th style={thStyle}>활성 일수</th>
-                      <th style={thStyle}>D1/D3/D7</th>
-                    </>
-                  )}
-                  {listType === "child" && (
-                    <>
-                      <th style={thStyle}>아이</th>
-                      <th style={thStyle}>학년</th>
-                      <th style={thStyle}>활성 일수</th>
-                      <th style={thStyle}>미션/자유대화/놀이 수</th>
-                      <th style={thStyle}>D1/D3/D7</th>
-                    </>
-                  )}
-                  {listType === "parent" && (
-                    <>
-                      <th style={thStyle}>부모</th>
-                      <th style={thStyle}>가입일</th>
-                      <th style={thStyle}>로그인/리포트/대화거리 뷰</th>
-                      <th style={thStyle}>D1/D3/D7</th>
-                      <th style={thStyle}>상태</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {listData.map((item: any, i: number) => (
-                  <tr key={i}>
-                    {listType === "families" && (
-                      <>
-                        <td style={tdStyle}><IdentityCell name={item.representativeParentName} loginId={item.representativeLoginId} maskedId={item.maskedId} /></td>
-                        <td style={tdStyle}>{new Date(item.createdAt).toLocaleDateString()}</td>
-                        <td style={tdStyle}>{item.parentCount} / {item.childCount}</td>
-                        <td style={tdStyle}>{item.dualActive7d ? "✅" : "-"}</td>
-                      </>
-                    )}
-                    {listType === "all" && (
-                      <>
-                        <td style={tdStyle}>{item.userType === "parent" ? "부모" : "아이"}</td>
-                        <td style={tdStyle}><IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /></td>
-                        <td style={tdStyle}>{item.activeDaysTotal ?? 0}일</td>
-                        <td style={tdStyle}>{retainCell(item.d1Retained)} / {retainCell(item.d3Retained)} / {retainCell(item.d7Retained)}</td>
-                      </>
-                    )}
-                    {listType === "child" && (
-                      <>
-                        <td style={tdStyle}><IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /></td>
-                        <td style={tdStyle}>{item.grade}</td>
-                        <td style={tdStyle}>{item.activeDaysTotal}일</td>
-                        <td style={tdStyle}>{item.missionCount} / {item.freechatCount} / {item.playCount}</td>
-                        <td style={tdStyle}>{retainCell(item.d1Retained)} / {retainCell(item.d3Retained)} / {retainCell(item.d7Retained)}</td>
-                      </>
-                    )}
-                    {listType === "parent" && (
-                      <>
-                        <td style={tdStyle}><IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /></td>
-                        <td style={tdStyle}>{new Date(item.joinedAt).toLocaleDateString()}</td>
-                        <td style={tdStyle}>{item.visitCount} / {item.reportViewCount} / {item.topicViewCount}</td>
-                        <td style={tdStyle}>{retainCell(item.d1Retained)} / {retainCell(item.d3Retained)} / {retainCell(item.d7Retained)}</td>
-                        <td style={tdStyle}><StatusBadge status={item.status ?? ""} /></td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <AdminDataTable
+              columns={
+                listType === "families" ? [
+                  { key: "family", header: "가족", render: (item: any) => <IdentityCell name={item.representativeParentName} loginId={item.representativeLoginId} maskedId={item.maskedId} /> },
+                  { key: "createdAt", header: "생성일", render: (item: any) => new Date(item.createdAt).toLocaleDateString() },
+                  { key: "count", header: "부모/아이 수", render: (item: any) => `${item.parentCount} / ${item.childCount}` },
+                  { key: "active", header: "동시 활성(7일)", render: (item: any) => item.dualActive7d ? "✅" : "-" },
+                ] : listType === "all" ? [
+                  { key: "type", header: "유형", render: (item: any) => item.userType === "parent" ? "부모" : "아이" },
+                  { key: "user", header: "사용자", render: (item: any) => <IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /> },
+                  { key: "activeDays", header: "활성 일수", render: (item: any) => `${item.activeDaysTotal ?? 0}일` },
+                  { key: "retention", header: "D1/D3/D7", render: (item: any) => `${retainCell(item.d1Retained)} / ${retainCell(item.d3Retained)} / ${retainCell(item.d7Retained)}` },
+                ] : listType === "child" ? [
+                  { key: "child", header: "아이", render: (item: any) => <IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /> },
+                  { key: "grade", header: "학년", render: (item: any) => item.grade },
+                  { key: "activeDays", header: "활성 일수", render: (item: any) => `${item.activeDaysTotal}일` },
+                  { key: "counts", header: "미션/자유대화/놀이 수", render: (item: any) => `${item.missionCount} / ${item.freechatCount} / ${item.playCount}` },
+                  { key: "retention", header: "D1/D3/D7", render: (item: any) => `${retainCell(item.d1Retained)} / ${retainCell(item.d3Retained)} / ${retainCell(item.d7Retained)}` },
+                ] : [
+                  { key: "parent", header: "부모", render: (item: any) => <IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /> },
+                  { key: "joinedAt", header: "가입일", render: (item: any) => new Date(item.joinedAt).toLocaleDateString() },
+                  { key: "counts", header: "로그인/리포트/대화거리 뷰", render: (item: any) => `${item.visitCount} / ${item.reportViewCount} / ${item.topicViewCount}` },
+                  { key: "retention", header: "D1/D3/D7", render: (item: any) => `${retainCell(item.d1Retained)} / ${retainCell(item.d3Retained)} / ${retainCell(item.d7Retained)}` },
+                  { key: "status", header: "상태", render: (item: any) => <StatusBadge status={item.status ?? ""} /> },
+                ]
+              }
+              data={listData}
+              keyExtractor={(item: any) => item.maskedId || item.loginId || item.representativeLoginId || Math.random().toString()}
+            />
           </div>
         )}
       </div>
@@ -337,12 +289,12 @@ function AdminRetentionContent() {
   }, [features, scope]);
 
   return (
-    <div ref={rootRef} style={{ minHeight: embed ? undefined : "100vh", background: "var(--color-k-surface, #fafaf8)", paddingBottom: embed ? 24 : 64 }}>
+    <div ref={rootRef} style={{ minHeight: embed ? undefined : "100vh", background: "var(--admin-bg, #fafaf8)", paddingBottom: embed ? 24 : 64 }}>
       {!embed && (
-        <header style={{ background: "var(--color-k-background)", padding: "16px 20px", borderBottom: "1px solid var(--color-k-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <header style={{ background: "var(--admin-surface)", padding: "16px 20px", borderBottom: "1px solid var(--admin-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--color-k-text-primary)" }}>사용자 리텐션 대시보드</h1>
-            <Link href="/admin" style={{ fontSize: 13, color: "var(--color-k-navy)", textDecoration: "none" }}>← 관리자 홈</Link>
+            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--admin-text-primary)" }}>사용자 리텐션 대시보드</h1>
+            <Link href="/admin" style={{ fontSize: 13, color: "var(--admin-primary)", textDecoration: "none" }}>← 관리자 홈</Link>
           </div>
         </header>
       )}
@@ -357,9 +309,9 @@ function AdminRetentionContent() {
               style={{
                 padding: "8px 18px",
                 borderRadius: 999,
-                border: scope === s ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
-                background: scope === s ? "var(--color-k-navy)" : "white",
-                color: scope === s ? "white" : "var(--color-k-text-secondary)",
+                border: scope === s ? "1px solid var(--admin-primary)" : "1px solid var(--admin-border)",
+                background: scope === s ? "var(--admin-primary)" : "white",
+                color: scope === s ? "white" : "var(--admin-text-secondary)",
                 fontSize: 14,
                 fontWeight: scope === s ? 700 : 500,
                 cursor: "pointer",
@@ -371,75 +323,74 @@ function AdminRetentionContent() {
         </div>
 
         {/* Filters */}
-        <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap", alignItems: "center", background: "var(--color-k-background)", padding: "16px 24px", borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-k-text-secondary)" }}>조회 기간:</span>
-            {(["7d", "14d", "30d", "month", "all"] as Period[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: 999,
-                  border: period === p ? "1px solid var(--color-k-navy)" : "1px solid var(--color-k-border)",
-                  background: period === p ? "var(--color-k-navy)" : "white",
-                  color: period === p ? "white" : "var(--color-k-text-secondary)",
-                  fontSize: 13,
-                  fontWeight: period === p ? 700 : 400,
-                  cursor: "pointer",
-                }}
-              >
-                {p === "7d" ? "최근 7일" : p === "14d" ? "최근 14일" : p === "30d" ? "최근 30일" : p === "month" ? "이번 달" : "전체"}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ width: 1, height: 24, background: "var(--color-k-border)", margin: "0 8px" }} />
-
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", color: "var(--color-k-text-primary)" }}>
-            <input 
-              type="checkbox" 
-              checked={includeTestAccounts} 
-              onChange={e => setIncludeTestAccounts(e.target.checked)} 
-              style={{ width: 16, height: 16, accentColor: "var(--color-k-navy)" }}
-            />
-            내부 테스트 계정 포함
-          </label>
-
-          <div style={{ flex: 1 }} />
-
-          <a
-            href={`/api/admin/retention/export?scope=${scope}&includeTestAccounts=${includeTestAccounts}`}
-            download
-            style={{
-              padding: "6px 14px",
-              borderRadius: 8,
-              background: "var(--color-k-text-primary)",
-              color: "white",
-              fontSize: 13,
-              fontWeight: 600,
-              textDecoration: "none",
-            }}
-          >
-            CSV 다운로드
-          </a>
-        </div>
+        <AdminFilterBar
+          filterNodes={[
+            <div key="period" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--admin-text-secondary)" }}>조회 기간:</span>
+              {(["7d", "14d", "30d", "month", "all"] as Period[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 999,
+                    border: period === p ? "1px solid var(--admin-primary)" : "1px solid var(--admin-border)",
+                    background: period === p ? "var(--admin-primary)" : "white",
+                    color: period === p ? "white" : "var(--admin-text-secondary)",
+                    fontSize: 13,
+                    fontWeight: period === p ? 700 : 400,
+                    cursor: "pointer",
+                  }}
+                >
+                  {p === "7d" ? "최근 7일" : p === "14d" ? "최근 14일" : p === "30d" ? "최근 30일" : p === "month" ? "이번 달" : "전체"}
+                </button>
+              ))}
+            </div>,
+            <label key="testAccount" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", color: "var(--admin-text-primary)" }}>
+              <input 
+                type="checkbox" 
+                checked={includeTestAccounts} 
+                onChange={e => setIncludeTestAccounts(e.target.checked)} 
+                style={{ width: 16, height: 16, accentColor: "var(--admin-primary)" }}
+              />
+              내부 테스트 계정 포함
+            </label>,
+            <a
+              key="export"
+              href={`/api/admin/retention/export?scope=${scope}&includeTestAccounts=${includeTestAccounts}`}
+              download
+              style={{
+                padding: "6px 14px",
+                borderRadius: 8,
+                background: "var(--admin-text-primary)",
+                color: "white",
+                fontSize: 13,
+                fontWeight: 600,
+                textDecoration: "none",
+                marginLeft: "auto"
+              }}
+            >
+              CSV 다운로드
+            </a>
+          ]}
+        />
 
         {error && (
-          <div style={{ color: "var(--color-k-danger)", background: "#ffeef0", padding: "16px", borderRadius: 8, marginBottom: 24 }}>
+          <div style={{ color: "var(--admin-danger)", background: "#ffeef0", padding: "16px", borderRadius: 8, marginBottom: 24 }}>
             데이터를 불러오는 중 오류가 발생했습니다: {error}
           </div>
         )}
 
         {loading ? (
-          <div style={{ padding: "40px", textAlign: "center", color: "var(--color-k-text-secondary)" }}>대시보드 데이터를 집계하는 중입니다...</div>
+          <div style={{ padding: "40px", textAlign: "center", color: "var(--admin-text-secondary)" }}>대시보드 데이터를 집계하는 중입니다...</div>
         ) : overview && cohort ? (
           <>
             {/* KPI Cards */}
             <RetentionWidgetErrorBoundary label="핵심 지표">
             <div style={{ marginBottom: 40 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "var(--color-k-text-primary)" }}>사용자 규모 및 리텐션 핵심 지표</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "var(--admin-text-primary)" }}>사용자 규모 및 리텐션 핵심 지표</h2>
+              <AdminKpiGrid>
+
                 {/* requests/063 §14 — scope별 UI 문구. 활성 사용자 수는 scope에 따라
                     전체(부모+아이 독립 합산)/부모만/아이만으로 갈아끼운다. */}
                 {scope === "all" && (
@@ -509,27 +460,27 @@ function AdminRetentionContent() {
                     actualString={`시작 ${overview.kpis.missionStarts.value}회 중 완료 ${overview.kpis.missionCompletes.value}회`}
                   />
                 )}
-              </div>
+              </AdminKpiGrid>
             </div>
             </RetentionWidgetErrorBoundary>
 
             {/* Daily Trend Chart */}
             <RetentionWidgetErrorBoundary label="일별 활성 사용자 추이(DAU)">
-            <div style={{ marginBottom: 40, background: "var(--color-k-background)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)" }}>
-              <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 24, color: "var(--color-k-text-primary)" }}>일별 활성 사용자 추이 (DAU)</h2>
+            <div style={{ marginBottom: 40, background: "var(--admin-surface)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)" }}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 24, color: "var(--admin-text-primary)" }}>일별 활성 사용자 추이 (DAU)</h2>
               <div style={{ height: 300, width: "100%" }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={overview.dailyTrend} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-k-border)" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 12, fill: "var(--color-k-text-secondary)" }} tickMargin={12} />
-                    <YAxis tick={{ fontSize: 12, fill: "var(--color-k-text-secondary)" }} axisLine={false} tickLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--admin-border)" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 12, fill: "var(--admin-text-secondary)" }} tickMargin={12} />
+                    <YAxis tick={{ fontSize: 12, fill: "var(--admin-text-secondary)" }} axisLine={false} tickLine={false} />
                     <RechartsTooltip contentStyle={{ borderRadius: 8, border: "none", boxShadow: "var(--shadow-k-card)" }} />
                     <Legend wrapperStyle={{ fontSize: 13, paddingTop: 16 }} />
                     {(scope === "all" || scope === "parent") && (
-                      <Line type="monotone" dataKey="activeParents" name="부모 실활성" stroke="var(--color-k-orange)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-orange)" }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="activeParents" name="부모 실활성" stroke="var(--admin-warning)" strokeWidth={3} dot={{ r: 4, fill: "var(--admin-warning)" }} activeDot={{ r: 6 }} />
                     )}
                     {(scope === "all" || scope === "child") && (
-                      <Line type="monotone" dataKey="activeChildren" name="아이 실활성" stroke="var(--color-k-navy)" strokeWidth={3} dot={{ r: 4, fill: "var(--color-k-navy)" }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="activeChildren" name="아이 실활성" stroke="var(--admin-primary)" strokeWidth={3} dot={{ r: 4, fill: "var(--admin-primary)" }} activeDot={{ r: 6 }} />
                     )}
                   </LineChart>
                 </ResponsiveContainer>
@@ -540,18 +491,18 @@ function AdminRetentionContent() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 40 }}>
               {/* Funnel Chart */}
               <RetentionWidgetErrorBoundary label="핵심 행동 퍼널 전환">
-              <div style={{ background: "var(--color-k-background)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)" }}>
-                <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 24, color: "var(--color-k-text-primary)" }}>핵심 행동 퍼널 전환</h2>
+              <div style={{ background: "var(--admin-surface)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)" }}>
+                <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 24, color: "var(--admin-text-primary)" }}>핵심 행동 퍼널 전환</h2>
                 <div style={{ height: 300, width: "100%" }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={featureChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-k-border)" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fontSize: 12, fill: "var(--color-k-text-secondary)" }} />
-                      <YAxis tick={{ fontSize: 12, fill: "var(--color-k-text-secondary)" }} axisLine={false} tickLine={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--admin-border)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 12, fill: "var(--admin-text-secondary)" }} />
+                      <YAxis tick={{ fontSize: 12, fill: "var(--admin-text-secondary)" }} axisLine={false} tickLine={false} />
                       <RechartsTooltip contentStyle={{ borderRadius: 8, border: "none", boxShadow: "var(--shadow-k-card)" }} />
                       <Legend wrapperStyle={{ fontSize: 13 }} />
-                      <Bar dataKey="진입" fill="var(--color-k-border)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="완료" fill="var(--color-k-navy)" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="진입" fill="var(--admin-border)" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="완료" fill="var(--admin-primary)" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -560,8 +511,8 @@ function AdminRetentionContent() {
 
               {/* Cohort Table */}
               <RetentionWidgetErrorBoundary label="가입 코호트 리텐션">
-              <div style={{ background: "var(--color-k-background)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)", overflowX: "auto" }}>
-                <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--color-k-text-primary)" }}>가입 코호트 리텐션 ({scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} 기준)</h2>
+              <div style={{ background: "var(--admin-surface)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)", overflowX: "auto" }}>
+                <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--admin-text-primary)" }}>가입 코호트 리텐션 ({scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} 기준)</h2>
                 <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center", fontSize: 13 }}>
                   <thead>
                     <tr>
@@ -577,18 +528,18 @@ function AdminRetentionContent() {
                     {cohort.cohorts.slice().reverse().map((c: any, idx: number) => (
                       <tr key={idx}>
                         <td style={{ ...tdStyle, fontWeight: 600 }}>{c.cohortLabel}</td>
-                        <td style={{ ...tdStyle, fontWeight: 600, color: "var(--color-k-navy)" }}>{c.size}명</td>
+                        <td style={{ ...tdStyle, fontWeight: 600, color: "var(--admin-primary)" }}>{c.size}명</td>
                         <td style={{ ...tdStyle, background: c.d1.rate !== null ? `rgba(45, 159, 143, ${c.d1.rate * 0.8})` : "transparent" }}>
-                          {c.d1.rate !== null ? <>{pct(c.d1.rate)} <br/><span style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{c.d1.numerator}명</span></> : "-"}
+                          {c.d1.rate !== null ? <>{pct(c.d1.rate)} <br/><span style={{ fontSize: 11, color: "var(--admin-text-secondary)" }}>{c.d1.numerator}명</span></> : "-"}
                         </td>
                         <td style={{ ...tdStyle, background: c.d3.rate !== null ? `rgba(45, 159, 143, ${c.d3.rate * 0.8})` : "transparent" }}>
-                          {c.d3.rate !== null ? <>{pct(c.d3.rate)} <br/><span style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{c.d3.numerator}명</span></> : "-"}
+                          {c.d3.rate !== null ? <>{pct(c.d3.rate)} <br/><span style={{ fontSize: 11, color: "var(--admin-text-secondary)" }}>{c.d3.numerator}명</span></> : "-"}
                         </td>
                         <td style={{ ...tdStyle, background: c.d7.rate !== null ? `rgba(45, 159, 143, ${c.d7.rate * 0.8})` : "transparent" }}>
-                          {c.d7.rate !== null ? <>{pct(c.d7.rate)} <br/><span style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{c.d7.numerator}명</span></> : "-"}
+                          {c.d7.rate !== null ? <>{pct(c.d7.rate)} <br/><span style={{ fontSize: 11, color: "var(--admin-text-secondary)" }}>{c.d7.numerator}명</span></> : "-"}
                         </td>
                         <td style={{ ...tdStyle, background: c.d14.rate !== null ? `rgba(45, 159, 143, ${c.d14.rate * 0.8})` : "transparent" }}>
-                          {c.d14.rate !== null ? <>{pct(c.d14.rate)} <br/><span style={{ fontSize: 11, color: "var(--color-k-text-secondary)" }}>{c.d14.numerator}명</span></> : "-"}
+                          {c.d14.rate !== null ? <>{pct(c.d14.rate)} <br/><span style={{ fontSize: 11, color: "var(--admin-text-secondary)" }}>{c.d14.numerator}명</span></> : "-"}
                         </td>
                       </tr>
                     ))}
@@ -610,7 +561,7 @@ function AdminRetentionContent() {
 
 export default function AdminRetentionPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--color-k-text-secondary)" }}>불러오는 중...</div>}>
+    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--admin-text-secondary)" }}>불러오는 중...</div>}>
       <AdminRetentionContent />
     </Suspense>
   );
