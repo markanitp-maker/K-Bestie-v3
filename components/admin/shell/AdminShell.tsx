@@ -1,0 +1,187 @@
+"use client";
+
+import React, { useState } from "react";
+import { Menu, X } from "lucide-react";
+
+export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention";
+
+export const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
+  { id: "overview", label: "전체 현황" },
+  { id: "revenue", label: "매출·가입자 상세" },
+  { id: "cost", label: "나갈 돈 · 비용 상세" },
+  { id: "llm-status", label: "LLM 사용 현황" },
+  { id: "account-restore", label: "계정 복구 승인" },
+  { id: "feedback", label: "문의·건의·버그 접수" },
+  { id: "beta-applications", label: "베타 신청 관리" },
+  { id: "manual-reporting", label: "리포팅 수동 실행" },
+  { id: "plan-change-requests", label: "요금제 변경 요청" },
+  { id: "child-approval-requests", label: "아이 승인 요청" },
+  { id: "retention", label: "사용자 리텐션" },
+];
+
+export interface AdminShellProps {
+  children: React.ReactNode;
+  activeMenuId: AdminPageId;
+  onMenuChange: (id: AdminPageId) => void;
+}
+
+export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellProps) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--admin-bg)", display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <header
+        style={{
+          height: "64px",
+          background: "var(--admin-surface)",
+          borderBottom: "1px solid var(--admin-border)",
+          padding: "0 var(--admin-space-24)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--admin-space-16)" }}>
+          {/* Mobile menu toggle */}
+          <button
+            className="lg:hidden"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="메뉴 열기"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "var(--admin-space-8)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--admin-text-primary)",
+            }}
+          >
+            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+          <h1 style={{
+            fontSize: "var(--admin-text-section-title)",
+            fontWeight: "var(--admin-weight-section-title)",
+            color: "var(--admin-text-primary)",
+            margin: 0
+          }}>
+            내친구 케이 — 관리자
+          </h1>
+        </div>
+      </header>
+
+      {/* Main Grid */}
+      <div style={{ flex: 1, display: "flex", position: "relative" }}>
+        {/* Sidebar Desktop */}
+        <aside
+          className="max-lg:hidden"
+          style={{
+            width: "232px",
+            background: "var(--admin-surface)",
+            borderRight: "1px solid var(--admin-border)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--admin-space-4)",
+            padding: "var(--admin-space-24) var(--admin-space-16)",
+            flexShrink: 0,
+          }}
+        >
+          {ADMIN_NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => onMenuChange(item.id)}
+              style={{
+                textAlign: "left",
+                padding: "0 var(--admin-space-16)",
+                height: "44px",
+                borderRadius: "8px",
+                fontSize: "var(--admin-text-body)",
+                fontWeight: activeMenuId === item.id ? 700 : 400,
+                border: "none",
+                background: activeMenuId === item.id ? "var(--admin-focus)" : "transparent",
+                color: activeMenuId === item.id ? "var(--admin-primary)" : "var(--admin-text-secondary)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </aside>
+
+        {/* Sidebar Mobile Drawer */}
+        {isMobileMenuOpen && (
+          <div
+            className="lg:hidden"
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 50,
+              display: "flex",
+            }}
+          >
+            <div
+              style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }}
+              onClick={() => setIsMobileMenuOpen(false)}
+            />
+            <aside
+              style={{
+                position: "relative",
+                width: "232px",
+                background: "var(--admin-surface)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--admin-space-4)",
+                padding: "var(--admin-space-24) var(--admin-space-16)",
+                boxShadow: "2px 0 12px rgba(0,0,0,0.1)",
+              }}
+            >
+              {ADMIN_NAV_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onMenuChange(item.id);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  style={{
+                    textAlign: "left",
+                    padding: "0 var(--admin-space-16)",
+                    height: "44px",
+                    borderRadius: "8px",
+                    fontSize: "var(--admin-text-body)",
+                    fontWeight: activeMenuId === item.id ? 700 : 400,
+                    border: "none",
+                    background: activeMenuId === item.id ? "var(--admin-focus)" : "transparent",
+                    color: activeMenuId === item.id ? "var(--admin-primary)" : "var(--admin-text-secondary)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </aside>
+          </div>
+        )}
+
+        {/* Content */}
+        <main
+          className="admin-content"
+          style={{
+            flex: 1,
+            minWidth: 0, // Prevent grid blowout
+          }}
+        >
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}

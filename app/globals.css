@@ -64,6 +64,51 @@
   --color-k-navy-hover: #0C2444;
 
   /* ══════════════════════════════════════════════════════════════════
+     Admin UI/UX Design System Tokens (Phase 1)
+     ══════════════════════════════════════════════════════════════════ */
+  --admin-bg: var(--color-k-surface);
+  --admin-surface: var(--color-k-background);
+  --admin-border: var(--color-k-border);
+  --admin-text-primary: var(--color-k-text-primary);
+  --admin-text-secondary: var(--color-k-text-secondary);
+  --admin-primary: var(--color-k-navy);
+  --admin-danger: var(--color-k-danger);
+  --admin-success: var(--color-k-success);
+  --admin-warning: var(--color-k-warning);
+  --admin-focus: var(--color-k-sky-blue);
+
+  --admin-space-4: 4px;
+  --admin-space-8: 8px;
+  --admin-space-12: 12px;
+  --admin-space-16: 16px;
+  --admin-space-20: 20px;
+  --admin-space-24: 24px;
+  --admin-space-32: 32px;
+  --admin-space-40: 40px;
+  --admin-space-48: 48px;
+
+  --admin-text-page-title: 24px;
+  --admin-line-page-title: 32px;
+  --admin-weight-page-title: 700;
+
+  --admin-text-section-title: 18px;
+  --admin-line-section-title: 26px;
+  --admin-weight-section-title: 700;
+
+  --admin-text-card-title: 14px;
+  --admin-line-card-title: 20px;
+  --admin-weight-card-title: 600;
+
+  --admin-text-kpi: 32px;
+  --admin-weight-kpi: 700;
+
+  --admin-text-body: 14px;
+  --admin-line-body: 20px;
+
+  --admin-text-sm: 13px;
+  --admin-line-sm: 18px;
+
+  /* ══════════════════════════════════════════════════════════════════
      026-UIUX-change.md Phase 1: Design System v2 Semantic Token 추가.
      Primitive(k-navy/k-orange/k-mascot-orange/k-sky-blue)는 위 v2 블록에 이미
      존재해 새로 만들지 않았다 — 026이 요청한 "brand-k-*" 이름 대신 이 저장소의
@@ -308,3 +353,24 @@ button[style*="background: var(--color-k-navy)"]:not(:disabled):hover {
     animation: none;
   }
 }
+
+/* ── Admin 공통 레이아웃 (Phase 1) ── */
+.admin-content {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: var(--admin-space-48) var(--admin-space-32);
+}
+
+@media (max-width: 1023px) {
+  .admin-content {
+    padding: var(--admin-space-32) var(--admin-space-24);
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-content {
+    padding: var(--admin-space-24) var(--admin-space-16);
+  }
+}
+
