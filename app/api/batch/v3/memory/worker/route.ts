@@ -6,10 +6,14 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    const configuredSecrets = [process.env.BATCH_SECRET, process.env.CRON_SECRET].filter(
+      (s): s is string => typeof s === "string" && s.trim().length > 0
+    );
+    const authHeader = req.headers.get("authorization") ?? "";
+    if (
+      configuredSecrets.length === 0 ||
+      !configuredSecrets.some((secret) => authHeader === `Bearer ${secret}`)
+    ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
