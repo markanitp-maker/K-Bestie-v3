@@ -34,6 +34,7 @@ export async function POST(req: Request) {
     const workerId = `worker_corr_${randomUUID()}`;
     let totalClaimed = 0;
     let totalCompleted = 0;
+    let totalSkipped = 0;
     let totalFailed = 0;
     const allErrors: any[] = [];
     const maxIterations = 20;
@@ -42,6 +43,7 @@ export async function POST(req: Request) {
       const res = await runContextCorrectionWorkerV3(limit, workerId, executionId);
       totalClaimed += res.claimed;
       totalCompleted += res.completed;
+      totalSkipped += res.skipped;
       totalFailed += res.failed;
       if (res.errors?.length) allErrors.push(...res.errors);
       if (res.claimed === 0) break;
@@ -53,6 +55,7 @@ export async function POST(req: Request) {
       result: {
         claimed: totalClaimed,
         completed: totalCompleted,
+        skipped: totalSkipped,
         failed: totalFailed,
         errors: allErrors,
       },
