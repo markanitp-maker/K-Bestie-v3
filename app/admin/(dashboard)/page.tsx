@@ -8,6 +8,8 @@ import EventsOverviewTab from "./EventsOverviewTab";
 import MissionOnboardingEventsTab from "./MissionOnboardingEventsTab";
 import QuizLeaderboardEventsTab from "./QuizLeaderboardEventsTab";
 import RewardFulfillmentsTab from "./RewardFulfillmentsTab";
+import ParentQuestionsTab from "./ParentQuestionsTab";
+import ParentQueryRouterTab from "./ParentQueryRouterTab";
 import { RetentionEmbed } from "@/components/admin/RetentionEmbed";
 import {
   ResponsiveContainer,
@@ -27,6 +29,7 @@ import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminKpiCard } from "@/components/admin/shell/AdminKpiCard";
 import { AdminEmptyState } from "@/components/admin/shell/AdminEmptyState";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
 interface ChatMessageRow {
   session_id: string;
@@ -585,7 +588,7 @@ function LlmStatusTab() {
 
       <div>
         <SectionTitle>기능별 모델 적용 현황</SectionTitle>
-        <AdminDataTable
+        <AdminResponsiveTable mobileStrategy="scroll"
           columns={[
             { key: "name", header: "기능명 (유형/플랫폼)", render: (r: any) => (
               <>
@@ -633,194 +636,7 @@ function LlmStatusTab() {
   );
 }
 
-interface GcaiProfileRow {
-  profile: "A" | "B";
-  google_cloud_project: string | null;
-  is_active: boolean;
-  last_health_check_result: any;
-}
 
-function GCAIProfileSection() {
-  const [profiles, setProfiles] = useState<GcaiProfileRow[] | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [healthChecking, setHealthChecking] = useState<string | null>(null);
-  const [switching, setSwitching] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [actionMsg, setActionMsg] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    setProfiles(null);
-    setLoadFailed(false);
-    fetch("/api/admin/gcai-profiles")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) setLoadFailed(true);
-        else setProfiles(d.profiles);
-      })
-      .catch(() => setLoadFailed(true));
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const runHealthCheck = async (profile: "A" | "B") => {
-    setHealthChecking(profile);
-    setErrorMsg(null);
-    setActionMsg(null);
-    try {
-      const res = await fetch(`/api/admin/gcai-health?profile=${profile}`);
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error || "헬스체크 실패");
-      }
-
-      setProfiles((prev) => prev?.map(p => {
-        if (p.profile === profile) {
-          if (data.status === '미설정') {
-            return { ...p, last_health_check_result: { _status: "미설정" } };
-          } else if (data.checks) {
-            return { ...p, last_health_check_result: data.checks };
-          }
-        }
-        return p;
-      }) || null);
-    } catch {
-      setErrorMsg("헬스체크 요청 실패");
-    } finally {
-      setHealthChecking(null);
-    }
-  };
-
-  const handleSwitch = async (targetProfile: "A" | "B") => {
-    if (!window.confirm(`정말 프로필 ${targetProfile}로 전환하시겠습니까?\\nDB 표시값만 바뀌며 실제 적용은 Vercel 환경변수 변경+재배포가 필요합니다.`)) {
-      return;
-    }
-
-    setSwitching(targetProfile);
-    setErrorMsg(null);
-    setActionMsg(null);
-    try {
-      const res = await fetch("/api/admin/gcai-switch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetProfile }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setErrorMsg(data.error || "전환 실패");
-      } else {
-        setActionMsg(data.message);
-      }
-      load();
-    } catch {
-      setErrorMsg("전환 요청 실패");
-    } finally {
-      setSwitching(null);
-    }
-  };
-
-  if (loadFailed) return <EmptyState text="GCAI 프로필 정보를 불러오지 못했어요." />;
-  if (!profiles) return <EmptyState text="불러오는 중..." />;
-
-  const maskProject = (proj: string | null) => {
-    if (!proj) return "미설정";
-    if (proj.length <= 4) return proj;
-    return proj.substring(0, 4) + "*".repeat(proj.length - 4);
-  };
-
-  return (
-    <div style={{ marginTop: 24 }}>
-      <SectionTitle>GCAI A/B 프로필 설정</SectionTitle>
-      {errorMsg && <div style={{ fontSize: 12, color: "var(--admin-danger)", marginBottom: 10 }}>{errorMsg}</div>}
-      {actionMsg && <div style={{ fontSize: 12, color: "var(--admin-primary)", marginBottom: 10, background: "var(--admin-focus)", padding: "8px 12px", borderRadius: 8 }}>{actionMsg}</div>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {profiles.map(p => {
-          const isUnconfigured = !p.last_health_check_result || Object.keys(p.last_health_check_result).length === 0 || p.last_health_check_result._status === "미설정";
-          let allPassed = false;
-          if (p.last_health_check_result && !isUnconfigured) {
-            const checks = p.last_health_check_result;
-            const requiredKeys = ["groupA", "groupB", "groupC", "stt", "tts"];
-            allPassed = requiredKeys.every(k => checks[k] && checks[k].status === "ok");
-          }
-
-          return (
-            <div key={p.profile} style={{ background: "var(--admin-surface)", borderRadius: 12, padding: 16, border: p.is_active ? "2px solid var(--admin-primary)" : "1px solid transparent" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--admin-text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
-                    프로필 {p.profile}
-                    {p.is_active && <span style={{ fontSize: 11, background: "var(--admin-primary)", color: "white", padding: "2px 6px", borderRadius: 4 }}>활성</span>}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--admin-text-secondary)", marginTop: 4 }}>
-                    Project: {maskProject(p.google_cloud_project)}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => runHealthCheck(p.profile)}
-                    disabled={healthChecking === p.profile}
-                    style={{
-                      padding: "6px 12px", borderRadius: 8, border: "1px solid var(--admin-border)",
-                      background: "white", color: "var(--admin-text-primary)", fontSize: 12, fontWeight: 700, cursor: "pointer"
-                    }}
-                  >
-                    {healthChecking === p.profile ? "실행 중..." : "헬스체크 실행"}
-                  </button>
-                  <button
-                    onClick={() => handleSwitch(p.profile)}
-                    disabled={!allPassed || switching === p.profile}
-                    title={!allPassed ? (isUnconfigured ? `${p.profile} 자격증명 미설정` : "헬스체크가 모두 성공해야 전환 가능합니다.") : undefined}
-                    style={{
-                      padding: "6px 12px", borderRadius: 8, border: "none",
-                      background: (!allPassed || switching === p.profile) ? "var(--admin-border)" : "var(--admin-primary)",
-                      color: (!allPassed || switching === p.profile) ? "var(--admin-text-secondary)" : "white",
-                      fontSize: 12, fontWeight: 700, cursor: (!allPassed || switching === p.profile) ? "not-allowed" : "pointer"
-                    }}
-                  >
-                    {switching === p.profile ? "전환 중..." : "이 프로필로 전환"}
-                  </button>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flexDirection: "column", marginTop: 12 }}>
-                {["groupA", "groupB", "groupC", "stt", "tts"].map(svc => {
-                  const check = p.last_health_check_result?.[svc];
-                  let color = "var(--admin-text-secondary)";
-                  let bg = "white";
-                  let label = svc === "groupA" ? "TEXT A" : svc === "groupB" ? "TEXT B" : svc === "groupC" ? "LIVE C" : svc.toUpperCase();
-                  if (check) {
-                    if (check.status === "ok") {
-                      color = "var(--admin-success)";
-                      bg = "var(--admin-surface)";
-                    } else if (check.status === "fail") {
-                      color = "var(--admin-danger)";
-                      bg = "var(--admin-surface)";
-                    }
-                  }
-                  return (
-                    <div key={svc} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 8, background: bg, border: `1px solid ${color}`, color, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontWeight: 600 }}>{label}</span>
-                      {check ? (
-                        <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                          <div>
-                            <span style={{ fontWeight: 700 }}>{check.status === "ok" ? "OK" : "FAIL"}</span>
-                            {check.ms !== undefined && <span style={{ fontSize: 11, color: "var(--admin-text-secondary)", marginLeft: 6 }}>{check.ms}ms</span>}
-                          </div>
-                          {check.modelVersion && <div style={{ fontSize: 10, color: "var(--admin-text-secondary)" }}>{check.modelVersion}</div>}
-                          {check.status === "fail" && check.detail && <div style={{ fontSize: 11, color: "var(--admin-danger)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={check.detail}>{check.detail}</div>}
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: 11 }}>미확인</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 function BetaApplicationsTab() {
   const [requests, setRequests] = useState<any[] | null>(null);
@@ -979,7 +795,7 @@ function BetaApplicationsTab() {
     <div>
       {toast}
       <AdminPageHeader title="베타 신청 관리" description="가입을 대기 중인 베타 신청자 목록입니다." />
-      <AdminDataTable
+      <AdminResponsiveTable mobileStrategy="card"
         columns={columns}
         data={requests || []}
         keyExtractor={(req) => req.user_id}
@@ -1360,7 +1176,7 @@ function ChildApprovalRequestsTab() {
         ]}
       />
 
-      <AdminDataTable
+      <AdminResponsiveTable mobileStrategy="card"
         columns={columns}
         data={filteredRequests}
         keyExtractor={(req) => req.id}
@@ -1470,7 +1286,7 @@ function AccountRestoreTab() {
   return (
     <div>
       <AdminPageHeader title="계정 복구 신청 목록" description="탈퇴 유저의 계정 복구 신청을 처리합니다." />
-      <AdminDataTable
+      <AdminResponsiveTable mobileStrategy="card"
         columns={columns}
         data={requests || []}
         keyExtractor={(r) => r.id}
@@ -1529,10 +1345,7 @@ function AdminDashboard() {
     <AdminShell activeMenuId={page} onMenuChange={setPage}>
       <div style={{ minWidth: 0 }}>
         {page === "llm-status" ? (
-          <>
-            <LlmStatusTab />
-            <GCAIProfileSection />
-          </>
+          <LlmStatusTab />
         ) : page === "account-restore" ? (
           <AccountRestoreTab />
         ) : page === "feedback" ? (
@@ -1555,6 +1368,10 @@ function AdminDashboard() {
           <QuizLeaderboardEventsTab />
         ) : page === "events-reward-fulfillments" ? (
           <RewardFulfillmentsTab />
+        ) : page === "parent-questions" ? (
+          <ParentQuestionsTab />
+        ) : page === "parent-query-router" ? (
+          <ParentQueryRouterTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
@@ -1781,7 +1598,7 @@ function AdminDashboard() {
                 )}
 
                 <SectionTitle>나갈 돈 — 비용 항목별 분해 ({PERIOD_LABEL[period]}, 비용 큰 순)</SectionTitle>
-                <AdminDataTable
+                <AdminResponsiveTable mobileStrategy="scroll"
                   columns={[
                     { key: "category", header: "항목", render: (item) => {
                       const isTopUserService = item.category === "ai" && topUsersByServiceKeys.includes(item.key);
@@ -1816,7 +1633,7 @@ function AdminDashboard() {
                       return (
                         <div style={{ padding: "var(--admin-space-16)" }}>
                           <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--admin-primary)", marginBottom: 10 }}>Gemini 사용 형태별 상세</div>
-                          <AdminDataTable
+                          <AdminResponsiveTable mobileStrategy="card"
                             columns={[
                               { key: "dim", header: "항목", render: (d) => d.label },
                               { key: "gross", header: "실제 사용 원가(gross)", render: (d) => won(d.data.grossKrw) },
@@ -1842,7 +1659,7 @@ function AdminDashboard() {
                       return (
                         <div style={{ padding: "var(--admin-space-16)" }}>
                           <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--admin-primary)", marginBottom: 10 }}>{item.label} 사용량 TOP10</div>
-                          <AdminDataTable
+                          <AdminResponsiveTable mobileStrategy="card"
                             columns={[
                               { key: "rank", header: "순위", render: (u) => topUsers.indexOf(u) + 1 },
                               { key: "child", header: "아이", render: (u) => u.name },
