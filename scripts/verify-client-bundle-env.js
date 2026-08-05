@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const target = process.env.NEXT_PUBLIC_SUPABASE_TARGET === 'prod' ? 'prod' : 'dev';
 const PROD_PROJECT_REF = 'fetvnhhjicndmxvhrffk';
 const DEV_PROJECT_REF = 'mkrsaaedxqrcrktapaus';
+
+const target = (process.env.NEXT_PUBLIC_SUPABASE_TARGET === 'prod' || (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_URL.includes(PROD_PROJECT_REF))) ? 'prod' : 'dev';
 
 const expectedUrl = target === 'prod' ? `${PROD_PROJECT_REF}.supabase.co` : `${DEV_PROJECT_REF}.supabase.co`;
 
@@ -37,3 +38,4 @@ if (!found) {
   console.log(`SUCCESS: NEXT_PUBLIC_SUPABASE_${target === 'prod' ? 'URL' : 'DEV_URL'} 값이 클라이언트 번들에서 확인되었습니다.`);
   process.exit(0);
 }
+
