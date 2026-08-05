@@ -98,7 +98,8 @@ export async function middleware(request: NextRequest) {
   if (
     !isAdminPath &&
     pathname.startsWith("/parent") &&
-    pathname !== "/account/withdrawn"
+    pathname !== "/account/withdrawn" &&
+    pathname !== "/account/suspended"
   ) {
     const { data: parent } = await supabase
       .from("parents")
@@ -109,6 +110,14 @@ export async function middleware(request: NextRequest) {
     if (parent && (parent.account_status === "WITHDRAWN_PENDING" || parent.account_status === "RESTORE_REQUESTED")) {
       const url = request.nextUrl.clone();
       url.pathname = "/account/withdrawn";
+      return NextResponse.redirect(url);
+    }
+
+    // REQUEST-AUTH-SIGNUP-AUTOLOGIN: 관리자 이용정지(SUSPENDED) 계정도 탈퇴와 동일한
+    // 방식으로 /parent/* 접근을 차단한다.
+    if (parent && parent.account_status === "SUSPENDED") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/account/suspended";
       return NextResponse.redirect(url);
     }
   }

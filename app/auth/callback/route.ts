@@ -69,12 +69,14 @@ export async function GET(request: Request) {
                 feature: "auth",
                 route: "/auth/callback"
               });
-            } else if (returnUrl === "/") {
-              // 053: 가족에 아직 소속되지 않은 사용자(첫 로그인 오너 후보)는 온보딩
-              // (PWA 설치 안내 + 가족 만들기/참여하기)으로 먼저 보낸다. 명시적
-              // returnUrl이 있는 경우(초대 수락 등)는 그 목적지를 그대로 존중한다.
-              redirectTo = "/onboarding";
             }
+            // REQUEST-AUTH-SIGNUP-AUTOLOGIN: 여기서 더 이상 목적지를 직접 결정하지 않는다.
+            // 예전에는 가족이 없는 사용자를 곧바로 /onboarding(PWA 설치 안내)으로 보냈는데,
+            // 이는 회원가입(약관 동의/보호자 정보/가족/아이 등록)이 전혀 끝나지 않은
+            // 사용자에게도 PWA 설치 화면을 먼저 보여주는 버그의 원인이었다(요청서 §10).
+            // 이제는 항상 returnUrl(기본 "/")로 보내고, 루트 페이지(app/page.tsx)가
+            // /api/auth/membership-status의 서버 검증 결과만 근거로 로그인 완료 사용자는
+            // 홈(및 PWA 게이트)으로, 미완료 사용자는 /signup으로 분기한다.
           } catch (e) {
             console.error("[auth/callback] behavior event logging failed:", e);
           }

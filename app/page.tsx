@@ -4,6 +4,29 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { isStandaloneDisplay } from "@/lib/pwa/standalone";
+
+const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
+
+// 회원가입/필수 등록 완료(ACTIVE_PARENT/ACTIVE_CHILD) 사용자가 처음 홈에 도착할 때만
+// PWA 설치 안내(/onboarding)를 한 번 보여준다 — 요청서 §10 "PWA 설치 안내는 회원가입
+// 완료 및 로그인 이후에만 표시한다"에 대응. 이미 설치됐거나(standalone) 이미 본 적
+// 있으면 목적지로 바로 이동한다.
+async function routePastPwaGate(
+  destination: "/parent/home" | "/child/home",
+  router: ReturnType<typeof useRouter>
+) {
+  if (typeof window === "undefined") {
+    router.replace(destination);
+    return;
+  }
+  const alreadySeen = window.localStorage.getItem(PWA_INTRO_SEEN_KEY) === "1";
+  if (alreadySeen || isStandaloneDisplay(window)) {
+    router.replace(destination);
+    return;
+  }
+  router.replace(`/onboarding?next=${encodeURIComponent(destination)}`);
+}
 
 export default function HubPage() {
   const router = useRouter();
@@ -70,10 +93,11 @@ export default function HubPage() {
           return;
         }
 
-        // 3. 구성원 계정인 경우 즉시 역할별 대시보드로 이동
+        // 3. 구성원 계정(아이 아이디+비번 로그인)은 승인 시점에 이미 가족/프로필이 완결된
+        // 상태로만 생성되므로(child_approval_requests 승인 처리 참고) 미완료 상태가 존재하지
+        // 않는다 — 기존과 동일하게 역할별 대시보드로 바로 이동한다.
         if (pwData.is_member_account) {
           if (pwData.role === "child") {
-            // 자녀의 프로필 ID 로딩을 위해 child/me 재조회 후 저장
             const childMeRes = await fetch("/api/child/me");
             if (childMeRes.ok) {
               const childInfo = await childMeRes.json();
@@ -81,19 +105,18 @@ export default function HubPage() {
                 localStorage.setItem("k_child_id", childInfo.id);
               }
             }
-            router.replace("/child/home");
+            await routePastPwaGate("/child/home", router);
           } else {
-            router.replace("/parent/home");
+            await routePastPwaGate("/parent/home", router);
           }
           return;
         }
 
-        // 4. 소셜 로그인(오너) 계정인 경우 기존의 auto-join 호출
-        const joinRes = await fetch("/api/auth/auto-join", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-
+        // 4. 소셜 로그인(오너 후보) 계정.
+        // 4-a. 먼저 기존 auto-join(초대 이메일/아이 프로필 이메일 매칭)을 그대로 시도한다 —
+        // 2번째 보호자가 가족 초대를 수락하는 경우, 아이 이메일이 미리 등록돼 있던 경우를
+        // 위한 기존 로직으로, 이 매칭에 성공하면 신규 회원가입 마법사를 거칠 필요가 없다.
+        const joinRes = await fetch("/api/auth/auto-join", { method: "POST" });
         if (joinRes.ok) {
           const joinData = await joinRes.json();
           if (joinData.joined) {
@@ -101,28 +124,57 @@ export default function HubPage() {
               if (joinData.child_profile_id) {
                 localStorage.setItem("k_child_id", joinData.child_profile_id);
               }
-              router.replace("/child/home");
+              await routePastPwaGate("/child/home", router);
             } else {
-              router.replace("/parent/home");
+              await routePastPwaGate("/parent/home", router);
             }
-            return;
-          } else {
-            if (joinData.reason === "no_email") {
-              alert(joinData.message || "이메일 정보가 없어 로그인이 어렵습니다.");
-              await supabase.auth.signOut();
-              router.replace("/login");
-              return;
-            }
-            // 그 외 예약 데이터 매칭 실패 시 parent/home으로 보내서 가족 그룹을 생성케 함
-            router.replace("/parent/home");
             return;
           }
-        } else {
-          router.replace("/parent/home");
+          if (joinData.reason === "no_email") {
+            alert(joinData.message || "이메일 정보가 없어 로그인이 어렵습니다.");
+            await supabase.auth.signOut();
+            router.replace("/login");
+            return;
+          }
+          // reason이 "no_match"/"limit"이면 예약된 가족이 없다는 뜻이므로, 아래 4-b
+          // 멤버십 상태 판정으로 넘어가 신규 회원가입 여부를 정식으로 판정한다.
+        }
+
+        // 4-b. 예약된 가족이 없는 경우 — 서버 검증된 멤버십 상태를 근거로 라우팅한다.
+        // localStorage나 검증되지 않은 클라이언트 판단으로 절대 대체하지 않는다.
+        const statusRes = await fetch("/api/auth/membership-status");
+        if (!statusRes.ok) {
+          throw new Error("membership-status check failed");
+        }
+        const status = await statusRes.json();
+
+        switch (status.state) {
+          case "ACTIVE_PARENT":
+            await routePastPwaGate("/parent/home", router);
+            return;
+          case "ACTIVE_CHILD": {
+            if (status.childId) localStorage.setItem("k_child_id", status.childId);
+            await routePastPwaGate("/child/home", router);
+            return;
+          }
+          case "SUSPENDED":
+            router.replace("/account/suspended");
+            return;
+          case "DELETED":
+            await supabase.auth.signOut();
+            router.replace("/login");
+            return;
+          case "AUTHENTICATED_INCOMPLETE":
+          default:
+            router.replace(`/signup?step=${status.onboardingStep ?? "consent"}`);
+            return;
         }
       } catch (err) {
         console.error("Hub page initialization error:", err);
-        router.replace("/parent/home");
+        // 상태 판정 자체가 실패한 경우 회원가입 미완료로 오판해 기존 활성 회원을 회원가입
+        // 화면으로 튕겨내는 것보다는, 안전하게 재시도 유도 화면을 보여주는 편이 낫다
+        // (요청서 §13.3 기존 보호자 자동 로그인 보존 요구사항).
+        setNetworkError(true);
       } finally {
         setLoading(false);
       }

@@ -72,5 +72,14 @@ export async function POST(req: NextRequest) {
     created_at: data[0].created_at
   };
 
+  // REQUEST-AUTH-SIGNUP-AUTOLOGIN §5.1: 동의 기록에 가족 ID를 남겨야 하는데, 1단계
+  // (동의)는 가족이 생기기 전이라 signup_consents.family_id가 NULL로 저장된다 — 가족이
+  // 실제로 만들어진 지금 이 시점에 백필한다(claude-review 정적 리뷰 지적사항).
+  await svc
+    .from("signup_consents")
+    .update({ family_id: family.id })
+    .eq("user_id", user.id)
+    .is("family_id", null);
+
   return NextResponse.json({ family }, { status: 201 });
 }

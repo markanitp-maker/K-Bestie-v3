@@ -1,19 +1,29 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 
-// 053: 회원가입 직후 첫 화면. PWA 설치 안내를 먼저 보여준 뒤, "가족 만들기"/
-// "가족 구성원으로 참여하기"로 이어간다. 그 두 버튼과 실제 가족 생성/참여 신청
-// 로직은 /parent/home이 가족이 없는 사용자에게 이미 그대로 보여주고 있으므로
-// (기존에 검증된 흐름을 그대로 재사용 — 여기서 중복 구현하지 않는다), 이 화면은
-// PWA 설치 게이트 역할만 하고 다음 단계로 넘긴다.
-export default function OnboardingPage() {
+const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
+
+// REQUEST-AUTH-SIGNUP-AUTOLOGIN §10: 이 화면은 이제 회원가입 여부와 무관하게 도달할 수
+// 있는 화면이 아니다 — 루트 페이지(app/page.tsx)가 서버 검증된 멤버십 상태가
+// ACTIVE_PARENT/ACTIVE_CHILD일 때만, 그리고 이 브라우저에서 아직 안내를 본 적이 없을
+// 때만 여기로 보낸다(?next=/parent/home 또는 ?next=/child/home). 회원가입 진행 중인
+// 사용자는 애초에 여기 도달하지 않고 /signup으로 간다.
+function OnboardingContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") === "/child/home" ? "/child/home" : "/parent/home";
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
 
-  const proceed = () => router.replace("/parent/home");
+  const proceed = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(PWA_INTRO_SEEN_KEY, "1");
+    }
+    router.replace(next);
+  };
 
   const onInstallClick = async () => {
     await handleInstall();
@@ -76,5 +86,19 @@ export default function OnboardingPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-dvh flex flex-col items-center justify-center bg-gray-50">
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
+        </div>
+      }
+    >
+      <OnboardingContent />
+    </Suspense>
   );
 }

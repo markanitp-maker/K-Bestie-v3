@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CONSENT_DOCUMENT_VERSION } from "@/lib/plan/consentDocument";
 import { getChildApprovalEncryptionKey } from "@/lib/plan/childApprovalEncryption";
+import { getServicePhase } from "@/lib/plan/servicePhase";
+import { autoApproveChildRequest } from "@/lib/plan/autoApproveChildRequest";
 
 export const runtime = "nodejs";
 
@@ -168,6 +170,31 @@ export async function POST(
       return NextResponse.json({ error: "법정대리인 동의가 필요합니다" }, { status: 400 });
     }
     return NextResponse.json({ error: "승인 요청 생성에 실패했습니다" }, { status: 400 });
+  }
+
+  // 5. 베타 기간 자동 승인 (요청서 §7.1) — 관리자 수동 승인을 기다리지 않고 즉시 확정한다.
+  //    관리자 승인 관리 화면/기록은 그대로 유지된다(동일 RPC를 재사용하므로 admin 화면에도
+  //    "승인 완료"로 정확히 동일하게 표시된다). 정식 서비스(PAID) 전환 후에는 이 블록을
+  //    건너뛰고 기존과 동일하게 관리자 승인 대기 상태로 남는다.
+  if (getServicePhase() === "BETA" && result.request_id) {
+    const approval = await autoApproveChildRequest(
+      result.request_id,
+      user.id,
+      (user.email ?? "").trim().toLowerCase()
+    );
+    if (approval.success) {
+      return NextResponse.json(
+        {
+          request: { id: result.request_id, status: "approved" },
+          child: { id: approval.childId },
+          autoApproved: true,
+        },
+        { status: 201 }
+      );
+    }
+    // 자동 승인이 실패해도 승인 요청 자체는 이미 생성돼 있으므로(pending), 관리자가 수동으로
+    // 이어서 승인할 수 있다 — 요청 생성 자체를 실패로 되돌리지 않는다.
+    console.error("[api/families/:id/children] auto-approve failed, left as pending:", approval.error);
   }
 
   return NextResponse.json(
