@@ -6,7 +6,7 @@ import { Menu, X } from "lucide-react";
 // "parent-questions"/"parent-query-router"는 이 파일이 관여하지 않는 별도 티켓 소관
 // 페이지다(app/admin/(dashboard)/page.tsx가 참조). 그 티켓의 컴포넌트 파일이 아직
 // git에 없어 여기서는 타입 호환성만 유지하고 네비게이션 항목은 추가하지 않는다.
-export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-reward-fulfillments" | "trash" | "parent-questions" | "parent-query-router";
+export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "inquiries" | "suggestions" | "bugs" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-reward-fulfillments" | "trash" | "parent-questions" | "parent-query-router";
 
 export const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
@@ -14,7 +14,9 @@ export const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "cost", label: "나갈 돈 · 비용 상세" },
   { id: "llm-status", label: "LLM 사용 현황" },
   { id: "account-restore", label: "계정 복구 승인" },
-  { id: "feedback", label: "문의·건의·버그 접수" },
+  { id: "inquiries", label: "문의 접수" },
+  { id: "suggestions", label: "건의 접수" },
+  { id: "bugs", label: "버그 접수" },
   { id: "beta-applications", label: "베타 신청 관리" },
   { id: "manual-reporting", label: "리포팅 수동 실행" },
   { id: "plan-change-requests", label: "요금제 변경 요청" },
