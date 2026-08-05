@@ -21,8 +21,10 @@ export async function GET() {
       name,
       approval_status,
       beta_applications (
+        id,
         answers,
-        created_at
+        created_at,
+        deleted_at
       )
     `)
     .eq("approval_status", "pending")
@@ -33,18 +35,33 @@ export async function GET() {
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
-  const formatted = data.map((p: any) => {
-    const answers = p.beta_applications?.[0]?.answers ?? {};
-    return {
-      user_id: p.id,
-      name: p.name,
-      phone: answers.phone ?? null,
-      age_group: answers.age_group ?? null,
-      referral_source: answers.referral_source ?? null,
-      motivation: answers.motivation ?? null,
-      created_at: p.beta_applications?.[0]?.created_at ?? null,
-    };
-  });
+  // requests/066 소프트 삭제 — 관리자 목록에서는 deleted_at IS NULL인 신청서만 본다.
+  // 중첩 select라 서버에서 걸지 못하므로 여기서 제외한다.
+  // 주의: "신청서가 아예 없는 승인 대기 부모"는 원래대로 계속 노출한다(삭제된 게 아니라
+  // 애초에 설문을 안 낸 상태이므로, 여기서 숨기면 승인 대기 건이 관리자 눈에서 사라진다).
+  const formatted = data
+    .map((p: any) => {
+      const applications = (p.beta_applications ?? []) as any[];
+      const beta = applications.find((a) => a.deleted_at == null) ?? null;
+      const hasOnlyDeleted = !beta && applications.length > 0;
+      return { parent: p, beta, hasOnlyDeleted };
+    })
+    .filter((row) => !row.hasOnlyDeleted)
+    .map(({ parent: p, beta }) => {
+      const answers = beta?.answers ?? {};
+      return {
+        // 소프트 삭제 대상 id(beta_applications.id). 신청서가 없으면 null이고,
+        // 이 경우 관리자 UI에서 삭제 버튼을 노출하지 않는다.
+        id: beta?.id ?? null,
+        user_id: p.id,
+        name: p.name,
+        phone: answers.phone ?? null,
+        age_group: answers.age_group ?? null,
+        referral_source: answers.referral_source ?? null,
+        motivation: answers.motivation ?? null,
+        created_at: beta?.created_at ?? null,
+      };
+    });
 
   return NextResponse.json(formatted);
 }

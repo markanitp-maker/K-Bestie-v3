@@ -2,8 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { AdminDataTable } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminStatusBadge, type AdminStatusVariant } from "@/components/admin/shell/AdminStatusBadge";
+import {
+  SoftDeleteButton,
+  SoftDeleteRowCheckbox,
+  SoftDeleteSelectionBar,
+  useAdminSoftDelete,
+} from "@/components/admin/AdminSoftDelete";
 
 interface RewardRow {
   id: string;
@@ -99,6 +106,24 @@ export default function RewardFulfillmentsTab() {
     await handleTransition(row, "on_hold");
   };
 
+  // requests/066 소프트 삭제 — 이벤트·상품권 지급 처리 이력(event_reward_fulfillments).
+  // 주의: 삭제 대상은 "지급 처리 이력" 행이며, 황금열쇠 원장이나 아이 계정은 대상이 아니다.
+  const softDelete = useAdminSoftDelete(
+    "event_reward_fulfillments",
+    "이벤트·상품권 지급 이력",
+    load,
+    statusFilter !== "all" ? `상태=${statusFilter}` : ""
+  );
+  const pageRows = rows ?? [];
+  const pageIds = pageRows.map((row: any) => row.id as string);
+  const allSelected = pageIds.length > 0 && pageIds.every((id: string) => softDelete.isSelected(id));
+  const toTarget = (row: any) => ({
+    id: row.id as string,
+    identity: `${row.childName ?? String(row.child_id).slice(0, 8)} / ${EVENT_TYPE_LABELS[row.event_type] ?? row.event_type}`,
+    summary: won(row.reward_amount),
+    status: STATUS_LABELS[row.status] ?? row.status,
+  });
+
   return (
     <div>
       <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", color: "var(--admin-text-primary)", marginBottom: "var(--admin-space-12)" }}>
@@ -128,8 +153,20 @@ export default function RewardFulfillmentsTab() {
       />
 
       <div style={{ marginTop: "var(--admin-space-16)" }}>
-        <AdminDataTable
+        <SoftDeleteSelectionBar
+          selectedCount={softDelete.selectedIds.length}
+          totalCount={pageIds.length}
+          allSelected={allSelected}
+          onSelectAll={(checked) => softDelete.setPageSelection(pageIds, checked)}
+          onClear={softDelete.clearSelection}
+          onBulkDelete={() => softDelete.requestBulkDelete(pageRows.filter((r: any) => softDelete.isSelected(r.id)).map(toTarget))}
+          disabled={softDelete.busy}
+        />
+        <AdminResponsiveTable mobileStrategy="card"
           columns={[
+            { key: "select", header: "선택", render: (row) => (
+              <SoftDeleteRowCheckbox checked={softDelete.isSelected(row.id)} onChange={() => softDelete.toggleSelected(row.id)} />
+            ) },
             { key: "event_type", header: "이벤트 유형", render: (row) => EVENT_TYPE_LABELS[row.event_type] },
             { key: "child", header: "아이", render: (row) => row.childName ?? row.child_id.slice(0, 8) },
             { key: "amount", header: "지급 금액", render: (row) => won(row.reward_amount) },
@@ -166,6 +203,10 @@ export default function RewardFulfillmentsTab() {
                         보류
                       </button>
                     )}
+                    <SoftDeleteButton
+                      disabled={softDelete.busy}
+                      onClick={(e) => { e.stopPropagation(); softDelete.requestDelete(toTarget(row)); }}
+                    />
                   </div>
                 );
               },
@@ -177,6 +218,8 @@ export default function RewardFulfillmentsTab() {
           emptyMessage="표시할 지급 건이 없습니다."
         />
       </div>
+
+      {softDelete.modals}
     </div>
   );
 }

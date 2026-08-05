@@ -28,6 +28,8 @@ export async function GET(req: NextRequest) {
       parents:parent_user_id ( id, name, email ),
       child_profiles:child_id ( id, name )
     `)
+    // requests/066 소프트 삭제 — 삭제된 요청은 목록·통계·검색에서 제외한다.
+    .is("deleted_at", null)
     .order("requested_at", { ascending: false });
 
   if (status && ["pending", "approved", "rejected", "cancelled"].includes(status)) {

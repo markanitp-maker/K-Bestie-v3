@@ -2,8 +2,15 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
+import {
+  SoftDeleteButton,
+  SoftDeleteRowCheckbox,
+  SoftDeleteSelectionBar,
+  useAdminSoftDelete,
+} from "@/components/admin/AdminSoftDelete";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("ko-KR");
@@ -13,6 +20,15 @@ function formatSubmitter(req: { submitter_name?: string | null; submitter_role?:
   const role = req.submitter_role === "child" ? "아이" : "부모";
   const name = req.submitter_name?.trim();
   return name ? `${name}(${role})` : role;
+}
+
+// 컴포넌트 본문의 getCategoryLabel은 렌더 도중(선택 목록 계산 시점)에는 아직
+// 초기화 전이라 쓸 수 없어서, 모듈 스코프에 같은 매핑을 둔다.
+function getCategoryLabelStatic(c: string): string {
+  if (c === "voc") return "문의";
+  if (c === "feature") return "건의";
+  if (c === "bug") return "버그";
+  return c;
 }
 
 export default function FeedbackTab() {
@@ -46,6 +62,28 @@ export default function FeedbackTab() {
     load();
   }, [load]);
 
+  // requests/066 소프트 삭제 — 문의·건의·버그 접수(support_requests).
+  const filterSummary = [
+    category !== "all" ? `유형=${category}` : null,
+    status !== "all" ? `상태=${status}` : null,
+    role !== "all" ? `접수자=${role}` : null,
+    search ? `검색="${search}"` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const softDelete = useAdminSoftDelete("support_requests", "문의·건의·버그", load, filterSummary);
+  const pageIds = requests.map((r) => r.id as string);
+  const allSelected = pageIds.length > 0 && pageIds.every((id) => softDelete.isSelected(id));
+  const selectedTargets = requests
+    .filter((r) => softDelete.isSelected(r.id))
+    .map((r) => ({
+      id: r.id as string,
+      identity: `${r.request_number || r.id} / ${formatSubmitter(r)}`,
+      summary: getCategoryLabelStatic(r.category),
+      status: r.status ?? null,
+    }));
+
   const handleUpdate = async (id: string, newStatus: string, newNote: string) => {
     try {
       const res = await fetch(`/api/admin/support-requests/${id}`, {
@@ -65,12 +103,7 @@ export default function FeedbackTab() {
     }
   };
 
-  const getCategoryLabel = (c: string) => {
-    if (c === "voc") return "문의";
-    if (c === "feature") return "건의";
-    if (c === "bug") return "버그";
-    return c;
-  };
+  const getCategoryLabel = getCategoryLabelStatic;
 
   const getStatusLabel = (s: string) => {
     if (s === "open" || s === "received") return "접수됨";
@@ -89,6 +122,13 @@ export default function FeedbackTab() {
   };
 
   const columns: AdminDataTableColumn<any>[] = [
+    {
+      key: "select",
+      header: "선택",
+      render: (req) => (
+        <SoftDeleteRowCheckbox checked={softDelete.isSelected(req.id)} onChange={() => softDelete.toggleSelected(req.id)} />
+      ),
+    },
     { key: "request_number", header: "접수번호", render: (req) => req.request_number || "-" },
     { key: "category", header: "유형", render: (req) => getCategoryLabel(req.category) },
     { key: "submitter", header: "접수자", render: (req) => formatSubmitter(req) },
@@ -105,7 +145,25 @@ export default function FeedbackTab() {
     { key: "created_at", header: "접수일", render: (req) => formatDateTime(req.created_at) },
     { key: "status", header: "상태", render: (req) => (
       <AdminStatusBadge text={getStatusLabel(req.status)} variant={getStatusVariant(req.status)} />
-    )}
+    )},
+    {
+      key: "actions",
+      header: "액션",
+      render: (req) => (
+        <SoftDeleteButton
+          disabled={softDelete.busy}
+          onClick={(e) => {
+            e.stopPropagation();
+            softDelete.requestDelete({
+              id: req.id,
+              identity: `${req.request_number || req.id} / ${formatSubmitter(req)}`,
+              summary: getCategoryLabel(req.category),
+              status: getStatusLabel(req.status),
+            });
+          }}
+        />
+      ),
+    },
   ];
 
   return (
@@ -154,7 +212,16 @@ export default function FeedbackTab() {
       />
 
       <div style={{ marginTop: "var(--admin-space-16)" }}>
-        <AdminDataTable
+        <SoftDeleteSelectionBar
+          selectedCount={softDelete.selectedIds.length}
+          totalCount={pageIds.length}
+          allSelected={allSelected}
+          onSelectAll={(checked) => softDelete.setPageSelection(pageIds, checked)}
+          onClear={softDelete.clearSelection}
+          onBulkDelete={() => softDelete.requestBulkDelete(selectedTargets)}
+          disabled={softDelete.busy}
+        />
+        <AdminResponsiveTable mobileStrategy="card"
           columns={columns}
           data={requests}
           isLoading={loading}
@@ -169,6 +236,8 @@ export default function FeedbackTab() {
           )}
         />
       </div>
+
+      {softDelete.modals}
     </div>
   );
 }

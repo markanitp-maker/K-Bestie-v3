@@ -2,8 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
+import {
+  SoftDeleteButton,
+  SoftDeleteRowCheckbox,
+  SoftDeleteSelectionBar,
+  useAdminSoftDelete,
+} from "@/components/admin/AdminSoftDelete";
 
 const CARE_PLAN_LABELS: Record<number, string> = { 1: "케어 스타트", 2: "케어 인사이트", 3: "케어 프리미엄" };
 const STATUS_LABELS: Record<string, string> = { pending: "승인 대기", approved: "승인", rejected: "거절", cancelled: "취소" };
@@ -110,6 +117,22 @@ export default function PlanChangeRequestsTab() {
     }
   };
 
+  // requests/066 소프트 삭제 — 요금제 변경 요청(plan_change_requests).
+  const softDelete = useAdminSoftDelete(
+    "plan_change_requests",
+    "요금제 변경 요청",
+    load,
+    [statusFilter !== "all" ? `상태=${statusFilter}` : null, search ? `검색="${search}"` : null].filter(Boolean).join(", ")
+  );
+  const pageIds = filtered.map((row: any) => row.id as string);
+  const allSelected = pageIds.length > 0 && pageIds.every((id: string) => softDelete.isSelected(id));
+  const toTarget = (row: any) => ({
+    id: row.id as string,
+    identity: `${row.parents?.name ?? "부모 미상"} / ${row.child_profiles?.name ?? "자녀 미상"}`,
+    summary: `${CARE_PLAN_LABELS[row.current_plan_snapshot] ?? row.current_plan_snapshot} → ${CARE_PLAN_LABELS[row.requested_tier] ?? row.requested_tier}`,
+    status: STATUS_LABELS[row.status] ?? row.status,
+  });
+
   return (
     <div>
       <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", color: "var(--admin-text-primary)", marginBottom: "var(--admin-space-12)" }}>
@@ -153,8 +176,20 @@ export default function PlanChangeRequestsTab() {
       />
 
       <div style={{ marginTop: "var(--admin-space-16)" }}>
-        <AdminDataTable
+        <SoftDeleteSelectionBar
+          selectedCount={softDelete.selectedIds.length}
+          totalCount={pageIds.length}
+          allSelected={allSelected}
+          onSelectAll={(checked) => softDelete.setPageSelection(pageIds, checked)}
+          onClear={softDelete.clearSelection}
+          onBulkDelete={() => softDelete.requestBulkDelete(filtered.filter((r: any) => softDelete.isSelected(r.id)).map(toTarget))}
+          disabled={softDelete.busy}
+        />
+        <AdminResponsiveTable mobileStrategy="card"
           columns={[
+            { key: "select", header: "선택", render: (row) => (
+              <SoftDeleteRowCheckbox checked={softDelete.isSelected(row.id)} onChange={() => softDelete.toggleSelected(row.id)} />
+            ) },
             { key: "requested_at", header: "요청 일시", render: (row) => formatDateTime(row.requested_at) },
             { key: "parents", header: "부모", render: (row) => (
               <>
@@ -206,7 +241,13 @@ export default function PlanChangeRequestsTab() {
                   승인
                 </button>
               </div>
-            ) : <span style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)" }}>-</span> }
+            ) : <span style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)" }}>-</span> },
+            { key: "delete", header: "삭제", render: (row) => (
+              <SoftDeleteButton
+                disabled={softDelete.busy}
+                onClick={(e) => { e.stopPropagation(); softDelete.requestDelete(toTarget(row)); }}
+              />
+            ) }
           ]}
           data={filtered}
           isLoading={loading}
@@ -214,6 +255,8 @@ export default function PlanChangeRequestsTab() {
           emptyMessage="표시할 요청이 없습니다."
         />
       </div>
+
+      {softDelete.modals}
     </div>
   );
 }

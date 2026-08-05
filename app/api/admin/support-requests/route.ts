@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const search = url.searchParams.get("search");
 
   const service = createServiceClient();
-  let query = service.from("support_requests").select("*").order("created_at", { ascending: false });
+  let query = service.from("support_requests").select("*, attachments:feedback_request_attachments(*)").is("deleted_at", null).order("created_at", { ascending: false });
 
   if (category) query = query.eq("category", category);
   if (status) query = query.eq("status", status);
@@ -91,6 +91,36 @@ export async function GET(req: NextRequest) {
         ? childNames.get(request.child_id) ?? null
         : parentNames.get(request.user_id) ?? null,
   }));
+
+  // Fetch signed urls for all attachments
+  const allAttachments = requests.flatMap((r) => r.attachments || []);
+  const validAttachments = allAttachments.filter(a => a.upload_status === "uploaded");
+  
+  if (validAttachments.length > 0) {
+    const paths = validAttachments.map(a => a.storage_path);
+    const { data: signedUrls, error: signError } = await service.storage
+      .from("feedback-attachments")
+      .createSignedUrls(paths, 3600); // 1 hour expiry
+
+    if (!signError && signedUrls) {
+      const urlMap = new Map();
+      paths.forEach((path, i) => {
+        if (signedUrls[i]?.signedUrl) {
+          urlMap.set(path, signedUrls[i].signedUrl);
+        }
+      });
+
+      for (const req of requests) {
+        if (req.attachments) {
+          for (const att of req.attachments) {
+            if (urlMap.has(att.storage_path)) {
+              att.signed_url = urlMap.get(att.storage_path);
+            }
+          }
+        }
+      }
+    }
+  }
 
   return NextResponse.json({ requests });
 }

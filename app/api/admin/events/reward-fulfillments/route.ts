@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
     .from("event_reward_fulfillments")
     .select("id, event_type, event_reference_id, child_id, reward_amount, status, delivery_method, approved_at, delivered_at, admin_note, created_at")
     .eq("environment", environment)
+    // requests/066 소프트 삭제 — 삭제된 지급 이력은 목록·통계·검색에서 제외한다.
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (status && ["pending", "approved", "scheduled", "delivered", "on_hold", "cancelled"].includes(status)) {

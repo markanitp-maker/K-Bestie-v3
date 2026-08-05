@@ -10,7 +10,14 @@ import QuizLeaderboardEventsTab from "./QuizLeaderboardEventsTab";
 import RewardFulfillmentsTab from "./RewardFulfillmentsTab";
 import ParentQuestionsTab from "./ParentQuestionsTab";
 import ParentQueryRouterTab from "./ParentQueryRouterTab";
+import TrashTab from "./TrashTab";
 import { RetentionEmbed } from "@/components/admin/RetentionEmbed";
+import {
+  SoftDeleteButton,
+  SoftDeleteRowCheckbox,
+  SoftDeleteSelectionBar,
+  useAdminSoftDelete,
+} from "@/components/admin/AdminSoftDelete";
 import {
   ResponsiveContainer,
   LineChart,
@@ -670,6 +677,20 @@ function BetaApplicationsTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  // requests/066 소프트 삭제 — 베타 신청(beta_applications).
+  const softDelete = useAdminSoftDelete("beta_applications", "베타 신청", load, "승인 대기 전체");
+  const deletableRows = (requests || []).filter((r: any) => !!r.id);
+  const pageIds = deletableRows.map((r: any) => r.id as string);
+  const allSelected = pageIds.length > 0 && pageIds.every((id: string) => softDelete.isSelected(id));
+  const selectedTargets = deletableRows
+    .filter((r: any) => softDelete.isSelected(r.id))
+    .map((r: any) => ({
+      id: r.id as string,
+      identity: `${r.name || "이름 미입력"} (${r.phone || "연락처 미입력"})`,
+      summary: "베타 신청 설문",
+      status: "대기 중",
+    }));
+
   const execAction = async (userId: string, action: "approve" | "reject", payload: any) => {
     setActionLoading(userId);
     try {
@@ -723,6 +744,14 @@ function BetaApplicationsTab() {
   // We can just keep the toast rendered.
 
   const columns: AdminDataTableColumn<any>[] = [
+    {
+      key: "select",
+      header: "선택",
+      render: (req) =>
+        req.id ? (
+          <SoftDeleteRowCheckbox checked={softDelete.isSelected(req.id)} onChange={() => softDelete.toggleSelected(req.id)} />
+        ) : null,
+    },
     {
       key: "name",
       header: "이름",
@@ -786,6 +815,22 @@ function BetaApplicationsTab() {
           >
             승인
           </button>
+          {/* requests/066 — 신청서(beta_applications) 행이 있는 건에만 삭제 버튼을 노출한다.
+              설문 미제출(승인 대기)이라 신청서 자체가 없으면 삭제 대상이 없다. */}
+          {req.id && (
+            <SoftDeleteButton
+              disabled={softDelete.busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                softDelete.requestDelete({
+                  id: req.id,
+                  identity: `${req.name || "이름 미입력"} (${req.phone || "연락처 미입력"})`,
+                  summary: "베타 신청 설문",
+                  status: "대기 중",
+                });
+              }}
+            />
+          )}
         </div>
       ),
     },
@@ -795,6 +840,15 @@ function BetaApplicationsTab() {
     <div>
       {toast}
       <AdminPageHeader title="베타 신청 관리" description="가입을 대기 중인 베타 신청자 목록입니다." />
+      <SoftDeleteSelectionBar
+        selectedCount={softDelete.selectedIds.length}
+        totalCount={pageIds.length}
+        allSelected={allSelected}
+        onSelectAll={(checked) => softDelete.setPageSelection(pageIds, checked)}
+        onClear={softDelete.clearSelection}
+        onBulkDelete={() => softDelete.requestBulkDelete(selectedTargets)}
+        disabled={softDelete.busy}
+      />
       <AdminResponsiveTable mobileStrategy="card"
         columns={columns}
         data={requests || []}
@@ -880,6 +934,8 @@ function BetaApplicationsTab() {
           </div>
         </div>
       )}
+
+      {softDelete.modals}
     </div>
   );
 }
@@ -1007,7 +1063,31 @@ function ChildApprovalRequestsTab() {
     return req.status === "approved" || req.status === "rejected";
   });
 
+  // requests/066 소프트 삭제 — 아이 승인 요청(child_approval_requests).
+  // 주의: 삭제 대상은 "승인 요청 행"이며, 이미 생성된 아이 계정/프로필은 대상이 아니다.
+  const softDelete = useAdminSoftDelete(
+    "child_approval_requests",
+    "아이 승인 요청",
+    load,
+    activeTab === "pending" ? "대기 중인 요청" : "처리 완료"
+  );
+  const pageIds = filteredRequests.map((req: any) => req.id as string);
+  const allSelected = pageIds.length > 0 && pageIds.every((id: string) => softDelete.isSelected(id));
+  const toTarget = (req: any) => ({
+    id: req.id as string,
+    identity: `${req.family_name ?? ""}${req.given_name ?? ""} (${req.username ?? "아이디 미상"})`,
+    summary: `요청자 ${req.requester_email ?? "미상"}`,
+    status: STATUS_LABEL[req.status] ?? req.status,
+  });
+
   const columns: AdminDataTableColumn<any>[] = [
+    {
+      key: "select",
+      header: "선택",
+      render: (req) => (
+        <SoftDeleteRowCheckbox checked={softDelete.isSelected(req.id)} onChange={() => softDelete.toggleSelected(req.id)} />
+      ),
+    },
     {
       key: "child",
       header: "아이",
@@ -1142,6 +1222,18 @@ function ChildApprovalRequestsTab() {
     });
   }
 
+  // 삭제는 대기/완료 두 탭 모두에서 가능하다(정식 오픈 전 누적 요청 정리 목적).
+  columns.push({
+    key: "delete",
+    header: "삭제",
+    render: (req) => (
+      <SoftDeleteButton
+        disabled={softDelete.busy}
+        onClick={(e) => { e.stopPropagation(); softDelete.requestDelete(toTarget(req)); }}
+      />
+    ),
+  });
+
   return (
     <div>
       {toast}
@@ -1176,6 +1268,16 @@ function ChildApprovalRequestsTab() {
         ]}
       />
 
+      <SoftDeleteSelectionBar
+        selectedCount={softDelete.selectedIds.length}
+        totalCount={pageIds.length}
+        allSelected={allSelected}
+        onSelectAll={(checked) => softDelete.setPageSelection(pageIds, checked)}
+        onClear={softDelete.clearSelection}
+        onBulkDelete={() => softDelete.requestBulkDelete(filteredRequests.filter((r: any) => softDelete.isSelected(r.id)).map(toTarget))}
+        disabled={softDelete.busy}
+      />
+
       <AdminResponsiveTable mobileStrategy="card"
         columns={columns}
         data={filteredRequests}
@@ -1184,6 +1286,8 @@ function ChildApprovalRequestsTab() {
         emptyMessage="해당 상태의 아이 승인 요청이 없습니다."
         density="comfortable"
       />
+
+      {softDelete.modals}
 
       {rejectModalId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" aria-modal="true" role="dialog">
@@ -1372,6 +1476,8 @@ function AdminDashboard() {
           <ParentQuestionsTab />
         ) : page === "parent-query-router" ? (
           <ParentQueryRouterTab />
+        ) : page === "trash" ? (
+          <TrashTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
