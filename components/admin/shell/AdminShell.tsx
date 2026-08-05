@@ -3,7 +3,10 @@
 import React, { useState } from "react";
 import { Menu, X } from "lucide-react";
 
-export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-reward-fulfillments" | "trash";
+// "parent-questions"/"parent-query-router"는 이 파일이 관여하지 않는 별도 티켓 소관
+// 페이지다(app/admin/(dashboard)/page.tsx가 참조). 그 티켓의 컴포넌트 파일이 아직
+// git에 없어 여기서는 타입 호환성만 유지하고 네비게이션 항목은 추가하지 않는다.
+export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "feedback" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-reward-fulfillments" | "trash" | "parent-questions" | "parent-query-router";
 
 export const ADMIN_NAV_ITEMS: { id: AdminPageId; label: string }[] = [
   { id: "overview", label: "전체 현황" },
