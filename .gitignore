@@ -104,10 +104,15 @@ scratch_none/
 scratch_prod/
 scratch_v3/
 scratch_*/
-reports/
+# 앵커(/) 필수 — 앵커 없는 "reports/"는 깊이 무관하게 매칭돼 app/api/parent/reports/,
+# lib/reports/ 같은 동일 이름의 소스 디렉터리까지 통째로 무시된다(.vercelignore에서
+# 이미 같은 이유로 /reports/로 앵커링된 전례 있음, requests/024에서 재확인).
+/reports/
 .claude/kim-bridge-agent-poc/
 vercel_prod.log
 dev_diff.sql
 
 
 .env*
+
+.vercel
