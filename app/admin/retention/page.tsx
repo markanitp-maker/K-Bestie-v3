@@ -93,7 +93,7 @@ function IdentityCell({ name, loginId, maskedId }: { name?: string | null; login
   );
 }
 
-function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includeTestAccounts: boolean }) {
+function DrillDownSection({ scope, includeTestAccounts, period }: { scope: Scope; includeTestAccounts: boolean; period: Period }) {
   const [showFamilies, setShowFamilies] = useState(false);
   const [listType, setListType] = useState<DrillDownRowType>("all");
   const [listData, setListData] = useState<any[] | null>(null);
@@ -120,8 +120,8 @@ function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includ
           setListData(d.families ?? []);
         } else if (requestedType === "all") {
           const [pRes, cRes] = await Promise.all([
-            fetch(`/api/admin/retention/parents?includeTestAccounts=${includeTestAccounts}`),
-            fetch(`/api/admin/retention/children?includeTestAccounts=${includeTestAccounts}`),
+            fetch(`/api/admin/retention/parents?includeTestAccounts=${includeTestAccounts}&period=${period}`),
+            fetch(`/api/admin/retention/children?includeTestAccounts=${includeTestAccounts}&period=${period}`),
           ]);
           if (!pRes.ok || !cRes.ok) throw new Error("HTTP error");
           const [pD, cD] = await Promise.all([pRes.json(), cRes.json()]);
@@ -134,7 +134,7 @@ function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includ
           setListData(merged);
         } else {
           const endpoint = requestedType === "parent" ? "parents" : "children";
-          const res = await fetch(`/api/admin/retention/${endpoint}?includeTestAccounts=${includeTestAccounts}`);
+          const res = await fetch(`/api/admin/retention/${endpoint}?includeTestAccounts=${includeTestAccounts}&period=${period}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const d = await res.json();
           if (cancelled) return;
@@ -152,7 +152,7 @@ function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includ
     };
     load();
     return () => { cancelled = true; };
-  }, [scope, showFamilies, includeTestAccounts]);
+  }, [scope, showFamilies, includeTestAccounts, period]);
 
   const title = showFamilies ? "가족 상세" : scope === "all" ? "전체 상세 (부모+아이)" : scope === "parent" ? "부모 상세" : "아이 상세";
 
@@ -362,7 +362,7 @@ function AdminRetentionContent() {
             </label>,
             <a
               key="export"
-              href={`/api/admin/retention/export?scope=${scope}&includeTestAccounts=${includeTestAccounts}`}
+              href={`/api/admin/retention/export?scope=${scope}&includeTestAccounts=${includeTestAccounts}&period=${period}`}
               download
               style={{
                 padding: "6px 14px",
@@ -555,7 +555,7 @@ function AdminRetentionContent() {
             </div>
 
             <RetentionWidgetErrorBoundary label="사용자별 상세 드릴다운">
-              <DrillDownSection scope={scope} includeTestAccounts={includeTestAccounts} />
+              <DrillDownSection scope={scope} includeTestAccounts={includeTestAccounts} period={period} />
             </RetentionWidgetErrorBoundary>
           </>
         ) : null}

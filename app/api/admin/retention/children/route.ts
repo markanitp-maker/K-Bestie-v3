@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { toKSTDateStr, getOffsetDateStr } from "@/lib/analytics/kstDate";
+import { getOffsetDateStr } from "@/lib/analytics/kstDate";
 import { toDisplayFields } from "@/lib/admin/retentionDisplay";
+import { resolveRetentionPeriodRange } from "@/lib/admin/retentionPeriod";
+import { computeChildActivityMetrics } from "@/lib/admin/retentionChildMetrics";
 
 export const runtime = "nodejs";
 
@@ -11,12 +13,24 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
 
   const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
+  const periodParam = req.nextUrl.searchParams.get("period");
+  const fromParam = req.nextUrl.searchParams.get("from");
+  const toParam = req.nextUrl.searchParams.get("to");
 
   const nowKST = new Date();
   nowKST.setHours(nowKST.getHours() + 9);
   const todayStr = nowKST.toISOString().slice(0, 10);
   const todayMs = new Date(todayStr + "T00:00:00Z").getTime();
   const ms = (iso: string) => new Date(iso).getTime();
+
+  // 화면 상단 기간 선택(7일/14일/30일/이번 달/전체)이 그대로 이 목록의 "활성 일수"/
+  // "미션 수" 등에 반영된다 — 예전엔 이 라우트가 period 파라미터를 아예 받지 않아
+  // 항상 전체 누적으로 계산됐고, 이게 화면에 보이는 선택된 기간과 어긋나는 근본
+  // 원인 중 하나였다.
+  const displayRange = resolveRetentionPeriodRange(periodParam, todayStr, fromParam, toParam);
+  // D1/D3/D7/W2 유지율 커브는 기간 선택과 무관한 별개 개념(가입 후 경과일 기준)이라
+  // 항상 전체 이력에서 계산해야 한다.
+  const allTimeRange = { fromStr: null, toStr: todayStr };
 
   const service = createServiceClient();
 
@@ -69,112 +83,90 @@ export async function GET(req: NextRequest) {
     for (const m of memberData || []) usernameMap.set(m.id, m.username);
   }
 
-  // 2. Fetch behavior_events for children
-  const allEvents: any[] = [];
-  let eOffset = 0;
-  while (true) {
-    let q = service.from("behavior_events")
-      .select("id, event_name, child_id, occurred_at")
-      .eq("actor_type", "child")
-      .order("occurred_at").order("id")
-      .range(eOffset, eOffset + 999);
-    
-    const { data, error } = await q;
-    if (error) return NextResponse.json({ error: `behavior_events 조회 실패: ${error.message}` }, { status: 500 });
-    if (!data || data.length === 0) break;
-    allEvents.push(...data);
-    if (data.length < 1000) break;
-    eOffset += 1000;
+  const childIds = validChildren.map(c => c.id);
+
+  // 2. child_login 이벤트 — "마지막 방문(lastVisitAt)"에만 쓴다(활성 일수 계산에는 더 이상
+  // 쓰지 않음 — 활성 일수는 미션·자유대화·놀이 등 실제 활동 발생일 기준으로 바뀌었다).
+  const loginRows: { id: string; child_id: string; occurred_at: string }[] = [];
+  {
+    let eOffset = 0;
+    while (true) {
+      const { data, error } = await service.from("behavior_events")
+        .select("id, child_id, occurred_at")
+        .eq("actor_type", "child")
+        .eq("event_name", "child_login")
+        .order("occurred_at").order("id")
+        .range(eOffset, eOffset + 999);
+      if (error) return NextResponse.json({ error: `behavior_events(child_login) 조회 실패: ${error.message}` }, { status: 500 });
+      if (!data || data.length === 0) break;
+      loginRows.push(...data);
+      if (data.length < 1000) break;
+      eOffset += 1000;
+    }
+  }
+  const lastVisitByChild = new Map<string, string>();
+  for (const row of loginRows) {
+    if (!row.child_id) continue;
+    const prev = lastVisitByChild.get(row.child_id);
+    if (!prev || ms(row.occurred_at) > ms(prev)) lastVisitByChild.set(row.child_id, row.occurred_at);
   }
 
-  // 3. Process metrics
-  const childStats = new Map<string, any>();
+  // 3. 공통 집계 함수 — 선택된 기간(카드/표에 표시)과 전체 기간(D1/D3/D7/W2 커브)을
+  // 각각 한 번씩만 계산한다. 두 값 모두 동일한 mission_progress/behavior_events dedupe
+  // 규칙을 쓰므로 activeDaysTotal·missionCount가 서로 다른 기준으로 벌어지지 않는다.
+  const displayMetrics = await computeChildActivityMetrics(service, childIds, displayRange);
+  const allTimeMetrics = await computeChildActivityMetrics(service, childIds, allTimeRange);
+
+  const childrenResult = [];
   for (const c of validChildren) {
     const authUserId = c.member_id ? authUserIdByMemberRowId.get(c.member_id) : undefined;
     const username = authUserId ? usernameMap.get(authUserId) : undefined;
-    childStats.set(c.id, {
+    const display = displayMetrics.get(c.id) || { activeDaysTotal: 0, missionCount: 0, freechatCount: 0, playCount: 0, lastActivityAt: null, activeDates: [], missionByDate: {} };
+    const allTime = allTimeMetrics.get(c.id) || { activeDates: [] as string[] };
+
+    const stats: any = {
       childId: c.id,
       familyId: c.family_id,
       grade: c.grade || "알 수 없음",
       ...toDisplayFields(c.id, c.name, username),
       isTestAccount: allTestFamilyIds.has(c.family_id) || !!c.is_internal_test,
-      lastVisitAt: null,
-      activeDaysTotal: 0,
-      missionCount: 0,
-      freechatCount: 0,
-      playCount: 0,
+      lastVisitAt: lastVisitByChild.get(c.id) || null,
+      activeDaysTotal: display.activeDaysTotal,
+      missionCount: display.missionCount,
+      freechatCount: display.freechatCount,
+      playCount: display.playCount,
       d1Retained: null,
       d3Retained: null,
       d7Retained: null,
       w2Retained: null,
-      _firstMeaningfulDate: null,
-      _meaningfulDates: new Set<string>(),
-      _loginDates: new Set<string>()
-    });
-  }
+      firstActiveDate: null as string | null,
+    };
 
-  const MEANINGFUL_EVENTS = ['mission_start', 'freechat_start', 'play_start'];
+    // D1/D3/D7/W2 — 전체 이력 기준 첫 유의미 활동일(firstActiveDate)로부터 계산.
+    const allTimeDates = new Set(allTime.activeDates);
+    const firstActiveDate = allTime.activeDates.length > 0 ? allTime.activeDates[0] : null;
+    stats.firstActiveDate = firstActiveDate;
 
-  for (const e of allEvents) {
-    if (!e.child_id || !childStats.has(e.child_id)) continue;
-    const stats = childStats.get(e.child_id);
-    const kstDate = toKSTDateStr(e.occurred_at);
+    if (firstActiveDate) {
+      const d1Str = getOffsetDateStr(firstActiveDate, 1);
+      const d3Str = getOffsetDateStr(firstActiveDate, 3);
+      const d7Str = getOffsetDateStr(firstActiveDate, 7);
 
-    if (e.event_name === "child_login") {
-      stats._loginDates.add(kstDate);
-      if (!stats.lastVisitAt || ms(e.occurred_at) > ms(stats.lastVisitAt)) {
-        stats.lastVisitAt = e.occurred_at;
-      }
-    } else if (e.event_name === "mission_start") {
-      stats.missionCount++;
-      stats._meaningfulDates.add(kstDate);
-      if (!stats._firstMeaningfulDate) stats._firstMeaningfulDate = kstDate;
-    } else if (e.event_name === "freechat_start") {
-      stats.freechatCount++;
-      stats._meaningfulDates.add(kstDate);
-      if (!stats._firstMeaningfulDate) stats._firstMeaningfulDate = kstDate;
-    } else if (e.event_name === "play_start") {
-      stats.playCount++;
-      stats._meaningfulDates.add(kstDate);
-      if (!stats._firstMeaningfulDate) stats._firstMeaningfulDate = kstDate;
-    }
-  }
+      if (ms(d1Str) <= todayMs) stats.d1Retained = allTimeDates.has(d1Str);
+      if (ms(d3Str) <= todayMs) stats.d3Retained = allTimeDates.has(d3Str);
+      if (ms(d7Str) <= todayMs) stats.d7Retained = allTimeDates.has(d7Str);
 
-  const childrenResult = [];
-  for (const stats of childStats.values()) {
-    stats.activeDaysTotal = stats._loginDates.size;
-
-    if (stats._firstMeaningfulDate) {
-      const firstStr = stats._firstMeaningfulDate;
-      const d1Str = getOffsetDateStr(firstStr, 1);
-      const d3Str = getOffsetDateStr(firstStr, 3);
-      const d7Str = getOffsetDateStr(firstStr, 7);
-
-      if (ms(d1Str) <= todayMs) {
-        stats.d1Retained = stats._meaningfulDates.has(d1Str);
-      }
-      if (ms(d3Str) <= todayMs) {
-        stats.d3Retained = stats._meaningfulDates.has(d3Str);
-      }
-      if (ms(d7Str) <= todayMs) {
-        stats.d7Retained = stats._meaningfulDates.has(d7Str);
-      }
-
-      const w2StartStr = getOffsetDateStr(firstStr, 8);
-      const w2EndStr = getOffsetDateStr(firstStr, 14);
+      const w2StartStr = getOffsetDateStr(firstActiveDate, 8);
+      const w2EndStr = getOffsetDateStr(firstActiveDate, 14);
       if (ms(w2EndStr) <= todayMs) {
         let visited = false;
-        for (const d of stats._meaningfulDates as Set<string>) {
+        for (const d of allTimeDates) {
           if (ms(d) >= ms(w2StartStr) && ms(d) <= ms(w2EndStr)) { visited = true; break; }
         }
         stats.w2Retained = visited;
       }
     }
 
-    stats.firstActiveDate = stats._firstMeaningfulDate;
-    delete stats._firstMeaningfulDate;
-    delete stats._meaningfulDates;
-    delete stats._loginDates;
     childrenResult.push(stats);
   }
 
@@ -183,7 +175,8 @@ export async function GET(req: NextRequest) {
     meta: {
       testAccountsExcluded: !includeTestAccounts,
       timezone: "Asia/Seoul",
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      period: { key: periodParam || "7d", from: displayRange.fromStr, to: displayRange.toStr },
     }
   });
 }

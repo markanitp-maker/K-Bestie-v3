@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
+import { resolveRetentionPeriodRange } from "@/lib/admin/retentionPeriod";
+import { computeChildActivityMetrics } from "@/lib/admin/retentionChildMetrics";
 
 export const runtime = "nodejs";
 
@@ -18,8 +20,16 @@ export async function GET(
   }
 
   const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
+  const periodParam = req.nextUrl.searchParams.get("period");
+  const fromParam = req.nextUrl.searchParams.get("from");
+  const toParam = req.nextUrl.searchParams.get("to");
   const service = createServiceClient();
   const toMs = (iso: string) => new Date(iso).getTime();
+
+  const nowKST = new Date();
+  nowKST.setHours(nowKST.getHours() + 9);
+  const todayStr = nowKST.toISOString().slice(0, 10);
+  const displayRange = resolveRetentionPeriodRange(periodParam, todayStr, fromParam, toParam);
 
   // 1. Check family existence and test status
   const { data: family, error: familyErr } = await service.from("families").select("id, created_at").eq("id", familyId).maybeSingle();
@@ -98,35 +108,29 @@ export async function GET(
     };
   });
 
-  // Calculate children stats
+  // Calculate children stats — 아이 탭(children/route.ts)과 동일한 공통 함수로
+  // 계산한다. 예전엔 이 라우트가 raw mission_start 이벤트를 기간 필터·dedupe 없이
+  // 그대로 세서(가족 상세 화면에만 있던 별도 버그), 같은 아이의 미션 수가 아이 탭
+  // 드릴다운과 다른 숫자로 보일 수 있었다.
+  // claude-review 지적: lastActivityAt은 "최근 활동" 표시용이라 선택 기간과 무관하게
+  // 항상 전체 이력 기준이어야 한다(그렇지 않으면 8일 이상 미활동인데 과거 이력이 있는
+  // 아이가 "활동 없음"으로 잘못 표시된다) — activeDaysTotal/missionCount 등 기간
+  // 표시값과는 별도로 all-time 호출에서만 가져온다.
+  const [familyMetrics, familyMetricsAllTime] = await Promise.all([
+    computeChildActivityMetrics(service, childIds, displayRange),
+    computeChildActivityMetrics(service, childIds, { fromStr: null, toStr: displayRange.toStr }),
+  ]);
   const childrenRes = children.map(c => {
-    const cEvents = familyEvents.filter(e => e.child_id === c.id);
-    let lastActivityAt: string | null = null;
-    let maxMs = 0;
-    
-    let missionCount = 0;
-    let freechatCount = 0;
-    let playCount = 0;
-    
-    for (const e of cEvents) {
-      if (e.event_name === "mission_start") missionCount++;
-      if (e.event_name === "freechat_start") freechatCount++;
-      if (e.event_name === "play_start") playCount++;
-      
-      const ms = toMs(e.occurred_at);
-      if (ms > maxMs) {
-        maxMs = ms;
-        lastActivityAt = e.occurred_at;
-      }
-    }
-    
+    const m = familyMetrics.get(c.id);
+    const mAll = familyMetricsAllTime.get(c.id);
     return {
       childId: c.id,
       grade: c.grade,
-      missionCount,
-      freechatCount,
-      playCount,
-      lastActivityAt
+      activeDaysTotal: m?.activeDaysTotal ?? 0,
+      missionCount: m?.missionCount ?? 0,
+      freechatCount: m?.freechatCount ?? 0,
+      playCount: m?.playCount ?? 0,
+      lastActivityAt: mAll?.lastActivityAt ?? null,
     };
   });
 

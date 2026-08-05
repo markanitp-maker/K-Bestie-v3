@@ -71,24 +71,39 @@ export default function ChildDetailPage({ params }: { params: Promise<{ childId:
             <div><strong>마지막 접속:</strong> {data.lastVisitAt ? new Date(data.lastVisitAt).toLocaleString() : "없음"}</div>
             <div><strong>총 접속 횟수:</strong> {data.totalVisits}회</div>
             <div><strong>연속 접속:</strong> {data.streakDays}일</div>
-            <div><strong>최근 7일 활성:</strong> {data.activeDaysLast7}일</div>
-            <div><strong>최근 30일 활성:</strong> {data.activeDaysLast30}일</div>
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 16, marginBottom: 24 }}>
+        {data.integrityViolations && data.integrityViolations.length > 0 && (
+          <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: 16, borderRadius: 12, marginBottom: 24, color: "#991B1B", fontSize: 13 }}>
+            <strong>⚠ 정합성 위반 감지</strong>
+            <ul style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+              {data.integrityViolations.map((v: string) => <li key={v}>{v}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {/* 활성 일수와 미션/자유대화/놀이 수를 같은 기간(최근 7일, 최근 30일) 기준으로
+            나란히 보여준다 — 예전엔 활성 일수만 기간별로 나뉘고 미션 수는 기간 필터 없이
+            전체 누적을 보여줘서 서로 다른 분모를 비교하는 것처럼 보였다. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 24 }}>
           <div style={{ background: "var(--admin-surface)", padding: 16, borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
-            <h3 style={{ fontSize: 15, margin: "0 0 12px 0", color: "var(--admin-text-primary)" }}>미션 활동</h3>
-            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>시작: {data.mission.startCount}회 | 완료: {data.mission.completeCount}회</div>
+            <h3 style={{ fontSize: 15, margin: "0 0 12px 0", color: "var(--admin-text-primary)" }}>최근 7일</h3>
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>활성 일수: <strong>{data.activeDaysLast7}일</strong></div>
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>미션 수: <strong>{data.mission.last7}회</strong> (하루 최대 2회, child_id+business_date+mission_type 기준 dedupe)</div>
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>자유대화: {data.freechat.last7}회 · 놀이: {data.play.last7}회</div>
+          </div>
+          <div style={{ background: "var(--admin-surface)", padding: 16, borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
+            <h3 style={{ fontSize: 15, margin: "0 0 12px 0", color: "var(--admin-text-primary)" }}>최근 30일</h3>
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>활성 일수: <strong>{data.activeDaysLast30}일</strong></div>
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>미션 수: <strong>{data.mission.last30}회</strong></div>
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>자유대화: {data.freechat.last30}회 · 놀이: {data.play.last30}회</div>
+          </div>
+          <div style={{ background: "var(--admin-surface)", padding: 16, borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
+            <h3 style={{ fontSize: 15, margin: "0 0 12px 0", color: "var(--admin-text-primary)" }}>전체 누적</h3>
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>미션 수(dedupe): {data.mission.allTime}회 | 완료: {data.mission.completeCount}회</div>
             <div style={{ fontSize: 14, color: "var(--admin-text-secondary)", marginTop: 4 }}>완료율: {data.mission.completionRate ? (data.mission.completionRate * 100).toFixed(1) + "%" : "-"}</div>
-          </div>
-          <div style={{ background: "var(--admin-surface)", padding: 16, borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
-            <h3 style={{ fontSize: 15, margin: "0 0 12px 0", color: "var(--admin-text-primary)" }}>자유 대화</h3>
-            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>시작: {data.freechat.startCount}회 | 완료: {data.freechat.completeCount}회</div>
-          </div>
-          <div style={{ background: "var(--admin-surface)", padding: 16, borderRadius: 12, boxShadow: "var(--shadow-k-card)" }}>
-            <h3 style={{ fontSize: 15, margin: "0 0 12px 0", color: "var(--admin-text-primary)" }}>놀이 활동</h3>
-            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>시작: {data.play.startCount}회 | 완료: {data.play.completeCount}회</div>
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)", marginTop: 4 }}>자유대화: {data.freechat.allTime}회 · 놀이: {data.play.allTime}회</div>
             <div style={{ fontSize: 13, color: "var(--admin-text-secondary)", marginTop: 8 }}>
               {Object.entries(data.play.byType || {}).map(([k, v]) => (
                 <span key={k} style={{ marginRight: 8, display: "inline-block", background: "var(--admin-bg)", padding: "2px 6px", borderRadius: 4 }}>{k}: {v as number}회</span>

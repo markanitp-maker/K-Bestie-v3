@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { toKSTDateStr, getOffsetDateStr } from "@/lib/analytics/kstDate";
+import { toDisplayFields } from "@/lib/admin/retentionDisplay";
+import { resolveRetentionPeriodRange, isDateInRange } from "@/lib/admin/retentionPeriod";
 
 export const runtime = "nodejs";
 
@@ -10,12 +12,20 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
 
   const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
+  const periodParam = req.nextUrl.searchParams.get("period");
+  const fromParam = req.nextUrl.searchParams.get("from");
+  const toParam = req.nextUrl.searchParams.get("to");
 
   const nowKST = new Date();
   nowKST.setHours(nowKST.getHours() + 9);
   const todayStr = nowKST.toISOString().slice(0, 10);
   const todayMs = new Date(todayStr + "T00:00:00Z").getTime();
-  
+
+  // 아이 탭(children/route.ts)과 동일한 원칙 — 화면에 표시되는 활성 일수/카운트는
+  // 선택된 기간을 반영해야 한다. D1/D3/D7/W2 유지율은 가입일 기준 절대 경과일
+  // 개념이라 기간 선택과 무관하게 항상 전체 이력에서 계산한다(아래에서 별도 처리).
+  const displayRange = resolveRetentionPeriodRange(periodParam, todayStr, fromParam, toParam);
+
   const ms = (iso: string) => new Date(iso).getTime();
 
   const service = createServiceClient();
@@ -32,7 +42,8 @@ export async function GET(req: NextRequest) {
     cpOffset += 1000;
   }
 
-  const testFamilyIds = !includeTestAccounts ? await import("@/lib/admin/retentionFilter").then(m => m.getTestFamilyIds(service)) : new Set<string>();
+  const allTestFamilyIds = await import("@/lib/admin/retentionFilter").then(m => m.getTestFamilyIds(service));
+  const testFamilyIds = !includeTestAccounts ? allTestFamilyIds : new Set<string>();
 
   // 2. Fetch family_members
   const familyMembers: any[] = [];
@@ -59,7 +70,19 @@ export async function GET(req: NextRequest) {
       actorId: fm.user_id,
       familyId: fm.family_id,
       joinedAt: fm.joined_at || fm.created_at,
+      isTestAccount: allTestFamilyIds.has(fm.family_id),
     });
+  }
+
+  // requests/062 — 이름·로그인 아이디 조인(부모 본인 로그인 값 = parents.email,
+  // 아이 로그인 아이디와 혼동 금지). N+1 방지 위해 배치 조회.
+  const parentIds = validParents.map(p => p.actorId).filter(Boolean);
+  const parentInfoMap = new Map<string, { name: string | null; email: string | null }>();
+  if (parentIds.length > 0) {
+    const { data: parentsData } = await service.from("parents").select("id, name, email").in("id", parentIds);
+    for (const p of parentsData || []) {
+      parentInfoMap.set(p.id, { name: p.name, email: p.email });
+    }
   }
 
   // 3. Fetch behavior_events for parents
@@ -83,16 +106,22 @@ export async function GET(req: NextRequest) {
   // Calculate metrics per parent
   const parentStats = new Map<string, any>();
   for (const p of validParents) {
+    const info = parentInfoMap.get(p.actorId);
     parentStats.set(p.actorId, {
       ...p,
+      ...toDisplayFields(p.actorId, info?.name, info?.email),
       lastVisitAt: null,
       activeDaysTotal: 0,
       visitCount: 0,
       reportViewCount: 0,
       topicViewCount: 0,
       status: "가입 후 의미 행동 없음",
-      _meaningfulDates: new Set<string>(),
-      _loginDates: new Set<string>(),
+      d1Retained: null,
+      d3Retained: null,
+      d7Retained: null,
+      w2Retained: null,
+      _meaningfulDates: new Set<string>(), // 전체 이력(D1/D3/D7/W2용)
+      _loginDatesDisplay: new Set<string>(), // 선택된 기간 내(활성 일수 표시용)
     });
   }
 
@@ -100,18 +129,21 @@ export async function GET(req: NextRequest) {
     if (!e.actor_id || !parentStats.has(e.actor_id)) continue;
     const stats = parentStats.get(e.actor_id);
     const kstDate = toKSTDateStr(e.occurred_at);
+    const inDisplayRange = isDateInRange(kstDate, displayRange);
 
     if (e.event_name === "parent_login") {
-      stats.visitCount++;
-      stats._loginDates.add(kstDate);
+      if (inDisplayRange) {
+        stats.visitCount++;
+        stats._loginDatesDisplay.add(kstDate);
+      }
       if (!stats.lastVisitAt || ms(e.occurred_at) > ms(stats.lastVisitAt)) {
         stats.lastVisitAt = e.occurred_at;
       }
     } else if (e.event_name === "parent_report_view") {
-      stats.reportViewCount++;
+      if (inDisplayRange) stats.reportViewCount++;
       stats._meaningfulDates.add(kstDate);
     } else if (e.event_name === "parent_conversation_topic_view") {
-      stats.topicViewCount++;
+      if (inDisplayRange) stats.topicViewCount++;
       stats._meaningfulDates.add(kstDate);
     }
   }
@@ -123,7 +155,26 @@ export async function GET(req: NextRequest) {
 
   const parentsResult = [];
   for (const stats of parentStats.values()) {
-    stats.activeDaysTotal = stats._loginDates.size;
+    stats.activeDaysTotal = stats._loginDatesDisplay.size;
+
+    // requests/063 §13 CSV용 개별 D1/D3/D7/W2 — 코호트 API와 동일하게 가입일(joinedAt)을
+    // Day0으로 삼는다.
+    const day0Str = toKSTDateStr(stats.joinedAt);
+    for (const [key, offset] of [["d1Retained", 1], ["d3Retained", 3], ["d7Retained", 7]] as const) {
+      const targetStr = getOffsetDateStr(day0Str, offset);
+      if (ms(targetStr) <= todayMs) {
+        stats[key] = stats._meaningfulDates.has(targetStr);
+      }
+    }
+    const w2StartStr = getOffsetDateStr(day0Str, 8);
+    const w2EndStr = getOffsetDateStr(day0Str, 14);
+    if (ms(w2EndStr) <= todayMs) {
+      let visited = false;
+      for (const d of stats._meaningfulDates as Set<string>) {
+        if (ms(d) >= ms(w2StartStr) && ms(d) <= ms(w2EndStr)) { visited = true; break; }
+      }
+      stats.w2Retained = visited;
+    }
 
     if (stats._meaningfulDates.size > 0) {
       // "최근 7일 미접속"이 실제로 "지난 7일간 의미있는 행동이 없었다"는 뜻이 되도록,
@@ -145,7 +196,7 @@ export async function GET(req: NextRequest) {
     }
 
     delete stats._meaningfulDates;
-    delete stats._loginDates;
+    delete stats._loginDatesDisplay;
     parentsResult.push(stats);
   }
 
@@ -154,7 +205,8 @@ export async function GET(req: NextRequest) {
     meta: {
       testAccountsExcluded: !includeTestAccounts,
       timezone: "Asia/Seoul",
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      period: { key: periodParam || "7d", from: displayRange.fromStr, to: displayRange.toStr },
     }
   });
 }
