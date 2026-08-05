@@ -22,6 +22,7 @@ export const runtime = "nodejs";
 
 interface StartHandoffRequestBody {
   childId?: string;
+  mode?: "start" | "restart";
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -52,7 +53,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const result = await createQuizHandoffToken(childId, user.id, child.grade);
+  // requests/023 "새로 시작하기": 기존 진행 attempt 종료는 여기서 하지 않는다.
+  // 차감보다 먼저 종료하면 잔액 부족으로 시작이 실패했을 때 진행하던 퀴즈만 사라진다.
+  // begin_quiz_start_charge RPC가 같은 트랜잭션 안에서 (차감 → 종료) 순서로 처리한다.
+  const result = await createQuizHandoffToken(childId, user.id, child.grade, {
+    isRestart: body.mode === "restart",
+  });
 
   if (!result.ok) {
     const status =
@@ -62,7 +68,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ? 400
           : result.reason === "child_not_found"
             ? 404
-            : 500;
+            : // 이미 같은 아이의 시작 요청이 처리 중(더블클릭·다중 탭) — 차감은 일어나지 않았다.
+              result.reason === "already_starting"
+              ? 409
+              : 500;
     return NextResponse.json({ error: result.reason }, { status });
   }
 

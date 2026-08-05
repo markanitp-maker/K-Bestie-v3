@@ -253,6 +253,10 @@ export default function ChildPlayPage() {
           setShowActionModal(false);
           setShowInsufficientModal(true);
           return;
+        } else if (res.status === 409) {
+          // 023: 같은 아이의 시작 요청이 이미 처리 중(다른 탭·기기에서 방금 눌렀다).
+          // 서버가 황금열쇠를 차감하지 않고 거절한 것이므로 재시도를 부추기지 않는다.
+          alert("이미 놀이를 시작하고 있어요.\n잠시 후 다시 확인해주세요.");
         } else if (res.ok) {
           const { token } = await res.json();
           writeQuizSessionHandoff({ token, childId });
@@ -368,28 +372,93 @@ export default function ChildPlayPage() {
   };
 
   const handleRestart = async () => {
-    if (!childId || !selectedGame) return;
+    // 023 시나리오 D(더블클릭·연속 탭): disabled={isRestarting}만으로는 부족하다 —
+    // setState는 비동기라 같은 tick 안에 들어온 두 번째 클릭이 리렌더 전에 통과한다.
+    // handleStart/handleResume과 동일하게 ref 락으로 먼저 막는다(서버 측 중복 차감
+    // 방지는 별도로 존재한다: gold_key_reservations / play_start_guards 유니크 인덱스).
+    if (!childId || !selectedGame || actionLockRef.current) return;
+    actionLockRef.current = true;
     setIsRestarting(true);
+    let navigatingAway = false;
     try {
-      const res = await fetch("/api/play/restart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ child_id: childId, play_type: selectedGame.id })
-      });
-      if (res.ok) {
-        setShowFinalConfirm(false);
-        setShowActionModal(false);
-        setShowGameScreen(true);
-        refetchBalance(childId);
+      if (selectedGame.id === "mbti") {
+        const res = await fetch("/api/play/execution-ticket", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId, playId: "mbti", mode: "restart" })
+        });
+        if (res.ok) {
+          setShowFinalConfirm(false);
+          setShowActionModal(false);
+          navigatingAway = true;
+          router.push("/child/play/mbti");
+          return;
+        } else if (res.status === 402) {
+          setIsRestarting(false);
+          actionLockRef.current = false;
+          setShowFinalConfirm(false);
+          setShowActionModal(false);
+          setShowInsufficientModal(true);
+          return;
+        } else if (res.status === 409) {
+          // 023: 예약이 이미 진행 중(다른 탭·기기). 서버가 같은 예약을 재사용하거나
+          // 거절하므로 추가 차감은 없다. 재시도를 부추기지 않고 안내만 한다.
+          alert("이미 놀이를 시작하고 있어요.\n잠시 후 다시 확인해주세요.");
+          setShowFinalConfirm(false);
+        } else {
+          alert("새로 시작하기에 실패했습니다.");
+        }
+      } else if (selectedGame.id === "quizmaster") {
+        const res = await fetch("/api/quiz/start-handoff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId, mode: "restart" })
+        });
+        if (res.status === 402) {
+          setIsRestarting(false);
+          actionLockRef.current = false;
+          setShowFinalConfirm(false);
+          setShowActionModal(false);
+          setShowInsufficientModal(true);
+          return;
+        } else if (res.status === 409) {
+          alert("이미 놀이를 시작하고 있어요.\n잠시 후 다시 확인해주세요.");
+          setShowFinalConfirm(false);
+        } else if (res.ok) {
+          const { token } = await res.json();
+          writeQuizSessionHandoff({ token, childId });
+          setShowFinalConfirm(false);
+          setShowActionModal(false);
+          navigatingAway = true;
+          router.push("/child/play/quizmaster");
+          return;
+        } else {
+          alert("퀴즈마스터 새로 시작하기에 실패했습니다.");
+        }
       } else {
-        alert("초기화에 실패했습니다. 기존 상태가 유지됩니다.");
-        setShowFinalConfirm(false);
+        const res = await fetch("/api/play/restart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ child_id: childId, play_type: selectedGame.id })
+        });
+        if (res.ok) {
+          setShowFinalConfirm(false);
+          setShowActionModal(false);
+          setShowGameScreen(true);
+          refetchBalance(childId);
+        } else {
+          alert("초기화에 실패했습니다. 기존 상태가 유지됩니다.");
+          setShowFinalConfirm(false);
+        }
       }
     } catch (e) {
       alert("오류가 발생했습니다.");
       setShowFinalConfirm(false);
     } finally {
-      setIsRestarting(false);
+      if (!navigatingAway) {
+        setIsRestarting(false);
+        actionLockRef.current = false;
+      }
     }
   };
 
@@ -588,35 +657,57 @@ export default function ChildPlayPage() {
                     {canResume ? "이전에 하던 놀이가 있어요" : "새로운 놀이를 시작할까요?"}
                   </p>
                   <p className="text-gray-500 text-sm mb-6">
-                    {canResume ? "이어서 놀이를 진행할까요?" : `황금열쇠 ${selectedGame.keys}개가 소모됩니다`}
+                    {canResume ? "이어할까요, 처음부터 다시 시작할까요?" : `황금열쇠 ${selectedGame.keys}개가 소모됩니다`}
                   </p>
-                  <div className="flex gap-3 w-full">
-                    <button 
-                      onClick={() => setShowActionModal(false)} 
-                      className="flex-1 py-3.5 rounded-2xl bg-gray-100 text-gray-600 font-bold active:scale-95 transition-transform"
-                    >
-                      취소
-                    </button>
-                    {canResume ? (
-                      <button 
-                        onClick={handleResume} 
-                        disabled={isStarting}
-                        className="flex-1 py-3.5 rounded-2xl text-white font-bold shadow-md active:scale-95 transition-transform disabled:opacity-70 disabled:scale-100" 
-                        style={{ background: selectedGame.bg }}
+                  {/* 023 UI 요구사항: 이어하기 가능하면 3버튼. 모바일에서 세 개가 한 줄에
+                      들어가면 글자가 잘리므로 지시서 권장 배치를 따른다 —
+                      1행 `취소`, 2행 `새로 시작하기`/`이어하기`. `이어하기`가 주 버튼(놀이
+                      고유색), `새로 시작하기`는 경고성 보조 버튼(red-50/red-600)으로 구분하고
+                      태블릿·PC에서도 같은 우선순위를 유지한다. */}
+                  {canResume ? (
+                    <div className="flex flex-col gap-3 w-full">
+                      <button
+                        onClick={() => setShowActionModal(false)}
+                        className="w-full py-3.5 rounded-2xl bg-gray-100 text-gray-600 font-bold active:scale-95 transition-transform"
                       >
-                        {isStarting ? "준비 중..." : "이어하기"}
+                        취소
                       </button>
-                    ) : (
-                      <button 
-                        onClick={handleStart} 
-                        disabled={isStarting} 
-                        className="flex-[1.2] py-3.5 rounded-2xl text-white font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1 disabled:opacity-70 disabled:scale-100" 
+                      <div className="flex gap-3 w-full">
+                        <button
+                          onClick={() => setShowFinalConfirm(true)}
+                          disabled={isStarting}
+                          className="flex-1 py-3.5 rounded-2xl bg-red-50 text-red-600 font-bold active:scale-95 transition-transform disabled:opacity-70 disabled:scale-100"
+                        >
+                          새로 시작하기
+                        </button>
+                        <button
+                          onClick={handleResume}
+                          disabled={isStarting}
+                          className="flex-[1.2] py-3.5 rounded-2xl text-white font-bold shadow-md active:scale-95 transition-transform disabled:opacity-70 disabled:scale-100"
+                          style={{ background: selectedGame.bg }}
+                        >
+                          {isStarting ? "준비 중..." : "이어하기"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 w-full">
+                      <button
+                        onClick={() => setShowActionModal(false)}
+                        className="flex-1 py-3.5 rounded-2xl bg-gray-100 text-gray-600 font-bold active:scale-95 transition-transform"
+                      >
+                        취소
+                      </button>
+                      <button
+                        onClick={handleStart}
+                        disabled={isStarting}
+                        className="flex-[1.2] py-3.5 rounded-2xl text-white font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1 disabled:opacity-70 disabled:scale-100"
                         style={{ background: selectedGame.bg }}
                       >
                         {isStarting ? "준비 중..." : "시작하기"}
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -656,13 +747,9 @@ export default function ChildPlayPage() {
           <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50 p-5">
             <div className="bg-white rounded-[28px] w-full max-w-sm p-6 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-200">
               <div className="text-4xl mb-3">⚠️</div>
-              <p className="font-bold text-gray-800 text-lg mb-3">기존 놀이를 초기화할까요?</p>
+              <p className="font-bold text-gray-800 text-lg mb-3">처음부터 다시 시작할까요?</p>
               <div className="bg-red-50 rounded-2xl p-4 mb-6 text-sm text-red-800 leading-relaxed text-left border border-red-100">
-                <ul className="list-disc pl-4 space-y-1">
-                  <li>다른 놀이가 이미 진행 중입니다.</li>
-                  <li><strong>기존 진행 기록이 초기화됩니다.</strong></li>
-                  <li>황금열쇠 <strong>{selectedGame.keys}개</strong>가 소모됩니다.</li>
-                </ul>
+                기존 진행 내용은 종료되고 황금열쇠 <strong>{selectedGame.keys}개</strong>가 새로 소모됩니다.
               </div>
               <div className="flex gap-3">
                 <button 
@@ -676,7 +763,7 @@ export default function ChildPlayPage() {
                   disabled={isRestarting} 
                   className="flex-1 py-3.5 rounded-2xl bg-red-500 text-white font-bold shadow-md active:scale-95 transition-transform disabled:opacity-70 disabled:scale-100"
                 >
-                  {isRestarting ? "초기화 중..." : "확인 (초기화)"}
+                  {isRestarting ? "처리 중..." : "새로 시작하기"}
                 </button>
               </div>
             </div>

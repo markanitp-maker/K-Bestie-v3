@@ -27,7 +27,7 @@ const TICKET_TTL_SECONDS = 90;
 interface StartTicketRequestBody {
   childId?: string;
   playId?: string;
-  mode?: "start" | "resume";
+  mode?: "start" | "resume" | "restart";
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const childId = typeof body.childId === "string" ? body.childId : "";
   const playId = typeof body.playId === "string" ? body.playId : "";
-  const mode = body.mode === "resume" ? "resume" : "start";
+  const mode = body.mode === "resume" ? "resume" : (body.mode === "restart" ? "restart" : "start");
   if (!childId || !playId) {
     return NextResponse.json({ error: "childId and playId required" }, { status: 400 });
   }
@@ -72,11 +72,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   let reservationId: string | null = null;
 
-  if (mode === "start") {
+  if (mode === "start" || mode === "restart") {
     const { data: reserveData, error: reserveErr } = await service.rpc("reserve_gold_keys_for_play", {
       p_child_id: childId,
       p_play_type: playId,
       p_keys_needed: registryRow.keys_cost,
+      p_is_restart: mode === "restart",
     });
 
     if (reserveErr || !reserveData || reserveData.length === 0) {
