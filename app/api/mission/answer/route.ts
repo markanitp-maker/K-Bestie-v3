@@ -15,8 +15,12 @@ import { pickReaction } from "@/lib/freeChatReactions";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
-import { selectAdditionalReserveQuestions } from "@/lib/mission/selectQuestions";
+import { selectAdditionalReserveQuestions, parseGrade, getEffectiveContentGrade } from "@/lib/mission/selectQuestions";
+import { computeParentQuestionLifecycleUpdate, paraphraseAnswerForParent } from "@/lib/mission/parentQuestionReconfirm";
+import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
+import { recordMissionOnboardingCompletion } from "@/lib/events/missionOnboarding";
 
 export const runtime = "nodejs";
 
@@ -50,7 +54,34 @@ type ActiveParentQuestion = {
   id: string;
   question_text: string;
   mission_confirm_attempts: number | null;
+  confirmation_question_text: string | null;
+  child_answer_summary: string | null;
 };
+
+// §10 "대화 원문 직접 노출 금지" — parentUpdate가 방금 "confirmed"로 확정하는 경우에만
+// child_answer_summary를 부모 노출용 3인칭 요약으로 덮어쓴다(원문은 재확인 라운드
+// 중에만 내부적으로 잠깐 보관되고, 확정 순간에 순화된다).
+async function finalizeParentAnswerSummaryIfConfirmed(
+  parentUpdate: Record<string, unknown>,
+  activeParentQ: ActiveParentQuestion,
+  rawConfirmedAnswer: string,
+): Promise<Record<string, unknown>> {
+  if (parentUpdate.status !== "confirmed") return parentUpdate;
+  try {
+    const model = await getModelForGroup("B");
+    const ai = createGenAIClient(model);
+    const summary = await paraphraseAnswerForParent(
+      ai,
+      getLlmModel("parentQuestionGeneration"),
+      activeParentQ.question_text,
+      rawConfirmedAnswer,
+    );
+    return { ...parentUpdate, child_answer_summary: summary };
+  } catch (e) {
+    console.error("[mission/answer] 부모 노출용 답변 요약 생성 중 예외 — 안전 문구로 대체", e);
+    return { ...parentUpdate, child_answer_summary: "아이가 질문에 답변했어요." };
+  }
+}
 
 async function findParentQuestionDeliveredInSession(
   service: ReturnType<typeof createServiceClient>,
@@ -59,7 +90,7 @@ async function findParentQuestionDeliveredInSession(
 ): Promise<ActiveParentQuestion | null> {
   const { data: activeQuestion, error: questionError } = await service
     .from("parent_questions")
-    .select("id, question_text, mission_confirm_attempts")
+    .select("id, question_text, mission_confirm_attempts, confirmation_question_text, child_answer_summary")
     .eq("child_id", childId)
     .eq("status", "mission_confirming")
     .order("last_delivered_at", { ascending: false, nullsFirst: false })
@@ -97,7 +128,8 @@ async function findParentQuestionDeliveredInSession(
     return null;
   }
 
-  return lastKMessage?.content?.includes(activeQuestion.question_text)
+  const deliveredText = activeQuestion.confirmation_question_text || activeQuestion.question_text;
+  return lastKMessage?.content?.includes(deliveredText)
     ? activeQuestion
     : null;
 }
@@ -247,12 +279,23 @@ export async function POST(req: NextRequest) {
 
   if (prevState === "answered") {
     if (sessionParentQuestion) {
+      // 이 질문(mission question)은 이전 요청에서 이미 VALID로 기록됐고 이번은 재시도
+      // (idempotent) 요청이다 — 그 재시도가 실은 재확인 라운드로 이어지는 자연스러운
+      // 흐름이므로, "confirmed"로 임의 확정하지 않고 §6.1과 동일한 재확인 규칙을 적용한다.
+      let parentUpdate = computeParentQuestionLifecycleUpdate({
+        confirmationQuestionText: sessionParentQuestion.confirmation_question_text,
+        missionConfirmAttempts: sessionParentQuestion.mission_confirm_attempts ?? 0,
+        classification: "VALID",
+        answerText,
+      });
+      parentUpdate = await finalizeParentAnswerSummaryIfConfirmed(
+        parentUpdate,
+        sessionParentQuestion,
+        sessionParentQuestion.child_answer_summary || answerText,
+      );
       const { error: finalizeError } = await service
         .from("parent_questions")
-        .update({
-          status: "confirmed",
-          child_answer_summary: null,
-        })
+        .update(parentUpdate)
         .eq("id", sessionParentQuestion.id)
         .eq("status", "mission_confirming");
       if (finalizeError) {
@@ -359,6 +402,10 @@ export async function POST(req: NextRequest) {
         counts[questionId] = 1;
         await service.from("mission_progress").update({ clarification_counts: counts }).eq("session_id", sessionId);
         
+        if (childTurnId) {
+          await service.from("chat_messages").update({ is_clarification: true }).eq("session_id", sessionId).eq("turn_id", childTurnId);
+        }
+
         const resPayload = {
           valid: false,
           reason: "clarification_needed",
@@ -407,15 +454,15 @@ export async function POST(req: NextRequest) {
       }
 
       if (isParentQuestion && activeParentQ) {
+        const parentUpdate = computeParentQuestionLifecycleUpdate({
+          confirmationQuestionText: activeParentQ.confirmation_question_text,
+          missionConfirmAttempts: activeParentQ.mission_confirm_attempts ?? 0,
+          classification: "SAFETY_SIGNAL",
+          answerText,
+        });
         const { error: parentLifecycleError } = await service
           .from("parent_questions")
-          .update({
-            status: "declined",
-            mission_confirm_attempts: Math.min(
-              2,
-              (activeParentQ.mission_confirm_attempts ?? 0) + 1,
-            ),
-          })
+          .update(parentUpdate)
           .eq("id", activeParentQ.id)
           .eq("status", "mission_confirming");
         if (parentLifecycleError) {
@@ -523,24 +570,20 @@ export async function POST(req: NextRequest) {
     }
 
     if (isParentQuestion && activeParentQ) {
-      const parentUpdate =
-        classification === "VALID"
-          ? {
-              status: "confirmed",
-              // Raw child text remains in the normal chat/mission collection
-              // pipeline and is not exposed through the parent question list.
-              child_answer_summary: null,
-            }
-          : {
-              status:
-                classification === "REFUSAL"
-                  ? "declined"
-                  : "mission_incomplete",
-              mission_confirm_attempts: Math.min(
-                2,
-                (activeParentQ.mission_confirm_attempts ?? 0) + 1,
-              ),
-            };
+      let parentUpdate = computeParentQuestionLifecycleUpdate({
+        confirmationQuestionText: activeParentQ.confirmation_question_text,
+        missionConfirmAttempts: activeParentQ.mission_confirm_attempts ?? 0,
+        classification,
+        answerText,
+      });
+      // "confirmed"로 확정되는 순간 — 재확인 라운드 동안 보관해온 원문(activeParentQ의
+      // 기존 child_answer_summary, 이번 턴은 "응/맞아" 같은 확인 응답일 뿐 원문이 아님)을
+      // 부모 노출용 3인칭 요약으로 순화한다.
+      parentUpdate = await finalizeParentAnswerSummaryIfConfirmed(
+        parentUpdate,
+        activeParentQ,
+        activeParentQ.child_answer_summary || answerText,
+      );
 
       const { error: parentLifecycleError } = await service
         .from("parent_questions")
@@ -698,7 +741,8 @@ export async function POST(req: NextRequest) {
             .eq("session_id", sessionId)
             .maybeSingle();
 
-          const gradeNum = typeof childProfile?.grade === "string" ? parseInt(childProfile.grade, 10) : (childProfile?.grade ?? null);
+          const realGradeNum = parseGrade(childProfile?.grade);
+          const gradeNum = realGradeNum !== null ? getEffectiveContentGrade(realGradeNum) : null;
           const roundTypeVal = progressRoundType?.round_type;
 
           let backfillIds: string[] = [];
@@ -879,78 +923,112 @@ export async function POST(req: NextRequest) {
 
   let newState: QuestionState;
   let answerStatus: "answered" | "skipped" | "refused";
-  if (result.valid) {
-    newState = "answered";
-    answerStatus = "answered";
 
-    if (isParentQuestionV1 && activeParentQV1) {
-      const { error: lifecycleError } = await service
-        .from("parent_questions")
-        .update({
-          status: "confirmed",
-          child_answer_summary: null,
-        })
-        .eq("id", activeParentQV1.id)
-        .eq("status", "mission_confirming");
-      if (lifecycleError) {
-        console.error("[mission/answer] V1 parent lifecycle completion failed", {
-          sessionId,
-          parentQuestionId: activeParentQV1.id,
-          error: lifecycleError.message,
-        });
+  async function applyV1ParentLifecycle(classificationForV1: "VALID" | "REFUSAL" | "NO_RESPONSE") {
+    if (!isParentQuestionV1 || !activeParentQV1) return;
+    let parentUpdate = computeParentQuestionLifecycleUpdate({
+      confirmationQuestionText: activeParentQV1.confirmation_question_text,
+      missionConfirmAttempts: activeParentQV1.mission_confirm_attempts ?? 0,
+      classification: classificationForV1,
+      answerText: answerText ?? "",
+    });
+    parentUpdate = await finalizeParentAnswerSummaryIfConfirmed(
+      parentUpdate,
+      activeParentQV1,
+      activeParentQV1.child_answer_summary || answerText || "",
+    );
+    const { error: lifecycleError } = await service
+      .from("parent_questions")
+      .update(parentUpdate)
+      .eq("id", activeParentQV1.id)
+      .eq("status", "mission_confirming");
+    if (lifecycleError) {
+      console.error("[mission/answer] V1 parent lifecycle update failed", {
+        sessionId,
+        parentQuestionId: activeParentQV1.id,
+        classificationForV1,
+        error: lifecycleError.message,
+      });
+      throw new Error("Database error");
+    }
+  }
+
+  let clarificationTextV1: string | undefined = undefined;
+
+  if (result.needsClarification) {
+    const counts = progress.clarification_counts || {};
+    const currentCount = counts[questionId] || 0;
+    
+    if (currentCount >= 1) {
+      newState = "skipped";
+      answerStatus = "skipped";
+      try {
+        await applyV1ParentLifecycle("NO_RESPONSE");
+      } catch {
         return NextResponse.json({ error: "Database error" }, { status: 500 });
       }
+    } else {
+      counts[questionId] = 1;
+      
+      const { data: qData } = await service
+        .from("mission_questions")
+        .select("question_text")
+        .eq("id", questionId)
+        .single();
+      const questionTextV1 = qData?.question_text ?? "";
+      
+      const bgClassResult = await classifyAnswer(questionTextV1, answerText);
+      clarificationTextV1 = bgClassResult.clarificationText;
+
+      const resPayload = {
+        valid: false,
+        reason: "clarification_needed",
+        refused: false,
+        previousState: prevState,
+        questionState: "clarification_required" as const,
+        clarificationText: clarificationTextV1,
+        validAnswerCount: progress.valid_answer_count ?? 0,
+        progressPercent: (progress.valid_answer_count ?? 0) * 20,
+        requiredCount: REQUIRED_COUNT,
+        completed: false,
+        engine_version: "v1",
+        questionStates: { ...states, [questionId]: "clarification_required" as const },
+      };
+      
+      await service.from("mission_progress").update({ clarification_counts: counts }).eq("session_id", sessionId);
+
+      if (childTurnId) {
+        await service.from("chat_messages").update({ is_clarification: true }).eq("session_id", sessionId).eq("turn_id", childTurnId);
+      }
+
+      console.log("[mission/answer] clarification required", { sessionId, questionId });
+      if (childTurnId) setCachedAnswer(childTurnId, resPayload);
+      return NextResponse.json(resPayload);
+    }
+  } else if (result.valid) {
+    newState = "answered";
+    answerStatus = "answered";
+    try {
+      await applyV1ParentLifecycle("VALID");
+    } catch {
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
   } else if (result.refused) {
     newState = "refused";
     answerStatus = "refused";
-
-    if (isParentQuestionV1 && activeParentQV1) {
-      const { error: lifecycleError } = await service
-        .from("parent_questions")
-        .update({
-          status: "declined",
-          mission_confirm_attempts: Math.min(
-            2,
-            (activeParentQV1.mission_confirm_attempts ?? 0) + 1,
-          ),
-        })
-        .eq("id", activeParentQV1.id)
-        .eq("status", "mission_confirming");
-      if (lifecycleError) {
-        console.error("[mission/answer] V1 parent lifecycle decline failed", {
-          sessionId,
-          parentQuestionId: activeParentQV1.id,
-          error: lifecycleError.message,
-        });
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
+    try {
+      await applyV1ParentLifecycle("REFUSAL");
+    } catch {
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
   } else {
     // 무응답/회피/오답 → 완료처리 없이 skipped (전체 순회 후 루프백 대상)
     newState = "skipped";
     answerStatus = "skipped";
-
-    if (isParentQuestionV1 && activeParentQV1) {
-      const { error: lifecycleError } = await service
-        .from("parent_questions")
-        .update({
-          status: "mission_incomplete",
-          mission_confirm_attempts: Math.min(
-            2,
-            (activeParentQV1.mission_confirm_attempts ?? 0) + 1,
-          ),
-        })
-        .eq("id", activeParentQV1.id)
-        .eq("status", "mission_confirming");
-      if (lifecycleError) {
-        console.error("[mission/answer] V1 parent lifecycle incomplete update failed", {
-          sessionId,
-          parentQuestionId: activeParentQV1.id,
-          error: lifecycleError.message,
-        });
-        return NextResponse.json({ error: "Database error" }, { status: 500 });
-      }
+    try {
+      await applyV1ParentLifecycle("NO_RESPONSE");
+    } catch {
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
   }
 
@@ -1052,6 +1130,7 @@ export async function POST(req: NextRequest) {
       feature: "mission",
       route: "/api/mission/answer",
     }).catch(() => {});
+    await recordMissionOnboardingCompletion(service, session.child_id, sessionId);
   }
 
   // 게이지 5칸 최초 달성 시점에만 황금열쇠 적립 (재호출로 중복 적립 방지) — 기존 로직 그대로.
