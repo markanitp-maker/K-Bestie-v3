@@ -33,10 +33,13 @@ export const SOFT_DELETE_MAX_BULK = 200;
 
 export type SoftDeleteResource =
   | "beta_applications"
-  | "support_requests"
+  | "support_requests_voc"
+  | "support_requests_feature"
+  | "support_requests_bug"
   | "plan_change_requests"
   | "child_approval_requests"
-  | "event_reward_fulfillments";
+  | "event_reward_fulfillments"
+  | "acquisition_links";
 
 export interface SoftDeleteResourceConfig {
   /** 실제 테이블명. 요청 값이 아니라 이 상수만 쿼리에 사용한다. */
@@ -54,6 +57,8 @@ export interface SoftDeleteResourceConfig {
   statusColumn: string | null;
   /** 휴지통에서 "무엇인지" 알아볼 수 있게 이어 붙일 컬럼들. */
   titleColumns: string[];
+  /** 특정 조건(예: 문의/건의/버그 분리)으로 리소스를 필터링할 때 사용. */
+  fixedFilters?: Record<string, string>;
 }
 
 export const SOFT_DELETE_RESOURCES: Record<SoftDeleteResource, SoftDeleteResourceConfig> = {
@@ -66,14 +71,32 @@ export const SOFT_DELETE_RESOURCES: Record<SoftDeleteResource, SoftDeleteResourc
     statusColumn: null,
     titleColumns: ["user_id"],
   },
-  support_requests: {
+  support_requests_voc: {
     table: "support_requests",
-    label: "문의·건의·버그",
-    // subject/body(사용자 작성 원문)는 제외.
+    label: "문의 접수",
     snapshotColumns: ["id", "request_number", "category", "status", "submitter_role", "created_at"],
     createdAtColumn: "created_at",
     statusColumn: "status",
     titleColumns: ["request_number", "category"],
+    fixedFilters: { category: "voc" },
+  },
+  support_requests_feature: {
+    table: "support_requests",
+    label: "건의 접수",
+    snapshotColumns: ["id", "request_number", "category", "status", "submitter_role", "created_at"],
+    createdAtColumn: "created_at",
+    statusColumn: "status",
+    titleColumns: ["request_number", "category"],
+    fixedFilters: { category: "feature" },
+  },
+  support_requests_bug: {
+    table: "support_requests",
+    label: "버그 접수",
+    snapshotColumns: ["id", "request_number", "category", "status", "submitter_role", "created_at"],
+    createdAtColumn: "created_at",
+    statusColumn: "status",
+    titleColumns: ["request_number", "category"],
+    fixedFilters: { category: "bug" },
   },
   plan_change_requests: {
     table: "plan_change_requests",
@@ -99,6 +122,14 @@ export const SOFT_DELETE_RESOURCES: Record<SoftDeleteResource, SoftDeleteResourc
     createdAtColumn: "created_at",
     statusColumn: "status",
     titleColumns: ["event_type", "status"],
+  },
+  acquisition_links: {
+    table: "acquisition_links",
+    label: "유입 링크 관리",
+    snapshotColumns: ["id", "link_id", "channel_name", "utm_source", "utm_medium", "utm_campaign", "purpose", "status", "created_at"],
+    createdAtColumn: "created_at",
+    statusColumn: "status",
+    titleColumns: ["channel_name", "link_id"],
   },
 };
 
@@ -231,11 +262,17 @@ export async function softDeleteRecords(
   const normalizedReason = normalizeDeleteReason(reason);
 
   // 감사 로그 before 스냅샷 확보(삭제되지 않은 행만).
-  const { data: beforeRows, error: beforeError } = await service
+  let q = service
     .from(config.table)
     .select(config.snapshotColumns.join(", "))
     .in("id", targetIds)
     .is("deleted_at", null);
+  if (config.fixedFilters) {
+    for (const [k, v] of Object.entries(config.fixedFilters)) {
+      q = q.eq(k, v);
+    }
+  }
+  const { data: beforeRows, error: beforeError } = await q;
   if (beforeError) throw new SoftDeleteError(beforeError.message, 500);
 
   const beforeById = new Map<string, Record<string, unknown>>(
@@ -247,12 +284,17 @@ export async function softDeleteRecords(
   }
 
   const deletedAt = new Date().toISOString();
-  const { data: updated, error: updateError } = await service
+  let updateQ = service
     .from(config.table)
     .update({ deleted_at: deletedAt, deleted_by: actor.id, delete_reason: normalizedReason })
     .in("id", Array.from(beforeById.keys()))
-    .is("deleted_at", null)
-    .select("id");
+    .is("deleted_at", null);
+  if (config.fixedFilters) {
+    for (const [k, v] of Object.entries(config.fixedFilters)) {
+      updateQ = updateQ.eq(k, v);
+    }
+  }
+  const { data: updated, error: updateError } = await updateQ.select("id");
   if (updateError) throw new SoftDeleteError(updateError.message, 500);
 
   const changed = ((updated ?? []) as { id: string }[]).map((row) => String(row.id));
@@ -292,11 +334,17 @@ export async function restoreRecords(
   const config = SOFT_DELETE_RESOURCES[resource];
   const targetIds = normalizeIds(ids);
 
-  const { data: beforeRows, error: beforeError } = await service
+  let q = service
     .from(config.table)
     .select(config.snapshotColumns.join(", "))
     .in("id", targetIds)
     .not("deleted_at", "is", null);
+  if (config.fixedFilters) {
+    for (const [k, v] of Object.entries(config.fixedFilters)) {
+      q = q.eq(k, v);
+    }
+  }
+  const { data: beforeRows, error: beforeError } = await q;
   if (beforeError) throw new SoftDeleteError(beforeError.message, 500);
 
   const beforeById = new Map<string, Record<string, unknown>>(
@@ -307,12 +355,17 @@ export async function restoreRecords(
     return { changed: [], unchanged: targetIds, failed: [] };
   }
 
-  const { data: updated, error: updateError } = await service
+  let updateQ = service
     .from(config.table)
     .update({ deleted_at: null, deleted_by: null, delete_reason: null })
     .in("id", Array.from(beforeById.keys()))
-    .not("deleted_at", "is", null)
-    .select("id");
+    .not("deleted_at", "is", null);
+  if (config.fixedFilters) {
+    for (const [k, v] of Object.entries(config.fixedFilters)) {
+      updateQ = updateQ.eq(k, v);
+    }
+  }
+  const { data: updated, error: updateError } = await updateQ.select("id");
   if (updateError) throw new SoftDeleteError(updateError.message, 500);
 
   const changed = ((updated ?? []) as { id: string }[]).map((row) => String(row.id));
@@ -392,6 +445,12 @@ export async function listTrash(service: Service, query: TrashQuery = {}): Promi
         .not("deleted_at", "is", null)
         .order("deleted_at", { ascending: false })
         .limit(limit);
+
+      if (config.fixedFilters) {
+        for (const [k, v] of Object.entries(config.fixedFilters)) {
+          q = q.eq(k, v);
+        }
+      }
 
       if (query.deletedFrom) q = q.gte("deleted_at", query.deletedFrom);
       if (query.deletedTo) q = q.lte("deleted_at", query.deletedTo);
@@ -476,12 +535,18 @@ export async function purgeExpired(
     const result: PurgeResult = { resource, purged: 0, attachmentsDeleted: 0, errors: [] };
 
     try {
-      const { data: rows, error } = await service
+      let q = service
         .from(config.table)
         .select(config.snapshotColumns.join(", "))
         .not("deleted_at", "is", null)
         .lt("deleted_at", cutoff)
         .limit(limitPerResource);
+      if (config.fixedFilters) {
+        for (const [k, v] of Object.entries(config.fixedFilters)) {
+          q = q.eq(k, v);
+        }
+      }
+      const { data: rows, error } = await q;
       if (error) throw new SoftDeleteError(error.message, 500);
 
       const targets = (rows ?? []) as unknown as Record<string, unknown>[];
@@ -493,7 +558,7 @@ export async function purgeExpired(
       let purgeableIds = targets.map((row) => String(row.id));
 
       // 첨부파일이 있는 리소스는 Storage 파일을 먼저 지운다.
-      if (resource === "support_requests") {
+      if (resource === "support_requests_voc" || resource === "support_requests_feature" || resource === "support_requests_bug") {
         const { removed, blockedIds, errors } = await purgeSupportAttachments(service, purgeableIds);
         result.attachmentsDeleted = removed;
         result.errors.push(...errors);

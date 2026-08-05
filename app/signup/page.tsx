@@ -521,6 +521,51 @@ function SignupContent() {
     router.replace("/");
   };
 
+  useEffect(() => {
+    const link_id = searchParams.get("link_id");
+    if (!link_id || typeof window === "undefined") return;
+
+    let visitor_id = localStorage.getItem("k_visitor_id");
+    if (!visitor_id) {
+      visitor_id = "v_" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+      localStorage.setItem("k_visitor_id", visitor_id);
+    }
+
+    const setCookie = (name: string, value: string, days: number) => {
+      const d = new Date();
+      d.setTime(d.getTime() + days * 24 * 60 * 60 * 1000);
+      document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/;secure;samesite=lax`;
+    };
+    
+    const getCookie = (name: string) => {
+      const v = document.cookie.match("(^|;) ?" + name + "=([^;]*)(;|$)");
+      return v ? v[2] : null;
+    };
+
+    setCookie("k_visitor_id", visitor_id, 30);
+    
+    if (!getCookie("first_touch_link_id")) {
+      setCookie("first_touch_link_id", link_id, 30);
+    }
+    setCookie("signup_touch_link_id", link_id, 30);
+
+    const landing_path = window.location.pathname + window.location.search;
+    const referrer = document.referrer;
+
+    fetch("/api/acquisition/click", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ link_id, visitor_id, landing_path, referrer })
+    }).catch(console.error);
+    
+    fetch("/api/acquisition/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_type: "SIGNUP_PAGE_VIEW", visitor_id, attribution_id: visitor_id, link_id })
+    }).catch(console.error);
+
+  }, [searchParams]);
+
   return (
     <Shell step={step}>
       {step === "consent" && <ConsentStep onNext={() => setStep("profile")} />}

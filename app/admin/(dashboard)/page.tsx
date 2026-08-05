@@ -11,6 +11,8 @@ import RewardFulfillmentsTab from "./RewardFulfillmentsTab";
 import ParentQuestionsTab from "./ParentQuestionsTab";
 import ParentQueryRouterTab from "./ParentQueryRouterTab";
 import TrashTab from "./TrashTab";
+import PushTestTab from "./PushTestTab";
+import AcquisitionLinksTab from "./AcquisitionLinksTab";
 import { RetentionEmbed } from "@/components/admin/RetentionEmbed";
 import {
   SoftDeleteButton,
@@ -1053,13 +1055,14 @@ function ChildApprovalRequestsTab() {
 
   const STATUS_LABEL: Record<string, string> = {
     pending: "승인 대기",
+    PENDING_PAYMENT: "결제 대기",
     creation_failed: "프로필 생성 실패",
     rejected: "거절됨",
     approved: "승인 완료",
   };
 
   const filteredRequests = (requests || []).filter((req: any) => {
-    if (activeTab === "pending") return req.status === "pending" || req.status === "creation_failed";
+    if (activeTab === "pending") return req.status === "pending" || req.status === "creation_failed" || req.status === "PENDING_PAYMENT";
     return req.status === "approved" || req.status === "rejected";
   });
 
@@ -1133,15 +1136,28 @@ function ChildApprovalRequestsTab() {
         
         let statusBadge;
         if (req.status === "pending") statusBadge = <AdminStatusBadge variant="warning" text={STATUS_LABEL[req.status]} />;
+        else if (req.status === "PENDING_PAYMENT") statusBadge = <AdminStatusBadge variant="warning" text={STATUS_LABEL[req.status]} />;
         else if (req.status === "creation_failed") statusBadge = <AdminStatusBadge variant="danger" text={STATUS_LABEL[req.status]} />;
         else if (req.status === "rejected") statusBadge = <AdminStatusBadge variant="neutral" text={STATUS_LABEL[req.status]} />;
         else if (req.status === "approved") statusBadge = <AdminStatusBadge variant="success" text={STATUS_LABEL[req.status]} />;
 
         if (!isActionable) {
+          let methodText = "";
+          if (req.status === "approved") {
+            if (req.approval_method === "BETA_AUTO") methodText = "자동 승인(베타)";
+            else if (req.approval_method === "PAYMENT_AUTO") methodText = "자동 승인(결제 완료)";
+            else if (req.approval_method === "ADMIN_MANUAL") methodText = "수동 승인";
+          }
           return (
             <div>
               {statusBadge}
               {req.status === "rejected" && req.rejected_reason && <div style={{ fontSize: "11px", color: "var(--admin-text-secondary)", marginTop: "4px" }}>사유: {req.rejected_reason}</div>}
+              {req.status === "approved" && methodText && (
+                <div style={{ fontSize: "11px", color: "var(--admin-text-secondary)", marginTop: "4px" }}>
+                  {methodText}<br/>
+                  {req.approved_at && formatDateTime(req.approved_at)}
+                </div>
+              )}
             </div>
           );
         }
@@ -1189,6 +1205,10 @@ function ChildApprovalRequestsTab() {
       key: "actions",
       header: "액션",
       render: (req) => {
+        if (req.status === "PENDING_PAYMENT") {
+          return <span style={{ fontSize: 12, color: "var(--admin-text-secondary)" }}>결제 확인 대기</span>;
+        }
+
         const verification = verifications[req.id] ?? { beta: req.beta_verified === true, survey: req.survey_verified === true };
         const verificationComplete = verification.beta && verification.survey;
 
@@ -1452,8 +1472,12 @@ function AdminDashboard() {
           <LlmStatusTab />
         ) : page === "account-restore" ? (
           <AccountRestoreTab />
-        ) : page === "feedback" ? (
-          <FeedbackTab />
+        ) : page === "inquiries" ? (
+          <FeedbackTab key="inquiries" fixedCategory="voc" />
+        ) : page === "suggestions" ? (
+          <FeedbackTab key="suggestions" fixedCategory="feature" />
+        ) : page === "bugs" ? (
+          <FeedbackTab key="bugs" fixedCategory="bug" />
         ) : page === "beta-applications" ? (
           <BetaApplicationsTab />
         ) : page === "manual-reporting" ? (
@@ -1478,6 +1502,10 @@ function AdminDashboard() {
           <ParentQueryRouterTab />
         ) : page === "trash" ? (
           <TrashTab />
+        ) : page === "push-test" ? (
+          <PushTestTab />
+        ) : page === "acquisition-links" ? (
+          <AcquisitionLinksTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
