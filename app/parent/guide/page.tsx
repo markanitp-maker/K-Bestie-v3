@@ -25,6 +25,9 @@ type Message = {
   askChildQuestionText?: string;
   askChildWeeklyUsedCount?: number;
   askChildWeeklyLimit?: number;
+  requestedTopic?: string;
+  requestedArea?: string;
+  parentIntent?: string;
 };
 
 // requests/request-parent-question-draft-modal-fix.md §6 — 초안 질문 모달 상태.
@@ -49,6 +52,8 @@ interface DraftModalState {
   editable: boolean;
   dailyUsedToday?: boolean;
   childQuestionText?: string;
+  requestedTopic?: string;
+  requestedArea?: string;
 }
 
 // requests/request-parent-query-router-grade4-v1.md §9.2/§9.3/§10 — Red/Crisis 코칭과
@@ -234,7 +239,10 @@ export default function ParentGuidePage() {
           role: "k",
           text: data.answer || "응답을 가져올 수 없어요.",
           askChildProposal: nextProposal,
-          originalQuestion: nextProposal || textToSend, // 후속 수정이면 합쳐진 제안을 초안 생성에 그대로 사용
+          originalQuestion: textToSend, // 원래 질문을 항상 보존하여 topics가 유실되지 않도록 한다.
+          requestedTopic: data.requestedTopic,
+          requestedArea: data.requestedArea,
+          parentIntent: data.intent,
         }
       ]);
     } catch (err) {
@@ -290,11 +298,24 @@ export default function ParentGuidePage() {
 
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, askChildIsLoading: true, askChildErrorText: undefined } : m));
 
+    const msg = messages.find((m) => m.id === msgId);
+
     try {
       const res = await fetch("/api/parent/k-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "draft_child_question", child_id: requestChildId, question: originalQuestion }),
+        body: JSON.stringify({ 
+          action: "draft_child_question", 
+          child_id: requestChildId, 
+          question: originalQuestion,
+          requested_topic: msg?.requestedTopic,
+          requested_area: msg?.requestedArea,
+          parent_intent: msg?.parentIntent,
+          conversation_id: `k-chat-${requestChildId}`,
+          last_user_message_id: msgId,
+          policy_version: "v2",
+          source_grade: 4 // This is a placeholder, server resolves realGrade
+        }),
       });
       const data = await res.json();
       if (childIdRef.current !== requestChildId) return;
@@ -322,6 +343,8 @@ export default function ParentGuidePage() {
           ruleId: data.ruleId,
           editable: false,
           idempotencyKey: `ask-child-${msgId}`,
+          requestedTopic: msg?.requestedTopic,
+          requestedArea: msg?.requestedArea,
         });
         return;
       }
@@ -386,6 +409,8 @@ export default function ParentGuidePage() {
           // 메시지(msgId)에 대한 재시도는 항상 같은 키를 써서 서버의 idempotency 조회가
           // 이전 시도를 그대로 찾아 반환하게 한다.
           idempotencyKey: `ask-child-${msgId}`,
+          requestedTopic: msg?.requestedTopic,
+          requestedArea: msg?.requestedArea,
         });
         return;
       }
@@ -454,6 +479,8 @@ export default function ParentGuidePage() {
       ruleId: alt.ruleId,
       editable: false,
       idempotencyKey: `ask-child-${redCoaching.messageId}`,
+      requestedTopic: redCoaching.safeAlternative?.area,
+      requestedArea: redCoaching.safeAlternative?.area,
     });
     setRedCoaching(null);
   };
@@ -482,6 +509,8 @@ export default function ParentGuidePage() {
       ruleId: candidate.ruleId,
       editable: false,
       idempotencyKey: `ask-child-${multiSelect.messageId}`,
+      requestedTopic: candidate.area,
+      requestedArea: candidate.area,
     });
     setMultiSelect(null);
   };
@@ -781,6 +810,8 @@ export default function ParentGuidePage() {
         <AskChildDraftModal
           childName={childName || "아이"}
           draftQuestion={draftModal.draftQuestion}
+          requestedTopic={draftModal.requestedTopic}
+          requestedArea={draftModal.requestedArea}
           rewriteApplied={draftModal.rewriteApplied}
           weeklyUsedCount={draftModal.weeklyUsedCount}
           weeklyLimit={draftModal.weeklyLimit}

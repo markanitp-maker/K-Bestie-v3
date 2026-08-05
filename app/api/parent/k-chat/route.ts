@@ -14,6 +14,7 @@ import { routeParentQueryGrade2, getGreenRuleById as getGreenRuleByIdGrade2 } fr
 import { routeParentQueryGrade3, getGreenRuleById as getGreenRuleByIdGrade3 } from "@/lib/plan/parentQueryRouterGrade3";
 import { routeParentQueryGrade5, getGreenRuleById as getGreenRuleByIdGrade5 } from "@/lib/plan/parentQueryRouterGrade5";
 import { routeParentQueryGrade6, getGreenRuleById as getGreenRuleByIdGrade6 } from "@/lib/plan/parentQueryRouterGrade6";
+import { classifyParentQueryCandidate } from "@/lib/plan/parentQueryRouterGrade4";
 import type { GreenRule, ParentQueryRouterResult, GenAILikeClient } from "@/lib/plan/parentQueryRouterEngine";
 import { parseGrade } from "@/lib/mission/selectQuestions";
 import { getSupabaseTarget } from "@/lib/supabase/env";
@@ -332,16 +333,37 @@ export async function POST(request: Request) {
         });
       }
 
+      let requested_topic: string | null = null;
+      let requested_area: string | null = null;
+
+      // 기록 조회 전에 부모의 원래 의도(주제)를 추출하여 유지한다.
+      const candidate = await classifyParentQueryCandidate(ai, getLlmModel("parentQuestionGeneration"), trimmedQuestion);
+      if (candidate) {
+        requested_area = candidate.candidateArea || candidate.detectedRedArea || null;
+        if (requested_area) {
+          const areaToTopicMap: Record<string, string> = {
+            "interest": "관심사", "school_fun": "학교생활", "subject_like": "좋아하는 과목",
+            "food_pref": "음식 취향", "pride": "자랑거리", "content": "영상/게임",
+            "weekend": "주말 계획", "dream": "장래희망", "peer_relationship": "친구 관계",
+            "emotion_cause": "감정 원인", "peer_conflict": "친구 갈등", "academic_pressure": "학업 스트레스",
+            "secret": "비밀 확인", "family_complaint": "가족 불만"
+          };
+          requested_topic = areaToTopicMap[requested_area] || requested_area;
+        }
+      }
+
       const fallbackResponse = {
         answerable: false,
         confidence: 0,
         answer: "제가 확인할 수 있는 기록에는 관련된 구체적인 내용이 남아 있지 않아요. 학교생활, 친구, 기분 중 궁금한 부분을 말씀해 주시면 그 범위로 다시 확인해 볼게요.",
         suggestedParentQuestion: null,
         evidenceIds: [],
-        askChildProposal: "요즘 학교에서 같이 있으면 재미있는 친구가 있어?", // 클라이언트에서 이 값을 활용할 수 있음
+        askChildProposal: trimmedQuestion, // 하드코딩된 school_fun fallback 질문을 제거하고 원래 질문을 유지한다.
         evidenceDateRange: null,
         intent,
         retrievalStatus: "NO_DATA",
+        requestedTopic: requested_topic,
+        requestedArea: requested_area,
       };
 
       if (retrievalResult.status === "no_data") {
@@ -447,6 +469,8 @@ JSON 스키마:
         askChildProposal: null,
         evidenceDateRange,
         intent,
+        requestedTopic: requested_topic,
+        requestedArea: requested_area,
       };
 
       logTurn({ retrievalAttempted: true, retrievalSource: ["search_memory_facts"], retrievalResultCount: facts.length, responseMode: "HAS_RESULT", fallbackReason: null });
@@ -469,10 +493,8 @@ JSON 스키마:
     // 교체해, 추측·유도·복수질문·비난조 표현은 기본적으로 재작성해서 초안을 만들고
     // 모달을 띄우며, 실제 BLOCKED는 재작성해도 안전하지 않은 경우로만 좁힌다.
     if (action === "draft_child_question") {
-      // requests/request-parent-query-router-grade4-v1.md — 이번 정책은 실제 학년이
-      // 정확히 4학년인 아이에게만 적용한다(§1 "다른 학년에는 자동 확장하지 않는다").
-      // 4학년이면 이 라우터가 유일한 판정 주체이며, 더 느슨한 일반 재작성 플로우
-      // (filterParentQuestion·classifyAndRewriteParentQuestion)는 건드리지 않는다.
+      const { requested_topic, requested_area, conversation_id, parent_intent, last_user_message_id, policy_version, source_grade } = body;
+      
       const realGrade = parseGrade(childProfileForAuth?.grade);
       const activeGradeRouter = resolveActiveGradeRouter(realGrade);
       if (activeGradeRouter) {
@@ -577,6 +599,8 @@ JSON 스키마:
           weeklyUsedCount: quotaPeek.weeklyUsedCount,
           dailyUsedToday: quotaPeek.dailyUsedToday,
           weeklyLimit: WEEKLY_QUESTION_LIMIT,
+          requestedTopic: requested_topic, // Pass back to frontend if needed
+          requestedArea: requested_area,
         });
       }
 
