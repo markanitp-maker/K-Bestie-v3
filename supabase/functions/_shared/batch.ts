@@ -924,12 +924,27 @@ export async function generateMemoryFacts(db: SupabaseClient, targetDate: string
         continue;
       }
 
-      const sections = new Set((messages || []).map((m: any) => m.section));
-      const hasMission = sections.has("mission_1") || sections.has("mission_2");
-      const hasFree = sections.has("free_chat_1") || sections.has("free_chat_2");
-      const sessionType = hasMission ? "mission" : (hasFree ? "free_chat" : "free_chat");
+      // 066-llm-wiki QA: 이전에는 하루 전체(미션+자유대화 혼합) 메시지를 한 번에 합쳐
+      // 단일 sessionType으로 추출했다 — 같은 날 미션과 자유대화를 모두 하면 자유대화에서만
+      // 나온 발화의 Fact까지 source_type='mission'으로 잘못 표시되는 결함이 있었다(§17
+      // "source 구분"). 구간별로 분리해 추출해 각자의 실제 출처를 유지한다.
+      const missionMessages = (messages as { role: string; content: string; section: string }[])
+        .filter((m) => m.section === "mission_1" || m.section === "mission_2");
+      const freeChatMessages = (messages as { role: string; content: string; section: string }[])
+        .filter((m) => m.section === "free_chat_1" || m.section === "free_chat_2");
 
-      const transcriptText = (messages as { role: string; content: string }[])
+      const groups: { sessionType: "mission" | "free_chat"; groupMessages: { role: string; content: string }[] }[] = [];
+      if (missionMessages.length > 0) groups.push({ sessionType: "mission", groupMessages: missionMessages });
+      if (freeChatMessages.length > 0) groups.push({ sessionType: "free_chat", groupMessages: freeChatMessages });
+
+      if (groups.length === 0) {
+        result.skipped.push(childId);
+        continue;
+      }
+
+      for (const group of groups) {
+      const sessionType = group.sessionType;
+      const transcriptText = group.groupMessages
         .map((m) => `${m.role === "child" ? "아이" : "케이"}: ${m.content}`)
         .join("\n");
 
@@ -1209,6 +1224,7 @@ ${transcriptText}
 
         if (factRpcResult.was_new) result.factsCreated++;
       }
+      } // end for (const group of groups)
 
       result.childrenProcessed.push(childId);
     } catch (e) {
