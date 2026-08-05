@@ -30,9 +30,10 @@ function walk(dir) {
       walk(filePath);
     } else if (filePath.endsWith('.js')) {
       const content = fs.readFileSync(filePath, 'utf8');
-      for (const secret of SECRETS_TO_CHECK) {
-        if (content.includes(secret)) {
-          leakedSecrets.push({ file: filePath, secret });
+      for (const secretKey of SECRETS_TO_CHECK) {
+        const val = process.env[secretKey];
+        if (val && val.length > 5 && content.includes(val)) {
+          leakedSecrets.push({ file: filePath, secret: secretKey });
         }
       }
     }
