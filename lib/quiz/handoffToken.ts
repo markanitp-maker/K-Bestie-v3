@@ -69,12 +69,16 @@ export async function createQuizHandoffToken(
   // 난수 idempotency_key를 만들어(해당 파일 주석에 명시) 동시 요청을 전혀 막지 못했다.
   // begin_quiz_start_charge는 advisory lock + play_start_guards 부분 유니크 인덱스로
   // "아이×놀이당 진행 중인 시작 1건"을 DB 레벨에서 보장하고, 그 안에서 차감까지 끝낸다.
+  // 024: guard TTL을 60초(토큰 수명)에서 5초(더블클릭 방지용)로 분리.
+  // 60초를 그대로 쓰면 퀴즈를 잠시 하고 나와서 새로시작을 누를 때 409(already_starting)에 막힌다.
+  const PLAY_START_GUARD_TTL_SECONDS = 5;
+
   const { data: chargeData, error: chargeErr } = await supabase.rpc("begin_quiz_start_charge", {
     p_child_id: childId,
     p_user_id: userId,
     p_keys_needed: QUIZ_GOLD_KEY_COST,
     p_is_restart: options?.isRestart === true,
-    p_ttl_seconds: HANDOFF_TOKEN_TTL_SECONDS,
+    p_ttl_seconds: PLAY_START_GUARD_TTL_SECONDS,
   });
 
   if (chargeErr || !chargeData || chargeData.length === 0) {
