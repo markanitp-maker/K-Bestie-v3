@@ -31,12 +31,11 @@ function getCategoryLabelStatic(c: string): string {
   return c;
 }
 
-export default function FeedbackTab() {
+export default function FeedbackTab({ fixedCategory }: { fixedCategory: "voc" | "feature" | "bug" }) {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Filters
-  const [category, setCategory] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
   const [role, setRole] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
@@ -46,7 +45,7 @@ export default function FeedbackTab() {
   const load = useCallback(() => {
     setLoading(true);
     const query = new URLSearchParams();
-    if (category && category !== "all") query.set("category", category);
+    query.set("category", fixedCategory);
     if (status && status !== "all") query.set("status", status);
     if (role && role !== "all") query.set("role", role);
     if (search) query.set("search", search);
@@ -56,7 +55,7 @@ export default function FeedbackTab() {
       .then((d) => setRequests(d.requests || []))
       .catch((e) => console.error(e))
       .finally(() => setLoading(false));
-  }, [category, status, role, search]);
+  }, [fixedCategory, status, role, search]);
 
   useEffect(() => {
     load();
@@ -64,7 +63,7 @@ export default function FeedbackTab() {
 
   // requests/066 소프트 삭제 — 문의·건의·버그 접수(support_requests).
   const filterSummary = [
-    category !== "all" ? `유형=${category}` : null,
+    `유형=${fixedCategory}`,
     status !== "all" ? `상태=${status}` : null,
     role !== "all" ? `접수자=${role}` : null,
     search ? `검색="${search}"` : null,
@@ -72,7 +71,12 @@ export default function FeedbackTab() {
     .filter(Boolean)
     .join(", ");
 
-  const softDelete = useAdminSoftDelete("support_requests", "문의·건의·버그", load, filterSummary);
+  const resourceName = fixedCategory === "voc" ? "support_requests_voc" :
+                       fixedCategory === "feature" ? "support_requests_feature" : "support_requests_bug";
+  const resourceLabel = fixedCategory === "voc" ? "문의 접수" :
+                        fixedCategory === "feature" ? "건의 접수" : "버그 접수";
+
+  const softDelete = useAdminSoftDelete(resourceName as any, resourceLabel, load, filterSummary);
   const pageIds = requests.map((r) => r.id as string);
   const allSelected = pageIds.length > 0 && pageIds.every((id) => softDelete.isSelected(id));
   const selectedTargets = requests
@@ -121,18 +125,17 @@ export default function FeedbackTab() {
     return "neutral";
   };
 
-  const columns: AdminDataTableColumn<any>[] = [
+  const columns = ([
     {
       key: "select",
       header: "선택",
-      render: (req) => (
+      render: (req: any) => (
         <SoftDeleteRowCheckbox checked={softDelete.isSelected(req.id)} onChange={() => softDelete.toggleSelected(req.id)} />
       ),
     },
-    { key: "request_number", header: "접수번호", render: (req) => req.request_number || "-" },
-    { key: "category", header: "유형", render: (req) => getCategoryLabel(req.category) },
-    { key: "submitter", header: "접수자", render: (req) => formatSubmitter(req) },
-    { key: "summary", header: "제목/내용 요약", render: (req) => (
+    { key: "request_number", header: "접수번호", render: (req: any) => req.request_number || "-" },
+    { key: "submitter", header: "접수자", render: (req: any) => formatSubmitter(req) },
+    { key: "summary", header: "제목/내용 요약", render: (req: any) => (
       <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
         {req.category === "voc" ? req.body : req.subject}
         {req.attachments && req.attachments.filter((a: any) => a.upload_status === "uploaded").length > 0 && (
@@ -142,14 +145,14 @@ export default function FeedbackTab() {
         )}
       </div>
     )},
-    { key: "created_at", header: "접수일", render: (req) => formatDateTime(req.created_at) },
-    { key: "status", header: "상태", render: (req) => (
+    { key: "created_at", header: "접수일", render: (req: any) => formatDateTime(req.created_at) },
+    { key: "status", header: "상태", render: (req: any) => (
       <AdminStatusBadge text={getStatusLabel(req.status)} variant={getStatusVariant(req.status)} />
     )},
     {
       key: "actions",
       header: "액션",
-      render: (req) => (
+      render: (req: any) => (
         <SoftDeleteButton
           disabled={softDelete.busy}
           onClick={(e) => {
@@ -164,12 +167,15 @@ export default function FeedbackTab() {
         />
       ),
     },
-  ];
+  ].filter(Boolean) as AdminDataTableColumn<any>[]);
 
   return (
     <div style={{ width: "100%" }}>
       <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", color: "var(--admin-text-primary)", marginBottom: "var(--admin-space-12)" }}>
-        문의·건의·버그 접수 목록
+        {fixedCategory === "voc" ? "문의 접수 목록" :
+         fixedCategory === "feature" ? "건의 접수 목록" :
+         fixedCategory === "bug" ? "버그 접수 목록" :
+         "문의·건의·버그 접수 목록"}
       </h2>
 
       <AdminFilterBar
@@ -190,12 +196,6 @@ export default function FeedbackTab() {
           />
         }
         filterNodes={[
-          <select key="category" value={category} onChange={(e) => setCategory(e.target.value)} style={{ padding: "var(--admin-space-6) var(--admin-space-10)", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: "var(--admin-text-sm)", background: "var(--admin-surface)", color: "var(--admin-text-primary)" }}>
-            <option value="all">모든 유형</option>
-            <option value="voc">문의</option>
-            <option value="feature">건의</option>
-            <option value="bug">버그</option>
-          </select>,
           <select key="status" value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "var(--admin-space-6) var(--admin-space-10)", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: "var(--admin-text-sm)", background: "var(--admin-surface)", color: "var(--admin-text-primary)" }}>
             <option value="all">모든 상태</option>
             <option value="open">접수됨 (open)</option>

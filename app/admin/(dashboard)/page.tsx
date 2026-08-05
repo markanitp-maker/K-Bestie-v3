@@ -13,6 +13,7 @@ import ParentQueryRouterTab from "./ParentQueryRouterTab";
 import TrashTab from "./TrashTab";
 import PushTestTab from "./PushTestTab";
 import AcquisitionLinksTab from "./AcquisitionLinksTab";
+import AcquisitionDashboardTab from "./AcquisitionDashboardTab";
 import { RetentionEmbed } from "@/components/admin/RetentionEmbed";
 import {
   SoftDeleteButton,
@@ -1506,6 +1507,8 @@ function AdminDashboard() {
           <PushTestTab />
         ) : page === "acquisition-links" ? (
           <AcquisitionLinksTab />
+        ) : page === "acquisition-dashboard" ? (
+          <AcquisitionDashboardTab />
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
