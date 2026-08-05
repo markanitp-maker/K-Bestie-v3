@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
       family_name, given_name, gender, username, grade, interests,
       guardian_consent, status, requested_at, reviewed_at, reviewed_by,
       rejected_reason, failure_reason, failed_at,
-      beta_verified, survey_verified, created_child_id
+      beta_verified, survey_verified, created_child_id,
+      approval_method, approved_at, payment_id, payment_status
     `)
     // requests/066 소프트 삭제 — 삭제된 요청은 목록·통계·검색에서 제외한다.
     .is("deleted_at", null)
