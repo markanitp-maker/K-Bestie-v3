@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AdminKpiGrid, AdminKpiCard } from "@/components/admin/shell/AdminKpiCard";
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
 
 interface MissionEventRow {
   status: string;
@@ -48,10 +49,8 @@ export default function EventsOverviewTab() {
   const byStatus = (s: string) => rewards.filter((r) => r.status === s).length;
 
   return (
-    <div>
-      <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", color: "var(--admin-text-primary)", marginBottom: "var(--admin-space-16)" }}>
-        이벤트 현황
-      </h2>
+    <div style={{ width: "100%" }}>
+      <AdminPageHeader title="이벤트 현황" />
       <AdminKpiGrid>
         <AdminKpiCard title="미션 시작 전" value={`${notStarted}명`} />
         <AdminKpiCard title="미션 진행 중" value={`${active}명`} />

@@ -3,11 +3,12 @@
 import { useEffect, useState, useMemo, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AdminDataTable } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminKpiCard, AdminKpiGrid } from "@/components/admin/shell/AdminKpiCard";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 import { RetentionWidgetErrorBoundary } from "@/components/admin/RetentionWidgetErrorBoundary";
+import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
 
 // requests/064 — /admin(사이드바) iframe에서 로드될 때 ?embed=1로 접근한다.
 // 이 페이지 자체의 헤더(내친구 케이 상단바는 app/admin/layout.tsx가 그리는 별개의
@@ -31,21 +32,25 @@ function formatDuration(sec: number): string {
 }
 
 function MetricCard({ label, value, sub, deltaPct, actualString }: { label: string; value: string; sub?: string; deltaPct?: number | null; actualString?: string }) {
-  return (
-    <div style={{ background: "var(--admin-surface)", borderRadius: 14, boxShadow: "var(--shadow-k-card)", padding: "18px 22px", display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ fontSize: 13, color: "var(--admin-text-secondary)", fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: "clamp(20px, 2.5vw, 32px)", fontWeight: 800, color: "var(--admin-text-primary)" }}>
-        {value}
-        {deltaPct !== undefined && deltaPct !== null && (
-          <span style={{ fontSize: 14, marginLeft: 8, color: deltaPct > 0 ? "var(--admin-primary)" : deltaPct < 0 ? "var(--admin-danger)" : "var(--admin-text-secondary)" }}>
-            {deltaPct > 0 ? "▲" : deltaPct < 0 ? "▼" : "-"}{Math.abs(deltaPct)}%
-          </span>
-        )}
-      </div>
-      {actualString && <div style={{ fontSize: 12, color: "var(--admin-text-secondary)", fontWeight: 500 }}>{actualString}</div>}
-      {sub && <div style={{ fontSize: 11, color: "var(--admin-text-secondary)" }}>{sub}</div>}
+  const description = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {actualString && <div style={{ fontSize: "var(--admin-text-xs)" }}>{actualString}</div>}
+      {sub && <div style={{ fontSize: "var(--admin-text-xs)" }}>{sub}</div>}
     </div>
   );
+  
+  const formattedValue = (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+      {value}
+      {deltaPct !== undefined && deltaPct !== null && (
+        <span style={{ fontSize: 14, color: deltaPct > 0 ? "var(--admin-primary)" : deltaPct < 0 ? "var(--admin-danger)" : "var(--admin-text-secondary)" }}>
+          {deltaPct > 0 ? "▲" : deltaPct < 0 ? "▼" : "-"}{Math.abs(deltaPct)}%
+        </span>
+      )}
+    </div>
+  );
+
+  return <AdminKpiCard title={label} value={formattedValue} description={description} />;
 }
 
 const thStyle = { padding: "12px 16px", fontSize: 13, color: "var(--admin-text-secondary)", borderBottom: "1px solid var(--admin-border)", fontWeight: 600, textAlign: "left" as const };
@@ -152,9 +157,9 @@ function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includ
   const title = showFamilies ? "가족 상세" : scope === "all" ? "전체 상세 (부모+아이)" : scope === "parent" ? "부모 상세" : "아이 상세";
 
   return (
-    <div style={{ marginTop: 40 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div style={{ fontSize: 18, fontWeight: 800, color: "var(--admin-text-primary)" }}>사용자별 상세 드릴다운 — {title}</div>
+    <div style={{ marginTop: "var(--admin-space-40)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--admin-space-16)" }}>
+        <div style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", color: "var(--admin-text-primary)" }}>사용자별 상세 드릴다운 — {title}</div>
         <button
           onClick={() => setShowFamilies(v => !v)}
           style={{
@@ -172,14 +177,14 @@ function DrillDownSection({ scope, includeTestAccounts }: { scope: Scope; includ
         </button>
       </div>
 
-      <div style={{ background: "var(--admin-surface)", borderRadius: 12, overflow: "hidden", boxShadow: "var(--shadow-k-card)" }}>
+      <div style={{ background: "var(--admin-surface)", borderRadius: 16, overflow: "hidden", border: "1px solid var(--admin-border)" }}>
         {loading ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--admin-text-secondary)" }}>불러오는 중...</div>
+          <div style={{ padding: "var(--admin-space-24)", textAlign: "center", color: "var(--admin-text-secondary)" }}>불러오는 중...</div>
         ) : !listData || listData.length === 0 ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--admin-text-secondary)" }}>데이터가 없습니다.</div>
+          <div style={{ padding: "var(--admin-space-24)", textAlign: "center", color: "var(--admin-text-secondary)" }}>데이터가 없습니다.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <AdminDataTable
+            <AdminResponsiveTable mobileStrategy="card"
               columns={
                 listType === "families" ? [
                   { key: "family", header: "가족", render: (item: any) => <IdentityCell name={item.representativeParentName} loginId={item.representativeLoginId} maskedId={item.maskedId} /> },
@@ -289,17 +294,17 @@ function AdminRetentionContent() {
   }, [features, scope]);
 
   return (
-    <div ref={rootRef} style={{ minHeight: embed ? undefined : "100vh", background: "var(--admin-bg, #fafaf8)", paddingBottom: embed ? 24 : 64 }}>
+    <div ref={rootRef} style={{ minHeight: embed ? undefined : "100vh", width: "100%", background: "var(--admin-bg, #fafaf8)", paddingBottom: embed ? 0 : 64 }}>
       {!embed && (
-        <header style={{ background: "var(--admin-surface)", padding: "16px 20px", borderBottom: "1px solid var(--admin-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--admin-text-primary)" }}>사용자 리텐션 대시보드</h1>
-            <Link href="/admin" style={{ fontSize: 13, color: "var(--admin-primary)", textDecoration: "none" }}>← 관리자 홈</Link>
-          </div>
-        </header>
+        <div style={{ padding: "var(--admin-space-24) var(--admin-space-32) 0" }}>
+          <AdminPageHeader 
+            title="사용자 리텐션 대시보드" 
+            action={<Link href="/admin" style={{ fontSize: "var(--admin-text-sm)", color: "var(--admin-primary)", textDecoration: "none" }}>← 관리자 홈</Link>} 
+          />
+        </div>
       )}
 
-      <main style={{ maxWidth: 1440, margin: "0 auto", padding: embed ? "4px 4px 0" : "24px 20px" }}>
+      <main style={embed ? { width: "100%", padding: 0 } : { width: "100%", maxWidth: 1600, margin: "0 auto", padding: "0 var(--admin-space-32) var(--admin-space-48)" }}>
         {/* requests/063 §3 — 전체/부모/아이 리텐션 scope 탭. 기본값 전체 */}
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
           {([["all", "전체 리텐션"], ["parent", "부모 리텐션"], ["child", "아이 리텐션"]] as const).map(([s, label]) => (
@@ -376,19 +381,19 @@ function AdminRetentionContent() {
         />
 
         {error && (
-          <div style={{ color: "var(--admin-danger)", background: "#ffeef0", padding: "16px", borderRadius: 8, marginBottom: 24 }}>
+          <div style={{ color: "var(--admin-danger)", background: "#ffeef0", padding: "var(--admin-space-16)", borderRadius: 8, marginBottom: "var(--admin-space-24)" }}>
             데이터를 불러오는 중 오류가 발생했습니다: {error}
           </div>
         )}
 
         {loading ? (
-          <div style={{ padding: "40px", textAlign: "center", color: "var(--admin-text-secondary)" }}>대시보드 데이터를 집계하는 중입니다...</div>
+          <div style={{ padding: "var(--admin-space-40)", textAlign: "center", color: "var(--admin-text-secondary)" }}>대시보드 데이터를 집계하는 중입니다...</div>
         ) : overview && cohort ? (
           <>
             {/* KPI Cards */}
             <RetentionWidgetErrorBoundary label="핵심 지표">
-            <div style={{ marginBottom: 40 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "var(--admin-text-primary)" }}>사용자 규모 및 리텐션 핵심 지표</h2>
+            <div style={{ marginBottom: "var(--admin-space-40)" }}>
+              <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", marginBottom: "var(--admin-space-16)", color: "var(--admin-text-primary)" }}>사용자 규모 및 리텐션 핵심 지표</h2>
               <AdminKpiGrid>
 
                 {/* requests/063 §14 — scope별 UI 문구. 활성 사용자 수는 scope에 따라
@@ -466,8 +471,8 @@ function AdminRetentionContent() {
 
             {/* Daily Trend Chart */}
             <RetentionWidgetErrorBoundary label="일별 활성 사용자 추이(DAU)">
-            <div style={{ marginBottom: 40, background: "var(--admin-surface)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)" }}>
-              <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 24, color: "var(--admin-text-primary)" }}>일별 활성 사용자 추이 (DAU)</h2>
+            <div style={{ marginBottom: "var(--admin-space-40)", background: "var(--admin-surface)", borderRadius: 16, padding: "var(--admin-space-24)", border: "1px solid var(--admin-border)" }}>
+              <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", marginBottom: "var(--admin-space-24)", color: "var(--admin-text-primary)" }}>일별 활성 사용자 추이 (DAU)</h2>
               <div style={{ height: 300, width: "100%" }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={overview.dailyTrend} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -488,11 +493,11 @@ function AdminRetentionContent() {
             </div>
             </RetentionWidgetErrorBoundary>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, marginBottom: 40 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--admin-space-24)", marginBottom: "var(--admin-space-40)" }}>
               {/* Funnel Chart */}
               <RetentionWidgetErrorBoundary label="핵심 행동 퍼널 전환">
-              <div style={{ background: "var(--admin-surface)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)" }}>
-                <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 24, color: "var(--admin-text-primary)" }}>핵심 행동 퍼널 전환</h2>
+              <div style={{ background: "var(--admin-surface)", borderRadius: 16, padding: "var(--admin-space-24)", border: "1px solid var(--admin-border)" }}>
+                <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", marginBottom: "var(--admin-space-24)", color: "var(--admin-text-primary)" }}>핵심 행동 퍼널 전환</h2>
                 <div style={{ height: 300, width: "100%" }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={featureChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -511,8 +516,8 @@ function AdminRetentionContent() {
 
               {/* Cohort Table */}
               <RetentionWidgetErrorBoundary label="가입 코호트 리텐션">
-              <div style={{ background: "var(--admin-surface)", borderRadius: 14, padding: "24px", boxShadow: "var(--shadow-k-card)", overflowX: "auto" }}>
-                <h2 style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: "var(--admin-text-primary)" }}>가입 코호트 리텐션 ({scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} 기준)</h2>
+              <div style={{ background: "var(--admin-surface)", borderRadius: 16, padding: "var(--admin-space-24)", border: "1px solid var(--admin-border)", overflowX: "auto" }}>
+                <h2 style={{ fontSize: "var(--admin-text-lg)", fontWeight: "var(--admin-weight-bold)", marginBottom: "var(--admin-space-16)", color: "var(--admin-text-primary)" }}>가입 코호트 리텐션 ({scope === "all" ? "전체" : scope === "parent" ? "부모" : "아이"} 기준)</h2>
                 <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "center", fontSize: 13 }}>
                   <thead>
                     <tr>
@@ -561,7 +566,7 @@ function AdminRetentionContent() {
 
 export default function AdminRetentionPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--admin-text-secondary)" }}>불러오는 중...</div>}>
+    <Suspense fallback={<div style={{ padding: "var(--admin-space-40)", textAlign: "center", color: "var(--admin-text-secondary)" }}>불러오는 중...</div>}>
       <AdminRetentionContent />
     </Suspense>
   );
