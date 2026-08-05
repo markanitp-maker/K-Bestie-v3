@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { requireAdminActor } from "@/lib/admin/adminActor";
 import { excludeDeleted } from "@/lib/admin/softDeleteService";
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const supabase = await createClient();
+  const supabase = createServiceClient();
 
   let q = supabase.from("acquisition_links").select("*");
   q = excludeDeleted(q);
@@ -22,11 +22,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
-  // Calculate clicks and signups later? 
-  // For Tier 1, let's just return the links. The UI can fetch or calculate later, 
-  // but wait, the instruction says "클릭수/가입완료수/전환율/최근가입일" should be in the list.
-  // We can fetch them via a joined query or aggregate.
-  
   const links = data ?? [];
 
   // Get aggregates
@@ -85,7 +80,7 @@ export async function POST(req: NextRequest) {
   const { denied, actor } = await requireAdminActor("admin_acquisition_links_create");
   if (denied) return denied;
 
-  const supabase = await createClient();
+  const supabase = createServiceClient();
   
   let body;
   try {
@@ -106,7 +101,6 @@ export async function POST(req: NextRequest) {
   const cleanPurpose = purpose.replace(/[^a-zA-Z0-9가-힣]/g, "").toLowerCase();
   
   let link_id = `${cleanChannel}_${dateStr}_${cleanPurpose}_${randomSuffix}`;
-  // link_id should not exceed 50 chars, but text can hold any. Let's just limit.
   link_id = link_id.substring(0, 100);
 
   const { data, error } = await supabase.from("acquisition_links").insert({

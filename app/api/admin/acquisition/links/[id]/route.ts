@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdminActor } from "@/lib/admin/adminActor";
 import { softDeleteRecords } from "@/lib/admin/softDeleteService";
 
@@ -13,7 +13,7 @@ export async function PATCH(
   if (denied) return denied;
 
   const { id } = await params;
-  const supabase = await createClient();
+  const supabase = createServiceClient();
   
   let body;
   try {
@@ -55,7 +55,7 @@ export async function DELETE(
   if (denied) return denied;
 
   const { id } = await params;
-  const supabase = await createClient();
+  const supabase = createServiceClient();
 
   try {
     await softDeleteRecords(

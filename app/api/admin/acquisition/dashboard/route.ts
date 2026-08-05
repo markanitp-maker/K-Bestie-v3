@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const supabase = await createClient();
+  const supabase = createServiceClient();
 
   // 1. Get Test Accounts if we need to exclude them
   let testParentIds = new Set<string>();
