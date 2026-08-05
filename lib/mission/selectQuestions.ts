@@ -114,12 +114,27 @@ const CYCLE_INTERVAL_DAYS: Record<Exclude<CycleType, "onboarding" | "always">, n
   quarterly: 90,
 };
 
-/** "초4", "4학년", "4" 등 학년 텍스트를 정수로 파싱 (실패 시 null) */
+/** "초4", "4학년", "4" 등 학년 텍스트를 실제 학년 정수로 파싱 (실패 시 null).
+ *  "중학교 1학년"/"중1"은 7(=초1~6 다음 학년)로 매핑한다 — 단순 숫자 추출(regex)로는
+ *  "중학교 1학년"의 "1"이 "1학년"(초1)과 충돌하므로 반드시 중학교 여부를 먼저
+ *  확인한다. 현재 서비스가 지원하는 중학교 학년은 1학년뿐이므로 "중2"/"중3" 등은
+ *  의도적으로 매핑하지 않고(오분류 방지) 그 외 숫자 추출 경로로 넘긴다. */
 export function parseGrade(grade: string | number | null | undefined): number | null {
   if (typeof grade === "number") return Number.isFinite(grade) ? grade : null;
   if (!grade) return null;
-  const m = String(grade).match(/\d+/);
+  const str = String(grade);
+  if (str.includes("중학교 1학년") || /^중1(?!\d)/.test(str)) return 7;
+  const m = str.match(/\d+/);
   return m ? parseInt(m[0], 10) : null;
+}
+
+/** 미션/퀴즈마스터 콘텐츠 선택 전용 — 실제 학년을 콘텐츠 학년으로 매핑한다.
+ *  중학교 1학년(실제 학년 7)은 콘텐츠가 없으므로 초6(콘텐츠 학년 6) 문항을 대신 쓴다.
+ *  이 함수는 문항/콘텐츠 선택 호출부에서만 쓰고, 표시·기억·LLM 프롬프트에는 항상
+ *  실제 학년(parseGrade 결과)을 그대로 써야 한다 — 절대 이 함수의 결과를 저장하거나
+ *  아이에게 보여주지 않는다. */
+export function getEffectiveContentGrade(realGrade: number): number {
+  return realGrade === 7 ? 6 : realGrade;
 }
 
 function shuffle<T>(arr: T[]): T[] {
