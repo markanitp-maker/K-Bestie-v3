@@ -20,6 +20,7 @@ import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
 import { calculateFinalDeletionDate, purchaseExtension } from "@/lib/plan/insightExtension";
 import { CONSENT_DOCUMENT_TEXT } from "@/lib/plan/consentDocument";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
+import { usePushSubscription } from "@/lib/notifications/usePushSubscription";
 import KChatbotWidget from "@/components/KChatbotWidget";
 
 function formatRetentionLabel(tier: Tier): string {
@@ -28,7 +29,7 @@ function formatRetentionLabel(tier: Tier): string {
   return months % 12 === 0 ? `${months / 12}년` : `${months}개월`;
 }
 
-const GRADES = ["1학년", "2학년", "3학년", "4학년", "5학년", "6학년"];
+const GRADES = ["1학년", "2학년", "3학년", "4학년", "5학년", "6학년", "중학교 1학년"];
 const INTERESTS = ["공룡", "우주", "동물", "그림", "음악", "스포츠", "요리", "게임", "과학", "책"];
 // plans 테이블(tier 1/2/3) 기준 사용자용 이름 — 내부 tier 숫자는 화면에 노출하지 않는다.
 // TODO: 정식 오픈 시 결제 연동으로 전환 필요 — 자세한 건 FUTURE_TODO.md 참고.
@@ -51,6 +52,37 @@ export default function ParentSettingsPage() {
   const { reportAlert, weeklySummary } = store.notifSettings;
   const { view: demoView } = useDemoView();
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
+  const { requestAndSubscribe } = usePushSubscription();
+  const [pushSaving, setPushSaving] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+
+  const handleReportAlertToggle = async (checked: boolean) => {
+    setNotifSetting("reportAlert", checked);
+    setPushError(null);
+    setPushSaving(true);
+    try {
+      if (checked) {
+        const result = await requestAndSubscribe();
+        if (result !== "granted") {
+          setPushError(
+            result === "unsupported"
+              ? "이 브라우저에서는 알림을 지원하지 않아요."
+              : "알림 권한이 허용되지 않아 알림을 받을 수 없어요. 브라우저 설정에서 알림 권한을 허용해 주세요."
+          );
+          setNotifSetting("reportAlert", false);
+          setPushSaving(false);
+          return;
+        }
+      }
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from("parents").update({ report_push_enabled: checked }).eq("id", user.id);
+      }
+    } finally {
+      setPushSaving(false);
+    }
+  };
 
   const [mounted, setMounted] = useState(false);
   const [windowWidth, setWindowWidth] = useState<number>(1200);
@@ -84,6 +116,8 @@ export default function ParentSettingsPage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
   const [addSuccessMessage, setAddSuccessMessage] = useState<string | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showBetaApprovedModal, setShowBetaApprovedModal] = useState(false);
 
   // 053: 아이 승인 요청(pending/creation_failed/rejected) 상태 - 조회 전용(승인/재시도는 관리자 화면)
   const [approvalRequests, setApprovalRequests] = useState<any[]>([]);
@@ -500,6 +534,10 @@ export default function ParentSettingsPage() {
       };
       setSaveState("success");
       await loadFamilyMembers();
+      // requests/request_parent_child_profile_sync.md §5.3 — 저장 성공 직후 "아이 승인
+      // 요청 현황" 카드도 함께 갱신한다(그동안 이 화면만 저장 후 재조회 대상에서
+      // 빠져 있어 승인 완료된 아이도 가입 신청 당시 값이 계속 보이던 버그의 원인이었음).
+      await loadApprovalRequests();
       return true;
     } catch {
       setSaveState("error");
@@ -681,8 +719,15 @@ export default function ParentSettingsPage() {
       setAddChildInterests([]);
       setAddChildConsent(false);
       setActiveMenu(null);
-      setAddSuccessMessage("승인 요청이 접수되었습니다. 관리자 승인 후 아이 계정이 만들어져요.");
+      if (data.request?.status === "approved") {
+        setShowBetaApprovedModal(true);
+      } else if (data.request?.status === "PENDING_PAYMENT") {
+        setShowPaymentModal(true);
+      } else {
+        setAddSuccessMessage("승인 요청이 접수되었습니다. 관리자 승인 후 아이 계정이 만들어져요.");
+      }
       await loadApprovalRequests();
+      await loadFamilyMembers(); // Reload members to show the newly approved child immediately
     } catch {
       setAddError("네트워크 에러가 발생했습니다.");
     } finally {
@@ -1025,12 +1070,17 @@ export default function ParentSettingsPage() {
                   return (
                     <div key={req.id} className="rounded-xl p-3 border border-gray-100 flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-gray-800 truncate">{req.family_name}{req.given_name} · {req.grade}</p>
+                        <p className="text-xs font-bold text-gray-800 truncate">
+                          {req.profileMissing ? "아이 정보" : `${req.family_name}${req.given_name}`} · {req.grade}
+                        </p>
                         {req.status === "rejected" && req.rejected_reason && (
                           <p className="text-[10px] text-gray-500 mt-0.5 truncate">사유: {req.rejected_reason}</p>
                         )}
                         {req.status === "creation_failed" && (
                           <p className="text-[10px] text-gray-500 mt-0.5 truncate">관리자가 확인 후 다시 처리할 예정이에요</p>
+                        )}
+                        {req.status === "approved" && req.profileMissing && (
+                          <p className="text-[10px] mt-0.5 truncate" style={{ color: "#991b1b" }}>정보 확인 필요 — 잠시 후 다시 확인해 주세요</p>
                         )}
                       </div>
                       <span
@@ -1049,6 +1099,49 @@ export default function ParentSettingsPage() {
           {addSuccessMessage && (
             <div className="bg-white rounded-2xl px-4 py-3 shadow-sm">
               <p className="text-xs font-bold text-center" style={{ color: "var(--color-k-navy)" }}>{addSuccessMessage}</p>
+            </div>
+          )}
+
+          {showBetaApprovedModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+              <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
+                <h3 className="text-lg font-bold text-center" style={{ color: "var(--color-k-navy)" }}>승인되었습니다</h3>
+                <p className="text-sm text-center text-gray-700">아이 등록이 완료되었습니다.<br />지금 바로 내친구 케이를 이용할 수 있습니다.</p>
+                <button
+                  onClick={() => setShowBetaApprovedModal(false)}
+                  className="w-full py-3 rounded-full text-white font-bold"
+                  style={{ background: "var(--color-k-orange)" }}
+                >
+                  확인
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showPaymentModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+              <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
+                <h3 className="text-lg font-bold text-center" style={{ color: "var(--color-k-navy)" }}>결제가 필요합니다</h3>
+                <p className="text-sm text-center text-gray-700">아이 등록과 서비스 이용을 위해 결제가 필요합니다.<br />결제 완료 후 아이 계정이 자동 승인됩니다.</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowPaymentModal(false)}
+                    className="flex-1 py-3 rounded-full font-bold border border-gray-300 text-gray-600"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowPaymentModal(false);
+                      alert("결제 연동이 아직 준비되지 않았습니다. (개발 중)");
+                    }}
+                    className="flex-1 py-3 rounded-full text-white font-bold"
+                    style={{ background: "var(--color-k-orange)" }}
+                  >
+                    결제 페이지로 이동
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1229,10 +1322,12 @@ export default function ParentSettingsPage() {
                       <input
                         type="checkbox"
                         checked={reportAlert}
-                        onChange={(e) => setNotifSetting("reportAlert", e.target.checked)}
+                        disabled={pushSaving}
+                        onChange={(e) => handleReportAlertToggle(e.target.checked)}
                         className="w-4 h-4 rounded text-[var(--color-k-navy)]"
                       />
                     </label>
+                    {pushError && <p className="text-[10px] text-red-500 px-1">{pushError}</p>}
                     <label className="flex items-center justify-between text-xs cursor-pointer">
                       <div>
                         <p className="font-bold text-gray-800">주간 종합 요약 알림</p>

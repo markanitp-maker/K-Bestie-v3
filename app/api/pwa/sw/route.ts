@@ -117,6 +117,30 @@ self.addEventListener("fetch", (event) => {
   // 3. 화이트리스트에 없는 나머지 GET 요청은 네트워크 전용 처리 (캐싱 안 함)
   return;
 });
+
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  try {
+    const data = event.data.json();
+    const title = data.title || "새로운 알림이 도착했습니다.";
+    const options = {
+      body: data.body,
+      icon: "/icons/icon-192-v4.png",
+      badge: "/icons/icon-192-v4.png",
+      data: data.url,
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch (e) {
+    console.error("Error parsing push data", e);
+  }
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  if (event.notification.data) {
+    event.waitUntil(self.clients.openWindow(event.notification.data));
+  }
+});
 `;
 
   return new NextResponse(swCode, {

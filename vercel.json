@@ -15,6 +15,10 @@
     {
       "path": "/api/batch/admin-trash-purge",
       "schedule": "30 18 * * *"
+    },
+    {
+      "path": "/api/batch/report-notifications",
+      "schedule": "0 23 * * *"
     }
   ]
 }
