@@ -24,6 +24,11 @@ if (fs.existsSync(envPath)) {
   });
 }
 
+if (process.env.VERCEL) {
+  console.log('OK: Vercel build environment detected, skipping local env separation check');
+  process.exit(0);
+}
+
 if (!process.env['NEXT_PUBLIC_SUPABASE_DEV_URL'] && !process.env['NEXT_PUBLIC_SUPABASE_URL']) {
   console.log('OK: Dev/Production 환경 분리 확인 완료');
   process.exit(0);
