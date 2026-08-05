@@ -41,6 +41,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .from("event_reward_fulfillments")
     .select("status")
     .eq("id", id)
+    .is("deleted_at", null)
     .single();
 
   if (fetchErr || !current) {

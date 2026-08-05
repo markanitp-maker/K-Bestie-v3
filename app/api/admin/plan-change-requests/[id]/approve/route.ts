@@ -26,9 +26,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // 이전에 이미 만들어진 pending 요청이 남아있을 가능성에 대비한 방어적 재검증.
   const { data: reqRow } = await service
     .from("plan_change_requests")
-    .select("requested_tier")
+    .select("requested_tier, deleted_at")
     .eq("id", id)
     .maybeSingle();
+  if (reqRow?.deleted_at) {
+    return NextResponse.json({ error: "삭제된 요청입니다." }, { status: 404 });
+  }
   if (reqRow?.requested_tier === 3) {
     return NextResponse.json({ error: "Care Premium은 현재 준비 중입니다." }, { status: 403 });
   }

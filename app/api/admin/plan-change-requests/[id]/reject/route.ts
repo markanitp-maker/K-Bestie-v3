@@ -25,6 +25,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const reason = (body.reason ?? "").trim().slice(0, 500);
 
   const service = createServiceClient();
+
+  const { data: reqRow } = await service
+    .from("plan_change_requests")
+    .select("deleted_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (reqRow?.deleted_at) {
+    return NextResponse.json({ error: "삭제된 요청입니다." }, { status: 404 });
+  }
+
   const { data, error } = await service.rpc("admin_reject_plan_change_request", {
     p_admin_user_id: adminUser.id,
     p_admin_email: adminUser.email!,

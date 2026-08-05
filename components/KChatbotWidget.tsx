@@ -479,6 +479,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
       // 버튼(closeModal)이 "미저장 콘텐츠"로 오인해 서버에서 삭제하지 않도록 목록만
       // 비운다(서버 DELETE 호출 없이 상태만 초기화 - resetForm과 달리 idempotency
       // key는 여기서 새로 발급하지 않는다. 성공 화면의 "확인" 버튼이 resetForm으로 처리).
+      attachments.forEach((a) => URL.revokeObjectURL(a.previewUrl));
       setAttachments([]);
     } catch (err) {
       console.error(err);
