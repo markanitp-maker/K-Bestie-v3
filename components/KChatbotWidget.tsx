@@ -22,13 +22,42 @@ export interface KChatbotWidgetProps {
 
 type Category = "voc" | "feature" | "bug";
 
+/** 056: 공식 FAQ 페이지 URL. 공개 링크라 NEXT_PUBLIC_ 접두어가 규약상 적합하다(비밀값 아님).
+ *  값이 없으면 URL을 임의로 만들지 않고 모달의 이동 버튼을 비활성으로 렌더링한다. */
+const RAW_FAQ_URL = (process.env.NEXT_PUBLIC_FAQ_URL ?? "").trim();
+const FAQ_URL = /^https?:\/\//i.test(RAW_FAQ_URL) ? RAW_FAQ_URL : null;
+
+/** 056: 플로팅 버튼 위치 저장 키. 021/043의 구 스키마({xPercent,yPercent})는 복원 clamp가
+ *  0~100 스케일 값을 0~1로 뭉개 세로 위치를 유실시켰으므로, 스키마를 바꾸면서 키도 올린다. */
+const POSITION_STORAGE_KEY = "k_faq_button_position_v1";
+/** 드래그로 인정하는 최소 이동 거리(px). 이하는 탭으로 보고 모달을 연다. */
+const DRAG_THRESHOLD_PX = 8;
+/** 하단 메뉴/주요 조작 버튼 영역으로 예약해 버튼이 침범하지 못하게 하는 높이(px). */
+const BOTTOM_RESERVED_PX = 90;
+/** 버튼 자체 높이(px, py-2 + text-sm 기준). 하단 clamp 계산에 쓴다. */
+const BUTTON_HEIGHT_PX = 40;
+
+type ButtonPosition = { edge: "left" | "right"; yRatio: number };
+
 export default function KChatbotWidget({ appSurface, topOffsetPx = 56, containerMaxWidthPx }: KChatbotWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [category, setCategory] = useState<Category>("voc");
   const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [resultMessage, setResultMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  type AttachmentState = {
+    client_id: string;
+    file: File;
+    previewUrl: string;
+    status: "processing" | "uploading" | "uploaded" | "failed";
+    server_id?: string;
+    error_message?: string;
+  };
+  const [attachments, setAttachments] = useState<AttachmentState[]>([]);
+
 
   const pathname = usePathname();
   const modalRef = useRef<HTMLDivElement>(null);
@@ -38,118 +67,76 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
   // DB 레벨에서 막는다(app/api/support/route.ts 참고).
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
 
-  // --- NEW STATE FOR DRAGGABLE ---
-  const [position, setPosition] = useState<{ xPercent: number; yPercent: number; edge: "left" | "right" } | null>(null);
+  // --- DRAGGABLE FLOATING BUTTON (056) ---
+  const [position, setPosition] = useState<ButtonPosition | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
-  
+
   const dragRef = useRef({
     startX: 0,
     startY: 0,
     offsetX: 0,
     offsetY: 0,
     isPointerDown: false,
-    longPressTimer: null as NodeJS.Timeout | null,
     isDragging: false,
-    wasDragging: false,
+    /** 드래그 종료 직후 브라우저가 발생시키는 native click을 1회 삼키기 위한 플래그.
+     *  click이 끝내 오지 않는 경우(터치에서 pointercancel 등)에도 다음 pointerdown이
+     *  반드시 false로 되돌리므로, 잔류해서 정상 탭을 삼키는 상태가 생기지 않는다. */
+    suppressClick: false,
   });
-
-  // 롱프레스 타이머가 대기 중일 때 컴포넌트가 언마운트되면 타이머 콜백이 이미 사라진
-  // 컴포넌트의 setState를 호출하게 되므로, 언마운트 시 반드시 정리한다.
-  useEffect(() => {
-    return () => {
-      if (dragRef.current.longPressTimer) {
-        clearTimeout(dragRef.current.longPressTimer);
-        dragRef.current.longPressTimer = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("k_chatbot_widget_position");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed.xPercent === "number" && typeof parsed.yPercent === "number" && (parsed.edge === "left" || parsed.edge === "right")) {
-          // 저장 이후 뷰포트가 바뀌었거나(PC 프리뷰 ↔ 실기기) 값 자체가 손상된 경우
-          // 버튼이 화면 밖으로 나가지 않도록 0~1 범위로 clamp한다.
-          setPosition({
-            ...parsed,
-            xPercent: Math.min(1, Math.max(0, parsed.xPercent)),
-            yPercent: Math.min(1, Math.max(0, parsed.yPercent)),
-          });
-        }
+      const saved = localStorage.getItem(POSITION_STORAGE_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (
+        parsed &&
+        (parsed.edge === "left" || parsed.edge === "right") &&
+        typeof parsed.yRatio === "number" &&
+        Number.isFinite(parsed.yRatio)
+      ) {
+        setPosition({
+          edge: parsed.edge,
+          yRatio: Math.min(1, Math.max(0, parsed.yRatio)),
+        });
       }
-    } catch (e) {
-      // ignore
+    } catch {
+      // 손상된 값이면 조용히 기본 위치(우측 하단)를 쓴다.
     }
   }, []);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (e.button !== 0 && e.pointerType === "mouse") return; // Only left click for mouse
-    
+    if (e.pointerType === "mouse" && e.button !== 0) return; // 마우스는 좌클릭만
+
     const rect = e.currentTarget.getBoundingClientRect();
     dragRef.current = {
-      ...dragRef.current,
       startX: e.clientX,
       startY: e.clientY,
       offsetX: e.clientX - rect.left,
       offsetY: e.clientY - rect.top,
       isPointerDown: true,
       isDragging: false,
-      wasDragging: false,
+      suppressClick: false,
     };
-    
+
     e.currentTarget.setPointerCapture(e.pointerId);
-
-    // 아이 화면에서만 롱프레스로 드래그 진입한다. 부모 화면은 handlePointerMove의
-    // 10px 이동 임계치로만 드래그를 시작해야 하는데, 이 타이머가 화면 구분 없이
-    // 걸려 있으면 부모 화면에서 "이동 없이 400ms 이상 누르고 있다가 뗀 평범한 클릭"도
-    // 드래그로 오인되어 모달이 안 열리고 위치까지 덮어써지는 버그가 생긴다.
-    if (appSurface !== "child") return;
-
-    dragRef.current.longPressTimer = setTimeout(() => {
-      if (dragRef.current.isPointerDown) {
-        dragRef.current.isDragging = true;
-        setIsDragging(true);
-        setDragPos({
-          x: dragRef.current.startX - dragRef.current.offsetX,
-          y: dragRef.current.startY - dragRef.current.offsetY,
-        });
-      }
-    }, 400);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!dragRef.current.isPointerDown) return;
-    
+
     const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
-    
-    if (!dragRef.current.isDragging && Math.sqrt(dx * dx + dy * dy) > 10) {
-      if (appSurface === "child") {
-        // Child screen: Must long press to move. Swipe cancels.
-        // 롱프레스 완료 전 10px 이상 스와이프는 드래그도 클릭도 아닌 취소 동작이므로,
-        // wasDragging을 세팅해 뒤이어 발생하는 native click이 모달을 열지 않게 막는다.
-        if (dragRef.current.longPressTimer) {
-          clearTimeout(dragRef.current.longPressTimer);
-          dragRef.current.longPressTimer = null;
-        }
-        dragRef.current.isPointerDown = false;
-        dragRef.current.wasDragging = true;
-        e.currentTarget.releasePointerCapture(e.pointerId);
-        return;
-      } else {
-        // Parent screen: Immediate drag allowed
-        if (dragRef.current.longPressTimer) {
-          clearTimeout(dragRef.current.longPressTimer);
-          dragRef.current.longPressTimer = null;
-        }
-        dragRef.current.isDragging = true;
-        setIsDragging(true);
-      }
+
+    // 드래그 진입 조건은 아이·부모 화면 공통으로 이동거리 하나뿐이다. 화면별로
+    // 롱프레스/스와이프 취소를 다르게 두면 "눌렀는데 아무 일도 안 일어나는" 상태가
+    // 생기고, 정지 롱프레스가 드래그로 오인돼 모달이 안 열리는 버그로 이어졌다.
+    if (!dragRef.current.isDragging && Math.sqrt(dx * dx + dy * dy) > DRAG_THRESHOLD_PX) {
+      dragRef.current.isDragging = true;
+      setIsDragging(true);
     }
-    
+
     if (dragRef.current.isDragging) {
       setDragPos({
         x: e.clientX - dragRef.current.offsetX,
@@ -160,54 +147,40 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
 
   const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!dragRef.current.isPointerDown) return;
-    
-    if (dragRef.current.longPressTimer) {
-      clearTimeout(dragRef.current.longPressTimer);
-      dragRef.current.longPressTimer = null;
-    }
-    
+
     dragRef.current.isPointerDown = false;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    
-    if (dragRef.current.isDragging) {
-      dragRef.current.isDragging = false;
-      dragRef.current.wasDragging = true;
-      setIsDragging(false);
-      
-      const btnX = e.clientX - dragRef.current.offsetX;
-      const btnY = e.clientY - dragRef.current.offsetY;
-      
-      const xPercent = (btnX / window.innerWidth) * 100;
-      const yPercent = (btnY / window.innerHeight) * 100;
-      
-      const edge = xPercent < 50 ? "left" : "right";
-      let snappedY = 50;
-      if (yPercent < 33) snappedY = 15;
-      else if (yPercent > 66) snappedY = 85;
-      else snappedY = 50;
-      
-      const newPos = { 
-        xPercent: edge === "left" ? 5 : 95, 
-        yPercent: snappedY, 
-        edge: edge as "left" | "right" 
-      };
-      setPosition(newPos);
-      
-      try {
-        localStorage.setItem("k_chatbot_widget_position", JSON.stringify({
-          ...newPos,
-          updatedAt: new Date().toISOString()
-        }));
-      } catch (err) {}
-      
-      setTimeout(() => {
-        dragRef.current.wasDragging = false;
-      }, 100);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    if (!dragRef.current.isDragging) return; // 탭 → 이어지는 click이 모달을 연다.
+
+    dragRef.current.isDragging = false;
+    dragRef.current.suppressClick = true;
+    setIsDragging(false);
+
+    const btnLeft = e.clientX - dragRef.current.offsetX;
+    const btnTop = e.clientY - dragRef.current.offsetY;
+    const btnCenterX = btnLeft + e.currentTarget.offsetWidth / 2;
+
+    const next: ButtonPosition = {
+      edge: btnCenterX < window.innerWidth / 2 ? "left" : "right",
+      // 세로는 3단계 스냅 없이 뷰포트 높이 대비 비율로 그대로 보존한다.
+      // 헤더/하단메뉴/safe-area를 침범하지 않게 하는 것은 getButtonStyles()의 CSS clamp가 맡는다.
+      yRatio: Math.min(1, Math.max(0, btnTop / window.innerHeight)),
+    };
+    setPosition(next);
+
+    try {
+      localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // 저장 실패(프라이빗 모드 등)해도 이번 세션 위치는 그대로 유지한다.
     }
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    if (dragRef.current.wasDragging) {
+    if (dragRef.current.suppressClick) {
+      dragRef.current.suppressClick = false;
       e.preventDefault();
       return;
     }
@@ -288,12 +261,21 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
   }, [isOpen, handleKeyDown]);
 
   const closeModal = () => {
-    if (content.trim() !== "" || subject.trim() !== "") {
+    if (content.trim() !== "" || subject.trim() !== "" || attachments.length > 0) {
       if (!confirm(appSurface === "child" ? "작성하던 내용이 사라져. 정말 닫을까?" : "작성 중인 내용이 삭제됩니다. 정말 닫으시겠습니까?")) {
         return;
       }
     }
     setIsOpen(false);
+    
+    // Clean up orphans
+    attachments.forEach(att => {
+      if (att.previewUrl) URL.revokeObjectURL(att.previewUrl);
+      if (att.status === "uploaded" && att.server_id) {
+        fetch(`/api/support/attachments?id=${att.server_id}`, { method: "DELETE" }).catch(() => {});
+      }
+    });
+    
     resetForm();
   };
 
@@ -302,15 +284,148 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
     setSubject("");
     setContent("");
     setResultMessage(null);
+    setAttachments([]);
     // 다음번 제출은 완전히 새 시도이므로 새 idempotency key를 발급한다(이번 제출과
     // 겹치지 않게). 실패 후 재시도(폼 유지, resetForm 미호출)는 기존 값을 그대로 써서
     // 서버가 같은 시도로 인식하도록 한다.
     idempotencyKeyRef.current = crypto.randomUUID();
   };
 
+
+  // --- ATTACHMENT HELPERS ---
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+    e.target.value = ""; // reset input
+
+    if (attachments.length + files.length > 3) {
+      alert("이미지는 최대 3장까지 첨부할 수 있어요.");
+      return;
+    }
+
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert("이미지는 한 장당 10MB 이하만 첨부할 수 있어요.");
+        continue;
+      }
+      
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+      if (!allowedTypes.includes(file.type)) {
+        alert("지원하지 않는 파일 형식입니다.");
+        continue;
+      }
+
+      const client_id = crypto.randomUUID();
+      const previewUrl = URL.createObjectURL(file);
+      
+      const newAtt: AttachmentState = {
+        client_id,
+        file,
+        previewUrl,
+        status: "processing"
+      };
+      
+      setAttachments(prev => [...prev, newAtt]);
+      
+      // Process and upload
+      processAndUpload(newAtt);
+    }
+  };
+
+  const processAndUpload = async (att: AttachmentState) => {
+    try {
+      // 1. Process image (resize, compress, strip EXIF)
+      const processedFile = await processImage(att.file);
+      
+      setAttachments(prev => prev.map(a => a.client_id === att.client_id ? { ...a, status: "uploading" } : a));
+      
+      // 2. Upload
+      const formData = new FormData();
+      formData.append("file", processedFile);
+      formData.append("upload_session_id", idempotencyKeyRef.current);
+      formData.append("display_order", "0"); // Not strictly ordered in this simple implementation, or we can use index
+
+      const res = await fetch("/api/support/attachments", {
+        method: "POST",
+        body: formData
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      
+      setAttachments(prev => prev.map(a => a.client_id === att.client_id ? { ...a, status: "uploaded", server_id: data.attachment.id } : a));
+      
+    } catch (err) {
+      console.error(err);
+      setAttachments(prev => prev.map(a => a.client_id === att.client_id ? { ...a, status: "failed", error_message: "업로드 실패" } : a));
+    }
+  };
+
+  const processImage = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > 2048 || height > 2048) {
+          if (width > height) {
+            height = Math.round(height * (2048 / width));
+            width = 2048;
+          } else {
+            width = Math.round(width * (2048 / height));
+            height = 2048;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(file);
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => {
+          if (!blob) return resolve(file);
+          resolve(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), { type: "image/jpeg" }));
+        }, "image/jpeg", 0.85);
+      };
+      img.onerror = () => reject(new Error("Image decode failed"));
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  const handleDeleteAttachment = async (client_id: string) => {
+    const att = attachments.find(a => a.client_id === client_id);
+    if (!att) return;
+    
+    // Remove from state immediately for better UX
+    setAttachments(prev => prev.filter(a => a.client_id !== client_id));
+    URL.revokeObjectURL(att.previewUrl);
+    
+    if (att.status === "uploaded" && att.server_id) {
+      try {
+        await fetch(`/api/support/attachments?id=${att.server_id}`, { method: "DELETE" });
+      } catch (err) {
+        console.error("Failed to delete attachment from server", err);
+      }
+    }
+  };
+  
+  const handleRetryAttachment = (client_id: string) => {
+    const att = attachments.find(a => a.client_id === client_id);
+    if (!att) return;
+    setAttachments(prev => prev.map(a => a.client_id === client_id ? { ...a, status: "processing", error_message: undefined } : a));
+    processAndUpload(att);
+  };
+  
+  const isSubmitDisabled = isSubmitting || attachments.some(a => a.status === "processing" || a.status === "uploading" || a.status === "failed");
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitDisabled) {
+      if (attachments.some(a => a.status === "failed")) {
+        alert("업로드 실패한 이미지가 있습니다. 삭제하거나 다시 시도해 주세요.");
+      }
+      return;
+    }
 
     if (category !== "voc" && subject.trim().length < 2) {
       alert(appSurface === "child" ? "제목을 2글자 이상 적어줘!" : "제목을 2자 이상 입력해 주세요.");
@@ -360,6 +475,11 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
       });
       setSubject("");
       setContent("");
+      // 제출 성공한 첨부파일은 이미 feedback_request_id로 연결됐으므로, 이후 닫기
+      // 버튼(closeModal)이 "미저장 콘텐츠"로 오인해 서버에서 삭제하지 않도록 목록만
+      // 비운다(서버 DELETE 호출 없이 상태만 초기화 - resetForm과 달리 idempotency
+      // key는 여기서 새로 발급하지 않는다. 성공 화면의 "확인" 버튼이 resetForm으로 처리).
+      setAttachments([]);
     } catch (err) {
       console.error(err);
       setResultMessage({
@@ -411,7 +531,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
     }
 
     const style = { ...baseStyle };
-    
+
     if (position.edge === "left") {
       style.left = defaultLeft;
       style.right = "auto";
@@ -420,30 +540,26 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
       style.left = "auto";
     }
 
-    if (position.yPercent === 15) {
-      style.top = `calc(${topOffsetPx + pcMockupPaddingTopPx}px + env(safe-area-inset-top))`;
-      style.bottom = "auto";
-      style.transform = "translateY(0)";
-    } else if (position.yPercent === 50) {
-      style.top = "50%";
-      style.bottom = "auto";
-      style.transform = "translateY(-50%)";
-    } else if (position.yPercent === 85) {
-      style.top = "auto";
-      style.bottom = `calc(90px + env(safe-area-inset-bottom))`;
-      style.transform = "translateY(0)";
-    }
+    // 저장된 세로 비율을 그대로 쓰되, 상단 헤더+safe-area와 하단 메뉴 영역을 침범하지
+    // 못하게 CSS clamp로 가둔다. JS로 픽셀을 계산하지 않고 env()/dvh를 그대로 쓰기 때문에
+    // 키보드가 올라오거나(dvh 축소) 화면이 회전해도 브라우저가 다시 안전 범위로 되돌린다.
+    const minTop = `calc(${topOffsetPx + pcMockupPaddingTopPx}px + env(safe-area-inset-top))`;
+    const maxTop = `calc(100dvh - ${BOTTOM_RESERVED_PX + BUTTON_HEIGHT_PX}px - env(safe-area-inset-bottom))`;
+    // clamp()는 MIN > MAX인 극단적으로 낮은 뷰포트에서도 MIN을 채택하므로 별도 방어가 필요 없다.
+    style.top = `clamp(${minTop}, ${(position.yRatio * 100).toFixed(2)}dvh, ${maxTop})`;
+    style.bottom = "auto";
+    style.transform = "translateY(0)";
 
     return style;
   };
 
   return (
     <>
-      {/* 022: 좌측 하단 플로팅 → 상단 헤더 우측 영역으로 이동, 라벨 "케이 챗봇"→"문의".
-          헤더 자체의 DOM 안에 넣지 않고(13개 페이지마다 헤더 구조가 달라 공용 컴포넌트가
-          그 내부구조를 알 수 없음) fixed로 화면 우측 상단에 고정 배치해 모든 페이지에서
-          동일하게 동작하게 한다. topOffsetPx로 페이지별 헤더 높이/기존 우측 요소(연결상태
-          표시 등)와의 겹침을 피한다. */}
+      {/* 022: 좌측 하단 플로팅 → 상단 헤더 우측 영역으로 이동. 헤더 자체의 DOM 안에 넣지
+          않고(13개 페이지마다 헤더 구조가 달라 공용 컴포넌트가 그 내부구조를 알 수 없음)
+          fixed로 고정 배치해 모든 페이지에서 동일하게 동작하게 한다. topOffsetPx로 페이지별
+          헤더 높이/기존 우측 요소(연결상태 표시 등)와의 겹침을 피한다.
+          056: 라벨 "문의"→"FAQ". 세로 위치는 드래그로 자유롭게 옮길 수 있고 localStorage에 남는다. */}
       <button
         ref={triggerRef}
         onClick={handleClick}
@@ -453,10 +569,10 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
         onPointerCancel={handlePointerUp}
         className="fixed z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors select-none focus:outline-none focus-visible:outline-3 focus-visible:outline-k-sky-blue focus-visible:outline-offset-2"
         style={getButtonStyles()}
-        aria-label="문의하기 열기"
+        aria-label="FAQ 열기"
       >
         <span className="text-base leading-none">💬</span>
-        <span className="font-bold text-sm whitespace-nowrap">문의</span>
+        <span className="font-bold text-sm whitespace-nowrap">FAQ</span>
       </button>
 
       {isOpen && (
@@ -507,6 +623,33 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                  {/* 056: FAQ 안내 영역. 아래 3개 탭(문의/건의/버그)과 그 폼은 건드리지 않는다. */}
+                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col items-center text-center gap-2 mb-2">
+                    <h3 className="font-bold text-gray-900">FAQ</h3>
+                    <p className="text-sm text-gray-600">사용법이 궁금하면 언제든지 확인해 보세요.</p>
+                    {FAQ_URL ? (
+                      <a
+                        href={FAQ_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+                      >
+                        FAQ 페이지로 이동
+                      </a>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled
+                          className="mt-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 shadow-sm opacity-50 cursor-not-allowed"
+                        >
+                          FAQ 페이지로 이동
+                        </button>
+                        <p className="text-xs text-gray-400">FAQ 페이지 준비 중입니다.</p>
+                      </>
+                    )}
+                  </div>
+
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -583,6 +726,67 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
                     />
                   </div>
 
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-sm font-bold text-gray-700">이미지 첨부 (선택)</label>
+                    <p className="text-xs text-gray-500">
+                      {appSurface === "child" 
+                        ? "문제 화면이나 보여주고 싶은 사진이 있으면 올려줘. 이름이나 얼굴 같은 개인정보가 보이지 않는지 먼저 확인해 줘."
+                        : "문제 화면이나 관련 이미지를 첨부할 수 있습니다. 개인정보가 포함되지 않았는지 확인해 주세요."}
+                    </p>
+                    
+                    {attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-3 mt-2">
+                        {attachments.map((att, idx) => (
+                          <div key={att.client_id} className="relative w-20 h-20 bg-gray-100 rounded-lg border border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center group">
+                            <img src={att.previewUrl} alt={`첨부 ${idx + 1}`} className="w-full h-full object-cover" />
+                            
+                            {(att.status === "processing" || att.status === "uploading") && (
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              </div>
+                            )}
+                            
+                            {att.status === "failed" && (
+                              <div className="absolute inset-0 bg-red-500/80 flex flex-col items-center justify-center">
+                                <span className="text-white text-xs font-bold mb-1">실패</span>
+                                <button type="button" onClick={() => handleRetryAttachment(att.client_id)} className="bg-white text-red-500 text-[10px] px-2 py-1 rounded shadow">재시도</button>
+                              </div>
+                            )}
+                            
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAttachment(att.client_id)}
+                              className="absolute top-1 right-1 w-5 h-5 bg-black/60 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              aria-label="삭제"
+                            >
+                              ✕
+                            </button>
+                            
+                            <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 rounded">
+                              {idx + 1}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {attachments.length < 3 && (
+                      <div className="mt-1">
+                        <label className="inline-flex items-center justify-center bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-bold py-2.5 px-4 rounded-xl cursor-pointer transition-colors border border-gray-200">
+                          {attachments.length > 0 ? "이미지 추가" : (appSurface === "child" ? "사진 선택" : "사진 선택")}
+                          <input 
+                            type="file" 
+                            accept="image/jpeg,image/png,image/webp,image/heic,image/heif" 
+                            multiple 
+                            onChange={handleFileSelect} 
+                            className="hidden" 
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+
                   {resultMessage?.type === "error" && (
                     <div className="text-red-500 text-sm font-medium p-2 bg-red-50 rounded-lg">
                       {resultMessage.text}
@@ -591,10 +795,10 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
 
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitDisabled}
                     className="bg-k-orange hover:opacity-90 text-white font-bold py-3.5 rounded-xl disabled:opacity-50 transition-colors mt-2"
                   >
-                    {isSubmitting ? "제출 중..." : "제출하기"}
+                    {isSubmitting ? "제출 중..." : attachments.some(a => a.status === "processing" || a.status === "uploading") ? "이미지 처리 중..." : "제출하기"}
                   </button>
                 </form>
               )}
