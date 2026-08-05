@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { mergeCurrentChildProfiles } from "@/lib/childApproval/mergeCurrentProfile";
 
 export const runtime = "nodejs";
 
@@ -37,15 +36,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
-  // requests/request_parent_child_profile_sync.md — 이 라우트 자체 주석("부모/관리자
-  // 화면이 항상 일치한다")을 실제로 성립시키려면 부모 화면(app/api/families/[id]/
-  // child-approval-requests/route.ts)과 동일하게 승인 완료 건은 child_profiles 최신값을
-  // 반영해야 한다. 안 하면 부모 화면만 최신화되고 관리자 화면은 계속 예전 값을 보여줘
-  // 오히려 새로운 불일치가 생긴다.
-  const merged = await mergeCurrentChildProfiles(service, data ?? []);
-
   const priority = (s: string) => (s === "pending" || s === "creation_failed" ? 0 : 1);
-  const sorted = merged.sort((a: any, b: any) => priority(a.status) - priority(b.status));
+  const sorted = [...(data ?? [])].sort((a: any, b: any) => priority(a.status) - priority(b.status));
 
   return NextResponse.json(sorted);
 }
