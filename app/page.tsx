@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { isStandaloneDisplay } from "@/lib/pwa/standalone";
+import BetaLandingPage from "@/components/landing/BetaLandingPage";
 
 const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 
@@ -32,6 +33,7 @@ export default function HubPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [networkError, setNetworkError] = useState(false);
+  const [showGuestLanding, setShowGuestLanding] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -70,7 +72,11 @@ export default function HubPage() {
       }
 
       if (!result) {
-        router.replace("/login");
+        // 057: 세션이 없는 방문자(GUEST)는 /login으로 즉시 리다이렉트하는 대신
+        // 이 자리에서 베타 테스터 모집 랜딩페이지를 보여준다. 기존 회원은
+        // 랜딩페이지 헤더의 "기존 회원 로그인" 버튼으로 /login에 간다.
+        setShowGuestLanding(true);
+        setLoading(false);
         return;
       }
 
@@ -204,6 +210,10 @@ export default function HubPage() {
         <p className="text-xs text-gray-500 mt-3">사용자 정보를 확인하는 중...</p>
       </div>
     );
+  }
+
+  if (showGuestLanding) {
+    return <BetaLandingPage />;
   }
 
   return null;
