@@ -46,13 +46,27 @@ function won(n?: number): string {
 // 로그인 이벤트 안내 팝업 — 요청서 §6. 아이/부모 홈 데이터 로딩 완료 직후 마운트한다.
 // audience는 서버 판정 결과를 그대로 따른다(클라이언트가 미리 알 필요 없음).
 // React Strict Mode 중복 호출 방지를 위해 ref로 in-flight/이미 확인 처리를 가드한다.
-export default function AppEventAnnouncementModal() {
-  const [status, setStatus] = useState<StatusResponse | null>(null);
-  const [visible, setVisible] = useState(false);
+export default function AppEventAnnouncementModal({
+  manualOpen = false,
+  onClose,
+}: {
+  manualOpen?: boolean;
+  onClose?: () => void;
+} = {}) {
+  const [status, setStatus] = useState<StatusResponse | null>(
+    manualOpen ? { shouldShow: true, audience: "child" } : null
+  );
+  const [visible, setVisible] = useState(manualOpen);
   const [closing, setClosing] = useState(false);
   const fetchedRef = useRef(false);
 
   useEffect(() => {
+    if (manualOpen) {
+      setVisible(true);
+      setStatus({ shouldShow: true, audience: "child" });
+      return;
+    }
+
     if (fetchedRef.current) return;
     fetchedRef.current = true;
 
@@ -65,17 +79,21 @@ export default function AppEventAnnouncementModal() {
       .catch(() => {
         // 팝업 조회 실패가 로그인 자체를 막지 않는다(§6.1) — 조용히 숨긴다.
       });
-  }, []);
+  }, [manualOpen]);
 
   const handleAcknowledge = async () => {
     if (closing) return;
     setClosing(true);
     try {
-      await fetch("/api/events/announcements/acknowledge", { method: "POST" });
+      if (!manualOpen) {
+        await fetch("/api/events/announcements/acknowledge", { method: "POST" });
+      }
     } catch {
       // 실패해도 다음 로그인에서 재노출되는 것으로 충분 — 여기서 사용자를 막지 않는다.
     } finally {
       setVisible(false);
+      setClosing(false);
+      if (onClose) onClose();
     }
   };
 
@@ -90,7 +108,7 @@ export default function AppEventAnnouncementModal() {
       <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-xl flex flex-col max-h-[85vh]">
         <div className="overflow-y-auto px-6 pt-6 pb-4">
           {status.audience === "child" ? (
-            <ChildAnnouncementBody missionEvent={status.missionEvent} />
+            <ChildAnnouncementBody />
           ) : (
             <ParentAnnouncementBody children={status.children ?? []} />
           )}
@@ -102,7 +120,7 @@ export default function AppEventAnnouncementModal() {
             className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
             style={{ background: "var(--color-k-orange, #FF9F45)" }}
           >
-            {status.audience === "child" ? "이벤트 확인했어요" : "이벤트 확인"}
+            {manualOpen ? "닫기" : (status.audience === "child" ? "이벤트 확인했어요" : "이벤트 확인")}
           </button>
         </div>
       </div>
@@ -110,47 +128,80 @@ export default function AppEventAnnouncementModal() {
   );
 }
 
-function ChildAnnouncementBody({ missionEvent }: { missionEvent?: ChildMissionEventSummary }) {
-  const status = missionEvent?.status ?? "not_started";
-
+// 이벤트 규칙 설명 전용 — 개인 진행률(N/60, 현재 단계 등)은 아이 홈의 "케이와
+// 친해지는 30일" 카드에서만 보여준다(여기서는 표시하지 않음, 형진님 2026-08-04 지시).
+function ChildAnnouncementBody() {
   return (
     <>
-      <h2 className="text-lg font-bold mb-3" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+      <h2 className="text-lg font-bold mb-4" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
         케이와 더 친해지는 이벤트가 열렸어요!
       </h2>
-      {status === "active" || status === "max_completed" ? (
+
+      {/* 이벤트 1 카드 */}
+      <div
+        className="rounded-2xl p-4 mb-4"
+        style={{ background: "#FFF3E0", border: "1px solid rgba(255,159,69,0.3)" }}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <span
+            className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
+            style={{ background: "var(--color-k-orange, #FF9F45)" }}
+          >
+            1
+          </span>
+          <p className="text-sm font-bold" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+            이벤트 1. 케이와 친해지는 30일
+          </p>
+        </div>
+
         <div className="text-sm leading-relaxed space-y-1" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-          <p>케이와 친해지는 30일 이벤트가 진행 중이에요.</p>
-          <p className="font-bold mt-3">
-            현재 미션 {missionEvent?.completedCount ?? 0}/60 완료
-          </p>
-          <p>현재 달성 선물: {won(missionEvent?.currentRewardAmount)}</p>
-          {missionEvent?.nextTierRemaining ? (
-            <p>다음 단계까지 {missionEvent.nextTierRemaining.remaining}번 남았어요.</p>
-          ) : (
-            <p>최고 단계를 달성했어요!</p>
-          )}
+          <p>첫 미션을 끝까지 완료하면 시작돼요.</p>
+          <p>30일 동안 미션을 완료한 횟수에 따라 선물을 받아요.</p>
         </div>
-      ) : (
-        <div className="text-sm leading-relaxed space-y-2" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-          <p>첫 미션을 끝까지 완료하면 그 순간부터 30일 이벤트가 시작돼요.</p>
-          <p>
-            30일 동안 케이와 미션을 완료해 보세요.
-            <br />
-            10번, 30번, 50번, 60번을 달성할수록 받을 수 있는 선물이 커져요.
-          </p>
-          <p>
-            최종 달성한 가장 높은 단계의 선물 하나를 받아요.
-            <br />
-            60번을 완료하면 편의점 상품권 10,000원을 받을 수 있어요.
-          </p>
-          <p>
-            8월, 9월, 10월에는 퀴즈 리더보드 이벤트도 진행돼요.
-            <br />
-            매월 마지막 날 기준 1·2·3등에게 선물을 드려요.
+
+        <div className="mt-3 space-y-1 text-sm font-bold" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+          <p>10번 이상 완료 → 상품권 1,000원</p>
+          <p>30번 이상 완료 → 상품권 3,000원</p>
+          <p>50번 이상 완료 → 상품권 5,000원</p>
+          <p>60번 완료 → 상품권 10,000원</p>
+        </div>
+
+        <p className="text-xs mt-3" style={{ color: "var(--color-k-sky-blue, #6B8CAE)" }}>
+          여러 선물을 모두 받는 것이 아니라 30일 동안 달성한 가장 높은 단계의 선물 1개를 받아요.
+        </p>
+      </div>
+
+      {/* 이벤트 2 카드 */}
+      <div
+        className="rounded-2xl p-4"
+        style={{ background: "#E9F3FF", border: "1px solid rgba(107,140,174,0.3)" }}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <span
+            className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
+            style={{ background: "var(--color-k-sky-blue, #6B8CAE)" }}
+          >
+            2
+          </span>
+          <p className="text-sm font-bold" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+            이벤트 2. 퀴즈 리더보드 도전
           </p>
         </div>
-      )}
+
+        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+          8월, 9월, 10월마다 퀴즈 점수 순위를 새로 겨뤄요.
+        </p>
+
+        <div className="mt-3 space-y-1 text-sm font-bold" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+          <p>1등 → 상품권 5,000원</p>
+          <p>2등 → 상품권 3,000원</p>
+          <p>3등 → 상품권 1,000원</p>
+        </div>
+
+        <p className="text-xs mt-3" style={{ color: "var(--color-k-sky-blue, #6B8CAE)" }}>
+          한 달이 끝나면 그 달 순위가 정해지고, 다음 달에는 점수가 0점부터 다시 시작돼요.
+        </p>
+      </div>
     </>
   );
 }

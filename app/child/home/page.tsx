@@ -23,6 +23,15 @@ function LogOut({ size = 20, color = "currentColor" }: { size?: number; color?: 
   );
 }
 
+function Bell({ size = 20, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
 function X({ size = 20, color = "currentColor" }: { size?: number; color?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -48,6 +57,7 @@ export default function ChildHomePage() {
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
   const [showPwaBanner, setShowPwaBanner] = useState(false);
   const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
 
   useEffect(() => {
     // 1. /api/child/me를 호출하여 세션 기반의 아이 프로필 확인
@@ -240,6 +250,7 @@ export default function ChildHomePage() {
       <div className="relative h-full flex flex-col overflow-y-auto overflow-x-hidden w-full text-[var(--color-k-navy)]"
            style={{ background: "linear-gradient(180deg, #BFE8FF 0%, #EAF7FF 38%, #FFF9F2 75%, #FFF7E9 100%)" }}>
         <AppEventAnnouncementModal />
+        {isEventModalOpen && <AppEventAnnouncementModal manualOpen onClose={() => setIsEventModalOpen(false)} />}
 
         {/* Background Clouds (decorative) */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-50 flex items-start justify-between pt-24 px-4 z-0">
@@ -249,7 +260,14 @@ export default function ChildHomePage() {
         
         {/* Top Action Bar */}
         <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top)] mt-4 relative z-10 w-full max-w-[430px] mx-auto child-home-content">
-          <div className="w-[44px]"></div>
+          <button
+            onClick={() => setIsEventModalOpen(true)}
+            className="flex items-center gap-1.5 h-[44px] px-3 rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
+            aria-label="이벤트 안내 보기"
+          >
+            <Bell size={18} color="var(--color-k-navy)" />
+            <span className="text-sm font-bold text-[var(--color-k-navy)]">이벤트</span>
+          </button>
           {/* Mission Event Pill (Hidden as requested: "이 영역은 숨김 처리") */}
           <div className="invisible">
             <div className="px-4 py-1.5 bg-white/70 rounded-full border border-[var(--color-k-navy)] shadow-sm text-sm font-semibold">
