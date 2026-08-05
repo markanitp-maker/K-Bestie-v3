@@ -93,7 +93,7 @@ function IdentityCell({ name, loginId, maskedId }: { name?: string | null; login
   );
 }
 
-function DrillDownSection({ scope, includeTestAccounts, period }: { scope: Scope; includeTestAccounts: boolean; period: Period }) {
+function DrillDownSection({ scope, includeTestAccounts, period, filters }: { scope: Scope; includeTestAccounts: boolean; period: Period; filters: any }) {
   const [showFamilies, setShowFamilies] = useState(false);
   const [listType, setListType] = useState<DrillDownRowType>("all");
   const [listData, setListData] = useState<any[] | null>(null);
@@ -120,7 +120,7 @@ function DrillDownSection({ scope, includeTestAccounts, period }: { scope: Scope
           setListData(d.families ?? []);
         } else if (requestedType === "all") {
           const [pRes, cRes] = await Promise.all([
-            fetch(`/api/admin/retention/parents?includeTestAccounts=${includeTestAccounts}&period=${period}`),
+            fetch(`/api/admin/retention/parents?includeTestAccounts=${includeTestAccounts}&period=${period}&signup_source=${filters.signupSource}&source=${filters.sourceFilter}&medium=${filters.mediumFilter}&campaign=${filters.campaignFilter}&has_attribution=${filters.hasAttribution}`),
             fetch(`/api/admin/retention/children?includeTestAccounts=${includeTestAccounts}&period=${period}`),
           ]);
           if (!pRes.ok || !cRes.ok) throw new Error("HTTP error");
@@ -134,7 +134,10 @@ function DrillDownSection({ scope, includeTestAccounts, period }: { scope: Scope
           setListData(merged);
         } else {
           const endpoint = requestedType === "parent" ? "parents" : "children";
-          const res = await fetch(`/api/admin/retention/${endpoint}?includeTestAccounts=${includeTestAccounts}&period=${period}`);
+          const query = requestedType === "parent" 
+            ? `&signup_source=${filters.signupSource}&source=${filters.sourceFilter}&medium=${filters.mediumFilter}&campaign=${filters.campaignFilter}&has_attribution=${filters.hasAttribution}` 
+            : "";
+          const res = await fetch(`/api/admin/retention/${endpoint}?includeTestAccounts=${includeTestAccounts}&period=${period}${query}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const d = await res.json();
           if (cancelled) return;
@@ -152,7 +155,7 @@ function DrillDownSection({ scope, includeTestAccounts, period }: { scope: Scope
     };
     load();
     return () => { cancelled = true; };
-  }, [scope, showFamilies, includeTestAccounts, period]);
+  }, [scope, showFamilies, includeTestAccounts, period, filters]);
 
   const title = showFamilies ? "가족 상세" : scope === "all" ? "전체 상세 (부모+아이)" : scope === "parent" ? "부모 상세" : "아이 상세";
 
@@ -204,6 +207,20 @@ function DrillDownSection({ scope, includeTestAccounts, period }: { scope: Scope
                   { key: "retention", header: "D1/D3/D7", render: (item: any) => `${retainCell(item.d1Retained)} / ${retainCell(item.d3Retained)} / ${retainCell(item.d7Retained)}` },
                 ] : [
                   { key: "parent", header: "부모", render: (item: any) => <IdentityCell name={item.name} loginId={item.loginId} maskedId={item.maskedId} /> },
+                  { key: "attribution", header: "가입 채널", render: (item: any) => {
+                    if (item.isTestAccount) return "내부 테스트";
+                    if (!item.attribution) return "기존 가입자";
+                    if (!item.attribution.signupLink) return "미확인";
+                    const link = item.attribution.signupLink;
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span style={{ fontWeight: 600 }}>{link.channel_name}</span>
+                        <span style={{ fontSize: 11, color: "var(--admin-text-secondary)" }}>
+                          {link.utm_source} {link.utm_campaign ? `· ${link.utm_campaign}` : ""}
+                        </span>
+                      </div>
+                    );
+                  }},
                   { key: "joinedAt", header: "가입일", render: (item: any) => new Date(item.joinedAt).toLocaleDateString() },
                   { key: "counts", header: "로그인/리포트/대화거리 뷰", render: (item: any) => `${item.visitCount} / ${item.reportViewCount} / ${item.topicViewCount}` },
                   { key: "retention", header: "D1/D3/D7", render: (item: any) => `${retainCell(item.d1Retained)} / ${retainCell(item.d3Retained)} / ${retainCell(item.d7Retained)}` },
@@ -248,8 +265,13 @@ function AdminRetentionContent() {
   }, [embed]);
 
   const [period, setPeriod] = useState<Period>("7d");
-  const [scope, setScope] = useState<Scope>("all");
+  const [scope, setScope] = useState<Scope>(searchParams.get("scope") as Scope || "all");
   const [includeTestAccounts, setIncludeTestAccounts] = useState(false);
+  const [signupSource, setSignupSource] = useState(searchParams.get("signup_source") || "");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [mediumFilter, setMediumFilter] = useState("");
+  const [campaignFilter, setCampaignFilter] = useState("");
+  const [hasAttribution, setHasAttribution] = useState("");
   const [overview, setOverview] = useState<any>(null);
   const [cohort, setCohort] = useState<any>(null);
   const [features, setFeatures] = useState<any>(null);
@@ -376,8 +398,21 @@ function AdminRetentionContent() {
               }}
             >
               CSV 다운로드
-            </a>
-          ]}
+            </a>,
+            scope === "parent" && (
+              <div key="parent-filters" style={{ display: "flex", gap: 8, width: "100%", marginTop: 8, flexWrap: "wrap", borderTop: "1px solid var(--admin-border)", paddingTop: 8 }}>
+                <input type="text" placeholder="가입 채널" value={signupSource} onChange={e => setSignupSource(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)", fontSize: 13, width: 100 }} />
+                <input type="text" placeholder="Source" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)", fontSize: 13, width: 90 }} />
+                <input type="text" placeholder="Medium" value={mediumFilter} onChange={e => setMediumFilter(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)", fontSize: 13, width: 90 }} />
+                <input type="text" placeholder="Campaign" value={campaignFilter} onChange={e => setCampaignFilter(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)", fontSize: 13, width: 100 }} />
+                <select value={hasAttribution} onChange={e => setHasAttribution(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)", fontSize: 13 }}>
+                  <option value="">유입정보 전체</option>
+                  <option value="true">유입정보 있음</option>
+                  <option value="false">유입정보 없음</option>
+                </select>
+              </div>
+            )
+          ].filter(Boolean)}
         />
 
         {error && (
@@ -555,7 +590,7 @@ function AdminRetentionContent() {
             </div>
 
             <RetentionWidgetErrorBoundary label="사용자별 상세 드릴다운">
-              <DrillDownSection scope={scope} includeTestAccounts={includeTestAccounts} period={period} />
+              <DrillDownSection scope={scope} includeTestAccounts={includeTestAccounts} period={period} filters={{ signupSource, sourceFilter, mediumFilter, campaignFilter, hasAttribution }} />
             </RetentionWidgetErrorBoundary>
           </>
         ) : null}

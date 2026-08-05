@@ -15,6 +15,12 @@ export async function GET(req: NextRequest) {
   const periodParam = req.nextUrl.searchParams.get("period");
   const fromParam = req.nextUrl.searchParams.get("from");
   const toParam = req.nextUrl.searchParams.get("to");
+  
+  const filterSignupSource = req.nextUrl.searchParams.get("signup_source");
+  const filterSource = req.nextUrl.searchParams.get("source");
+  const filterMedium = req.nextUrl.searchParams.get("medium");
+  const filterCampaign = req.nextUrl.searchParams.get("campaign");
+  const filterHasAttribution = req.nextUrl.searchParams.get("has_attribution");
 
   const nowKST = new Date();
   nowKST.setHours(nowKST.getHours() + 9);
@@ -85,6 +91,38 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // 2.5 Fetch attributions and links
+  const parentAttributionsMap = new Map<string, any>();
+  if (parentIds.length > 0) {
+    const { data: attData } = await service
+      .from("parent_attributions")
+      .select("parent_user_id, signup_link_id, first_touch_link_id")
+      .in("parent_user_id", parentIds);
+
+    const linkIds = new Set<string>();
+    for (const a of attData || []) {
+      if (a.signup_link_id) linkIds.add(a.signup_link_id);
+      if (a.first_touch_link_id) linkIds.add(a.first_touch_link_id);
+    }
+
+    const linksMap = new Map<string, any>();
+    if (linkIds.size > 0) {
+      const { data: linksData } = await service
+        .from("acquisition_links")
+        .select("link_id, channel_name, utm_source, utm_medium, utm_campaign, utm_content")
+        .in("link_id", Array.from(linkIds));
+      for (const l of linksData || []) linksMap.set(l.link_id, l);
+    }
+
+    for (const a of attData || []) {
+      parentAttributionsMap.set(a.parent_user_id, {
+        ...a,
+        signupLink: a.signup_link_id ? linksMap.get(a.signup_link_id) : null,
+        firstTouchLink: a.first_touch_link_id ? linksMap.get(a.first_touch_link_id) : null,
+      });
+    }
+  }
+
   // 3. Fetch behavior_events for parents
   const allEvents: any[] = [];
   let eOffset = 0;
@@ -107,9 +145,11 @@ export async function GET(req: NextRequest) {
   const parentStats = new Map<string, any>();
   for (const p of validParents) {
     const info = parentInfoMap.get(p.actorId);
+    const attr = parentAttributionsMap.get(p.actorId);
     parentStats.set(p.actorId, {
       ...p,
       ...toDisplayFields(p.actorId, info?.name, info?.email),
+      attribution: attr || null,
       lastVisitAt: null,
       activeDaysTotal: 0,
       visitCount: 0,
@@ -197,6 +237,20 @@ export async function GET(req: NextRequest) {
 
     delete stats._meaningfulDates;
     delete stats._loginDatesDisplay;
+
+    // Apply filters
+    if (filterSignupSource || filterSource || filterMedium || filterCampaign || filterHasAttribution) {
+      const link = stats.attribution?.signupLink;
+      
+      if (filterHasAttribution === "true" && (!stats.attribution || !link)) continue;
+      if (filterHasAttribution === "false" && (stats.attribution && link)) continue;
+
+      if (filterSignupSource && link?.channel_name !== filterSignupSource) continue;
+      if (filterSource && link?.utm_source !== filterSource) continue;
+      if (filterMedium && link?.utm_medium !== filterMedium) continue;
+      if (filterCampaign && link?.utm_campaign !== filterCampaign) continue;
+    }
+
     parentsResult.push(stats);
   }
 

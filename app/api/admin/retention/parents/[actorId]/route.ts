@@ -141,6 +141,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ acto
 
   const avgWeeklyVisits = Number((loginEventCount / weeksSinceJoined).toFixed(1));
 
+  // 4. Fetch attribution
+  const { data: attrData } = await service.from("parent_attributions").select("*").eq("parent_user_id", actorId).single();
+  let firstTouchLink = null;
+  let signupTouchLink = null;
+  if (attrData) {
+    if (attrData.first_touch_link_id) {
+      const { data } = await service.from("acquisition_links").select("link_id, channel_name, utm_source, utm_medium, utm_campaign, utm_content").eq("link_id", attrData.first_touch_link_id).single();
+      firstTouchLink = data;
+    }
+    if (attrData.signup_link_id) {
+      const { data } = await service.from("acquisition_links").select("link_id, channel_name, utm_source, utm_medium, utm_campaign, utm_content").eq("link_id", attrData.signup_link_id).single();
+      signupTouchLink = data;
+    }
+  }
+
   return NextResponse.json({
     actorId,
     familyId,
@@ -153,6 +168,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ acto
     avgWeeklyVisits,
     connectedChildren,
     featureUsage,
-    timeline
+    timeline,
+    attribution: attrData ? {
+      firstTouchAt: attrData.first_touch_at,
+      signupTouchAt: attrData.signup_touch_at,
+      firstTouchLink,
+      signupTouchLink,
+    } : null
   });
 }
+

@@ -64,10 +64,10 @@ export default function AcquisitionDashboardTab() {
   const channelTable = data?.channelTable || [];
   
   const columns: AdminDataTableColumn<any>[] = [
-    { key: "channel", header: "채널", render: (r) => <div style={{ fontWeight: 600 }}>{r.channel}</div> },
+    { key: "channel", header: "채널", render: (r) => <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ fontWeight: 600, color: "var(--admin-primary)", textDecoration: "none" }}>{r.channel}</a> },
     { key: "uniqueVisitors", header: "고유 방문자", render: (r) => r.uniqueVisitors.toLocaleString() },
     { key: "signupStarted", header: "가입 시작", render: (r) => r.signupStarted.toLocaleString() },
-    { key: "parentSignup", header: "부모 가입", render: (r) => r.parentSignup.toLocaleString() },
+    { key: "parentSignup", header: "부모 가입", render: (r) => <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ color: "var(--admin-primary)", textDecoration: "none" }}>{r.parentSignup.toLocaleString()}</a> },
     { key: "childAdded", header: "아이 등록", render: (r) => r.childAdded.toLocaleString() },
     { key: "conversionRate", header: "전환율", render: (r) => <div style={{ color: "var(--admin-success)", fontWeight: 600 }}>{r.conversionRate.toFixed(1)}%</div> },
     { key: "firstTouchSignups", header: "First Touch 가입", render: (r) => r.firstTouchSignups.toLocaleString() },

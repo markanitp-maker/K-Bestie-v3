@@ -78,6 +78,36 @@ export default function ParentDetailPage({ params }: { params: Promise<{ actorId
         </div>
 
         <div style={{ background: "var(--admin-surface)", padding: 24, borderRadius: 16, boxShadow: "var(--shadow-k-card)", marginBottom: 24 }}>
+          <h3 style={{ fontSize: 16, margin: "0 0 12px 0", color: "var(--admin-text-primary)" }}>회원가입 유입 정보</h3>
+          {data.attribution ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, fontSize: 14, color: "var(--admin-text-primary)" }}>
+              <div>
+                <h4 style={{ fontSize: 13, color: "var(--admin-text-secondary)", marginBottom: 8, marginTop: 0 }}>가입 완료 유입 (Signup Touch)</h4>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div><strong>가입 완료 채널:</strong> {data.attribution.signupTouchLink?.channel_name || "미확인"}</div>
+                  <div><strong>가입 완료 링크:</strong> {data.attribution.signupTouchLink?.link_id || "-"}</div>
+                  <div><strong>가입일 (가입 유입):</strong> {data.attribution.signupTouchAt ? new Date(data.attribution.signupTouchAt).toLocaleString() : "-"}</div>
+                  <div><strong>Source / Medium:</strong> {data.attribution.signupTouchLink?.utm_source || "-"} / {data.attribution.signupTouchLink?.utm_medium || "-"}</div>
+                  <div><strong>Campaign / Content:</strong> {data.attribution.signupTouchLink?.utm_campaign || "-"} / {data.attribution.signupTouchLink?.utm_content || "-"}</div>
+                </div>
+              </div>
+              <div>
+                <h4 style={{ fontSize: 13, color: "var(--admin-text-secondary)", marginBottom: 8, marginTop: 0 }}>최초 유입 (First Touch)</h4>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div><strong>최초 유입 채널:</strong> {data.attribution.firstTouchLink?.channel_name || "미확인"}</div>
+                  <div><strong>최초 유입 링크:</strong> {data.attribution.firstTouchLink?.link_id || "-"}</div>
+                  <div><strong>최초 방문일:</strong> {data.attribution.firstTouchAt ? new Date(data.attribution.firstTouchAt).toLocaleString() : "-"}</div>
+                  <div><strong>Source / Medium:</strong> {data.attribution.firstTouchLink?.utm_source || "-"} / {data.attribution.firstTouchLink?.utm_medium || "-"}</div>
+                  <div><strong>Campaign / Content:</strong> {data.attribution.firstTouchLink?.utm_campaign || "-"} / {data.attribution.firstTouchLink?.utm_content || "-"}</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 14, color: "var(--admin-text-secondary)" }}>유입 정보 없음 (기존 가입자 또는 직접 유입)</div>
+          )}
+        </div>
+
+        <div style={{ background: "var(--admin-surface)", padding: 24, borderRadius: 16, boxShadow: "var(--shadow-k-card)", marginBottom: 24 }}>
           <h3 style={{ fontSize: 16, margin: "0 0 12px 0", color: "var(--admin-text-primary)" }}>기능 사용 통계</h3>
           <div style={{ display: "flex", gap: 24, fontSize: 14, color: "var(--admin-text-secondary)" }}>
             {Object.entries(data.featureUsage).map(([k, v]) => (
