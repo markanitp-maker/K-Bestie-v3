@@ -24,11 +24,15 @@ export async function POST(req: NextRequest) {
   const db = createServiceClient();
 
   // Bounded worker step execution with independent try/catches & executionId parameter
-  if (action === "collect" || action === "collect_and_generate") {
-    try {
-      await processCollectionJobsV3(2, 10, workerId, executionId);
-    } catch (e) {
-      console.error("[Pulse Collect Error]", e);
+  const isCollect = action.startsWith("collect");
+  if (isCollect) {
+    const phases = action === "collect_first" ? [1] : action === "collect_second" ? [2] : [1, 2];
+    for (const phase of phases) {
+      try {
+        await processCollectionJobsV3(phase as 1 | 2, 10, workerId, executionId);
+      } catch (e) {
+        console.error(`[Pulse Collect Error - Phase ${phase}]`, e);
+      }
     }
   }
 

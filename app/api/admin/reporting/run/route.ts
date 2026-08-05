@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid businessDate" }, { status: 400 });
   }
 
-  if (!["collect", "generate", "collect_and_generate"].includes(action)) {
+  if (!["collect_first", "collect_second", "collect_all", "generate", "collect_and_generate"].includes(action)) {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
 
@@ -84,39 +84,25 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 관리자 수동 실행(execution_mode=manual, 이 라우트 자체가 그 전용 경로 —
-  // requireAdmin()으로 서버에서 관리자 권한을 이미 검증했다)은 자동 Cron의
-  // 17:55/23:55 KST 스케줄과 무관하게 대표님이 선택한 날짜·대상을 시간 제한
-  // 없이 즉시 수집할 수 있어야 한다. 실제 자동 Cron 경로(app/api/batch/v3/
-  // collection/enqueue/route.ts, BATCH_SECRET 인증)는 이 시간 제한을 자체
-  // 코드로 강제하지 않고 Vercel Cron 스케줄 자체로만 통제하므로, 여기 있던
-  // 17:55 이전 차단은 자동 경로 로직 재사용이 아니라 잘못 복제된 별도 규칙이었다.
-  //
-  // cutoff는 p_use_current_time: true로 넘겨 Postgres 자신의 now()로 계산하게 한다
-  // (아래 RPC 호출부 참조). 예전에는 여기서 Node.js 서버의 로컬 시계로 "지금" 시각을
-  // 계산해 p_cutoff_at으로 명시적으로 보냈는데, RPC의 `p_cutoff_at <= now()` 검증은
-  // Postgres 서버의 시계로 판정하기 때문에 두 서버 시계 사이의 아주 작은(수백ms) 오차
-  // 만으로도 "cutoff가 미래"로 오판되어 INVALID_CUTOFF로 매번 실패했다(2026-08-02
-  // 실측 재현·확정). 클라이언트가 시각을 아예 계산하지 않고 의도(즉시 실행)만 전달하는
-  // 이 방식이 서버 간 시계 차이에 원천적으로 영향받지 않는다(migration
-  // 20260802230000_enqueue_collection_server_clock_cutoff.sql).
-  //
-  // 참고로 p_cutoff_at을 아예 안 보내고 기본값(v_sched_end = 다음날 00:00 KST)에
-  // 맡기는 방법도 시도했으나, claim_collection_jobs_v3_for_execution이
-  // `cutoff_at <= now()`를 "이 시각이 지나야 작업을 집을 수 있다"는 클레임 게이트로도
-  // 재사용하고 있어 그 방식은 자정까지 즉시 실행이 막히는 새 회귀를 만들었다.
-
   const executionId = crypto.randomUUID();
   const nowIso = new Date().toISOString();
 
   // Determine required stages per action
   const stagesToSnapshot: { job_type: string; collection_phase?: number }[] = [];
-  if (action === "collect") {
+  if (action === "collect_first") {
+    stagesToSnapshot.push({ job_type: "collection_1", collection_phase: 1 });
+  } else if (action === "collect_second") {
     stagesToSnapshot.push({ job_type: "collection_2", collection_phase: 2 });
+  } else if (action === "collect_all") {
+    stagesToSnapshot.push(
+      { job_type: "collection_1", collection_phase: 1 },
+      { job_type: "collection_2", collection_phase: 2 }
+    );
   } else if (action === "generate") {
     stagesToSnapshot.push({ job_type: "memory_batch" }, { job_type: "daily_report" });
   } else if (action === "collect_and_generate") {
     stagesToSnapshot.push(
+      { job_type: "collection_1", collection_phase: 1 },
       { job_type: "collection_2", collection_phase: 2 },
       { job_type: "context_correction" },
       { job_type: "memory_batch" },
@@ -128,7 +114,7 @@ export async function POST(req: NextRequest) {
   const snapshotItems: any[] = [];
   for (const c of targetChildren) {
     for (const stage of stagesToSnapshot) {
-      const item_key = stage.job_type === "collection_2" ? "collection_2" : stage.job_type;
+      const item_key = stage.job_type;
       snapshotItems.push({
         execution_id: executionId,
         child_id: c.id,
@@ -152,41 +138,46 @@ export async function POST(req: NextRequest) {
 
   // 3. Process Action per Target
   for (const c of targetChildren) {
-    if (action === "collect" || action === "collect_and_generate") {
-      const { error: colErr } = await db.rpc("enqueue_collection_jobs_v3", {
-        p_collection_phase: 2,
-        p_business_date: businessDate,
-        p_execution_id: executionId,
-        p_child_id: c.id,
-        p_use_current_time: true,
-      });
+    const isCollect = action.startsWith("collect");
+    if (isCollect) {
+      const phases = action === "collect_first" ? [1] : action === "collect_second" ? [2] : [1, 2];
+      for (const phase of phases) {
+        const itemKey = phase === 1 ? "collection_1" : "collection_2";
+        const { error: colErr } = await db.rpc("enqueue_collection_jobs_v3", {
+          p_collection_phase: phase,
+          p_business_date: businessDate,
+          p_execution_id: executionId,
+          p_child_id: c.id,
+          p_use_current_time: true,
+        });
 
-      if (colErr) {
-        // Enqueue error => mark FAILED with actual code/summary
-        const { error: colFailErr } = await db.from("pipeline_execution_items").update({
-          status: "failed",
-          outcome: "FAILED",
-          error_code: "ENQUEUE_FAILED",
-          error_summary: colErr.message,
-          completed_at: nowIso,
-          updated_at: nowIso,
-        }).eq("execution_id", executionId).eq("child_id", c.id).eq("item_key", "collection_2").not("status", "in", '("completed","failed")');
-        
-        if (colFailErr) {
-          return NextResponse.json({ error: `Failed to record collection error for execution ${executionId}: ${colFailErr.message}` }, { status: 500 });
-        }
-        
-        if (action === "collect_and_generate") {
-          const { error: dsFailErr } = await db.from("pipeline_execution_items").update({
+        if (colErr) {
+          // Enqueue error => mark FAILED with actual code/summary
+          const { error: colFailErr } = await db.from("pipeline_execution_items").update({
             status: "failed",
-            outcome: "UPSTREAM_FAILED",
-            error_code: "COLLECTION_ENQUEUE_FAILED",
-            error_summary: "Collection enqueue failed, downstream cancelled.",
+            outcome: "FAILED",
+            error_code: "ENQUEUE_FAILED",
+            error_summary: colErr.message,
             completed_at: nowIso,
             updated_at: nowIso,
-          }).eq("execution_id", executionId).eq("child_id", c.id).in("job_type", ["context_correction", "memory_batch", "daily_report"]).not("status", "in", '("completed","failed")');
-          if (dsFailErr) {
-            return NextResponse.json({ error: `Failed to record downstream errors for execution ${executionId}: ${dsFailErr.message}` }, { status: 500 });
+          }).eq("execution_id", executionId).eq("child_id", c.id).eq("item_key", itemKey).not("status", "in", '("completed","failed")');
+          
+          if (colFailErr) {
+            return NextResponse.json({ error: `Failed to record collection error for execution ${executionId}: ${colFailErr.message}` }, { status: 500 });
+          }
+          
+          if (action === "collect_and_generate") {
+            const { error: dsFailErr } = await db.from("pipeline_execution_items").update({
+              status: "failed",
+              outcome: "UPSTREAM_FAILED",
+              error_code: "COLLECTION_ENQUEUE_FAILED",
+              error_summary: "Collection enqueue failed, downstream cancelled.",
+              completed_at: nowIso,
+              updated_at: nowIso,
+            }).eq("execution_id", executionId).eq("child_id", c.id).in("job_type", ["context_correction", "memory_batch", "daily_report"]).not("status", "in", '("completed","failed")');
+            if (dsFailErr) {
+              return NextResponse.json({ error: `Failed to record downstream errors for execution ${executionId}: ${dsFailErr.message}` }, { status: 500 });
+            }
           }
         }
       }

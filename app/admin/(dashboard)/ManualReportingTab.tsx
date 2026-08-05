@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminKpiCard, AdminKpiGrid } from "@/components/admin/shell/AdminKpiCard";
 
 function formatDateTime(iso: string): string {
@@ -74,7 +75,7 @@ export default function ManualReportingTab() {
     }
   }, [date, scope, loadSummary]);
 
-  const handleRun = async (action: "collect" | "generate" | "collect_and_generate") => {
+  const handleRun = async (action: "collect_first" | "collect_second" | "collect_all" | "generate" | "collect_and_generate") => {
     if (scope === "all") {
       if (!window.confirm("전체 아이를 대상으로 실행하시겠습니까? 시간이 오래 걸릴 수 있습니다.")) return;
     }
@@ -207,26 +208,63 @@ export default function ManualReportingTab() {
 
   const selectedChild = children.find(c => c.childId === selectedChildId);
 
+    const getStatusUI = (job: any, count: number, isCollection: boolean = false) => {
+    if (!job) return <span style={{ color: "var(--admin-text-secondary)" }}>대기</span>;
+    let color = "var(--admin-text-secondary)";
+    let text = "대기";
+    
+    if (job.status === "completed") {
+      color = "var(--admin-success)";
+      text = "완료";
+    } else if (job.status === "processing" || job.status === "claimed") {
+      color = "var(--admin-primary)";
+      text = "실행 중";
+    } else if (job.status === "failed") {
+      color = "var(--admin-danger)";
+      text = "실패";
+    } else if (job.status === "retry_wait") {
+      color = "var(--admin-warning)";
+      text = "재시도 대기";
+    }
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ color, fontWeight: 600, fontSize: "var(--admin-text-sm)" }}>
+          {text}{isCollection && job.status === "completed" ? ` · ${count}건` : ""}
+        </div>
+        {job.completed_at ? (
+          <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)" }}>
+            {formatDateTime(job.completed_at).substring(11, 19)}
+          </div>
+        ) : job.started_at ? (
+          <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)" }}>
+            시작: {formatDateTime(job.started_at).substring(11, 19)}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const columns: AdminDataTableColumn<any>[] = [
     { key: "select", header: "선택", render: (c) => (
       <input type="radio" checked={selectedChildId === c.childId} readOnly style={{ cursor: "pointer" }} />
     )},
     { key: "name", header: "이름", render: (c) => c.name },
     { key: "sessions", header: "세션 (미션/자유)", render: (c) => `${c.missionSessionCount} / ${c.freeChatSessionCount}` },
-    { key: "collected", header: "대화수집", render: (c) => c.collected ? "O" : "X" },
-    { key: "report", header: "리포트(생성/버전)", render: (c) => (
-      c.reportExists ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <span>{c.lastReportGeneratedAt ? formatDateTime(c.lastReportGeneratedAt).substring(0, 16) : "O"}</span>
-          {(c.generationSource || c.generationVersion) && (
-            <span style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)" }}>
-              {c.generationSource === "scheduled" ? "정기" : "수동"} (v{c.generationVersion || 1})
-            </span>
-          )}
-        </div>
-      ) : "X"
-    )},
-    { key: "dashboardFieldCount", header: "N/8", render: (c) => c.dashboardFieldCount ?? "-" }
+    { key: "col1", header: "1차 수집 18:00", render: (c) => getStatusUI(c.jobs?.collection_1, c.collection1Count, true) },
+    { key: "col2", header: "2차 수집 23:59:59", render: (c) => getStatusUI(c.jobs?.collection_2, c.collection2Count, true) },
+    { key: "corr", header: "보정", render: (c) => getStatusUI(c.jobs?.context_correction, 0) },
+    { key: "mem", header: "Memory Batch", render: (c) => getStatusUI(c.jobs?.memory_batch, 0) },
+    { key: "report", header: "리포트", render: (c) => (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {getStatusUI(c.jobs?.daily_report, 0)}
+        {c.reportExists && (c.generationSource || c.generationVersion) && (
+          <span style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)" }}>
+            {c.generationSource === "scheduled" ? "정기" : "수동"} (v{c.generationVersion || 1})
+          </span>
+        )}
+      </div>
+    )}
   ];
 
   const resultColumns: AdminDataTableColumn<any>[] = [
@@ -318,7 +356,7 @@ export default function ManualReportingTab() {
           </div>
 
           <div style={{ marginBottom: "var(--admin-space-16)" }}>
-            <AdminDataTable
+            <AdminResponsiveTable mobileStrategy="card"
               columns={columns}
               data={children}
               isLoading={loadingChildren}
@@ -332,17 +370,24 @@ export default function ManualReportingTab() {
           <div style={{ display: "flex", gap: "var(--admin-space-8)" }}>
             <button
               disabled={!selectedChildId || running}
-              onClick={() => handleRun("collect")}
+              onClick={() => handleRun("collect_first")}
               style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
             >
-              즉시 대화 수집
+              1차 수집 실행
             </button>
             <button
-              disabled={!selectedChildId || running || !selectedChild?.collected}
-              onClick={() => handleRun("generate")}
-              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: (!selectedChildId || running || !selectedChild?.collected) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running || !selectedChild?.collected) ? 0.5 : 1 }}
+              disabled={!selectedChildId || running}
+              onClick={() => handleRun("collect_second")}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
             >
-              즉시 리포트 생성
+              2차 수집 실행
+            </button>
+            <button
+              disabled={!selectedChildId || running}
+              onClick={() => handleRun("collect_all")}
+              style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
+            >
+              전체 수집 실행
             </button>
             <button
               disabled={!selectedChildId || running}
@@ -378,7 +423,7 @@ export default function ManualReportingTab() {
           <div style={{ display: "flex", gap: "var(--admin-space-8)" }}>
             <button
               disabled={running}
-              onClick={() => handleRun("collect")}
+              onClick={() => handleRun("collect_all")}
               style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: running ? "not-allowed" : "pointer", opacity: running ? 0.5 : 1 }}
             >
               전체 대화 수집
@@ -444,7 +489,7 @@ export default function ManualReportingTab() {
                     <div style={{ marginTop: "var(--admin-space-12)" }}>
                       <strong style={{ fontWeight: "var(--admin-weight-bold)" }}>[V3 처리 상태]</strong><br/>
                       <div style={{ marginTop: "var(--admin-space-8)" }}>
-                        <AdminDataTable
+                        <AdminResponsiveTable mobileStrategy="card"
                           columns={resultColumns}
                           data={runResult.statuses}
                           keyExtractor={(s: any) => s.childId || s.maskedChildId || s.loginId || Math.random().toString()}
