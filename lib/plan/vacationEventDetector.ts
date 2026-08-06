@@ -153,6 +153,34 @@ import { SupabaseClient } from "@supabase/supabase-js";
 
 export const VACATION_KEYWORD_PATTERN = /방학|개학|학교\s*안\s*가|여름방학|겨울방학|모르겠|기억\s*안|날짜\s*몰라|엄마가\s*알아|미뤄졌|날짜\s*바뀌|다녀왔|다녀\s*왔|갔다\s*왔|\d+\s*월\s*\d+\s*일|다음\s*주|이번\s*주|다음\s*달|이번\s*달|(월|화|수|목|금|토|일)요일/;
 
+export function detectVacationEventRuleFastPath(
+  text: string,
+  businessDateKST: string
+): VacationEventResult | null {
+  const clean = text.trim();
+  if (/^(나\s*)?(방학이야|방학임|여름방학이야|겨울방학이야|학교\s*안\s*가|학교\s*쉬어)/.test(clean)) {
+    return { eventType: "VACATION_DECLARED", schoolStartDate: null, needsFollowUpForAmbiguousDate: false };
+  }
+  if (/^(오늘\s*)?(개학했어|개학했|학교\s*갔어|학교\s*다녀왔어|학교\s*다녀왔|학교\s*갔다왔어)/.test(clean)) {
+    return { eventType: "SCHOOL_START_CONFIRMED", schoolStartDate: null, needsFollowUpForAmbiguousDate: false };
+  }
+  if (/^(잘\s*)?(모르겠|기억\s*안\s*나|날짜\s*몰라|개학일\s*몰라|엄마가\s*알아)/.test(clean)) {
+    return { eventType: "SCHOOL_START_DATE_UNKNOWN", schoolStartDate: null, needsFollowUpForAmbiguousDate: false };
+  }
+  const dateMatch = clean.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+  if (dateMatch) {
+    const month = parseInt(dateMatch[1], 10).toString().padStart(2, "0");
+    const day = parseInt(dateMatch[2], 10).toString().padStart(2, "0");
+    const year = businessDateKST.substring(0, 4);
+    const startDate = `${year}-${month}-${day}`;
+    if (/미뤄/.test(clean)) {
+      return { eventType: "SCHOOL_START_POSTPONED", schoolStartDate: startDate, needsFollowUpForAmbiguousDate: false };
+    }
+    return { eventType: "SCHOOL_START_DATE_PROVIDED", schoolStartDate: startDate, needsFollowUpForAmbiguousDate: false };
+  }
+  return null;
+}
+
 export async function processVacationEventDetection(
   service: SupabaseClient,
   childId: string,
@@ -163,8 +191,11 @@ export async function processVacationEventDetection(
   if (!VACATION_KEYWORD_PATTERN.test(answerText)) return;
   try {
     const businessDate = getKstBusinessDate();
-    const event = await detectVacationEvent(answerText, businessDate);
-    console.log("[vacationEvent] detected:", { childId, eventType: event?.eventType, schoolStartDate: event?.schoolStartDate });
+    const startTime = Date.now();
+    const ruleResult = detectVacationEventRuleFastPath(answerText, businessDate);
+    const event = ruleResult ?? (await detectVacationEvent(answerText, businessDate));
+    const durationMs = Date.now() - startTime;
+    console.log("[vacationEvent] detected:", { childId, eventType: event?.eventType, schoolStartDate: event?.schoolStartDate, ruleFastPath: !!ruleResult, durationMs });
     if (!event || event.eventType === "NONE") return;
     await applyVacationEvent(
       service,
@@ -179,6 +210,7 @@ export async function processVacationEventDetection(
     console.error("[vacationEvent] detection failed (non-fatal):", err);
   }
 }
+
 
 export function scheduleVacationEventDetection(
   service: SupabaseClient,
