@@ -585,13 +585,10 @@ function LlmStatusTab() {
         <div style={{ background: "var(--admin-surface)", borderRadius: 12, border: "1px solid var(--admin-border)", padding: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: "var(--admin-text-sm)", color: "var(--admin-text-primary)" }}>
             <div><strong>환경:</strong> {summary.environment}</div>
-            <div><strong>배포 커밋:</strong> {summary.commitSha.substring(0, 7)}</div>
-            <div><strong>마지막 빌드:</strong> {summary.buildTime}</div>
             <div><strong>마지막 확인:</strong> {formatDateTime(summary.lastCheckTime)}</div>
             <div><strong>등록 기능 수:</strong> {summary.total}개</div>
             <div><strong>정상:</strong> <span style={{ color: "var(--admin-success)" }}>{summary.normal}개</span></div>
-            <div><strong>미설정:</strong> <span style={{ color: "var(--admin-danger)" }}>{summary.missing}개</span></div>
-            <div><strong>설정 불일치:</strong> <span style={{ color: "var(--admin-danger)" }}>{summary.mismatch}개</span></div>
+            <div><strong>오류:</strong> <span style={{ color: "var(--admin-danger)" }}>{summary.error}개</span></div>
           </div>
         </div>
       </div>
@@ -628,11 +625,7 @@ function LlmStatusTab() {
               <>
                 <AdminStatusBadge
                   text={r.status}
-                  variant={
-                    r.status === "정상" || r.status === "기본값 사용" ? "success" :
-                    r.status === "확인 불가" ? "neutral" :
-                    "danger"
-                  }
+                  variant={r.status === "정상" ? "success" : "danger"}
                 />
                 {r.warningReason && <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-danger)", marginTop: 2 }}>{r.warningReason}</div>}
               </>

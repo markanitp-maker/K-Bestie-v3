@@ -2,7 +2,7 @@ import { LLM_MODEL_ROLES, LLM_ENV_KEYS, getLlmModel, type LlmModelRole } from "@
 
 export type FeatureType = "텍스트 생성" | "음성(Live)" | "STT/TTS" | "Batch/Report" | "기타";
 export type PlatformType = "Vercel Node" | "Supabase Edge" | "Cloud Run" | "기타";
-export type StatusType = "정상" | "미설정" | "설정 불일치" | "확인 불가" | "기본값 사용";
+export type StatusType = "정상" | "오류";
 
 export interface LlmStatusEntry {
   id: string;
@@ -39,11 +39,11 @@ export function getLlmStatusList(): LlmStatusEntry[] {
     const isOverride = effectiveModel !== defaultModel;
     const fallbackModel = fallbackRole ? getLlmModel(fallbackRole) : null;
     
-    let status: StatusType = isOverride ? "정상" : "기본값 사용";
+    let status: StatusType = "정상";
     let warningReason = undefined;
     
     if (!effectiveModel || effectiveModel.trim() === "") {
-      status = "미설정";
+      status = "오류";
       warningReason = "모델 값이 비어있습니다.";
     }
 
@@ -57,7 +57,7 @@ export function getLlmStatusList(): LlmStatusEntry[] {
       defaultModel,
       effectiveModel,
       fallbackModel,
-      region: process.env.GOOGLE_CLOUD_LOCATION || "확인 불가",
+      region: process.env.GOOGLE_CLOUD_LOCATION || "",
       status,
       warningReason,
       apiMethod: "Vertex AI SDK (@google/genai)",
@@ -79,23 +79,6 @@ export function getLlmStatusList(): LlmStatusEntry[] {
   entries.push(buildEntry("supabase_batch_report", "Edge Function 배치 리포트", "Batch/Report", "Supabase Edge", "supabase/functions/_shared/batch.ts", "supabaseBatchReport"));
   entries.push(buildEntry("mission_memory_greeting", "미션 기억 안부 인사", "텍스트 생성", "Vercel Node", "lib/mission/memoryGreeting.ts", "missionMemoryGreeting"));
 
-  // Extra Vertex Live relay entry (Cloud run)
-  entries.push({
-    id: "vertex_live_relay",
-    name: "Vertex Live 릴레이 서비스",
-    featureType: "음성(Live)",
-    platform: "Cloud Run",
-    internalPath: "services/vertex-live-relay",
-    envKey: "자체 환경변수 사용",
-    defaultModel: "확인 불가",
-    effectiveModel: "확인 불가",
-    fallbackModel: null,
-    region: "확인 불가",
-    status: "확인 불가",
-    warningReason: "별도 Cloud Run 서비스로 배포되어 확인 불가",
-    apiMethod: "Vertex AI Live API (WebSockets)",
-  });
-  
   // STT / TTS (Google Cloud Speech APIs)
   entries.push({
     id: "gcp_stt",
@@ -107,8 +90,8 @@ export function getLlmStatusList(): LlmStatusEntry[] {
     defaultModel: "latest_long",
     effectiveModel: "latest_long",
     fallbackModel: null,
-    region: process.env.GOOGLE_CLOUD_LOCATION || "확인 불가",
-    status: process.env.GCP_VERTEX_SA_KEY_JSON ? "정상" : "미설정",
+    region: process.env.GOOGLE_CLOUD_LOCATION || "",
+    status: process.env.GCP_VERTEX_SA_KEY_JSON ? "정상" : "오류",
     warningReason: !process.env.GCP_VERTEX_SA_KEY_JSON ? "GCP 서비스 계정 키 없음" : undefined,
     apiMethod: "GCP REST API",
   });
@@ -122,8 +105,8 @@ export function getLlmStatusList(): LlmStatusEntry[] {
     defaultModel: "ko-KR-Journey-F",
     effectiveModel: "ko-KR-Journey-F",
     fallbackModel: null,
-    region: process.env.GOOGLE_CLOUD_LOCATION || "확인 불가",
-    status: process.env.GCP_VERTEX_SA_KEY_JSON ? "정상" : "미설정",
+    region: process.env.GOOGLE_CLOUD_LOCATION || "",
+    status: process.env.GCP_VERTEX_SA_KEY_JSON ? "정상" : "오류",
     warningReason: !process.env.GCP_VERTEX_SA_KEY_JSON ? "GCP 서비스 계정 키 없음" : undefined,
     apiMethod: "GCP REST API",
   });
