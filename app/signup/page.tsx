@@ -68,11 +68,20 @@ function PrimaryButton({
   );
 }
 
-function ErrorBanner({ message }: { message: string | null }) {
+function ErrorBanner({ message, onRetry }: { message: string | null; onRetry?: () => void }) {
   if (!message) return null;
   return (
-    <div className="rounded-xl px-4 py-3 text-xs font-medium text-center" style={{ background: "#FEF2F2", color: "#DC2626" }}>
-      {message}
+    <div className="rounded-xl px-4 py-3 text-xs font-medium text-center flex flex-col items-center gap-2" style={{ background: "#FEF2F2", color: "#DC2626" }}>
+      <span>{message}</span>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="px-3 py-1 text-[11px] font-bold rounded-lg bg-red-100 hover:bg-red-200 text-red-700 transition-colors cursor-pointer"
+        >
+          다시 시도
+        </button>
+      )}
     </div>
   );
 }
@@ -114,11 +123,11 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "동의 처리에 실패했습니다.");
+        throw new Error(data.error || "회원가입 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
       }
       onNext();
     } catch (e: any) {
-      setError(e.message || "잠시 후 다시 시도해 주세요. 입력한 내용은 안전하게 보관되어 있습니다.");
+      setError(e.message || "회원가입 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setLoading(false);
     }
@@ -130,7 +139,7 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
         <p className="text-base font-bold text-gray-800">약관 및 개인정보 동의</p>
         <p className="text-xs mt-1 text-gray-500">서비스 이용을 위해 아래 내용에 동의해 주세요.</p>
       </div>
-      <ErrorBanner message={error} />
+      <ErrorBanner message={error} onRetry={submit} />
       <button
         type="button"
         onClick={() => toggleAll(!allRequired)}
@@ -220,7 +229,7 @@ function ProfileStep({ onNext }: { onNext: () => void }) {
         <p className="text-base font-bold text-gray-800">보호자 기본정보</p>
         <p className="text-xs mt-1 text-gray-500">서비스 이용에 꼭 필요한 정보만 입력받아요.</p>
       </div>
-      <ErrorBanner message={error} />
+      <ErrorBanner message={error} onRetry={submit} />
       <input
         type="text"
         placeholder="보호자 이름"

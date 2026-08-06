@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { headers as nextHeaders } from "next/headers";
+import { headers as nextHeaders, cookies } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CONSENT_DOCUMENT_VERSION } from "@/lib/plan/consentDocument";
 
@@ -91,6 +91,23 @@ export async function POST(req: NextRequest) {
       .update({ family_id: existingMember.family_id })
       .eq("user_id", user.id)
       .is("family_id", null);
+  }
+
+  // Handle Acquisition Attribution SIGNUP_STARTED
+  const cookieStore = await cookies();
+  const firstTouch = cookieStore.get("first_touch_link_id")?.value;
+  const signupTouch = cookieStore.get("signup_touch_link_id")?.value;
+  const visitorId = cookieStore.get("k_visitor_id")?.value || user.id;
+
+  const activeLink = signupTouch || firstTouch;
+  if (activeLink) {
+    await svc.from("acquisition_events").insert({
+      event_type: "SIGNUP_STARTED",
+      attribution_id: visitorId,
+      visitor_id: visitorId,
+      link_id: activeLink,
+      parent_user_id: user.id
+    });
   }
 
   return NextResponse.json({ ok: true });

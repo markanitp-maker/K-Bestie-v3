@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -48,17 +49,48 @@ export async function POST(req: NextRequest) {
   const svc = createServiceClient();
   const { error } = await svc
     .from("parents")
-    .update({
+    .upsert({
+      id: user.id,
+      email: user.email ?? "",
       name,
       phone_number: phone,
       relationship_to_child: relationship,
       legal_guardian_confirmed_at: new Date().toISOString(),
-    })
-    .eq("id", user.id);
+    }, { onConflict: "id" });
 
   if (error) {
-    console.error("[signup/profile] update error:", error);
+    console.error("[signup/profile] upsert error:", error);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
+  }
+
+  // Handle Acquisition Attribution
+  const cookieStore = await cookies();
+  const firstTouch = cookieStore.get("first_touch_link_id")?.value;
+  const signupTouch = cookieStore.get("signup_touch_link_id")?.value;
+  const visitorId = cookieStore.get("k_visitor_id")?.value || user.id;
+
+  if (firstTouch || signupTouch) {
+    const now = new Date().toISOString();
+    const activeLink = signupTouch || firstTouch;
+    
+    if (activeLink) {
+      await svc.from("parent_attributions").upsert({
+        parent_user_id: user.id,
+        first_touch_link_id: firstTouch,
+        first_touch_at: now,
+        signup_link_id: signupTouch,
+        signup_touch_at: now,
+        attribution_window_days: 30
+      }, { onConflict: "parent_user_id", ignoreDuplicates: true });
+
+      await svc.from("acquisition_events").insert({
+        event_type: "PARENT_SIGNUP_COMPLETED",
+        attribution_id: visitorId,
+        visitor_id: visitorId,
+        link_id: activeLink,
+        parent_user_id: user.id
+      });
+    }
   }
 
   return NextResponse.json({ ok: true });
