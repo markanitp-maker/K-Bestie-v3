@@ -69,12 +69,13 @@ export default function BetaLandingPage() {
               </p>
               <div className="mt-7 flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                 <Link
-                  href="/signup"
+                  href="/login"
                   className="w-full sm:w-auto text-center px-7 py-3.5 rounded-full font-bold text-white text-sm md:text-base transition-opacity active:opacity-80"
                   style={{ background: "var(--color-k-orange)" }}
                 >
-                  베타 테스터 신청하기
+                  시작하기
                 </Link>
+
                 <a
                   href="#features"
                   className="w-full sm:w-auto text-center px-7 py-3.5 rounded-full font-bold text-sm md:text-base border transition-colors"
@@ -191,12 +192,13 @@ export default function BetaLandingPage() {
 
             <div className="mt-9 flex justify-center">
               <Link
-                href="/signup"
+                href="/login"
                 className="w-full sm:w-auto text-center px-8 py-3.5 rounded-full font-bold text-white text-sm md:text-base"
                 style={{ background: "var(--color-k-orange)" }}
               >
-                베타 테스터 신청하기
+                시작하기
               </Link>
+
             </div>
           </div>
         </section>

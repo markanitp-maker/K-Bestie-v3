@@ -45,6 +45,11 @@ export async function resolveMembershipState(userId: string): Promise<Membership
       .is("deleted_at", null),
   ]);
 
+  if (parentRes.error || memberRes.error) {
+    console.error("[resolveMembershipState] DB query error:", parentRes.error || memberRes.error);
+    throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+  }
+
   const parent = parentRes.data as {
     account_status: string;
     withdrawn_at: string | null;
@@ -68,7 +73,7 @@ export async function resolveMembershipState(userId: string): Promise<Membership
         purgeDate = new Date(new Date(parent.withdrawn_at).getTime() + 30 * 24 * 60 * 60 * 1000);
       }
 
-      // 탈퇴 30일 이내인 경우 -> 복구 가능 탈퇴 계정으로 판정 (가족/아이 존재여부보다 우선)
+      // 탈퇴 30일 이내인 경우 -> 복구 가능 탈퇴 계정으로 판정
       if (purgeDate && now < purgeDate) {
         return { state: "RESTOREABLE_WITHDRAWN" };
       } else {
@@ -92,15 +97,65 @@ export async function resolveMembershipState(userId: string): Promise<Membership
     return { state: "ACTIVE_CHILD", familyId: childMembership.family_id, role: "child" };
   }
 
-  // ── 3순위/4순위: 가입 상태 및 미완료 단계 판정 ─────────────────────────
+  // ── 3순위: 활성 기존 보호자 계정 판정 ───────────────────────────────────
   const parentMembership = members.find(
     (m) => m.role === "owner_parent" || m.role === "parent"
   );
-  const familyId = parentMembership?.family_id ?? null;
+  let familyId = parentMembership?.family_id ?? null;
 
+  let childCount = 0;
+  if (familyId) {
+    const childRes = await svc
+      .from("child_profiles")
+      .select("id", { count: "exact" })
+      .eq("family_id", familyId);
+    
+    if (childRes.error) {
+      console.error("[resolveMembershipState] child_profiles DB query error:", childRes.error);
+      throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+    }
+    childCount = childRes.count ?? 0;
+  }
+
+  // family_members 행이 없는 경우, 사용자가 생성한 활성 가족이 존재하는지 확인
+  if (!familyId && userId) {
+    const familyRes = await svc
+      .from("families")
+      .select("id")
+      .eq("created_by", userId)
+      .is("deleted_at", null)
+      .limit(1)
+      .maybeSingle();
+
+    if (familyRes.error) {
+      console.error("[resolveMembershipState] families DB query error:", familyRes.error);
+      throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+    }
+
+    if (familyRes.data?.id) {
+      familyId = familyRes.data.id;
+    }
+  }
+
+  // 기존 보호자 판단 원칙:
+  // onboarding_completed_at 존재 OR 유효한 부모 가족 멤버십 존재 OR 연결된 자녀 존재 OR 기존 가족 존재 시 무조건 ACTIVE_PARENT
+  const isExistingParent =
+    Boolean(parent?.onboarding_completed_at) ||
+    Boolean(parentMembership) ||
+    Boolean(familyId) ||
+    childCount > 0;
+
+  if (isExistingParent) {
+    return {
+      state: "ACTIVE_PARENT",
+      familyId: familyId ?? undefined,
+      role: parentMembership?.role ?? "owner_parent",
+    };
+  }
+
+  // ── 4순위: 가입 미완료 계정 단계 판정 (순수 신규 회원) ────────────────────
   const onboardingStep = await resolveIncompleteStep(svc, userId, familyId);
 
-  // 약관, 프로필, 가족 생성, 아이 등록 중 미완료 단계가 존재하는 경우
   if (onboardingStep !== "complete") {
     return {
       state: "AUTHENTICATED_INCOMPLETE",
@@ -109,11 +164,10 @@ export async function resolveMembershipState(userId: string): Promise<Membership
     };
   }
 
-  // 모든 온보딩 완료 (가족+활성 아이 존재) -> ACTIVE_PARENT
   return {
     state: "ACTIVE_PARENT",
     familyId: familyId!,
-    role: parentMembership!.role,
+    role: parentMembership?.role ?? "owner_parent",
   };
 }
 
@@ -123,7 +177,7 @@ async function resolveIncompleteStep(
   familyId: string | null
 ): Promise<OnboardingStep | "complete"> {
   // 1. 약관 동의 확인
-  const { data: consent } = await svc
+  const consentRes = await svc
     .from("signup_consents")
     .select("id")
     .eq("user_id", userId)
@@ -132,26 +186,43 @@ async function resolveIncompleteStep(
     .is("withdrawn_at", null)
     .limit(1)
     .maybeSingle();
-  if (!consent) return "consent";
+
+  if (consentRes.error) {
+    console.error("[resolveIncompleteStep] signup_consents query error:", consentRes.error);
+    throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+  }
+
+  if (!consentRes.data) return "consent";
 
   // 2. 보호자 정보 (전화번호) 확인
-  const { data: parentRow } = await svc
+  const parentRes = await svc
     .from("parents")
     .select("phone_number, onboarding_completed_at")
     .eq("id", userId)
     .maybeSingle();
-  if (!(parentRow as { phone_number?: string | null } | null)?.phone_number) return "profile";
+
+  if (parentRes.error) {
+    console.error("[resolveIncompleteStep] parents query error:", parentRes.error);
+    throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+  }
+
+  if (!(parentRes.data as { phone_number?: string | null } | null)?.phone_number) return "profile";
 
   // 3. 가족 생성/소속 확인
   if (!familyId) return "family";
 
-  // 4. 아이 등록 및 활성 아이 존재 확인 (child_profiles에는 deleted_at 컬럼 없음)
-  const { count: childCount } = await svc
+  // 4. 아이 등록 및 활성 아이 존재 확인
+  const childRes = await svc
     .from("child_profiles")
     .select("id", { count: "exact" })
     .eq("family_id", familyId);
 
-  if (!childCount) return "child";
+  if (childRes.error) {
+    console.error("[resolveIncompleteStep] child_profiles query error:", childRes.error);
+    throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+  }
+
+  if (!childRes.count) return "child";
 
   return "complete";
 }

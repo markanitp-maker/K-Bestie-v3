@@ -2,6 +2,8 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+
 
 type Step = "consent" | "profile" | "family" | "child";
 const STEP_INDEX: Record<Step, number> = { consent: 1, profile: 2, family: 3, child: 4 };
@@ -565,12 +567,26 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
 function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [authChecking, setAuthChecking] = useState(true);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) {
+        window.location.replace("/login?from=/signup");
+        return;
+      }
+      setAuthChecking(false);
+    });
+  }, []);
+
   const initialStep = (searchParams.get("step") as Step) ?? "consent";
   const [step, setStep] = useState<Step>(
     ["consent", "profile", "family", "child"].includes(initialStep) ? initialStep : "consent"
   );
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [loadingFamily, setLoadingFamily] = useState(true);
+
 
   const finish = () => {
     if (typeof window !== "undefined") {
@@ -643,10 +659,20 @@ function SignupContent() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ event_type: "SIGNUP_PAGE_VIEW", visitor_id, attribution_id: visitor_id, link_id })
     }).catch(console.error);
-
   }, [searchParams]);
 
+
+  if (authChecking) {
+
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-gray-50">
+        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
+      </div>
+    );
+  }
+
   return (
+
     <Shell step={step}>
       {step === "consent" && <ConsentStep onNext={() => setStep("profile")} />}
       {step === "profile" && <ProfileStep onNext={() => setStep("family")} />}

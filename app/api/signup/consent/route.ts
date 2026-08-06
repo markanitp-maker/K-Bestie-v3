@@ -30,6 +30,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+
+  // [긴급 장애 방어] 이미 온보딩을 완료했거나 유효한 가족 및 자녀를 보유한 기존 회원 계정은
+  // 신규 동의 저장을 409 EXISTING_MEMBERSHIP_ONBOARDING_BLOCKED 로 차단한다.
+  const svc = createServiceClient();
+  const { data: parentRow } = await svc
+    .from("parents")
+    .select("onboarding_completed_at")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const { data: memberRow } = await svc
+    .from("family_members")
+    .select("family_id")
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (parentRow?.onboarding_completed_at && memberRow?.family_id) {
+    const { count: childCount } = await svc
+      .from("child_profiles")
+      .select("id", { count: "exact" })
+      .eq("family_id", memberRow.family_id);
+
+    if (childCount && childCount > 0) {
+      console.warn("[signup/consent] 409 EXISTING_MEMBERSHIP_ONBOARDING_BLOCKED for user:", user.id);
+      return NextResponse.json(
+        { error: "EXISTING_MEMBERSHIP_ONBOARDING_BLOCKED" },
+        { status: 409 }
+      );
+    }
+  }
+
+
   let body: { agreements?: Record<string, boolean> };
   try {
     body = await req.json();
@@ -53,8 +86,8 @@ export async function POST(req: NextRequest) {
     null;
   const userAgent = headersList.get("user-agent");
 
-  const svc = createServiceClient();
   const now = new Date().toISOString();
+
 
   const consentItems = ALL_TYPES.filter((t) => t in agreements).map((t) => ({
     consent_type: t,
