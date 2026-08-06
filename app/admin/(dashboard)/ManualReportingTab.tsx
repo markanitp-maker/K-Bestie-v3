@@ -13,6 +13,7 @@ export default function ManualReportingTab() {
   const [date, setDate] = useState(() => new Date().toLocaleDateString("en-CA")); // YYYY-MM-DD
   const [scope, setScope] = useState<"single" | "all">("single");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed" | "pending">("all");
   const [children, setChildren] = useState<any[]>([]);
   const [loadingChildren, setLoadingChildren] = useState(false);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
@@ -208,6 +209,26 @@ export default function ManualReportingTab() {
 
   const selectedChild = children.find(c => c.childId === selectedChildId);
 
+  const filteredChildren = children.filter((c) => {
+    if (statusFilter === "all") return true;
+
+    const jobStatuses = [
+      c.jobs?.collection_1?.status,
+      c.jobs?.collection_2?.status,
+      c.jobs?.context_correction?.status,
+      c.jobs?.memory_batch?.status,
+      c.jobs?.daily_report?.status,
+    ];
+
+    const hasFailed = jobStatuses.some(s => s === "failed");
+    const hasPending = jobStatuses.some(s => s !== "completed");
+
+    if (statusFilter === "success") return !hasPending;
+    if (statusFilter === "failed") return hasFailed;
+    if (statusFilter === "pending") return !hasFailed && hasPending;
+    return true;
+  });
+
     const getStatusUI = (job: any, count: number, isCollection: boolean = false) => {
     if (!job) return <span style={{ color: "var(--admin-text-secondary)" }}>대기</span>;
     let color = "var(--admin-text-secondary)";
@@ -345,7 +366,7 @@ export default function ManualReportingTab() {
 
       {scope === "single" && (
         <div style={{ background: "var(--admin-surface)", borderRadius: 12, border: "1px solid var(--admin-border)", padding: "var(--admin-space-16)", marginBottom: "var(--admin-space-20)" }}>
-          <div style={{ marginBottom: "var(--admin-space-16)" }}>
+          <div style={{ display: "flex", gap: "var(--admin-space-16)", alignItems: "center", marginBottom: "var(--admin-space-16)", flexWrap: "wrap" }}>
             <input
               type="text"
               placeholder="이름 또는 ID로 검색..."
@@ -353,12 +374,36 @@ export default function ManualReportingTab() {
               onChange={e => setSearch(e.target.value)}
               style={{ padding: "var(--admin-space-8) var(--admin-space-12)", borderRadius: 8, border: "1px solid var(--admin-border)", width: "100%", maxWidth: 300, fontSize: "var(--admin-text-sm)", background: "var(--admin-bg)", color: "var(--admin-text-primary)" }}
             />
+            <div style={{ display: "flex", gap: "var(--admin-space-8)" }}>
+              {(["all", "success", "failed", "pending"] as const).map(filter => {
+                const label = filter === "all" ? "전체" : filter === "success" ? "성공" : filter === "failed" ? "실패" : "대기";
+                const isSelected = statusFilter === filter;
+                return (
+                  <button
+                    key={filter}
+                    onClick={() => setStatusFilter(filter)}
+                    style={{
+                      padding: "var(--admin-space-4) var(--admin-space-12)",
+                      borderRadius: 16,
+                      fontSize: "var(--admin-text-xs)",
+                      fontWeight: 600,
+                      background: isSelected ? "var(--admin-primary)" : "var(--admin-bg)",
+                      color: isSelected ? "white" : "var(--admin-text-primary)",
+                      border: `1px solid ${isSelected ? "var(--admin-primary)" : "var(--admin-border)"}`,
+                      cursor: "pointer"
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div style={{ marginBottom: "var(--admin-space-16)" }}>
             <AdminResponsiveTable mobileStrategy="card"
               columns={columns}
-              data={children}
+              data={filteredChildren}
               isLoading={loadingChildren}
               keyExtractor={(c) => c.childId || Math.random().toString()}
               emptyMessage={search ? "검색 결과가 없습니다." : "아이를 검색해주세요."}
