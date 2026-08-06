@@ -9,7 +9,7 @@ import { classifyAnswer } from "@/lib/questions/answer-classifier";
 import { pickReaction } from "@/lib/freeChatReactions";
 import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
 import { detectVacationEvent } from "@/lib/plan/vacationEventDetector";
-import { applyVacationEvent } from "@/lib/plan/vacationSchoolContext";
+import { applyVacationEvent, getActiveVacationContext, resolveSchoolQuestionBlockState } from "@/lib/plan/vacationSchoolContext";
 
 // 068: 방학/개학 관련 키워드가 있을 때만 LLM 이벤트 감지를 호출한다(매 턴 LLM 호출 비용
 // 방지). 지시서 6장 예시 키워드 그대로.
@@ -38,6 +38,7 @@ function scheduleVacationEventDetection(
     try {
       const businessDate = getKstBusinessDate();
       const event = await detectVacationEvent(answerText, businessDate);
+      console.log("[mission/answer] vacation event detected:", { childId, eventType: event?.eventType, schoolStartDate: event?.schoolStartDate });
       if (!event || event.eventType === "NONE") return;
       await applyVacationEvent(
         service,
@@ -47,10 +48,19 @@ function scheduleVacationEventDetection(
         sessionId,
         childTurnId
       );
+      console.log("[mission/answer] vacation context applied:", { childId, eventType: event.eventType });
     } catch (err) {
       console.error("[mission/answer] vacation event detection failed (non-fatal):", err);
     }
   });
+}
+
+async function pickNonSchoolQuestionId(service: any, candidateIds: string[], blocked: boolean): Promise<string> {
+  if (!blocked || candidateIds.length === 0) return candidateIds[0];
+  const { data } = await service.from("mission_questions").select("id, school_context_tag").in("id", candidateIds);
+  const tagMap = new Map((data ?? []).map((r: any) => [r.id, r.school_context_tag]));
+  const nonSchool = candidateIds.find(id => tagMap.get(id) !== "school_required");
+  return nonSchool ?? candidateIds[0];
 }
 
 // 컬럼 정의 통일:
@@ -680,14 +690,18 @@ export async function POST(req: NextRequest) {
           .eq("question_role", "RESERVE")
           .is("asked_order", null)
           .order("selected_order", { ascending: true })
-          .limit(1);
+          .limit(5);
 
         if (reserveErr) {
           throw new Error(`Failed to query reserve questions: ${reserveErr.message}`);
         }
 
         if (reserveList && reserveList.length > 0) {
-          const reserveQ = reserveList[0];
+          const vCtx = await getActiveVacationContext(service, session.child_id);
+          const blocked = resolveSchoolQuestionBlockState(vCtx, getKstBusinessDate()).blocked;
+          const candidateIds = reserveList.map(r => r.question_id);
+          const chosenId = await pickNonSchoolQuestionId(service, candidateIds, blocked);
+          const reserveQ = reserveList.find(r => r.question_id === chosenId) ?? reserveList[0];
           
           // 현재 질문의 selected_order 조회
           const { data: failedQ, error: failedQErr } = await service
@@ -799,7 +813,7 @@ export async function POST(req: NextRequest) {
           let backfillIds: string[] = [];
           if (gradeNum && roundTypeVal) {
             try {
-              backfillIds = await selectAdditionalReserveQuestions(session.child_id, gradeNum, roundTypeVal as any, usedIds, 1);
+              backfillIds = await selectAdditionalReserveQuestions(session.child_id, gradeNum, roundTypeVal as any, usedIds, 5);
             } catch (e) {
               console.error("[answer/route] mid-session reserve backfill failed:", e);
             }
@@ -811,11 +825,15 @@ export async function POST(req: NextRequest) {
             });
             questionPoolExhausted = true;
           } else {
+            const vCtx = await getActiveVacationContext(service, session.child_id);
+            const blocked = resolveSchoolQuestionBlockState(vCtx, getKstBusinessDate()).blocked;
+            const chosenId = await pickNonSchoolQuestionId(service, backfillIds, blocked);
+
             const { data: insertedReserve, error: insertReserveErr } = await service
               .from("mission_question_history")
               .insert({
                 child_id: session.child_id,
-                question_id: backfillIds[0],
+                question_id: chosenId,
                 question_role: "RESERVE",
                 selected_order: 9999,
                 session_id: sessionId,
