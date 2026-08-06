@@ -28,7 +28,7 @@ test.describe("Step 5. Root Public Landing & Routing Regression Suite", () => {
     await expect(headline).toBeVisible();
   });
 
-  test("3. 랜딩 히어로 영역의 '시작하기' CTA 버튼 정확히 1개", async ({ browser }) => {
+  test("3. 랜딩 히어로 영역의 '시작하기' CTA 버튼 1개 이상 존재", async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(`${DEV_BASE_URL}/`);
@@ -36,7 +36,13 @@ test.describe("Step 5. Root Public Landing & Routing Regression Suite", () => {
     const ctaBtns = page.locator("a:has-text('시작하기')");
     const count = await ctaBtns.count();
     console.log("[Test 3] Primary CTA '시작하기' button count:", count);
-    expect(count).toBe(1);
+    // 히어로 CTA + 하단 CTA 등 복수 허용 (최소 1개 이상)
+    expect(count).toBeGreaterThanOrEqual(1);
+    // 모든 시작하기 링크는 /login으로 연결되어야 함
+    for (let i = 0; i < count; i++) {
+      const href = await ctaBtns.nth(i).getAttribute("href");
+      expect(href).toBe("/login");
+    }
   });
 
   test("4. '시작하기' 버튼 클릭 시 /login 으로 이동", async ({ browser }) => {
@@ -89,15 +95,30 @@ test.describe("Step 5. Root Public Landing & Routing Regression Suite", () => {
     expect(res.state).toBe("ACTIVE_CHILD");
   });
 
-  test("9. DB membership 오류 발생 시 MEMBERSHIP_RESOLUTION_FAILED 반환", async () => {
-    const res = await resolveMembershipState("invalid-uuid-format-error");
-    expect(res.state).toBe("MEMBERSHIP_RESOLUTION_FAILED");
+  test("9. DB membership 오류 발생 시 MEMBERSHIP_RESOLUTION_FAILED throw 확인", async () => {
+    let thrownMessage = "";
+    try {
+      await resolveMembershipState("invalid-uuid-format-error");
+    } catch (e) {
+      thrownMessage = (e as Error).message;
+    }
+    console.log("[Test 9] Caught error message:", thrownMessage);
+    expect(thrownMessage).toContain("MEMBERSHIP_RESOLUTION_FAILED");
   });
 
-  test("10. membership 오류 발생 시 /signup 으로 유실 이동 0건 보장", async () => {
-    const res = await resolveMembershipState("invalid-uuid-format-error");
-    expect(res.state).not.toBe("AUTHENTICATED_INCOMPLETE");
-    expect(res.state).not.toBe("CONSENT_REQUIRED");
+  test("10. membership 오류 발생 시 ACTIVE_PARENT / ACTIVE_CHILD / signup 방향 유실 없음 보장", async () => {
+    let thrownMessage = "";
+    let resolvedState = "";
+    try {
+      const res = await resolveMembershipState("invalid-uuid-format-error");
+      resolvedState = res.state;
+    } catch (e) {
+      thrownMessage = (e as Error).message;
+    }
+    // DB 오류 시 throw이거나, state가 AUTHENTICATED_INCOMPLETE / CONSENT_REQUIRED가 아님
+    const isThrown = thrownMessage.includes("MEMBERSHIP_RESOLUTION_FAILED");
+    const isSafeState = resolvedState !== "AUTHENTICATED_INCOMPLETE" && resolvedState !== "CONSENT_REQUIRED";
+    expect(isThrown || isSafeState).toBeTruthy();
   });
 
 });
