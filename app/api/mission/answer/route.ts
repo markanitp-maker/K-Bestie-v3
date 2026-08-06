@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { validateAnswer } from "@/lib/mission/validateAnswer";
 import { earnMissionCompleteKey } from "@/lib/goldkey/ledger";
@@ -18,36 +18,39 @@ import { applyVacationEvent } from "@/lib/plan/vacationSchoolContext";
 const VACATION_KEYWORD_PATTERN = /방학|개학|학교\s*안\s*가|여름방학|겨울방학|모르겠|기억\s*안|날짜\s*몰라|엄마가\s*알아|미뤄졌|날짜\s*바뀌|다녀왔|다녀\s*왔|갔다\s*왔|\d+\s*월\s*\d+\s*일|다음\s*주|이번\s*주|다음\s*달|이번\s*달|(월|화|수|목|금|토|일)요일/;
 
 // 068: 아이 발화에서 방학/개학 이벤트를 감지해 child_temporal_context를 갱신한다.
-// 반드시 미션 답변 처리(진행률/보상/다음질문)를 막지 않아야 하므로:
+// 반드시 미션 답변 처리(진행률/보상/다음질문) 응답 시간에 전혀 영향을 주면 안 되므로
+// Next.js `after()`(이 라우트 파일 그룹의 다른 파일들 — respond/route.ts,
+// stt/route.ts 등 — 이 이미 쓰는 확립된 패턴)로 응답 전송 후 백그라운드에서 실행한다.
+// (실측 Dev 검증: 응답 흐름 안에서 await+짧은 타임아웃으로 감싸는 방식은 LLM 호출이
+// 타임아웃 예산을 자주 넘겨 감지 자체가 무력화됐다 — after()로 전환해 해결.)
 // - 키워드 사전필터로 관련 없는 턴에서는 아예 호출하지 않는다.
-// - 짧은 타임아웃으로 감싸 LLM이 느려도 이 턴의 응답이 무기한 지연되지 않는다.
-// - 어떤 에러가 나도 절대 throw하지 않는다(호출부가 await해도 답변 흐름에 영향 없음).
-async function detectAndApplyVacationEventSafely(
+// - 어떤 에러가 나도 절대 throw하지 않는다(백그라운드 실행이라 응답에는 영향 없지만,
+//   미처리 예외로 함수 인스턴스가 불안정해지는 것을 방지하기 위해 항상 catch한다).
+function scheduleVacationEventDetection(
   service: ReturnType<typeof createServiceClient>,
   childId: string,
   answerText: string,
   sessionId: string,
   childTurnId?: string
-): Promise<void> {
+): void {
   if (!VACATION_KEYWORD_PATTERN.test(answerText)) return;
-  try {
-    const businessDate = getKstBusinessDate();
-    const event = await Promise.race([
-      detectVacationEvent(answerText, businessDate),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
-    ]);
-    if (!event || event.eventType === "NONE") return;
-    await applyVacationEvent(
-      service,
-      childId,
-      { eventType: event.eventType, schoolStartDate: event.schoolStartDate },
-      businessDate,
-      sessionId,
-      childTurnId
-    );
-  } catch (err) {
-    console.error("[mission/answer] vacation event detection failed (non-fatal):", err);
-  }
+  after(async () => {
+    try {
+      const businessDate = getKstBusinessDate();
+      const event = await detectVacationEvent(answerText, businessDate);
+      if (!event || event.eventType === "NONE") return;
+      await applyVacationEvent(
+        service,
+        childId,
+        { eventType: event.eventType, schoolStartDate: event.schoolStartDate },
+        businessDate,
+        sessionId,
+        childTurnId
+      );
+    } catch (err) {
+      console.error("[mission/answer] vacation event detection failed (non-fatal):", err);
+    }
+  });
 }
 
 // 컬럼 정의 통일:
@@ -250,7 +253,7 @@ export async function POST(req: NextRequest) {
   // 철회·미승인 아이의 답변을 외부 LLM으로 보내거나 DB에 쓰지 않기 위해 반드시 이
   // 위치여야 한다 — claude-review 지적 반영). 답변 처리 흐름과는 독립적으로 실행되며
   // 실패해도 무시된다.
-  await detectAndApplyVacationEventSafely(service, session.child_id, answerText, sessionId, childTurnId);
+  scheduleVacationEventDetection(service, session.child_id, answerText, sessionId, childTurnId);
 
   const sessionCheck = await assertMissionSessionActive(service, sessionId);
   if (!sessionCheck.allowed) {
