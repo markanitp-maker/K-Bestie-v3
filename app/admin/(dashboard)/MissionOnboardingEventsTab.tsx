@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { AdminDataTable } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminStatusBadge, type AdminStatusVariant } from "@/components/admin/shell/AdminStatusBadge";
 
@@ -88,7 +89,7 @@ export default function MissionOnboardingEventsTab() {
       />
 
       <div style={{ marginTop: "var(--admin-space-16)" }}>
-        <AdminDataTable
+        <AdminResponsiveTable mobileStrategy="card"
           columns={[
             { key: "child", header: "아이", render: (row) => row.childName ?? row.child_id.slice(0, 8) },
             { key: "status", header: "상태", render: (row) => <AdminStatusBadge text={STATUS_LABELS[row.status]} variant={STATUS_VARIANT[row.status]} /> },

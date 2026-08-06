@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const unit = (req.nextUrl.searchParams.get("unit") || "child") as "family" | "parent" | "child";
+  const unit = (req.nextUrl.searchParams.get("unit") || "child") as "family" | "parent" | "child" | "all";
   const cohortBasis = (req.nextUrl.searchParams.get("cohortBasis") || "first_use") as "registration" | "first_use";
   const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
 
@@ -143,6 +143,20 @@ export async function GET(req: NextRequest) {
       const joinedAt = fm.joined_at || fm.created_at;
       units.set(fm.user_id, { id: fm.user_id, familyId: fm.family_id, cohortDateStr: toKSTDateStr(joinedAt), meaningfulKstDates: new Set() });
     }
+  } else if (unit === 'all' && cohortBasis === 'registration') {
+    // requests/063 §9 — 전체 리텐션은 부모·아이를 각각 독립 사용자로 namespace 분리해
+    // 합산한다(가족 단위 dedupe 금지, parent:<id>/child:<id> 키로 우연한 UUID 충돌 방지).
+    for (const [cid, c] of validChildren.entries()) {
+      if (c.familyId && familiesMap.has(c.familyId)) {
+        units.set(`child:${cid}`, { id: cid, familyId: c.familyId, cohortDateStr: toKSTDateStr(c.createdAt), meaningfulKstDates: new Set() });
+      }
+    }
+    for (const fm of familyMembers) {
+      if (!fm.user_id || !fm.family_id) continue;
+      if (!includeTestAccounts && testFamilyIds.has(fm.family_id)) continue;
+      const joinedAt = fm.joined_at || fm.created_at;
+      units.set(`parent:${fm.user_id}`, { id: fm.user_id, familyId: fm.family_id, cohortDateStr: toKSTDateStr(joinedAt), meaningfulKstDates: new Set() });
+    }
   }
 
   for (const e of allEvents) {
@@ -161,6 +175,17 @@ export async function GET(req: NextRequest) {
     } else if (unit === 'parent') {
       if (e.actor_type === 'parent' && e.actor_id) {
         uId = e.actor_id;
+        isMeaningful = PARENT_EVENTS.includes(e.event_name);
+      }
+    } else if (unit === 'all') {
+      // requests/063 §9 — namespace 분리(parent:/child:)로 부모·아이 이벤트를 각각
+      // 독립 사용자로 취급한다.
+      if (e.actor_type === 'child' && e.child_id) {
+        if (!validChildren.has(e.child_id)) continue;
+        uId = `child:${e.child_id}`;
+        isMeaningful = CHILD_EVENTS.includes(e.event_name);
+      } else if (e.actor_type === 'parent' && e.actor_id) {
+        uId = `parent:${e.actor_id}`;
         isMeaningful = PARENT_EVENTS.includes(e.event_name);
       }
     }

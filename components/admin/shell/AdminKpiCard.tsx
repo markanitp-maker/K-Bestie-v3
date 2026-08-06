@@ -16,8 +16,7 @@ export function AdminKpiCard({ title, value, description, icon }: AdminKpiCardPr
         background: "var(--admin-surface)",
         border: "1px solid var(--admin-border)",
         borderRadius: "16px",
-        padding: "var(--admin-space-20)",
-        minHeight: "132px",
+        padding: "var(--admin-space-16)",
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
@@ -35,13 +34,15 @@ export function AdminKpiCard({ title, value, description, icon }: AdminKpiCardPr
         {icon && <div style={{ color: "var(--admin-text-secondary)" }}>{icon}</div>}
       </div>
       <div>
-        <div style={{
-          fontSize: "var(--admin-text-kpi)",
-          fontWeight: "var(--admin-weight-kpi)",
-          color: "var(--admin-text-primary)",
-          marginTop: "var(--admin-space-12)",
-          marginBottom: description ? "var(--admin-space-4)" : 0
-        }}>
+        <div 
+          className="admin-kpi-value"
+          style={{
+            fontWeight: "var(--admin-weight-kpi)",
+            color: "var(--admin-text-primary)",
+            marginTop: "var(--admin-space-12)",
+            marginBottom: description ? "var(--admin-space-4)" : 0
+          }}
+        >
           {value}
         </div>
         {description && (
@@ -50,6 +51,16 @@ export function AdminKpiCard({ title, value, description, icon }: AdminKpiCardPr
           </div>
         )}
       </div>
+      <style>{`
+        .admin-kpi-value {
+          font-size: var(--admin-text-kpi);
+        }
+        @media (max-width: 767px) {
+          .admin-kpi-value {
+            font-size: 26px; /* 26~32px */
+          }
+        }
+      `}</style>
     </div>
   );
 }
@@ -75,6 +86,11 @@ export function AdminKpiGrid({ children }: { children: React.ReactNode }) {
           }
         }
         @media (max-width: 767px) {
+          .admin-kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+        @media (max-width: 479px) {
           .admin-kpi-grid {
             grid-template-columns: repeat(1, minmax(0, 1fr));
           }

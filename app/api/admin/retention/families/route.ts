@@ -50,12 +50,27 @@ export async function GET(req: NextRequest) {
   let familyMembers: any[] = [];
   let fmOffset = 0;
   while (true) {
-    const { data, error } = await service.from("family_members").select("family_id, role").in("role", ["owner_parent", "parent"]).range(fmOffset, fmOffset + 999);
+    const { data, error } = await service.from("family_members").select("family_id, role, user_id, joined_at, created_at").in("role", ["owner_parent", "parent"]).range(fmOffset, fmOffset + 999);
     if (error) return NextResponse.json({ error: `family_members 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
     familyMembers.push(...data);
     if (data.length < 1000) break;
     fmOffset += 1000;
+  }
+
+  // requests/062 §3 — 가족명이 없으므로 "대표 부모(owner_parent, 없으면 가장 먼저 합류한
+  // 부모) 이름 가족 (로그인 아이디)" 형식으로 표시한다.
+  const representativeParentIdByFamily = new Map<string, string>();
+  for (const fid of familyIds) {
+    const members = familyMembers.filter(fm => fm.family_id === fid);
+    const owner = members.find(fm => fm.role === "owner_parent") || members[0];
+    if (owner?.user_id) representativeParentIdByFamily.set(fid, owner.user_id);
+  }
+  const repParentIds = Array.from(new Set(representativeParentIdByFamily.values()));
+  const parentInfoMap = new Map<string, { name: string | null; email: string | null }>();
+  if (repParentIds.length > 0) {
+    const { data: parentsData } = await service.from("parents").select("id, name, email").in("id", repParentIds);
+    for (const p of parentsData || []) parentInfoMap.set(p.id, { name: p.name, email: p.email });
   }
 
   // Fetch behavior_events for activities
@@ -123,6 +138,14 @@ export async function GET(req: NextRequest) {
     const hasChild7d = childEvents.some(e => toMs(e.occurred_at) >= sevenDaysAgoMs);
     const dualActive7d = hasParent7d && hasChild7d;
 
+    const repParentId = representativeParentIdByFamily.get(f.id);
+    const repInfo = repParentId ? parentInfoMap.get(repParentId) : undefined;
+    const repParentName = repInfo?.name?.trim() || null;
+    const repLoginId = repInfo?.email?.trim() || null;
+    const familyDisplayLabel = repParentName
+      ? `${repParentName} 가족${repLoginId ? ` (${repLoginId})` : ""}`
+      : (repLoginId || `${f.id.substring(0, 8)}...`);
+
     return {
       familyId: f.id,
       createdAt: f.created_at,
@@ -130,7 +153,11 @@ export async function GET(req: NextRequest) {
       childCount,
       lastParentActivityAt,
       lastChildActivityAt,
-      dualActive7d
+      dualActive7d,
+      representativeParentName: repParentName,
+      representativeLoginId: repLoginId,
+      displayLabel: familyDisplayLabel,
+      maskedId: `${f.id.substring(0, 8)}...`,
     };
   });
 

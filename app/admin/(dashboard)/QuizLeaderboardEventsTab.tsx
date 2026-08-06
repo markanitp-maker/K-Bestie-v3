@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { AdminDataTable } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
 
 const PERIODS = ["2026-08", "2026-09", "2026-10"];
@@ -108,7 +109,7 @@ export default function QuizLeaderboardEventsTab() {
             {data.scoringVersion && <span>산식: {data.scoringVersion}</span>}
             {data.finalizedAt && <span>확정 시각: {new Date(data.finalizedAt).toLocaleString("ko-KR")}</span>}
           </div>
-          <AdminDataTable
+          <AdminResponsiveTable mobileStrategy="card"
             columns={[
               { key: "rank", header: "순위", render: (r) => r.rank },
               { key: "child", header: "아이", render: (r) => {
