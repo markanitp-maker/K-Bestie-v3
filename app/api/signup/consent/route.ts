@@ -49,29 +49,21 @@ export async function POST(req: NextRequest) {
   const svc = createServiceClient();
   const now = new Date().toISOString();
 
-  const rows = ALL_TYPES.filter((t) => t in agreements).map((t) => ({
-    user_id: user.id,
-    consent_type: t as ConsentType,
+  const consentItems = ALL_TYPES.filter((t) => t in agreements).map((t) => ({
+    consent_type: t,
     document_version: CONSENT_DOCUMENT_VERSION,
     agreed: agreements[t] === true,
-    agreed_at: now,
-    ip_address: ip,
-    user_agent: userAgent,
-    auth_method: (user.app_metadata as { provider?: string } | undefined)?.provider ?? "unknown",
   }));
 
-  // 이중 클릭/네트워크 재시도로 거의 동시에 두 번 POST돼도 동의 행이 중복 생성되지
-  // 않도록 DB 레벨 부분 유니크 인덱스(signup_consents_active_unique, migration
-  // 20260805200200)에 기대는 upsert로 처리한다 — 애플리케이션 레벨 SELECT 후 INSERT는
-  // TOCTOU 경쟁 조건에 취약해 claude-review 정적 리뷰에서 지적됨.
-  const { error } = await svc
-    .from("signup_consents")
-    .upsert(rows, {
-      onConflict: "user_id,consent_type,document_version",
-      ignoreDuplicates: true,
-    });
+  const { data: rpcRes, error } = await svc.rpc("record_user_signup_consents", {
+    p_user_id: user.id,
+    p_consents: consentItems,
+    p_ip_address: ip,
+    p_user_agent: userAgent,
+    p_auth_method: (user.app_metadata as { provider?: string } | undefined)?.provider ?? "unknown",
+  });
   if (error) {
-    console.error("[signup/consent] upsert error:", error);
+    console.error("[signup/consent] RPC error:", error);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
