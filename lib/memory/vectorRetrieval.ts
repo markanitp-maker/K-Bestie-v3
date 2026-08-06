@@ -41,16 +41,22 @@ function toPgVectorLiteral(values: number[]): string {
   return `[${values.join(",")}]`;
 }
 
-/** queryText와 관련 있는 아이의 active memory_facts를 top_k개 검색.
- *  임베딩/RPC 실패 또는 결과 0건이면 null(호출부는 이때 기존 recency 조회로 fallback). */
-export async function searchMemoryFacts(
+export type SearchMemoryFactsResult =
+  | { status: "ok"; facts: RetrievedMemoryFact[] }
+  | { status: "no_data" }
+  | { status: "error"; reason: string };
+
+/** searchMemoryFacts의 상세 버전 — "실패"와 "정상 조회했으나 0건"을 구분해서
+ *  반환한다(requests/request-parent-k-chat-intent-routing-fallback-fix.md §6/§9 —
+ *  RETRIEVAL_ERROR를 NO_DATA로 위장하지 않는다). */
+export async function searchMemoryFactsDetailed(
   db: SupabaseClient,
   childId: string,
   queryText: string,
   topK = 5,
-): Promise<RetrievedMemoryFact[] | null> {
+): Promise<SearchMemoryFactsResult> {
   const embedding = await embedQuery(queryText);
-  if (!embedding) return null;
+  if (!embedding) return { status: "error", reason: "embedding_failed" };
 
   try {
     const { data, error } = await db.rpc("search_memory_facts", {
@@ -59,26 +65,42 @@ export async function searchMemoryFacts(
       p_top_k: topK,
     });
     if (error) {
-      console.error("[vectorRetrieval] search_memory_facts RPC 실패(fallback 예정):", error.message);
-      return null;
+      console.error("[vectorRetrieval] search_memory_facts RPC 실패:", error.message);
+      return { status: "error", reason: "rpc_error" };
     }
     const rows = Array.isArray(data) ? data : [];
-    if (rows.length === 0) return null;
+    if (rows.length === 0) return { status: "no_data" };
 
-    return rows.map((r: any) => ({
-      factId: r.fact_id,
-      factType: r.fact_type,
-      content: r.content,
-      confidence: r.confidence,
-      importance: r.importance,
-      sourceDate: r.source_date,
-      sourceCount: r.source_count,
-      similarity: r.similarity,
-    }));
+    return {
+      status: "ok",
+      facts: rows.map((r: any) => ({
+        factId: r.fact_id,
+        factType: r.fact_type,
+        content: r.content,
+        confidence: r.confidence,
+        importance: r.importance,
+        sourceDate: r.source_date,
+        sourceCount: r.source_count,
+        similarity: r.similarity,
+      })),
+    };
   } catch (err) {
-    console.error("[vectorRetrieval] search_memory_facts 예외(fallback 예정):", err);
-    return null;
+    console.error("[vectorRetrieval] search_memory_facts 예외:", err);
+    return { status: "error", reason: "exception" };
   }
+}
+
+/** queryText와 관련 있는 아이의 active memory_facts를 top_k개 검색.
+ *  임베딩/RPC 실패 또는 결과 0건이면 null(호출부는 이때 기존 recency 조회로 fallback).
+ *  실패와 0건을 구분해야 하면 searchMemoryFactsDetailed를 사용한다. */
+export async function searchMemoryFacts(
+  db: SupabaseClient,
+  childId: string,
+  queryText: string,
+  topK = 5,
+): Promise<RetrievedMemoryFact[] | null> {
+  const result = await searchMemoryFactsDetailed(db, childId, queryText, topK);
+  return result.status === "ok" ? result.facts : null;
 }
 
 /** 프롬프트 주입용 문자열 포맷 — 근거 메타데이터 포함(설계 문서 §6 예시 형태). */
