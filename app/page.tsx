@@ -72,13 +72,12 @@ export default function HubPage() {
       }
 
       if (!result) {
-        // 057: 세션이 없는 방문자(GUEST)는 /login으로 즉시 리다이렉트하는 대신
-        // 이 자리에서 베타 테스터 모집 랜딩페이지를 보여준다. 기존 회원은
-        // 랜딩페이지 헤더의 "기존 회원 로그인" 버튼으로 /login에 간다.
+        // [라벨/선순위 가드] 세션이 없는 미인증 방문자/새 기기는 공개 랜딩페이지를 노출한다.
         setShowGuestLanding(true);
         setLoading(false);
         return;
       }
+
 
       try {
         // 1. 단일 공통 서버 판정 (membership-status) 최우선 실행!
