@@ -524,14 +524,27 @@ export default function ChatPage() {
   }, [setMicEnabled, manualFinalize, isResponding]);
 
   const switchToText = useCallback(() => {
-    setMode("text");
+    // 진행 중인 녹음이 있으면 먼저 정상 종료(교착 방지) — handleCentralButtonClick의
+    // "정지" 분기와 동일한 순서: manualFinalize 먼저, 그 다음 mic/recording 상태 정리.
+    if (isRecordingRef.current) {
+      manualFinalize();
+      setIsRecording(false);
+      isRecordingRef.current = false;
+    }
+    setInputMode("manual");
+    setIsAuto(false);
     setMicEnabled(false);
-  }, [setMicEnabled]);
+    setMode("text");
+    if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, "manual");
+  }, [setMicEnabled, setInputMode, manualFinalize, childId]);
 
   const switchToVoice = useCallback(() => {
+    // 키보드 종료 후에는 항상 수동 음성 모드로 복귀한다 — 자동 VAD를 다시 켜지 않고,
+    // 마이크도 자동으로 켜지 않는다(사용자가 마이크 버튼을 눌러야 녹음 시작).
+    setInputMode("manual");
+    setIsAuto(false);
     setMode("voice");
-    setMicEnabled(true);
-  }, [setMicEnabled]);
+  }, [setInputMode]);
 
   const handleSendText = useCallback(async () => {
     const text = textInput.trim();
