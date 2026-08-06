@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   title: "내친구 케이",
   description: "아이의 마음을 듣는 AI 친구, 케이",
   manifest: "/manifest.json",
+  verification: {
+    other: {
+      "naver-site-verification": "4763684a599d70ff5241478e30f86dab458d7e0b",
+    },
+  },
   icons: {
     icon: [
       { url: pwaIcons.favicon16, sizes: "16x16", type: "image/png" },
