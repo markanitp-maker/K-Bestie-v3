@@ -199,12 +199,10 @@ export async function autoApproveChildRequest(
       onboarding_completed_at: new Date().toISOString(),
     })
     .eq("id", requestedByUserId)
-    .in("account_status", ["AUTHENTICATED_INCOMPLETE", "ONBOARDING"]);
+    .not("account_status", "in", '("WITHDRAWN_PENDING","SUSPENDED","PURGED")');
 
   if (activateError) {
-    // ACTIVE 전환 실패는 치명적이지 않다 — 아이는 이미 등록됐으므로 오류를 삼키고
-    // 관리자가 별도로 account_status를 교정할 수 있다. 단, 반드시 로깅한다.
-    console.error("[autoApproveChildRequest] ACTIVE 전환 실패 (non-fatal):", activateError);
+    console.error("[autoApproveChildRequest] ACTIVE 전환 실패:", activateError);
   }
 
   return { success: true, childId: child.id };

@@ -413,6 +413,33 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
     }
   };
 
+  const [confirmingStatus, setConfirmingStatus] = useState(false);
+
+  const handleStart = async () => {
+    setConfirmingStatus(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/membership-status", { cache: "no-store" });
+      if (res.ok) {
+        const status = await res.json();
+        if (status.state === "ACTIVE_PARENT") {
+          if (typeof window !== "undefined") {
+            window.localStorage.removeItem("k_pwa_intro_seen");
+            window.location.replace("/parent/home");
+          } else {
+            onDone();
+          }
+          return;
+        }
+      }
+      setError("가입 상태 확인 중입니다. 잠시 후 다시 시작하기를 눌러주세요.");
+    } catch {
+      setError("상태 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setConfirmingStatus(false);
+    }
+  };
+
   if (approved) {
     return (
       <div className="flex flex-col items-center text-center gap-4 py-4">
@@ -421,7 +448,10 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
         <p className="text-xs text-gray-500 leading-relaxed">
           아이 등록 내용을 확인했어요. 이제 바로 케이와 대화를 시작할 수 있어요.
         </p>
-        <PrimaryButton onClick={onDone}>시작하기 →</PrimaryButton>
+        <ErrorBanner message={error} />
+        <PrimaryButton onClick={handleStart} loading={confirmingStatus}>
+          시작하기 →
+        </PrimaryButton>
       </div>
     );
   }
