@@ -145,12 +145,11 @@ async function resolveIncompleteStep(
   // 3. 가족 생성/소속 확인
   if (!familyId) return "family";
 
-  // 4. 아이 등록 및 활성 아이 존재 확인
+  // 4. 아이 등록 및 활성 아이 존재 확인 (child_profiles에는 deleted_at 컬럼 없음)
   const { count: childCount } = await svc
     .from("child_profiles")
-    .select("id", { count: "exact", head: true })
-    .eq("family_id", familyId)
-    .is("deleted_at", null);
+    .select("id", { count: "exact" })
+    .eq("family_id", familyId);
 
   if (!childCount) return "child";
 
