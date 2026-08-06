@@ -83,7 +83,7 @@ export default function HubPage() {
       try {
         // 1. 단일 공통 서버 판정 (membership-status) 최우선 실행!
         // 라우팅 우선순위: 복구 가능 탈퇴 계정 -> 정지·영구 삭제 -> 활성 기존 계정 -> 가입 미완료 -> 신규 계정
-        const statusRes = await fetch("/api/auth/membership-status");
+        const statusRes = await fetch("/api/auth/membership-status", { cache: "no-store" });
         if (!statusRes.ok) {
           throw new Error("membership-status check failed");
         }

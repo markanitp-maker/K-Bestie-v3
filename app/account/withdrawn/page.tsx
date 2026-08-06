@@ -25,7 +25,7 @@ export default function WithdrawnAccountPage() {
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.replace("/login");
+    window.location.href = "/login";
   };
 
   const handleRestore = async () => {
