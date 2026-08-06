@@ -3,7 +3,8 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
-import { scheduleVacationEventDetection } from "@/lib/plan/vacationEventDetector";
+import { scheduleVacationEventDetection, processVacationEventDetection } from "@/lib/plan/vacationEventDetector";
+
 
 export const runtime = "nodejs";
 
@@ -191,8 +192,13 @@ export async function POST(req: NextRequest) {
   }
 
   if (role === "child") {
-    scheduleVacationEventDetection(service, session.child_id, content.trim(), sessionId, turnId);
+    try {
+      await processVacationEventDetection(service, session.child_id, content.trim(), sessionId, turnId);
+    } catch (err) {
+      console.error("[chat/messages] vacation event detection failed (non-fatal):", err);
+    }
   }
+
 
   console.log("[chat/messages] POST done", { sessionId, turnId, durationMs: Date.now() - startedAt, status: "success" });
   return NextResponse.json({ ok: true });

@@ -230,7 +230,11 @@ export async function filterSchoolRequiredQuestion(
     .eq("question_text", questionText)
     .maybeSingle();
 
-  if (currentQ?.school_context_tag !== "school_required") {
+  const isSchoolRequired = currentQ
+    ? currentQ.school_context_tag === "school_required"
+    : /학교/.test(questionText);
+
+  if (!isSchoolRequired) {
     return questionText;
   }
 
@@ -248,7 +252,8 @@ export async function filterSchoolRequiredQuestion(
     return randomPick.question_text;
   }
 
-  return questionText;
+  return "오늘 가장 재미있거나 기억에 남는 순간은 언제였어?";
 }
+
 
 

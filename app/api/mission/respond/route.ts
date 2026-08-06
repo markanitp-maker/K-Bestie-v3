@@ -394,6 +394,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let vacationQuestionAskedDate: string | null = null;
+
   if (activeQuestion) {
     if (activeQuestion.status === "mission_confirming") {
       // confirmation_question_text가 있으면 이 delivery는 "재확인" 턴이다 — 원본
@@ -412,12 +414,14 @@ export async function POST(req: NextRequest) {
     const realGrade = parseGrade(verifiedIdentity.persona.gradeLabel) ?? 4;
 
     if (vacationBlockState.needsSchoolStartDateQuestion) {
+
       finalNextQuestionText = getVacationFollowUpQuestion(realGrade);
-      await markVacationQuestionAsked(authService, session.child_id, businessDate);
+      vacationQuestionAskedDate = businessDate;
     } else if (vacationBlockState.needsSchoolStartConfirmationQuestion) {
       finalNextQuestionText = getSchoolStartConfirmationQuestion(realGrade);
-      await markVacationQuestionAsked(authService, session.child_id, businessDate);
+      vacationQuestionAskedDate = businessDate;
     } else if (vacationBlockState.blocked) {
+
       finalNextQuestionText = await filterSchoolRequiredQuestion(authService, finalNextQuestionText, true, realGrade);
     }
   }
@@ -599,8 +603,13 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
       });
     }
 
+    if (vacationQuestionAskedDate) {
+      await markVacationQuestionAsked(authService, session.child_id, vacationQuestionAskedDate);
+    }
+
     console.log("[mission/respond] done", { sessionId: body.sessionId, childTurnId, durationMs: Date.now() - startedAt, status: "success" });
     return NextResponse.json({ text });
+
   } catch (err) {
     console.error("[mission/respond] error:", (err as Error).message, { sessionId: body.sessionId, childTurnId });
     return NextResponse.json({ error: "미션 응답 생성 실패" }, { status: 500 });

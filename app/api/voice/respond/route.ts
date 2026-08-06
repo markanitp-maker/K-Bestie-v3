@@ -171,23 +171,26 @@ export async function POST(req: NextRequest) {
 
   if (vacationBlockState.needsSchoolStartDateQuestion) {
     const followUpQ = getVacationFollowUpQuestion(realGrade);
+    const finalizedText = finalizeFreeChatText(followUpQ, session.session_type);
     await markVacationQuestionAsked(service, session.child_id, businessDate);
     return NextResponse.json({
-      text: finalizeFreeChatText(followUpQ, session.session_type),
+      text: finalizedText,
       category: "vacation_followup",
       flaggedForParent: false,
       model: "vacation_rule",
     });
   } else if (vacationBlockState.needsSchoolStartConfirmationQuestion) {
     const confirmQ = getSchoolStartConfirmationQuestion(realGrade);
+    const finalizedText = finalizeFreeChatText(confirmQ, session.session_type);
     await markVacationQuestionAsked(service, session.child_id, businessDate);
     return NextResponse.json({
-      text: finalizeFreeChatText(confirmQ, session.session_type),
+      text: finalizedText,
       category: "vacation_confirmation",
       flaggedForParent: false,
       model: "vacation_rule",
     });
   }
+
 
 
   // 1.5) 기억 회상(Memory Recall) 질의 감지 및 처리
