@@ -170,6 +170,7 @@ export async function autoApproveChildRequest(
     p_admin_user_id: requestedByUserId,
     p_admin_email: requestedByEmail,
     p_child_id: child.id,
+    p_approval_method: "BETA_AUTO",
   });
 
   if (finalizeError || !finalizeData?.[0]?.success) {
@@ -184,6 +185,26 @@ export async function autoApproveChildRequest(
       p_reason: "승인 확정 처리에 실패했습니다.",
     });
     return { success: false, error: "승인 확정 처리에 실패했습니다" };
+  }
+
+  // ── 온보딩 최종 단계 완료: 보호자 계정을 ACTIVE로 전환 ──────────────────────
+  // 가족 생성 + 최초 아이 등록 + 법정대리인 동의 + 아이 승인이 모두 원자적으로 성공한
+  // 이 시점에서만 account_status를 ACTIVE로 바꾼다. (AUTHENTICATED_INCOMPLETE →
+  // ONBOARDING → ACTIVE 상태 머신의 마지막 전이)
+  // 이미 ACTIVE/RESTORED인 기존 계정은 건드리지 않는다(WHERE 조건으로 안전 보호).
+  const { error: activateError } = await svc
+    .from("parents")
+    .update({
+      account_status: "ACTIVE",
+      onboarding_completed_at: new Date().toISOString(),
+    })
+    .eq("id", requestedByUserId)
+    .in("account_status", ["AUTHENTICATED_INCOMPLETE", "ONBOARDING"]);
+
+  if (activateError) {
+    // ACTIVE 전환 실패는 치명적이지 않다 — 아이는 이미 등록됐으므로 오류를 삼키고
+    // 관리자가 별도로 account_status를 교정할 수 있다. 단, 반드시 로깅한다.
+    console.error("[autoApproveChildRequest] ACTIVE 전환 실패 (non-fatal):", activateError);
   }
 
   return { success: true, childId: child.id };

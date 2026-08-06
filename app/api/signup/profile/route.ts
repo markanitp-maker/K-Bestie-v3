@@ -47,6 +47,9 @@ export async function POST(req: NextRequest) {
   }
 
   const svc = createServiceClient();
+  // upsert only allowed profile input fields — administrative/membership fields are not touched.
+  // account_status transitions to ONBOARDING (from AUTHENTICATED_INCOMPLETE) to signal active onboarding.
+  // It will only transition to ACTIVE once family + child are fully created.
   const { error } = await svc
     .from("parents")
     .upsert({
@@ -56,6 +59,7 @@ export async function POST(req: NextRequest) {
       phone_number: phone,
       relationship_to_child: relationship,
       legal_guardian_confirmed_at: new Date().toISOString(),
+      account_status: "ONBOARDING",
     }, { onConflict: "id" });
 
   if (error) {

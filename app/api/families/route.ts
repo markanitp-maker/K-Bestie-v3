@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { requireActiveAccount } from "@/lib/auth/requireActiveAccount";
+import { requireActiveAccount, requireOnboardingOrActive } from "@/lib/auth/requireActiveAccount";
 
 export const runtime = "nodejs";
 
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const activeCheck = await requireActiveAccount(user.id);
+  const activeCheck = await requireOnboardingOrActive(user.id);
   if (activeCheck) return activeCheck;
 
   let name: string;

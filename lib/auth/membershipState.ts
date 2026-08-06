@@ -20,15 +20,19 @@ export interface MembershipResult {
 /**
  * 서버 검증된 auth 사용자(userId)의 회원가입/멤버십 상태를 판정한다.
  *
- * 판정 기준은 family_members/child_profiles의 "구조적 완결성"(가족 소속 + 아이 최소 1명)
- * 뿐이다 — signup_consents(신규 동의 감사 테이블) 존재 여부는 상태 게이트에 절대 쓰지
- * 않는다. 기존 실사용자는 이 테이블에 아무 행도 없으므로, 존재 여부로 게이트를 걸면
- * 기존 활성 보호자가 전부 AUTHENTICATED_INCOMPLETE로 오분류되어 회원가입 화면으로
- * 튕겨나가는 회귀가 생긴다(요청서 §9 "기존 사용자와 가족을 삭제한 뒤 재생성하는 방식
- * 금지"/§13.3 "기존 보호자... 회원가입 페이지가 표시되지 않음"과 정면 충돌).
- * signup_consents는 신규 가입 마법사가 통과 시점에 채우는 감사 기록 전용이며, resume 지점
- * 계산(onboardingStep)에서만 참고한다 — 그마저도 이미 AUTHENTICATED_INCOMPLETE로 판정된
- * 사용자에게만 영향을 준다(ACTIVE_PARENT/ACTIVE_CHILD 분기는 이 테이블을 아예 조회하지 않음).
+ * 판정 기준:
+ * - account_status: PURGED/SUSPENDED → 즉시 차단.
+ *   ACTIVE/RESTORED 상태여야만 ACTIVE_PARENT로 반환한다.
+ *   AUTHENTICATED_INCOMPLETE/ONBOARDING 상태는 구조적 데이터(family+child)가
+ *   있어도 온보딩 단계로 라우팅 — 상태 머신 우회 방지.
+ * - family_members/child_profiles 구조적 완결성(가족 소속 + 아이 최소 1명)을 추가로 검증.
+ * - onboarding_completed_at: 신규 계정은 최종 단계(아이 등록 + 승인)에서만 채워진다.
+ *   기존 계정(마이그레이션 이전 생성)은 NULL이므로 ACTIVE_PARENT 판정에서 제외하지 않는다
+ *   (역호환성). 추후 강제 검증이 필요하면 아래 TODO 지점을 활성화한다.
+ *
+ * signup_consents 존재 여부는 상태 게이트에 사용하지 않는다 — 기존 사용자는 이 테이블에
+ * 아무 행도 없으므로, 존재 여부로 게이트를 걸면 기존 활성 보호자가 회원가입 화면으로
+ * 튕겨나가는 회귀가 발생한다. signup_consents는 resume 지점 계산(onboardingStep)에서만 참고.
  */
 export async function resolveMembershipState(userId: string): Promise<MembershipResult> {
   const svc = createServiceClient();
@@ -36,7 +40,7 @@ export async function resolveMembershipState(userId: string): Promise<Membership
   const [parentRes, memberRes] = await Promise.all([
     svc
       .from("parents")
-      .select("account_status")
+      .select("account_status, onboarding_completed_at")
       .eq("id", userId)
       .maybeSingle(),
     svc
@@ -46,7 +50,11 @@ export async function resolveMembershipState(userId: string): Promise<Membership
       .is("deleted_at", null),
   ]);
 
-  const parent = parentRes.data as { account_status: string } | null;
+  const parent = parentRes.data as {
+    account_status: string;
+    onboarding_completed_at: string | null;
+  } | null;
+
   if (parent) {
     if (parent.account_status === "PURGED") {
       return { state: "DELETED" };
@@ -66,6 +74,23 @@ export async function resolveMembershipState(userId: string): Promise<Membership
     return { state: "ACTIVE_CHILD", familyId: childMembership.family_id, role: "child" };
   }
 
+  // ── ONBOARDING/AUTHENTICATED_INCOMPLETE: 구조 완결이어도 온보딩 단계로 라우팅 ──
+  // 상태 머신 우회 방지: 가족+아이가 있어도 공식 account_status 전이가 완료되지 않으면
+  // onboarding step으로 보낸다.
+  const INCOMPLETE_STATUSES = ["AUTHENTICATED_INCOMPLETE", "ONBOARDING"];
+  if (parent && INCOMPLETE_STATUSES.includes(parent.account_status)) {
+    const parentMemberForStep = members.find(
+      (m) => m.role === "owner_parent" || m.role === "parent"
+    );
+    const onboardingStep = await resolveIncompleteStep(
+      svc,
+      userId,
+      parentMemberForStep?.family_id ?? null
+    );
+    return { state: "AUTHENTICATED_INCOMPLETE", onboardingStep };
+  }
+
+  // ── ACTIVE/RESTORED: 구조적 완결성 검증 ─────────────────────────────────────
   const parentMembership = members.find((m) => m.role === "owner_parent" || m.role === "parent");
   if (!parentMembership) {
     const onboardingStep = await resolveIncompleteStep(svc, userId, null);
@@ -84,6 +109,10 @@ export async function resolveMembershipState(userId: string): Promise<Membership
       familyId: parentMembership.family_id,
     };
   }
+
+  // TODO(strict): 신규 계정 전용 강화 검증 — onboarding_completed_at이 NULL이고
+  // ACTIVE_PARENT인 경우 별도 조치가 필요하면 아래를 활성화한다.
+  // if (!parent?.onboarding_completed_at) { ... }
 
   return { state: "ACTIVE_PARENT", familyId: parentMembership.family_id, role: parentMembership.role };
 }
