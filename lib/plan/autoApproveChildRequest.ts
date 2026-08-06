@@ -189,20 +189,29 @@ export async function autoApproveChildRequest(
 
   // ── 온보딩 최종 단계 완료: 보호자 계정을 ACTIVE로 전환 ──────────────────────
   // 가족 생성 + 최초 아이 등록 + 법정대리인 동의 + 아이 승인이 모두 원자적으로 성공한
-  // 이 시점에서만 account_status를 ACTIVE로 바꾼다. (AUTHENTICATED_INCOMPLETE →
-  // ONBOARDING → ACTIVE 상태 머신의 마지막 전이)
-  // 이미 ACTIVE/RESTORED인 기존 계정은 건드리지 않는다(WHERE 조건으로 안전 보호).
-  const { error: activateError } = await svc
+  // 이 시점에서만 account_status를 ACTIVE로 바꾼다.
+  const { data: updatedParents, error: activateError } = await svc
     .from("parents")
     .update({
       account_status: "ACTIVE",
       onboarding_completed_at: new Date().toISOString(),
     })
     .eq("id", requestedByUserId)
-    .not("account_status", "in", '("WITHDRAWN_PENDING","SUSPENDED","PURGED")');
+    .in("account_status", ["AUTHENTICATED_INCOMPLETE", "ONBOARDING", "ACTIVE", "RESTORED"])
+    .select("id, account_status, onboarding_completed_at");
 
-  if (activateError) {
-    console.error("[autoApproveChildRequest] ACTIVE 전환 실패:", activateError);
+  if (activateError || !updatedParents || updatedParents.length === 0) {
+    console.error("[autoApproveChildRequest] 부모 ACTIVE 전환 실패:", activateError, updatedParents);
+    await svc.from("child_profiles").delete().eq("id", child.id);
+    await svc.from("member_accounts").delete().eq("id", authUserId);
+    await svc.from("family_members").delete().eq("id", familyMember.id);
+    await svc.rpc("admin_finalize_child_approval_failure", {
+      p_request_id: requestId,
+      p_admin_user_id: requestedByUserId,
+      p_admin_email: requestedByEmail,
+      p_reason: "보호자 계정 활성화 처리에 실패했습니다.",
+    });
+    return { success: false, error: "보호자 계정 활성화 처리에 실패했습니다" };
   }
 
   return { success: true, childId: child.id };
