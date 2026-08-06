@@ -97,28 +97,44 @@ export async function middleware(request: NextRequest) {
   // 자연스럽게 게이트된다(별도 미들웨어 체크 불필요).
   if (
     !isAdminPath &&
-    pathname.startsWith("/parent") &&
+    (pathname.startsWith("/parent") || pathname.startsWith("/signup")) &&
     pathname !== "/account/withdrawn" &&
     pathname !== "/account/suspended"
   ) {
     const { data: parent } = await supabase
       .from("parents")
-      .select("account_status")
+      .select("account_status, withdrawn_at, purge_scheduled_at")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (parent && (parent.account_status === "WITHDRAWN_PENDING" || parent.account_status === "RESTORE_REQUESTED")) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/account/withdrawn";
-      return NextResponse.redirect(url);
-    }
+    if (parent) {
+      const isWithdrawnStatus =
+        parent.account_status === "WITHDRAWN_PENDING" ||
+        parent.account_status === "RESTORE_REQUESTED" ||
+        parent.account_status === "WITHDRAWN";
 
-    // REQUEST-AUTH-SIGNUP-AUTOLOGIN: 관리자 이용정지(SUSPENDED) 계정도 탈퇴와 동일한
-    // 방식으로 /parent/* 접근을 차단한다.
-    if (parent && parent.account_status === "SUSPENDED") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/account/suspended";
-      return NextResponse.redirect(url);
+      if (isWithdrawnStatus || parent.withdrawn_at) {
+        const now = new Date();
+        const purgeDate = parent.purge_scheduled_at
+          ? new Date(parent.purge_scheduled_at)
+          : parent.withdrawn_at
+          ? new Date(new Date(parent.withdrawn_at).getTime() + 30 * 24 * 60 * 60 * 1000)
+          : null;
+
+        if (purgeDate && now < purgeDate) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/account/withdrawn";
+          return NextResponse.redirect(url);
+        }
+      }
+
+      // REQUEST-AUTH-SIGNUP-AUTOLOGIN: 관리자 이용정지(SUSPENDED) 계정도 탈퇴와 동일한
+      // 방식으로 접근을 차단한다.
+      if (parent.account_status === "SUSPENDED") {
+        const url = request.nextUrl.clone();
+        url.pathname = "/account/suspended";
+        return NextResponse.redirect(url);
+      }
     }
   }
 
@@ -139,6 +155,7 @@ export const config = {
   // 것이다 — 그 분기는 getUser()를 호출하기 전에 항상 return한다.
   matcher: [
     "/parent/:path*",
+    "/signup",
     "/admin/:path*",
     "/api/admin/:path*",
     "/play/quiz",

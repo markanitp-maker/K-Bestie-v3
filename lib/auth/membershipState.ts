@@ -1,11 +1,13 @@
 import { createServiceClient } from "@/lib/supabase/server";
 
 export type MembershipState =
-  | "AUTHENTICATED_INCOMPLETE"
-  | "ACTIVE_PARENT"
-  | "ACTIVE_CHILD"
-  | "SUSPENDED"
-  | "DELETED";
+  | "RESTOREABLE_WITHDRAWN"    // 1. 복구 가능 탈퇴 계정 (탈퇴 후 30일 이내)
+  | "SUSPENDED"                // 2. 관리자 정지 계정
+  | "DELETED"                  // 2. 영구 파기 / 30일 초과 만료 계정
+  | "ACTIVE_PARENT"            // 3. 활성 기존 보호자 계정
+  | "ACTIVE_CHILD"             // 3. 활성 기존 아이 계정
+  | "AUTHENTICATED_INCOMPLETE" // 4. 회원가입 진행 중 미완료 계정
+  | "GUEST";                   // 5. 신규 방문자 / 세션 없음
 
 export type OnboardingStep = "consent" | "profile" | "family" | "child";
 
@@ -20,19 +22,12 @@ export interface MembershipResult {
 /**
  * 서버 검증된 auth 사용자(userId)의 회원가입/멤버십 상태를 판정한다.
  *
- * 판정 기준:
- * - account_status: PURGED/SUSPENDED → 즉시 차단.
- *   ACTIVE/RESTORED 상태여야만 ACTIVE_PARENT로 반환한다.
- *   AUTHENTICATED_INCOMPLETE/ONBOARDING 상태는 구조적 데이터(family+child)가
- *   있어도 온보딩 단계로 라우팅 — 상태 머신 우회 방지.
- * - family_members/child_profiles 구조적 완결성(가족 소속 + 아이 최소 1명)을 추가로 검증.
- * - onboarding_completed_at: 신규 계정은 최종 단계(아이 등록 + 승인)에서만 채워진다.
- *   기존 계정(마이그레이션 이전 생성)은 NULL이므로 ACTIVE_PARENT 판정에서 제외하지 않는다
- *   (역호환성). 추후 강제 검증이 필요하면 아래 TODO 지점을 활성화한다.
- *
- * signup_consents 존재 여부는 상태 게이트에 사용하지 않는다 — 기존 사용자는 이 테이블에
- * 아무 행도 없으므로, 존재 여부로 게이트를 걸면 기존 활성 보호자가 회원가입 화면으로
- * 튕겨나가는 회귀가 발생한다. signup_consents는 resume 지점 계산(onboardingStep)에서만 참고.
+ * 라우팅 우선순위 (요청서 엄수):
+ * 1. 복구 가능 탈퇴 계정 (RESTOREABLE_WITHDRAWN) -> 30일 이내 탈퇴 계정은 /signup이 아닌 /account/withdrawn으로 라우팅
+ * 2. 정지·영구 삭제 계정 (SUSPENDED / DELETED) -> 차단 또는 세션 종료
+ * 3. 활성 기존 계정 (ACTIVE_PARENT / ACTIVE_CHILD) -> 대시보드 홈 진입
+ * 4. 가입 미완료 계정 (AUTHENTICATED_INCOMPLETE) -> /signup (resume step)
+ * 5. 신규 계정 (GUEST)
  */
 export async function resolveMembershipState(userId: string): Promise<MembershipResult> {
   const svc = createServiceClient();
@@ -40,43 +35,64 @@ export async function resolveMembershipState(userId: string): Promise<Membership
   const [parentRes, memberRes] = await Promise.all([
     svc
       .from("parents")
-      .select("account_status, onboarding_completed_at")
+      .select("account_status, withdrawn_at, purge_scheduled_at, onboarding_completed_at")
       .eq("id", userId)
       .maybeSingle(),
     svc
       .from("family_members")
-      .select("id, family_id, role")
+      .select("id, family_id, role, deleted_at")
       .eq("user_id", userId)
       .is("deleted_at", null),
   ]);
 
   const parent = parentRes.data as {
     account_status: string;
+    withdrawn_at: string | null;
+    purge_scheduled_at: string | null;
     onboarding_completed_at: string | null;
   } | null;
 
+  // ── 1순위 & 2순위: 탈퇴 / 정지 / 삭제 상태 우선 판정 ─────────────────────
   if (parent) {
+    const isWithdrawnStatus =
+      parent.account_status === "WITHDRAWN_PENDING" ||
+      parent.account_status === "RESTORE_REQUESTED" ||
+      parent.account_status === "WITHDRAWN";
+
+    if (isWithdrawnStatus || parent.withdrawn_at) {
+      const now = new Date();
+      let purgeDate: Date | null = null;
+      if (parent.purge_scheduled_at) {
+        purgeDate = new Date(parent.purge_scheduled_at);
+      } else if (parent.withdrawn_at) {
+        purgeDate = new Date(new Date(parent.withdrawn_at).getTime() + 30 * 24 * 60 * 60 * 1000);
+      }
+
+      // 탈퇴 30일 이내인 경우 -> 복구 가능 탈퇴 계정으로 판정 (가족/아이 존재여부보다 우선)
+      if (purgeDate && now < purgeDate) {
+        return { state: "RESTOREABLE_WITHDRAWN" };
+      } else {
+        // 30일 초과 만료 계정 -> 파기(DELETED) 처리
+        return { state: "DELETED" };
+      }
+    }
+
     if (parent.account_status === "PURGED") {
       return { state: "DELETED" };
     }
     if (parent.account_status === "SUSPENDED") {
       return { state: "SUSPENDED" };
     }
-    // WITHDRAWN_PENDING/RESTORE_REQUESTED는 middleware.ts가 /parent/* 접근 시 이미
-    // /account/withdrawn으로 리다이렉트한다 — 여기서 중복 처리하지 않고 그대로 통과시킨다
-    // (루트 페이지 라우팅과 미들웨어 두 곳에서 서로 다른 목적지로 보내면 더 혼란스럽다).
   }
 
+  // ── 3순위: 활성 기존 아이 계정 ──────────────────────────────────────────
   const members = (memberRes.data ?? []) as { id: string; family_id: string; role: string }[];
-
   const childMembership = members.find((m) => m.role === "child");
   if (childMembership) {
     return { state: "ACTIVE_CHILD", familyId: childMembership.family_id, role: "child" };
   }
 
-  // ── ONBOARDING/AUTHENTICATED_INCOMPLETE: 구조 완결이어도 온보딩 단계로 라우팅 ──
-  // 상태 머신 우회 방지: 가족+아이가 있어도 공식 account_status 전이가 완료되지 않으면
-  // onboarding step으로 보낸다.
+  // ── 4순위: 가입 미완료 계정 (ONBOARDING / AUTHENTICATED_INCOMPLETE) ──────────
   const INCOMPLETE_STATUSES = ["AUTHENTICATED_INCOMPLETE", "ONBOARDING"];
   if (parent && INCOMPLETE_STATUSES.includes(parent.account_status)) {
     const parentMemberForStep = members.find(
@@ -90,7 +106,7 @@ export async function resolveMembershipState(userId: string): Promise<Membership
     return { state: "AUTHENTICATED_INCOMPLETE", onboardingStep };
   }
 
-  // ── ACTIVE/RESTORED: 구조적 완결성 검증 ─────────────────────────────────────
+  // ── 3순위: 활성 기존 보호자 계정 (ACTIVE / RESTORED) ──────────────────────
   const parentMembership = members.find((m) => m.role === "owner_parent" || m.role === "parent");
   if (!parentMembership) {
     const onboardingStep = await resolveIncompleteStep(svc, userId, null);
@@ -100,7 +116,8 @@ export async function resolveMembershipState(userId: string): Promise<Membership
   const { count: childCount } = await svc
     .from("child_profiles")
     .select("id", { count: "exact", head: true })
-    .eq("family_id", parentMembership.family_id);
+    .eq("family_id", parentMembership.family_id)
+    .is("deleted_at", null);
 
   if (!childCount) {
     return {
@@ -109,10 +126,6 @@ export async function resolveMembershipState(userId: string): Promise<Membership
       familyId: parentMembership.family_id,
     };
   }
-
-  // TODO(strict): 신규 계정 전용 강화 검증 — onboarding_completed_at이 NULL이고
-  // ACTIVE_PARENT인 경우 별도 조치가 필요하면 아래를 활성화한다.
-  // if (!parent?.onboarding_completed_at) { ... }
 
   return { state: "ACTIVE_PARENT", familyId: parentMembership.family_id, role: parentMembership.role };
 }

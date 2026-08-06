@@ -25,22 +25,22 @@ export default function WithdrawnAccountPage() {
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/login");
+    router.replace("/login");
   };
 
   const handleRestore = async () => {
-    if (!confirm("계정 복구를 신청하시겠습니까?")) return;
+    if (!confirm("계정을 복구하고 다시 시작하시겠습니까?")) return;
     setRestoring(true);
     try {
-      const res = await fetch("/api/account/restore-request", { method: "POST" });
-      if (res.ok) {
-        alert("복구 신청이 완료되었습니다.");
-        setStatus({ ...status, account_status: "RESTORE_REQUESTED" });
+      const res = await fetch("/api/account/restore", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        router.replace("/parent/home");
       } else {
-        alert("복구 신청에 실패했습니다.");
+        alert(data.error || "복구 처리 중 오류가 발생했습니다.");
       }
     } catch (err) {
-      alert("오류가 발생했습니다.");
+      alert("오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
       setRestoring(false);
     }
@@ -92,9 +92,9 @@ export default function WithdrawnAccountPage() {
             <button
               onClick={handleRestore}
               disabled={restoring}
-              className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold text-sm disabled:opacity-50"
+              className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm disabled:opacity-50 cursor-pointer"
             >
-              {restoring ? "신청 중..." : "복구 신청"}
+              {restoring ? "복구 처리 중..." : "계정 복구하기"}
             </button>
           </div>
         )}

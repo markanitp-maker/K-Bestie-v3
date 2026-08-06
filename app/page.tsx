@@ -155,6 +155,9 @@ export default function HubPage() {
         const status = await statusRes.json();
 
         switch (status.state) {
+          case "RESTOREABLE_WITHDRAWN":
+            router.replace("/account/withdrawn");
+            return;
           case "ACTIVE_PARENT":
             await routePastPwaGate("/parent/home", router);
             return;
