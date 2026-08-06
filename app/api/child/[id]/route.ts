@@ -179,7 +179,7 @@ export async function DELETE(
 
     if (rpcError || !rpcResult || rpcResult.length === 0) {
       console.error("[child/route/DELETE] RPC Error or empty result:", rpcError, rpcResult);
-      return NextResponse.json({ error: "삭제 실패" }, { status: 500 });
+      return NextResponse.json({ error: "아이를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
     }
 
     const { success, reason, deleted_user_id } = rpcResult[0] as {
@@ -195,7 +195,7 @@ export async function DELETE(
       if (reason === "not_authorized") {
         return NextResponse.json({ error: "아이 삭제는 가족 오너만 가능합니다." }, { status: 403 });
       }
-      return NextResponse.json({ error: "삭제 실패" }, { status: 500 });
+      return NextResponse.json({ error: "아이를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
     }
 
     // 자녀의 auth 계정이 있는 경우 최대 3회 재시도로 auth.users 계정 삭제
