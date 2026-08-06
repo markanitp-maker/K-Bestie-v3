@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CONSENT_DOCUMENT_VERSION } from "@/lib/plan/consentDocument";
 import { getChildApprovalEncryptionKey } from "@/lib/plan/childApprovalEncryption";
@@ -149,13 +150,17 @@ export async function POST(
     p_encryption_key: getChildApprovalEncryptionKey(),
     p_grade: grade,
     p_interests: interests,
-    p_guardian_consent: guardian_consent,
+    p_guardian_consent: Boolean(guardian_consent),
     p_guardian_consent_version: CONSENT_DOCUMENT_VERSION,
+    p_status: getServicePhase() === "PAID" ? "PENDING_PAYMENT" : "pending",
   });
 
   if (error) {
     console.error("[api/families/:id/children] create_child_approval_request error:", error);
-    return NextResponse.json({ error: "승인 요청 생성에 실패했습니다" }, { status: 500 });
+    return NextResponse.json(
+      { error: "아이 등록을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요." },
+      { status: 500 }
+    );
   }
 
   const result = data?.[0] as { success: boolean; reason: string | null; request_id: string | null } | undefined;
@@ -169,7 +174,27 @@ export async function POST(
     if (result?.reason === "guardian_consent_required") {
       return NextResponse.json({ error: "법정대리인 동의가 필요합니다" }, { status: 400 });
     }
-    return NextResponse.json({ error: "승인 요청 생성에 실패했습니다" }, { status: 400 });
+    return NextResponse.json(
+      { error: "아이 등록을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요." },
+      { status: 400 }
+    );
+  }
+
+  // Handle Acquisition Attribution CHILD_ADDED
+  const cookieStore = await cookies();
+  const firstTouch = cookieStore.get("first_touch_link_id")?.value;
+  const signupTouch = cookieStore.get("signup_touch_link_id")?.value;
+  const visitorId = cookieStore.get("k_visitor_id")?.value || user.id;
+
+  const activeLink = signupTouch || firstTouch;
+  if (activeLink) {
+    await svc.from("acquisition_events").insert({
+      event_type: "CHILD_ADDED",
+      attribution_id: visitorId,
+      visitor_id: visitorId,
+      link_id: activeLink,
+      parent_user_id: user.id
+    });
   }
 
   // 5. 베타 기간 자동 승인 (요청서 §7.1) — 관리자 수동 승인을 기다리지 않고 즉시 확정한다.
@@ -198,7 +223,7 @@ export async function POST(
   }
 
   return NextResponse.json(
-    { request: { id: result.request_id, status: "pending" } },
+    { request: { id: result.request_id, status: getServicePhase() === "PAID" ? "PENDING_PAYMENT" : "pending" } },
     { status: 201 }
   );
 }
