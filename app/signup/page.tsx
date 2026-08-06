@@ -318,17 +318,7 @@ function FamilyStep({ onNext }: { onNext: (familyId: string) => void }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (res.status === 409 && data.error?.includes("이미")) {
-          // 이미 가족이 있으면(중복 클릭/재시도) 그대로 다음 단계로 — 멱등 처리.
-          const listRes = await fetch("/api/families");
-          const listData = await listRes.json().catch(() => ({}));
-          const existing = listData?.families?.[0]?.family_id;
-          if (existing) {
-            onNext(existing);
-            return;
-          }
-        }
-        throw new Error(data.error || "가족 만들기에 실패했습니다.");
+        throw new Error(data.error || "가족을 만들지 못했습니다. 다시 시도해 주세요.");
       }
       onNext(data.family.id);
     } catch (e: any) {

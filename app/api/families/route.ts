@@ -52,34 +52,36 @@ export async function POST(req: NextRequest) {
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[api/families] create_family_with_owner RPC error:", error);
+    return NextResponse.json({ error: "가족을 만들지 못했습니다. 다시 시도해 주세요." }, { status: 500 });
   }
 
   if (!data || !data[0]) {
-    return NextResponse.json({ error: "가족 생성 응답 오류" }, { status: 500 });
+    return NextResponse.json({ error: "가족을 만들지 못했습니다. 다시 시도해 주세요." }, { status: 500 });
   }
 
-  if (data[0].error_code || !data[0].family_id) {
+  const result = data[0];
+
+  if (!result.family_id) {
     return NextResponse.json(
-      { error: data[0].error_code === "already_member" ? "이미 가족에 소속되어 있습니다." : "가족 생성 실패" },
-      { status: data[0].error_code === "already_member" ? 409 : 500 }
+      { error: "가족을 만들지 못했습니다. 다시 시도해 주세요." },
+      { status: 500 }
     );
   }
 
   const family = {
-    id: data[0].family_id,
-    name: data[0].family_name,
-    created_at: data[0].created_at
+    id: result.family_id,
+    name: result.family_name || name.trim(),
+    created_at: result.created_at || new Date().toISOString()
   };
 
-  // REQUEST-AUTH-SIGNUP-AUTOLOGIN §5.1: 동의 기록에 가족 ID를 남겨야 하는데, 1단계
-  // (동의)는 가족이 생기기 전이라 signup_consents.family_id가 NULL로 저장된다 — 가족이
-  // 실제로 만들어진 지금 이 시점에 백필한다(claude-review 정적 리뷰 지적사항).
+  // 1단계(동의) 시점에 가족이 없어서 signup_consents.family_id가 NULL로 남아있는 행들 백필
   await svc
     .from("signup_consents")
     .update({ family_id: family.id })
     .eq("user_id", user.id)
     .is("family_id", null);
 
-  return NextResponse.json({ family }, { status: 201 });
+  const status = result.error_code === "already_member" ? 200 : 201;
+  return NextResponse.json({ family }, { status });
 }
