@@ -60,7 +60,8 @@ export default function AcquisitionLinksTab() {
         body: JSON.stringify(formData)
       });
       if (res.ok) {
-        setResultToast({ type: "success", text: "링크가 생성되었습니다." });
+        const d = await res.json();
+        setResultToast({ type: "success", text: `링크가 생성되었습니다: ${d.link.link_id}` });
         setIsCreateModalOpen(false);
         setFormData({ channel_name: "", utm_source: "", utm_medium: "", utm_campaign: "", purpose: "", utm_content: "", memo: "", destination_path: "/signup" });
         load();

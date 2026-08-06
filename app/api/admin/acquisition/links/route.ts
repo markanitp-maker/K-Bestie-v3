@@ -95,31 +95,68 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Required fields missing" }, { status: 400 });
   }
 
-  const dateStr = new Date().toISOString().substring(0, 7).replace("-", "");
-  const randomSuffix = Math.random().toString(36).substring(2, 6);
-  const cleanChannel = channel_name.replace(/[^a-zA-Z0-9가-힣]/g, "").toLowerCase();
-  const cleanPurpose = purpose.replace(/[^a-zA-Z0-9가-힣]/g, "").toLowerCase();
-  
-  let link_id = `${cleanChannel}_${dateStr}_${cleanPurpose}_${randomSuffix}`;
-  link_id = link_id.substring(0, 100);
+  const normalize = (str: string) => {
+    return str
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_]/g, "")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "");
+  };
 
-  const { data, error } = await supabase.from("acquisition_links").insert({
-    link_id,
-    channel_name,
-    utm_source,
-    utm_medium,
-    utm_campaign,
-    utm_content: utm_content || null,
-    purpose,
-    destination_path: destination_path || "/signup",
-    status: status || "ACTIVE",
-    memo: memo || null,
-    starts_at: starts_at || null,
-    ends_at: ends_at || null,
-    created_by: actor.id
-  }).select().single();
+  const normSource = normalize(utm_source);
+  const normCampaign = normalize(utm_campaign);
 
-  if (error) {
+  if (!normSource || !normCampaign) {
+    return NextResponse.json({ error: "utm_source 또는 utm_campaign을 알아볼 수 있는 영문/숫자로 입력해주세요." }, { status: 400 });
+  }
+
+  let data = null;
+  let error = null;
+  let success = false;
+
+  for (let i = 0; i < 5; i++) {
+    // 4~6자 a-z0-9. Math.random().toString(36).substring(2, 6) generates 4 chars.
+    const randomSuffix = Math.random().toString(36).substring(2, 6);
+    const link_id = `${normSource}_${normCampaign}_${randomSuffix}`;
+    
+    if (!/^[a-z0-9_]+$/.test(link_id)) {
+      console.error(`[admin/acquisition/links] Validation failed for link_id: ${link_id}`);
+      return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    }
+
+    const res = await supabase.from("acquisition_links").insert({
+      link_id,
+      channel_name,
+      utm_source,
+      utm_medium,
+      utm_campaign,
+      utm_content: utm_content || null,
+      purpose,
+      destination_path: destination_path || "/signup",
+      status: status || "ACTIVE",
+      memo: memo || null,
+      starts_at: starts_at || null,
+      ends_at: ends_at || null,
+      created_by: actor.id
+    }).select().single();
+
+    data = res.data;
+    error = res.error;
+
+    if (!error) {
+      success = true;
+      break;
+    }
+
+    if (error.code === '23505') {
+      continue;
+    }
+    
+    break;
+  }
+
+  if (!success) {
     console.error("[admin/acquisition/links] POST error:", error);
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
