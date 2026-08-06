@@ -109,15 +109,22 @@ export async function POST(
     return NextResponse.json({ error: "가족 오너만 아이 계정 승인 요청을 보낼 수 있습니다" }, { status: 403 });
   }
 
-  // 2. username 전역 유일성 확인 (실제 계정 + 대기 중인 요청 모두 - RPC 내부에서도 재검증됨)
+  // 2. username 전역 유일성 확인 (실제 계정 + 승인/요청 목록)
   const { data: existingUsername } = await svc
     .from("member_accounts")
     .select("id")
     .eq("username", username.trim())
     .maybeSingle();
-  if (existingUsername) {
+
+  const { data: existingRequest } = await svc
+    .from("child_approval_requests")
+    .select("id")
+    .eq("username", username.trim())
+    .maybeSingle();
+
+  if (existingUsername || existingRequest) {
     return NextResponse.json(
-      { error: "이미 사용 중인 아이디입니다. 다른 아이디를 사용하세요" },
+      { error: "이미 사용 중이거나 존재 중인 아이디입니다. 다른 아이디를 사용하세요" },
       { status: 409 }
     );
   }
