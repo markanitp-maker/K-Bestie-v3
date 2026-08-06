@@ -494,6 +494,12 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
           </button>
         ))}
       </div>
+      <p
+        className="text-center text-xs sm:text-sm font-medium py-1 whitespace-nowrap"
+        style={{ color: "var(--color-k-orange)" }}
+      >
+        아이들이 접속할 계정을 부모님이 만들어요.
+      </p>
       <input
         type="text"
         placeholder="아이 로그인 아이디"
