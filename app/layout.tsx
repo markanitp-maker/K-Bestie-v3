@@ -6,6 +6,7 @@ import { getPwaIcons } from "@/lib/pwaIcons";
 const pwaIcons = getPwaIcons();
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://app.k-bestie.com"),
   title: "내친구 케이",
   description: "아이의 마음을 듣는 AI 친구, 케이",
   manifest: "/manifest.json",
@@ -13,6 +14,32 @@ export const metadata: Metadata = {
     other: {
       "naver-site-verification": "4763684a599d70ff5241478e30f86dab458d7e0b",
     },
+  },
+  openGraph: {
+    title: "내친구 케이",
+    description: "아이의 마음을 듣는 AI 친구, 케이",
+    url: "https://app.k-bestie.com",
+    siteName: "내친구 케이",
+    locale: "ko_KR",
+    type: "website",
+    images: [
+      {
+        url: pwaIcons.icon512,
+        width: 512,
+        height: 512,
+        alt: "내친구 케이",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    title: "내친구 케이",
+    description: "아이의 마음을 듣는 AI 친구, 케이",
+    images: [pwaIcons.icon512],
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
   icons: {
     icon: [
