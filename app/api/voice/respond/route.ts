@@ -244,7 +244,8 @@ export async function POST(req: NextRequest) {
   // 요청서(케이 동갑내기 페르소나) — "몇 살이야?/몇 학년이야?/동갑이야?"는 direct_question
   // (모르는 지식 질문)이 아니라 케이 자신의 정체성 질문이다. LLM 없이 서버 검증된
   // kPeerPersona로 결정론적으로 답해 나이·학년을 절대 지어내지 않는다.
-  if (reflective.category === "k_identity_question") {
+  if ((reflective.category as string) === "k_identity_question") {
+
     const text = kPeerPersona.hasGrade
       ? `나도 ${kPeerPersona.gradeLabel} ${kPeerPersona.peerAge}살이야!`
       : "학년 확인이 필요해!";
