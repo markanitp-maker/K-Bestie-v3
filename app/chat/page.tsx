@@ -11,6 +11,7 @@ import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
+import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversationViewport";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -559,6 +560,14 @@ export default function ChatPage() {
     }
   }, [childId, usagePhase, isAuto, micPermission, status, handleStart]);
 
+  const { viewportHeight, isKeyboardOpen } = useKeyboardConversationViewport();
+
+  // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
+  // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
+  // 화면이 튀는 현상(jitter)이 발생할 수 있습니다.
+  // 우측으로 밀리거나 잘리는 문제는 viewport 높이보다는 flex/grid 내의 
+  // min-width: 0 또는 width: 100vw 사용이 주 원인이므로 가로폭 안전 조건에 집중합니다.
+
   // 상태 플래그
   const isConnecting = status === "connecting";
   const isLive = status === "live";
@@ -716,7 +725,7 @@ export default function ChatPage() {
           </div>
 
           {/* Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-          <div className="flex-1 min-h-0 w-full flex flex-col items-center justify-end overflow-hidden z-20 px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[clamp(38px,6.5dvh,48px)]">
+          <div className={`flex-1 min-h-0 w-full flex flex-col items-center justify-end z-20 px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[clamp(38px,6.5dvh,48px)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
             {olderKText && (
               <div className="mb-[clamp(10px,2vw,14px)] text-gray-400 text-[clamp(14px,4vw,16px)] leading-[1.45] text-center max-w-[80%] font-medium shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
                 {olderKText}
@@ -740,6 +749,7 @@ export default function ChatPage() {
           </div>
 
           {/* Mascot Area & Side Cards */}
+          {mode !== "text" && (
           <div className="relative w-full shrink-0 h-[clamp(145px,22.6dvh,160px)]">
             
             {/* Mascot & Platform - Centered strictly */}
@@ -773,8 +783,10 @@ export default function ChatPage() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Auto/Manual Mode Toggles */}
+          {mode !== "text" && (
           <div className="relative z-20 flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
              <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
@@ -785,9 +797,12 @@ export default function ChatPage() {
                {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
              </button>
           </div>
+          )}
 
           {/* Spacer between mode and mic */}
+          {mode !== "text" && (
           <div className="h-[clamp(16px,2.5dvh,24px)] w-full shrink-0" />
+          )}
 
           {/* Bottom Inputs Area */}
           <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(54px,8dvh,66px)+env(safe-area-inset-bottom))]">

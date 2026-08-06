@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
+import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversationViewport";
 
 export interface MissionTranscriptTurn {
   id: string;
@@ -156,6 +157,14 @@ export function MissionConversationLayout({
     }
   };
 
+  const { viewportHeight, isKeyboardOpen } = useKeyboardConversationViewport();
+
+  // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
+  // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
+  // 화면이 튀는 현상(jitter)이 발생할 수 있습니다.
+  // 우측으로 밀리거나 잘리는 문제는 viewport 높이보다는 flex/grid 내의 
+  // min-width: 0 또는 width: 100vw 사용이 주 원인이므로 가로폭 안전 조건에 집중합니다.
+
   const [lastProgress, setLastProgress] = useState(progressCurrent);
   const [scaleStar, setScaleStar] = useState(-1);
   useEffect(() => {
@@ -213,7 +222,7 @@ export function MissionConversationLayout({
         </div>
 
         {/* Grid Row 2: Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-        <div className="relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pb-[clamp(4px,1dvh,10px)]">
+        <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pb-[clamp(4px,1dvh,10px)] ${isTextMode ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
           {/* Top fade out for older text when cut off */}
           <div className="absolute top-0 left-0 w-full h-[24px] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
 
@@ -269,6 +278,7 @@ export function MissionConversationLayout({
         </div>
 
         {/* Grid Row 3: Mascot Area & Side Cards */}
+        {!isTextMode && (
         <div className="relative z-10 flex flex-row items-center justify-center gap-[clamp(6px,2vw,12px)] px-[16px] w-full shrink-0 min-h-[140px] min-w-0 max-w-full">
 
           {/* Left Mute Card */}
@@ -318,10 +328,12 @@ export function MissionConversationLayout({
             <span className="sr-only">미션을 시작한 뒤 음성 입력을 사용할 수 있습니다</span>
           )}
         </div>
+        )}
 
         {/* Grid Row 4: Bottom Area */}
         <div className="relative z-20 flex flex-col shrink-0 w-full min-w-0 max-w-full">
           {/* Auto/Manual Mode Toggles */}
+          {!isTextMode && (
           <div className="flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
              <button onClick={() => onChangeMode('auto')} disabled={isClosing || entryStatus !== "active"} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
@@ -332,9 +344,12 @@ export function MissionConversationLayout({
                {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
              </button>
           </div>
+          )}
 
           {/* Spacer between mode and mic */}
+          {!isTextMode && (
           <div className="h-[clamp(20px,3dvh,28px)] w-full shrink-0" />
+          )}
 
           {/* Bottom Inputs Area */}
           <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center pb-[calc(clamp(54px,8dvh,66px)+env(safe-area-inset-bottom))]">
