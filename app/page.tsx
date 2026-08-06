@@ -81,7 +81,30 @@ export default function HubPage() {
       }
 
       try {
-        // 1. 첫 로그인 비밀번호 설정 플래그 및 계정 역할 조회
+        // 1. 단일 공통 서버 판정 (membership-status) 최우선 실행!
+        // 라우팅 우선순위: 복구 가능 탈퇴 계정 -> 정지·영구 삭제 -> 활성 기존 계정 -> 가입 미완료 -> 신규 계정
+        const statusRes = await fetch("/api/auth/membership-status");
+        if (!statusRes.ok) {
+          throw new Error("membership-status check failed");
+        }
+        const status = await statusRes.json();
+
+        // 1순위 & 2순위: 탈퇴 / 정지 / 삭제 가드
+        if (status.state === "RESTOREABLE_WITHDRAWN") {
+          router.replace("/account/withdrawn");
+          return;
+        }
+        if (status.state === "SUSPENDED") {
+          router.replace("/account/suspended");
+          return;
+        }
+        if (status.state === "DELETED") {
+          await supabase.auth.signOut();
+          router.replace("/login");
+          return;
+        }
+
+        // 2. 비밀번호 설정 및 계정 역할 조회
         const pwCheckRes = await fetch("/api/auth/change-password", {
           method: "GET",
           headers: { "Content-Type": "application/json" },
@@ -93,15 +116,13 @@ export default function HubPage() {
 
         const pwData = await pwCheckRes.json();
 
-        // 2. 만약 비밀번호를 반드시 변경해야 하는 경우 (구성원 첫 로그인)
+        // 만약 비밀번호를 반드시 변경해야 하는 경우 (구성원 첫 로그인)
         if (pwData.must_change_password) {
           router.replace("/auth/setup-password");
           return;
         }
 
-        // 3. 구성원 계정(아이 아이디+비번 로그인)은 승인 시점에 이미 가족/프로필이 완결된
-        // 상태로만 생성되므로(child_approval_requests 승인 처리 참고) 미완료 상태가 존재하지
-        // 않는다 — 기존과 동일하게 역할별 대시보드로 바로 이동한다.
+        // 구성원 계정(아이 아이디+비번 로그인)
         if (pwData.is_member_account) {
           if (pwData.role === "child") {
             const childMeRes = await fetch("/api/child/me");
@@ -118,10 +139,18 @@ export default function HubPage() {
           return;
         }
 
-        // 4. 소셜 로그인(오너 후보) 계정.
-        // 4-a. 먼저 기존 auto-join(초대 이메일/아이 프로필 이메일 매칭)을 그대로 시도한다 —
-        // 2번째 보호자가 가족 초대를 수락하는 경우, 아이 이메일이 미리 등록돼 있던 경우를
-        // 위한 기존 로직으로, 이 매칭에 성공하면 신규 회원가입 마법사를 거칠 필요가 없다.
+        // 3순위: 활성 기존 계정
+        if (status.state === "ACTIVE_PARENT") {
+          await routePastPwaGate("/parent/home", router);
+          return;
+        }
+        if (status.state === "ACTIVE_CHILD") {
+          if (status.childId) localStorage.setItem("k_child_id", status.childId);
+          await routePastPwaGate("/child/home", router);
+          return;
+        }
+
+        // 4. 소셜 로그인 초대/매칭(auto-join) 시도
         const joinRes = await fetch("/api/auth/auto-join", { method: "POST" });
         if (joinRes.ok) {
           const joinData = await joinRes.json();
@@ -142,42 +171,11 @@ export default function HubPage() {
             router.replace("/login");
             return;
           }
-          // reason이 "no_match"/"limit"이면 예약된 가족이 없다는 뜻이므로, 아래 4-b
-          // 멤버십 상태 판정으로 넘어가 신규 회원가입 여부를 정식으로 판정한다.
         }
 
-        // 4-b. 예약된 가족이 없는 경우 — 서버 검증된 멤버십 상태를 근거로 라우팅한다.
-        // localStorage나 검증되지 않은 클라이언트 판단으로 절대 대체하지 않는다.
-        const statusRes = await fetch("/api/auth/membership-status");
-        if (!statusRes.ok) {
-          throw new Error("membership-status check failed");
-        }
-        const status = await statusRes.json();
-
-        switch (status.state) {
-          case "RESTOREABLE_WITHDRAWN":
-            router.replace("/account/withdrawn");
-            return;
-          case "ACTIVE_PARENT":
-            await routePastPwaGate("/parent/home", router);
-            return;
-          case "ACTIVE_CHILD": {
-            if (status.childId) localStorage.setItem("k_child_id", status.childId);
-            await routePastPwaGate("/child/home", router);
-            return;
-          }
-          case "SUSPENDED":
-            router.replace("/account/suspended");
-            return;
-          case "DELETED":
-            await supabase.auth.signOut();
-            router.replace("/login");
-            return;
-          case "AUTHENTICATED_INCOMPLETE":
-          default:
-            router.replace(`/signup?step=${status.onboardingStep ?? "consent"}`);
-            return;
-        }
+        // 4순위: 가입 미완료 계정 (onboarding step)
+        router.replace(`/signup?step=${status.onboardingStep ?? "consent"}`);
+        return;
       } catch (err) {
         console.error("Hub page initialization error:", err);
         // 상태 판정 자체가 실패한 경우 회원가입 미완료로 오판해 기존 활성 회원을 회원가입

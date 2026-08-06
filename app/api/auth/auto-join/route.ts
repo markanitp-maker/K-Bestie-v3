@@ -44,13 +44,32 @@ export async function POST(_req: NextRequest) {
 
   const svc = createServiceClient();
 
+  // ── 0순위: 탈퇴 / 정지 / 삭제 상태 가드 ─────────────────────────────
+  const { data: parentCheck } = await svc
+    .from("parents")
+    .select("account_status, withdrawn_at")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (parentCheck) {
+    const isWithdrawn =
+      parentCheck.account_status === "WITHDRAWN_PENDING" ||
+      parentCheck.account_status === "RESTORE_REQUESTED" ||
+      parentCheck.account_status === "WITHDRAWN" ||
+      parentCheck.account_status === "SUSPENDED" ||
+      parentCheck.account_status === "PURGED" ||
+      Boolean(parentCheck.withdrawn_at);
+
+    if (isWithdrawn) {
+      return NextResponse.json({
+        joined: false,
+        reason: "withdrawn",
+        message: "탈퇴 또는 이용정지 처리된 계정입니다.",
+      });
+    }
+  }
+
   // ── 이미 가족 구성원인지 확인 ─────────────────────────────────────
-  // REQUEST-AUTH-SIGNUP-AUTOLOGIN 정적 리뷰(2026-08-05)에서 발견: deleted_at 필터가
-  // 없어서, 단독 오너 보호자가 탈퇴(request_account_withdrawal)해 해당 가족의
-  // family_members 전 행(아이 포함)에 deleted_at이 찍힌 뒤에도, 세션이 남아있는 아이
-  // 계정이 여전히 "이미 구성원"으로 인식되어 SUSPENDED/DELETED 판정(membership-status)을
-  // 거치지 않고 곧장 /child/home으로 들어갈 수 있었다(§13.5 필수 시나리오). 다른 활성
-  // 판정 쿼리(lib/auth/membershipState.ts)와 동일하게 deleted_at을 필터링한다.
   const { data: existingMember } = await svc
     .from("family_members")
     .select("id, family_id, role")
