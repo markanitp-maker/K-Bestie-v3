@@ -7,6 +7,48 @@ import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { isQuestionEngineV2Enabled } from "@/lib/questions/feature-flags";
 import { classifyAnswer } from "@/lib/questions/answer-classifier";
 import { pickReaction } from "@/lib/freeChatReactions";
+import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
+import { detectVacationEvent } from "@/lib/plan/vacationEventDetector";
+import { applyVacationEvent } from "@/lib/plan/vacationSchoolContext";
+
+// 068: 방학/개학 관련 키워드가 있을 때만 LLM 이벤트 감지를 호출한다(매 턴 LLM 호출 비용
+// 방지). 지시서 6장 예시 키워드 그대로.
+// claude-review 지적(개학일 후속답변이 "8월 20일"처럼 순수 날짜/요일 표현만으로 올 수
+// 있음) 반영 — 날짜/요일 패턴도 함께 감지 대상에 포함한다.
+const VACATION_KEYWORD_PATTERN = /방학|개학|학교\s*안\s*가|여름방학|겨울방학|모르겠|기억\s*안|날짜\s*몰라|엄마가\s*알아|미뤄졌|날짜\s*바뀌|다녀왔|다녀\s*왔|갔다\s*왔|\d+\s*월\s*\d+\s*일|다음\s*주|이번\s*주|다음\s*달|이번\s*달|(월|화|수|목|금|토|일)요일/;
+
+// 068: 아이 발화에서 방학/개학 이벤트를 감지해 child_temporal_context를 갱신한다.
+// 반드시 미션 답변 처리(진행률/보상/다음질문)를 막지 않아야 하므로:
+// - 키워드 사전필터로 관련 없는 턴에서는 아예 호출하지 않는다.
+// - 짧은 타임아웃으로 감싸 LLM이 느려도 이 턴의 응답이 무기한 지연되지 않는다.
+// - 어떤 에러가 나도 절대 throw하지 않는다(호출부가 await해도 답변 흐름에 영향 없음).
+async function detectAndApplyVacationEventSafely(
+  service: ReturnType<typeof createServiceClient>,
+  childId: string,
+  answerText: string,
+  sessionId: string,
+  childTurnId?: string
+): Promise<void> {
+  if (!VACATION_KEYWORD_PATTERN.test(answerText)) return;
+  try {
+    const businessDate = getKstBusinessDate();
+    const event = await Promise.race([
+      detectVacationEvent(answerText, businessDate),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+    ]);
+    if (!event || event.eventType === "NONE") return;
+    await applyVacationEvent(
+      service,
+      childId,
+      { eventType: event.eventType, schoolStartDate: event.schoolStartDate },
+      businessDate,
+      sessionId,
+      childTurnId
+    );
+  } catch (err) {
+    console.error("[mission/answer] vacation event detection failed (non-fatal):", err);
+  }
+}
 
 // 컬럼 정의 통일:
 // - answer_status: 레거시 상태값(answered/skipped/refused). UI 하위호환을 위해 계속 기록되지만 더 이상 진행률 판정의 권위값이 아니다.
@@ -203,6 +245,12 @@ export async function POST(req: NextRequest) {
 
   const approvalBlocked = await checkApprovalForChild(session.child_id);
   if (approvalBlocked) return approvalBlocked;
+
+  // 068: 방학/개학 이벤트 감지 — consent/approval 가드를 통과한 뒤에만 실행한다(동의
+  // 철회·미승인 아이의 답변을 외부 LLM으로 보내거나 DB에 쓰지 않기 위해 반드시 이
+  // 위치여야 한다 — claude-review 지적 반영). 답변 처리 흐름과는 독립적으로 실행되며
+  // 실패해도 무시된다.
+  await detectAndApplyVacationEventSafely(service, session.child_id, answerText, sessionId, childTurnId);
 
   const sessionCheck = await assertMissionSessionActive(service, sessionId);
   if (!sessionCheck.allowed) {
