@@ -540,13 +540,36 @@ function SignupContent() {
     ["consent", "profile", "family", "child"].includes(initialStep) ? initialStep : "consent"
   );
   const [familyId, setFamilyId] = useState<string | null>(null);
+  const [loadingFamily, setLoadingFamily] = useState(true);
 
   const finish = () => {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("k_pwa_intro_seen");
+      window.location.replace("/parent/home");
+    } else {
+      router.replace("/parent/home");
     }
-    router.replace("/");
   };
+
+  // 기존 소유/소속 가족 자동 조회 및 familyId 복원
+  useEffect(() => {
+    fetch("/api/families", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const existing = data?.families?.[0]?.family_id;
+        if (existing) {
+          setFamilyId(existing);
+          // 이미 가족이 존재하는 온보딩 보호자가 family 단계에 접근 시 child 단계로 자동 전이
+          if (step === "family") {
+            setStep("child");
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setLoadingFamily(false);
+      });
+  }, [step]);
 
   useEffect(() => {
     const link_id = searchParams.get("link_id");
@@ -608,10 +631,19 @@ function SignupContent() {
       {step === "child" &&
         (familyId ? (
           <ChildStep familyId={familyId} onDone={finish} />
+        ) : loadingFamily ? (
+          <div className="flex flex-col items-center justify-center py-10">
+            <div
+              className="w-6 h-6 rounded-full border-2 border-t-transparent animate-spin"
+              style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }}
+            />
+            <p className="text-xs text-gray-400 mt-3">가족 정보를 확인하는 중...</p>
+          </div>
         ) : (
           <FamilyStep
             onNext={(id) => {
               setFamilyId(id);
+              setStep("child");
             }}
           />
         ))}

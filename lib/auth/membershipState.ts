@@ -92,49 +92,37 @@ export async function resolveMembershipState(userId: string): Promise<Membership
     return { state: "ACTIVE_CHILD", familyId: childMembership.family_id, role: "child" };
   }
 
-  // ── 4순위: 가입 미완료 계정 (ONBOARDING / AUTHENTICATED_INCOMPLETE) ──────────
-  const INCOMPLETE_STATUSES = ["AUTHENTICATED_INCOMPLETE", "ONBOARDING"];
-  if (parent && INCOMPLETE_STATUSES.includes(parent.account_status)) {
-    const parentMemberForStep = members.find(
-      (m) => m.role === "owner_parent" || m.role === "parent"
-    );
-    const onboardingStep = await resolveIncompleteStep(
-      svc,
-      userId,
-      parentMemberForStep?.family_id ?? null
-    );
-    return { state: "AUTHENTICATED_INCOMPLETE", onboardingStep };
-  }
+  // ── 3순위/4순위: 가입 상태 및 미완료 단계 판정 ─────────────────────────
+  const parentMembership = members.find(
+    (m) => m.role === "owner_parent" || m.role === "parent"
+  );
+  const familyId = parentMembership?.family_id ?? null;
 
-  // ── 3순위: 활성 기존 보호자 계정 (ACTIVE / RESTORED) ──────────────────────
-  const parentMembership = members.find((m) => m.role === "owner_parent" || m.role === "parent");
-  if (!parentMembership) {
-    const onboardingStep = await resolveIncompleteStep(svc, userId, null);
-    return { state: "AUTHENTICATED_INCOMPLETE", onboardingStep };
-  }
+  const onboardingStep = await resolveIncompleteStep(svc, userId, familyId);
 
-  const { count: childCount } = await svc
-    .from("child_profiles")
-    .select("id", { count: "exact", head: true })
-    .eq("family_id", parentMembership.family_id)
-    .is("deleted_at", null);
-
-  if (!childCount) {
+  // 약관, 프로필, 가족 생성, 아이 등록 중 미완료 단계가 존재하는 경우
+  if (onboardingStep !== "complete") {
     return {
       state: "AUTHENTICATED_INCOMPLETE",
-      onboardingStep: "child",
-      familyId: parentMembership.family_id,
+      onboardingStep: onboardingStep as OnboardingStep,
+      familyId: familyId ?? undefined,
     };
   }
 
-  return { state: "ACTIVE_PARENT", familyId: parentMembership.family_id, role: parentMembership.role };
+  // 모든 온보딩 완료 (가족+활성 아이 존재) -> ACTIVE_PARENT
+  return {
+    state: "ACTIVE_PARENT",
+    familyId: familyId!,
+    role: parentMembership!.role,
+  };
 }
 
 async function resolveIncompleteStep(
   svc: ReturnType<typeof createServiceClient>,
   userId: string,
   familyId: string | null
-): Promise<OnboardingStep> {
+): Promise<OnboardingStep | "complete"> {
+  // 1. 약관 동의 확인
   const { data: consent } = await svc
     .from("signup_consents")
     .select("id")
@@ -146,13 +134,25 @@ async function resolveIncompleteStep(
     .maybeSingle();
   if (!consent) return "consent";
 
+  // 2. 보호자 정보 (전화번호) 확인
   const { data: parentRow } = await svc
     .from("parents")
-    .select("phone_number")
+    .select("phone_number, onboarding_completed_at")
     .eq("id", userId)
     .maybeSingle();
   if (!(parentRow as { phone_number?: string | null } | null)?.phone_number) return "profile";
 
+  // 3. 가족 생성/소속 확인
   if (!familyId) return "family";
-  return "child";
+
+  // 4. 아이 등록 및 활성 아이 존재 확인
+  const { count: childCount } = await svc
+    .from("child_profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("family_id", familyId)
+    .is("deleted_at", null);
+
+  if (!childCount) return "child";
+
+  return "complete";
 }

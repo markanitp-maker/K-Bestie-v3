@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
@@ -17,6 +17,19 @@ function OnboardingContent() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") === "/child/home" ? "/child/home" : "/parent/home";
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
+
+  useEffect(() => {
+    fetch("/api/auth/membership-status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((status) => {
+        if (status?.state === "AUTHENTICATED_INCOMPLETE") {
+          window.location.replace(`/signup?step=${status.onboardingStep ?? "consent"}`);
+        } else if (status?.state === "RESTOREABLE_WITHDRAWN") {
+          window.location.replace("/account/withdrawn");
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const proceed = () => {
     if (typeof window !== "undefined") {

@@ -330,6 +330,19 @@ export default function ParentHomePage() {
 
   useEffect(() => {
     setMounted(true);
+
+    // 가입 미완료 계정이 온보딩 완료 전 /parent/home으로 진입하는 것을 방지
+    fetch("/api/auth/membership-status", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((status) => {
+        if (status?.state === "AUTHENTICATED_INCOMPLETE") {
+          window.location.replace(`/signup?step=${status.onboardingStep ?? "consent"}`);
+        } else if (status?.state === "RESTOREABLE_WITHDRAWN") {
+          window.location.replace("/account/withdrawn");
+        }
+      })
+      .catch(() => {});
+
     fetch("/api/parents/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -339,9 +352,7 @@ export default function ParentHomePage() {
       })
       .catch(() => {});
 
-    // 로그인(OAuth 콜백/구성원 로그인) 직후 어디서도 로컬 캐시를 DB와 동기화하지 않아서,
-    // 이미 가족이 있는 부모도 activeFamilyId가 비어있는 채로 온보딩(가족 만들기/참여하기)
-    // 화면을 매번 다시 보게 되던 버그 수정 — 마운트 시 항상 먼저 동기화한다.
+    // 마운트 시 항상 먼저 DB 스토어를 동기화한다.
     (async () => {
       try {
         const { syncChildrenFromDB } = await import("@/lib/store");
@@ -737,7 +748,7 @@ export default function ParentHomePage() {
           ) : (
             <>
               <TodayConversationGuide guideText={todaysQuote ?? undefined} />
-              <ParentMissionEventStatus />
+              <ParentMissionEventStatus childId={activeChild?.id ?? null} childName={activeChild?.name ?? ""} />
               <InsightGrid report={latestReport} insights={insightsData} view={view} />
             </>
           )}

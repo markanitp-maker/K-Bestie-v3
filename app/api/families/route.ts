@@ -46,6 +46,34 @@ export async function POST(req: NextRequest) {
 
   const svc = createServiceClient();
 
+  // 멱등성: 이미 본인이 소유/소속된 활성 가족이 존재하면 새 가족을 중복 생성하지 않고 기존 family 반환
+  const { data: existingMembers } = await svc
+    .from("family_members")
+    .select("family_id, families(id, name, created_at)")
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .order("joined_at", { ascending: true })
+    .limit(1);
+
+  if (existingMembers && existingMembers.length > 0 && existingMembers[0].families) {
+    const existingFamily = Array.isArray(existingMembers[0].families)
+      ? existingMembers[0].families[0]
+      : existingMembers[0].families;
+    if (existingFamily && (existingFamily as any).id) {
+      const family = {
+        id: (existingFamily as any).id,
+        name: (existingFamily as any).name || name.trim(),
+        created_at: (existingFamily as any).created_at || new Date().toISOString(),
+      };
+      await svc
+        .from("signup_consents")
+        .update({ family_id: family.id })
+        .eq("user_id", user.id)
+        .is("family_id", null);
+      return NextResponse.json({ family }, { status: 200 });
+    }
+  }
+
   const { data, error } = await svc.rpc("create_family_with_owner", { 
     p_user_id: user.id, 
     p_name: name.trim() 
