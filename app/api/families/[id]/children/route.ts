@@ -198,9 +198,6 @@ export async function POST(
   }
 
   // 5. 베타 기간 자동 승인 (요청서 §7.1) — 관리자 수동 승인을 기다리지 않고 즉시 확정한다.
-  //    관리자 승인 관리 화면/기록은 그대로 유지된다(동일 RPC를 재사용하므로 admin 화면에도
-  //    "승인 완료"로 정확히 동일하게 표시된다). 정식 서비스(PAID) 전환 후에는 이 블록을
-  //    건너뛰고 기존과 동일하게 관리자 승인 대기 상태로 남는다.
   if (getServicePhase() === "BETA" && result.request_id) {
     const approval = await autoApproveChildRequest(
       result.request_id,
@@ -217,9 +214,12 @@ export async function POST(
         { status: 201 }
       );
     }
-    // 자동 승인이 실패해도 승인 요청 자체는 이미 생성돼 있으므로(pending), 관리자가 수동으로
-    // 이어서 승인할 수 있다 — 요청 생성 자체를 실패로 되돌리지 않는다.
-    console.error("[api/families/:id/children] auto-approve failed, left as pending:", approval.error);
+    // 자동 승인이 실패했을 경우 클라이언트에 실패 사유를 명시적으로 반환
+    console.error("[api/families/:id/children] auto-approve failed:", approval.error);
+    return NextResponse.json(
+      { error: approval.error || "아이 계정 생성에 실패했습니다. 이미 존재하는 아이디일 수 있으니 다른 아이디로 시도해 주세요." },
+      { status: 400 }
+    );
   }
 
   return NextResponse.json(

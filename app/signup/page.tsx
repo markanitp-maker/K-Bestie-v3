@@ -401,12 +401,12 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || "아이 등록을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        throw new Error(data.error || "아이 등록을 완료하지 못했습니다. 이미 사용 중인 아이디인지 확인해 주세요.");
       }
       if (data.autoApproved) {
         setApproved(true);
       } else {
-        onDone();
+        throw new Error(data.error || "아이 계정 생성에 실패했습니다. 이미 존재하거나 다른 아이디로 시도해 주세요.");
       }
     } catch (e: any) {
       setError(e.message || "아이 등록을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
