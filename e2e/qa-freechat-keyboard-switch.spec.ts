@@ -6,7 +6,8 @@ import { test, expect } from "@playwright/test";
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
 const QA_TEST_PASSWORD = process.env.QA_TEST_PASSWORD || "";
-const CHILD_USERNAME = "testchild";
+// Dev와 Production은 QA 계정이 다르다(Dev: testchild, Production: testa) — BASE URL로 판정.
+const CHILD_USERNAME = BASE.includes("app.k-bestie.com") ? "testa" : "testchild";
 
 test("QA-freechat-keyboard-switch: 키보드 진입/복귀 시 자동→수동 전환 정확성", async ({ page }) => {
   test.setTimeout(120_000);
