@@ -17,6 +17,7 @@ export const LLM_MODEL_ROLES = {
   supabaseBatchReport: "gemini-3.5-flash",
   adminTextHealth: "gemini-3.5-flash",
   adminLiveHealth: "gemini-live-2.5-flash-native-audio",
+  vacationEventDetection: "gemini-3.5-flash",
 } as const;
 
 export type LlmModelRole = keyof typeof LLM_MODEL_ROLES;
@@ -40,6 +41,7 @@ export const LLM_ENV_KEYS: Record<LlmModelRole, string> = {
   supabaseBatchReport: "LLM_MODEL_BATCH_REPORT",
   adminTextHealth: "LLM_MODEL_ADMIN_TEXT_HEALTH",
   adminLiveHealth: "LLM_MODEL_ADMIN_LIVE_HEALTH",
+  vacationEventDetection: "LLM_MODEL_VACATION_EVENT_DETECTION",
 };
 
 /**

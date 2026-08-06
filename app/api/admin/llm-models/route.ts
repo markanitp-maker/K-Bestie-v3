@@ -23,6 +23,7 @@ const ROLE_DESCRIPTIONS: Record<LlmModelRole, string> = {
   supabaseBatchReport: "Supabase 배치 리포트 처리",
   adminTextHealth: "관리자 텍스트 LLM 헬스체크",
   adminLiveHealth: "관리자 실시간 음성 헬스체크",
+  vacationEventDetection: "방학/개학 이벤트 감지",
 };
 
 export async function GET() {
