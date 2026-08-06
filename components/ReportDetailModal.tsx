@@ -13,6 +13,8 @@ export interface DailyReport {
   mood_score: number;
   emotion_tags: string[];
   parent_guide: string;
+  parent_conversation_clue?: string | null;
+  recommended_questions?: string[] | null;
   emotion_level: EmotionLevel | null;
   created_at: string;
   school_academy_life?: string | null;
@@ -24,6 +26,13 @@ export interface DailyReport {
   future_dreams?: string | null;
   recurring_stories?: string | null;
   teacher_adults?: string | null;
+  business_date: string;
+}
+
+export function formatBusinessDate(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return "";
+  return `${month}월 ${day}일`;
 }
 
 export interface WeeklySummary {
@@ -36,6 +45,8 @@ export interface WeeklySummary {
   mood_average: number;
   highlights: string[];
   parent_guide: string;
+  parent_conversation_clue?: string | null;
+  recommended_questions?: string[] | null;
   weekend_activity_recommendation: string;
 }
 
@@ -63,10 +74,11 @@ export interface ReportDetailModalProps {
   reportId: string | null;
   reportType: "daily" | "weekly" | null;
   childId?: string | null;
+  businessDate?: string | null;
   returnFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function ReportDetailModal({ isOpen, onClose, reportId, reportType, childId, returnFocusRef }: ReportDetailModalProps) {
+export function ReportDetailModal({ isOpen, onClose, reportId, reportType, childId, businessDate, returnFocusRef }: ReportDetailModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -76,8 +88,15 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   const [weeklyData, setWeeklyData] = useState<{ report: WeeklySummary; restricted: boolean } | null>(null);
 
   const modalRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
+
+  // requests/023 §16.1 — 탭을 전환하면 그 탭 콘텐츠의 최상단을 보여준다(직전 탭의
+  // 스크롤 위치가 그대로 남아있으면 안 됨). 콘텐츠 영역만 스크롤되므로 이 ref만 리셋.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [activeTab]);
 
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -120,6 +139,18 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
           const res = await fetch(`/api/parent/reports/${reportId}`);
           const d = await res.json();
           if (d.error) throw new Error(d.error);
+          
+          if (businessDate && d.report.business_date && d.report.business_date !== businessDate) {
+            console.error("Report date mismatch", {
+              reportId: reportId ? `${reportId.slice(0, 8)}...` : "unknown",
+              expectedDate: businessDate,
+              apiDate: d.report.business_date,
+              childId: childId ? `${childId.slice(0, 8)}...` : "unknown",
+              env: typeof window !== "undefined" ? "browser" : "server"
+            });
+            throw new Error("리포트 날짜를 확인하지 못했어요.\n잠시 후 다시 확인해 주세요.");
+          }
+
           const data = { report: d.report, restricted: Boolean(d.restricted) };
           dailyCache.set(cacheKey, { ...data, timestamp: Date.now() });
           if (isMounted) setDailyData(data);
@@ -334,15 +365,13 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   };
 
   const renderDailyTab3 = (report: DailyReport) => {
-    const candidateSentences = report.parent_guide
-      ? report.parent_guide
-          .split(/[.\n]/)
-          .map((s) => s.trim())
-          .filter((s) => s.length > 5 && (s.includes("?") || s.endsWith("요") || s.endsWith("까")))
-      : [];
+    // requests/024 §12 — parent_conversation_clue가 없는 과거 리포트는 기존 parent_guide를
+    // 부모 대화 실마리로만 표시한다(질문을 임의로 추출하지 않음).
+    const clue = report.parent_conversation_clue ?? report.parent_guide;
+    const questions = report.recommended_questions ?? [];
 
     const watchOut = report.recurring_stories || "이 항목은 확인할 대화가 충분하지 않아요.";
-    const comment = report.interests_preferences 
+    const comment = report.interests_preferences
       ? `오늘 아이는 ${report.interests_preferences} 이야기에 가장 밝게 마음을 열고 대답했습니다.`
       : "이 항목은 확인할 대화가 충분하지 않아요.";
 
@@ -353,27 +382,25 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
             💬 부모 대화 실마리
           </h3>
           <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
-            {report.parent_guide || "이 항목은 확인할 대화가 충분하지 않아요."}
+            {clue || "이 항목은 확인할 대화가 충분하지 않아요."}
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-3" style={{ color: "var(--color-k-text-primary)" }}>
-            ❓ 부모용 추천 질문
-          </h3>
-          {candidateSentences.length > 0 ? (
+        {questions.length > 0 && (
+          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+            <h3 className="font-bold text-base mb-3" style={{ color: "var(--color-k-text-primary)" }}>
+              ❓ 부모용 추천 질문
+            </h3>
             <ul className="flex flex-col gap-2.5">
-              {candidateSentences.slice(0, 5).map((q, i) => (
+              {questions.map((q, i) => (
                 <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--color-k-text-primary)" }}>
                   <span style={{ color: "#22c55e" }}>✓</span>
                   <span>{q}</span>
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="text-xs text-gray-400">이 항목은 확인할 대화가 충분하지 않아요.</p>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
           <h3 className="font-bold text-base mb-2" style={{ color: "#3b82f6" }}>
@@ -461,17 +488,38 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   };
 
   const renderWeeklyTab3 = (report: WeeklySummary) => {
+    // requests/024 §12/§13 — 일일과 동일하게 신규 필드가 없는 과거 주간 리포트는
+    // parent_guide를 실마리로만 표시하고, 질문 카드는 없으면 숨긴다.
+    const clue = report.parent_conversation_clue ?? report.parent_guide;
+    const questions = report.recommended_questions ?? [];
+
     return (
       <div className="flex flex-col gap-4">
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
           <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
-            💬 부모님께 드리는 이번 주 가이드
+            💬 부모 대화 실마리
           </h3>
           <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
-            {report.parent_guide || "이 항목은 확인할 대화가 충분하지 않아요."}
+            {clue || "이 항목은 확인할 대화가 충분하지 않아요."}
           </p>
         </div>
-        
+
+        {questions.length > 0 && (
+          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+            <h3 className="font-bold text-base mb-3" style={{ color: "var(--color-k-text-primary)" }}>
+              ❓ 부모용 추천 질문
+            </h3>
+            <ul className="flex flex-col gap-2.5">
+              {questions.map((q, i) => (
+                <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--color-k-text-primary)" }}>
+                  <span style={{ color: "#22c55e" }}>✓</span>
+                  <span>{q}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
           <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
             🎈 주말 활동 추천
@@ -524,8 +572,8 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
 
   let title = "상세 리포트";
   if (reportType === "daily" && dailyData?.report) {
-    const d = new Date(dailyData.report.created_at);
-    title = `${d.getMonth() + 1}월 ${d.getDate()}일 일간 리포트`;
+    const formatted = formatBusinessDate(dailyData.report.business_date);
+    title = formatted ? `${formatted} 일간 리포트` : "일간 리포트";
   } else if (reportType === "weekly" && weeklyData?.report) {
     const s = new Date(weeklyData.report.week_start);
     const e = new Date(weeklyData.report.week_end);
@@ -560,27 +608,29 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          {!error && (!loading || showSkeleton) && (
-            <div className="flex gap-2 px-4 pt-4 overflow-x-auto shrink-0 pb-1">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold text-left transition-colors cursor-pointer`}
-                  style={{
-                    background: activeTab === tab.id ? "var(--color-k-navy)" : "#ffffff",
-                    color: activeTab === tab.id ? "#ffffff" : "var(--color-k-text-primary)",
-                  }}
-                  role="tab"
-                  aria-selected={activeTab === tab.id}
-                >
-                  {tab.id !== 1 && restricted ? `🔒 ${tab.label}` : tab.label}
-                </button>
-              ))}
-            </div>
-          )}
+        {!error && (!loading || showSkeleton) && (
+          <div
+            className="flex gap-2 px-4 py-3 overflow-x-auto shrink-0 bg-white border-b border-gray-100 sticky top-0 z-10"
+          >
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold text-left transition-colors cursor-pointer`}
+                style={{
+                  background: activeTab === tab.id ? "var(--color-k-navy)" : "#ffffff",
+                  color: activeTab === tab.id ? "#ffffff" : "var(--color-k-text-primary)",
+                }}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+              >
+                {tab.id !== 1 && restricted ? `🔒 ${tab.label}` : tab.label}
+              </button>
+            ))}
+          </div>
+        )}
 
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div className="px-4 py-4">
             {renderContent()}
           </div>
