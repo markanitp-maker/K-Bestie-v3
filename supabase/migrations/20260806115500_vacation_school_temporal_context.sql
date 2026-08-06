@@ -20,10 +20,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_child_temporal_context_active
 
 ALTER TABLE child_temporal_context ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "child_temporal_context_service_all" ON child_temporal_context;
 CREATE POLICY "child_temporal_context_service_all"
   ON child_temporal_context FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
+
 
 GRANT ALL ON child_temporal_context TO anon, authenticated;
 
