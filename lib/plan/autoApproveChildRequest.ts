@@ -121,7 +121,7 @@ export async function autoApproveChildRequest(
     family_id: familyId,
     role: "child",
     created_by: requestedByUserId,
-    must_change_password: true,
+    must_change_password: false,
   });
   if (accError) {
     await svc.from("family_members").delete().eq("id", familyMember.id);
