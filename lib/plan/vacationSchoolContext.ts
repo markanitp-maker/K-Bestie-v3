@@ -138,10 +138,11 @@ export async function applyVacationEvent(
   }
 
   if (status === "SEMESTER" && current) {
-    await supabase
+    const { error } = await supabase
       .from("child_temporal_context")
       .update({ expired_at: new Date().toISOString() })
       .eq("id", current.id);
+    if (error) console.error("applyVacationEvent expire error:", error);
     return;
   } else if (status === "SEMESTER" && !current) {
     return;
@@ -159,13 +160,15 @@ export async function applyVacationEvent(
   };
 
   if (current) {
-    await supabase
+    const { error } = await supabase
       .from("child_temporal_context")
       .update({ ...upsertData, updated_at: new Date().toISOString() })
       .eq("id", current.id);
+    if (error) console.error("applyVacationEvent update error:", error);
   } else {
-    await supabase
+    const { error } = await supabase
       .from("child_temporal_context")
       .insert(upsertData);
+    if (error) console.error("applyVacationEvent insert error:", error);
   }
 }
