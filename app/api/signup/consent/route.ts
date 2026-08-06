@@ -20,8 +20,15 @@ type ConsentType = (typeof ALL_TYPES)[number];
 // Body: { agreements: { [type]: boolean } } — REQUIRED_TYPES는 전부 true여야 통과.
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (!user) {
+    console.error("[signup/consent] 401 Unauthorized:", {
+      authError: authError?.message || authError,
+      hasCookieHeader: !!req.headers.get("cookie"),
+      cookies: req.cookies.getAll().map((c) => c.name),
+    });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   let body: { agreements?: Record<string, boolean> };
   try {

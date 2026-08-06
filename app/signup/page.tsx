@@ -103,6 +103,15 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("k_saved_agreements");
+      if (saved) {
+        setAgreements(JSON.parse(saved));
+      }
+    } catch {}
+  }, []);
+
   const allRequired = REQUIRED_CONSENTS.every((c) => agreements[c.key]);
 
   const toggleAll = (checked: boolean) => {
@@ -123,8 +132,21 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          try {
+            sessionStorage.setItem("k_saved_agreements", JSON.stringify(agreements));
+          } catch {}
+          setError("로그인 세션이 만료되었습니다. 다시 로그인 후 이어 진행합니다.");
+          setTimeout(() => {
+            window.location.href = "/login?from=/signup";
+          }, 1200);
+          return;
+        }
         throw new Error(data.error || "회원가입 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
       }
+      try {
+        sessionStorage.removeItem("k_saved_agreements");
+      } catch {}
       onNext();
     } catch (e: any) {
       setError(e.message || "회원가입 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
