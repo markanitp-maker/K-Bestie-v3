@@ -11,6 +11,7 @@ import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { after } from "next/server";
 import { FREE_CHAT_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
+import { fetchKPeerPersonaForChild, buildKPeerPersonaFragment } from "@/lib/persona/kPeerPersona";
 import {
   createGenAIClient,
   FREE_CHAT_MAX_OUTPUT_TOKENS,
@@ -19,10 +20,15 @@ import {
 import {
   buildFreeChatContents,
   validateFreeChatResponse,
-  normalizeFreeChatResponse
+  normalizeFreeChatResponse,
+  FREE_CHAT_UNKNOWN_CONTENT_PHRASE,
 } from "@/lib/freechat/geminiPolicy";
+import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
+import { getActiveVacationContext, resolveSchoolQuestionBlockState, getVacationFollowUpQuestion, getSchoolStartConfirmationQuestion, markVacationQuestionAsked } from "@/lib/plan/vacationSchoolContext";
+import { parseGrade } from "@/lib/mission/selectQuestions";
 
 export const runtime = "nodejs";
+
 
 // 047 QA 리뷰 지적([복잡]): direct_question/저신뢰ASR/Gemini 예외 폴백 등 규칙 엔진 응답은
 // validateFreeChatResponse/normalizeFreeChatResponse를 거치지 않아, 자유대화에서도
@@ -119,6 +125,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // 요청서(케이 동갑내기 페르소나) — 이미 검증된 session.child_id로 서버가 새로
+  // 조회한 학년만 페르소나 프롬프트에 쓴다. 형제자매가 번갈아 로그인해도 매 요청마다
+  // 새로 조회하므로 정보가 섞이지 않는다.
+  const kPeerPersona = await fetchKPeerPersonaForChild(service, session.child_id);
+  const freeChatSystemPrompt = `${FREE_CHAT_SYSTEM_PROMPT}\n\n${buildKPeerPersonaFragment(kPeerPersona)}`;
+
   const consentBlocked = await checkConsentForSession(sessionId);
   if (consentBlocked) return consentBlocked;
 
@@ -150,6 +162,33 @@ export async function POST(req: NextRequest) {
       flaggedForParent: true,
     });
   }
+
+  // 068: 방학/개학일 후속 질문 및 개학 확인 질문 연결
+  const businessDate = getKstBusinessDate();
+  const activeVacationContext = await getActiveVacationContext(service, session.child_id);
+  const vacationBlockState = resolveSchoolQuestionBlockState(activeVacationContext, businessDate);
+  const realGrade = parseGrade(kPeerPersona.gradeLabel) ?? 4;
+
+  if (vacationBlockState.needsSchoolStartDateQuestion) {
+    const followUpQ = getVacationFollowUpQuestion(realGrade);
+    await markVacationQuestionAsked(service, session.child_id, businessDate);
+    return NextResponse.json({
+      text: finalizeFreeChatText(followUpQ, session.session_type),
+      category: "vacation_followup",
+      flaggedForParent: false,
+      model: "vacation_rule",
+    });
+  } else if (vacationBlockState.needsSchoolStartConfirmationQuestion) {
+    const confirmQ = getSchoolStartConfirmationQuestion(realGrade);
+    await markVacationQuestionAsked(service, session.child_id, businessDate);
+    return NextResponse.json({
+      text: finalizeFreeChatText(confirmQ, session.session_type),
+      category: "vacation_confirmation",
+      flaggedForParent: false,
+      model: "vacation_rule",
+    });
+  }
+
 
   // 1.5) 기억 회상(Memory Recall) 질의 감지 및 처리
   const childText = lastChild.text.trim();
@@ -199,12 +238,29 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // 요청서(케이 동갑내기 페르소나) — "몇 살이야?/몇 학년이야?/동갑이야?"는 direct_question
+  // (모르는 지식 질문)이 아니라 케이 자신의 정체성 질문이다. LLM 없이 서버 검증된
+  // kPeerPersona로 결정론적으로 답해 나이·학년을 절대 지어내지 않는다.
+  if (reflective.category === "k_identity_question") {
+    const text = kPeerPersona.hasGrade
+      ? `나도 ${kPeerPersona.gradeLabel} ${kPeerPersona.peerAge}살이야!`
+      : "학년 확인이 필요해!";
+    return NextResponse.json({
+      text: finalizeFreeChatText(text, session.session_type),
+      category: reflective.category,
+      flaggedForParent: false,
+      model: "rule_fallback",
+    });
+  }
+
   // 일반 지식·설명 질문에는 모델의 사전지식을 사용하지 않는다. 과거 대화에 대한
   // 질문은 위의 LLM WIKI 회상 경로에서 먼저 처리되며, 근거가 없거나 그 밖의 질문은
   // 정답을 지어내지 않고 아이에게 알려달라고 요청한다.
   if (reflective.category === "direct_question") {
+    // 고정 문구는 직접 작성한 것이라 검증(물음표 금지 등)을 거치지 않고 그대로 반환한다
+    // (finalizeFreeChatText를 거치면 이 문구 자체가 검증에 걸려 폴백으로 대체돼버린다).
     return NextResponse.json({
-      text: finalizeFreeChatText("그건 잘 모르겠어. 네가 알려줄래?", session.session_type),
+      text: FREE_CHAT_UNKNOWN_CONTENT_PHRASE,
       category: reflective.category,
       flaggedForParent: false,
       model: "wiki_only_guard",
@@ -216,7 +272,7 @@ export async function POST(req: NextRequest) {
     const contents = buildFreeChatContents(history);
     const baseConfig = {
       systemInstruction: {
-        parts: [{ text: FREE_CHAT_SYSTEM_PROMPT }],
+        parts: [{ text: freeChatSystemPrompt }],
       },
       thinkingConfig: { thinkingBudget: 0 },
       temperature: 0.7,
@@ -239,7 +295,7 @@ export async function POST(req: NextRequest) {
             systemInstruction: {
               parts: [
                 {
-                  text: `${FREE_CHAT_SYSTEM_PROMPT}\n\n이전 출력이 길이 또는 형식 규칙을 어겼습니다. 반드시 자연스러운 한국어 1줄, 30자 이내, 질문 없이 공감만으로 다시 답하세요.`,
+                  text: `${freeChatSystemPrompt}\n\n이전 출력이 길이 또는 형식 규칙을 어겼습니다. 반드시 자연스러운 한국어 1줄, 30자 이내, 질문 없이 공감만으로 다시 답하세요.`,
                 },
               ],
             },

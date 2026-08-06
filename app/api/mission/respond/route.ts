@@ -11,10 +11,16 @@ import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
+import { fetchVerifiedChildIdentity, buildKPeerPersonaFragment } from "@/lib/persona/kPeerPersona";
+import { TRANSITION_CONNECTOR_POOL } from "@/lib/mission/eReactionPool";
 import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
 import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
+import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
+import { getActiveVacationContext, resolveSchoolQuestionBlockState, getVacationFollowUpQuestion, getSchoolStartConfirmationQuestion, markVacationQuestionAsked, filterSchoolRequiredQuestion } from "@/lib/plan/vacationSchoolContext";
+import { parseGrade } from "@/lib/mission/selectQuestions";
 
 export const runtime = "nodejs";
+
 
 interface HistoryTurn { role: "child" | "k"; text: string }
 
@@ -124,7 +130,6 @@ export async function POST(req: NextRequest) {
   const lastChildTurn = [...history].reverse().find((t) => t.role === "child" && t.text?.trim());
   const nextQuestionText = typeof body.nextQuestionText === "string" ? body.nextQuestionText.trim() : "";
   const childTurnId = typeof body.childTurnId === "string" ? body.childTurnId : null;
-  const childContext = body.childContext;
 
   if (history.length === 0 || !nextQuestionText) {
     console.error("[mission/respond] history and nextQuestionText required", { sessionId: body.sessionId, childTurnId });
@@ -162,6 +167,11 @@ export async function POST(req: NextRequest) {
     console.error("[mission/respond] Forbidden", { sessionId: body.sessionId, childTurnId });
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  // 요청서(케이 동갑내기 페르소나) — 클라이언트가 보낸 body.childContext(이름/학년)를
+  // 그대로 신뢰하지 않는다. 위에서 이미 검증된 session.child_id로 서버가 새로 조회한
+  // 값만 정체성 프롬프트에 쓴다(스푸핑·형제자매 정보 혼입 방지).
+  const verifiedIdentity = await fetchVerifiedChildIdentity(authService, session.child_id);
 
   const sessionCheck = await assertMissionSessionActive(authService, body.sessionId);
   if (!sessionCheck.allowed) {
@@ -241,9 +251,13 @@ export async function POST(req: NextRequest) {
   }
 
   const claimedElsewhere = activeRows?.[0] ?? null;
+  const claimedElsewhereDeliveredText = claimedElsewhere
+    ? claimedElsewhere.confirmation_question_text || claimedElsewhere.question_text
+    : null;
   if (
     claimedElsewhere &&
-    kTexts.some((text) => text.includes(claimedElsewhere.question_text))
+    claimedElsewhereDeliveredText &&
+    kTexts.some((text) => text.includes(claimedElsewhereDeliveredText))
   ) {
     // The question is already present in this mission transcript. If it is
     // still active here, the previous answer/connection did not finish the
@@ -269,7 +283,7 @@ export async function POST(req: NextRequest) {
   } else if (!claimedElsewhere) {
     const { data: knownQuestions, error: knownQuestionsError } = await authService
       .from("parent_questions")
-      .select("question_text")
+      .select("question_text, confirmation_question_text")
       .eq("child_id", session.child_id)
       .not("status", "eq", "draft");
 
@@ -281,17 +295,48 @@ export async function POST(req: NextRequest) {
     }
 
     const alreadyAskedInSession = (knownQuestions ?? []).some((question) =>
-      kTexts.some((text) => text.includes(question.question_text)),
+      kTexts.some(
+        (text) =>
+          text.includes(question.question_text) ||
+          (question.confirmation_question_text && text.includes(question.confirmation_question_text)),
+      ),
     );
 
     if (!alreadyAskedInSession) {
-      let { data: readyRows, error: readyQueryError } = await authService
+      // requests/request-parent-question-feature.md §6 — reconfirm_pending(1차 답변을
+      // 재확인해야 하는 질문)도 함께 claim 대상에 포함한다. ai_generated/parent_edited는
+      // 원본 질문을 물어보는 최초 전달이고, reconfirm_pending은 그 답변이 맞는지 되짚어
+      // 묻는 재확인 전달이다 — 우선순위는 재확인이 먼저(아이가 이미 답한 질문을 방치하지
+      // 않기 위해 created_at 무관하게 재확인 대기 건을 먼저 처리).
+      let { data: reconfirmRows, error: reconfirmQueryError } = await authService
         .from("parent_questions")
-        .select("id, status, delivered_count")
+        .select("id, status, delivered_count, confirmation_question_text")
         .eq("child_id", session.child_id)
-        .in("status", ["ai_generated", "parent_edited"])
+        .eq("status", "reconfirm_pending")
         .order("created_at", { ascending: true })
         .limit(1);
+
+      if (reconfirmQueryError) {
+        console.error("[mission/respond] reconfirm parent question query failed", {
+          childId: session.child_id,
+          error: reconfirmQueryError.message,
+        });
+      }
+
+      let readyRows = reconfirmRows;
+      let readyQueryError = reconfirmQueryError;
+
+      if (!readyRows?.length) {
+        const readyResult = await authService
+          .from("parent_questions")
+          .select("id, status, delivered_count, confirmation_question_text")
+          .eq("child_id", session.child_id)
+          .in("status", ["ai_generated", "parent_edited"])
+          .order("created_at", { ascending: true })
+          .limit(1);
+        readyRows = readyResult.data;
+        readyQueryError = readyResult.error;
+      }
 
       if (readyQueryError) {
         console.error("[mission/respond] ready parent question query failed", {
@@ -305,7 +350,7 @@ export async function POST(req: NextRequest) {
       if (!readyRows?.length) {
         const legacyResult = await authService
           .from("parent_questions")
-          .select("id, status, delivered_count")
+          .select("id, status, delivered_count, confirmation_question_text")
           .eq("child_id", session.child_id)
           .eq("status", "draft")
           .not("parent_id", "is", null)
@@ -351,16 +396,38 @@ export async function POST(req: NextRequest) {
 
   if (activeQuestion) {
     if (activeQuestion.status === "mission_confirming") {
+      // confirmation_question_text가 있으면 이 delivery는 "재확인" 턴이다 — 원본
+      // 질문이 아니라 재확인 질문을 그대로 물어본다.
+      const textToAsk = activeQuestion.confirmation_question_text || activeQuestion.question_text;
       if (activeQuestion.mission_confirm_attempts > 0) {
-        finalNextQuestionText = `방금 물어본 질문("${activeQuestion.question_text}")에 대해 아직 대답하지 않았으니 부드럽게 다시 한 번 물어보세요.`;
+        finalNextQuestionText = `방금 물어본 질문("${textToAsk}")에 대해 아직 대답하지 않았으니 부드럽게 다시 한 번 물어보세요.`;
       } else {
-        finalNextQuestionText = activeQuestion.question_text;
+        finalNextQuestionText = textToAsk;
       }
+    }
+  } else {
+    const businessDate = getKstBusinessDate();
+    const activeVacationContext = await getActiveVacationContext(authService, session.child_id);
+    const vacationBlockState = resolveSchoolQuestionBlockState(activeVacationContext, businessDate);
+    const realGrade = parseGrade(verifiedIdentity.persona.gradeLabel) ?? 4;
+
+    if (vacationBlockState.needsSchoolStartDateQuestion) {
+      finalNextQuestionText = getVacationFollowUpQuestion(realGrade);
+      await markVacationQuestionAsked(authService, session.child_id, businessDate);
+    } else if (vacationBlockState.needsSchoolStartConfirmationQuestion) {
+      finalNextQuestionText = getSchoolStartConfirmationQuestion(realGrade);
+      await markVacationQuestionAsked(authService, session.child_id, businessDate);
+    } else if (vacationBlockState.blocked) {
+      finalNextQuestionText = await filterSchoolRequiredQuestion(authService, finalNextQuestionText, true, realGrade);
     }
   }
 
+
   if (body.parentQuestionOnly) {
-    const text = activeQuestion?.question_text ?? null;
+    // §6 재확인 턴이면 confirmation_question_text를 그대로 물어야 한다 — 위
+    // finalNextQuestionText 계산부와 동일한 우선순위를 따른다(원본 질문으로 되돌아가면
+    // 재확인 상태머신이 끊긴다).
+    const text = activeQuestion?.confirmation_question_text || activeQuestion?.question_text || null;
     if (text && childTurnId) setCachedRespond(childTurnId, text);
     console.log("[mission/respond] parent-question-only done", {
       sessionId: body.sessionId,
@@ -378,12 +445,14 @@ export async function POST(req: NextRequest) {
     contents.push({ role: "user", parts: [{ text: finalNextQuestionText }] });
   }
 
-  const knownContextMsg = childContext && childContext.givenName
-    ? `아이의 이름은 '${childContext.givenName}'이고 ${childContext.grade}학년입니다. 아이가 자기 이름이나 학년을 물어보면 모른다고 하지 말고 알고 있는 정보를 자연스럽게 말해주세요.\n`
+  const knownContextMsg = verifiedIdentity.givenName
+    ? `아이의 이름은 '${verifiedIdentity.givenName}'이고 ${verifiedIdentity.persona.gradeLabel}입니다. 아이가 자기 이름이나 학년을 물어보면 모른다고 하지 말고 알고 있는 정보를 자연스럽게 말해주세요.\n`
     : "";
 
   const systemInstruction = `
 ${MISSION_CHAT_SYSTEM_PROMPT}
+
+${buildKPeerPersonaFragment(verifiedIdentity.persona, { compact: true })}
 
 ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말에 대한 매우 짧은 공감이나 감탄사(리액션)만 딱 1~2문장(최대 15자)으로 생성하세요. 물음표(?)는 절대 사용 금지.
 예: "우와, 정말 재밌었겠다!", "그렇구나!", "대단한데!"
@@ -493,7 +562,8 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
       ]).then(({error}) => { if (error) console.error("[mission/respond] timing err", error.message); }, (e: unknown) => console.error("[mission/respond] timing exc", e));
     }
 
-    const text = `${reaction} ${finalNextQuestionText}`;
+    const connector = TRANSITION_CONNECTOR_POOL[Math.floor(Math.random() * TRANSITION_CONNECTOR_POOL.length)];
+    const text = `${reaction} ${connector} ${finalNextQuestionText}`;
 
     if (childTurnId) setCachedRespond(childTurnId, text);
 

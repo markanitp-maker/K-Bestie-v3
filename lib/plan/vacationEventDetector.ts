@@ -145,3 +145,40 @@ export async function detectVacationEvent(
     };
   }
 }
+
+import { after } from "next/server";
+import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
+import { applyVacationEvent } from "./vacationSchoolContext";
+import { SupabaseClient } from "@supabase/supabase-js";
+
+export const VACATION_KEYWORD_PATTERN = /방학|개학|학교\s*안\s*가|여름방학|겨울방학|모르겠|기억\s*안|날짜\s*몰라|엄마가\s*알아|미뤄졌|날짜\s*바뀌|다녀왔|다녀\s*왔|갔다\s*왔|\d+\s*월\s*\d+\s*일|다음\s*주|이번\s*주|다음\s*달|이번\s*달|(월|화|수|목|금|토|일)요일/;
+
+export function scheduleVacationEventDetection(
+  service: SupabaseClient,
+  childId: string,
+  answerText: string,
+  sessionId: string,
+  childTurnId?: string
+): void {
+  if (!VACATION_KEYWORD_PATTERN.test(answerText)) return;
+  after(async () => {
+    try {
+      const businessDate = getKstBusinessDate();
+      const event = await detectVacationEvent(answerText, businessDate);
+      console.log("[vacationEvent] detected:", { childId, eventType: event?.eventType, schoolStartDate: event?.schoolStartDate });
+      if (!event || event.eventType === "NONE") return;
+      await applyVacationEvent(
+        service,
+        childId,
+        { eventType: event.eventType, schoolStartDate: event.schoolStartDate },
+        businessDate,
+        sessionId,
+        childTurnId
+      );
+      console.log("[vacationEvent] context applied:", { childId, eventType: event.eventType });
+    } catch (err) {
+      console.error("[vacationEvent] detection failed (non-fatal):", err);
+    }
+  });
+}
+

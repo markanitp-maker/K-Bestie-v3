@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
+import { scheduleVacationEventDetection } from "@/lib/plan/vacationEventDetector";
 
 export const runtime = "nodejs";
 
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { sessionId?: string; role?: string; content?: string; voiceMode?: string; asrConfidence?: number; displaySequence?: number; turnId?: string };
+  let body: { sessionId?: string; role?: string; content?: string; voiceMode?: string; asrConfidence?: number; displaySequence?: number; turnId?: string; isClarification?: boolean };
   try {
     body = await req.json();
   } catch (err) {
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { sessionId, role, content, voiceMode: bodyVoiceMode, asrConfidence, displaySequence, turnId } = body;
+  const { sessionId, role, content, voiceMode: bodyVoiceMode, asrConfidence, displaySequence, turnId, isClarification } = body;
   console.log("[chat/messages] POST start", { sessionId, turnId, role });
 
   if (!sessionId || !role || !content?.trim()) {
@@ -180,12 +181,17 @@ export async function POST(req: NextRequest) {
       content: content.trim(), 
       mode, 
       voice_mode: voiceMode, 
-      display_sequence: mode === "mission" ? displaySequence : (displaySequence ?? null) 
+      display_sequence: mode === "mission" ? displaySequence : (displaySequence ?? null),
+      is_clarification: isClarification ?? false
     }, { onConflict: "session_id,turn_id", ignoreDuplicates: true });
 
   if (error) {
     console.error("[chat/messages] upsert failed", { sessionId, turnId, role, mode, message: error.message, code: error.code });
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (role === "child") {
+    scheduleVacationEventDetection(service, session.child_id, content.trim(), sessionId, turnId);
   }
 
   console.log("[chat/messages] POST done", { sessionId, turnId, durationMs: Date.now() - startedAt, status: "success" });

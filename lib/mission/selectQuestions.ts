@@ -16,6 +16,9 @@ import { getDeterministicQuestionId } from "@/lib/questions/deterministicQuestio
 import fs from "fs";
 import path from "path";
 import { ChildConversationContext } from "./ChildConversationContext";
+import { getActiveVacationContext, resolveSchoolQuestionBlockState } from "@/lib/plan/vacationSchoolContext";
+import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
+
 
 export type RoundType = "round1_day" | "round2_night" | "common";
 export type CycleType = "onboarding" | "always" | "weekly" | "monthly" | "quarterly";
@@ -654,10 +657,22 @@ export async function selectFixedMissionQuestions(
     return daysSince(last) >= CYCLE_INTERVAL_DAYS[q.cycle_type];
   });
 
+  const businessDate = getKstBusinessDate();
+  const vacationCtx = await getActiveVacationContext(service, childId);
+  const vacationBlock = resolveSchoolQuestionBlockState(vacationCtx, businessDate);
+
   const getSlotIdExcluding = (tag: string, exclude: Set<string>): string | undefined => {
-    const filterEx = (arr: typeof allActive) => arr.filter((q) => !exclude.has(q.id));
+    const filterEx = (arr: typeof allActive) => {
+      let filtered = arr.filter((q) => !exclude.has(q.id));
+      if (vacationBlock.blocked) {
+        const nonSchool = filtered.filter((q: any) => q.school_context_tag !== "school_required");
+        if (nonSchool.length > 0) filtered = nonSchool;
+      }
+      return filtered;
+    };
 
     let available = filterEx(eligible.filter((q) => q.dashboard_area_tag === tag));
+
     if (available.length > 0) return shuffle(available)[0].id;
 
     available = filterEx(candidates.filter((q) => q.dashboard_area_tag === tag));
