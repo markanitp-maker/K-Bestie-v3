@@ -765,15 +765,15 @@ export default function ChatPage() {
           {!isKeyboardOpen && (
           <div className="relative w-full shrink-0 h-[clamp(135px,20dvh,155px)] transition-all duration-300 flex items-center justify-center">
             {mode === "text" ? (
-              /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 크게 따뜻한 코랄 레드 #E85D5D '✕ 채팅창 닫기' CTA 노출 */
+              /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 시원하고 명확한 코랄 레드 #EF5350 '✕ 채팅창 닫기' pill CTA 노출 */
               <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
                 <button
                   onClick={switchToVoice}
-                  style={{ backgroundColor: "#E85D5D" }}
-                  className="h-[62px] min-w-[230px] px-8 rounded-full text-white font-[700] text-[19px] shadow-lg shadow-red-200/50 flex items-center justify-center gap-2.5 cursor-pointer active:scale-95 hover:bg-[#D44C4C] transition-all border border-red-300/30"
+                  style={{ backgroundColor: "#EF5350" }}
+                  className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30"
                   aria-label="채팅창 닫기"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                   <span>채팅창 닫기</span>
                 </button>
               </div>
