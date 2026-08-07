@@ -5,6 +5,9 @@ import { createClient, type Session } from "@supabase/supabase-js";
 const DEV_URL = process.env.PLAYWRIGHT_BASE_URL || "https://k-bestie-v3-dev.vercel.app";
 const CHILD_ID = "4e7c1a6f-a953-4ebc-a181-e9c054a8ee3c";
 const EVIDENCE_DIR = "/tmp/codex-qa-069";
+const QA_ROUND = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours() >= 18
+  ? "round2_night"
+  : "round1_day";
 
 type ApiResult = { status: number; body: any };
 
@@ -52,11 +55,11 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
     return { status: response.status(), body: await response.json().catch(() => null) };
   };
 
-  let started = await call("/api/mission/start", { childId: CHILD_ID, roundType: "round1_day" });
+  let started = await call("/api/mission/start", { childId: CHILD_ID, roundType: QA_ROUND });
   if (started.status === 200 && started.body?.requiresConfirmation) {
     started = await call("/api/mission/start", {
       childId: CHILD_ID,
-      roundType: "round1_day",
+      roundType: QA_ROUND,
       confirmRestart: true,
     });
   }
@@ -163,12 +166,12 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
 
   const uiStarted = await call("/api/mission/start", {
     childId: CHILD_ID,
-    roundType: "round1_day",
+    roundType: QA_ROUND,
     confirmRestart: true,
   });
   expect(uiStarted.status, JSON.stringify(uiStarted.body)).toBe(200);
   await page.evaluate((childId) => localStorage.setItem("k_child_id", childId), CHILD_ID);
-  await page.goto(`${DEV_URL}/child/missions?childId=${CHILD_ID}&roundType=round1_day`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${DEV_URL}/child/missions?childId=${CHILD_ID}&roundType=${QA_ROUND}`, { waitUntil: "domcontentloaded" });
   const resume = page.getByRole("button", { name: /진행 중인 미션 이어하기/ });
   await expect(resume).toBeVisible({ timeout: 20_000 });
   await resume.click({ force: true });

@@ -461,6 +461,13 @@ function MissionInner() {
     }
   }, [resetToIdle]);
 
+  const showTurnPersistenceRetry = useCallback(() => {
+    recoveryAttemptedRef.current = true;
+    resetToIdle(false);
+    setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+    setShowRetryButton(true);
+  }, [resetToIdle]);
+
   const isAutoRef = useRef(true);
   // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
   // transcript에 채워넣는다(그 전에 넣으면 startSession()이 비워버림).
@@ -809,7 +816,9 @@ function MissionInner() {
             if (finalizeRes.status === 403 || finalizeError.code === "MISSION_EXPIRED") {
               handleForcedExpiry();
             }
-            throw new Error(typeof finalizeError.error === "string" ? finalizeError.error : "TURN_FINALIZE_FAILED");
+            const error = new Error(typeof finalizeError.error === "string" ? finalizeError.error : "TURN_FINALIZE_FAILED");
+            error.name = "TurnPersistenceError";
+            throw error;
           }
           const finalized = await finalizeRes.json();
           serverPersistedKTextsRef.current.push(kText);
@@ -860,24 +869,7 @@ function MissionInner() {
               if (isLive) liveRef.current?.lockNow();
               return;
             }
-            if (isLive) {
-              if (manualTimeoutRef.current) {
-                clearTimeout(manualTimeoutRef.current);
-                manualTimeoutRef.current = null;
-              }
-              setTurnPhase("waiting_k");
-              if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
-              if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
-              if (liveRef.current?.status === "live") {
-                if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-                const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
-                if (!success) resetToIdle(true);
-              } else {
-                attemptSilentRecoveryOrShowRetry();
-              }
-            } else {
-              attemptSilentRecoveryOrShowRetry();
-            }
+            showTurnPersistenceRetry();
             return;
           }
           data = await res.json();
@@ -1225,8 +1217,12 @@ function MissionInner() {
           }
         }
         askQuestionRef.current?.(next, respondText);
-      } catch {
+      } catch (error) {
         if (currentEpoch !== answerEpochRef.current) return;
+        if (error instanceof Error && error.name === "TurnPersistenceError") {
+          showTurnPersistenceRetry();
+          return;
+        }
         if (isLive) {
           if (manualTimeoutRef.current) {
             clearTimeout(manualTimeoutRef.current);
@@ -1273,7 +1269,7 @@ function MissionInner() {
         }
       }
     })();
-  }, [saveMessage, pickNextIndex, nextTurnId, nextDisplaySequence, recordNormalTurn]);
+  }, [saveMessage, pickNextIndex, nextTurnId, nextDisplaySequence, recordNormalTurn, showTurnPersistenceRetry]);
 
   // 자동·수동 발화 상태 및 DOM 조작을 위한 Ref 선언
   const [isAuto, setIsAuto] = useState(true);
