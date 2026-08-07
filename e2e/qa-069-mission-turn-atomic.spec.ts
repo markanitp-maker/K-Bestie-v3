@@ -21,6 +21,44 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
   expect(supabaseUrl && anonKey && serviceKey).toBeTruthy();
   const service = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   const anon = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
+  const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const kstDayStart = new Date(Date.UTC(
+    kstNow.getUTCFullYear(),
+    kstNow.getUTCMonth(),
+    kstNow.getUTCDate(),
+  ) - 9 * 60 * 60 * 1000).toISOString();
+  const { data: todaySessions, error: todaySessionsError } = await service
+    .from("chat_sessions")
+    .select("id")
+    .eq("child_id", CHILD_ID)
+    .gte("started_at", kstDayStart);
+  expect(todaySessionsError, todaySessionsError?.message).toBeNull();
+  const todaySessionIds = (todaySessions ?? []).map((row) => row.id);
+  if (todaySessionIds.length > 0) {
+    const { data: staleProgress, error: staleProgressError } = await service
+      .from("mission_progress")
+      .select("session_id")
+      .in("session_id", todaySessionIds)
+      .eq("round_type", QA_ROUND)
+      .eq("status", "IN_PROGRESS");
+    expect(staleProgressError, staleProgressError?.message).toBeNull();
+    const staleSessionIds = (staleProgress ?? []).map((row) => row.session_id);
+    if (staleSessionIds.length > 0) {
+      const { error: progressCleanupError } = await service
+        .from("mission_progress")
+        .update({ status: "FORCE_ENDED" })
+        .in("session_id", staleSessionIds);
+      expect(progressCleanupError, progressCleanupError?.message).toBeNull();
+      const { error: sessionCleanupError } = await service
+        .from("chat_sessions")
+        .update({
+          started_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          ended_at: new Date().toISOString(),
+        })
+        .in("id", staleSessionIds);
+      expect(sessionCleanupError, sessionCleanupError?.message).toBeNull();
+    }
+  }
   const { data: link, error: linkError } = await service.auth.admin.generateLink({
     type: "magiclink",
     email: "qatesti-dev@kbestie.local",
@@ -55,14 +93,11 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
     return { status: response.status(), body: await response.json().catch(() => null) };
   };
 
-  let started = await call("/api/mission/start", { childId: CHILD_ID, roundType: QA_ROUND });
-  if (started.status === 200 && started.body?.requiresConfirmation) {
-    started = await call("/api/mission/start", {
-      childId: CHILD_ID,
-      roundType: QA_ROUND,
-      confirmRestart: true,
-    });
-  }
+  const started = await call("/api/mission/start", {
+    childId: CHILD_ID,
+    roundType: QA_ROUND,
+    confirmRestart: true,
+  });
   expect(started.status, JSON.stringify(started.body)).toBe(200);
   expect(started.body.sessionId).toBeTruthy();
   expect(started.body.questions.length).toBeGreaterThanOrEqual(5);
@@ -193,6 +228,7 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
   });
   await input.fill("없어");
   await page.getByRole("button", { name: "전송" }).click();
+  await expect.poll(() => failedBodies.length, { timeout: 15_000 }).toBe(3);
   await expect(page.getByRole("button", { name: "다시 시도" })).toBeVisible({ timeout: 15_000 });
   expect(failedBodies).toHaveLength(3);
   expect(new Set(failedBodies.map((body) => body.clientTurnId)).size).toBe(1);

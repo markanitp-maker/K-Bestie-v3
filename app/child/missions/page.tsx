@@ -849,7 +849,6 @@ function MissionInner() {
             signal: isLive ? manualAbortControllerRef.current?.signal : apiAbortControllerRef.current?.signal,
           });
           if (!res.ok) {
-            if (currentEpoch !== answerEpochRef.current) return;
             const errData = await res.json().catch(() => ({}));
             if (res.status === 403 || errData.code === "MISSION_EXPIRED" || errData.expired || errData.status === "FORCE_ENDED" || errData.scheduleClosed) {
               handleForcedExpiry();
