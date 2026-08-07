@@ -37,7 +37,11 @@ export async function postMissionTurnWithRetry({
     } catch (error) {
       if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error;
       lastError = error;
-      if (attempt === maxAttempts) throw error;
+      if (attempt === maxAttempts) {
+        const requestError = new Error(error instanceof Error ? error.message : "Mission turn request failed");
+        requestError.name = "MissionTurnRequestError";
+        throw requestError;
+      }
     }
     await wait(baseDelayMs * attempt);
   }

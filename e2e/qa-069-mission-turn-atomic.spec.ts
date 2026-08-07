@@ -221,7 +221,7 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
     const body = route.request().postDataJSON();
     if (body?.action === "start" && failedBodies.length < 3) {
       failedBodies.push(body);
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "QA_NETWORK_FAILURE" }) });
+      await route.abort("internetdisconnected");
       return;
     }
     await route.continue();

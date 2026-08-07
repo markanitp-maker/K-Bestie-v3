@@ -1224,11 +1224,11 @@ function MissionInner() {
         }
         askQuestionRef.current?.(next, respondText);
       } catch (error) {
-        if (currentEpoch !== answerEpochRef.current) return;
-        if (error instanceof Error && error.name === "TurnPersistenceError") {
+        if (error instanceof Error && (error.name === "TurnPersistenceError" || error.name === "MissionTurnRequestError")) {
           showTurnPersistenceRetry();
           return;
         }
+        if (currentEpoch !== answerEpochRef.current) return;
         if (isLive) {
           if (manualTimeoutRef.current) {
             clearTimeout(manualTimeoutRef.current);
