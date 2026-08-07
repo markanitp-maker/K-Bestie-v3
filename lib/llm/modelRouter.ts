@@ -22,8 +22,6 @@ export const LLM_MODEL_ROLES = {
 
 export type LlmModelRole = keyof typeof LLM_MODEL_ROLES;
 
-export const DEFAULT_VERTEX_LOCATION = "us-central1";
-
 export const LLM_ENV_KEYS: Record<LlmModelRole, string> = {
   premiumLiveVoice: "LLM_MODEL_PREMIUM_LIVE_VOICE",
   missionLean: "LLM_MODEL_MISSION_LEAN",
@@ -59,10 +57,6 @@ function getEnvValue(key: string): string | undefined {
     return Deno.env.get(key);
   }
   return undefined;
-}
-
-export function getLlmRegion(): string {
-  return getEnvValue("GOOGLE_CLOUD_LOCATION")?.trim() || DEFAULT_VERTEX_LOCATION;
 }
 
 /**
