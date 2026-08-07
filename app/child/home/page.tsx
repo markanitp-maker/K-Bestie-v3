@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementModal";
 import MissionOnboardingCard from "@/components/events/MissionOnboardingCard";
-import AttendanceRouletteCard from "@/components/events/AttendanceRouletteCard";
+import AttendanceRouletteLoginModal from "@/components/events/AttendanceRouletteLoginModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { appendVocative } from "@/lib/utils/koreanParticle";
 import { usePushSubscription } from "@/lib/notifications/usePushSubscription";
@@ -60,6 +60,8 @@ export default function ChildHomePage() {
   const [showPwaBanner, setShowPwaBanner] = useState(false);
   const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [rouletteGateResolved, setRouletteGateResolved] = useState(false);
+  const handleRouletteGateResolved = useCallback(() => setRouletteGateResolved(true), []);
 
   // Notification Banner
   const { requestAndSubscribe } = usePushSubscription();
@@ -274,7 +276,14 @@ export default function ChildHomePage() {
     <DemoFrame>
       <div className="relative h-full flex flex-col overflow-y-auto overflow-x-hidden w-full text-[var(--color-k-navy)]"
            style={{ background: "linear-gradient(180deg, #BFE8FF 0%, #EAF7FF 38%, #FFF9F2 75%, #FFF7E9 100%)" }}>
-        <AppEventAnnouncementModal />
+        {child?.id && (
+          <AttendanceRouletteLoginModal
+            childId={child.id}
+            onBalanceChange={setGoldKeyBalance}
+            onGateResolved={handleRouletteGateResolved}
+          />
+        )}
+        {rouletteGateResolved && <AppEventAnnouncementModal />}
         {isEventModalOpen && <AppEventAnnouncementModal manualOpen onClose={() => setIsEventModalOpen(false)} />}
 
         {/* Background Clouds (decorative) */}
@@ -334,10 +343,6 @@ export default function ChildHomePage() {
           </div>
 
           <MissionOnboardingCard />
-
-          {child?.id && (
-            <AttendanceRouletteCard childId={child.id} onBalanceChange={setGoldKeyBalance} />
-          )}
 
           {/* Status Bubble */}
           <div className="flex justify-center mb-3">
