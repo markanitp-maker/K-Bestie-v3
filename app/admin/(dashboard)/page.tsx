@@ -143,9 +143,15 @@ function ConversationsTab({ childId }: { childId: string }) {
   );
 }
 
-type Period = "today" | "7d" | "month";
+type Period = "today" | "7d" | "month" | "last_month" | "custom";
 
-const PERIOD_LABEL: Record<Period, string> = { today: "오늘", "7d": "최근 7일", month: "이번 달" };
+const PERIOD_LABEL: Record<Period, string> = {
+  today: "오늘",
+  "7d": "최근 7일",
+  month: "이번 달",
+  last_month: "지난달",
+  custom: "직접 선택",
+};
 
 interface DailyTrendPoint {
   day: string;
@@ -173,11 +179,11 @@ interface TierHeadcount {
 }
 
 interface CostBreakdownItem {
-  key: "stt" | "tts" | "gemini_agent_platform" | "agent_platform_model_garden" | "cloud_run" | "cloud_storage" | "vercel" | "supabase";
+  key: string;
   label: string;
   category: "ai" | "infra";
   usage: number;
-  usageUnit: "sec" | "chars" | "tokens" | "days";
+  usageUnit: "sec" | "chars" | "tokens" | "requests" | "mixed" | "days";
   ourEstimateKrw: number;
   gcpActualKrw: number | null;
   confirmedCostKrw: number;
@@ -216,6 +222,9 @@ interface ModeBreakdownRow {
 
 interface UsageOverview {
   period: Period;
+  range: { from: string; to: string; startDate: string; endDate: string; timezone: string; fromKst: string; toKst: string };
+  environment: "Development" | "Production";
+  billingBasis: string;
   scope:
     | { mode: "all"; conversationMode: ModeBucket | null }
     | { mode: "child"; childId: string; childName: string; conversationMode: ModeBucket | null };
@@ -237,7 +246,7 @@ interface UsageOverview {
   dailyTrend: DailyTrendPoint[];
   costBreakdown: CostBreakdownItem[];
   topUsersByService: Record<string, TopUser[]>;
-  traffic: { sessionCount: number; sttCount: number; ttsCount: number; liveCount: number; llmCount: number };
+  traffic: { sessionCount: number; sttCount: number; ttsCount: number; liveCount: number; llmCount: number; embeddingCount: number };
   perChildProfitability: PerChildProfitability[];
   gcpBillingError: string | null;
 
@@ -245,15 +254,28 @@ interface UsageOverview {
     configured: boolean;
     error: string | null;
     dataCutoffDate: string;
+    latestDataAt: string;
+    latestDataAtKst: string;
+    projectScope: string[];
     grossKrw: number;
     creditKrw: number;
     netKrw: number;
-    byCategory: Record<"stt"|"tts"|"gemini_agent_platform"|"agent_platform_model_garden"|"cloud_run"|"cloud_storage"|"other", { grossCostKrw: number; creditKrw: number; netCostKrw: number }>;
+    byCategory: Record<string, { grossCostKrw: number; creditKrw: number; netCostKrw: number }>;
+    skuRows: Array<{
+      projectId: string;
+      projectName: string;
+      serviceId: string;
+      service: string;
+      skuId: string;
+      sku: string;
+      category: string;
+      cost: { grossCostKrw: number; creditKrw: number; netCostKrw: number };
+    }>;
     geminiUsageDimensions: Record<"input_audio"|"output_audio"|"text_input"|"text_output"|"other", { grossKrw: number; creditKrw: number; netKrw: number }>;
     unclassified: { count: number; services: string[]; grossKrw: number; ratePct: number; warning: boolean };
   };
   estimateCost: {
-    stt: number; tts: number; live_audio: number; llm: number; cloud_run: number;
+    stt: number; tts: number; live_audio: number; llm: number; embedding: number; cloud_run: number;
     totalKrw: number;
     note: string;
   };
@@ -263,7 +285,15 @@ interface UsageOverview {
     differenceKrw: number;
     underestimationRatePct: number;
     multiplier: number | null;
+    coveragePct: number;
     warning: boolean;
+  };
+  internalUsage: {
+    stt: { seconds: number; minutes: number; eventCount: number };
+    tts: { characters: number; eventCount: number };
+    llm: { inputTokens: number; outputTokens: number; eventCount: number };
+    liveAudio: { seconds: number; minutes: number; eventCount: number };
+    embeddings: { requestCount: number; inputCount: number; eventCount: number };
   };
   companyWideCost: {
     fixedInfraKrw: number;
@@ -280,6 +310,10 @@ function usageLabel(usage: number, unit: CostBreakdownItem["usageUnit"]): string
       return `${usage.toLocaleString("ko-KR")}자`;
     case "tokens":
       return `${usage.toLocaleString("ko-KR")}토큰`;
+    case "requests":
+      return `${usage.toLocaleString("ko-KR")}회`;
+    case "mixed":
+      return "서비스별 상이";
     case "days":
       return `${usage}일`;
     default:
@@ -1419,6 +1453,9 @@ function AccountRestoreTab() {
 function AdminDashboard() {
   const [page, setPage] = useState<AdminPageId>("overview");
   const [period, setPeriod] = useState<Period>("month");
+  const kstToday = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [customStart, setCustomStart] = useState(kstToday);
+  const [customEnd, setCustomEnd] = useState(kstToday);
   const [mode, setMode] = useState<ModeBucket | "">(""); // "" = 전체 A~F
   const [data, setData] = useState<UsageOverview | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -1437,16 +1474,22 @@ function AdminDashboard() {
     let cancelled = false;
     setData(null);
     setLoadFailed(false);
-    fetch(`/api/admin/usage-overview?period=${period}${mode ? `&mode=${mode}` : ""}`)
-      .then((r) => r.json())
+    const customQuery = period === "custom"
+      ? `&startDate=${encodeURIComponent(customStart)}&endDate=${encodeURIComponent(customEnd)}`
+      : "";
+    fetch(`/api/admin/usage-overview?period=${period}${customQuery}${mode ? `&mode=${mode}` : ""}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error((await r.json().catch(() => null))?.error ?? "usage overview failed");
+        return r.json();
+      })
       .then((d) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setLoadFailed(true); });
     return () => { cancelled = true; };
-  }, [period, mode]);
+  }, [period, mode, customStart, customEnd]);
 
   // 내보내기(익명 집계) — 현재 기간·모드 필터를 그대로 전달. CSV/XLSX만 노출(JSON은 dev/QA API 전용).
   const exportHref = (fmt: "csv" | "xlsx") =>
-    `/api/admin/usage-overview/export?period=${period}${mode ? `&mode=${mode}` : ""}&format=${fmt}`;
+    `/api/admin/usage-overview/export?period=${period}${period === "custom" ? `&startDate=${encodeURIComponent(customStart)}&endDate=${encodeURIComponent(customEnd)}` : ""}${mode ? `&mode=${mode}` : ""}&format=${fmt}`;
 
   const toggleService = (key: string) => {
     setExpandedServiceKey((prev) => (prev === key ? null : key));
@@ -1508,7 +1551,7 @@ function AdminDashboard() {
         ) : (
           <>
         {/* 기간 필터 — 사용량 관련 탭 공통 */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
           {(Object.keys(PERIOD_LABEL) as Period[]).map((p) => (
             <button
               key={p}
@@ -1527,6 +1570,28 @@ function AdminDashboard() {
               {PERIOD_LABEL[p]}
             </button>
           ))}
+          {period === "custom" && (
+            <>
+              <input
+                type="date"
+                value={customStart}
+                max={customEnd}
+                onChange={(event) => setCustomStart(event.target.value)}
+                aria-label="조회 시작일"
+                style={{ padding: "6px 8px", border: "1px solid var(--admin-border)", borderRadius: 8, background: "var(--admin-surface)", color: "var(--admin-text-primary)" }}
+              />
+              <span style={{ color: "var(--admin-text-secondary)" }}>~</span>
+              <input
+                type="date"
+                value={customEnd}
+                min={customStart}
+                max={kstToday}
+                onChange={(event) => setCustomEnd(event.target.value)}
+                aria-label="조회 종료일"
+                style={{ padding: "6px 8px", border: "1px solid var(--admin-border)", borderRadius: 8, background: "var(--admin-surface)", color: "var(--admin-text-primary)" }}
+              />
+            </>
+          )}
         </div>
 
         {/* A~F 대화방식 필터 + 익명 내보내기 — 사용량/비용 탭 공통 */}
@@ -1687,6 +1752,22 @@ function AdminDashboard() {
 
             {page === "cost" && (
               <div>
+                <div style={{ padding: "12px 14px", marginBottom: 14, borderRadius: 12, border: "1px solid var(--admin-border)", background: "var(--admin-surface)", fontSize: 12, color: "var(--admin-text-secondary)", lineHeight: 1.7 }}>
+                  <b style={{ color: "var(--admin-text-primary)" }}>{data.environment}</b> · {data.billingBasis} · {data.range.startDate} ~ {data.range.endDate} ({data.range.timezone})
+                  <br />
+                  최신 Billing 데이터: {data.actualCost.latestDataAtKst || "확인 불가"} · 대상 프로젝트: {data.actualCost.projectScope.join(", ") || "미설정"}
+                </div>
+                <div className="hb-cost-summary" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginBottom: 14 }}>
+                  <style jsx>{`
+                    @media (max-width: 760px) { .hb-cost-summary { grid-template-columns: 1fr !important; } }
+                  `}</style>
+                  <BigNumberCard label="GCP 실제 사용액 (gross)" value={won(data.actualCost.grossKrw)} />
+                  <BigNumberCard label="크레딧·할인" value={won(data.actualCost.creditKrw)} />
+                  <BigNumberCard label="GCP 실제 청구액 (net)" value={won(data.actualCost.netKrw)} />
+                  <BigNumberCard label="고정 인프라 일할액" value={won(data.companyWideCost.fixedInfraKrw)} />
+                  <BigNumberCard label="총 발생 원가" value={won(data.companyWideCost.totalIncurredKrw)} />
+                  <BigNumberCard label="예상 현금 지출" value={won(data.companyWideCost.expectedCashOutlayKrw)} />
+                </div>
                 {data.reconciliation ? (
                   <div className="hb-recon-cards" style={{
                     display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 14,
@@ -1704,8 +1785,8 @@ function AdminDashboard() {
                         ⚠️ 실제 비용이 내부 추정보다 10% 이상 큽니다
                       </div>
                     )}
-                    <BigNumberCard label="실제 원가" value={won(data.reconciliation.actualGrossKrw)} />
-                    <BigNumberCard label="내부 추정 원가" value={won(data.reconciliation.estimateKrw)} />
+                    <BigNumberCard label="비교 가능 실제 원가" value={won(data.reconciliation.actualGrossKrw)} sub={`전체 Billing 중 비교 범위 ${data.reconciliation.coveragePct.toFixed(1)}%`} />
+                    <BigNumberCard label="동일 범위 내부 추정" value={won(data.reconciliation.estimateKrw)} />
                     <BigNumberCard 
                       label="차이·배수" 
                       value={won(data.reconciliation.differenceKrw)} 
@@ -1735,13 +1816,15 @@ function AdminDashboard() {
                   columns={[
                     { key: "category", header: "항목", render: (item) => {
                       const isTopUserService = item.category === "ai" && topUsersByServiceKeys.includes(item.key);
-                      const isGeminiDetail = item.key === "gemini_agent_platform";
+                      const isGeminiDetail = item.key === "vertex_ai_gemini";
+                      const hasSkuDetail = data.actualCost.skuRows.some((row) => row.category === item.key);
                       const isOpen = expandedServiceKey === item.key;
                       return (
                         <div style={{ display: "flex", alignItems: "center" }}>
                           {item.label}
                           {isTopUserService && <span style={{ fontSize: 11, color: "var(--admin-primary)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} TOP10</span>}
                           {isGeminiDetail && <span style={{ fontSize: 11, color: "var(--admin-primary)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} 오디오/텍스트 상세</span>}
+                          {hasSkuDetail && <span style={{ fontSize: 11, color: "var(--admin-primary)", marginLeft: 6 }}>{isOpen ? "▲" : "▶"} Service/SKU</span>}
                         </div>
                       );
                     } },
@@ -1757,14 +1840,36 @@ function AdminDashboard() {
                   keyExtractor={(item) => item.key}
                   onRowClick={(item) => {
                     const isTopUserService = item.category === "ai" && topUsersByServiceKeys.includes(item.key);
-                    const isGeminiDetail = item.key === "gemini_agent_platform";
-                    if (isTopUserService || isGeminiDetail) toggleService(item.key);
+                    const isGeminiDetail = item.key === "vertex_ai_gemini";
+                    const hasSkuDetail = data.actualCost.skuRows.some((row) => row.category === item.key);
+                    if (isTopUserService || isGeminiDetail || hasSkuDetail) toggleService(item.key);
                   }}
                   expandedRowIds={new Set(expandedServiceKey ? [expandedServiceKey] : [])}
                   expandedRowRender={(item) => {
-                    if (item.key === "gemini_agent_platform") {
-                      return (
-                        <div style={{ padding: "var(--admin-space-16)" }}>
+                    const skuRows = data.actualCost.skuRows.filter((row) => row.category === item.key);
+                    const topUsers = topUsersByServiceKeys.includes(item.key) ? data.topUsersByService[item.key] ?? [] : [];
+                    if (skuRows.length === 0 && topUsers.length === 0 && item.key !== "vertex_ai_gemini") return null;
+                    return (
+                      <div style={{ padding: "var(--admin-space-16)", display: "grid", gap: 18 }}>
+                        {skuRows.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--admin-primary)", marginBottom: 10 }}>Google Cloud Service/SKU 실제 비용</div>
+                            <AdminResponsiveTable mobileStrategy="scroll"
+                              columns={[
+                                { key: "service", header: "Service", render: (row) => row.service },
+                                { key: "sku", header: "SKU", render: (row) => row.sku },
+                                { key: "gross", header: "gross", render: (row) => won(row.cost.grossCostKrw) },
+                                { key: "credit", header: "credit", render: (row) => won(row.cost.creditKrw) },
+                                { key: "net", header: "net", render: (row) => won(row.cost.netCostKrw) },
+                              ]}
+                              data={skuRows}
+                              keyExtractor={(row) => `${row.projectId}:${row.serviceId}:${row.skuId}`}
+                              density="compact"
+                            />
+                          </div>
+                        )}
+                        {item.key === "vertex_ai_gemini" && (
+                          <div>
                           <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--admin-primary)", marginBottom: 10 }}>Gemini 사용 형태별 상세</div>
                           <AdminResponsiveTable mobileStrategy="card"
                             columns={[
@@ -1783,14 +1888,10 @@ function AdminDashboard() {
                             keyExtractor={(d) => d.key}
                             density="compact"
                           />
-                        </div>
-                      );
-                    }
-                    if (topUsersByServiceKeys.includes(item.key)) {
-                      const topUsers = data.topUsersByService[item.key] ?? [];
-                      if (topUsers.length === 0) return <div style={{ padding: "var(--admin-space-16)" }}>이 서비스를 사용한 아이가 없어요.</div>;
-                      return (
-                        <div style={{ padding: "var(--admin-space-16)" }}>
+                          </div>
+                        )}
+                        {topUsers.length > 0 && (
+                          <div>
                           <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--admin-primary)", marginBottom: 10 }}>{item.label} 사용량 TOP10</div>
                           <AdminResponsiveTable mobileStrategy="card"
                             columns={[
@@ -1804,13 +1905,31 @@ function AdminDashboard() {
                             onRowClick={(u) => openChildPanel(u.childId, u.name)}
                             density="compact"
                           />
-                        </div>
-                      );
-                    }
-                    return null;
+                          </div>
+                        )}
+                      </div>
+                    );
                   }}
                 />
-                <div style={{ fontSize: 11, color: "var(--admin-text-secondary)", marginTop: 6 }}>AI 서비스 항목을 클릭하면 바로 아래에 TOP10 유저가 펼쳐집니다.</div>
+                <div style={{ fontSize: 11, color: "var(--admin-text-secondary)", marginTop: 6 }}>비용 항목을 클릭하면 Service/SKU 실제 청구 근거와 내부 사용량 상세가 펼쳐집니다.</div>
+
+                <SectionTitle>내부 실제 사용량 ({PERIOD_LABEL[period]})</SectionTitle>
+                <AdminResponsiveTable mobileStrategy="card"
+                  columns={[
+                    { key: "service", header: "서비스", render: (row) => row.service },
+                    { key: "usage", header: "집계 사용량", render: (row) => row.usage },
+                    { key: "events", header: "이벤트", render: (row) => `${row.events.toLocaleString("ko-KR")}건` },
+                  ]}
+                  data={[
+                    { key: "stt", service: "STT", usage: `${data.internalUsage.stt.minutes.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}분`, events: data.internalUsage.stt.eventCount },
+                    { key: "tts", service: "TTS", usage: `${data.internalUsage.tts.characters.toLocaleString("ko-KR")}자`, events: data.internalUsage.tts.eventCount },
+                    { key: "llm", service: "Gemini 텍스트", usage: `${(data.internalUsage.llm.inputTokens + data.internalUsage.llm.outputTokens).toLocaleString("ko-KR")}토큰`, events: data.internalUsage.llm.eventCount },
+                    { key: "live", service: "Live/Realtime Audio", usage: `${data.internalUsage.liveAudio.minutes.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}분`, events: data.internalUsage.liveAudio.eventCount },
+                    { key: "embedding", service: "Embeddings", usage: `${data.internalUsage.embeddings.requestCount.toLocaleString("ko-KR")}회 · 입력 ${data.internalUsage.embeddings.inputCount.toLocaleString("ko-KR")}`, events: data.internalUsage.embeddings.eventCount },
+                  ]}
+                  keyExtractor={(row) => row.key}
+                  density="compact"
+                />
 
                 {/* A~F 대화방식별 원가 배분 (Plan01 §23 결정1) */}
                 <SectionTitle>A~F 대화방식별 원가 배분 ({PERIOD_LABEL[period]})</SectionTitle>

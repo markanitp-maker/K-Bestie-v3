@@ -15,34 +15,60 @@
 //   - service "Cloud Run"                → cloud_run (검증치 769원)
 //   - service "Cloud Storage"            → cloud_storage (검증치 8원)
 //   - service "Vertex AI":
-//       sku에 "3.1" 포함(예: "Gemini 3.1 Flash Lite Global ...")  → agent_platform_model_garden (검증치 90원)
-//       그 외(Gemini 2.5 GA/Live 전부)                              → gemini_agent_platform (검증치 17,906원)
+//       Gemini text/prediction SKU → vertex_ai_gemini (모델 버전과 무관)
+//       Embedding SKU → vertex_ai_embeddings, Live/AV2A SKU → live_realtime_audio
 //   - 그 외 서비스(Cloud Logging/Secret Manager/BigQuery/Cloud Build/Artifact Registry 등)
 //     → other(미분류) — 대부분 과금 대상이 아닌 무료 메터링 행이라 금액은 사실상 0에 수렴한다.
 // 주의: billing_export는 회사 전체 청구서라 A~E 모드·아이·가족·세션 단위로는 쪼갤 수 없다.
 //       그 단위 실청구는 usage_events 사용량 비중 기반 '배분 추정액'으로만 제공한다(호출부에서 배분).
 
 import { BigQuery } from "@google-cloud/bigquery";
+import { formatKstDate } from "@/lib/billing/periodRange";
 
-// stt/tts = 음성 AI. gemini_agent_platform/agent_platform_model_garden = Vertex AI Gemini(모델별로 분리).
+// 서비스와 SKU family를 기준으로 분류하며 모델 버전 문자열로 비용을 나누지 않는다.
 // cloud_run = 라이브 음성 릴레이 인프라. cloud_storage = 저장소. other = 위 6종 외 전부(미분류 집계용).
 export type BillingCategory =
   | "stt"
   | "tts"
-  | "gemini_agent_platform"
-  | "agent_platform_model_garden"
+  | "vertex_ai_gemini"
+  | "vertex_ai_embeddings"
+  | "live_realtime_audio"
   | "cloud_run"
   | "cloud_storage"
+  | "cloud_logging"
+  | "bigquery"
+  | "artifact_registry"
+  | "secret_manager"
   | "other";
 
 export const KNOWN_BILLING_CATEGORIES: Exclude<BillingCategory, "other">[] = [
   "stt",
   "tts",
-  "gemini_agent_platform",
-  "agent_platform_model_garden",
+  "vertex_ai_gemini",
+  "vertex_ai_embeddings",
+  "live_realtime_audio",
   "cloud_run",
   "cloud_storage",
+  "cloud_logging",
+  "bigquery",
+  "artifact_registry",
+  "secret_manager",
 ];
+
+export const BILLING_CATEGORY_LABELS: Record<BillingCategory, string> = {
+  stt: "Speech-to-Text",
+  tts: "Text-to-Speech",
+  vertex_ai_gemini: "Vertex AI - Gemini",
+  vertex_ai_embeddings: "Vertex AI - Embeddings",
+  live_realtime_audio: "Live / Realtime Audio",
+  cloud_run: "Cloud Run",
+  cloud_storage: "Cloud Storage",
+  cloud_logging: "Cloud Logging",
+  bigquery: "BigQuery",
+  artifact_registry: "Artifact Registry",
+  secret_manager: "Secret Manager",
+  other: "기타/미분류",
+};
 
 // Gemini SKU를 모델 사용 형태로 세분화 — 제품(Live/LLM/TTS) 단위로 임의 배분하지 않고
 // SKU 문자열 자체로 판별한다(대표님 지시: "제품 단위로 임의 배분 금지").
@@ -73,9 +99,13 @@ function addTriplet(a: CostTriplet, b: CostTriplet): CostTriplet {
 
 export interface GcpBillingSkuRow {
   service: string; // 원본 service.description
+  serviceId: string;
   sku: string; // 원본 sku.description
+  skuId: string;
+  projectId: string;
+  projectName: string;
   category: BillingCategory;
-  geminiDimension?: GeminiUsageDimension; // gemini_agent_platform/agent_platform_model_garden에만 설정
+  geminiDimension?: GeminiUsageDimension;
   usageAmount: number;
   usageUnit: string;
   cost: CostTriplet;
@@ -95,6 +125,8 @@ export interface GcpBillingResult {
   };
   /** GCP billing export는 통상 하루 지연되어 반영된다 — 이 날짜(오늘) 이후 데이터는 "집계 중"으로 취급. */
   dataCutoffDate: string;
+  latestDataAt: string | null;
+  projectScope: string[];
 }
 
 let cachedClient: BigQuery | null = null;
@@ -127,6 +159,10 @@ export function classifyBillingRow(serviceDesc: string, skuDesc: string): Billin
 
   if (s.includes("cloud run")) return "cloud_run";
   if (s.includes("cloud storage")) return "cloud_storage";
+  if (s.includes("cloud logging") || s === "logging") return "cloud_logging";
+  if (s.includes("bigquery")) return "bigquery";
+  if (s.includes("artifact registry")) return "artifact_registry";
+  if (s.includes("secret manager")) return "secret_manager";
   // STT: "Cloud Speech API" / "Cloud Speech-to-Text*"
   if (s.includes("speech-to-text") || s === "cloud speech api" || (s.includes("speech") && !s.includes("text-to-speech"))) {
     return "stt";
@@ -135,18 +171,16 @@ export function classifyBillingRow(serviceDesc: string, skuDesc: string): Billin
   if (s.includes("text-to-speech")) {
     return "tts";
   }
-  // Vertex AI: sku 버전 문자열로 Model Garden(3.1) vs Gemini Agent Platform(2.5 등) 구분.
-  // 2026-07-27 실측 검증: "Gemini 3.1 Flash Lite Global ..." 계열만 Model Garden(≈90원),
-  // 그 외 Gemini 2.5 GA/Live 전부가 Agent Platform(≈17,906원) — 두 합이 Vertex AI 전체(≈17,995.59원)와 일치.
-  // claude-review 지적: 기존엔 "3.1이면 Model Garden, 그 외는 전부 Agent Platform"이라
-  // Vertex AI인 이상 무조건 알려진 두 카테고리 중 하나로 떨어져 "other"로 도피할 길이
-  // 없었다 — 이러면 향후 새 모델(예: Gemini 4.0)이 나와도 자동으로 2.5 계열에
-  // 합산돼버려 미분류율 경고가 그 드리프트를 영영 잡아내지 못한다. 알려진 버전
-  // 문자열("2.5"/"3.1")로만 명시적으로 분류하고, 둘 다 아니면 "other"로 떨어뜨려
-  // 안전망을 되살린다.
+  // Vertex AI는 모델 버전이 아니라 SKU family로 분류한다. 새 Gemini 버전은 같은
+  // text/audio prediction family인 한 자동으로 기존 상위 카테고리에 포함된다.
   if (s.includes("vertex")) {
-    if (sku.includes("3.1")) return "agent_platform_model_garden";
-    if (sku.includes("2.5")) return "gemini_agent_platform";
+    if (sku.includes("embedding") || sku.includes("text embedding")) return "vertex_ai_embeddings";
+    if (sku.includes("gemini") && (sku.includes("live audio") || sku.includes("av2a") || sku.includes("realtime"))) {
+      return "live_realtime_audio";
+    }
+    if (sku.includes("gemini") && (sku.includes("prediction") || sku.includes("text input") || sku.includes("text output"))) {
+      return "vertex_ai_gemini";
+    }
     return "other";
   }
   return "other";
@@ -174,15 +208,20 @@ function emptyTotalsByCategory(): Record<BillingCategory, CostTriplet> {
   return {
     stt: emptyTriplet(),
     tts: emptyTriplet(),
-    gemini_agent_platform: emptyTriplet(),
-    agent_platform_model_garden: emptyTriplet(),
+    vertex_ai_gemini: emptyTriplet(),
+    vertex_ai_embeddings: emptyTriplet(),
+    live_realtime_audio: emptyTriplet(),
     cloud_run: emptyTriplet(),
     cloud_storage: emptyTriplet(),
+    cloud_logging: emptyTriplet(),
+    bigquery: emptyTriplet(),
+    artifact_registry: emptyTriplet(),
+    secret_manager: emptyTriplet(),
     other: emptyTriplet(),
   };
 }
 
-function emptyResult(configured: boolean, dataCutoffDate: string, error?: string): GcpBillingResult {
+function emptyResult(configured: boolean, dataCutoffDate: string, projectScope: string[], error?: string): GcpBillingResult {
   return {
     configured,
     error,
@@ -191,7 +230,14 @@ function emptyResult(configured: boolean, dataCutoffDate: string, error?: string
     skuRows: [],
     unclassified: { count: 0, services: [], cost: emptyTriplet(), ratePct: 0 },
     dataCutoffDate,
+    latestDataAt: null,
+    projectScope,
   };
+}
+
+function getTargetProjectIds(): string[] {
+  const raw = process.env.GCP_BILLING_TARGET_PROJECT_IDS ?? process.env.GOOGLE_CLOUD_PROJECT ?? "";
+  return Array.from(new Set(raw.split(",").map((value) => value.trim()).filter(Boolean)));
 }
 
 /** 실제 GCP 청구 원가(사용 원가/크레딧/순청구액)를 SKU 단위로 [from, to) 기간 조회. */
@@ -199,16 +245,20 @@ export async function fetchGcpBilling(input: { from: Date; to: Date }): Promise<
   const today = new Date().toISOString().slice(0, 10);
   const projectId = process.env.GCP_BILLING_PROJECT_ID;
   const dataset = process.env.GCP_BILLING_DATASET;
+  const targetProjectIds = getTargetProjectIds();
 
   const client = getClient();
   if (!client || !projectId || !dataset) {
-    return emptyResult(false, today);
+    return emptyResult(false, today, targetProjectIds);
+  }
+  if (targetProjectIds.length === 0) {
+    return emptyResult(false, today, [], "Production GCP project filter가 설정되지 않았습니다");
   }
 
   try {
     const table = await resolveBillingTable(client, `${projectId}.${dataset}`);
     if (!table) {
-      return emptyResult(false, today, "billing_export 테이블을 찾을 수 없습니다");
+      return emptyResult(false, today, targetProjectIds, "billing_export 테이블을 찾을 수 없습니다");
     }
 
     // 대표님 지시: 특정 서비스만 사전 필터링하지 않는다 — 전체 서비스를 가져와 알려진 6종 외는
@@ -217,17 +267,23 @@ export async function fetchGcpBilling(input: { from: Date; to: Date }): Promise<
       query: `
         SELECT
           service.description AS service_desc,
+          service.id AS service_id,
           sku.description AS sku_desc,
+          sku.id AS sku_id,
+          project.id AS project_id,
+          project.name AS project_name,
           SUM(cost) AS gross_cost,
           SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS credit_amount,
           SUM(usage.amount) AS usage_amount,
-          ANY_VALUE(usage.unit) AS usage_unit
+          ANY_VALUE(usage.unit) AS usage_unit,
+          MAX(usage_end_time) AS latest_usage_end_time
         FROM \`${projectId}.${dataset}.${table}\`
         WHERE usage_start_time >= @from
           AND usage_start_time < @to
-        GROUP BY service_desc, sku_desc
+          AND project.id IN UNNEST(@targetProjectIds)
+        GROUP BY service_desc, service_id, sku_desc, sku_id, project_id, project_name
       `,
-      params: { from: input.from.toISOString(), to: input.to.toISOString() },
+      params: { from: input.from.toISOString(), to: input.to.toISOString(), targetProjectIds },
     });
 
     const totalsByCategory = emptyTotalsByCategory();
@@ -236,14 +292,20 @@ export async function fetchGcpBilling(input: { from: Date; to: Date }): Promise<
     let unclassifiedGross = 0;
     let unclassifiedCredit = 0;
     let total = emptyTriplet();
+    let latestDataAt: string | null = null;
 
     for (const r of rows as Array<{
       service_desc: string;
+      service_id: string | null;
       sku_desc: string;
+      sku_id: string | null;
+      project_id: string | null;
+      project_name: string | null;
       gross_cost: number | null;
       credit_amount: number | null;
       usage_amount: number | null;
       usage_unit: string | null;
+      latest_usage_end_time: { value?: string } | string | null;
     }>) {
       const category = classifyBillingRow(r.service_desc, r.sku_desc);
       const grossCostKrw = r.gross_cost ?? 0;
@@ -256,16 +318,23 @@ export async function fetchGcpBilling(input: { from: Date; to: Date }): Promise<
 
       const row: GcpBillingSkuRow = {
         service: r.service_desc,
+        serviceId: r.service_id ?? "",
         sku: r.sku_desc,
+        skuId: r.sku_id ?? "",
+        projectId: r.project_id ?? "",
+        projectName: r.project_name ?? "",
         category,
         usageAmount: r.usage_amount ?? 0,
         usageUnit: r.usage_unit ?? "",
         cost,
       };
-      if (category === "gemini_agent_platform" || category === "agent_platform_model_garden") {
+      if (category === "vertex_ai_gemini" || category === "live_realtime_audio") {
         row.geminiDimension = classifyGeminiDimension(r.sku_desc);
       }
       skuRows.push(row);
+
+      const rawLatest = typeof r.latest_usage_end_time === "string" ? r.latest_usage_end_time : r.latest_usage_end_time?.value;
+      if (rawLatest && (!latestDataAt || new Date(rawLatest) > new Date(latestDataAt))) latestDataAt = rawLatest;
 
       if (category === "other") {
         unclassifiedServices.add(r.service_desc);
@@ -292,10 +361,12 @@ export async function fetchGcpBilling(input: { from: Date; to: Date }): Promise<
         cost: unclassifiedCost,
         ratePct: unclassifiedRatePct,
       },
-      dataCutoffDate: today,
+      dataCutoffDate: latestDataAt ? formatKstDate(latestDataAt) : today,
+      latestDataAt,
+      projectScope: targetProjectIds,
     };
   } catch (err) {
     // 조회 실패 시 configured=false로 반환해 호출부가 실청구 0원이 아니라 '추정치'로 폴백하게 한다.
-    return emptyResult(false, today, (err as Error).message);
+    return emptyResult(false, today, targetProjectIds, (err as Error).message);
   }
 }

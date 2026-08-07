@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { fetchGcpBilling, KNOWN_BILLING_CATEGORIES, type BillingCategory, type GcpBillingResult, type GeminiUsageDimension } from "@/lib/billing/gcpBilling";
+import { BILLING_CATEGORY_LABELS, fetchGcpBilling, KNOWN_BILLING_CATEGORIES, type BillingCategory, type GcpBillingResult, type GeminiUsageDimension } from "@/lib/billing/gcpBilling";
+import { BillingPeriodError, formatKstDate, formatKstDateTime, prorateMonthlyCost, resolveBillingPeriodRange, type BillingPeriod, type BillingPeriodRange } from "@/lib/billing/periodRange";
 import { REVENUE_MODE, VERCEL_FIXED_KRW_PER_MONTH, SUPABASE_FIXED_KRW_PER_MONTH, USD_TO_KRW, FX_AS_OF } from "@/lib/plan/pricing";
 import { ALL_MODE_BUCKETS, toModeBucket, normalizeConversationMode, UNCLASSIFIED_MODE, type ModeBucket } from "@/lib/plan/conversationMode";
 
@@ -14,22 +15,29 @@ function emptyGcpBillingResult(dataCutoffDate: string): GcpBillingResult {
     totalsByCategory: {
       stt: emptyTriplet(),
       tts: emptyTriplet(),
-      gemini_agent_platform: emptyTriplet(),
-      agent_platform_model_garden: emptyTriplet(),
+      vertex_ai_gemini: emptyTriplet(),
+      vertex_ai_embeddings: emptyTriplet(),
+      live_realtime_audio: emptyTriplet(),
       cloud_run: emptyTriplet(),
       cloud_storage: emptyTriplet(),
+      cloud_logging: emptyTriplet(),
+      bigquery: emptyTriplet(),
+      artifact_registry: emptyTriplet(),
+      secret_manager: emptyTriplet(),
       other: emptyTriplet(),
     },
     skuRows: [],
     unclassified: { count: 0, services: [], cost: emptyTriplet(), ratePct: 0 },
     dataCutoffDate,
+    latestDataAt: null,
+    projectScope: [],
   };
 }
 
 export const runtime = "nodejs";
 
-type Period = "today" | "7d" | "month";
-type AiKind = "stt" | "tts" | "live_audio" | "llm";
+type Period = BillingPeriod;
+type AiKind = "stt" | "tts" | "live_audio" | "llm" | "embedding";
 type UsageEventRow = {
   id: string;
   child_id: string | null;
@@ -40,24 +48,13 @@ type UsageEventRow = {
   char_count: number | null;
   token_in: number | null;
   token_out: number | null;
+  model: string | null;
+  request_count: number | null;
+  input_count: number | null;
+  environment: string | null;
   est_cost_krw: number | null;
   created_at: string;
 };
-
-function periodRange(period: Period, now: Date): { from: Date; to: Date; days: number } {
-  const to = new Date(now);
-  const from = new Date(now);
-  if (period === "today") {
-    from.setHours(0, 0, 0, 0);
-  } else if (period === "7d") {
-    from.setDate(from.getDate() - 7);
-  } else {
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-  }
-  const days = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
-  return { from, to, days };
-}
 
 function changeRate(current: number, prev: number): number | null {
   if (prev === 0) return current === 0 ? 0 : null; // 직전 기간 데이터가 없으면 비율 계산 불가
@@ -66,13 +63,6 @@ function changeRate(current: number, prev: number): number | null {
 
 function sumCost(events: UsageEventRow[]): number {
   return events.reduce((s, e) => s + (e.est_cost_krw ?? 0), 0);
-}
-
-/** 인프라 고정비 — month 기간엔 전액, today/7d엔 기간 일수만큼 일할 계산. */
-function proratedInfraCost(monthlyKrw: number, period: Period, days: number): number {
-  if (period === "month") return monthlyKrw;
-  const DAYS_IN_MONTH = 30;
-  return (monthlyKrw / DAYS_IN_MONTH) * days;
 }
 
 // GET /api/admin/usage-overview?period=today|7d|month&childId=xxx
@@ -87,8 +77,20 @@ export async function GET(req: NextRequest) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const periodParam = req.nextUrl.searchParams.get("period");
-  const period: Period = periodParam === "7d" || periodParam === "today" ? periodParam : "month";
+  let periodRange: BillingPeriodRange;
+  try {
+    periodRange = resolveBillingPeriodRange({
+      period: req.nextUrl.searchParams.get("period"),
+      startDate: req.nextUrl.searchParams.get("startDate"),
+      endDate: req.nextUrl.searchParams.get("endDate"),
+    });
+  } catch (error) {
+    if (error instanceof BillingPeriodError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
+  const period: Period = periodRange.period;
   const filterChildId = req.nextUrl.searchParams.get("childId") || null;
   // A~E 대화방식 필터: 'A'~'E' 또는 'unclassified'(미분류) 또는 없음(전체).
   const rawModeParam = req.nextUrl.searchParams.get("mode");
@@ -96,33 +98,41 @@ export async function GET(req: NextRequest) {
   const filterUnclassified = rawModeParam === UNCLASSIFIED_MODE;
 
   const now = new Date();
-  const { from, to, days } = periodRange(period, now);
+  const { from, to, days } = periodRange;
   // 직전 동기간 — 현재 기간과 동일한 길이만큼 바로 이전 구간.
   const prevTo = new Date(from);
   const prevFrom = new Date(from.getTime() - (to.getTime() - from.getTime()));
 
   const service = createServiceClient();
 
+  const fetchUsageRange = async (rangeFrom: Date, rangeTo: Date): Promise<UsageEventRow[]> => {
+    const pageSize = 5_000;
+    const rows: UsageEventRow[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await service
+        .from("usage_events")
+        .select("id, child_id, tier, kind, conversation_mode, duration_sec, char_count, token_in, token_out, model, request_count, input_count, environment, est_cost_krw, created_at")
+        .gte("created_at", rangeFrom.toISOString())
+        .lt("created_at", rangeTo.toISOString())
+        .order("created_at", { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw error;
+      const page = (data ?? []) as UsageEventRow[];
+      rows.push(...page);
+      if (page.length < pageSize) return rows;
+    }
+  };
+
   const [eventsSettled, prevEventsSettled, childrenSettled, plansSettled] = await Promise.allSettled([
-    service
-      .from("usage_events")
-      .select("id, child_id, tier, kind, conversation_mode, duration_sec, char_count, token_in, token_out, est_cost_krw, created_at")
-      .gte("created_at", from.toISOString())
-      .lte("created_at", to.toISOString())
-      .limit(20000),
-    service
-      .from("usage_events")
-      .select("id, child_id, tier, kind, conversation_mode, duration_sec, char_count, token_in, token_out, est_cost_krw, created_at")
-      .gte("created_at", prevFrom.toISOString())
-      .lt("created_at", prevTo.toISOString())
-      .limit(20000),
+    fetchUsageRange(from, to),
+    fetchUsageRange(prevFrom, prevTo),
     service.from("child_profiles").select("id, name, tier, created_at"),
     service.from("plans").select("tier, name, price_krw"),
   ]);
 
   // 부분 실패는 빈 배열로 폴백해 대시보드가 깨지지 않게 한다(Promise.allSettled 규칙 준수).
-  const allEvents = (eventsSettled.status === "fulfilled" ? eventsSettled.value.data ?? [] : []) as UsageEventRow[];
-  const prevEvents = (prevEventsSettled.status === "fulfilled" ? prevEventsSettled.value.data ?? [] : []) as UsageEventRow[];
+  const allEvents = eventsSettled.status === "fulfilled" ? eventsSettled.value : [];
+  const prevEvents = prevEventsSettled.status === "fulfilled" ? prevEventsSettled.value : [];
   const children = (childrenSettled.status === "fulfilled" ? childrenSettled.value.data ?? [] : []) as { id: string; name: string; tier: number; created_at: string }[];
   const plans = (plansSettled.status === "fulfilled" ? plansSettled.value.data ?? [] : []) as { tier: number; name: string; price_krw: number }[];
 
@@ -148,7 +158,7 @@ export async function GET(req: NextRequest) {
   //   Plan01 §23 결정1: 신규부터 conversation_mode 태깅, 기존/미지정은 '미분류(unclassified)'.
   const modeScoped = filterChildId ? allEvents.filter((e) => e.child_id === filterChildId) : allEvents;
   const costByMode: Record<ModeBucket, Record<AiKind, number>> = Object.fromEntries(
-    ALL_MODE_BUCKETS.map((m) => [m, { stt: 0, tts: 0, live_audio: 0, llm: 0 }])
+    ALL_MODE_BUCKETS.map((m) => [m, { stt: 0, tts: 0, live_audio: 0, llm: 0, embedding: 0 }])
   ) as Record<ModeBucket, Record<AiKind, number>>;
   const countByMode: Record<ModeBucket, number> = Object.fromEntries(
     ALL_MODE_BUCKETS.map((m) => [m, 0])
@@ -166,10 +176,10 @@ export async function GET(req: NextRequest) {
   });
 
   // ── 서비스별(kind) 집계 + 일별 비용 (childId 필터 적용된 events 기준) ──
-  const totalsByKind = { stt: 0, tts: 0, live_audio: 0, llm: 0 } as Record<string, number>;
-  const countsByKind = { stt: 0, tts: 0, live_audio: 0, llm: 0 } as Record<string, number>;
+  const totalsByKind = { stt: 0, tts: 0, live_audio: 0, llm: 0, embedding: 0 } as Record<string, number>;
+  const countsByKind = { stt: 0, tts: 0, live_audio: 0, llm: 0, embedding: 0 } as Record<string, number>;
   const dailyCostEstimate: Record<string, Record<string, number>> = {};
-  const usageAmountByKind = { sttSec: 0, ttsChars: 0, liveSec: 0, llmTokenIn: 0, llmTokenOut: 0 };
+  const usageAmountByKind = { sttSec: 0, ttsChars: 0, liveSec: 0, llmTokenIn: 0, llmTokenOut: 0, embeddingRequests: 0, embeddingInputs: 0 };
 
   for (const e of events) {
     const kind = e.kind;
@@ -177,7 +187,7 @@ export async function GET(req: NextRequest) {
     totalsByKind[kind] = (totalsByKind[kind] ?? 0) + cost;
     countsByKind[kind] = (countsByKind[kind] ?? 0) + 1;
 
-    const day = e.created_at.slice(0, 10);
+    const day = formatKstDate(e.created_at);
     dailyCostEstimate[day] = dailyCostEstimate[day] ?? { stt: 0, tts: 0, live_audio: 0, llm: 0 };
     if (dailyCostEstimate[day][kind] != null) dailyCostEstimate[day][kind] += cost;
 
@@ -187,6 +197,10 @@ export async function GET(req: NextRequest) {
     if (kind === "llm") {
       if (e.token_in) usageAmountByKind.llmTokenIn += e.token_in;
       if (e.token_out) usageAmountByKind.llmTokenOut += e.token_out;
+    }
+    if (kind === "embedding") {
+      usageAmountByKind.embeddingRequests += e.request_count ?? 1;
+      usageAmountByKind.embeddingInputs += e.input_count ?? 0;
     }
   }
 
@@ -201,7 +215,7 @@ export async function GET(req: NextRequest) {
 
     const key = `${e.kind}:${e.child_id}`;
     const usageAmount =
-      e.kind === "tts" ? e.char_count ?? 0 : e.kind === "llm" ? (e.token_in ?? 0) + (e.token_out ?? 0) : e.duration_sec ?? 0;
+      e.kind === "tts" ? e.char_count ?? 0 : e.kind === "llm" ? (e.token_in ?? 0) + (e.token_out ?? 0) : e.kind === "embedding" ? e.request_count ?? 1 : e.duration_sec ?? 0;
     const existing = usageByServiceChild.get(key);
     if (existing) {
       existing.usage += usageAmount;
@@ -216,13 +230,13 @@ export async function GET(req: NextRequest) {
     .from("chat_sessions")
     .select("id", { count: "exact", head: true })
     .gte("started_at", from.toISOString())
-    .lte("started_at", to.toISOString());
+    .lt("started_at", to.toISOString());
   if (filterChildId) sessionCountQuery = sessionCountQuery.eq("child_id", filterChildId);
   const { count: sessionCount } = await sessionCountQuery;
 
   const aiCostTotal = totalsByKind.stt + totalsByKind.tts + totalsByKind.live_audio + totalsByKind.llm;
-  const vercelCost = proratedInfraCost(VERCEL_FIXED_KRW_PER_MONTH, period, days);
-  const supabaseCost = proratedInfraCost(SUPABASE_FIXED_KRW_PER_MONTH, period, days);
+  const vercelCost = prorateMonthlyCost(VERCEL_FIXED_KRW_PER_MONTH, periodRange);
+  const supabaseCost = prorateMonthlyCost(SUPABASE_FIXED_KRW_PER_MONTH, periodRange);
 
   // ── GCP 실제 청구액(STT/TTS/Gemini Agent Platform/Model Garden/Cloud Run/Cloud Storage) —
   // 회사 전체 청구서라 아이 단위로는 못 쪼갠다. childId 상세 드릴다운에서는 조회하지 않는다
@@ -262,8 +276,9 @@ export async function GET(req: NextRequest) {
   const confirmedAiCost = gcpBilling.configured
     ? gcpBilling.totalsByCategory.stt.netCostKrw +
       gcpBilling.totalsByCategory.tts.netCostKrw +
-      gcpBilling.totalsByCategory.gemini_agent_platform.netCostKrw +
-      gcpBilling.totalsByCategory.agent_platform_model_garden.netCostKrw
+      gcpBilling.totalsByCategory.vertex_ai_gemini.netCostKrw +
+      gcpBilling.totalsByCategory.live_realtime_audio.netCostKrw +
+      gcpBilling.totalsByCategory.vertex_ai_embeddings.netCostKrw
     : aiCostTotal;
   const actualTotalCost = confirmedAiCost + vercelCost + supabaseCost + cloudRunActual;
   const actualRevenue = isFreePeriod ? 0 : projectedRevenue;
@@ -312,7 +327,7 @@ export async function GET(req: NextRequest) {
   // 2026-07-27 개편(대표님 지시): 로컬 usage_events 추정치를 "실제 비용"으로 취급하지 않는다.
   // Google Cloud Billing 실제값(gcpBilling)을 정본으로 하고, 로컬 추정치는 "내부 배분 원가"로
   // 별도 컬럼에만 병기한다. Gemini는 제품 단위(Live/LLM)로 임의 배분하지 않고 SKU 기준
-  // gemini_agent_platform/agent_platform_model_garden 그대로 노출한다(estimateKrw는 참고용
+  // Gemini/Embedding/Live는 서비스·SKU family 기준으로 독립 노출한다(estimateKrw는 참고용).
   // 근사치로만 붙인다 — 정확한 1:1 매칭이 아님을 note로 명시).
   type CostBreakdownItem = {
     key: BillingCategory | "vercel" | "supabase";
@@ -337,8 +352,9 @@ export async function GET(req: NextRequest) {
 
   // 월말 예상 원가 — period=month이고 아직 월이 끝나지 않았으면 현재까지의 순청구액을
   // 경과일수 비례로 월 전체에 투영한다. 그 외 기간(today/7d)이거나 이미 지난 기간이면 net 그대로.
-  const daysInCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysElapsedInMonth = now.getDate();
+  const nowKst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const daysInCurrentMonth = new Date(Date.UTC(nowKst.getUTCFullYear(), nowKst.getUTCMonth() + 1, 0)).getUTCDate();
+  const daysElapsedInMonth = nowKst.getUTCDate();
   function projectToMonthEnd(netKrw: number): number {
     if (period !== "month" || daysElapsedInMonth <= 0) return netKrw;
     return (netKrw / daysElapsedInMonth) * daysInCurrentMonth;
@@ -383,38 +399,55 @@ export async function GET(req: NextRequest) {
       gcpActualKrw: gcpConfigured ? actualTriplet("tts").grossCostKrw : null,
     },
     {
-      key: "gemini_agent_platform",
-      label: "Gemini on Agent Platform",
+      key: "vertex_ai_gemini",
+      label: BILLING_CATEGORY_LABELS.vertex_ai_gemini,
       category: "ai",
       usage: usageAmountByKind.liveSec + usageAmountByKind.llmTokenIn + usageAmountByKind.llmTokenOut,
       usageUnit: "mixed",
-      grossKrw: actualTriplet("gemini_agent_platform").grossCostKrw,
-      creditKrw: actualTriplet("gemini_agent_platform").creditKrw,
-      netKrw: actualTriplet("gemini_agent_platform").netCostKrw,
-      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("gemini_agent_platform").netCostKrw),
-      estimateKrw: null, // 제품 단위(Live/LLM)로 임의 배분하지 않음 — 아래 estimateCost 섹션에서 별도 참고치로만 제공
-      varianceKrw: null,
-      confirmedCostKrw: gcpConfigured ? actualTriplet("gemini_agent_platform").netCostKrw : 0,
+      grossKrw: actualTriplet("vertex_ai_gemini").grossCostKrw,
+      creditKrw: actualTriplet("vertex_ai_gemini").creditKrw,
+      netKrw: actualTriplet("vertex_ai_gemini").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("vertex_ai_gemini").netCostKrw),
+      estimateKrw: totalsByKind.llm,
+      varianceKrw: gcpConfigured ? actualTriplet("vertex_ai_gemini").grossCostKrw - totalsByKind.llm : null,
+      confirmedCostKrw: gcpConfigured ? actualTriplet("vertex_ai_gemini").netCostKrw : 0,
       ourEstimateKrw: totalsByKind.live_audio + totalsByKind.llm,
-      gcpActualKrw: gcpConfigured ? actualTriplet("gemini_agent_platform").grossCostKrw : null,
-      note: "SKU 기준 실제값(모델별 입력/출력 오디오·텍스트 세부는 geminiUsageDimensions 참고) — Live/LLM 제품 단위로 임의 배분하지 않음",
+      gcpActualKrw: gcpConfigured ? actualTriplet("vertex_ai_gemini").grossCostKrw : null,
+      note: "모델 버전과 무관한 Gemini text/prediction SKU family 기준",
     },
     {
-      key: "agent_platform_model_garden",
-      label: "Agent Platform Model Garden",
+      key: "vertex_ai_embeddings",
+      label: BILLING_CATEGORY_LABELS.vertex_ai_embeddings,
       category: "ai",
-      usage: 0,
-      usageUnit: "mixed",
-      grossKrw: actualTriplet("agent_platform_model_garden").grossCostKrw,
-      creditKrw: actualTriplet("agent_platform_model_garden").creditKrw,
-      netKrw: actualTriplet("agent_platform_model_garden").netCostKrw,
-      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("agent_platform_model_garden").netCostKrw),
+      usage: usageAmountByKind.embeddingRequests,
+      usageUnit: "requests",
+      grossKrw: actualTriplet("vertex_ai_embeddings").grossCostKrw,
+      creditKrw: actualTriplet("vertex_ai_embeddings").creditKrw,
+      netKrw: actualTriplet("vertex_ai_embeddings").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("vertex_ai_embeddings").netCostKrw),
       estimateKrw: null,
       varianceKrw: null,
-      confirmedCostKrw: gcpConfigured ? actualTriplet("agent_platform_model_garden").netCostKrw : 0,
+      confirmedCostKrw: gcpConfigured ? actualTriplet("vertex_ai_embeddings").netCostKrw : 0,
       ourEstimateKrw: 0,
-      gcpActualKrw: gcpConfigured ? actualTriplet("agent_platform_model_garden").grossCostKrw : null,
-      note: "Gemini 3.1 계열(Model Garden) SKU — 내부 추정 모델 없음",
+      gcpActualKrw: gcpConfigured ? actualTriplet("vertex_ai_embeddings").grossCostKrw : null,
+      note: "호출 성공 건만 내부 사용량에 기록하며 원문은 저장하지 않음",
+    },
+    {
+      key: "live_realtime_audio",
+      label: BILLING_CATEGORY_LABELS.live_realtime_audio,
+      category: "ai",
+      usage: usageAmountByKind.liveSec,
+      usageUnit: "sec",
+      grossKrw: actualTriplet("live_realtime_audio").grossCostKrw,
+      creditKrw: actualTriplet("live_realtime_audio").creditKrw,
+      netKrw: actualTriplet("live_realtime_audio").netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet("live_realtime_audio").netCostKrw),
+      estimateKrw: totalsByKind.live_audio,
+      varianceKrw: gcpConfigured ? actualTriplet("live_realtime_audio").grossCostKrw - totalsByKind.live_audio : null,
+      confirmedCostKrw: gcpConfigured ? actualTriplet("live_realtime_audio").netCostKrw : totalsByKind.live_audio,
+      ourEstimateKrw: totalsByKind.live_audio,
+      gcpActualKrw: gcpConfigured ? actualTriplet("live_realtime_audio").grossCostKrw : null,
+      note: "Gemini Live/Realtime audio SKU family 기준",
     },
     {
       key: "vercel",
@@ -484,6 +517,23 @@ export async function GET(req: NextRequest) {
       gcpActualKrw: gcpConfigured ? actualTriplet("cloud_storage").grossCostKrw : null,
       note: gcpConfigured ? "BigQuery 실청구(크레딧 반영)" : "BigQuery 미설정",
     },
+    ...(["cloud_logging", "bigquery", "artifact_registry", "secret_manager", "other"] as BillingCategory[]).map((key) => ({
+      key,
+      label: BILLING_CATEGORY_LABELS[key],
+      category: "infra" as const,
+      usage: 0,
+      usageUnit: "mixed",
+      grossKrw: actualTriplet(key).grossCostKrw,
+      creditKrw: actualTriplet(key).creditKrw,
+      netKrw: actualTriplet(key).netCostKrw,
+      monthEndProjectionKrw: projectToMonthEnd(actualTriplet(key).netCostKrw),
+      estimateKrw: null,
+      varianceKrw: null,
+      confirmedCostKrw: gcpConfigured ? actualTriplet(key).netCostKrw : 0,
+      ourEstimateKrw: 0,
+      gcpActualKrw: gcpConfigured ? actualTriplet(key).grossCostKrw : null,
+      note: key === "other" ? "신규/알 수 없는 Service·SKU를 숨기지 않고 유지" : "BigQuery 실청구",
+    })),
   ];
   const breakdownTotal = rawBreakdown.reduce((s, i) => s + i.confirmedCostKrw, 0);
   const costBreakdown = rawBreakdown
@@ -491,7 +541,7 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => b.confirmedCostKrw - a.confirmedCostKrw);
 
   // ── Gemini 사용형태별(모델·입력 오디오·출력 오디오·텍스트 입력·텍스트 출력) SKU 실제 원가 매핑 ──
-  // gemini_agent_platform + agent_platform_model_garden 두 카테고리를 합쳐 오디오/텍스트
+  // Gemini text와 Live/Realtime 카테고리의 SKU를 사용 형태 차원으로 함께 집계한다.
   // 입출력 차원으로 재집계한다(제품 단위 Live/LLM 임의 배분이 아니라 SKU 문자열 기준).
   const geminiDimensions: Record<GeminiUsageDimension, { grossKrw: number; creditKrw: number; netKrw: number }> = {
     input_audio: { grossKrw: 0, creditKrw: 0, netKrw: 0 },
@@ -502,7 +552,7 @@ export async function GET(req: NextRequest) {
   };
   if (gcpConfigured) {
     for (const row of gcpBilling.skuRows) {
-      if (row.category !== "gemini_agent_platform" && row.category !== "agent_platform_model_garden") continue;
+      if (row.category !== "vertex_ai_gemini" && row.category !== "live_realtime_audio") continue;
       const dim = row.geminiDimension ?? "other";
       geminiDimensions[dim].grossKrw += row.cost.grossCostKrw;
       geminiDimensions[dim].creditKrw += row.cost.creditKrw;
@@ -515,17 +565,21 @@ export async function GET(req: NextRequest) {
     configured: gcpConfigured,
     error: gcpBilling.error ?? null,
     dataCutoffDate: gcpBilling.dataCutoffDate,
+    latestDataAt: gcpBilling.latestDataAt,
+    latestDataAtKst: formatKstDateTime(gcpBilling.latestDataAt),
+    projectScope: gcpBilling.projectScope,
     grossKrw: gcpBilling.total.grossCostKrw,
     creditKrw: gcpBilling.total.creditKrw,
     netKrw: gcpBilling.total.netCostKrw,
     byCategory: gcpBilling.totalsByCategory,
+    skuRows: gcpBilling.skuRows,
     geminiUsageDimensions: geminiDimensions,
     unclassified: {
       count: gcpBilling.unclassified.count,
       services: gcpBilling.unclassified.services,
       grossKrw: gcpBilling.unclassified.cost.grossCostKrw,
       ratePct: gcpBilling.unclassified.ratePct,
-      warning: gcpBilling.unclassified.ratePct > 1,
+      warning: gcpBilling.unclassified.ratePct > 1 || gcpBilling.unclassified.cost.grossCostKrw >= 100,
     },
   };
 
@@ -535,30 +589,31 @@ export async function GET(req: NextRequest) {
     tts: totalsByKind.tts,
     live_audio: totalsByKind.live_audio,
     llm: totalsByKind.llm,
+    embedding: totalsByKind.embedding,
     cloud_run: 0,
     totalKrw: aiCostTotal,
     note: "로컬 usage_events 기반 제품 단위 추정치 — 실제 청구액이 아님(actualCost 참고).",
   };
 
-  // ── 실제 vs 추정 오차 검증(대표님 검증치: 차이 20,023원 / 과소추정률 79.6% / 배수 4.91배) ──
-  // claude-review 지적: actualGrandGross는 GCP 전체(AI 4종 + Cloud Run + Cloud Storage
-  // 실제값 gross) 합계이고 aiCostTotal은 usage_events 기반 "AI만"의 로컬 추정치라 두
-  // 스코프가 다르다 — 하지만 이는 의도된 설계다(단순 스코프 버그 아님). 대표님이 직접
-  // 검증한 20,023원/79.6%/4.91배는 정확히 "GCP 전체 실제 gross(25,142원)" 대
-  // "관리자 자체 추정 총액(5,119원, Cloud Run 추정 0원 포함)"을 비교한 결과이며, AI만
-  // 놓고 비교하면 이 정확한 검증치와 어긋난다(Cloud Run+Storage分 777원, 약 3.9%p
-  // 차이). 즉 이 필드는 "AI 원가 오차"가 아니라 "회사 전체 GCP 비용을 로컬 추정이
-  // 얼마나 과소평가했는가"를 보여주는 지표로 의도했다.
-  const actualGrandGross = gcpConfigured ? gcpBilling.total.grossCostKrw : null;
-  const reconciliation = actualGrandGross == null
+  // 내부 추정 정확도는 usage_events와 직접 비교 가능한 STT/TTS/Gemini text/Live만 사용한다.
+  const comparableActualGross = gcpConfigured
+    ? (["stt", "tts", "vertex_ai_gemini", "live_realtime_audio"] as BillingCategory[])
+        .reduce((sum, category) => sum + gcpBilling.totalsByCategory[category].grossCostKrw, 0)
+    : null;
+  const comparableEstimate = totalsByKind.stt + totalsByKind.tts + totalsByKind.llm + totalsByKind.live_audio;
+  const coveragePct = gcpConfigured && gcpBilling.total.grossCostKrw > 0 && comparableActualGross != null
+    ? (comparableActualGross / gcpBilling.total.grossCostKrw) * 100
+    : 0;
+  const reconciliation = comparableActualGross == null
     ? null
     : {
-        actualGrossKrw: actualGrandGross,
-        estimateKrw: aiCostTotal,
-        differenceKrw: actualGrandGross - aiCostTotal,
-        underestimationRatePct: actualGrandGross > 0 ? ((actualGrandGross - aiCostTotal) / actualGrandGross) * 100 : 0,
-        multiplier: aiCostTotal > 0 ? actualGrandGross / aiCostTotal : null,
-        warning: actualGrandGross > 0 && Math.abs(actualGrandGross - aiCostTotal) / actualGrandGross > 0.1,
+        actualGrossKrw: comparableActualGross,
+        estimateKrw: comparableEstimate,
+        differenceKrw: comparableActualGross - comparableEstimate,
+        underestimationRatePct: comparableActualGross > 0 ? ((comparableActualGross - comparableEstimate) / comparableActualGross) * 100 : 0,
+        multiplier: comparableEstimate > 0 ? comparableActualGross / comparableEstimate : null,
+        coveragePct,
+        warning: coveragePct >= 50 && comparableActualGross > 0 && Math.abs(comparableActualGross - comparableEstimate) / comparableActualGross > 0.1,
       };
 
   // ── 회사 전체 원가(companyWideCost) — 고정비(Vercel+Supabase) + GCP 실제값 ──
@@ -615,7 +670,17 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     period,
-    range: { from: from.toISOString(), to: to.toISOString() },
+    range: {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      startDate: periodRange.startDate,
+      endDate: periodRange.endDate,
+      timezone: periodRange.timezone,
+      fromKst: formatKstDateTime(from),
+      toKst: formatKstDateTime(to),
+    },
+    environment: process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod" ? "Production" : "Development",
+    billingBasis: "Google Cloud Billing Export",
     scope: filterChildId
       ? { mode: "child", childId: filterChildId, childName: selectedChild?.name ?? "(알 수 없음)", conversationMode: filterMode ?? (filterUnclassified ? UNCLASSIFIED_MODE : null) }
       : { mode: "all", conversationMode: filterMode ?? (filterUnclassified ? UNCLASSIFIED_MODE : null) },
@@ -662,6 +727,13 @@ export async function GET(req: NextRequest) {
     costBreakdown,
     actualCost,
     estimateCost,
+    internalUsage: {
+      stt: { seconds: usageAmountByKind.sttSec, minutes: usageAmountByKind.sttSec / 60, eventCount: countsByKind.stt },
+      tts: { characters: usageAmountByKind.ttsChars, eventCount: countsByKind.tts },
+      llm: { inputTokens: usageAmountByKind.llmTokenIn, outputTokens: usageAmountByKind.llmTokenOut, eventCount: countsByKind.llm },
+      liveAudio: { seconds: usageAmountByKind.liveSec, minutes: usageAmountByKind.liveSec / 60, eventCount: countsByKind.live_audio },
+      embeddings: { requestCount: usageAmountByKind.embeddingRequests, inputCount: usageAmountByKind.embeddingInputs, eventCount: countsByKind.embedding },
+    },
     reconciliation,
     companyWideCost,
     topUsersByService,
@@ -671,6 +743,7 @@ export async function GET(req: NextRequest) {
       ttsCount: countsByKind.tts,
       liveCount: countsByKind.live_audio,
       llmCount: countsByKind.llm,
+      embeddingCount: countsByKind.embedding,
     },
     perChildProfitability: perChild,
     gcpBillingError: gcpBilling.error ?? null,
