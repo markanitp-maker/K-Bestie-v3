@@ -20,8 +20,7 @@ function initWebPush() {
 export async function sendPushNotification(subscription: webPush.PushSubscription, payload: any) {
   initWebPush();
   if (!initialized) {
-    console.error('WebPush not initialized (missing VAPID keys)');
-    return;
+    throw new Error('WEB_PUSH_NOT_CONFIGURED');
   }
   
   try {
@@ -30,4 +29,30 @@ export async function sendPushNotification(subscription: webPush.PushSubscriptio
     console.error('Failed to send push notification', err);
     throw err;
   }
+}
+
+export function getPushErrorStatus(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) return null;
+  const statusCode = (error as { statusCode?: unknown }).statusCode;
+  return typeof statusCode === "number" ? statusCode : null;
+}
+
+export async function sendPushNotificationWithRetry(
+  subscription: webPush.PushSubscription,
+  payload: unknown,
+  maxAttempts = 2
+) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await sendPushNotification(subscription, payload);
+      return attempt;
+    } catch (error) {
+      lastError = error;
+      const status = getPushErrorStatus(error);
+      if (status === 404 || status === 410 || attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)));
+    }
+  }
+  throw lastError;
 }

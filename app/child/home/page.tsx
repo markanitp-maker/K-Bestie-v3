@@ -10,7 +10,8 @@ import MissionOnboardingCard from "@/components/events/MissionOnboardingCard";
 import AttendanceRouletteLoginModal from "@/components/events/AttendanceRouletteLoginModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { appendVocative } from "@/lib/utils/koreanParticle";
-import { usePushSubscription } from "@/lib/notifications/usePushSubscription";
+import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
+import { revokeCurrentPushInstallation } from "@/lib/notifications/usePushSubscription";
 
 // 이 프로젝트는 아이콘 라이브러리(lucide-react/heroicons)를 설치하지 않고 인라인
 // SVG·이모지만 사용하는 관례라(package.json에 둘 다 없음), 로그아웃/닫기 아이콘 2개만
@@ -62,29 +63,6 @@ export default function ChildHomePage() {
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [rouletteGateResolved, setRouletteGateResolved] = useState(false);
   const handleRouletteGateResolved = useCallback(() => setRouletteGateResolved(true), []);
-
-  // Notification Banner
-  const { requestAndSubscribe } = usePushSubscription();
-  const [notiStatus, setNotiStatus] = useState<string | null>(null);
-  
-  useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window) {
-      setNotiStatus(Notification.permission);
-    }
-  }, []);
-
-  const handleNotiClick = async () => {
-    if (notiStatus === "denied") {
-      alert("브라우저 및 기기 설정에서 알림 권한을 허용해주세요.");
-      return;
-    }
-    const res = await requestAndSubscribe();
-    if (res === "granted") {
-      setNotiStatus("granted");
-    } else {
-      alert("알림 권한 설정이 필요합니다.");
-    }
-  };
 
   useEffect(() => {
     // 1. /api/child/me를 호출하여 세션 기반의 아이 프로필 확인
@@ -203,6 +181,7 @@ export default function ChildHomePage() {
       setIsLogoutProcessing(true);
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
+      await revokeCurrentPushInstallation();
       await supabase.auth.signOut();
       localStorage.removeItem("k_child_id");
       localStorage.removeItem("login_role");
@@ -283,6 +262,7 @@ export default function ChildHomePage() {
             onGateResolved={handleRouletteGateResolved}
           />
         )}
+        <NotificationOnboarding role="child" />
         {rouletteGateResolved && <AppEventAnnouncementModal />}
         {isEventModalOpen && <AppEventAnnouncementModal manualOpen onClose={() => setIsEventModalOpen(false)} />}
 
@@ -434,20 +414,6 @@ export default function ChildHomePage() {
           </div>
         )}
 
-        {/* Notification Banner */}
-        {!showPwaBanner && isStandalone && notiStatus && notiStatus !== "granted" && (
-          <div className="sticky bottom-0 w-full bg-[#FFF9F2] border-t border-black/5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] p-4 flex items-center justify-between z-50 mt-auto pb-[env(safe-area-inset-bottom,16px)]">
-            <p className="text-sm font-semibold text-[var(--color-k-navy)] px-2">미션 시작 알림 받기</p>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={handleNotiClick}
-                className="h-[44px] px-5 rounded-full bg-[var(--color-k-orange)] text-white font-bold text-[15px] shadow-sm active:scale-95 transition-transform"
-              >
-                알림 켜기
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <KChatbotWidget appSurface="child" containerMaxWidthPx={430} />

@@ -15,6 +15,7 @@ import { TodayConversationGuide } from "./components/TodayConversationGuide";
 import { InsightGrid } from "./components/InsightGrid";
 import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementModal";
 import { ParentMissionEventStatus } from "@/components/events/ParentMissionEventStatus";
+import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
 
 interface Report {
   id: string;
@@ -436,6 +437,7 @@ export default function ParentHomePage() {
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
           <ParentHomeHeader />
+          <NotificationOnboarding role="parent" />
           <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
             <SkeletonBox className="w-28 h-5 mb-3" />
             <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3`}>
@@ -456,6 +458,7 @@ export default function ParentHomePage() {
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
           <ParentHomeHeader />
+          <NotificationOnboarding role="parent" />
 
           {viewState === "select" && (
             <div className="flex-1 min-h-0 overflow-y-auto px-5 py-10 flex flex-col items-center text-center gap-6">
@@ -671,6 +674,7 @@ export default function ParentHomePage() {
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
           <ParentHomeHeader />
+          <NotificationOnboarding role="parent" />
           <div className="flex-1 min-h-0 overflow-y-auto px-5 py-14 flex flex-col items-center text-center gap-6">
             <p className="text-5xl">🧒</p>
             <div>
@@ -701,6 +705,7 @@ export default function ParentHomePage() {
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
         <AppEventAnnouncementModal />
         <ParentHomeHeader />
+        <NotificationOnboarding role="parent" />
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
           {reportLoading ? (

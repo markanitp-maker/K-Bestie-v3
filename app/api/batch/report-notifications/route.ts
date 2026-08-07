@@ -1,206 +1,61 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { sendPushNotification } from '@/lib/notifications/push';
+import { NextResponse } from "next/server";
+import { createServiceClient } from "@/lib/supabase/server";
+import { getPushErrorStatus, sendPushNotificationWithRetry } from "@/lib/notifications/push";
 
-// Helper to get KST Date object
-function getKstDate() {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000);
-}
-
-function kstToday() {
-  return getKstDate().toISOString().slice(0, 10);
-}
-
-function kstYesterday() {
-  const d = getKstDate();
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-function getWeekBounds(targetDate: string) {
-  const d = new Date(`${targetDate}T12:00:00Z`);
-  const dow = d.getUTCDay();
-  const diffToMon = dow === 0 ? -6 : 1 - dow;
-  const mon = new Date(d);
-  mon.setUTCDate(d.getUTCDate() + diffToMon);
-  const sun = new Date(mon);
-  sun.setUTCDate(mon.getUTCDate() + 6);
-  const fmt = (dt: Date) => dt.toISOString().slice(0, 10);
-  return { weekStart: fmt(mon), weekEnd: fmt(sun) };
-}
+export const runtime = "nodejs";
+const kstDate = (offsetDays = 0) => {
+  const date = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+};
 
 export async function GET(req: Request) {
-  // Authorization check (Vercel Cron Secret or Supabase Batch Secret)
-  const authHeader = req.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET || process.env.BATCH_SECRET;
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const secret = process.env.CRON_SECRET || process.env.BATCH_SECRET;
+  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const db = createServiceClient();
+  const yesterday = kstDate(-1);
+  const results = { sent: 0, skippedNoReport: 0, skippedAlreadySent: 0, failed: 0 };
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_DEV_URL!;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_DEV_SERVICE_ROLE_KEY!;
-  const db = createClient(supabaseUrl, supabaseKey);
+  const { data: parents, error: parentsError } = await db.from("parents").select("id").eq("report_push_enabled", true).eq("account_status", "ACTIVE");
+  if (parentsError) return NextResponse.json({ error: "Parent lookup failed" }, { status: 500 });
 
-  const today = kstToday();
-  const yesterday = kstYesterday();
-  const { weekStart } = getWeekBounds(today);
+  for (const parent of parents ?? []) {
+    const { data: preference } = await db.from("notification_preferences").select("parent_report_enabled").eq("user_id", parent.id).eq("role", "parent").eq("scope_key", "parent").maybeSingle();
+    if (preference && !preference.parent_report_enabled) continue;
 
-  try {
-    // 1. Get all active parents with push enabled
-    const { data: parents, error: parentsErr } = await db
-      .from('parents')
-      .select('id, report_push_enabled')
-      .eq('report_push_enabled', true);
+    const { data: memberships } = await db.from("family_members").select("family_id").eq("user_id", parent.id).in("role", ["parent", "owner_parent"]).is("deleted_at", null);
+    const familyIds = [...new Set((memberships ?? []).map((row) => row.family_id))];
+    if (!familyIds.length) continue;
+    const { data: children } = await db.from("child_profiles").select("id,name").in("family_id", familyIds);
+    const childIds = (children ?? []).map((row) => row.id);
+    if (!childIds.length) continue;
+    const { data: reports } = await db.from("daily_reports").select("id,child_id").in("child_id", childIds).eq("business_date", yesterday).is("deleted_at", null);
+    if (!reports?.length) { results.skippedNoReport++; continue; }
 
-    if (parentsErr) throw new Error(`Parents query failed: ${parentsErr.message}`);
-    if (!parents || parents.length === 0) {
-      return NextResponse.json({ message: 'No parents with push enabled' });
-    }
+    const { data: existing } = await db.from("report_notification_logs").select("id,status,attempt_count").eq("parent_id", parent.id).eq("notification_date", yesterday).eq("notification_type", "DAILY_REPORT").eq("report_type", "daily").maybeSingle();
+    if (existing?.status === "sent") { results.skippedAlreadySent++; continue; }
+    const log = { parent_id: parent.id, notification_type: "DAILY_REPORT", notification_date: yesterday, report_type: "daily", status: "pending", attempt_count: (existing?.attempt_count ?? 0) + 1, last_error_code: null, updated_at: new Date().toISOString() };
+    await db.from("report_notification_logs").upsert(log, { onConflict: "parent_id,notification_date,notification_type,report_type" });
 
-    const results = {
-      sent: 0,
-      skipped_no_data: 0,
-      skipped_already_sent: 0,
-      errors: [] as any[]
-    };
-
-    for (const parent of parents) {
+    const reportChildIds = new Set(reports.map((row) => row.child_id));
+    const names = (children ?? []).filter((row) => reportChildIds.has(row.id)).map((row) => row.name);
+    const title = names.length === 1 ? `${names[0]}의 새 리포트가 도착했어요` : "아이들의 새 리포트가 도착했어요";
+    const url = reports.length === 1 ? `/parent/report/${reports[0].id}` : "/parent/report";
+    const { data: subscriptions } = await db.from("push_subscriptions").select("id,endpoint,p256dh,auth").eq("user_id", parent.id).eq("role", "parent").eq("is_active", true).eq("permission_status", "granted");
+    let successful = 0;
+    let lastError = "NO_ACTIVE_SUBSCRIPTION";
+    for (const subscription of subscriptions ?? []) {
       try {
-        // 2. Get children connected to this parent
-        const { data: familyMembers, error: fmErr } = await db
-          .from('family_members')
-          .select('family_id')
-          .eq('user_id', parent.id)
-          .in('role', ['parent', 'owner_parent']);
-          
-        if (fmErr) throw new Error(fmErr.message);
-        if (!familyMembers || familyMembers.length === 0) continue;
-
-        const familyIds = familyMembers.map((fm: any) => fm.family_id);
-
-        const { data: children, error: childErr } = await db
-          .from('child_profiles')
-          .select('id, name')
-          .in('family_id', familyIds);
-
-        if (childErr) throw new Error(childErr.message);
-        if (!children || children.length === 0) continue;
-
-        const childIds = children.map((c: any) => c.id);
-
-        // 3. Check for Weekly Reports first
-        const { data: weeklyReports, error: weeklyErr } = await db
-          .from('weekly_summaries')
-          .select('id, child_id')
-          .in('child_id', childIds)
-          .eq('week_start', weekStart);
-
-        if (weeklyErr) throw new Error(weeklyErr.message);
-
-        // 4. Check for Daily Reports
-        const { data: dailyReports, error: dailyErr } = await db
-          .from('daily_reports')
-          .select('id, child_id')
-          .in('child_id', childIds)
-          .eq('business_date', yesterday)
-          .is('deleted_at', null);
-
-        if (dailyErr) throw new Error(dailyErr.message);
-
-        const hasWeekly = weeklyReports && weeklyReports.length > 0;
-        const hasDaily = dailyReports && dailyReports.length > 0;
-
-        if (!hasWeekly && !hasDaily) {
-          results.skipped_no_data++;
-          continue;
-        }
-
-        const reportType = hasWeekly ? 'weekly' : 'daily';
-        const targetDate = hasWeekly ? weekStart : yesterday;
-        const reportsToUse = hasWeekly ? weeklyReports : dailyReports;
-
-        // 5. Check idempotency (already sent?)
-        const { data: existingLog, error: logErr } = await db
-          .from('report_notification_logs')
-          .select('id')
-          .eq('parent_id', parent.id)
-          .eq('notification_date', targetDate)
-          .eq('report_type', reportType)
-          .maybeSingle();
-
-        if (logErr) throw new Error(logErr.message);
-        if (existingLog) {
-          results.skipped_already_sent++;
-          continue;
-        }
-
-        // 6. Format push message
-        let title = '';
-        let body = '';
-        const url = '/parent/reports';
-
-        const validChildren = children.filter((c: any) => reportsToUse.some((r: any) => r.child_id === c.id));
-        const names = validChildren.map((c: any) => c.name);
-
-        if (names.length > 1) {
-          title = '아이들의 새로운 리포트가 도착했어요.';
-          body = hasWeekly ? '지난 한 주의 변화와 관심사를 확인해 보세요.' : '어제 아이의 이야기와 오늘 나눌 대화를 확인해 보세요.';
-        } else if (names.length === 1) {
-          title = `${names[0]}의 ${hasWeekly ? '주간' : '새'} 리포트가 도착했어요`;
-          body = hasWeekly ? '지난 한 주의 변화와 관심사를 확인해 보세요.' : '어제 아이의 이야기와 오늘 나눌 대화를 확인해 보세요.';
-        } else {
-          continue; // Should not happen
-        }
-
-        // 7. Get push subscriptions
-        const { data: subs, error: subErr } = await db
-          .from('push_subscriptions')
-          .select('*')
-          .eq('user_id', parent.id);
-
-        if (subErr) throw new Error(subErr.message);
-        
-        let sentPush = false;
-        if (subs && subs.length > 0) {
-          for (const sub of subs) {
-            try {
-              const subscription = {
-                endpoint: sub.endpoint,
-                keys: {
-                  p256dh: sub.p256dh,
-                  auth: sub.auth
-                }
-              };
-              await sendPushNotification(subscription, { title, body, url });
-              sentPush = true;
-            } catch (pushErr) {
-              console.error(`Push failed for parent ${parent.id}`, pushErr);
-              // Cleanup invalid subscriptions if necessary (e.g. 410 Gone)
-            }
-          }
-        }
-
-        // 8. Log the notification (even if push fails, to avoid retrying infinitely for a bad token)
-        // Wait, if push completely fails, we might want to retry. The spec says "푸시 실패: 리포트는 생성됐지만 푸시 발송만 실패한 경우: 관리자 로그에 발송 실패 기록. 성공 기록 전에도 중복 알림이 생성되지 않도록 상태 관리"
-        // Let's insert into logs anyway to prevent spam.
-        await db.from('report_notification_logs').insert({
-          parent_id: parent.id,
-          notification_type: hasWeekly ? 'WEEKLY_REPORT' : 'DAILY_REPORT',
-          notification_date: targetDate,
-          report_type: reportType
-        });
-
-        if (sentPush) results.sent++;
-
-      } catch (err) {
-        results.errors.push({ parentId: parent.id, error: String(err) });
+        await sendPushNotificationWithRetry({ endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } }, { title, body: "어제의 이야기와 오늘 나눌 대화를 확인해 보세요.", url });
+        successful++;
+      } catch (error) {
+        const status = getPushErrorStatus(error);
+        lastError = status ? `PUSH_${status}` : "PUSH_FAILED";
+        if (status === 404 || status === 410) await db.from("push_subscriptions").update({ is_active: false, revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", subscription.id);
       }
     }
-
-    return NextResponse.json({ ok: true, results });
-
-  } catch (error) {
-    console.error('[8am-notification-batch] Failed:', error);
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    await db.from("report_notification_logs").update({ status: successful ? "sent" : "failed", last_error_code: successful ? null : lastError, sent_at: successful ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("parent_id", parent.id).eq("notification_date", yesterday).eq("notification_type", "DAILY_REPORT").eq("report_type", "daily");
+    if (successful) results.sent++; else results.failed++;
   }
+  return NextResponse.json({ ok: true, results });
 }

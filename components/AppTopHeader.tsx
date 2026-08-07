@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { LogOut } from "lucide-react";
+import { revokeCurrentPushInstallation } from "@/lib/notifications/usePushSubscription";
 
 export interface AppTopHeaderProps {
   title: string;
@@ -19,6 +20,7 @@ export function AppTopHeader({ title, onBack, backHref = "/child/home", backLabe
       setIsLogoutProcessing(true);
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
+      await revokeCurrentPushInstallation();
       await supabase.auth.signOut();
       localStorage.removeItem("k_child_id");
       localStorage.removeItem("login_role");

@@ -1,59 +1,130 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-function urlBase64ToUint8Array(base64String: string): BufferSource {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = atob(base64);
-  const array = Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
-  return array.buffer as ArrayBuffer;
+export type PushPermission = NotificationPermission | "unsupported";
+export type PushServerStatus = {
+  role: "parent" | "child";
+  onboardingCompleted: boolean;
+  isExistingUser: boolean;
+  active: boolean;
+  parentReportEnabled: boolean;
+  missionStartEnabled: boolean;
+};
+
+function urlBase64ToUint8Array(value: string): BufferSource {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const raw = atob((value + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0))).buffer as ArrayBuffer;
 }
 
-async function subscribeAndSend(): Promise<boolean> {
+function getInstallationId() {
+  const key = "kbestie_push_installation_id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
+export async function revokeCurrentPushInstallation() {
+  if (typeof window === "undefined") return;
+  const installationId = localStorage.getItem("kbestie_push_installation_id");
+  if (!installationId) return;
+  await fetch("/api/notifications/subscribe", {
+    method: "DELETE", headers: { "Content-Type": "application/json" }, keepalive: true,
+    body: JSON.stringify({ installationId }),
+  }).catch(() => undefined);
+}
+
+function clientMetadata() {
+  const ua = navigator.userAgent;
+  return {
+    platform: /iPad|iPhone|iPod/.test(ua) ? "ios" : /Android/.test(ua) ? "android" : "desktop",
+    browser: /Edg\//.test(ua) ? "edge" : /CriOS|Chrome\//.test(ua) ? "chrome" : /Safari\//.test(ua) ? "safari" : "other",
+  };
+}
+
+async function registerSubscription(installationId: string): Promise<boolean> {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   if (!publicKey) return false;
-
   const registration = await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    });
+    subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
   }
-
   const json = subscription.toJSON();
-  const res = await fetch("/api/notifications/subscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),
+  const response = await fetch("/api/notifications/subscribe", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys, installationId, deviceId: installationId, ...clientMetadata() }),
   });
-  return res.ok;
+  return response.ok;
 }
 
-/**
- * 부모 홈 화면 등에서 호출한다. 이미 알림 권한이 허용된 경우에만 조용히
- * 구독을 등록/갱신한다(권한 요청 팝업을 임의로 띄우지 않음). 권한 요청은
- * requestAndSubscribe()를 명시적 사용자 액션(버튼 클릭 등)에 연결해 호출한다.
- */
 export function usePushSubscription() {
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    if (Notification.permission !== "granted") return;
-    subscribeAndSend().catch((err) => console.error("[usePushSubscription] silent resubscribe failed", err));
-  }, []);
+  const [permission, setPermission] = useState<PushPermission>("default");
+  const [status, setStatus] = useState<PushServerStatus | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const requestAndSubscribe = useCallback(async (): Promise<"granted" | "denied" | "unsupported"> => {
-    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-      return "unsupported";
+  const refresh = useCallback(async () => {
+    if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPermission("unsupported");
+      await revokeCurrentPushInstallation();
+      setLoading(false); return;
     }
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return "denied";
-    const ok = await subscribeAndSend().catch(() => false);
-    return ok ? "granted" : "denied";
+    const current = Notification.permission;
+    setPermission(current);
+    const installationId = getInstallationId();
+    const response = await fetch(`/api/notifications/subscribe?installationId=${encodeURIComponent(installationId)}`, { cache: "no-store" });
+    let nextStatus: PushServerStatus | null = null;
+    if (response.ok) {
+      nextStatus = await response.json();
+      setStatus(nextStatus);
+    }
+    const preferenceEnabled = !nextStatus || (nextStatus.role === "parent" ? nextStatus.parentReportEnabled : nextStatus.missionStartEnabled);
+    if (current === "granted" && preferenceEnabled) await registerSubscription(installationId).catch(() => false);
+    if (current !== "granted") await revokeCurrentPushInstallation();
+    setLoading(false);
   }, []);
 
-  return { requestAndSubscribe };
+  useEffect(() => {
+    refresh().catch(() => setLoading(false));
+    const onFocus = () => refresh().catch(() => undefined);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onFocus); };
+  }, [refresh]);
+
+  // This function must be called directly from a user click. Permission is requested before any await.
+  const requestAndSubscribe = useCallback(async (): Promise<"granted" | "denied" | "unsupported" | "error"> => {
+    if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+    if (Notification.permission === "denied") { setPermission("denied"); return "denied"; }
+    const result = await Notification.requestPermission();
+    setPermission(result);
+    if (result !== "granted") return "denied";
+    const ok = await registerSubscription(getInstallationId()).catch(() => false);
+    if (ok) await refresh();
+    return ok ? "granted" : "error";
+  }, [refresh]);
+
+  const defer = useCallback(async () => {
+    await fetch("/api/notifications/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "defer" }) });
+    setStatus((current) => current ? { ...current, onboardingCompleted: true } : current);
+  }, []);
+
+  const setEnabled = useCallback(async (enabled: boolean) => {
+    if (enabled) return requestAndSubscribe();
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    await fetch("/api/notifications/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preference", enabled: false }) });
+    if (subscription) {
+      await fetch("/api/notifications/subscribe", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: subscription.endpoint, installationId: getInstallationId() }) });
+      await subscription.unsubscribe();
+    }
+    setStatus((current) => current ? { ...current, active: false, parentReportEnabled: false, missionStartEnabled: false } : current);
+    return "denied" as const;
+  }, [requestAndSubscribe]);
+
+  return { permission, status, loading, requestAndSubscribe, defer, setEnabled, refresh };
 }

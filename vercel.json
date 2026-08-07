@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/batch/report-notifications",
-      "schedule": "0 23 * * *"
+      "schedule": "0 22 * * *"
     },
     {
       "path": "/api/cron/mission-start?missionType=1",
