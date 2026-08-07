@@ -126,8 +126,10 @@ export default function AdminUsersPage() {
     const params = new URLSearchParams(window.location.search);
     const nextTab = params.get("tab");
     const nextSub = params.get("sub");
+    const nextSearch = params.get("search")?.trim();
     if (nextTab === "parents" || nextTab === "children" || nextTab === "families") setTab(nextTab);
     if (["restorations", "plan-change", "approval"].includes(nextSub || "")) setSub(nextSub as SubTab);
+    if (nextSearch) { setSearch(nextSearch); setDebouncedSearch(nextSearch); }
   }, []);
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300); return () => window.clearTimeout(timer); }, [search]);
 

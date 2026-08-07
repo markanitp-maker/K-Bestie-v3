@@ -20,7 +20,7 @@ export interface KChatbotWidgetProps {
   containerMaxWidthPx?: number;
 }
 
-type Category = "voc" | "feature" | "bug";
+type Category = "inquiry" | "suggestion" | "bug";
 
 /** 056: 공식 FAQ 페이지 URL. 공개 링크라 NEXT_PUBLIC_ 접두어가 규약상 적합하다(비밀값 아님).
  *  값이 없으면 URL을 임의로 만들지 않고 모달의 이동 버튼을 비활성으로 렌더링한다. */
@@ -41,7 +41,7 @@ type ButtonPosition = { edge: "left" | "right"; yRatio: number };
 
 export default function KChatbotWidget({ appSurface, topOffsetPx = 56, containerMaxWidthPx }: KChatbotWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [category, setCategory] = useState<Category>("voc");
+  const [category, setCategory] = useState<Category>("inquiry");
   const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -280,7 +280,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
   };
 
   const resetForm = () => {
-    setCategory("voc");
+    setCategory("inquiry");
     setSubject("");
     setContent("");
     setResultMessage(null);
@@ -427,7 +427,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
       return;
     }
 
-    if (category !== "voc" && subject.trim().length < 2) {
+    if (category !== "inquiry" && subject.trim().length < 2) {
       alert(appSurface === "child" ? "제목을 2글자 이상 적어줘!" : "제목을 2자 이상 입력해 주세요.");
       return;
     }
@@ -452,7 +452,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           category,
-          subject: category === "voc" ? "" : subject,
+          subject: category === "inquiry" ? "" : subject,
           content,
           current_route: pathname,
           app_surface: appSurface,
@@ -654,20 +654,20 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setCategory("voc")}
+                      onClick={() => setCategory("inquiry")}
                       className={cn(
                         "flex-1 py-2 rounded-lg text-sm font-bold border transition-colors",
-                        category === "voc" ? "bg-k-navy text-white border-k-navy" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        category === "inquiry" ? "bg-k-navy text-white border-k-navy" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
                       )}
                     >
                       문의하기
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCategory("feature")}
+                      onClick={() => setCategory("suggestion")}
                       className={cn(
                         "flex-1 py-2 rounded-lg text-sm font-bold border transition-colors",
-                        category === "feature" ? "bg-k-navy text-white border-k-navy" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        category === "suggestion" ? "bg-k-navy text-white border-k-navy" : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
                       )}
                     >
                       건의하기
@@ -684,10 +684,10 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
                     </button>
                   </div>
 
-                  {category !== "voc" && (
+                  {category !== "inquiry" && (
                     <div className="flex flex-col gap-1.5">
                       <label className="text-sm font-bold text-gray-700">
-                        {category === "feature"
+                        {category === "suggestion"
                           ? "어떤 기능을 원하나요?"
                           : category === "bug"
                           ? "어떤 문제가 발생했나요?"
@@ -698,7 +698,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
                         placeholder={
-                          category === "feature"
+                          category === "suggestion"
                             ? (appSurface === "child" ? "케이에게 바라는 것을 짧게 적어줘." : "어떤 기능을 원하나요?")
                             : (appSurface === "child" ? "어떤 문제가 생겼어?" : "어떤 문제가 발생했나요?")
                         }
@@ -710,15 +710,15 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
 
                   <div className="flex flex-col gap-1.5 flex-1 min-h-[150px]">
                     <label className="text-sm font-bold text-gray-700">
-                      {category === "voc" ? "무엇이 궁금한가요?" : "내용"}
+                      {category === "inquiry" ? "무엇이 궁금한가요?" : "내용"}
                     </label>
                     <textarea
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
                       placeholder={
-                        category === "voc"
+                        category === "inquiry"
                           ? (appSurface === "child" ? "케이에게 궁금한 내용을 적어줘." : "문의하실 내용을 입력해 주세요.")
-                          : category === "feature"
+                          : category === "suggestion"
                           ? (appSurface === "child" ? "왜 필요하고 어떻게 되면 좋을지 알려줘." : "어떻게 바뀌면 좋을지 자세히 알려주세요.")
                           : (appSurface === "child" ? "무엇을 누르거나 말했을 때 문제가 생겼는지 알려줘." : "무엇을 하던 중 문제가 발생했는지 적어주세요.")
                       }
