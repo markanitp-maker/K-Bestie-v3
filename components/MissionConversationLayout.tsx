@@ -277,63 +277,77 @@ export function MissionConversationLayout({
           </div>
         </div>
 
-        {/* Grid Row 3: Mascot Area & Side Cards */}
-        {!isTextMode && (
-        <div className="relative z-10 flex flex-row items-center justify-center gap-[clamp(6px,2vw,12px)] px-[16px] w-full shrink-0 min-h-[140px] min-w-0 max-w-full">
-
-          {/* Left Mute Card */}
-          <button onClick={onToggleMute} disabled={isClosing} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-            <div className="w-[clamp(34px,9vw,44px)] h-[clamp(34px,9vw,44px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5">
-              {isMuted ? (
-                <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-              ) : (
-                <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-              )}
-            </div>
-            <span className="text-[clamp(15px,4vw,18px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{isMuted ? '소리 꺼짐' : '소리 켜짐'}</span>
-          </button>
-
-          {/* Mascot & Platform */}
-          <div className="relative flex flex-col items-center justify-end h-[clamp(130px,18dvh,160px)]">
-             {/* Halo */}
-             <div className="absolute top-[10%] w-[120px] h-[120px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
-             {/* Mascot */}
-             <div className="relative z-10 flex justify-center items-end pb-[clamp(16px,2.5dvh,24px)]">
-               <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={116} className="!w-[clamp(100px,29vw,130px)] !h-auto object-contain" />
+        {/* Grid Row 3: Mascot Area & Side Cards OR Text-Mode Closed-Keyboard CTA */}
+        {!isKeyboardOpen && (
+        <div className="relative w-full shrink-0 h-[clamp(135px,20dvh,155px)] transition-all duration-300 flex items-center justify-center">
+           {isTextMode ? (
+             /* isTextMode & 키보드 CLOSED: 미션 케이 위치 중앙에 시원하고 명확한 코랄 레드 #EF5350 '✕ 채팅창 닫기' pill CTA 노출 */
+             <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
+               <button
+                 onClick={onToggleTextMode}
+                 disabled={isClosing}
+                 style={{ backgroundColor: "#EF5350" }}
+                 className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30 disabled:opacity-50"
+                 aria-label="채팅창 닫기"
+               >
+                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                 <span>채팅창 닫기</span>
+               </button>
              </div>
-             {/* Platform */}
-             <div className="absolute bottom-0 w-[clamp(135px,38vw,175px)] h-[clamp(24px,4.5dvh,36px)] pointer-events-none">
-               {/* Top oval */}
-               <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
-               {/* Side cylinder */}
-               <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
-               {/* Shadow on platform */}
-               <div className="absolute top-[15%] left-[15%] w-[70%] h-[35%] bg-black/5 rounded-[100%] z-10 blur-sm" />
-             </div>
-          </div>
+           ) : (
+             /* isTextMode === false: 케이 마스코트 & Platform & 상태 카드 정상 노출 */
+             <div className="relative z-10 flex flex-row items-center justify-center gap-[clamp(6px,2vw,12px)] px-[16px] w-full shrink-0 min-h-[140px] min-w-0 max-w-full">
+               {/* Left Mute Card */}
+               <button onClick={onToggleMute} disabled={isClosing} className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                 <div className="w-[clamp(34px,9vw,44px)] h-[clamp(34px,9vw,44px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5">
+                   {isMuted ? (
+                     <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                   ) : (
+                     <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                   )}
+                 </div>
+                 <span className="text-[clamp(15px,4vw,18px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{isMuted ? '소리 꺼짐' : '소리 켜짐'}</span>
+               </button>
 
-          {/* Right State Card */}
-          <div
-            className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-w-0 min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm"
-            aria-live="polite"
-            aria-busy={entryStatus === "checking" || entryStatus === "starting" || entryStatus === "resuming"}
-          >
-             <div className="w-[clamp(34px,9vw,44px)] h-[clamp(34px,9vw,44px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5">
-               {StateIcon}
-             </div>
-             <span className="text-[clamp(15px,4vw,18px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
-          </div>
+               {/* Mascot & Platform */}
+               <div className="relative flex flex-col items-center justify-end h-[clamp(130px,18dvh,160px)]">
+                  {/* Halo */}
+                  <div className="absolute top-[10%] w-[120px] h-[120px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
+                  {/* Mascot */}
+                  <div className="relative z-10 flex justify-center items-end pb-[clamp(16px,2.5dvh,24px)]">
+                    <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={116} className="!w-[clamp(100px,29vw,130px)] !h-auto object-contain" />
+                  </div>
+                  {/* Platform */}
+                  <div className="absolute bottom-0 w-[clamp(135px,38vw,175px)] h-[clamp(24px,4.5dvh,36px)] pointer-events-none">
+                    {/* Top oval */}
+                    <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
+                    {/* Side cylinder */}
+                    <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
+                    {/* Shadow on platform */}
+                    <div className="absolute top-[15%] left-[15%] w-[70%] h-[35%] bg-black/5 rounded-[100%] z-10 blur-sm" />
+                  </div>
+               </div>
 
-          {entryStatus !== "active" && (
-            <span className="sr-only">미션을 시작한 뒤 음성 입력을 사용할 수 있습니다</span>
-          )}
+               {/* Right State Card */}
+               <div
+                 className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(72px,20vw,88px)] min-w-0 min-h-[clamp(82px,22vw,100px)] py-[10px] shadow-sm"
+                 aria-live="polite"
+                 aria-busy={entryStatus === "checking" || entryStatus === "starting" || entryStatus === "resuming"}
+               >
+                  <div className="w-[clamp(34px,9vw,44px)] h-[clamp(34px,9vw,44px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5">
+                    {StateIcon}
+                  </div>
+                  <span className="text-[clamp(15px,4vw,18px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
+               </div>
+             </div>
+           )}
         </div>
         )}
 
         {/* Grid Row 4: Bottom Area */}
         <div className="relative z-20 flex flex-col shrink-0 w-full min-w-0 max-w-full">
           {/* Auto/Manual Mode Toggles */}
-          {!isTextMode && (
+          {!isTextMode && !isKeyboardOpen && (
           <div className="flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
              <button onClick={() => onChangeMode('auto')} disabled={isClosing || entryStatus !== "active"} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
@@ -347,18 +361,18 @@ export function MissionConversationLayout({
           )}
 
           {/* Spacer between mode and mic */}
-          {!isTextMode && (
+          {!isTextMode && !isKeyboardOpen && (
           <div className="h-[clamp(20px,3dvh,28px)] w-full shrink-0" />
           )}
 
-          {/* Bottom Inputs Area */}
+          {/* Bottom Inputs Area - 미션 하단 UI 원본 100% 복원 (주황 테두리 input + 주황 52px 전송 + 흰색 52px X) */}
           <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center pb-[calc(clamp(54px,8dvh,66px)+env(safe-area-inset-bottom))]">
             {isTextMode ? (
               <div
-                className="w-full min-w-0 flex gap-2 box-border items-center"
+                className="w-full min-w-0 flex gap-2 box-border"
                 style={{
-                  paddingLeft: "max(12px, env(safe-area-inset-left))",
-                  paddingRight: "max(12px, env(safe-area-inset-right))",
+                  paddingLeft: "max(16px, env(safe-area-inset-left))",
+                  paddingRight: "max(16px, env(safe-area-inset-right))",
                 }}
               >
                 <input
@@ -371,26 +385,24 @@ export function MissionConversationLayout({
                   }}
                   placeholder="케이에게 텍스트로 답하기..."
                   disabled={isClosing || entryStatus !== "active"}
-                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-3.5 py-3 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 outline-none focus:border-[#1E293B] transition-colors disabled:opacity-50"
+                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[16px] font-medium text-gray-800 shadow-sm border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-k-orange)] focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
                   maxLength={200}
                 />
                 <button
                   onClick={onSendText}
                   disabled={!textInput.trim() || isClosing || entryStatus !== "active"}
-                  className="h-[48px] px-3.5 shrink-0 rounded-2xl flex items-center justify-center text-white font-bold disabled:opacity-40 cursor-pointer shadow-md bg-[#1E293B] active:scale-95 transition-all text-[14px] gap-1"
+                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center text-white disabled:opacity-40 cursor-pointer shadow-md bg-[var(--color-k-orange)] active:scale-95 transition-all"
                   aria-label="전송"
                 >
-                  <span>전송</span>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
                 <button
                   onClick={onToggleTextMode}
                   disabled={isClosing}
-                  className="h-[48px] px-3 shrink-0 rounded-2xl flex items-center justify-center bg-white border-2 border-gray-300 text-gray-700 font-bold active:scale-95 transition-all shadow-sm disabled:opacity-40 text-[13px] sm:text-[14px] gap-1 whitespace-nowrap cursor-pointer"
-                  aria-label="채팅창 닫기"
+                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40 transition-all"
+                  aria-label="텍스트 입력창 닫기"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  <span>채팅창 닫기</span>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
             ) : (
