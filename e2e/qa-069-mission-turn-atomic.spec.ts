@@ -3,7 +3,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createClient, type Session } from "@supabase/supabase-js";
 
 const DEV_URL = process.env.PLAYWRIGHT_BASE_URL || "https://k-bestie-v3-dev.vercel.app";
-const CHILD_ID = "4e7c1a6f-a953-4ebc-a181-e9c054a8ee3c";
+const CHILD_ID = process.env.QA_CHILD_ID || "4e7c1a6f-a953-4ebc-a181-e9c054a8ee3c";
+const QA_EMAIL = process.env.QA_EMAIL || "qatesti-dev@kbestie.local";
 const EVIDENCE_DIR = "/tmp/codex-qa-069";
 const QA_ROUND = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours() >= 18
   ? "round2_night"
@@ -61,7 +62,7 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
   }
   const { data: link, error: linkError } = await service.auth.admin.generateLink({
     type: "magiclink",
-    email: "qatesti-dev@kbestie.local",
+    email: QA_EMAIL,
   });
   expect(linkError, linkError?.message).toBeNull();
   const { data: verified, error: verifyError } = await anon.auth.verifyOtp({
