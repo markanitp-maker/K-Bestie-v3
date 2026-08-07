@@ -4,6 +4,10 @@ import { getLlmModel } from "@/lib/llm/modelRouter";
 import { WEEKLY_REPORT_PROMPT_TEMPLATE } from "@/app/api/_lib/prompts";
 import { sanitizeReportJson } from "@/app/api/_lib/reportSafetyGuard";
 import type { GoogleGenAI } from "@google/genai";
+import {
+  reportSectionValueForStorage,
+  sanitizeReportSectionRecord,
+} from "@/lib/reports/reportSectionAvailability";
 
 export interface WeeklySummaryResult {
   created: string[];  // 생성된 weekly_summary id 목록
@@ -235,8 +239,8 @@ export async function generateWeeklySummary(
             week_start: weekStart,
             week_end: weekEnd,
             summary_text: report.summary_text ?? "",
-            detail_text: report.detail_text ?? "",
-            detail_dashboard_cards: report.detail_dashboard_cards ?? {},
+            detail_text: reportSectionValueForStorage(report.detail_text),
+            detail_dashboard_cards: sanitizeReportSectionRecord(report.detail_dashboard_cards),
             mood_average: moodAverage,
             highlights: report.highlights ?? [],
             parent_guide: report.parent_guide ?? "",
