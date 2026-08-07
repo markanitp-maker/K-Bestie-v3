@@ -769,7 +769,7 @@ export default function ChatPage() {
               <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
                 <button
                   onClick={switchToVoice}
-                  className="h-[48px] px-6 rounded-2xl bg-[#1E293B] hover:bg-[#0F172A] text-white font-bold text-[15px] shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all border border-slate-700/50"
+                  className="h-[48px] px-7 rounded-full bg-[#1E293B] hover:bg-[#0F172A] text-white font-bold text-[15px] shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all border border-slate-700/50"
                   aria-label="채팅창 닫기"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
