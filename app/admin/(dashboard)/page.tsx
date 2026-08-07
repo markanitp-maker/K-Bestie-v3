@@ -7,6 +7,7 @@ import PlanChangeRequestsTab from "./PlanChangeRequestsTab";
 import EventsOverviewTab from "./EventsOverviewTab";
 import MissionOnboardingEventsTab from "./MissionOnboardingEventsTab";
 import QuizLeaderboardEventsTab from "./QuizLeaderboardEventsTab";
+import AttendanceRouletteAdminTab from "./AttendanceRouletteAdminTab";
 import RewardFulfillmentsTab from "./RewardFulfillmentsTab";
 import ParentQuestionsTab from "./ParentQuestionsTab";
 import ParentQueryRouterTab from "./ParentQueryRouterTab";
@@ -1488,6 +1489,8 @@ function AdminDashboard() {
           <MissionOnboardingEventsTab />
         ) : page === "events-quiz-leaderboard" ? (
           <QuizLeaderboardEventsTab />
+        ) : page === "events-attendance-roulette" ? (
+          <AttendanceRouletteAdminTab />
         ) : page === "events-reward-fulfillments" ? (
           <RewardFulfillmentsTab />
         ) : page === "parent-questions" ? (

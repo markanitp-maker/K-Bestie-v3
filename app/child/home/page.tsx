@@ -7,6 +7,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementModal";
 import MissionOnboardingCard from "@/components/events/MissionOnboardingCard";
+import AttendanceRouletteCard from "@/components/events/AttendanceRouletteCard";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { appendVocative } from "@/lib/utils/koreanParticle";
 import { usePushSubscription } from "@/lib/notifications/usePushSubscription";
@@ -333,6 +334,10 @@ export default function ChildHomePage() {
           </div>
 
           <MissionOnboardingCard />
+
+          {child?.id && (
+            <AttendanceRouletteCard childId={child.id} onBalanceChange={setGoldKeyBalance} />
+          )}
 
           {/* Status Bubble */}
           <div className="flex justify-center mb-3">
