@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Menu, X, ChevronDown, ChevronRight } from "lucide-react";
 
 // "parent-questions"/"parent-query-router"는 이 파일이 관여하지 않는 별도 티켓 소관
@@ -82,6 +82,21 @@ export interface AdminShellProps {
 export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [manuallyOpened, setManuallyOpened] = useState<Record<string, boolean>>({});
+  const mainScrollRef = useRef<HTMLElement>(null);
+
+  // 관리자 Shell이 viewport 스크롤을 전부 소유한다. 일반 사용자 화면에는 영향을
+  // 남기지 않도록 mount 동안에만 html/body 스크롤을 잠그고 원래 값을 복원한다.
+  useEffect(() => {
+    const originalHtmlOverflow = document.documentElement.style.overflow;
+    const originalBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.documentElement.style.overflow = originalHtmlOverflow;
+      document.body.style.overflow = originalBodyOverflow;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -93,6 +108,19 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
       // Ignore sessionStorage parsing errors
     }
   }, []);
+
+  // 이 화면은 URL 라우트 대신 activeMenuId로 관리자 페이지를 전환한다. 새 메뉴로
+  // 이동할 때만 본문을 상단으로 되돌리고, 같은 메뉴의 필터 변경에는 관여하지 않는다.
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [activeMenuId]);
+
+  useEffect(() => {
+    const selector = `[data-admin-menu-id="${activeMenuId}"]`;
+    document.querySelectorAll<HTMLElement>(selector).forEach((item) => {
+      item.scrollIntoView({ block: "nearest" });
+    });
+  }, [activeMenuId, isMobileMenuOpen]);
 
   const toggleGroup = (groupId: string) => {
     setManuallyOpened(prev => {
@@ -145,6 +173,7 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
                   {group.items.map(item => (
                     <button
                       key={item.id}
+                      data-admin-menu-id={item.id}
                       onClick={() => {
                         onMenuChange(item.id);
                         if (isMobile) {
@@ -180,7 +209,16 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--admin-bg)", display: "flex", flexDirection: "column" }}>
+    <div
+      className="admin-shell-root"
+      style={{
+        height: "100dvh",
+        background: "var(--admin-bg)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       {/* Header */}
       <header
         style={{
@@ -191,8 +229,8 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          position: "sticky",
-          top: 0,
+          flexShrink: 0,
+          position: "relative",
           zIndex: 40,
         }}
       >
@@ -227,10 +265,20 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
       </header>
 
       {/* Main Grid */}
-      <div style={{ flex: 1, display: "flex", position: "relative" }}>
+      <div
+        style={{
+          flex: "1 1 auto",
+          minHeight: 0,
+          display: "flex",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
         {/* Sidebar Desktop */}
         <aside
           className="max-lg:hidden admin-sidebar-scrollable"
+          tabIndex={0}
+          aria-label="관리자 메뉴"
           style={{
             width: "232px",
             background: "var(--admin-surface)",
@@ -239,8 +287,11 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
             flexDirection: "column",
             padding: "var(--admin-space-24) 0", // 좌우 패딩을 줄이고 내부 요소에서 처리
             flexShrink: 0,
+            height: "100%",
+            minHeight: 0,
             overflowY: "auto",
-            maxHeight: "calc(100vh - 64px)",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
           }}
         >
           {renderNavGroups(false)}
@@ -262,6 +313,10 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
               onClick={() => setIsMobileMenuOpen(false)}
             />
             <aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="관리자 메뉴"
+              tabIndex={0}
               style={{
                 position: "relative",
                 width: "232px",
@@ -270,7 +325,13 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
                 flexDirection: "column",
                 padding: "var(--admin-space-24) 0",
                 boxShadow: "2px 0 12px rgba(0,0,0,0.1)",
+                height: "100dvh",
+                minHeight: 0,
                 overflowY: "auto",
+                overflowX: "hidden",
+                overscrollBehavior: "contain",
+                WebkitOverflowScrolling: "touch",
+                paddingTop: "max(var(--admin-space-24), env(safe-area-inset-top))",
                 paddingBottom: "env(safe-area-inset-bottom, var(--admin-space-24))",
               }}
             >
@@ -281,15 +342,30 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
 
         {/* Content */}
         <main
+          ref={mainScrollRef}
           className="admin-content"
+          tabIndex={0}
+          aria-label="관리자 본문"
           style={{
-            flex: 1,
+            flex: "1 1 auto",
             minWidth: 0, // Prevent grid blowout
+            minHeight: 0,
+            overflowY: isMobileMenuOpen ? "hidden" : "auto",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
+            WebkitOverflowScrolling: "touch",
           }}
         >
           {children}
         </main>
       </div>
+      <style jsx>{`
+        @supports not (height: 100dvh) {
+          .admin-shell-root {
+            height: 100vh !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
