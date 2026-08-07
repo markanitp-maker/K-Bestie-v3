@@ -1061,6 +1061,18 @@ ${transcriptText}
         rawFact.importance = clamp01(rawFact.importance, 0.5);
 
         const embedding = await embedText(rawFact.content, "RETRIEVAL_DOCUMENT");
+        const { error: embeddingUsageError } = await db.from("usage_events").insert({
+          child_id: conv.child_id,
+          kind: "embedding",
+          model: EMBEDDING_MODEL,
+          request_count: 1,
+          input_count: rawFact.content.length,
+          est_cost_krw: null,
+          environment: Deno.env.get("NEXT_PUBLIC_SUPABASE_TARGET") === "prod" ? "production" : "development",
+        });
+        if (embeddingUsageError) {
+          console.error(`[memory-facts] embedding usage 기록 실패(${conv.child_id}): ${embeddingUsageError.message}`);
+        }
         const embeddingLiteral = toPgVectorLiteral(embedding);
 
         const { data: matchRows, error: matchErr } = await db.rpc("find_similar_memory_fact", {

@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getTierForChild, isDetailAllowed } from "@/lib/plan/requireDetailAccess";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
+import {
+  reportSectionValueForStorage,
+  sanitizeReportSectionRecord,
+} from "@/lib/reports/reportSectionAvailability";
 
 export const runtime = "nodejs";
 
@@ -34,7 +38,14 @@ export async function GET(
 
   const tier = await getTierForChild(weekly.child_id);
   const restricted = !isDetailAllowed(tier);
-  const safeWeekly = restricted ? { ...weekly, detail_text: "", detail_dashboard_cards: {} } : weekly;
+  const normalizedWeekly = {
+    ...weekly,
+    detail_text: reportSectionValueForStorage(weekly.detail_text),
+    detail_dashboard_cards: sanitizeReportSectionRecord(weekly.detail_dashboard_cards),
+  };
+  const safeWeekly = restricted
+    ? { ...normalizedWeekly, detail_text: "", detail_dashboard_cards: {} }
+    : normalizedWeekly;
 
   try {
     const { data: member } = await supabase.from('family_members').select('family_id').eq('user_id', user.id).maybeSingle();

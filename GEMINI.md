@@ -310,9 +310,9 @@
 
 - **E2E 테스트: Playwright (headless chromium, §26)**
 
-- 앱이 호출하는 Gemini(Gemma) 모델: `gemma-4-31b-it`, `gemma-4-26b-a4b-it` (이 2개만 사용)
+- 앱이 호출하는 모델은 `lib/llm/modelRouter.ts`의 역할별 설정과 각 배포 환경변수를 단일 기준으로 사용한다.
 
-- 위 "Gemma 모델"은 **앱 런타임이 호출하는 AI**를 뜻한다. 코드를 작성하는 실행 에이전트(너, **Gemini 3.1 Pro (High)**)와는 별개 층위다. 혼동 금지.
+- 위 모델 설정은 **앱 런타임이 호출하는 AI**를 뜻하며, 코드를 작성하는 실행 에이전트와는 별개 층위다.
 
   
 
@@ -388,7 +388,7 @@
 
     const response = await ai.models.generateContent({
 
-      model: "gemma-4-31b-it",
+      model: getLlmModel("dailyReport"),
 
       contents: prompt,
 
@@ -402,7 +402,7 @@
 
 - 금지: `ai.getGenerativeModel(...)`, `response.text()`, `response.response.text()`, `contents:[{role,parts:[{text}]}]` 불필요 래핑.
 
-- 모델 정책: 분석(정확도)=`gemma-4-31b-it` 고정, 제안(속도)=`gemma-4-26b-a4b-it` 고정. 임의 변경·폴백 추가 금지.
+- 모델 정책: 분석·대화별 실제 모델은 `lib/llm/modelRouter.ts`와 배포 환경변수에서 관리하며 호출부에 별도 고정값을 추가하지 않는다.
 
 - 재시도: `RETRY_DELAYS = [0, 3000, 5000]`(최대 3회). timeout/5xx/rate limit/무응답/품질미달 시 재시도, 매 시도 `console.error` 로깅, 3회 실패 시 throw.
 
@@ -976,8 +976,3 @@ npx playwright install --only-shell chromium
 12. **너는 1차 코딩 주체이자 E2E QA 주체다(§0.8·§26). 코드는 정적 코드리뷰(게이트①, codex 또는 미가용 시 Claude) + 별도 QA 세션의 E2E QA를 거치며, 반려된 단순 문제는 재수정하고 복잡 로직/아키텍처 문제는 Claude에 넘긴다.**
 
 13. **QA 위임(§26)일 때는 코드를 수정하지 않고 Playwright E2E 테스트 실행·증거 저장·보고만 한다. 자기가 짠 코드를 자기 세션이 QA하지 않는다(셀프통과 금지).**
-
-14. **Production QA 테스트 계정 운영 및 실제 사용자 보호 원칙 (공통 정책)**:
-    - **Production QA 전용 고정 계정 재사용**: Production 환경에서 QA 또는 개발 테스트를 수행할 때는 무조건 지정된 전용 QA 가족 및 고정 3개 계정(`qa-parent@kbestie.local`, `testa@kbestie.local`, `testb@kbestie.local`)만 재사용한다. 2026-08-07 정리 직후의 현황(24개 Auth, 7개 가족)은 일시적 현황일 뿐 상한선이나 영구 화이트리스트가 아니며, 향후 가입하는 실제 사용자와 가족은 계속 증가할 수 있다.
-    - **신규 Production 테스트 계정 임의 생성 금지**: Antigravity, Codex, Claude Code 및 모든 개발 에이전트는 **대표님의 명시적 승인 없이** 신규 Production 테스트 Auth 계정, 부모/아이 프로필, `family_members`, `child_profiles`, `families`를 생성해서는 안 된다. 테스트 시 신규 사용자 상태가 필요하면 우선 기존 QA 가족의 테스트 데이터를 안전하게 초기화하거나 재사용하며, 신규 테스트 계정 생성이 불가피한 경우 반드시 대표님 승인을 받는다.
-    - **실제 사용자 및 가입 진행 사용자 절대 보호**: 실제 사용자, 현재 가입 진행 중 사용자, 실제 사용자가 생성한 가족 및 자녀는 이메일 패턴, 가족 미소속 상태, 온보딩 미완료 상태, 계정 총수 등을 이유로 임의로 테스트 계정으로 판단하거나 자동 삭제·수정·차단해서는 안 된다. 특히 가입 진행 중인 `jih0405@nate.com` 계정과 같이 실제 사용자의 가입/온보딩 정보는 절대적인 보호 대상이다.

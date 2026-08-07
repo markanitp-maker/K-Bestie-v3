@@ -20,7 +20,7 @@ export interface RetrievedMemoryFact {
   similarity: number;
 }
 
-async function embedQuery(text: string): Promise<number[] | null> {
+async function embedQuery(db: SupabaseClient, childId: string, text: string): Promise<number[] | null> {
   try {
     const ai = createGenAIClient({ provider: "vertex" });
     const response = await ai.models.embedContent({
@@ -30,6 +30,18 @@ async function embedQuery(text: string): Promise<number[] | null> {
     });
     const values = response.embeddings?.[0]?.values;
     if (!Array.isArray(values) || values.length !== EMBEDDING_DIMENSIONS) return null;
+    const { error: usageError } = await db.from("usage_events").insert({
+      child_id: childId,
+      kind: "embedding",
+      model: EMBEDDING_MODEL,
+      request_count: 1,
+      input_count: text.length,
+      est_cost_krw: null,
+      environment: process.env.NEXT_PUBLIC_SUPABASE_TARGET === "prod" ? "production" : "development",
+    });
+    if (usageError) {
+      console.error("[vectorRetrieval] embedding usage 기록 실패:", usageError.message);
+    }
     return values;
   } catch (err) {
     console.error("[vectorRetrieval] 임베딩 생성 실패(fallback 예정):", err);
@@ -55,7 +67,7 @@ export async function searchMemoryFactsDetailed(
   queryText: string,
   topK = 5,
 ): Promise<SearchMemoryFactsResult> {
-  const embedding = await embedQuery(queryText);
+  const embedding = await embedQuery(db, childId, queryText);
   if (!embedding) return { status: "error", reason: "embedding_failed" };
 
   try {

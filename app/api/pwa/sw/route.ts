@@ -137,7 +137,7 @@ self.addEventListener("push", (event) => {
       body: data.body,
       icon: "/icons/icon-192-v4.png",
       badge: "/icons/icon-192-v4.png",
-      data: data.url,
+      data: { url: data.url || "/" },
     };
     event.waitUntil(self.registration.showNotification(title, options));
   } catch (e) {
@@ -147,9 +147,18 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  if (event.notification.data) {
-    event.waitUntil(self.clients.openWindow(event.notification.data));
-  }
+  const target = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
+      const targetUrl = new URL(target, self.location.origin).href;
+      const sameOrigin = windows.find((client) => new URL(client.url).origin === self.location.origin);
+      if (sameOrigin) {
+        if ("navigate" in sameOrigin) await sameOrigin.navigate(targetUrl);
+        return sameOrigin.focus();
+      }
+      return self.clients.openWindow(targetUrl);
+    })
+  );
 });
 `;
 

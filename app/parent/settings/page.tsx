@@ -20,7 +20,7 @@ import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
 import { calculateFinalDeletionDate, purchaseExtension } from "@/lib/plan/insightExtension";
 import { CONSENT_DOCUMENT_TEXT } from "@/lib/plan/consentDocument";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
-import { usePushSubscription } from "@/lib/notifications/usePushSubscription";
+import { revokeCurrentPushInstallation, usePushSubscription } from "@/lib/notifications/usePushSubscription";
 import KChatbotWidget from "@/components/KChatbotWidget";
 
 function formatRetentionLabel(tier: Tier): string {
@@ -52,7 +52,7 @@ export default function ParentSettingsPage() {
   const { reportAlert, weeklySummary } = store.notifSettings;
   const { view: demoView } = useDemoView();
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
-  const { requestAndSubscribe } = usePushSubscription();
+  const { requestAndSubscribe, setEnabled } = usePushSubscription();
   const [pushSaving, setPushSaving] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
 
@@ -73,6 +73,8 @@ export default function ParentSettingsPage() {
           setPushSaving(false);
           return;
         }
+      } else {
+        await setEnabled(false);
       }
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -795,6 +797,7 @@ export default function ParentSettingsPage() {
 
   const handleLogout = async () => {
     const supabase = createClient();
+    await revokeCurrentPushInstallation();
     await supabase.auth.signOut().catch(() => {});
     clearStore();
     router.push("/login");

@@ -32,7 +32,7 @@ export interface MembershipResult {
 export async function resolveMembershipState(userId: string): Promise<MembershipResult> {
   const svc = createServiceClient();
 
-  const [parentRes, memberRes] = await Promise.all([
+  const [parentSettled, memberSettled] = await Promise.allSettled([
     svc
       .from("parents")
       .select("account_status, withdrawn_at, purge_scheduled_at, onboarding_completed_at")
@@ -44,6 +44,13 @@ export async function resolveMembershipState(userId: string): Promise<Membership
       .eq("user_id", userId)
       .is("deleted_at", null),
   ]);
+
+  if (parentSettled.status === "rejected" || memberSettled.status === "rejected") {
+    console.error("[resolveMembershipState] DB request rejected");
+    throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+  }
+  const parentRes = parentSettled.value;
+  const memberRes = memberSettled.value;
 
   if (parentRes.error || memberRes.error) {
     console.error("[resolveMembershipState] DB query error:", parentRes.error || memberRes.error);
@@ -103,20 +110,6 @@ export async function resolveMembershipState(userId: string): Promise<Membership
   );
   let familyId = parentMembership?.family_id ?? null;
 
-  let childCount = 0;
-  if (familyId) {
-    const childRes = await svc
-      .from("child_profiles")
-      .select("id", { count: "exact" })
-      .eq("family_id", familyId);
-    
-    if (childRes.error) {
-      console.error("[resolveMembershipState] child_profiles DB query error:", childRes.error);
-      throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
-    }
-    childCount = childRes.count ?? 0;
-  }
-
   // family_members 행이 없는 경우, 사용자가 생성한 활성 가족이 존재하는지 확인
   if (!familyId && userId) {
     const familyRes = await svc
@@ -137,13 +130,24 @@ export async function resolveMembershipState(userId: string): Promise<Membership
     }
   }
 
-  // 기존 보호자 판단 원칙:
-  // onboarding_completed_at 존재 OR 유효한 부모 가족 멤버십 존재 OR 연결된 자녀 존재 OR 기존 가족 존재 시 무조건 ACTIVE_PARENT
-  const isExistingParent =
-    Boolean(parent?.onboarding_completed_at) ||
-    Boolean(parentMembership) ||
-    Boolean(familyId) ||
-    childCount > 0;
+  let childCount = 0;
+  if (familyId) {
+    const childRes = await svc
+      .from("child_profiles")
+      .select("id", { count: "exact" })
+      .eq("family_id", familyId);
+
+    if (childRes.error) {
+      console.error("[resolveMembershipState] child_profiles DB query error:", childRes.error);
+      throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+    }
+    childCount = childRes.count ?? 0;
+  }
+
+  // 가족이나 부모 멤버십만 만들어진 상태는 가입 완료가 아니다. 실제 아이가 있어야
+  // 기존 보호자로 확정한다. 그래야 가족 생성 후 아이 등록 전 사용자가 /signup?step=child로
+  // 정확히 복귀하며, 레거시 계정은 onboarding_completed_at이 없어도 기존 아이로 판별된다.
+  const isExistingParent = childCount > 0;
 
   if (isExistingParent) {
     return {

@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
+import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
+import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnUrl = searchParams.get("returnUrl");
+  const returnUrl = safePostAuthReturnUrl(searchParams.get("returnUrl"));
+  const oauthInFlightRef = useRef(false);
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -20,21 +23,28 @@ function LoginContent() {
   useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam === "auth") {
-      setError("소셜 로그인 중 문제가 발생했어요. 다시 시도해주세요.");
+      setError("로그인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      void logAuthFlowEvent("social_auth_failed");
+    } else if (errorParam === "cancelled") {
+      setError("로그인이 취소되었습니다. 다시 시도해 주세요.");
+      void logAuthFlowEvent("social_auth_failed");
     }
   }, [searchParams]);
 
   const handleOAuthLogin = async (provider: "google" | "kakao") => {
+    if (oauthInFlightRef.current) return;
+    oauthInFlightRef.current = true;
     setLoadingProvider(provider);
     setError(null);
     const supabase = createClient();
     
     localStorage.setItem("login_role", "owner");
+    void logAuthFlowEvent("social_auth_provider_selected", { provider });
 
     // 접속한 실제 도메인을 그대로 사용; 0.0.0.0만 localhost로 치환
     const appOrigin = window.location.origin.replace("//0.0.0.0", "//localhost");
     const redirectTo = `${appOrigin}/auth/callback${
-      returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ""
+      returnUrl !== "/" ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ""
     }`;
 
     const { error: authError } = await supabase.auth.signInWithOAuth({
@@ -45,8 +55,10 @@ function LoginContent() {
     });
 
     if (authError) {
-      setError(authError.message);
+      setError("로그인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      void logAuthFlowEvent("social_auth_failed", { provider });
       setLoadingProvider(null);
+      oauthInFlightRef.current = false;
     }
   };
 
@@ -79,11 +91,8 @@ function LoginContent() {
 
     fetch("/api/analytics/login", { method: "POST" }).catch(() => {});
 
-    if (returnUrl) {
-      router.push(returnUrl);
-    } else {
-      router.push("/");
-    }
+    const hubUrl = returnUrl === "/" ? "/" : `/?returnUrl=${encodeURIComponent(returnUrl)}`;
+    router.push(hubUrl);
     router.refresh();
   };
 
@@ -111,6 +120,10 @@ function LoginContent() {
         </p>
       </div>
 
+      <Link href="/" className="mb-4 text-sm font-medium text-gray-500 hover:text-gray-700">
+        ← 뒤로 가기
+      </Link>
+
       <div className="w-full flex flex-col gap-6 bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-white/50">
         {error && (
           <div
@@ -137,7 +150,7 @@ function LoginContent() {
             <svg className="w-5 h-5 fill-current text-gray-900" viewBox="0 0 24 24">
               <path d="M12 3c-4.97 0-9 3.185-9 7.115 0 2.557 1.707 4.8 4.27 6.007-.188.702-.68 2.531-.777 2.896-.12.454.148.448.31.341.127-.083 2.012-1.366 2.825-1.922.449.124.919.193 1.372.193 4.97 0 9-3.186 9-7.115C21 6.185 16.97 3 12 3z" />
             </svg>
-            {loadingProvider === "kakao" ? "연결 중..." : "카카오로 로그인"}
+            {loadingProvider === "kakao" ? "연결 중..." : "카카오로 계속하기"}
           </button>
 
           <button
@@ -167,7 +180,7 @@ function LoginContent() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            {loadingProvider === "google" ? "연결 중..." : "구글로 로그인"}
+            {loadingProvider === "google" ? "연결 중..." : "구글로 계속하기"}
           </button>
         </div>
 

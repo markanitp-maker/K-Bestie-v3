@@ -2,6 +2,10 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { getLlmModel } from "@/lib/llm/modelRouter";
 import { extractJSON } from "@/app/api/_lib/utils";
+import {
+  isMeaningfulReportSection,
+  reportSectionValueForStorage,
+} from "@/lib/reports/reportSectionAvailability";
 
 const REPORT_PROMPT_TEMPLATE = `
 아이의 오늘 하루 대화 전문입니다. 이를 바탕으로 부모님을 위한 요약 리포트를 작성해주세요.
@@ -67,6 +71,7 @@ const DASHBOARD_CARD_FIELDS = [
 
 function isValidDashboardSummary(value: string): boolean {
   if (value === "") return true; // 근거 없음 = 정상적인 데이터 부족 상태
+  if (!isMeaningfulReportSection(value)) return false;
   if (value.includes("\n")) return false;
   if (value.length > 15) return false;
   if (FORBIDDEN_DASHBOARD_PHRASES.includes(value)) return false;
@@ -149,15 +154,15 @@ function sanitizeReportJson(obj: any) {
     emotion_tags: emotionTags,
     parent_guide: str(obj.parent_guide),
     emotion_level: emotionLevel,
-    school_academy_life: str(obj.school_academy_life),
-    peer_friendship: str(obj.peer_friendship),
-    emotion_hint: str(obj.emotion_hint),
-    interests_preferences: str(obj.interests_preferences),
-    study_concerns: str(obj.study_concerns),
-    digital_content_interests: str(obj.digital_content_interests),
-    future_dreams: str(obj.future_dreams),
-    recurring_stories: str(obj.recurring_stories),
-    teacher_adults: str(obj.teacher_adults),
+    school_academy_life: reportSectionValueForStorage(obj.school_academy_life),
+    peer_friendship: reportSectionValueForStorage(obj.peer_friendship),
+    emotion_hint: reportSectionValueForStorage(obj.emotion_hint),
+    interests_preferences: reportSectionValueForStorage(obj.interests_preferences),
+    study_concerns: reportSectionValueForStorage(obj.study_concerns),
+    digital_content_interests: reportSectionValueForStorage(obj.digital_content_interests),
+    future_dreams: reportSectionValueForStorage(obj.future_dreams),
+    recurring_stories: reportSectionValueForStorage(obj.recurring_stories),
+    teacher_adults: reportSectionValueForStorage(obj.teacher_adults),
     dashboard_cards_raw: (obj.dashboard_cards && typeof obj.dashboard_cards === "object") ? obj.dashboard_cards : {},
   };
 }

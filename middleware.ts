@@ -75,7 +75,10 @@ export async function middleware(request: NextRequest) {
     }
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("from", pathname);
+    // 로그인 후 회원 상태를 서버에서 검증한 다음에만 복원한다. query도 내부 경로의
+    // 일부로 보존하되, 로그인·callback 쪽 safePostAuthReturnUrl에서 다시 검증한다.
+    url.search = "";
+    url.searchParams.set("returnUrl", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(url);
   }
 

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getTierForChild, isDetailAllowed } from "@/lib/plan/requireDetailAccess";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { meaningfulReportSectionContent } from "@/lib/reports/reportSectionAvailability";
 
 export const runtime = "nodejs";
 
@@ -26,7 +27,7 @@ export async function GET(
   const { data: report, error } = await supabase
     .from("daily_reports")
     .select(
-      "id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, recurring_stories, created_at, business_date, child_id"
+      "id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, teacher_adults, recurring_stories, created_at, business_date, child_id"
     )
     .eq("id", id)
     .single();
@@ -48,9 +49,21 @@ export async function GET(
   const restricted = !isDetailAllowed(tier);
 
   const { child_id: _childId, ...rest } = report;
+  const normalizedRest = {
+    ...rest,
+    school_academy_life: meaningfulReportSectionContent(rest.school_academy_life),
+    peer_friendship: meaningfulReportSectionContent(rest.peer_friendship),
+    emotion_hint: meaningfulReportSectionContent(rest.emotion_hint),
+    interests_preferences: meaningfulReportSectionContent(rest.interests_preferences),
+    study_concerns: meaningfulReportSectionContent(rest.study_concerns),
+    digital_content_interests: meaningfulReportSectionContent(rest.digital_content_interests),
+    future_dreams: meaningfulReportSectionContent(rest.future_dreams),
+    teacher_adults: meaningfulReportSectionContent(rest.teacher_adults),
+    recurring_stories: meaningfulReportSectionContent(rest.recurring_stories),
+  };
   const safeRest = restricted
     ? {
-        ...rest,
+        ...normalizedRest,
         parent_guide: "",
         dashboard_cards: {},
         emotion_level: null,
@@ -61,9 +74,10 @@ export async function GET(
         study_concerns: null,
         digital_content_interests: null,
         future_dreams: null,
+        teacher_adults: null,
         recurring_stories: null
       }
-    : rest;
+    : normalizedRest;
 
   return NextResponse.json({ report: safeRest, restricted });
 }

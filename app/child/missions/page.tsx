@@ -31,6 +31,8 @@ import { usePipelineConnectionQuality } from "@/hooks/usePipelineConnectionQuali
 import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndicator";
 import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { clearPendingMissionTurn, readPendingMissionTurn, savePendingMissionTurn } from "@/lib/mission/pendingTurnStore";
+import { postMissionTurnWithRetry } from "@/lib/mission/turnRequest";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -91,7 +93,7 @@ async function playClosingLineViaTts(text: string, sessionId: string | null): Pr
 // (/api/config/child-time-restrictions 참고) — 게이트 로직(getKstHour/currentRound) 자체는
 // 그대로 유지하고, 적용 여부만 이 스위치로 결정한다.
 
-function MissionInner() {
+function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: boolean) => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { quality: connectionQuality, recordStageResult, recordNormalTurn } = usePipelineConnectionQuality();
@@ -99,7 +101,7 @@ function MissionInner() {
   // confirm_restart_after_completion(022): 오늘 이미 완료한 라운드에 재진입 시 "다시 할까요?"
   // 확인 없이 조용히 새 세션이 만들어지던 문제 수정 — 서버가 requiresConfirmation을 반환하면
   // 이 phase로 멈추고 확인 UI를 보여준다(진행 중/미완료 세션에는 영향 없음).
-  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "confirm_restart_after_completion" | "locked_completed">("loading");
+  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "turn_retry" | "confirm_restart_after_completion" | "locked_completed">("loading");
   // 031: MISSION_SCHEDULE_ENFORCED(Production 전용) 여부 — 서버(/api/config/child-time-restrictions)가
   // 계산해 내려준 값을 그대로 저장해 "closed"/완료잠금 화면의 문구 분기에만 쓴다.
   const [scheduleEnforced, setScheduleEnforced] = useState(false);
@@ -137,6 +139,9 @@ function MissionInner() {
   const rewardCloseXBtnRef = useRef<HTMLButtonElement | null>(null);
   const rewardCloseBottomBtnRef = useRef<HTMLButtonElement | null>(null);
   const [mode, setMode] = useState<"voice" | "text">("voice");
+  useEffect(() => {
+    onTextModeChange?.(mode === "text");
+  }, [mode, onTextModeChange]);
   const [textInput, setTextInput] = useState("");
   // 요금제(tier)별 음성 방식 — /api/mission/start 응답으로 확정됨. 확정 전까지 null(로딩).
   const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
@@ -459,6 +464,23 @@ function MissionInner() {
     }
   }, [resetToIdle]);
 
+  const showTurnPersistenceRetry = useCallback(() => {
+    recoveryAttemptedRef.current = true;
+    if (activeChildTurnIdRef.current) {
+      sessionStorage.setItem("mission-turn-recovery-paused", activeChildTurnIdRef.current);
+    }
+    answerInFlightRef.current = false;
+    setIsProcessingAnswer(false);
+    setIsAutoListening(false);
+    setTurnPhase("child_listening");
+    setIsRecording(false);
+    isRecordingRef.current = false;
+    sttSetMicEnabledRef.current?.(false);
+    setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+    setShowRetryButton(true);
+    setPhase("turn_retry");
+  }, [setTurnPhase]);
+
   const isAutoRef = useRef(true);
   // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
   // transcript에 채워넣는다(그 전에 넣으면 startSession()이 비워버림).
@@ -477,6 +499,7 @@ function MissionInner() {
   const activeChildTurnIdRef = useRef<string | null>(null);
   const activeChildTurnSeqRef = useRef<number | null>(null);
   const kClarificationTurnRef = useRef<boolean>(false);
+  const serverPersistedKTextsRef = useRef<string[]>([]);
 
   const saveMessage = useCallback((role: "child" | "k", content: string, displaySequence?: number, turnId?: string, isClarification?: boolean) => {
     const sid = sessionIdRef.current;
@@ -620,7 +643,24 @@ function MissionInner() {
       kClarificationTurnRef.current = false;
     }
     
-    saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id, isClarification);
+    const wasServerPersistedK = enrichedTurn.role === "k"
+      && serverPersistedKTextsRef.current[0] === enrichedTurn.text;
+    if (wasServerPersistedK) {
+      serverPersistedKTextsRef.current.shift();
+      pastMessagesRef.current = [
+        ...pastMessagesRef.current,
+        { role: enrichedTurn.role, text: enrichedTurn.text, id: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence },
+      ];
+    } else if (isChildTurnDuringActiveMission) {
+      // 활성 child 턴은 아래 Turn API가 서버 저장을 책임진다. 다만 모드 전환 시
+      // 화면 대화가 사라지지 않도록 로컬 스크롤백에는 즉시 한 번만 누적한다.
+      pastMessagesRef.current = [
+        ...pastMessagesRef.current,
+        { role: enrichedTurn.role, text: enrichedTurn.text, id: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence },
+      ];
+    } else {
+      saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id, isClarification);
+    }
 
     if (!isChildTurnDuringActiveMission) {
       if (!isLive && manualTimeoutRef.current) {
@@ -769,15 +809,60 @@ function MissionInner() {
         // 다음 질문 선택(pickNextIndex 이후)은 인사 턴이든 실제 답변이든 공통으로 실행된다.
         let data: any = null;
 
+        const finalizeServerTurn = async (kText: string, isClarification: boolean = false) => {
+          const kTurnId = `${childTurnId}:k`;
+          const kDisplaySequence = nextDisplaySequence();
+          const finalizeRes = await postMissionTurnWithRetry({
+            body: {
+              action: "finalize",
+              sessionId: sid,
+              clientTurnId: childTurnId,
+              kTurnId,
+              kContent: kText,
+              kDisplaySequence,
+              isClarification,
+            },
+            signal: isLive ? manualAbortControllerRef.current?.signal : apiAbortControllerRef.current?.signal,
+          });
+          if (!finalizeRes.ok) {
+            const finalizeError = await finalizeRes.json().catch(() => ({}));
+            if (finalizeRes.status === 403 || finalizeError.code === "MISSION_EXPIRED") {
+              handleForcedExpiry();
+            }
+            const error = new Error(typeof finalizeError.error === "string" ? finalizeError.error : "TURN_FINALIZE_FAILED");
+            error.name = "TurnPersistenceError";
+            throw error;
+          }
+          const finalized = await finalizeRes.json();
+          serverPersistedKTextsRef.current.push(kText);
+          await clearPendingMissionTurn(childTurnId);
+          return finalized;
+        };
+
         if (!isGreetingTurn) {
-          const res = await fetch("/api/mission/answer", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: enrichedTurn.text, childTurnId }),
+          await savePendingMissionTurn({
+            sessionId: sid,
+            clientTurnId: childTurnId,
+            questionId: question.id,
+            answerText: enrichedTurn.text,
+            voiceMode: voiceModeRef.current ?? "stt_tts",
+            displaySequence: enrichedTurn.displaySequence ?? 0,
+            createdAt: Date.now(),
+          });
+          sessionStorage.setItem("mission-turn-recovery-paused", childTurnId);
+          const res = await postMissionTurnWithRetry({
+            body: {
+              action: "start",
+              sessionId: sid,
+              clientTurnId: childTurnId,
+              questionId: question.id,
+              answerText: enrichedTurn.text,
+              voiceMode: voiceModeRef.current,
+              displaySequence: enrichedTurn.displaySequence ?? 0,
+            },
             signal: isLive ? manualAbortControllerRef.current?.signal : apiAbortControllerRef.current?.signal,
           });
           if (!res.ok) {
-            if (currentEpoch !== answerEpochRef.current) return;
             const errData = await res.json().catch(() => ({}));
             if (res.status === 403 || errData.code === "MISSION_EXPIRED" || errData.expired || errData.status === "FORCE_ENDED" || errData.scheduleClosed) {
               handleForcedExpiry();
@@ -797,27 +882,11 @@ function MissionInner() {
               if (isLive) liveRef.current?.lockNow();
               return;
             }
-            if (isLive) {
-              if (manualTimeoutRef.current) {
-                clearTimeout(manualTimeoutRef.current);
-                manualTimeoutRef.current = null;
-              }
-              setTurnPhase("waiting_k");
-              if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(false);
-              if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
-              if (liveRef.current?.status === "live") {
-                if (liveRef.current?.setKSpeechAllowed) liveRef.current.setKSpeechAllowed(true);
-                const success = liveRef.current.speakAsK("음... 잠깐만 기다려줄래?");
-                if (!success) resetToIdle(true);
-              } else {
-                attemptSilentRecoveryOrShowRetry();
-              }
-            } else {
-              attemptSilentRecoveryOrShowRetry();
-            }
+            showTurnPersistenceRetry();
             return;
           }
           data = await res.json();
+          sessionStorage.removeItem("mission-turn-recovery-paused");
           logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
           if (currentEpoch !== answerEpochRef.current) return;
           
@@ -854,6 +923,36 @@ function MissionInner() {
           setProgressPercent(data.progressPercent ?? 0);
           setRequiredCount(data.requiredCount ?? 5);
           setEngineVersion(data.engine_version ?? "v1");
+
+          if (data.completionCandidate) {
+            const closingText = "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!";
+            const finalized = await finalizeServerTurn(closingText);
+            if (!finalized.completed) throw new Error("MISSION_COMPLETION_NOT_CONFIRMED");
+            const rwStatus = finalized.rewardStatus ?? "none";
+            setRewardStatus(rwStatus);
+            // DB에 먼저 확정한 K 문구와 실제 재생/폴백 문구를 동일하게 유지한다.
+            // 황금열쇠 지급 여부는 서버 응답 기반 보상 모달에서 별도로 안내한다.
+            missionClosingLineRef.current = closingText;
+            missionStateRef.current = "completing";
+            setMissionState("completing");
+            if (voiceModeRef.current === "live") {
+              if (manualTimeoutRef.current) clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+              setTurnPhase("k_speaking");
+              liveRef.current?.lockNow();
+              const success = liveRef.current?.speakClosingLine(closingText);
+              missionControllerRef.current?.start({ immediateTtsFallback: !success });
+            } else {
+              setTurnPhase("k_speaking");
+              sttSetMicEnabledRef.current?.(false);
+              if (kVoiceEnabledRef.current) await sttTts.speak(closingText);
+              else sttTts.sayText(closingText);
+              missionStateRef.current = "completed";
+              setMissionState("completed");
+              setCompleted(true);
+            }
+            return;
+          }
 
           // setCompleted는 발화 완료 후 상태 전이 시에 호출되도록 위임
           if (data.completed) {
@@ -1125,8 +1224,18 @@ function MissionInner() {
         if (isLive) {
           setTurnPhase("k_speaking");
         }
+        if (!isGreetingTurn) {
+          const finalized = await finalizeServerTurn(respondText ?? nextQ.question_text, data?.clarificationText != null);
+          if (finalized.completed) {
+            throw new Error("UNEXPECTED_COMPLETION_DURING_NEXT_QUESTION");
+          }
+        }
         askQuestionRef.current?.(next, respondText);
-      } catch {
+      } catch (error) {
+        if (error instanceof Error && (error.name === "TurnPersistenceError" || error.name === "MissionTurnRequestError")) {
+          showTurnPersistenceRetry();
+          return;
+        }
         if (currentEpoch !== answerEpochRef.current) return;
         if (isLive) {
           if (manualTimeoutRef.current) {
@@ -1145,6 +1254,10 @@ function MissionInner() {
           } else {
             attemptSilentRecoveryOrShowRetry();
           }
+        } else {
+          resetToIdle(false);
+          setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+          setShowRetryButton(true);
         }
       } finally {
         if (currentEpoch === answerEpochRef.current) {
@@ -1170,7 +1283,7 @@ function MissionInner() {
         }
       }
     })();
-  }, [saveMessage, pickNextIndex, nextTurnId, nextDisplaySequence, recordNormalTurn]);
+  }, [saveMessage, pickNextIndex, nextTurnId, nextDisplaySequence, recordNormalTurn, showTurnPersistenceRetry]);
 
   // 자동·수동 발화 상태 및 DOM 조작을 위한 Ref 선언
   const [isAuto, setIsAuto] = useState(true);
@@ -1778,6 +1891,50 @@ function MissionInner() {
 
       setSessionId(data.sessionId);
       sessionIdRef.current = data.sessionId;
+
+      // PWA/탭 종료 뒤 남은 단일 미확정 턴을 같은 clientTurnId로 복구한다. 서버의
+      // answer_result가 이미 있으면 start는 재판정 없이 replay하고, 없으면 lease 만료 후
+      // 동일 턴 처리를 재개한다. 복구 K 문구에는 원문을 다시 싣지 않는다.
+      const pendingTurn = await readPendingMissionTurn().catch(() => null);
+      if (pendingTurn && pendingTurn.sessionId === data.sessionId) {
+        const pending = pendingTurn;
+        if (sessionStorage.getItem("mission-turn-recovery-paused") === pending.clientTurnId) {
+          setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+          setShowRetryButton(true);
+          setPhase("turn_retry");
+          return;
+        }
+        const replayResponse = await postMissionTurnWithRetry({
+          body: { action: "start", ...pending },
+          signal,
+        });
+        if (replayResponse.ok) {
+          const replay = await replayResponse.json();
+          const recoveryText = replay.completionCandidate
+            ? "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!"
+            : "이야기해 줘서 고마워! 다음 이야기도 들려줄래?";
+          const finalizeResponse = await postMissionTurnWithRetry({
+            body: {
+              action: "finalize",
+              sessionId: pending.sessionId,
+              clientTurnId: pending.clientTurnId,
+              kTurnId: `${pending.clientTurnId}:k`,
+              kContent: recoveryText,
+              kDisplaySequence: pending.displaySequence + 1,
+            },
+            signal,
+          });
+          if (finalizeResponse.ok) {
+            sessionStorage.removeItem("mission-turn-recovery-paused");
+            await clearPendingMissionTurn(pending.clientTurnId);
+            window.location.reload();
+            return;
+          }
+        }
+        setShowRetryButton(true);
+        setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+        return;
+      }
 
       if (navigator.serviceWorker?.controller) {
         const channel = new MessageChannel();
@@ -2422,6 +2579,35 @@ function MissionInner() {
     );
   }
 
+  if (phase === "turn_retry") {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
+        <p className="text-5xl">🔄</p>
+        <p className="text-base font-bold text-gray-800">대화를 저장하는 중 문제가 생겼어요.</p>
+        <p className="text-xs text-gray-500">연결을 확인하고 현재 대화만 다시 시도해 주세요.</p>
+        <button
+          onClick={() => {
+            sessionStorage.removeItem("mission-turn-recovery-paused");
+            window.location.reload();
+          }}
+          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          style={{ background: "var(--color-k-orange)" }}
+        >
+          다시 시도
+        </button>
+        <button
+          onClick={() => {
+            setSessionActive(false);
+            router.replace("/child/home");
+          }}
+          className="w-full max-w-xs py-3 rounded-2xl font-bold text-gray-500 text-sm active:scale-[0.98] transition-transform cursor-pointer"
+        >
+          미션 나가기
+        </button>
+      </div>
+    );
+  }
+
   if (phase === "error") {
     // 037 §21/§22: 실패 유형별 문구 - 저장된 세션을 삭제/초기화하지 않고 같은 동작을 재시도할 수 있게 한다.
     const errorTitle =
@@ -2494,12 +2680,21 @@ function MissionInner() {
   const retryOverlay = showRetryButton && (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/10 px-6">
       <div className="bg-white rounded-2xl shadow-lg p-5 flex flex-col items-center gap-3 max-w-xs">
-        <p className="text-sm font-bold text-gray-700 text-center">케이랑 접속이 끊겼네?</p>
+        <p className="text-sm font-bold text-gray-700 text-center">
+          {errorMsg.startsWith("대화를 저장하는 중")
+            ? "대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요."
+            : "케이랑 접속이 끊겼네?"}
+        </p>
         <div className="flex gap-2 w-full">
           <button
-            onClick={() => {
+            onClick={async () => {
               if (errorMsg === "연결 문제로 미션 종료 확인에 실패했어요. 다시 시도해 주세요.") {
                 handleForcedExpiry();
+                return;
+              }
+              const pending = await readPendingMissionTurn().catch(() => null);
+              if (pending) {
+                window.location.reload();
                 return;
               }
               recoveryAttemptedRef.current = false;
@@ -2697,6 +2892,7 @@ function MissionInner() {
 }
 
 function MissionRouteGate() {
+  const [isTextMode, setIsTextMode] = useState(false);
   const [decision, setDecision] = useState<"loading" | "ab" | "ef" | "cd" | "normal">("loading");
   const [selectedMode, setSelectedMode] = useState<"A" | "B" | "C" | "D" | "E" | "F">("C");
   useEffect(() => {
@@ -2751,10 +2947,12 @@ function MissionRouteGate() {
             min-height: 100% !important;
           }
         `}} />
-        <MissionInner />
-        <div className="absolute top-0 right-0">
-          <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={480} />
-        </div>
+        <MissionInner onTextModeChange={setIsTextMode} />
+        {!isTextMode && (
+          <div className="absolute top-0 right-0">
+            <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={480} />
+          </div>
+        )}
       </div>
     </DemoFrame>
   );

@@ -191,6 +191,7 @@ async function findParentQuestionDeliveredInSession(
 
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
+  const isAtomicTurnRequest = req.headers.get("x-mission-turn-api") === "1";
   const authClient = await createClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) {
@@ -596,7 +597,9 @@ export async function POST(req: NextRequest) {
     }
 
     // VALID/REFUSAL/NO_RESPONSE 판정 시 record_v2_mission_answer RPC 호출
-    const { data: rpcData, error: rpcErr } = await service.rpc("record_v2_mission_answer", {
+    const { data: rpcData, error: rpcErr } = await service.rpc(
+      isAtomicTurnRequest ? "record_v2_mission_answer_pending" : "record_v2_mission_answer",
+      {
       p_session_id: sessionId,
       p_child_id: session.child_id,
       p_question_id: questionId,
@@ -604,7 +607,8 @@ export async function POST(req: NextRequest) {
       p_answer_classification: classification,
       p_required_valid_count: requiredCount,
       p_reward_type: "mission_complete",
-    });
+      }
+    );
 
     if (rpcErr || !rpcData || rpcData.length === 0) {
       console.error("[mission/answer] record_v2_mission_answer RPC error:", { sessionId, questionId, err: rpcErr });
@@ -1203,7 +1207,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 게이지 5칸 최초 달성 시점에만 황금열쇠 적립 (재호출로 중복 적립 방지) — 기존 로직 그대로.
-  if (completed && !wasCompleted) {
+  if (completed && !wasCompleted && !isAtomicTurnRequest) {
     try {
       const goldKeyResult = await earnMissionCompleteKey(session.child_id);
       if (!goldKeyResult.earned && goldKeyResult.reason !== "already_earned") {

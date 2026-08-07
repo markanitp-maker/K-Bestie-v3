@@ -954,7 +954,7 @@ export default function ChatPage() {
         {/* 047 QA 실측: topOffsetPx가 너무 작아 문의 위젯이 상단 X(자유대화 종료) 버튼과
             정확히 같은 자리에 겹쳐 X가 완전히 가려졌다 - 미션 화면과 달리 진행률 바가
             없어 X 버튼 아래로 충분히 내려야 한다(X 버튼 높이 44px + 상단 패딩 고려). */}
-        <KChatbotWidget appSurface="child" topOffsetPx={64} />
+        {mode !== "text" && <KChatbotWidget appSurface="child" topOffsetPx={64} />}
       </div>
     </DemoFrame>
   );

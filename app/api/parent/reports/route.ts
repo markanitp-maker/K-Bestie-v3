@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import {
+  buildDashboardCardInsights,
+  type DashboardCardReportRow,
+} from "@/lib/reports/dashboardCardInsights";
 
 export const runtime = "nodejs";
 
@@ -23,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   const { data: reports, error } = await supabase
     .from("daily_reports")
-    .select("id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, recurring_stories, viewed_at, created_at, business_date")
+    .select("id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, teacher_adults, recurring_stories, viewed_at, created_at, business_date")
     .eq("child_id", childId)
     .is("deleted_at", null)
     .order("business_date", { ascending: false })
@@ -43,51 +47,30 @@ export async function GET(req: NextRequest) {
   const latestWeekly = weeklySummaries?.[0];
   const latestReport = reports?.[0] ?? null;
 
-  const INSIGHT_FIELDS = [
-    "school_academy_life",
-    "peer_friendship",
-    "emotion_hint",
-    "interests_preferences",
-    "study_concerns",
-    "digital_content_interests",
-    "future_dreams",
-    "recurring_stories",
-  ] as const;
+  // 영역별 Last Known Valid는 최신 일일 리포트 한 건이 아니라 전체 dashboard_cards
+  // 이력을 기준으로 계산한다. Supabase 행 제한을 넘는 장기 계정도 누락되지 않도록
+  // 페이지를 끝까지 읽고, 빈 문자열은 새 관찰로 취급하지 않는다.
+  const dashboardRows: DashboardCardReportRow[] = [];
+  const pageSize = 100;
+  for (let from = 0; ; from += pageSize) {
+    const { data: page, error: dashboardError } = await supabase
+      .from("daily_reports")
+      .select("dashboard_cards, business_date, emotion_level")
+      .eq("child_id", childId)
+      .is("deleted_at", null)
+      .order("business_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
 
-  const insights: Record<string, any> = {};
-  const now = new Date();
-  const sevenDaysAgoMs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
-
-  for (const field of INSIGHT_FIELDS) {
-    let recentValue = null;
-    let lastObserved = null;
-    let count7d = 0;
-    let emotionLevel = null;
-
-    for (const r of (reports || [])) {
-      if (r[field] && String(r[field]).trim() !== "") {
-        if (!recentValue) {
-          recentValue = r[field];
-          lastObserved = r.business_date || r.created_at;
-          if (field === "emotion_hint") {
-            emotionLevel = r.emotion_level;
-          }
-        }
-        
-        const rDateMs = new Date(r.business_date || r.created_at).getTime();
-        if (rDateMs >= sevenDaysAgoMs) {
-          count7d++;
-        }
-      }
+    if (dashboardError) {
+      return NextResponse.json({ error: dashboardError.message }, { status: 500 });
     }
 
-    insights[field] = {
-      value: recentValue,
-      last_observed_at: lastObserved,
-      recent_count: count7d,
-      ...(field === "emotion_hint" && { emotion_level: emotionLevel }),
-    };
+    dashboardRows.push(...((page ?? []) as DashboardCardReportRow[]));
+    if (!page || page.length < pageSize) break;
   }
+
+  const insights = buildDashboardCardInsights(dashboardRows);
 
   let todaysQuote = null;
   if (latestReport?.summary_line && latestReport.summary_line.trim() !== "") {

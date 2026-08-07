@@ -33,9 +33,7 @@ export const SOFT_DELETE_MAX_BULK = 200;
 
 export type SoftDeleteResource =
   | "beta_applications"
-  | "support_requests_voc"
-  | "support_requests_feature"
-  | "support_requests_bug"
+  | "support_requests"
   | "plan_change_requests"
   | "child_approval_requests"
   | "event_reward_fulfillments"
@@ -71,32 +69,13 @@ export const SOFT_DELETE_RESOURCES: Record<SoftDeleteResource, SoftDeleteResourc
     statusColumn: null,
     titleColumns: ["user_id"],
   },
-  support_requests_voc: {
+  support_requests: {
     table: "support_requests",
-    label: "문의 접수",
+    label: "고객 접수",
     snapshotColumns: ["id", "request_number", "category", "status", "submitter_role", "created_at"],
     createdAtColumn: "created_at",
     statusColumn: "status",
     titleColumns: ["request_number", "category"],
-    fixedFilters: { category: "voc" },
-  },
-  support_requests_feature: {
-    table: "support_requests",
-    label: "건의 접수",
-    snapshotColumns: ["id", "request_number", "category", "status", "submitter_role", "created_at"],
-    createdAtColumn: "created_at",
-    statusColumn: "status",
-    titleColumns: ["request_number", "category"],
-    fixedFilters: { category: "feature" },
-  },
-  support_requests_bug: {
-    table: "support_requests",
-    label: "버그 접수",
-    snapshotColumns: ["id", "request_number", "category", "status", "submitter_role", "created_at"],
-    createdAtColumn: "created_at",
-    statusColumn: "status",
-    titleColumns: ["request_number", "category"],
-    fixedFilters: { category: "bug" },
   },
   plan_change_requests: {
     table: "plan_change_requests",
@@ -558,7 +537,7 @@ export async function purgeExpired(
       let purgeableIds = targets.map((row) => String(row.id));
 
       // 첨부파일이 있는 리소스는 Storage 파일을 먼저 지운다.
-      if (resource === "support_requests_voc" || resource === "support_requests_feature" || resource === "support_requests_bug") {
+      if (config.table === "support_requests") {
         const { removed, blockedIds, errors } = await purgeSupportAttachments(service, purgeableIds);
         result.attachmentsDeleted = removed;
         result.errors.push(...errors);

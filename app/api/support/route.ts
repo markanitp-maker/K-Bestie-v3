@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveChildForUser } from "@/lib/child/testAccount";
 import { getSupabaseTarget } from "@/lib/supabase/env";
+import { normalizeSubmissionCategory } from "@/lib/admin/customerRequests";
 
 export const runtime = "nodejs";
 
@@ -21,14 +22,15 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { category, subject, content, current_route, device_info, app_surface, app_version, idempotency_key } = body;
+    const { category: submittedCategory, subject, content, current_route, device_info, app_surface, app_version, idempotency_key } = body;
+    const category = normalizeSubmissionCategory(submittedCategory);
 
-    if (!["voc", "feature", "bug"].includes(category)) {
+    if (!category) {
       return NextResponse.json({ error: "Invalid category" }, { status: 400 });
     }
 
-    const isVoc = category === "voc";
-    const finalSubject = isVoc ? "문의하기" : (subject || "").trim();
+    const isInquiry = category === "inquiry";
+    const finalSubject = isInquiry ? "문의하기" : (subject || "").trim();
     const finalContent = (content || "").trim();
 
     if (finalSubject.length < 2 || finalSubject.length > 100) {

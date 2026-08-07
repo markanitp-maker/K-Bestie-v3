@@ -4,6 +4,10 @@ import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ReportDetailSkeleton } from "@/app/parent/report/[id]/ReportDetailSkeleton";
+import {
+  buildMeaningfulReportSections,
+  meaningfulReportSectionContent,
+} from "@/lib/reports/reportSectionAvailability";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
@@ -333,33 +337,29 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   );
 
   const renderDailyTab2 = (report: DailyReport) => {
-    const sections = [
-      { title: "학교·학원 생활", body: report.school_academy_life },
-      { title: "친구 관계와 또래 생활", body: report.peer_friendship },
-      { title: "감정 힌트", body: report.emotion_hint },
-      { title: "관심사와 개인 취향", body: report.interests_preferences },
-      { title: "공부 고민", body: report.study_concerns },
-      { title: "디지털 관심사와 콘텐츠 취향", body: report.digital_content_interests },
-      { title: "미래·진로·꿈", body: report.future_dreams },
-      { title: "선생님·어른", body: report.teacher_adults },
-      { title: "반복되는 이야기", body: report.recurring_stories },
-    ];
+    const sections = buildMeaningfulReportSections(report as unknown as Record<string, unknown>);
 
     return (
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-5">
         <h3 className="font-bold text-base -mb-2" style={{ color: "var(--color-k-text-primary)" }}>
           📄 상세 리포트
         </h3>
-        {sections.map((section) => (
-          <div key={section.title} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
-            <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
-              {section.title}
-            </h4>
-            <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
-              {section.body || "이 항목은 확인할 대화가 충분하지 않아요."}
-            </p>
-          </div>
-        ))}
+        {sections.length > 0 ? (
+          sections.map((section) => (
+            <div key={section.key} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
+              <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
+                {section.title}
+              </h4>
+              <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
+                {section.body}
+              </p>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm leading-relaxed text-gray-500">
+            이번 리포트에서 제공할 상세 분석이 없어요.
+          </p>
+        )}
       </div>
     );
   };
@@ -448,41 +448,44 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
 
   const renderWeeklyTab2 = (report: WeeklySummary) => {
     const cards = report.detail_dashboard_cards ?? {};
-    const sections = [
-      { title: "학교·학원 생활", body: cards.school_academy_life },
-      { title: "친구 관계", body: cards.peer_friendship },
-      { title: "마음 흐름", body: cards.emotion_hint },
-      { title: "관심사·취향", body: cards.interests_preferences },
-      { title: "공부 고민", body: cards.study_concerns },
-      { title: "디지털 관심사", body: cards.digital_content_interests },
-      { title: "미래·진로", body: cards.future_dreams },
-      { title: "선생님·어른", body: cards.teacher_adults },
-      { title: "반복되는 이야기", body: cards.recurring_stories },
-    ];
+    const sections = buildMeaningfulReportSections(cards);
+    const detailText = meaningfulReportSectionContent(report.detail_text);
     
     return (
       <div className="flex flex-col gap-4">
-        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
-          <h3 className="font-bold text-base -mb-1" style={{ color: "var(--color-k-text-primary)" }}>
-            📄 이번 주 상세 분석
-          </h3>
-          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
-            {report.detail_text || "이 항목은 확인할 대화가 충분하지 않아요."}
-          </p>
-        </div>
+        {detailText && (
+          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
+            <h3 className="font-bold text-base -mb-1" style={{ color: "var(--color-k-text-primary)" }}>
+              📄 이번 주 상세 분석
+            </h3>
+            <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
+              {detailText}
+            </p>
+          </div>
+        )}
 
-        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
-          {sections.map((section) => (
-            <div key={section.title} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
-              <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
-                {section.title}
-              </h4>
-              <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
-                {section.body || "이 항목은 확인할 대화가 충분하지 않아요."}
-              </p>
-            </div>
-          ))}
-        </div>
+        {sections.length > 0 && (
+          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
+            {sections.map((section) => (
+              <div key={section.key} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
+                <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
+                  {section.title}
+                </h4>
+                <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
+                  {section.body}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!detailText && sections.length === 0 && (
+          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+            <p className="text-sm leading-relaxed text-gray-500">
+              이번 리포트에서 제공할 상세 분석이 없어요.
+            </p>
+          </div>
+        )}
       </div>
     );
   };

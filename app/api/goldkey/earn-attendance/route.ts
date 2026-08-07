@@ -1,38 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { earnAttendanceKey } from "@/lib/goldkey/ledger";
-import { requireChildAccess } from "@/lib/auth/requireChildAccess";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-// POST /api/goldkey/earn-attendance { childId } — 출석 적립(하루 1회, 중복 방지)
-export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  let body: { childId?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  const { childId } = body;
-  if (!childId) {
-    return NextResponse.json({ error: "childId required" }, { status: 400 });
-  }
-
-  const { allowed } = await requireChildAccess(supabase, user.id, childId);
-  if (!allowed) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  try {
-    const result = await earnAttendanceKey(childId);
-    return NextResponse.json(result);
-  } catch {
-    return NextResponse.json({ error: "출석 적립 실패" }, { status: 500 });
-  }
+/**
+ * 기존의 무조건 +1 출석 지급 경로는 출석 룰렛으로 대체됐다.
+ * 남아 있는 구버전 클라이언트가 이 API를 호출해도 룰렛과 중복 지급되지 않도록
+ * 명시적으로 종료 상태를 반환한다. 미션 등 다른 황금열쇠 보상 경로에는 영향이 없다.
+ */
+export async function POST() {
+  return NextResponse.json(
+    { error: "attendance_reward_replaced_by_roulette", replacement: "/api/events/attendance-roulette/spin" },
+    { status: 410 }
+  );
 }
-

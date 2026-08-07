@@ -14,17 +14,18 @@ test("TTS: 'Cloud Text-to-Speech API'", () => {
   assert.notEqual(classifyBillingRow("Cloud Text-to-Speech API", "x"), "stt");
 });
 
-test("Vertex AI + Gemini 2.5(GA/Live 전부) → gemini_agent_platform", () => {
-  assert.equal(classifyBillingRow("Vertex AI", "Gemini 2.5 Flash Live Audio (AV2A) Output - Predictions"), "gemini_agent_platform");
-  assert.equal(classifyBillingRow("Vertex AI", "Gemini 2.5 Flash Live Audio Input - Predictions"), "gemini_agent_platform");
-  assert.equal(classifyBillingRow("Vertex AI", "Gemini 2.5 Flash Live Text Input - Predictions"), "gemini_agent_platform");
-  assert.equal(classifyBillingRow("Vertex AI", "Gemini 2.5 Flash GA Text Input - Predictions"), "gemini_agent_platform");
-  assert.equal(classifyBillingRow("Vertex AI", "Gemini 2.5 Flash GA Thinking Text Output - Predictions"), "gemini_agent_platform");
+test("Vertex AI Gemini text prediction은 모델 버전과 무관하게 동일 family로 분류", () => {
+  for (const version of ["2.5", "3.1", "3.5", "3.5 Flash Lite", "3.6", "4.0"]) {
+    assert.equal(classifyBillingRow("Vertex AI", `Gemini ${version} Global Text Input - Predictions`), "vertex_ai_gemini");
+    assert.equal(classifyBillingRow("Vertex AI", `Gemini ${version} Global Text Output - Predictions`), "vertex_ai_gemini");
+  }
 });
 
-test("Vertex AI + Gemini 3.1(Model Garden) → agent_platform_model_garden", () => {
-  assert.equal(classifyBillingRow("Vertex AI", "Gemini 3.1 Flash Lite Global Text Input - Predictions"), "agent_platform_model_garden");
-  assert.equal(classifyBillingRow("Vertex AI", "Gemini 3.1 Flash Lite Global Text Output - Predictions"), "agent_platform_model_garden");
+test("Vertex AI Live audio와 Embeddings는 독립 family로 분류", () => {
+  assert.equal(classifyBillingRow("Vertex AI", "Gemini 2.5 Flash Live Audio (AV2A) Output - Predictions"), "live_realtime_audio");
+  assert.equal(classifyBillingRow("Vertex AI", "Gemini 3.6 Flash Live Audio Input - Predictions"), "live_realtime_audio");
+  assert.equal(classifyBillingRow("Vertex AI", "Large Text Embedding Model - Predictions"), "vertex_ai_embeddings");
+  assert.equal(classifyBillingRow("Vertex AI", "Vertex Embeddings Text Embedding"), "vertex_ai_embeddings");
 });
 
 test("Cloud Run(라이브 릴레이) → cloud_run", () => {
@@ -36,14 +37,15 @@ test("Cloud Storage → cloud_storage", () => {
   assert.equal(classifyBillingRow("Cloud Storage", "Standard Storage"), "cloud_storage");
 });
 
-test("알려진 6종 밖 서비스는 'other'(미분류)로 명시 분류 — null로 조용히 누락시키지 않는다", () => {
+test("운영 인프라 서비스는 독립 카테고리로 분류하고 알 수 없는 서비스만 other 유지", () => {
+  assert.equal(classifyBillingRow("Cloud Logging", "Log Volume"), "cloud_logging");
+  assert.equal(classifyBillingRow("BigQuery", "Analysis"), "bigquery");
+  assert.equal(classifyBillingRow("Artifact Registry", "Storage"), "artifact_registry");
+  assert.equal(classifyBillingRow("Secret Manager", "Active Secret Versions"), "secret_manager");
   assert.equal(classifyBillingRow("Compute Engine", "N1 Predefined Instance Core"), "other");
-  assert.equal(classifyBillingRow("Cloud Logging", "Log Volume"), "other");
-  assert.equal(classifyBillingRow("Secret Manager", "Active Secret Versions"), "other");
 });
 
-test("Vertex AI라도 알려진 버전(2.5/3.1) 문자열이 없으면 'other'(미분류)로 떨어진다 — 향후 신규 모델(예: Gemini 4.0) 드리프트 안전망", () => {
-  assert.equal(classifyBillingRow("Vertex AI", "Gemini 4.0 Ultra Text Input - Predictions"), "other");
+test("Vertex AI라도 알려진 SKU family가 아니면 other로 남긴다", () => {
   assert.equal(classifyBillingRow("Vertex AI", "Unknown Future SKU"), "other");
 });
 
@@ -56,8 +58,8 @@ test("Gemini SKU 세부 사용형태 분류(모델 단위 임의배분 금지 �
   assert.equal(classifyGeminiDimension("Gemini 3.1 Flash Lite Global Text Input - Predictions"), "text_input");
 });
 
-test("KNOWN_BILLING_CATEGORIES는 'other'를 포함하지 않는 6종", () => {
-  assert.equal(KNOWN_BILLING_CATEGORIES.length, 6);
+test("KNOWN_BILLING_CATEGORIES는 other를 제외한 운영 11종", () => {
+  assert.equal(KNOWN_BILLING_CATEGORIES.length, 11);
   assert.ok(!KNOWN_BILLING_CATEGORIES.includes("other" as never));
 });
 
@@ -107,14 +109,8 @@ test(
     assert.ok(Math.abs(result.totalsByCategory.stt.grossCostKrw - 6369.11) < 1, `stt=${result.totalsByCategory.stt.grossCostKrw}`);
     assert.ok(Math.abs(result.totalsByCategory.cloud_run.grossCostKrw - 769.28) < 1, `cloud_run=${result.totalsByCategory.cloud_run.grossCostKrw}`);
     assert.ok(Math.abs(result.totalsByCategory.cloud_storage.grossCostKrw - 8.16) < 1, `cloud_storage=${result.totalsByCategory.cloud_storage.grossCostKrw}`);
-    assert.ok(
-      Math.abs(result.totalsByCategory.gemini_agent_platform.grossCostKrw - 17906) < 5,
-      `gemini_agent_platform=${result.totalsByCategory.gemini_agent_platform.grossCostKrw}`
-    );
-    assert.ok(
-      Math.abs(result.totalsByCategory.agent_platform_model_garden.grossCostKrw - 90) < 1,
-      `agent_platform_model_garden=${result.totalsByCategory.agent_platform_model_garden.grossCostKrw}`
-    );
+    const vertexGross = result.totalsByCategory.vertex_ai_gemini.grossCostKrw + result.totalsByCategory.live_realtime_audio.grossCostKrw;
+    assert.ok(Math.abs(vertexGross - 17996) < 5, `vertex=${vertexGross}`);
 
     // 행 합계·서비스 합계·전체 합계 정합성 — SKU 행(skuRows) 합이 서비스 합(totalsByCategory) 합과,
     // 서비스 합이 전체 합(total)과 반올림 전/후 모두 일치해야 한다.

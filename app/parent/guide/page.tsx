@@ -11,6 +11,7 @@ import { Mic, MicOff, Send, Volume2, Square } from "lucide-react";
 import { AskChildDraftModal } from "@/components/parent/AskChildDraftModal";
 import { RedCoachingModal } from "@/components/parent/RedCoachingModal";
 import { MultiQuestionSelectModal, type MultiQuestionCandidate } from "@/components/parent/MultiQuestionSelectModal";
+import { RegisteredQuestionsList, type Question } from "@/components/RegisteredQuestionsList";
 
 type Message = {
   id: string;
@@ -86,6 +87,10 @@ export default function ParentGuidePage() {
   //  이전 자녀의 대화·응답이 전환 후에도 화면에 남는 문제가 있었음).
   const { activeChildId } = useStore();
   const [childName, setChildName] = useState("");
+  const [activeTab, setActiveTab] = useState<"chat" | "questions">("chat");
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [draftModal, setDraftModal] = useState<DraftModalState | null>(null);
@@ -182,6 +187,48 @@ export default function ParentGuidePage() {
 
     return () => controller.abort();
   }, [childId]);
+
+  useEffect(() => {
+    if (activeTab !== "questions") return;
+    if (!childId) {
+      setQuestions([]);
+      setQuestionsError(null);
+      return;
+    }
+
+    const requestChildId = childId;
+    const controller = new AbortController();
+    setQuestionsLoading(true);
+    setQuestionsError(null);
+
+    fetch(`/api/parent/questions?childId=${encodeURIComponent(requestChildId)}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || "질문 목록을 불러오지 못했어요.");
+        }
+        return data;
+      })
+      .then((data) => {
+        if (controller.signal.aborted || childIdRef.current !== requestChildId) return;
+        setQuestions(Array.isArray(data?.questions) ? data.questions : []);
+      })
+      .catch((error) => {
+        if (error?.name === "AbortError") return;
+        if (childIdRef.current !== requestChildId) return;
+        setQuestions([]);
+        setQuestionsError("질문 목록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && childIdRef.current === requestChildId) {
+          setQuestionsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [activeTab, childId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -622,25 +669,38 @@ export default function ParentGuidePage() {
               </p>
             </div>
             <p className="text-[10px] text-gray-400 max-w-[140px] text-right leading-tight">
-              아이와 대화를 시작하기 위한 참고 정보예요.
+              {activeTab === "chat"
+                ? "아이와 대화를 시작하기 위한 참고 정보예요."
+                : "아이에게 전달한 질문의 진행 상황이에요."}
             </p>
           </div>
           {/* requests/request-parent-question-feature.md §8 — [대화] [Q&A] 탭 */}
-          <div className="flex gap-1 mt-2.5">
-            <div className="flex-1 text-center text-xs font-bold py-1.5 rounded-full bg-[var(--color-k-navy)] text-white">
+          <div className="flex gap-1 mt-2.5" role="tablist" aria-label="케이와 대화 메뉴">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "chat"}
+              onClick={() => setActiveTab("chat")}
+              className={`flex-1 text-center text-xs font-bold py-1.5 rounded-full ${activeTab === "chat" ? "bg-[var(--color-k-navy)] text-white" : "bg-gray-100 text-gray-600"}`}
+            >
               대화
-            </div>
-            <a
-              href="/parent/questions"
-              className="flex-1 text-center text-xs font-bold py-1.5 rounded-full bg-gray-100 text-gray-600"
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "questions"}
+              onClick={() => setActiveTab("questions")}
+              className={`flex-1 text-center text-xs font-bold py-1.5 rounded-full ${activeTab === "questions" ? "bg-[var(--color-k-navy)] text-white" : "bg-gray-100 text-gray-600"}`}
             >
               Q&amp;A
-            </a>
+            </button>
           </div>
         </div>
 
-        {/* 채팅 메시지 영역 */}
-        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {activeTab === "chat" ? (
+          <>
+          {/* 채팅 메시지 영역 */}
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           {!childId && (
             <div className="text-center text-sm text-gray-500 mt-10">
               우측 상단 메뉴에서 자녀를 먼저 선택해주세요.
@@ -704,9 +764,13 @@ export default function ParentGuidePage() {
                           <> (이번 주 질문 {msg.askChildWeeklyUsedCount}/{msg.askChildWeeklyLimit ?? 3})</>
                         )}
                       </p>
-                      <a href="/parent/questions" className="text-xs font-semibold text-blue-600 underline w-fit">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("questions")}
+                        className="text-xs font-semibold text-blue-600 underline w-fit text-left"
+                      >
                         Q&amp;A에서 진행 상황 보기
-                      </a>
+                      </button>
                     </div>
                   )}
                   {msg.askChildStatus === "error" && msg.askChildErrorText && (
@@ -742,10 +806,10 @@ export default function ParentGuidePage() {
           )}
           
           <div ref={messagesEndRef} />
-        </div>
+          </div>
 
-        {/* 입력 영역 */}
-        <div className="bg-white border-t p-3 pb-safe z-20">
+          {/* 입력 영역 */}
+          <div className="bg-white border-t p-3 pb-safe z-20">
           {!isSttSupported && (
             <p className="text-[10px] text-gray-400 mb-2 text-center">
               이 기기에서는 앱 내 음성 인식이 지원되지 않아요. 텍스트 입력이나 키보드의 받아쓰기 기능을 이용해 주세요.
@@ -801,7 +865,23 @@ export default function ParentGuidePage() {
               )}
             </div>
           </form>
-        </div>
+          </div>
+          </>
+        ) : (
+          <div className="flex-1 overflow-y-auto px-4 py-4" role="tabpanel">
+            {!childId ? (
+              <div className="text-center text-sm text-gray-500 mt-10">
+                우측 상단 메뉴에서 자녀를 먼저 선택해주세요.
+              </div>
+            ) : questionsLoading ? (
+              <div className="text-center text-sm text-gray-500 py-8">질문 목록을 불러오는 중이에요.</div>
+            ) : questionsError ? (
+              <div className="text-center text-sm text-red-500 py-8" role="alert">{questionsError}</div>
+            ) : (
+              <RegisteredQuestionsList questions={questions} />
+            )}
+          </div>
+        )}
         
         <RealParentNav active="케이와 대화" />
       </div>

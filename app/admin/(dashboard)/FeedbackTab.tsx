@@ -71,8 +71,7 @@ export default function FeedbackTab({ fixedCategory }: { fixedCategory: "voc" | 
     .filter(Boolean)
     .join(", ");
 
-  const resourceName = fixedCategory === "voc" ? "support_requests_voc" :
-                       fixedCategory === "feature" ? "support_requests_feature" : "support_requests_bug";
+  const resourceName = "support_requests";
   const resourceLabel = fixedCategory === "voc" ? "문의 접수" :
                         fixedCategory === "feature" ? "건의 접수" : "버그 접수";
 

@@ -33,9 +33,8 @@ export function estimateLiveCostFromTokens(input: { tokenIn: number; tokenOut: n
 }
 
 // ── Gemini 텍스트(LLM) 공식 단가 ──
-// 실사용 모델: mission/respond="gemini-flash-lite-latest", report/generate="gemma-4-31b-it"(폴백 "gemini-2.5-flash").
-// Gemma 계열은 공식 퍼블릭 토큰 단가가 없어(무료/별도 체계) gemini-2.5-flash 공식 단가로 근사한다.
-// 출처: Gemini API 공식 단가표(2.5 Flash, text) — 입력 $0.30/1M 토큰, 출력 $2.50/1M 토큰. 확정 전까지 근사치.
+// 실사용 텍스트 모델은 lib/llm/modelRouter.ts의 역할별 설정을 따른다.
+// 아래 값은 실제 청구가 아니라 관리자 추정치이며, 확정 청구액은 BigQuery Billing 데이터를 사용한다.
 export const LLM_TEXT_INPUT_USD_PER_M_TOKENS = 0.3;
 export const LLM_TEXT_OUTPUT_USD_PER_M_TOKENS = 2.5;
 

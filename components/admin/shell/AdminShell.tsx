@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Menu, X, ChevronDown, ChevronRight } from "lucide-react";
 
 // "parent-questions"/"parent-query-router"는 이 파일이 관여하지 않는 별도 티켓 소관
 // 페이지다(app/admin/(dashboard)/page.tsx가 참조). 그 티켓의 컴포넌트 파일이 아직
 // git에 없어 여기서는 타입 호환만 유지하고 네비게이션 항목은 추가하지 않는다.
-export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "inquiries" | "suggestions" | "bugs" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-reward-fulfillments" | "trash" | "parent-questions" | "parent-query-router" | "push-test" | "acquisition-links" | "acquisition-dashboard";
+export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "users" | "customer-requests" | "account-restore" | "inquiries" | "suggestions" | "bugs" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-attendance-roulette" | "events-reward-fulfillments" | "trash" | "parent-questions" | "parent-query-router" | "push-test" | "acquisition-links" | "acquisition-dashboard";
 
 type AdminMenuItem = { id: AdminPageId; label: string; badgeKey?: string };
 type AdminMenuGroup = { id: string; label: string; items: AdminMenuItem[] };
@@ -26,18 +26,14 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
     id: "users",
     label: "사용자 관리",
     items: [
-      { id: "account-restore", label: "계정 복구 승인" },
-      { id: "plan-change-requests", label: "요금제 변경 요청" },
-      { id: "child-approval-requests", label: "아이 승인 요청" },
+      { id: "users", label: "사용자 관리" },
     ]
   },
   {
     id: "support",
     label: "고객 접수",
     items: [
-      { id: "inquiries", label: "문의 접수" },
-      { id: "suggestions", label: "건의 접수" },
-      { id: "bugs", label: "버그 접수" },
+      { id: "customer-requests", label: "고객 접수" },
     ]
   },
   {
@@ -55,6 +51,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
       { id: "events-overview", label: "이벤트 현황" },
       { id: "events-mission-onboarding", label: "미션 이벤트" },
       { id: "events-quiz-leaderboard", label: "퀴즈 리더보드" },
+      { id: "events-attendance-roulette", label: "출석 룰렛" },
       { id: "events-reward-fulfillments", label: "상품권 지급 관리" },
     ]
   },
@@ -81,6 +78,21 @@ export interface AdminShellProps {
 export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [manuallyOpened, setManuallyOpened] = useState<Record<string, boolean>>({});
+  const mainScrollRef = useRef<HTMLElement>(null);
+
+  // 관리자 Shell이 viewport 스크롤을 전부 소유한다. 일반 사용자 화면에는 영향을
+  // 남기지 않도록 mount 동안에만 html/body 스크롤을 잠그고 원래 값을 복원한다.
+  useEffect(() => {
+    const originalHtmlOverflow = document.documentElement.style.overflow;
+    const originalBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.documentElement.style.overflow = originalHtmlOverflow;
+      document.body.style.overflow = originalBodyOverflow;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -92,6 +104,19 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
       // Ignore sessionStorage parsing errors
     }
   }, []);
+
+  // 이 화면은 URL 라우트 대신 activeMenuId로 관리자 페이지를 전환한다. 새 메뉴로
+  // 이동할 때만 본문을 상단으로 되돌리고, 같은 메뉴의 필터 변경에는 관여하지 않는다.
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [activeMenuId]);
+
+  useEffect(() => {
+    const selector = `[data-admin-menu-id="${activeMenuId}"]`;
+    document.querySelectorAll<HTMLElement>(selector).forEach((item) => {
+      item.scrollIntoView({ block: "nearest" });
+    });
+  }, [activeMenuId, isMobileMenuOpen]);
 
   const toggleGroup = (groupId: string) => {
     setManuallyOpened(prev => {
@@ -144,8 +169,15 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
                   {group.items.map(item => (
                     <button
                       key={item.id}
+                      data-admin-menu-id={item.id}
                       onClick={() => {
-                        onMenuChange(item.id);
+                        if (item.id === "users" && window.location.pathname !== "/admin/users") {
+                          window.location.assign("/admin/users");
+                        } else if (item.id === "customer-requests" && window.location.pathname !== "/admin/customer-requests") {
+                          window.location.assign("/admin/customer-requests");
+                        } else {
+                          onMenuChange(item.id);
+                        }
                         if (isMobile) {
                           setIsMobileMenuOpen(false);
                         }
@@ -179,7 +211,16 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--admin-bg)", display: "flex", flexDirection: "column" }}>
+    <div
+      className="admin-shell-root"
+      style={{
+        height: "100dvh",
+        background: "var(--admin-bg)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       {/* Header */}
       <header
         style={{
@@ -190,15 +231,15 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          position: "sticky",
-          top: 0,
+          flexShrink: 0,
+          position: "relative",
           zIndex: 40,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "var(--admin-space-16)" }}>
           {/* Mobile menu toggle */}
           <button
-            className="lg:hidden"
+            className="flex lg:hidden"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="메뉴 열기"
             style={{
@@ -206,7 +247,6 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
               border: "none",
               cursor: "pointer",
               padding: "var(--admin-space-8)",
-              display: "flex",
               alignItems: "center",
               justifyContent: "center",
               color: "var(--admin-text-primary)",
@@ -226,20 +266,32 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
       </header>
 
       {/* Main Grid */}
-      <div style={{ flex: 1, display: "flex", position: "relative" }}>
+      <div
+        style={{
+          flex: "1 1 auto",
+          minHeight: 0,
+          display: "flex",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
         {/* Sidebar Desktop */}
         <aside
-          className="max-lg:hidden admin-sidebar-scrollable"
+          className="hidden lg:flex admin-sidebar-scrollable"
+          tabIndex={0}
+          aria-label="관리자 메뉴"
           style={{
             width: "232px",
             background: "var(--admin-surface)",
             borderRight: "1px solid var(--admin-border)",
-            display: "flex",
             flexDirection: "column",
             padding: "var(--admin-space-24) 0", // 좌우 패딩을 줄이고 내부 요소에서 처리
             flexShrink: 0,
+            height: "100%",
+            minHeight: 0,
             overflowY: "auto",
-            maxHeight: "calc(100vh - 64px)",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
           }}
         >
           {renderNavGroups(false)}
@@ -248,12 +300,11 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
         {/* Sidebar Mobile Drawer */}
         {isMobileMenuOpen && (
           <div
-            className="lg:hidden"
+            className="flex lg:hidden"
             style={{
               position: "fixed",
               inset: 0,
               zIndex: 50,
-              display: "flex",
             }}
           >
             <div
@@ -261,6 +312,10 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
               onClick={() => setIsMobileMenuOpen(false)}
             />
             <aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="관리자 메뉴"
+              tabIndex={0}
               style={{
                 position: "relative",
                 width: "232px",
@@ -269,7 +324,13 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
                 flexDirection: "column",
                 padding: "var(--admin-space-24) 0",
                 boxShadow: "2px 0 12px rgba(0,0,0,0.1)",
+                height: "100dvh",
+                minHeight: 0,
                 overflowY: "auto",
+                overflowX: "hidden",
+                overscrollBehavior: "contain",
+                WebkitOverflowScrolling: "touch",
+                paddingTop: "max(var(--admin-space-24), env(safe-area-inset-top))",
                 paddingBottom: "env(safe-area-inset-bottom, var(--admin-space-24))",
               }}
             >
@@ -280,15 +341,30 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
 
         {/* Content */}
         <main
+          ref={mainScrollRef}
           className="admin-content"
+          tabIndex={0}
+          aria-label="관리자 본문"
           style={{
-            flex: 1,
+            flex: "1 1 auto",
             minWidth: 0, // Prevent grid blowout
+            minHeight: 0,
+            overflowY: isMobileMenuOpen ? "hidden" : "auto",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
+            WebkitOverflowScrolling: "touch",
           }}
         >
           {children}
         </main>
       </div>
+      <style jsx>{`
+        @supports not (height: 100dvh) {
+          .admin-shell-root {
+            height: 100vh !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
