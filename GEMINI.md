@@ -310,9 +310,9 @@
 
 - **E2E 테스트: Playwright (headless chromium, §26)**
 
-- 앱이 호출하는 Gemini(Gemma) 모델: `gemma-4-31b-it`, `gemma-4-26b-a4b-it` (이 2개만 사용)
+- 앱이 호출하는 모델은 `lib/llm/modelRouter.ts`의 역할별 설정과 각 배포 환경변수를 단일 기준으로 사용한다.
 
-- 위 "Gemma 모델"은 **앱 런타임이 호출하는 AI**를 뜻한다. 코드를 작성하는 실행 에이전트(너, **Gemini 3.1 Pro (High)**)와는 별개 층위다. 혼동 금지.
+- 위 모델 설정은 **앱 런타임이 호출하는 AI**를 뜻하며, 코드를 작성하는 실행 에이전트와는 별개 층위다.
 
   
 
@@ -388,7 +388,7 @@
 
     const response = await ai.models.generateContent({
 
-      model: "gemma-4-31b-it",
+      model: getLlmModel("dailyReport"),
 
       contents: prompt,
 
@@ -402,7 +402,7 @@
 
 - 금지: `ai.getGenerativeModel(...)`, `response.text()`, `response.response.text()`, `contents:[{role,parts:[{text}]}]` 불필요 래핑.
 
-- 모델 정책: 분석(정확도)=`gemma-4-31b-it` 고정, 제안(속도)=`gemma-4-26b-a4b-it` 고정. 임의 변경·폴백 추가 금지.
+- 모델 정책: 분석·대화별 실제 모델은 `lib/llm/modelRouter.ts`와 배포 환경변수에서 관리하며 호출부에 별도 고정값을 추가하지 않는다.
 
 - 재시도: `RETRY_DELAYS = [0, 3000, 5000]`(최대 3회). timeout/5xx/rate limit/무응답/품질미달 시 재시도, 매 시도 `console.error` 로깅, 3회 실패 시 throw.
 

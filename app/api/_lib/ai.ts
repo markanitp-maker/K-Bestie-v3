@@ -4,6 +4,7 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
+import { getLlmRegion } from "@/lib/llm/modelRouter";
 import {
   type ReportModelConfig,
   REPORT_MODELS,
@@ -72,7 +73,7 @@ export function createGenAIClient(config: Pick<GroupModelConfig, "provider">): G
   if (!keyJson) throw new Error(`[GCAI Profile ${profile}] ${envKeys.GCP_VERTEX_SA_KEY_JSON} not configured`);
   if (!project) throw new Error(`[GCAI Profile ${profile}] ${envKeys.GOOGLE_CLOUD_PROJECT} not configured`);
   
-  const location = process.env[envKeys.GOOGLE_CLOUD_LOCATION] || "global";
+  const location = getLlmRegion();
   const credentials = JSON.parse(keyJson);
   
   return new GoogleGenAI({ vertexai: true, project, location, googleAuthOptions: { credentials } });

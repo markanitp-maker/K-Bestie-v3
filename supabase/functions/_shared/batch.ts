@@ -796,7 +796,7 @@ ${transcriptText}
 // 한 줄도 건드리지 않는다 — 같은 배치 트리거(memory-batch)에서 병행 호출되는
 // 완전히 별도의 파이프라인이다.
 
-const EMBEDDING_MODEL = "gemini-embedding-001";
+const EMBEDDING_MODEL = Deno.env.get("LLM_MODEL_EMBEDDING")?.trim() || "gemini-embedding-001";
 const EMBEDDING_DIMENSIONS = 768;
 const REINFORCEMENT_SIMILARITY_THRESHOLD = 0.92; // 설계 문서 §9 — 튜닝 대상, 확정값 아님
 const TRAIT_PATTERN_SELF_STATEMENT_CONFIDENCE = 0.85; // 설계 문서 §9 — 튜닝 대상

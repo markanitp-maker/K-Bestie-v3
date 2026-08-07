@@ -29,7 +29,8 @@ const MAX_SESSION_MS = Number(process.env.MAX_SESSION_MS) || 30 * 60 * 1000;
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const HEARTBEAT_TIMEOUT_MS = 45_000;
 
-const VERTEX_LIVE_MODEL_ID = "gemini-live-2.5-flash-native-audio";
+const VERTEX_LIVE_MODEL_ID = process.env.LLM_MODEL_PREMIUM_LIVE_VOICE?.trim()
+  || "gemini-live-2.5-flash-native-audio";
 
 if (!RELAY_SECRET) {
   console.error("[vertex-live-relay] VERTEX_LIVE_RELAY_SECRET not configured — refusing to start");

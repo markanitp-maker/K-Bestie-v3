@@ -640,29 +640,34 @@ function LlmStatusTab() {
         <SectionTitle>기능별 모델 적용 현황</SectionTitle>
         <AdminResponsiveTable mobileStrategy="scroll"
           columns={[
-            { key: "name", header: "기능명 (유형/플랫폼)", render: (r: any) => (
+            { key: "name", header: "기능명", render: (r: any) => (
               <>
                 <div style={{ fontWeight: 600 }}>{r.name}</div>
-                <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.featureType} · {r.platform}</div>
+                <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.category} · {r.runtime}</div>
               </>
             )},
             { key: "model", header: "실제 적용 모델", render: (r: any) => (
-              <>
-                <span style={{ fontWeight: 600, color: "var(--admin-focus)" }}>{r.effectiveModel}</span>
-                {r.apiMethod && <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.apiMethod}</div>}
-              </>
+              <span style={{ fontWeight: 600, color: "var(--admin-focus)" }}>{r.effectiveModel}</span>
             )},
-            { key: "default", header: "기본값 / 환경변수", render: (r: any) => (
-              <>
-                <div style={{ fontSize: "var(--admin-text-sm)" }}>{r.defaultModel}</div>
-                {r.envKey && <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.envKey}</div>}
-              </>
+            { key: "fallback", header: "Fallback", render: (r: any) => (
+              <span style={{ fontSize: "var(--admin-text-sm)" }}>{r.fallbackModel || "-"}</span>
             )},
-            { key: "path", header: "호출부 / 리전", render: (r: any) => (
-              <>
-                <div style={{ fontSize: "var(--admin-text-sm)" }}>{r.internalPath}</div>
-                <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.region}</div>
-              </>
+            { key: "env", header: "환경변수", render: (r: any) => (
+              <div style={{ fontSize: "var(--admin-text-xs)", whiteSpace: "nowrap" }}>{r.envKeys.map((key: string) => <div key={key}>{key}</div>)}</div>
+            )},
+            { key: "runtime", header: "Runtime / SDK", render: (r: any) => (
+              <div style={{ fontSize: "var(--admin-text-xs)", minWidth: 150 }}>
+                <div>{r.runtime}</div>
+                <div style={{ color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.sdk}</div>
+              </div>
+            )},
+            { key: "path", header: "호출부", render: (r: any) => (
+              <div style={{ fontSize: "var(--admin-text-xs)", minWidth: 220 }}>
+                {r.internalPaths.map((path: string) => <div key={path} title={path} style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{path}</div>)}
+              </div>
+            )},
+            { key: "region", header: "리전", render: (r: any) => (
+              <span style={{ fontSize: "var(--admin-text-sm)", whiteSpace: "nowrap" }}>{r.region}</span>
             )},
             { key: "status", header: "상태", render: (r: any) => (
               <>

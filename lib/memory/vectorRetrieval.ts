@@ -5,8 +5,8 @@
 
 import { SupabaseClient } from "@supabase/supabase-js";
 import { createGenAIClient } from "@/app/api/_lib/ai";
+import { getLlmModel } from "@/lib/llm/modelRouter";
 
-const EMBEDDING_MODEL = "gemini-embedding-001";
 const EMBEDDING_DIMENSIONS = 768;
 
 export interface RetrievedMemoryFact {
@@ -23,8 +23,9 @@ export interface RetrievedMemoryFact {
 async function embedQuery(db: SupabaseClient, childId: string, text: string): Promise<number[] | null> {
   try {
     const ai = createGenAIClient({ provider: "vertex" });
+    const embeddingModel = getLlmModel("embedding");
     const response = await ai.models.embedContent({
-      model: EMBEDDING_MODEL,
+      model: embeddingModel,
       contents: text,
       config: { taskType: "RETRIEVAL_QUERY", outputDimensionality: EMBEDDING_DIMENSIONS },
     });
@@ -33,7 +34,7 @@ async function embedQuery(db: SupabaseClient, childId: string, text: string): Pr
     const { error: usageError } = await db.from("usage_events").insert({
       child_id: childId,
       kind: "embedding",
-      model: EMBEDDING_MODEL,
+      model: embeddingModel,
       request_count: 1,
       input_count: text.length,
       est_cost_krw: null,
