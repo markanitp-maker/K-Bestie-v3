@@ -155,8 +155,13 @@ export function PwaServiceWorker() {
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         if (!refreshing) {
           refreshing = true;
-          setPwaState("reloading");
-          window.location.reload();
+          const currentSha = process.env.NEXT_PUBLIC_DEPLOYMENT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "v1";
+          const guardKey = `pwa_sw_reloaded_${currentSha}`;
+          if (typeof window !== "undefined" && !sessionStorage.getItem(guardKey)) {
+            sessionStorage.setItem(guardKey, "true");
+            setPwaState("reloading");
+            window.location.reload();
+          }
         }
       });
     }

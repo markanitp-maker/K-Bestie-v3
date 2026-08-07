@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const buildId = process.env.NEXT_PUBLIC_DEPLOYMENT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || "local";
+  const buildId =
+    process.env.NEXT_PUBLIC_DEPLOYMENT_SHA ||
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.VERCEL_DEPLOYMENT_ID ||
+    process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
+    "v3.1.0";
   const CACHE_NAME = `kbestie-shell-${buildId}`;
 
   const swCode = `
@@ -23,6 +28,8 @@ const PRECACHE_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
+  // 새 Service Worker 설치 시 대기 없이 즉시 활성화 준비 (skipWaiting)
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
       await Promise.all(
@@ -39,12 +46,15 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((name) => {
+          // kbestie-shell-로 시작하는 모든 구버전 캐시(kbestie-shell-local 포함) 삭제
           if (name.startsWith("kbestie-shell-") && name !== CACHE_NAME) {
+            console.log("[SW] Cleaning up old cache:", name);
             return caches.delete(name);
           }
         })
       );
     }).then(() => {
+      // 기존 클라이언트 페이지에 즉시 새 Service Worker 제어권 적용
       return self.clients.claim();
     })
   );
@@ -146,7 +156,9 @@ self.addEventListener("notificationclick", (event) => {
   return new NextResponse(swCode, {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
-      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0, s-maxage=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
       "Service-Worker-Allowed": "/",
     },
   });
