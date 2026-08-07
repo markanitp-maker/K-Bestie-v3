@@ -5,6 +5,7 @@ import Link from "next/link";
 import { DemoFrame } from "../../components/DemoFrame";
 import { ParentNav } from "../../components/ParentNav";
 import { parentGuideTurns } from "../../lib/mockData";
+import KChatbotWidget from "@/components/KChatbotWidget";
 
 const INITIAL_VISIBLE = 2;
 
@@ -21,7 +22,7 @@ export default function DemoParentGuidePage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
+      <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "var(--color-k-surface)" }}>
         <div className="shrink-0 flex items-center justify-center px-4 pt-4 pb-2">
           <Link href="/demo" className="font-bold text-sm cursor-pointer" style={{ color: "var(--color-k-navy)" }}>
             케이와 대화
