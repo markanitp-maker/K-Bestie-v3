@@ -464,7 +464,7 @@ function MissionInner() {
   const showTurnPersistenceRetry = useCallback(() => {
     recoveryAttemptedRef.current = true;
     if (activeChildTurnIdRef.current) {
-      sessionStorage.setItem("mission-turn-retry-exhausted", activeChildTurnIdRef.current);
+      sessionStorage.setItem("mission-turn-recovery-paused", activeChildTurnIdRef.current);
     }
     answerInFlightRef.current = false;
     setIsProcessingAnswer(false);
@@ -846,6 +846,7 @@ function MissionInner() {
             displaySequence: enrichedTurn.displaySequence ?? 0,
             createdAt: Date.now(),
           });
+          sessionStorage.setItem("mission-turn-recovery-paused", childTurnId);
           const res = await postMissionTurnWithRetry({
             body: {
               action: "start",
@@ -882,6 +883,7 @@ function MissionInner() {
             return;
           }
           data = await res.json();
+          sessionStorage.removeItem("mission-turn-recovery-paused");
           logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
           if (currentEpoch !== answerEpochRef.current) return;
           
@@ -1893,7 +1895,7 @@ function MissionInner() {
       const pendingTurn = await readPendingMissionTurn().catch(() => null);
       if (pendingTurn && pendingTurn.sessionId === data.sessionId) {
         const pending = pendingTurn;
-        if (sessionStorage.getItem("mission-turn-retry-exhausted") === pending.clientTurnId) {
+        if (sessionStorage.getItem("mission-turn-recovery-paused") === pending.clientTurnId) {
           setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
           setShowRetryButton(true);
           setPhase("turn_retry");
@@ -1920,7 +1922,7 @@ function MissionInner() {
             signal,
           });
           if (finalizeResponse.ok) {
-            sessionStorage.removeItem("mission-turn-retry-exhausted");
+            sessionStorage.removeItem("mission-turn-recovery-paused");
             await clearPendingMissionTurn(pending.clientTurnId);
             window.location.reload();
             return;
@@ -2582,7 +2584,7 @@ function MissionInner() {
         <p className="text-xs text-gray-500">연결을 확인하고 현재 대화만 다시 시도해 주세요.</p>
         <button
           onClick={() => {
-            sessionStorage.removeItem("mission-turn-retry-exhausted");
+            sessionStorage.removeItem("mission-turn-recovery-paused");
             window.location.reload();
           }}
           className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
