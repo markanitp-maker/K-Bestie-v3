@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   if (approvalBlocked) return approvalBlocked;
   const { data: questions, error } = await supabase
     .from("parent_questions")
-    .select("id, question_text, status, created_at, delivered_count")
+    .select("id, question_text, status, created_at, delivered_count, child_answer_summary")
     .eq("child_id", childId)
     .order("created_at", { ascending: false });
 
