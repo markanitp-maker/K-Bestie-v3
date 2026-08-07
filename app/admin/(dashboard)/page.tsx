@@ -631,6 +631,7 @@ function LlmStatusTab() {
             <div><strong>마지막 확인:</strong> {formatDateTime(summary.lastCheckTime)}</div>
             <div><strong>등록 기능 수:</strong> {summary.total}개</div>
             <div><strong>정상:</strong> <span style={{ color: "var(--admin-success)" }}>{summary.normal}개</span></div>
+            <div><strong>경고:</strong> <span style={{ color: "#b45309" }}>{summary.warning}개</span></div>
             <div><strong>오류:</strong> <span style={{ color: "var(--admin-danger)" }}>{summary.error}개</span></div>
           </div>
         </div>
@@ -666,16 +667,16 @@ function LlmStatusTab() {
                 {r.internalPaths.map((path: string) => <div key={path} title={path} style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{path}</div>)}
               </div>
             )},
-            { key: "region", header: "리전", render: (r: any) => (
-              <span style={{ fontSize: "var(--admin-text-sm)", whiteSpace: "nowrap" }}>{r.region}</span>
+            { key: "endpointLocation", header: "Endpoint / Location", render: (r: any) => (
+              <span style={{ fontSize: "var(--admin-text-sm)", whiteSpace: "nowrap" }}>{r.endpointLocation}</span>
             )},
             { key: "status", header: "상태", render: (r: any) => (
               <>
                 <AdminStatusBadge
                   text={r.status}
-                  variant={r.status === "정상" ? "success" : "danger"}
+                  variant={r.status === "정상" ? "success" : r.status === "경고" ? "warning" : "danger"}
                 />
-                {r.warningReason && <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-danger)", marginTop: 2 }}>{r.warningReason}</div>}
+                {r.statusReason && <div style={{ fontSize: "var(--admin-text-xs)", color: r.status === "경고" ? "#b45309" : "var(--admin-danger)", marginTop: 2 }}>{r.statusReason}</div>}
               </>
             )}
           ]}

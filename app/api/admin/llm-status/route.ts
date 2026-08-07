@@ -15,6 +15,7 @@ export async function GET() {
 
   const total = entries.length;
   const normal = entries.filter((e) => e.status === "정상").length;
+  const warning = entries.filter((e) => e.status === "경고").length;
   const error = entries.filter((e) => e.status === "오류").length;
 
   return NextResponse.json({
@@ -23,6 +24,7 @@ export async function GET() {
       lastCheckTime: new Date().toISOString(),
       total,
       normal,
+      warning,
       error,
     },
     entries,
