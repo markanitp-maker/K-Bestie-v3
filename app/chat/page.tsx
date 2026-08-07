@@ -761,41 +761,55 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Mascot Area & Side Cards - 키보드가 닫혀 있으면 텍스트 모드에서도 케이 캐릭터를 항상 시각적으로 노출 */}
+          {/* Mascot Area & Side Cards OR Text-Mode Closed-Keyboard CTA */}
           {!isKeyboardOpen && (
-          <div className="relative w-full shrink-0 h-[clamp(135px,20dvh,155px)] transition-all duration-300">
-            
-            {/* Mascot & Platform - Centered strictly */}
-            <div className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
-               {/* Halo */}
-               <div className="absolute top-[5%] w-[150px] h-[150px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
-               
-               {/* Mascot */}
-               <div className="relative z-10 flex justify-center items-end pb-[clamp(38px,6.2dvh,46px)]">
-                 <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={140} className="!w-[clamp(115px,39.2vw,145px)] !h-[clamp(115px,39.2vw,145px)] object-contain" />
-               </div>
-               
-               {/* Platform */}
-               <div className="absolute bottom-0 w-[clamp(145px,50.9vw,185px)] h-[clamp(38px,6.1dvh,46px)] pointer-events-none">
-                 <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
-                 <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
-                 <div className="absolute top-[15%] left-[15%] w-[70%] h-[35%] bg-black/5 rounded-[100%] z-10 blur-sm" />
-               </div>
-            </div>
-
-            {/* Right State Card - Independent Absolute Overlay */}
-            {mode !== "text" && (
-            <div className="absolute right-[clamp(24px,8.7vw,36px)] top-[clamp(24px,4.1dvh,32px)]">
-              <div
-                className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(58px,19.5vw,72px)] h-[clamp(76px,12dvh,86px)] py-[10px] shadow-sm pointer-events-auto"
-                aria-live="polite"
-              >
-                 <div className="w-[clamp(30px,8.5vw,38px)] h-[clamp(30px,8.5vw,38px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5 shrink-0">
-                   {StateIcon}
-                 </div>
-                 <span className="text-[clamp(12px,3.6vw,14px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
+          <div className="relative w-full shrink-0 h-[clamp(135px,20dvh,155px)] transition-all duration-300 flex items-center justify-center">
+            {mode === "text" ? (
+              /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 명확한 '✕ 채팅창 닫기' CTA 노출 */
+              <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
+                <button
+                  onClick={switchToVoice}
+                  className="h-[48px] px-6 rounded-2xl bg-[#1E293B] hover:bg-[#0F172A] text-white font-bold text-[15px] shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all border border-slate-700/50"
+                  aria-label="채팅창 닫기"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  <span>채팅창 닫기</span>
+                </button>
               </div>
-            </div>
+            ) : (
+              /* mode !== "text": 케이 캐릭터 & Platform & 상태 카드 정상 노출 */
+              <>
+                {/* Mascot & Platform - Centered strictly */}
+                <div className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
+                   {/* Halo */}
+                   <div className="absolute top-[5%] w-[150px] h-[150px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
+                   
+                   {/* Mascot */}
+                   <div className="relative z-10 flex justify-center items-end pb-[clamp(38px,6.2dvh,46px)]">
+                     <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={140} className="!w-[clamp(115px,39.2vw,145px)] !h-[clamp(115px,39.2vw,145px)] object-contain" />
+                   </div>
+                   
+                   {/* Platform */}
+                   <div className="absolute bottom-0 w-[clamp(145px,50.9vw,185px)] h-[clamp(38px,6.1dvh,46px)] pointer-events-none">
+                     <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
+                     <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
+                     <div className="absolute top-[15%] left-[15%] w-[70%] h-[35%] bg-black/5 rounded-[100%] z-10 blur-sm" />
+                   </div>
+                </div>
+
+                {/* Right State Card - Independent Absolute Overlay */}
+                <div className="absolute right-[clamp(24px,8.7vw,36px)] top-[clamp(24px,4.1dvh,32px)]">
+                  <div
+                    className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(58px,19.5vw,72px)] h-[clamp(76px,12dvh,86px)] py-[10px] shadow-sm pointer-events-auto"
+                    aria-live="polite"
+                  >
+                     <div className="w-[clamp(30px,8.5vw,38px)] h-[clamp(30px,8.5vw,38px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5 shrink-0">
+                       {StateIcon}
+                     </div>
+                     <span className="text-[clamp(12px,3.6vw,14px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
+                  </div>
+                </div>
+              </>
             )}
           </div>
           )}
@@ -853,11 +867,10 @@ export default function ChatPage() {
                 </button>
                 <button
                   onClick={switchToVoice}
-                  className="h-[48px] px-3 shrink-0 rounded-2xl flex items-center justify-center bg-white border-2 border-gray-300 text-gray-700 font-bold active:scale-95 transition-all shadow-sm disabled:opacity-40 text-[13px] sm:text-[14px] gap-1 whitespace-nowrap cursor-pointer"
-                  aria-label="채팅창 닫기"
+                  className="w-[48px] h-[48px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40"
+                  aria-label="텍스트 입력창 닫기"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  <span>채팅창 닫기</span>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
             ) : (
