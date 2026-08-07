@@ -422,7 +422,9 @@ const CHILD_DETAIL_SUB_TABS: { id: ChildDetailSubTab; label: string }[] = [
   { id: "safety", label: "안전 이벤트" },
 ];
 
-function ChildUsageDetail({ period, childId }: { period: Period; childId: string }) {
+type ChildDetailSelection = { childId: string; childName: string; period: Period; customStart?: string; customEnd?: string };
+
+function ChildUsageDetail({ period, childId, customStart, customEnd }: { period: Period; childId: string; customStart?: string; customEnd?: string }) {
   const [detail, setDetail] = useState<UsageOverview | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -430,12 +432,18 @@ function ChildUsageDetail({ period, childId }: { period: Period; childId: string
     let cancelled = false;
     setDetail(null);
     setFailed(false);
-    fetch(`/api/admin/usage-overview?period=${period}&childId=${childId}`)
-      .then((r) => r.json())
+    const customQuery = period === "custom" && customStart && customEnd
+      ? `&startDate=${encodeURIComponent(customStart)}&endDate=${encodeURIComponent(customEnd)}`
+      : "";
+    fetch(`/api/admin/usage-overview?period=${period}${customQuery}&childId=${childId}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error("child usage detail failed");
+        return r.json();
+      })
       .then((d) => { if (!cancelled) setDetail(d); })
       .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
-  }, [period, childId]);
+  }, [period, childId, customStart, customEnd]);
 
   if (failed) return <EmptyState text="상세 데이터를 불러오지 못했어요." />;
   if (!detail) return <EmptyState text="불러오는 중..." />;
@@ -487,7 +495,7 @@ function ChildUsageDetail({ period, childId }: { period: Period; childId: string
   );
 }
 
-function ChildDetailPanel({ period, childId, childName }: { period: Period; childId: string; childName: string }) {
+function ChildDetailPanel({ period, childId, childName, customStart, customEnd }: ChildDetailSelection) {
   const [subTab, setSubTab] = useState<ChildDetailSubTab>("usage");
 
   return (
@@ -516,7 +524,7 @@ function ChildDetailPanel({ period, childId, childName }: { period: Period; chil
         ))}
       </div>
 
-      {subTab === "usage" && <ChildUsageDetail period={period} childId={childId} />}
+      {subTab === "usage" && <ChildUsageDetail period={period} childId={childId} customStart={customStart} customEnd={customEnd} />}
       {subTab === "conversations" && <ConversationsTab childId={childId} />}
       {subTab === "safety" && <SafetyTab childId={childId} />}
     </div>
@@ -529,7 +537,7 @@ function ChildRightPanel({
   selected,
   onClose,
 }: {
-  selected: { childId: string; childName: string; period: Period } | null;
+  selected: ChildDetailSelection | null;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -579,7 +587,7 @@ function ChildRightPanel({
             ✕
           </button>
         </div>
-        <ChildDetailPanel period={selected.period} childId={selected.childId} childName={selected.childName} />
+        <ChildDetailPanel {...selected} />
         <style jsx>{`
           @keyframes hbRightPanelSlideIn {
             from {
@@ -1468,7 +1476,7 @@ function AdminDashboard() {
   // 유저 상세(ChildDetailPanel) — 비용 탭/매출 탭 두 진입점을 단일 공유 상태로 통합.
   // 어느 탭에서 열든 동일한 우측 슬라이드 패널이 열리고, 탭을 전환해도 패널은 유지된다.
   // period는 클릭 시점 값을 캡처해 패널이 자체 보유(탭 목록의 현재 period를 따르지 않음).
-  const [selectedChildUser, setSelectedChildUser] = useState<{ childId: string; childName: string; period: Period } | null>(null);
+  const [selectedChildUser, setSelectedChildUser] = useState<ChildDetailSelection | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1499,7 +1507,12 @@ function AdminDashboard() {
   };
   const openChildPanel = (childId: string, childName: string) => {
     // period는 클릭 시점 값을 캡처해 고정 — 탭을 전환해도 패널의 period는 변하지 않는다.
-    setSelectedChildUser({ childId, childName, period });
+    setSelectedChildUser({
+      childId,
+      childName,
+      period,
+      ...(period === "custom" ? { customStart, customEnd } : {}),
+    });
   };
   const closeChildPanel = () => setSelectedChildUser(null);
 
