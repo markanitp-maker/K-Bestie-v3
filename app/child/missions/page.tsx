@@ -32,6 +32,7 @@ import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndica
 import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { clearPendingMissionTurn, readPendingMissionTurn, savePendingMissionTurn } from "@/lib/mission/pendingTurnStore";
+import { postMissionTurnWithRetry } from "@/lib/mission/turnRequest";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -791,10 +792,8 @@ function MissionInner() {
         const finalizeServerTurn = async (kText: string, isClarification: boolean = false) => {
           const kTurnId = `${childTurnId}:k`;
           const kDisplaySequence = nextDisplaySequence();
-          const finalizeRes = await fetch("/api/mission/turn", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          const finalizeRes = await postMissionTurnWithRetry({
+            body: {
               action: "finalize",
               sessionId: sid,
               clientTurnId: childTurnId,
@@ -802,7 +801,7 @@ function MissionInner() {
               kContent: kText,
               kDisplaySequence,
               isClarification,
-            }),
+            },
             signal: isLive ? manualAbortControllerRef.current?.signal : apiAbortControllerRef.current?.signal,
           });
           if (!finalizeRes.ok) {
@@ -828,10 +827,8 @@ function MissionInner() {
             displaySequence: enrichedTurn.displaySequence ?? 0,
             createdAt: Date.now(),
           });
-          const res = await fetch("/api/mission/turn", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          const res = await postMissionTurnWithRetry({
+            body: {
               action: "start",
               sessionId: sid,
               clientTurnId: childTurnId,
@@ -839,7 +836,7 @@ function MissionInner() {
               answerText: enrichedTurn.text,
               voiceMode: voiceModeRef.current,
               displaySequence: enrichedTurn.displaySequence ?? 0,
-            }),
+            },
             signal: isLive ? manualAbortControllerRef.current?.signal : apiAbortControllerRef.current?.signal,
           });
           if (!res.ok) {
@@ -1887,10 +1884,8 @@ function MissionInner() {
       const pendingTurn = await readPendingMissionTurn().catch(() => null);
       if (pendingTurn && pendingTurn.sessionId === data.sessionId) {
         const pending = pendingTurn;
-        const replayResponse = await fetch("/api/mission/turn", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "start", ...pending }),
+        const replayResponse = await postMissionTurnWithRetry({
+          body: { action: "start", ...pending },
           signal,
         });
         if (replayResponse.ok) {
@@ -1898,17 +1893,15 @@ function MissionInner() {
           const recoveryText = replay.completionCandidate
             ? "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!"
             : "이야기해 줘서 고마워! 다음 이야기도 들려줄래?";
-          const finalizeResponse = await fetch("/api/mission/turn", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+          const finalizeResponse = await postMissionTurnWithRetry({
+            body: {
               action: "finalize",
               sessionId: pending.sessionId,
               clientTurnId: pending.clientTurnId,
               kTurnId: `${pending.clientTurnId}:k`,
               kContent: recoveryText,
               kDisplaySequence: pending.displaySequence + 1,
-            }),
+            },
             signal,
           });
           if (finalizeResponse.ok) {

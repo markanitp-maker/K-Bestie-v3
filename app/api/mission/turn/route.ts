@@ -87,6 +87,16 @@ export async function POST(req: NextRequest) {
   if ("response" in auth) return auth.response;
   const { service, childId } = auth;
   const maskedChildId = childId.slice(0, 8);
+  const attemptCount = Math.max(1, Number.parseInt(req.headers.get("x-mission-turn-attempt") ?? "1", 10) || 1);
+  if (attemptCount > 1) {
+    telemetry("TURN_RETRY", {
+      sessionId: body.sessionId,
+      clientTurnId: body.clientTurnId,
+      maskedChildId,
+      status: "retrying",
+      attemptCount,
+    });
+  }
 
   if (body.action === "start") {
     if (!body.questionId || typeof body.answerText !== "string" || body.answerText.length > 500) {
@@ -139,6 +149,13 @@ export async function POST(req: NextRequest) {
       clientTurnId: body.clientTurnId,
       maskedChildId,
       status: started?.turn_status ?? "CHILD_PERSISTED",
+    });
+    telemetry("TURN_PROCESSING", {
+      sessionId: body.sessionId,
+      clientTurnId: body.clientTurnId,
+      maskedChildId,
+      status: "processing",
+      attemptCount,
     });
 
     if (started?.answer_result) {
@@ -235,6 +252,12 @@ export async function POST(req: NextRequest) {
     maskedChildId,
     status: "FINALIZED",
   });
+  telemetry("K_MESSAGE_PERSISTED", {
+    sessionId: body.sessionId,
+    clientTurnId: body.clientTurnId,
+    maskedChildId,
+    status: "persisted",
+  });
   if (finalized?.completed) {
     telemetry("MISSION_COMPLETED", {
       sessionId: body.sessionId,
@@ -242,6 +265,14 @@ export async function POST(req: NextRequest) {
       maskedChildId,
       status: finalized.reward_status,
     });
+    if (finalized.reward_status === "awarded" || finalized.reward_status === "already_earned") {
+      telemetry("REWARD_GRANTED", {
+        sessionId: body.sessionId,
+        clientTurnId: body.clientTurnId,
+        maskedChildId,
+        status: finalized.reward_status,
+      });
+    }
   }
 
   return NextResponse.json({
