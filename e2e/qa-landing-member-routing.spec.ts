@@ -118,11 +118,16 @@ test.describe.serial("landing auth membership routing", () => {
         }
 
         await attachSession(context, email);
+        const visitedPaths: string[] = [];
+        page.on("framenavigated", (frame) => {
+          if (frame === page.mainFrame()) visitedPaths.push(new URL(frame.url()).pathname);
+        });
         await page.goto(`${BASE}/?returnUrl=${encodeURIComponent("/parent/home")}`);
         await page.waitForURL((url) => url.pathname === "/signup", { timeout: 20_000 });
         const routedUrl = new URL(page.url());
         expect(routedUrl.searchParams.get("step")).toBe(scenario.expected);
         expect(routedUrl.searchParams.get("returnUrl")).toBe("/parent/home");
+        expect(visitedPaths).not.toContain("/parent/home");
       } finally {
         if (familyId) {
           await svc.from("family_members").delete().eq("family_id", familyId);

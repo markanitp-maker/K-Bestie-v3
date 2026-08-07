@@ -51,6 +51,24 @@ export default function HubPage() {
       await routePastPwaGate(fallback, router);
     };
 
+    const routeActiveMembership = async (status: {
+      state?: string;
+      childId?: string;
+    }): Promise<boolean> => {
+      if (status.state === "ACTIVE_PARENT") {
+        void logAuthFlowEvent("existing_user_routed_to_login");
+        await routeVerifiedUser("/parent/home");
+        return true;
+      }
+      if (status.state === "ACTIVE_CHILD") {
+        void logAuthFlowEvent("existing_user_routed_to_login");
+        if (status.childId) localStorage.setItem("k_child_id", status.childId);
+        await routeVerifiedUser("/child/home");
+        return true;
+      }
+      return false;
+    };
+
     // PWA의 manifest start_url이 "/"라서 앱을 재실행·백그라운드 복귀·재부팅할 때마다
     // 이 페이지가 항상 가장 먼저 실행된다. 기존 코드는 getSession()(로컬 저장소만
     // 읽는 조회, 서버 검증·리프레시 강제 없음)이 null을 반환하면 곧바로 로그인
@@ -99,7 +117,7 @@ export default function HubPage() {
         if (!statusRes.ok) {
           throw new Error("membership-status check failed");
         }
-        const status = await statusRes.json();
+        let status = await statusRes.json();
 
         // 1순위 & 2순위: 탈퇴 / 정지 / 삭제 가드
         if (status.state === "RESTOREABLE_WITHDRAWN") {
@@ -152,38 +170,37 @@ export default function HubPage() {
         }
 
         // 3순위: 활성 기존 계정
-        if (status.state === "ACTIVE_PARENT") {
-          void logAuthFlowEvent("existing_user_routed_to_login");
-          await routeVerifiedUser("/parent/home");
-          return;
-        }
-        if (status.state === "ACTIVE_CHILD") {
-          void logAuthFlowEvent("existing_user_routed_to_login");
-          if (status.childId) localStorage.setItem("k_child_id", status.childId);
-          await routeVerifiedUser("/child/home");
-          return;
-        }
+        if (await routeActiveMembership(status)) return;
 
-        // 4. 소셜 로그인 초대/매칭(auto-join) 시도
-        const joinRes = await fetch("/api/auth/auto-join", { method: "POST" });
-        if (joinRes.ok) {
-          const joinData = await joinRes.json();
-          if (joinData.joined) {
-            if (joinData.role === "child") {
-              if (joinData.child_profile_id) {
-                localStorage.setItem("k_child_id", joinData.child_profile_id);
+        // 4. 아직 가족이 전혀 없는 소셜 사용자만 초대/매칭(auto-join)을 시도한다.
+        // 가족만 만들고 아이 등록 전인 사용자는 이미 familyId가 있으므로 이 경로를
+        // 타면 안 된다. 기존 member라는 이유만으로 ACTIVE_PARENT처럼 라우팅하면
+        // 회원가입 child 단계를 잠깐 우회했다가 다시 돌아오는 오류가 생긴다.
+        if (!status.familyId) {
+          const joinRes = await fetch("/api/auth/auto-join", { method: "POST" });
+          if (joinRes.ok) {
+            const joinData = await joinRes.json();
+            if (joinData.joined) {
+              // join 응답의 role만 신뢰해 홈으로 보내지 않고, 변경된 DB 상태를 서버에서
+              // 다시 판정한다. 아이가 없는 초대 가족이면 여전히 회원가입 단계여야 한다.
+              const refreshedStatusRes = await fetch("/api/auth/membership-status", { cache: "no-store" });
+              if (!refreshedStatusRes.ok) throw new Error("membership-status refresh failed");
+              status = await refreshedStatusRes.json();
+
+              if (joinData.role === "child") {
+                if (joinData.child_profile_id) {
+                  localStorage.setItem("k_child_id", joinData.child_profile_id);
+                }
               }
-              await routeVerifiedUser("/child/home");
-            } else {
-              await routeVerifiedUser("/parent/home");
+
+              if (await routeActiveMembership(status)) return;
             }
-            return;
-          }
-          if (joinData.reason === "no_email") {
-            alert(joinData.message || "이메일 정보가 없어 로그인이 어렵습니다.");
-            await supabase.auth.signOut();
-            router.replace("/login");
-            return;
+            if (joinData.reason === "no_email") {
+              alert(joinData.message || "이메일 정보가 없어 로그인이 어렵습니다.");
+              await supabase.auth.signOut();
+              router.replace("/login");
+              return;
+            }
           }
         }
 
