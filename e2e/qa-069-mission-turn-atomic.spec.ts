@@ -52,7 +52,14 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
     return { status: response.status(), body: await response.json().catch(() => null) };
   };
 
-  const started = await call("/api/mission/start", { childId: CHILD_ID, roundType: "round1_day" });
+  let started = await call("/api/mission/start", { childId: CHILD_ID, roundType: "round1_day" });
+  if (started.status === 200 && started.body?.requiresConfirmation) {
+    started = await call("/api/mission/start", {
+      childId: CHILD_ID,
+      roundType: "round1_day",
+      confirmRestart: true,
+    });
+  }
   expect(started.status, JSON.stringify(started.body)).toBe(200);
   expect(started.body.sessionId).toBeTruthy();
   expect(started.body.questions.length).toBeGreaterThanOrEqual(5);
@@ -76,6 +83,26 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
       voiceMode: "stt_tts",
       displaySequence: index * 2 + 1,
     };
+
+    if (index === 0) {
+      const failedStart = await call("/api/mission/turn", {
+        ...startPayload,
+        questionId: crypto.randomUUID(),
+      });
+      expect(failedStart.status).toBe(503);
+      const { count: failedTurnCount } = await service
+        .from("mission_turns")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", sessionId)
+        .eq("client_turn_id", clientTurnId);
+      const { data: progressAfterFailure } = await service
+        .from("mission_progress")
+        .select("valid_answer_count,status")
+        .eq("session_id", sessionId)
+        .single();
+      expect(failedTurnCount).toBe(0);
+      expect(progressAfterFailure).toMatchObject({ valid_answer_count: 0, status: "IN_PROGRESS" });
+    }
 
     const first = await call("/api/mission/turn", startPayload);
     expect(first.status, `turn ${index + 1}: ${JSON.stringify(first.body)}`).toBe(200);
@@ -102,6 +129,22 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
       kDisplaySequence: index * 2 + 2,
       isClarification: false,
     };
+    if (index === requiredCount - 1) {
+      const failedFinalize = await call("/api/mission/turn", {
+        ...finalizePayload,
+        kTurnId: `${clientTurnId}:invalid`,
+      });
+      expect(failedFinalize.status).toBe(503);
+      const [{ data: preFinalizeProgress }, { count: preFinalizeRewardCount }, { count: preFinalizeKCount }] = await Promise.all([
+        service.from("mission_progress").select("valid_answer_count,status").eq("session_id", sessionId).single(),
+        service.from("gold_key_ledger").select("id", { count: "exact", head: true }).eq("mission_id", sessionId),
+        service.from("chat_messages").select("id", { count: "exact", head: true })
+          .eq("session_id", sessionId).eq("turn_id", kTurnId),
+      ]);
+      expect(preFinalizeProgress).toMatchObject({ valid_answer_count: requiredCount, status: "IN_PROGRESS" });
+      expect(preFinalizeRewardCount).toBe(0);
+      expect(preFinalizeKCount).toBe(0);
+    }
     const finalized = await call("/api/mission/turn", finalizePayload);
     expect(finalized.status, JSON.stringify(finalized.body)).toBe(200);
     expect(finalized.body.completed).toBe(index === requiredCount - 1);
@@ -117,4 +160,74 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
   }
 
   writeFileSync(`${EVIDENCE_DIR}/server-result.json`, JSON.stringify({ sessionId, requiredCount, turns }, null, 2));
+
+  const uiStarted = await call("/api/mission/start", {
+    childId: CHILD_ID,
+    roundType: "round1_day",
+    confirmRestart: true,
+  });
+  expect(uiStarted.status, JSON.stringify(uiStarted.body)).toBe(200);
+  await page.evaluate((childId) => localStorage.setItem("k_child_id", childId), CHILD_ID);
+  await page.goto(`${DEV_URL}/child/missions?childId=${CHILD_ID}&roundType=round1_day`, { waitUntil: "domcontentloaded" });
+  const resume = page.getByRole("button", { name: /진행 중인 미션 이어하기/ });
+  if (await resume.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    await resume.click();
+  }
+  const continueMission = page.getByRole("button", { name: "이어하기", exact: true });
+  if (await continueMission.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    await continueMission.click({ force: true });
+  }
+  const textMode = page.getByRole("button", { name: "텍스트로 답하기" }).first();
+  await expect(textMode).toBeEnabled({ timeout: 20_000 });
+  await textMode.click({ force: true });
+  const input = page.getByPlaceholder("케이에게 텍스트로 답하기...");
+  await expect(input).toBeVisible({ timeout: 10_000 });
+
+  const failedBodies: any[] = [];
+  await page.route("**/api/mission/turn", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body?.action === "start" && failedBodies.length < 3) {
+      failedBodies.push(body);
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "QA_NETWORK_FAILURE" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await input.fill("없어");
+  await page.getByRole("button", { name: "전송" }).click();
+  await expect(page.getByRole("button", { name: "다시 시도" })).toBeVisible({ timeout: 15_000 });
+  expect(failedBodies).toHaveLength(3);
+  expect(new Set(failedBodies.map((body) => body.clientTurnId)).size).toBe(1);
+
+  const pending = await page.evaluate(async () => new Promise<any>((resolve) => {
+    const open = indexedDB.open("k-bestie-mission-recovery", 1);
+    open.onsuccess = () => {
+      const tx = open.result.transaction("pending-turns", "readonly");
+      const get = tx.objectStore("pending-turns").get("current");
+      get.onsuccess = () => resolve(get.result ?? null);
+      get.onerror = () => resolve(null);
+    };
+    open.onerror = () => resolve(null);
+  }));
+  expect(pending?.clientTurnId).toBe(failedBodies[0].clientTurnId);
+
+  await page.unroute("**/api/mission/turn");
+  const recoveredIds: string[] = [];
+  page.on("request", (request) => {
+    if (!request.url().includes("/api/mission/turn") || request.method() !== "POST") return;
+    const body = request.postDataJSON();
+    if (body?.clientTurnId) recoveredIds.push(body.clientTurnId);
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect.poll(() => recoveredIds.includes(pending.clientTurnId), { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => page.evaluate(async () => new Promise<boolean>((resolve) => {
+    const open = indexedDB.open("k-bestie-mission-recovery", 1);
+    open.onsuccess = () => {
+      const tx = open.result.transaction("pending-turns", "readonly");
+      const get = tx.objectStore("pending-turns").get("current");
+      get.onsuccess = () => resolve(!get.result);
+      get.onerror = () => resolve(false);
+    };
+    open.onerror = () => resolve(false);
+  })), { timeout: 25_000 }).toBe(true);
 });

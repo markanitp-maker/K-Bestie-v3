@@ -99,7 +99,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === "start") {
-    if (!body.questionId || typeof body.answerText !== "string" || body.answerText.length > 500) {
+    if (!body.questionId || typeof body.answerText !== "string" || body.answerText.length > 500 ||
+        !["live", "stt_tts"].includes(body.voiceMode)) {
       return NextResponse.json({ error: "Invalid turn payload" }, { status: 400 });
     }
     if (!Number.isSafeInteger(body.displaySequence) || body.displaySequence < 0) {
