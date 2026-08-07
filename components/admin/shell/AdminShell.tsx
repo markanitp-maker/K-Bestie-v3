@@ -237,7 +237,7 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
         <div style={{ display: "flex", alignItems: "center", gap: "var(--admin-space-16)" }}>
           {/* Mobile menu toggle */}
           <button
-            className="lg:hidden"
+            className="flex lg:hidden"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="메뉴 열기"
             style={{
@@ -245,7 +245,6 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
               border: "none",
               cursor: "pointer",
               padding: "var(--admin-space-8)",
-              display: "flex",
               alignItems: "center",
               justifyContent: "center",
               color: "var(--admin-text-primary)",
@@ -276,14 +275,13 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
       >
         {/* Sidebar Desktop */}
         <aside
-          className="max-lg:hidden admin-sidebar-scrollable"
+          className="hidden lg:flex admin-sidebar-scrollable"
           tabIndex={0}
           aria-label="관리자 메뉴"
           style={{
             width: "232px",
             background: "var(--admin-surface)",
             borderRight: "1px solid var(--admin-border)",
-            display: "flex",
             flexDirection: "column",
             padding: "var(--admin-space-24) 0", // 좌우 패딩을 줄이고 내부 요소에서 처리
             flexShrink: 0,
@@ -300,12 +298,11 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
         {/* Sidebar Mobile Drawer */}
         {isMobileMenuOpen && (
           <div
-            className="lg:hidden"
+            className="flex lg:hidden"
             style={{
               position: "fixed",
               inset: 0,
               zIndex: 50,
-              display: "flex",
             }}
           >
             <div
