@@ -12,13 +12,13 @@ export interface Question {
 }
 
 const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> = {
-  draft: { label: "확인 중 · 최대 48시간 소요", bg: "#F3F4F6", color: "#6B7280" },
-  ai_generated: { label: "확인 중 · 최대 48시간 소요", bg: "#F3F4F6", color: "#6B7280" },
-  parent_edited: { label: "확인 중 · 최대 48시간 소요", bg: "#F3F4F6", color: "#6B7280" },
-  mission_confirming: { label: "확인 중 · 최대 48시간 소요", bg: "#F3F4F6", color: "#6B7280" },
-  confirmed: { label: "확인 완료", bg: "#DCFCE7", color: "#15803D" },
-  declined: { label: "명확한 답변 거부", bg: "#FEF2F2", color: "#DC2626" },
-  mission_incomplete: { label: "미션 미완료", bg: "#FEF2F2", color: "#DC2626" },
+  draft: { label: "질문 대기 중", bg: "#F3F4F6", color: "#6B7280" },
+  ai_generated: { label: "질문 대기 중", bg: "#F3F4F6", color: "#6B7280" },
+  parent_edited: { label: "질문 대기 중", bg: "#F3F4F6", color: "#6B7280" },
+  mission_confirming: { label: "질문 대기 중", bg: "#F3F4F6", color: "#6B7280" },
+  confirmed: { label: "답변 완료", bg: "#DCFCE7", color: "#15803D" },
+  declined: { label: "답변하지 않음", bg: "#FEF2F2", color: "#DC2626" },
+  mission_incomplete: { label: "답변하지 않음", bg: "#FEF2F2", color: "#DC2626" },
   failed_system: { label: "일시적인 문제로 확인을 완료하지 못했습니다. 질문 기회는 복구되었습니다", bg: "#FEF2F2", color: "#DC2626" },
   failed_recovered: { label: "일시적인 문제로 확인을 완료하지 못했습니다. 질문 기회는 복구되었습니다", bg: "#FEF2F2", color: "#DC2626" },
 };
