@@ -29,7 +29,7 @@ interface Report {
   interests_preferences?: string;
   study_concerns?: string;
   digital_content_interests?: string;
-  future_dreams?: string;
+  teacher_adults?: string;
   recurring_stories?: string;
   business_date?: string;
   created_at: string;
@@ -749,7 +749,7 @@ export default function ParentHomePage() {
             <>
               <TodayConversationGuide guideText={todaysQuote ?? undefined} />
               <ParentMissionEventStatus childId={activeChild?.id ?? null} childName={activeChild?.name ?? ""} />
-              <InsightGrid report={latestReport} insights={insightsData} view={view} />
+              <InsightGrid insights={insightsData} view={view} />
             </>
           )}
         </div>

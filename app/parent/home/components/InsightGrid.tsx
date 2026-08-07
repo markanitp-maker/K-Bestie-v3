@@ -1,9 +1,15 @@
 import React from "react";
+import type { DashboardCardField, DashboardCardInsight } from "@/lib/reports/dashboardCardInsights";
 
 // Format date relative to local timezone
 function formatRelativeDate(dateString: string | undefined | null): string {
   if (!dateString) return "기록 없음";
-  const date = new Date(dateString);
+  const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "기록 없음";
+  const [, yearText, monthText, dayText] = match;
+  const [year, month, day] = [yearText, monthText, dayText].map(Number);
+  if (!year || !month || !day) return "기록 없음";
+  const date = new Date(year, month - 1, day);
   const now = new Date();
   
   // Normalize to start of day
@@ -20,30 +26,9 @@ function formatRelativeDate(dateString: string | undefined | null): string {
   return "오래전";
 }
 
-interface Report {
-  id?: string;
-  business_date?: string;
-  created_at?: string;
-}
+type InsightMap = Partial<Record<DashboardCardField, DashboardCardInsight>>;
 
-function getCompactSummary(text: string | null | undefined): string {
-  if (!text || text.trim() === "") return "";
-  const trimmed = text.trim();
-  if (trimmed.length <= 12) return trimmed;
-  
-  // Try to find a short sentence ending with punctuation or polite endings
-  const sentences = trimmed.split(/(?<=[.!?])\s+|(?<=[다요어음지네])\s+/);
-  const shortSentences = sentences.filter(s => s.trim().length > 0 && s.trim().length <= 12);
-  
-  if (shortSentences.length > 0) {
-    return shortSentences[0].trim();
-  }
-  
-  // If no short sentence can be extracted cleanly, provide a meaningful fallback <= 12 chars
-  return "새로운 이야기가 있어요";
-}
-
-export function InsightGrid({ report, insights, view }: { report?: Report | null, insights?: any, view?: "tablet" | "mobile" }) {
+export function InsightGrid({ insights, view }: { insights?: InsightMap | null, view?: "tablet" | "mobile" }) {
   const getStatus = (val?: string, emotionLevel?: string | null, isEmotion?: boolean) => {
     if (!val || val.trim() === "") {
       return { label: "데이터 부족", color: "#9ca3af", dot: "#e5e7eb" };
@@ -56,18 +41,24 @@ export function InsightGrid({ report, insights, view }: { report?: Report | null
     return { label: "특징", color: "#10315B", dot: "#10315B" };
   };
 
-  const getInsightData = (field: string) => {
+  const getInsightData = (field: DashboardCardField): DashboardCardInsight => {
     return insights?.[field] || { value: null, last_observed_at: null, recent_count: 0 };
   };
 
-  const cards = [
+  const cards: Array<{
+    id: string;
+    field: DashboardCardField;
+    title: string;
+    icon: string;
+    isEmotion?: boolean;
+  }> = [
     { id: 'school', field: 'school_academy_life', title: '학교·학원 생활', icon: '🏫' },
     { id: 'friend', field: 'peer_friendship', title: '친구 관계', icon: '👥' },
     { id: 'emotion', field: 'emotion_hint', title: '마음 흐름', icon: '💛', isEmotion: true },
     { id: 'interest', field: 'interests_preferences', title: '관심사·취향', icon: '✨' },
     { id: 'study', field: 'study_concerns', title: '공부 고민', icon: '📚' },
     { id: 'digital', field: 'digital_content_interests', title: '디지털·콘텐츠', icon: '📱' },
-    { id: 'teacher', field: 'teacher', title: '선생님·어른', icon: '👩‍🏫' },
+    { id: 'teacher', field: 'teacher_adults', title: '선생님·어른', icon: '👩‍🏫' },
     { id: 'repeat', field: 'recurring_stories', title: '반복 이야기', icon: '🔁' },
   ];
 
@@ -75,17 +66,12 @@ export function InsightGrid({ report, insights, view }: { report?: Report | null
     <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
       {cards.map(c => {
         const data = getInsightData(c.field);
-        const hasData = data.value && data.value.trim() !== "";
-        const isUnsupported = c.id === 'teacher';
+        const hasData = typeof data.value === "string" && data.value.trim() !== "";
         
-        // Use exactly the text requested for empty state
-        const emptyMessage = isUnsupported ? "분석을 준비 중이에요" : "확인된 내용이 없어요";
-        
-        const status = getStatus(hasData ? data.value : undefined, data.emotion_level, c.isEmotion);
+        const status = getStatus(hasData ? data.value! : undefined, data.emotion_level, c.isEmotion);
         const dateStr = formatRelativeDate(data.last_observed_at);
         const countStr = data.recent_count > 0 ? `관찰 ${data.recent_count}일 · ` : "";
-        
-        const displayText = hasData ? getCompactSummary(data.value) : emptyMessage;
+        const displayText = hasData ? data.value : "대화 정보 부족";
 
         return (
           <div 
@@ -97,7 +83,7 @@ export function InsightGrid({ report, insights, view }: { report?: Report | null
                 <span className="text-base" aria-hidden="true">{c.icon}</span>
                 <span className="text-[11px] font-bold text-gray-500 break-keep">{c.title}</span>
               </div>
-              <p className="text-[13px] font-bold text-gray-800 leading-snug break-keep">
+              <p className="text-[clamp(9px,2.4vw,13px)] font-bold text-gray-800 leading-snug whitespace-nowrap tracking-tight">
                 {displayText}
               </p>
             </div>
