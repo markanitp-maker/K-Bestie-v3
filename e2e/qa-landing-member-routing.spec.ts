@@ -24,6 +24,51 @@ async function attachSession(context: BrowserContext, email: string) {
 test.describe.serial("landing auth membership routing", () => {
   test.setTimeout(60_000);
 
+  test("guest landing keeps the hero layout and opens the shared social auth screen", async ({ page }) => {
+    for (const viewport of [
+      { width: 320, height: 568 },
+      { width: 390, height: 844 },
+      { width: 768, height: 1024 },
+      { width: 1440, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto(BASE);
+      const hero = page.locator("main section").first();
+      await expect(hero.getByRole("link", { name: "시작하기" })).toHaveCount(1);
+      await expect(hero.getByRole("link", { name: "서비스 미리보기" })).toHaveCount(0);
+      await expect(page.getByRole("navigation", { name: "계정 메뉴" }).getByRole("link", { name: "로그인" })).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "계정 메뉴" }).getByRole("link", { name: "회원가입" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+
+    await page.goto(`${BASE}/parent/report?tab=week`);
+    await expect(page).toHaveURL((url) =>
+      url.pathname === "/login" && url.searchParams.get("returnUrl") === "/parent/report?tab=week"
+    );
+
+    await page.goto(BASE);
+    await page.locator("main section").first().getByRole("link", { name: "시작하기" }).click();
+    await expect(page).toHaveURL(/\/login\?entry=landing_start/);
+    await expect(page.getByRole("button", { name: "카카오로 계속하기" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "구글로 계속하기" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "뒤로 가기" })).toBeVisible();
+  });
+
+  test("callback rejects external and authentication-loop return destinations", async ({ request }) => {
+    for (const unsafe of ["https://evil.example/path", "//evil.example/path", "/signup?step=child"]) {
+      const response = await request.get(
+        `${BASE}/auth/callback?returnUrl=${encodeURIComponent(unsafe)}`,
+        { maxRedirects: 0 }
+      );
+      expect(response.status()).toBeGreaterThanOrEqual(300);
+      expect(response.status()).toBeLessThan(400);
+      const location = response.headers().location ?? "";
+      expect(new URL(location).pathname).toBe("/login");
+      expect(location).not.toContain("evil.example");
+      expect(location).not.toContain("returnUrl");
+    }
+  });
+
   for (const scenario of [
     { name: "new auth user", expected: "consent", setup: "new" },
     { name: "consent completed", expected: "profile", setup: "consent" },
@@ -73,9 +118,11 @@ test.describe.serial("landing auth membership routing", () => {
         }
 
         await attachSession(context, email);
-        await page.goto(BASE);
+        await page.goto(`${BASE}/?returnUrl=${encodeURIComponent("/parent/home")}`);
         await page.waitForURL((url) => url.pathname === "/signup", { timeout: 20_000 });
-        expect(new URL(page.url()).searchParams.get("step")).toBe(scenario.expected);
+        const routedUrl = new URL(page.url());
+        expect(routedUrl.searchParams.get("step")).toBe(scenario.expected);
+        expect(routedUrl.searchParams.get("returnUrl")).toBe("/parent/home");
       } finally {
         if (familyId) {
           await svc.from("family_members").delete().eq("family_id", familyId);
@@ -142,10 +189,25 @@ test.describe.serial("landing auth membership routing", () => {
       if (childError) throw childError;
       childId = child.id;
 
+      const { count: membersBefore } = await svc
+        .from("family_members").select("id", { count: "exact", head: true }).eq("family_id", familyId);
+      const { count: childrenBefore } = await svc
+        .from("child_profiles").select("id", { count: "exact", head: true }).eq("family_id", familyId);
+
       await attachSession(context, email);
+      await page.goto(`${BASE}/?returnUrl=${encodeURIComponent("/parent/report")}`);
+      await page.waitForURL((url) => url.pathname === "/parent/report", { timeout: 20_000 });
+      expect(page.url()).not.toContain("/signup");
+
+      // 동일 인증 결과가 다시 처리돼도 가족·구성원·아이를 중복 생성하지 않는다.
       await page.goto(BASE);
       await page.waitForURL((url) => url.pathname === "/parent/home", { timeout: 20_000 });
-      expect(page.url()).not.toContain("/signup");
+      const { count: membersAfter } = await svc
+        .from("family_members").select("id", { count: "exact", head: true }).eq("family_id", familyId);
+      const { count: childrenAfter } = await svc
+        .from("child_profiles").select("id", { count: "exact", head: true }).eq("family_id", familyId);
+      expect(membersAfter).toBe(membersBefore);
+      expect(childrenAfter).toBe(childrenBefore);
     } finally {
       if (childId) await svc.from("child_profiles").delete().eq("id", childId);
       if (familyId) {

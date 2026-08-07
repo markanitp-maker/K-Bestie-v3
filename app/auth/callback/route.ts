@@ -1,43 +1,32 @@
 import { NextResponse } from "next/server";
-import { headers as nextHeaders, cookies } from "next/headers";
+import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { getSupabaseUrl, getSupabaseAnonKey } from "@/lib/supabase/env";
 import { createServiceClient } from "@/lib/supabase/server";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
-import { safeReturnUrl } from "@/lib/auth/safeReturnUrl";
+import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 
 export async function GET(request: Request) {
   const { searchParams, origin: rawOrigin } = new URL(request.url);
-  const headersList = await nextHeaders();
-
-  // 포트포워딩·리버스프록시 환경에서 실제 외부 도메인 복원
-  // 직접 접속 시에는 0.0.0.0만 localhost로 치환
-  const forwardedHost = headersList.get("x-forwarded-host");
-  const forwardedProto = headersList.get("x-forwarded-proto") ?? "https";
-  let origin: string;
-  if (forwardedHost) {
-    const host = forwardedHost.split(",")[0].trim();
-    const proto = forwardedProto.split(",")[0].trim();
-    origin = `${proto}://${host}`;
-  } else {
-    origin = rawOrigin.replace("//0.0.0.0", "//localhost");
-  }
-
-  console.log("[auth/callback] rawOrigin      :", rawOrigin);
-  console.log("[auth/callback] x-forwarded-host :", forwardedHost);
-  console.log("[auth/callback] x-forwarded-proto:", forwardedProto);
-  console.log("[auth/callback] resolved origin  :", origin);
+  // Next가 검증해 구성한 요청 URL origin만 사용한다. 클라이언트가 전달할 수 있는
+  // x-forwarded-host/proto로 redirect origin을 재구성하면 외부 도메인 주입 여지가 있다.
+  const origin = rawOrigin.replace("//0.0.0.0", "//localhost");
 
   const code = searchParams.get("code");
-  const returnUrl = safeReturnUrl(searchParams.get("returnUrl"));
+  const returnUrl = safePostAuthReturnUrl(searchParams.get("returnUrl"));
+  const returnQuery = returnUrl === "/" ? "" : `&returnUrl=${encodeURIComponent(returnUrl)}`;
 
   if (searchParams.get("error") === "access_denied") {
-    return NextResponse.redirect(`${origin}/login?error=cancelled`);
+    return NextResponse.redirect(`${origin}/login?error=cancelled${returnQuery}`);
   }
 
   if (code) {
     const cookieStore = await cookies();
-    const targetRedirect = `${origin}${returnUrl}`;
+    // callback에서 원래 목적지로 직접 보내면 신규·미완료 사용자도 회원상태 판정을
+    // 우회할 수 있다. 항상 허브(/)를 먼저 거쳐 서버 검증 결과가 ACTIVE일 때만 복원한다.
+    const targetRedirect = returnUrl === "/"
+      ? `${origin}/`
+      : `${origin}/?returnUrl=${encodeURIComponent(returnUrl)}`;
     const response = NextResponse.redirect(targetRedirect);
 
     const supabase = createServerClient(
@@ -121,5 +110,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  return NextResponse.redirect(`${origin}/login?error=auth${returnQuery}`);
 }

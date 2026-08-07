@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 
 
 type Step = "consent" | "profile" | "family" | "child";
@@ -425,12 +426,7 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
       if (res.ok) {
         const status = await res.json();
         if (status.state === "ACTIVE_PARENT") {
-          if (typeof window !== "undefined") {
-            window.localStorage.removeItem("k_pwa_intro_seen");
-            window.location.replace("/parent/home");
-          } else {
-            onDone();
-          }
+          onDone();
           return;
         }
       }
@@ -568,17 +564,19 @@ function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [authChecking, setAuthChecking] = useState(true);
+  const returnUrl = safePostAuthReturnUrl(searchParams.get("returnUrl"));
 
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) {
-        window.location.replace("/login?from=/signup");
+        const query = returnUrl === "/" ? "" : `?returnUrl=${encodeURIComponent(returnUrl)}`;
+        window.location.replace(`/login${query}`);
         return;
       }
       setAuthChecking(false);
     });
-  }, []);
+  }, [returnUrl]);
 
   const initialStep = (searchParams.get("step") as Step) ?? "consent";
   const [step, setStep] = useState<Step>(
@@ -589,11 +587,12 @@ function SignupContent() {
 
 
   const finish = () => {
+    const destination = returnUrl === "/" ? "/parent/home" : returnUrl;
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("k_pwa_intro_seen");
-      window.location.replace("/parent/home");
+      window.location.replace(destination);
     } else {
-      router.replace("/parent/home");
+      router.replace(destination);
     }
   };
 

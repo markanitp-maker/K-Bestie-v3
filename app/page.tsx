@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isStandaloneDisplay } from "@/lib/pwa/standalone";
 import BetaLandingPage from "@/components/landing/BetaLandingPage";
 import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
+import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 
 const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 
@@ -33,11 +34,22 @@ async function routePastPwaGate(
 export default function HubPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [networkError, setNetworkError] = useState(false);
+  const [statusError, setStatusError] = useState<"network" | "membership" | null>(null);
   const [showGuestLanding, setShowGuestLanding] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
+    const returnUrl = safePostAuthReturnUrl(
+      new URLSearchParams(window.location.search).get("returnUrl")
+    );
+
+    const routeVerifiedUser = async (fallback: "/parent/home" | "/child/home") => {
+      if (returnUrl !== "/") {
+        router.replace(returnUrl);
+        return;
+      }
+      await routePastPwaGate(fallback, router);
+    };
 
     // PWA의 manifest start_url이 "/"라서 앱을 재실행·백그라운드 복귀·재부팅할 때마다
     // 이 페이지가 항상 가장 먼저 실행된다. 기존 코드는 getSession()(로컬 저장소만
@@ -67,7 +79,7 @@ export default function HubPage() {
 
     getAuthenticatedUser().then(async (result) => {
       if (result === "network_error") {
-        setNetworkError(true);
+        setStatusError("network");
         setLoading(false);
         return;
       }
@@ -132,9 +144,9 @@ export default function HubPage() {
                 localStorage.setItem("k_child_id", childInfo.id);
               }
             }
-            await routePastPwaGate("/child/home", router);
+            await routeVerifiedUser("/child/home");
           } else {
-            await routePastPwaGate("/parent/home", router);
+            await routeVerifiedUser("/parent/home");
           }
           return;
         }
@@ -142,13 +154,13 @@ export default function HubPage() {
         // 3순위: 활성 기존 계정
         if (status.state === "ACTIVE_PARENT") {
           void logAuthFlowEvent("existing_user_routed_to_login");
-          await routePastPwaGate("/parent/home", router);
+          await routeVerifiedUser("/parent/home");
           return;
         }
         if (status.state === "ACTIVE_CHILD") {
           void logAuthFlowEvent("existing_user_routed_to_login");
           if (status.childId) localStorage.setItem("k_child_id", status.childId);
-          await routePastPwaGate("/child/home", router);
+          await routeVerifiedUser("/child/home");
           return;
         }
 
@@ -161,9 +173,9 @@ export default function HubPage() {
               if (joinData.child_profile_id) {
                 localStorage.setItem("k_child_id", joinData.child_profile_id);
               }
-              await routePastPwaGate("/child/home", router);
+              await routeVerifiedUser("/child/home");
             } else {
-              await routePastPwaGate("/parent/home", router);
+              await routeVerifiedUser("/parent/home");
             }
             return;
           }
@@ -180,24 +192,29 @@ export default function HubPage() {
         void logAuthFlowEvent(
           signupStep === "consent" ? "new_user_routed_to_signup" : "incomplete_user_resumed_signup"
         );
-        router.replace(`/signup?step=${signupStep}`);
+        const signupReturn = returnUrl === "/" ? "" : `&returnUrl=${encodeURIComponent(returnUrl)}`;
+        router.replace(`/signup?step=${signupStep}${signupReturn}`);
         return;
       } catch (err) {
         console.error("Hub page initialization error:", err);
         // 상태 판정 자체가 실패한 경우 회원가입 미완료로 오판해 기존 활성 회원을 회원가입
         // 화면으로 튕겨내는 것보다는, 안전하게 재시도 유도 화면을 보여주는 편이 낫다
         // (요청서 §13.3 기존 보호자 자동 로그인 보존 요구사항).
-        setNetworkError(true);
+        setStatusError("membership");
       } finally {
         setLoading(false);
       }
     });
   }, [router]);
 
-  if (networkError) {
+  if (statusError) {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center bg-gray-50 gap-3 px-6 text-center">
-        <p className="text-sm text-gray-600">네트워크 연결을 확인할 수 없어요.</p>
+        <p className="text-sm text-gray-600">
+          {statusError === "network"
+            ? "네트워크 연결을 확인할 수 없어요."
+            : "회원 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요."}
+        </p>
         <button
           type="button"
           onClick={() => window.location.reload()}

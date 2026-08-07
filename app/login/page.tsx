@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
-import { safeReturnUrl } from "@/lib/auth/safeReturnUrl";
+import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnUrl = safeReturnUrl(searchParams.get("returnUrl"));
+  const returnUrl = safePostAuthReturnUrl(searchParams.get("returnUrl"));
+  const oauthInFlightRef = useRef(false);
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -26,16 +27,19 @@ function LoginContent() {
       void logAuthFlowEvent("social_auth_failed");
     } else if (errorParam === "cancelled") {
       setError("로그인이 취소되었습니다. 다시 시도해 주세요.");
+      void logAuthFlowEvent("social_auth_failed");
     }
   }, [searchParams]);
 
   const handleOAuthLogin = async (provider: "google" | "kakao") => {
+    if (oauthInFlightRef.current) return;
+    oauthInFlightRef.current = true;
     setLoadingProvider(provider);
     setError(null);
     const supabase = createClient();
     
     localStorage.setItem("login_role", "owner");
-    await logAuthFlowEvent("social_auth_provider_selected", { provider });
+    void logAuthFlowEvent("social_auth_provider_selected", { provider });
 
     // 접속한 실제 도메인을 그대로 사용; 0.0.0.0만 localhost로 치환
     const appOrigin = window.location.origin.replace("//0.0.0.0", "//localhost");
@@ -52,7 +56,9 @@ function LoginContent() {
 
     if (authError) {
       setError("로그인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      void logAuthFlowEvent("social_auth_failed", { provider });
       setLoadingProvider(null);
+      oauthInFlightRef.current = false;
     }
   };
 
@@ -85,11 +91,8 @@ function LoginContent() {
 
     fetch("/api/analytics/login", { method: "POST" }).catch(() => {});
 
-    if (returnUrl !== "/") {
-      router.push(returnUrl);
-    } else {
-      router.push("/");
-    }
+    const hubUrl = returnUrl === "/" ? "/" : `/?returnUrl=${encodeURIComponent(returnUrl)}`;
+    router.push(hubUrl);
     router.refresh();
   };
 

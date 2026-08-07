@@ -32,7 +32,7 @@ export interface MembershipResult {
 export async function resolveMembershipState(userId: string): Promise<MembershipResult> {
   const svc = createServiceClient();
 
-  const [parentRes, memberRes] = await Promise.all([
+  const [parentSettled, memberSettled] = await Promise.allSettled([
     svc
       .from("parents")
       .select("account_status, withdrawn_at, purge_scheduled_at, onboarding_completed_at")
@@ -44,6 +44,13 @@ export async function resolveMembershipState(userId: string): Promise<Membership
       .eq("user_id", userId)
       .is("deleted_at", null),
   ]);
+
+  if (parentSettled.status === "rejected" || memberSettled.status === "rejected") {
+    console.error("[resolveMembershipState] DB request rejected");
+    throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
+  }
+  const parentRes = parentSettled.value;
+  const memberRes = memberSettled.value;
 
   if (parentRes.error || memberRes.error) {
     console.error("[resolveMembershipState] DB query error:", parentRes.error || memberRes.error);
