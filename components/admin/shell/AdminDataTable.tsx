@@ -27,8 +27,8 @@ export interface AdminDataTableProps<T> {
 }
 
 export function AdminDataTable<T>({
-  columns,
-  data,
+  columns: rawColumns,
+  data: rawData,
   keyExtractor,
   isLoading,
   error,
@@ -40,6 +40,12 @@ export function AdminDataTable<T>({
   expandedRowRender,
   expandedRowIds = new Set(),
 }: AdminDataTableProps<T>) {
+  // API 롤링 배포나 구버전 캐시가 잘못된 shape를 넘겨도 관리자 전체 화면을
+  // client exception으로 무너뜨리지 않는다. 호출 화면의 error prop은 별도로
+  // 유지하므로 실제 API 실패가 빈 목록으로 숨겨지지는 않는다.
+  const columns = Array.isArray(rawColumns) ? rawColumns : [];
+  const data = Array.isArray(rawData) ? rawData : [];
+
   if (error) {
     return <AdminErrorState onRetry={onRetry} error={typeof error === "string" ? error : (error as Error).message} />;
   }

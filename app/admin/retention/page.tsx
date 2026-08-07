@@ -9,6 +9,7 @@ import { AdminKpiCard, AdminKpiGrid } from "@/components/admin/shell/AdminKpiCar
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts";
 import { RetentionWidgetErrorBoundary } from "@/components/admin/RetentionWidgetErrorBoundary";
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
+import { asArray } from "@/lib/admin/userManagement";
 
 // requests/064 — /admin(사이드바) iframe에서 로드될 때 ?embed=1로 접근한다.
 // 이 페이지 자체의 헤더(내친구 케이 상단바는 app/admin/layout.tsx가 그리는 별개의
@@ -277,6 +278,7 @@ function AdminRetentionContent() {
   const [features, setFeatures] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -288,6 +290,7 @@ function AdminRetentionContent() {
       fetch(`/api/admin/retention/cohort?unit=${scope}&cohortBasis=registration&includeTestAccounts=${includeTestAccounts}`).then(r => r.ok ? r.json() : Promise.reject("cohort error")),
       fetch(`/api/admin/retention/features?includeTestAccounts=${includeTestAccounts}`).then(r => r.ok ? r.json() : Promise.reject("features error"))
     ]).then(([o, c, f]) => {
+      if (!Array.isArray(c?.cohorts)) throw new Error("cohort response invalid");
       if (!cancelled) {
         setOverview(o);
         setCohort(c);
@@ -302,7 +305,7 @@ function AdminRetentionContent() {
     });
 
     return () => { cancelled = true; };
-  }, [period, scope, includeTestAccounts]);
+  }, [period, scope, includeTestAccounts, reloadToken]);
 
   const featureChartData = useMemo(() => {
     if (!features?.features) return [];
@@ -418,6 +421,7 @@ function AdminRetentionContent() {
         {error && (
           <div style={{ color: "var(--admin-danger)", background: "#ffeef0", padding: "var(--admin-space-16)", borderRadius: 8, marginBottom: "var(--admin-space-24)" }}>
             데이터를 불러오는 중 오류가 발생했습니다: {error}
+            <button type="button" onClick={() => setReloadToken((value) => value + 1)} style={{ marginLeft: 12, fontWeight: 700, textDecoration: "underline" }}>다시 시도</button>
           </div>
         )}
 
@@ -565,7 +569,7 @@ function AdminRetentionContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {cohort.cohorts.slice().reverse().map((c: any, idx: number) => (
+                    {asArray<any>(cohort?.cohorts).slice().reverse().map((c, idx) => (
                       <tr key={idx}>
                         <td style={{ ...tdStyle, fontWeight: 600 }}>{c.cohortLabel}</td>
                         <td style={{ ...tdStyle, fontWeight: 600, color: "var(--admin-primary)" }}>{c.size}명</td>

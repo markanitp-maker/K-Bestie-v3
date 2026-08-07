@@ -154,7 +154,11 @@ export async function GET(request: NextRequest) {
       const representative = familyParents.find((parent) => parent.role === "owner_parent") ?? familyParents[0];
       const name = family.name?.trim() || (representative?.name ? `${representative.name} 가족` : "이름 없는 가족");
       const planNames = [...new Set(familyChildren.map((child) => planByTier.get(child.tier)?.name || `Tier ${child.tier}`))];
-      const lastActivityAt = maxIso(familyChildren.map((child) => lastSessionByChild.get(child.id)));
+      const familyParentActivity = familyParents.map((parent) => lastParentActivityById.get(parent.id));
+      const lastActivityAt = maxIso([
+        ...familyChildren.map((child) => lastSessionByChild.get(child.id)),
+        ...familyParentActivity,
+      ]);
       const flags = [...familyMembers.map((member) => Boolean(member.is_internal_test)), ...familyChildren.map((child) => child.isTest)];
       const testLabel = flags.length > 0 && flags.every(Boolean) ? "테스트" : flags.some(Boolean) ? "혼합" : "일반";
       return { id: family.id, type: "family", name, displayName: name, parents: familyParents, children: familyChildren, parentCount: familyParents.length, childCount: familyChildren.length, planNames, createdAt: family.created_at, lastActivityAt, isTest: testFamilyIds.has(family.id), testLabel, status: "활성" };
@@ -184,7 +188,7 @@ export async function GET(request: NextRequest) {
 
     const rawRows: RecordRow[] = tab === "parents" ? parentRows : tab === "children" ? childRows : familyRows;
     const filterable = rawRows.filter((row) => matchesInternalTestFilter(Boolean(row.isTest), internalTest));
-    const kpi = {
+    const counts = {
       families: familyRows.filter((row) => matchesInternalTestFilter(Boolean(row.isTest), internalTest)).length,
       parents: parentRows.filter((row) => matchesInternalTestFilter(Boolean(row.isTest), internalTest)).length,
       children: childRows.filter((row) => matchesInternalTestFilter(Boolean(row.isTest), internalTest)).length,
@@ -217,9 +221,18 @@ export async function GET(request: NextRequest) {
 
     const total = ordered.length;
     const start = (page - 1) * pageSize;
-    return NextResponse.json({ tab, kpi, items: ordered.slice(start, start + pageSize), pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) }, meta: { internalTest, searchApplied: Boolean(search), generatedAt: new Date().toISOString(), timezone: "Asia/Seoul", softDeletedExcluded: true } }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ tab, counts, kpi: counts, items: ordered.slice(start, start + pageSize), pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) }, meta: { internalTest, searchApplied: Boolean(search), generatedAt: new Date().toISOString(), timezone: "Asia/Seoul", softDeletedExcluded: true } }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[admin/users/overview]", error);
-    return NextResponse.json({ error: "사용자 관리 데이터를 불러오지 못했습니다." }, { status: 500 });
+    const emptyCounts = { families: 0, parents: 0, children: 0, pending: 0 };
+    return NextResponse.json({
+      error: "사용자 관리 데이터를 불러오지 못했습니다.",
+      tab,
+      counts: emptyCounts,
+      kpi: emptyCounts,
+      items: [],
+      pagination: { page, pageSize, total: 0, totalPages: 1 },
+      meta: { internalTest, searchApplied: Boolean(search), generatedAt: new Date().toISOString(), timezone: "Asia/Seoul", softDeletedExcluded: true },
+    }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }

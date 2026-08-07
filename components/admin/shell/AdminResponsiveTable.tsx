@@ -3,6 +3,7 @@
 import React from "react";
 import { AdminDataTable, type AdminDataTableProps } from "./AdminDataTable";
 import { AdminMobileListCard } from "./AdminMobileListCard";
+import { AdminErrorState } from "./AdminErrorState";
 
 export interface AdminResponsiveTableProps<T> extends AdminDataTableProps<T> {
   // Mobile specific strategy
@@ -13,36 +14,41 @@ export interface AdminResponsiveTableProps<T> extends AdminDataTableProps<T> {
 
 export function AdminResponsiveTable<T>(props: AdminResponsiveTableProps<T>) {
   const { mobileStrategy = "scroll", renderMobileCard, ...tableProps } = props;
+  const safeData = Array.isArray(tableProps.data) ? tableProps.data : [];
+  const safeColumns = Array.isArray(tableProps.columns) ? tableProps.columns : [];
+  const safeTableProps = { ...tableProps, data: safeData, columns: safeColumns };
 
   return (
     <>
       <div className={mobileStrategy !== "scroll" ? "max-lg:hidden" : ""}>
-        <AdminDataTable {...tableProps} />
+        <AdminDataTable {...safeTableProps} />
       </div>
 
       {mobileStrategy !== "scroll" && (
         <div className="lg:hidden">
-          {tableProps.isLoading && tableProps.data.length === 0 ? (
+          {safeTableProps.error ? (
+            <AdminErrorState onRetry={safeTableProps.onRetry} error={typeof safeTableProps.error === "string" ? safeTableProps.error : safeTableProps.error.message} />
+          ) : safeTableProps.isLoading && safeData.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} style={{ height: 80, background: "var(--admin-surface)", borderRadius: 12, border: "1px solid var(--admin-border)", opacity: 0.5 }} />
               ))}
             </div>
-          ) : tableProps.data.length === 0 ? (
+          ) : safeData.length === 0 ? (
             <div style={{ padding: 24, textAlign: "center", color: "var(--admin-text-secondary)", background: "var(--admin-surface)", borderRadius: 12, border: "1px dashed var(--admin-border)" }}>
-              {tableProps.emptyMessage || "현재 표시할 항목이 없습니다."}
+              {safeTableProps.emptyMessage || "현재 표시할 항목이 없습니다."}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {tableProps.data.map((row) => {
-                const actionsCol = tableProps.columns.find(c => c.key === "actions" || c.key === "action");
-                const otherCols = tableProps.columns.slice(1).filter(c => c !== actionsCol);
+              {safeData.map((row) => {
+                const actionsCol = safeColumns.find(c => c.key === "actions" || c.key === "action");
+                const otherCols = safeColumns.slice(1).filter(c => c !== actionsCol);
                 
-                const onClick = tableProps.onRowClick ? () => tableProps.onRowClick!(row) : undefined;
+                const onClick = safeTableProps.onRowClick ? () => safeTableProps.onRowClick!(row) : undefined;
 
                 return (
                   <div
-                    key={tableProps.keyExtractor(row)}
+                    key={safeTableProps.keyExtractor(row)}
                     onClick={onClick}
                     role={onClick ? "button" : undefined}
                     tabIndex={onClick ? 0 : undefined}
@@ -51,7 +57,7 @@ export function AdminResponsiveTable<T>(props: AdminResponsiveTableProps<T>) {
                   >
                     {renderMobileCard ? renderMobileCard(row) : (
                       <AdminMobileListCard
-                        title={tableProps.columns[0]?.render(row)}
+                        title={safeColumns[0]?.render(row)}
                         content={
                           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                             {otherCols.map(col => (
@@ -86,9 +92,9 @@ export function AdminResponsiveTable<T>(props: AdminResponsiveTableProps<T>) {
                         }
                       />
                     )}
-                    {tableProps.expandedRowRender && tableProps.expandedRowIds?.has(tableProps.keyExtractor(row)) && (
+                    {safeTableProps.expandedRowRender && safeTableProps.expandedRowIds?.has(safeTableProps.keyExtractor(row)) && (
                       <div style={{ marginTop: 8, padding: 12, background: "var(--admin-bg)", borderRadius: 8 }}>
-                        {tableProps.expandedRowRender(row)}
+                        {safeTableProps.expandedRowRender(row)}
                       </div>
                     )}
                   </div>

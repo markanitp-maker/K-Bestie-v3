@@ -96,6 +96,10 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
+function safeArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
 function ConversationsTab({ childId }: { childId: string }) {
   const [sessions, setSessions] = useState<ConversationSession[] | null>(null);
 
@@ -123,11 +127,11 @@ function ConversationsTab({ childId }: { childId: string }) {
             {formatDateTime(s.started_at)} · {s.session_type === "mission" ? "미션" : "자유대화"} · {s.turn_count}턴
             {!s.ended_at && " · 진행중"}
           </div>
-          {s.messages.length === 0 ? (
+          {safeArray<ChatMessageRow>(s.messages).length === 0 ? (
             <div style={{ fontSize: 13, color: "var(--admin-text-secondary)" }}>메시지 없음</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {s.messages.map((m, i) => (
+              {safeArray<ChatMessageRow>(s.messages).map((m, i) => (
                 <div key={i} style={{ fontSize: 13 }}>
                   <span style={{ fontWeight: 600, color: m.role === "k" ? "var(--admin-primary)" : "var(--admin-text-primary)" }}>
                     {m.role === "k" ? "케이" : "아이"}
@@ -466,7 +470,7 @@ function ChildUsageDetail({ period, childId, customStart, customEnd }: { period:
             </tr>
           </thead>
           <tbody>
-            {detail.costBreakdown.filter((i) => i.category === "ai").map((i) => (
+            {safeArray<CostBreakdownItem>(detail.costBreakdown).filter((i) => i.category === "ai").map((i) => (
               <tr key={i.key}>
                 <td style={tdStyle}>{i.label}</td>
                 <td style={tdStyle}>{usageLabel(i.usage, i.usageUnit)}</td>
@@ -477,11 +481,11 @@ function ChildUsageDetail({ period, childId, customStart, customEnd }: { period:
         </table>
       </div>
       <div style={{ marginTop: 12, background: "var(--admin-surface)", borderRadius: 12, padding: 12, height: 180 }}>
-        {detail.dailyTrend.length === 0 ? (
+        {safeArray<DailyTrendPoint>(detail.dailyTrend).length === 0 ? (
           <EmptyState text="기간 내 원가 추이가 없어요." />
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={detail.dailyTrend.map((d) => ({ day: d.day, 원가: Math.round(d.costKrw) }))} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+            <LineChart data={safeArray<DailyTrendPoint>(detail.dailyTrend).map((d) => ({ day: d.day, 원가: Math.round(d.costKrw) }))} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--admin-border)" />
               <XAxis dataKey="day" fontSize={11} />
               <YAxis fontSize={11} width={60} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
@@ -654,7 +658,7 @@ function LlmStatusTab() {
               <span style={{ fontSize: "var(--admin-text-sm)" }}>{r.fallbackModel || "-"}</span>
             )},
             { key: "env", header: "환경변수", render: (r: any) => (
-              <div style={{ fontSize: "var(--admin-text-xs)", whiteSpace: "nowrap" }}>{r.envKeys.length === 0 ? "- (코드 상수)" : r.envKeys.map((key: string) => <div key={key}>{key}</div>)}</div>
+              <div style={{ fontSize: "var(--admin-text-xs)", whiteSpace: "nowrap" }}>{safeArray<string>(r.envKeys).length === 0 ? "- (코드 상수)" : safeArray<string>(r.envKeys).map((key) => <div key={key}>{key}</div>)}</div>
             )},
             { key: "runtime", header: "Runtime / SDK", render: (r: any) => (
               <div style={{ fontSize: "var(--admin-text-xs)", minWidth: 150 }}>
@@ -664,7 +668,7 @@ function LlmStatusTab() {
             )},
             { key: "path", header: "호출부", render: (r: any) => (
               <div style={{ fontSize: "var(--admin-text-xs)", minWidth: 220 }}>
-                {r.internalPaths.map((path: string) => <div key={path} title={path} style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{path}</div>)}
+                {safeArray<string>(r.internalPaths).map((path) => <div key={path} title={path} style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{path}</div>)}
               </div>
             )},
             { key: "endpointLocation", header: "Endpoint / Location", render: (r: any) => (
@@ -1440,7 +1444,7 @@ function AccountRestoreTab() {
     { key: "withdrawn", header: "탈퇴일", render: (r) => formatDateTime(r.withdrawn_at) },
     { key: "purge", header: "삭제예정일", render: (r) => formatDateTime(r.purge_scheduled_at) },
     { key: "requested", header: "신청일", render: (r) => formatDateTime(r.restore_requested_at) },
-    { key: "family", header: "가족", render: (r) => r.memberships.map((m: any) => `${m.families?.name || "알 수 없는 가족"} (${m.role})`).join(", ") || "없음" },
+    { key: "family", header: "가족", render: (r) => safeArray<any>(r.memberships).map((m) => `${m.families?.name || "알 수 없는 가족"} (${m.role})`).join(", ") || "없음" },
     { key: "reason", header: "사유", render: (r) => r.withdrawal_reason || "-" },
     { key: "actions", header: "액션", render: (r) => (
       <div style={{ display: "flex", gap: "8px" }}>
@@ -1473,6 +1477,7 @@ function AdminDashboard() {
   const [mode, setMode] = useState<ModeBucket | "">(""); // "" = 전체 A~F
   const [data, setData] = useState<UsageOverview | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
   // 비용 상세(나갈 돈) 탭 아코디언 — 같은 레벨엔 단일 선택만 유지(새로 열면 이전 건 자동 접힘).
   // TOP10/티어 목록 자체는 그대로 인라인 아코디언 유지(상위 레벨, 이번 전환 대상 아님).
@@ -1506,7 +1511,7 @@ function AdminDashboard() {
       .then((d) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setLoadFailed(true); });
     return () => { cancelled = true; };
-  }, [period, mode, customStart, customEnd]);
+  }, [period, mode, customStart, customEnd, reloadToken]);
 
   // 내보내기(익명 집계) — 현재 기간·모드 필터를 그대로 전달. CSV/XLSX만 노출(JSON은 dev/QA API 전용).
   const exportHref = (fmt: "csv" | "xlsx") =>
@@ -1662,7 +1667,7 @@ function AdminDashboard() {
         </div>
 
         {loadFailed ? (
-          <EmptyState text="사용량 데이터를 불러오지 못했어요." />
+          <div style={{ textAlign: "center" }}><EmptyState text="사용량 데이터를 불러오지 못했어요." /><button type="button" onClick={() => setReloadToken((value) => value + 1)} style={{ border: "1px solid var(--admin-border)", borderRadius: 8, padding: "8px 14px", fontWeight: 700 }}>다시 시도</button></div>
         ) : !data ? (
           <EmptyState text="불러오는 중..." />
         ) : (
@@ -1737,9 +1742,9 @@ function AdminDashboard() {
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
                   <div style={{ background: "var(--admin-surface)", borderRadius: 10, border: "1px solid var(--admin-border)", padding: "10px 14px", fontSize: 12, minWidth: 110 }}>
                     <div style={{ color: "var(--admin-text-secondary)" }}>총 가입 고객(아이)</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--admin-text-primary)" }}>{data.subSummary.totalChildren}명</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "var(--admin-text-primary)" }}>{data.subSummary?.totalChildren ?? 0}명</div>
                   </div>
-                  {data.subSummary.byTier.map((t) => (
+                  {safeArray<TierHeadcount>(data.subSummary?.byTier).map((t) => (
                     <div key={t.tier} style={{ background: "var(--admin-surface)", borderRadius: 10, border: "1px solid var(--admin-border)", padding: "10px 14px", fontSize: 12, minWidth: 110 }}>
                       <div style={{ color: "var(--admin-text-secondary)" }}>{t.name}</div>
                       <div style={{ fontSize: 16, fontWeight: 700, color: "var(--admin-text-primary)" }}>{t.count}명</div>
@@ -1760,7 +1765,7 @@ function AdminDashboard() {
                 <div style={{ background: "var(--admin-surface)", borderRadius: 12, border: "1px solid var(--admin-border)", padding: 16, height: 260 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
-                      data={data.dailyTrend.map((d) => ({ day: d.day, 매출: Math.round(d.revenueKrw), 비용: Math.round(d.costKrw) }))}
+                      data={safeArray<DailyTrendPoint>(data.dailyTrend).map((d) => ({ day: d.day, 매출: Math.round(d.revenueKrw), 비용: Math.round(d.costKrw) }))}
                       margin={{ top: 4, right: 8, left: 0, bottom: 4 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--admin-border)" />
@@ -1973,10 +1978,10 @@ function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.modeBreakdown.filter((r) => r.eventCount > 0).length === 0 ? (
+                      {safeArray<ModeBreakdownRow>(data.modeBreakdown).filter((r) => r.eventCount > 0).length === 0 ? (
                         <tr><td colSpan={7} style={tdStyle}><EmptyState text="기간 내 대화방식별 원가 데이터가 없어요." /></td></tr>
                       ) : (
-                        data.modeBreakdown.filter((r) => r.eventCount > 0).map((r) => (
+                        safeArray<ModeBreakdownRow>(data.modeBreakdown).filter((r) => r.eventCount > 0).map((r) => (
                           <tr key={r.mode} style={r.mode === "unclassified" ? { background: "var(--admin-focus)" } : undefined}>
                             <td style={tdStyle}>{MODE_LABELS[r.mode]}</td>
                             <td style={tdStyle}>{r.eventCount.toLocaleString("ko-KR")}</td>
@@ -2010,9 +2015,9 @@ function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.subSummary.byTier.map((t) => {
+                      {safeArray<TierHeadcount>(data.subSummary?.byTier).map((t) => {
                         const isOpen = expandedTier === t.tier;
-                        const tierUsers = data.perChildProfitability.filter((c) => c.tier === t.tier);
+                        const tierUsers = safeArray<PerChildProfitability>(data.perChildProfitability).filter((c) => c.tier === t.tier);
                         return (
                           <Fragment key={t.tier}>
                             <tr
