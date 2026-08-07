@@ -31,6 +31,7 @@ import { usePipelineConnectionQuality } from "@/hooks/usePipelineConnectionQuali
 import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndicator";
 import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { clearPendingMissionTurn, readPendingMissionTurn, savePendingMissionTurn } from "@/lib/mission/pendingTurnStore";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -477,6 +478,7 @@ function MissionInner() {
   const activeChildTurnIdRef = useRef<string | null>(null);
   const activeChildTurnSeqRef = useRef<number | null>(null);
   const kClarificationTurnRef = useRef<boolean>(false);
+  const serverPersistedKTextsRef = useRef<string[]>([]);
 
   const saveMessage = useCallback((role: "child" | "k", content: string, displaySequence?: number, turnId?: string, isClarification?: boolean) => {
     const sid = sessionIdRef.current;
@@ -620,7 +622,24 @@ function MissionInner() {
       kClarificationTurnRef.current = false;
     }
     
-    saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id, isClarification);
+    const wasServerPersistedK = enrichedTurn.role === "k"
+      && serverPersistedKTextsRef.current[0] === enrichedTurn.text;
+    if (wasServerPersistedK) {
+      serverPersistedKTextsRef.current.shift();
+      pastMessagesRef.current = [
+        ...pastMessagesRef.current,
+        { role: enrichedTurn.role, text: enrichedTurn.text, id: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence },
+      ];
+    } else if (isChildTurnDuringActiveMission) {
+      // 활성 child 턴은 아래 Turn API가 서버 저장을 책임진다. 다만 모드 전환 시
+      // 화면 대화가 사라지지 않도록 로컬 스크롤백에는 즉시 한 번만 누적한다.
+      pastMessagesRef.current = [
+        ...pastMessagesRef.current,
+        { role: enrichedTurn.role, text: enrichedTurn.text, id: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence },
+      ];
+    } else {
+      saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id, isClarification);
+    }
 
     if (!isChildTurnDuringActiveMission) {
       if (!isLive && manualTimeoutRef.current) {
@@ -769,11 +788,58 @@ function MissionInner() {
         // 다음 질문 선택(pickNextIndex 이후)은 인사 턴이든 실제 답변이든 공통으로 실행된다.
         let data: any = null;
 
-        if (!isGreetingTurn) {
-          const res = await fetch("/api/mission/answer", {
+        const finalizeServerTurn = async (kText: string, isClarification: boolean = false) => {
+          const kTurnId = `${childTurnId}:k`;
+          const kDisplaySequence = nextDisplaySequence();
+          const finalizeRes = await fetch("/api/mission/turn", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId: sid, questionId: question.id, answerText: enrichedTurn.text, childTurnId }),
+            body: JSON.stringify({
+              action: "finalize",
+              sessionId: sid,
+              clientTurnId: childTurnId,
+              kTurnId,
+              kContent: kText,
+              kDisplaySequence,
+              isClarification,
+            }),
+            signal: isLive ? manualAbortControllerRef.current?.signal : apiAbortControllerRef.current?.signal,
+          });
+          if (!finalizeRes.ok) {
+            const finalizeError = await finalizeRes.json().catch(() => ({}));
+            if (finalizeRes.status === 403 || finalizeError.code === "MISSION_EXPIRED") {
+              handleForcedExpiry();
+            }
+            throw new Error(typeof finalizeError.error === "string" ? finalizeError.error : "TURN_FINALIZE_FAILED");
+          }
+          const finalized = await finalizeRes.json();
+          serverPersistedKTextsRef.current.push(kText);
+          await clearPendingMissionTurn(childTurnId);
+          return finalized;
+        };
+
+        if (!isGreetingTurn) {
+          await savePendingMissionTurn({
+            sessionId: sid,
+            clientTurnId: childTurnId,
+            questionId: question.id,
+            answerText: enrichedTurn.text,
+            voiceMode: voiceModeRef.current ?? "stt_tts",
+            displaySequence: enrichedTurn.displaySequence ?? 0,
+            createdAt: Date.now(),
+          });
+          const res = await fetch("/api/mission/turn", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "start",
+              sessionId: sid,
+              clientTurnId: childTurnId,
+              questionId: question.id,
+              answerText: enrichedTurn.text,
+              voiceMode: voiceModeRef.current,
+              displaySequence: enrichedTurn.displaySequence ?? 0,
+            }),
             signal: isLive ? manualAbortControllerRef.current?.signal : apiAbortControllerRef.current?.signal,
           });
           if (!res.ok) {
@@ -854,6 +920,36 @@ function MissionInner() {
           setProgressPercent(data.progressPercent ?? 0);
           setRequiredCount(data.requiredCount ?? 5);
           setEngineVersion(data.engine_version ?? "v1");
+
+          if (data.completionCandidate) {
+            const closingText = "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!";
+            const finalized = await finalizeServerTurn(closingText);
+            if (!finalized.completed) throw new Error("MISSION_COMPLETION_NOT_CONFIRMED");
+            const rwStatus = finalized.rewardStatus ?? "none";
+            setRewardStatus(rwStatus);
+            // DB에 먼저 확정한 K 문구와 실제 재생/폴백 문구를 동일하게 유지한다.
+            // 황금열쇠 지급 여부는 서버 응답 기반 보상 모달에서 별도로 안내한다.
+            missionClosingLineRef.current = closingText;
+            missionStateRef.current = "completing";
+            setMissionState("completing");
+            if (voiceModeRef.current === "live") {
+              if (manualTimeoutRef.current) clearTimeout(manualTimeoutRef.current);
+              manualTimeoutRef.current = null;
+              setTurnPhase("k_speaking");
+              liveRef.current?.lockNow();
+              const success = liveRef.current?.speakClosingLine(closingText);
+              missionControllerRef.current?.start({ immediateTtsFallback: !success });
+            } else {
+              setTurnPhase("k_speaking");
+              sttSetMicEnabledRef.current?.(false);
+              if (kVoiceEnabledRef.current) await sttTts.speak(closingText);
+              else sttTts.sayText(closingText);
+              missionStateRef.current = "completed";
+              setMissionState("completed");
+              setCompleted(true);
+            }
+            return;
+          }
 
           // setCompleted는 발화 완료 후 상태 전이 시에 호출되도록 위임
           if (data.completed) {
@@ -1124,6 +1220,12 @@ function MissionInner() {
         }
         if (isLive) {
           setTurnPhase("k_speaking");
+        }
+        if (!isGreetingTurn) {
+          const finalized = await finalizeServerTurn(respondText ?? nextQ.question_text, data?.clarificationText != null);
+          if (finalized.completed) {
+            throw new Error("UNEXPECTED_COMPLETION_DURING_NEXT_QUESTION");
+          }
         }
         askQuestionRef.current?.(next, respondText);
       } catch {
@@ -1778,6 +1880,47 @@ function MissionInner() {
 
       setSessionId(data.sessionId);
       sessionIdRef.current = data.sessionId;
+
+      // PWA/탭 종료 뒤 남은 단일 미확정 턴을 같은 clientTurnId로 복구한다. 서버의
+      // answer_result가 이미 있으면 start는 재판정 없이 replay하고, 없으면 lease 만료 후
+      // 동일 턴 처리를 재개한다. 복구 K 문구에는 원문을 다시 싣지 않는다.
+      const pendingTurn = await readPendingMissionTurn().catch(() => null);
+      if (pendingTurn && pendingTurn.sessionId === data.sessionId) {
+        const pending = pendingTurn;
+        const replayResponse = await fetch("/api/mission/turn", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "start", ...pending }),
+          signal,
+        });
+        if (replayResponse.ok) {
+          const replay = await replayResponse.json();
+          const recoveryText = replay.completionCandidate
+            ? "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!"
+            : "이야기해 줘서 고마워! 다음 이야기도 들려줄래?";
+          const finalizeResponse = await fetch("/api/mission/turn", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "finalize",
+              sessionId: pending.sessionId,
+              clientTurnId: pending.clientTurnId,
+              kTurnId: `${pending.clientTurnId}:k`,
+              kContent: recoveryText,
+              kDisplaySequence: pending.displaySequence + 1,
+            }),
+            signal,
+          });
+          if (finalizeResponse.ok) {
+            await clearPendingMissionTurn(pending.clientTurnId);
+            window.location.reload();
+            return;
+          }
+        }
+        setShowRetryButton(true);
+        setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+        return;
+      }
 
       if (navigator.serviceWorker?.controller) {
         const channel = new MessageChannel();
@@ -2497,9 +2640,14 @@ function MissionInner() {
         <p className="text-sm font-bold text-gray-700 text-center">케이랑 접속이 끊겼네?</p>
         <div className="flex gap-2 w-full">
           <button
-            onClick={() => {
+            onClick={async () => {
               if (errorMsg === "연결 문제로 미션 종료 확인에 실패했어요. 다시 시도해 주세요.") {
                 handleForcedExpiry();
+                return;
+              }
+              const pending = await readPendingMissionTurn().catch(() => null);
+              if (pending) {
+                window.location.reload();
                 return;
               }
               recoveryAttemptedRef.current = false;
