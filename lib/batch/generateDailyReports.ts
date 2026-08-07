@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { getLlmModel } from "@/lib/llm/modelRouter";
 import { extractJSON } from "@/app/api/_lib/utils";
+import { reportSectionValueForStorage } from "@/lib/reports/reportSectionAvailability";
 
 const REPORT_PROMPT_TEMPLATE = `
 아이의 오늘 하루 대화 전문입니다. 이를 바탕으로 부모님을 위한 요약 리포트를 작성해주세요.
@@ -23,8 +24,11 @@ const REPORT_PROMPT_TEMPLATE = `
   "study_concerns": "...",
   "digital_content_interests": "...",
   "future_dreams": "...",
+  "teacher_adults": "...",
   "recurring_stories": "..."
 }
+
+각 상세 항목에 실제 대화 근거가 없으면 placeholder 안내 문구를 만들지 말고 빈 문자열("")로 응답하세요.
 `;
 
 function sanitizeReportJson(obj: any) {
@@ -113,14 +117,15 @@ export async function generateDailyReports(targetDate: string, onlyChildId?: str
         emotion_tags: report.emotion_tags ?? [],
         parent_guide: report.parent_guide ?? "",
         emotion_level: emotionLevel,
-        school_academy_life: report.school_academy_life ?? "",
-        peer_friendship: report.peer_friendship ?? "",
-        emotion_hint: report.emotion_hint ?? "",
-        interests_preferences: report.interests_preferences ?? "",
-        study_concerns: report.study_concerns ?? "",
-        digital_content_interests: report.digital_content_interests ?? "",
-        future_dreams: report.future_dreams ?? "",
-        recurring_stories: report.recurring_stories ?? "",
+        school_academy_life: reportSectionValueForStorage(report.school_academy_life),
+        peer_friendship: reportSectionValueForStorage(report.peer_friendship),
+        emotion_hint: reportSectionValueForStorage(report.emotion_hint),
+        interests_preferences: reportSectionValueForStorage(report.interests_preferences),
+        study_concerns: reportSectionValueForStorage(report.study_concerns),
+        digital_content_interests: reportSectionValueForStorage(report.digital_content_interests),
+        future_dreams: reportSectionValueForStorage(report.future_dreams),
+        teacher_adults: reportSectionValueForStorage(report.teacher_adults),
+        recurring_stories: reportSectionValueForStorage(report.recurring_stories),
       };
 
       const { data: existingRows } = await db

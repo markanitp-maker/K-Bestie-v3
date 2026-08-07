@@ -7,6 +7,10 @@ import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHeader } from "@/components/ParentHeader";
 import { SkeletonBox } from "@/components/Skeleton";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import {
+  buildMeaningfulReportSections,
+  meaningfulReportSectionContent,
+} from "@/lib/reports/reportSectionAvailability";
 
 interface WeeklySummary {
   id: string;
@@ -77,17 +81,8 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
   }
 
   const cards = weekly.detail_dashboard_cards ?? {};
-  const cardEntries: [string, string][] = (
-    [
-      ["학교·학원 생활", cards.school_life ?? ""],
-      ["친구 관계", cards.peer_relations ?? ""],
-      ["관심사", cards.interests ?? ""],
-      ["공부 고민", cards.study_concerns ?? ""],
-      ["디지털 관심사", cards.digital_interests ?? ""],
-      ["미래·진로", cards.future_dreams ?? ""],
-      ["반복되는 이야기", cards.recurring_stories ?? ""],
-    ] as [string, string][]
-  ).filter(([, v]) => v);
+  const detailSections = buildMeaningfulReportSections(cards);
+  const detailText = meaningfulReportSectionContent(weekly.detail_text);
 
   return (
     <DemoFrame>
@@ -136,27 +131,37 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
             </div>
           ) : (
             <>
-              <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
-                <h3 className="font-bold text-base -mb-1" style={{ color: "var(--color-k-text-primary)" }}>
-                  📄 이번 주 상세 분석
-                </h3>
-                <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
-                  {weekly.detail_text || "상세 분석이 준비 중입니다."}
-                </p>
-              </div>
-
-              {cardEntries.length > 0 && (
+              {detailText && (
                 <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
-                  {cardEntries.map(([title, body]) => (
-                    <div key={title} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
+                  <h3 className="font-bold text-base -mb-1" style={{ color: "var(--color-k-text-primary)" }}>
+                    📄 이번 주 상세 분석
+                  </h3>
+                  <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
+                    {detailText}
+                  </p>
+                </div>
+              )}
+
+              {detailSections.length > 0 && (
+                <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
+                  {detailSections.map((section) => (
+                    <div key={section.key} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
                       <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
-                        {title}
+                        {section.title}
                       </h4>
                       <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
-                        {body}
+                        {section.body}
                       </p>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {!detailText && detailSections.length === 0 && (
+                <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+                  <p className="text-sm leading-relaxed text-gray-500">
+                    이번 리포트에서 제공할 상세 분석이 없어요.
+                  </p>
                 </div>
               )}
 

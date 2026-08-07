@@ -93,7 +93,7 @@ async function playClosingLineViaTts(text: string, sessionId: string | null): Pr
 // (/api/config/child-time-restrictions 참고) — 게이트 로직(getKstHour/currentRound) 자체는
 // 그대로 유지하고, 적용 여부만 이 스위치로 결정한다.
 
-function MissionInner() {
+function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: boolean) => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { quality: connectionQuality, recordStageResult, recordNormalTurn } = usePipelineConnectionQuality();
@@ -139,6 +139,9 @@ function MissionInner() {
   const rewardCloseXBtnRef = useRef<HTMLButtonElement | null>(null);
   const rewardCloseBottomBtnRef = useRef<HTMLButtonElement | null>(null);
   const [mode, setMode] = useState<"voice" | "text">("voice");
+  useEffect(() => {
+    onTextModeChange?.(mode === "text");
+  }, [mode, onTextModeChange]);
   const [textInput, setTextInput] = useState("");
   // 요금제(tier)별 음성 방식 — /api/mission/start 응답으로 확정됨. 확정 전까지 null(로딩).
   const [voiceMode, setVoiceMode] = useState<VoiceMode | null>(null);
@@ -2889,6 +2892,7 @@ function MissionInner() {
 }
 
 function MissionRouteGate() {
+  const [isTextMode, setIsTextMode] = useState(false);
   const [decision, setDecision] = useState<"loading" | "ab" | "ef" | "cd" | "normal">("loading");
   const [selectedMode, setSelectedMode] = useState<"A" | "B" | "C" | "D" | "E" | "F">("C");
   useEffect(() => {
@@ -2943,10 +2947,12 @@ function MissionRouteGate() {
             min-height: 100% !important;
           }
         `}} />
-        <MissionInner />
-        <div className="absolute top-0 right-0">
-          <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={480} />
-        </div>
+        <MissionInner onTextModeChange={setIsTextMode} />
+        {!isTextMode && (
+          <div className="absolute top-0 right-0">
+            <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={480} />
+          </div>
+        )}
       </div>
     </DemoFrame>
   );

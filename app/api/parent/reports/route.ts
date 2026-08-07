@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   const { data: reports, error } = await supabase
     .from("daily_reports")
-    .select("id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, teacher_adults, recurring_stories, viewed_at, created_at, business_date")
+    .select("id, summary_line, mood_score, emotion_tags, parent_guide, emotion_level, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, teacher_adults, recurring_stories, viewed_at, created_at, business_date")
     .eq("child_id", childId)
     .is("deleted_at", null)
     .order("business_date", { ascending: false })
