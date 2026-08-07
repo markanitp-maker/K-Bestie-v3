@@ -977,6 +977,7 @@ npx playwright install --only-shell chromium
 
 13. **QA 위임(§26)일 때는 코드를 수정하지 않고 Playwright E2E 테스트 실행·증거 저장·보고만 한다. 자기가 짠 코드를 자기 세션이 QA하지 않는다(셀프통과 금지).**
 
-14. **Production QA 및 테스트 계정 절대 재사용 원칙**:
-    - Production QA 테스트 시에는 무조건 지정된 전용 계정(`qa-parent@kbestie.local`, `testa@kbestie.local`, `testb@kbestie.local`)만 재사용한다.
-    - Antigravity·Codex·Claude Code 등 모든 에이전트는 **대표님의 명시 승인 없이 신규 Production 테스트 계정, 프로필, 가족을 임의로 생성하는 것을 엄격히 금지**하며, 화이트리스트 24개 Auth 계정 및 7개 가족만 유지·운영한다.
+14. **Production QA 테스트 계정 운영 및 실제 사용자 보호 원칙 (공통 정책)**:
+    - **Production QA 전용 고정 계정 재사용**: Production 환경에서 QA 또는 개발 테스트를 수행할 때는 무조건 지정된 전용 QA 가족 및 고정 3개 계정(`qa-parent@kbestie.local`, `testa@kbestie.local`, `testb@kbestie.local`)만 재사용한다. 2026-08-07 정리 직후의 현황(24개 Auth, 7개 가족)은 일시적 현황일 뿐 상한선이나 영구 화이트리스트가 아니며, 향후 가입하는 실제 사용자와 가족은 계속 증가할 수 있다.
+    - **신규 Production 테스트 계정 임의 생성 금지**: Antigravity, Codex, Claude Code 및 모든 개발 에이전트는 **대표님의 명시적 승인 없이** 신규 Production 테스트 Auth 계정, 부모/아이 프로필, `family_members`, `child_profiles`, `families`를 생성해서는 안 된다. 테스트 시 신규 사용자 상태가 필요하면 우선 기존 QA 가족의 테스트 데이터를 안전하게 초기화하거나 재사용하며, 신규 테스트 계정 생성이 불가피한 경우 반드시 대표님 승인을 받는다.
+    - **실제 사용자 및 가입 진행 사용자 절대 보호**: 실제 사용자, 현재 가입 진행 중 사용자, 실제 사용자가 생성한 가족 및 자녀는 이메일 패턴, 가족 미소속 상태, 온보딩 미완료 상태, 계정 총수 등을 이유로 임의로 테스트 계정으로 판단하거나 자동 삭제·수정·차단해서는 안 된다. 특히 가입 진행 중인 `jih0405@nate.com` 계정과 같이 실제 사용자의 가입/온보딩 정보는 절대적인 보호 대상이다.
