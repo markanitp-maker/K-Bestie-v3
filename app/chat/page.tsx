@@ -761,9 +761,9 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Mascot Area & Side Cards */}
-          {mode !== "text" && (
-          <div className="relative w-full shrink-0 h-[clamp(145px,22.6dvh,160px)]">
+          {/* Mascot Area & Side Cards - 키보드가 닫혀 있으면 텍스트 모드에서도 케이 캐릭터를 항상 시각적으로 노출 */}
+          {!isKeyboardOpen && (
+          <div className="relative w-full shrink-0 h-[clamp(135px,20dvh,155px)] transition-all duration-300">
             
             {/* Mascot & Platform - Centered strictly */}
             <div className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
@@ -784,6 +784,7 @@ export default function ChatPage() {
             </div>
 
             {/* Right State Card - Independent Absolute Overlay */}
+            {mode !== "text" && (
             <div className="absolute right-[clamp(24px,8.7vw,36px)] top-[clamp(24px,4.1dvh,32px)]">
               <div
                 className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(58px,19.5vw,72px)] h-[clamp(76px,12dvh,86px)] py-[10px] shadow-sm pointer-events-auto"
@@ -795,11 +796,12 @@ export default function ChatPage() {
                  <span className="text-[clamp(12px,3.6vw,14px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
               </div>
             </div>
+            )}
           </div>
           )}
 
           {/* Auto/Manual Mode Toggles */}
-          {mode !== "text" && (
+          {mode !== "text" && !isKeyboardOpen && (
           <div className="relative z-20 flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
              <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
@@ -813,7 +815,7 @@ export default function ChatPage() {
           )}
 
           {/* Spacer between mode and mic */}
-          {mode !== "text" && (
+          {mode !== "text" && !isKeyboardOpen && (
           <div className="h-[clamp(16px,2.5dvh,24px)] w-full shrink-0" />
           )}
 

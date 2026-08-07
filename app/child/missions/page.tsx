@@ -21,6 +21,7 @@ import {
 } from "@/lib/mission/missionRewardPresentation";
 import { canStartRecording, shouldAcceptChildTurn } from "@/lib/mission/turnGuard";
 import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
+import { pickTransitionConnector } from "@/lib/mission/eReactionPool";
 import { ChildConversationContext } from "@/lib/mission/ChildConversationContext";
 import { getKstHour, currentRound } from "@/lib/mission/missionTimeGate";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
@@ -150,6 +151,7 @@ function MissionInner() {
   voiceModeRef.current = voiceMode;
   const questionsRef = useRef<MissionQuestion[]>([]);
   const lastReactionRef = useRef<string | null>(null);
+  const lastConnectorRef = useRef<string | null>(null);
   const currentIndexRef = useRef(0);
   const questionStatesRef = useRef<Record<string, QuestionState>>({});
   const askedIndexRef = useRef<number>(-1);
@@ -278,8 +280,13 @@ function MissionInner() {
 
     // 011 2차: 문구를 케이 말풍선(askQuestion 경유 speakAsK)이나 배너로 노출하지 않는다.
     // 복구 불가능한 경우에만 재시도 버튼을 띄운다 — 텍스트도, 채팅 기록 저장도 없다.
-    setShowRetryButton(!!showRetryButtonNow);
-  }, [setTurnPhase]);
+    // 수동 텍스트 입력 모드(mode === "text") 중에는 음성/마이크 중단으로 인한 접속 끊김 팝업을 띄우지 않는다.
+    if (mode === "text") {
+      setShowRetryButton(false);
+    } else {
+      setShowRetryButton(!!showRetryButtonNow);
+    }
+  }, [setTurnPhase, mode]);
 
   const roundTypeRef = useRef<RoundType | null>(null);
   roundTypeRef.current = roundType;
@@ -469,8 +476,9 @@ function MissionInner() {
 
   const activeChildTurnIdRef = useRef<string | null>(null);
   const activeChildTurnSeqRef = useRef<number | null>(null);
+  const kClarificationTurnRef = useRef<boolean>(false);
 
-  const saveMessage = useCallback((role: "child" | "k", content: string, displaySequence?: number, turnId?: string) => {
+  const saveMessage = useCallback((role: "child" | "k", content: string, displaySequence?: number, turnId?: string, isClarification?: boolean) => {
     const sid = sessionIdRef.current;
     if (!sid || !content.trim()) return;
 
@@ -481,7 +489,7 @@ function MissionInner() {
     fetch("/api/chat/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current, displaySequence, turnId }),
+      body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current, displaySequence, turnId, isClarification }),
     })
       .then(async res => {
         if (!res.ok) {
@@ -605,7 +613,14 @@ function MissionInner() {
     }
 
     logVoiceEvent({ ts: Date.now(), eventType: "saveMessage_call", childTurnId: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence });
-    saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id);
+    
+    let isClarification = false;
+    if (enrichedTurn.role === "k" && kClarificationTurnRef.current) {
+      isClarification = true;
+      kClarificationTurnRef.current = false;
+    }
+    
+    saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id, isClarification);
 
     if (!isChildTurnDuringActiveMission) {
       if (!isLive && manualTimeoutRef.current) {
@@ -996,6 +1011,7 @@ function MissionInner() {
         let respondText: string | undefined;
         if (data?.clarificationText) {
           respondText = data.clarificationText;
+          kClarificationTurnRef.current = true;
         } else if (!isLive) {
           const reactionText = await reactionResultPromise!;
           if (currentEpoch !== answerEpochRef.current) return;
@@ -1032,7 +1048,9 @@ function MissionInner() {
             if ((error as Error)?.name === "AbortError") throw error;
             console.error("[mission] parent question lookup failed", error);
           }
-          respondText = `${reactionText} ${parentQuestionText ?? nextQ.question_text}`;
+          const connector = pickTransitionConnector(lastConnectorRef.current);
+          lastConnectorRef.current = connector;
+          respondText = `${reactionText} ${connector} ${parentQuestionText ?? nextQ.question_text}`;
         } else {
           try {
             logVoiceEvent({ ts: Date.now(), eventType: "respond_request" });
@@ -1577,6 +1595,11 @@ function MissionInner() {
   const switchToText = useCallback(() => {
     if (missionStateRef.current !== "active") return;
     
+    // 수동 텍스트 모드 전환 시 기존 음성/마이크 관련 워치독 타이머 및 팝업 해제
+    if (sttTimeoutRef.current) { clearTimeout(sttTimeoutRef.current); sttTimeoutRef.current = null; }
+    if (manualTimeoutRef.current) { clearTimeout(manualTimeoutRef.current); manualTimeoutRef.current = null; }
+    setShowRetryButton(false);
+
     // 1. VAD/activity 및 마이크 중단 (모드 변경 전 무조건 실행)
     if (isLiveMode) {
       live.sendActivityEnd();
