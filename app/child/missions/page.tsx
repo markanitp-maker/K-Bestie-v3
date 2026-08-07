@@ -463,10 +463,16 @@ function MissionInner() {
 
   const showTurnPersistenceRetry = useCallback(() => {
     recoveryAttemptedRef.current = true;
-    resetToIdle(false);
+    answerInFlightRef.current = false;
+    setIsProcessingAnswer(false);
+    setIsAutoListening(false);
+    setTurnPhase("child_listening");
+    setIsRecording(false);
+    isRecordingRef.current = false;
+    sttSetMicEnabledRef.current?.(false);
     setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
     setShowRetryButton(true);
-  }, [resetToIdle]);
+  }, [setTurnPhase]);
 
   const isAutoRef = useRef(true);
   // 스크롤백용 — DB(chat_messages)에서 불러온 과거 대화. 세션이 live가 된 직후 1회만
