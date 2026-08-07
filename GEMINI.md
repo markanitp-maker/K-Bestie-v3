@@ -976,3 +976,7 @@ npx playwright install --only-shell chromium
 12. **너는 1차 코딩 주체이자 E2E QA 주체다(§0.8·§26). 코드는 정적 코드리뷰(게이트①, codex 또는 미가용 시 Claude) + 별도 QA 세션의 E2E QA를 거치며, 반려된 단순 문제는 재수정하고 복잡 로직/아키텍처 문제는 Claude에 넘긴다.**
 
 13. **QA 위임(§26)일 때는 코드를 수정하지 않고 Playwright E2E 테스트 실행·증거 저장·보고만 한다. 자기가 짠 코드를 자기 세션이 QA하지 않는다(셀프통과 금지).**
+
+14. **Production QA 및 테스트 계정 절대 재사용 원칙**:
+    - Production QA 테스트 시에는 무조건 지정된 전용 계정(`qa-parent@kbestie.local`, `testa@kbestie.local`, `testb@kbestie.local`)만 재사용한다.
+    - Antigravity·Codex·Claude Code 등 모든 에이전트는 **대표님의 명시 승인 없이 신규 Production 테스트 계정, 프로필, 가족을 임의로 생성하는 것을 엄격히 금지**하며, 화이트리스트 24개 Auth 계정 및 7개 가족만 유지·운영한다.
