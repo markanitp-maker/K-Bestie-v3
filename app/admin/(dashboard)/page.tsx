@@ -653,7 +653,7 @@ function LlmStatusTab() {
               <span style={{ fontSize: "var(--admin-text-sm)" }}>{r.fallbackModel || "-"}</span>
             )},
             { key: "env", header: "환경변수", render: (r: any) => (
-              <div style={{ fontSize: "var(--admin-text-xs)", whiteSpace: "nowrap" }}>{r.envKeys.map((key: string) => <div key={key}>{key}</div>)}</div>
+              <div style={{ fontSize: "var(--admin-text-xs)", whiteSpace: "nowrap" }}>{r.envKeys.length === 0 ? "- (코드 상수)" : r.envKeys.map((key: string) => <div key={key}>{key}</div>)}</div>
             )},
             { key: "runtime", header: "Runtime / SDK", render: (r: any) => (
               <div style={{ fontSize: "var(--admin-text-xs)", minWidth: 150 }}>

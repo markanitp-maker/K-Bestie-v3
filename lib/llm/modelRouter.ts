@@ -18,7 +18,6 @@ export const LLM_MODEL_ROLES = {
   adminTextHealth: "gemini-3.5-flash",
   adminLiveHealth: "gemini-live-2.5-flash-native-audio",
   vacationEventDetection: "gemini-3.5-flash",
-  embedding: "gemini-embedding-001",
 } as const;
 
 export type LlmModelRole = keyof typeof LLM_MODEL_ROLES;
@@ -45,7 +44,6 @@ export const LLM_ENV_KEYS: Record<LlmModelRole, string> = {
   adminTextHealth: "LLM_MODEL_ADMIN_TEXT_HEALTH",
   adminLiveHealth: "LLM_MODEL_ADMIN_LIVE_HEALTH",
   vacationEventDetection: "LLM_MODEL_VACATION_EVENT_DETECTION",
-  embedding: "LLM_MODEL_EMBEDDING",
 };
 
 /**

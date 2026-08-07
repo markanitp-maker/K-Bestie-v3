@@ -47,10 +47,10 @@ const DEFINITIONS: readonly VertexDefinition[] = [
   { id: "weekly_report", name: "주간 리포트", category: "Batch", runtime: "Vercel Node", sdk: "@google/genai", paths: ["lib/batch/generateWeeklySummary.ts"], role: "weeklyReport", region: "vertex" },
   { id: "supabase_batch_report", name: "Supabase Batch 리포트", category: "Batch", runtime: "Supabase Edge / Deno", sdk: "npm:@google/genai", paths: ["supabase/functions/_shared/batch.ts"], role: "supabaseBatchReport", region: "vertex" },
   { id: "vacation_event_detection", name: "방학/개학 이벤트 감지", category: "이벤트 감지", runtime: "Vercel Node", sdk: "@google/genai", paths: ["lib/plan/vacationEventDetector.ts"], role: "vacationEventDetection", region: "vertex" },
-  { id: "premium_live_voice", name: "Premium 실시간 음성 (Live)", category: "Live 음성", runtime: "Cloud Run", sdk: "@google/genai", paths: ["services/vertex-live-relay/src/server.ts"], role: "premiumLiveVoice", region: "vertex" },
+  { id: "premium_live_voice", name: "Premium 실시간 음성 (Live)", category: "Live 음성", runtime: "Cloud Run", sdk: "@google/genai", paths: ["services/vertex-live-relay/src/server.ts"], fixedModel: "gemini-live-2.5-flash-native-audio", fixedEnvKeys: [], region: "vertex" },
   { id: "gcp_stt", name: "아동 음성 전사 (STT)", category: "STT", runtime: "Vercel Node", sdk: "GCP Speech REST", paths: ["app/api/mission/stt/route.ts"], fixedModel: "default", fixedEnvKeys: ["GCP_STT_API_KEY"], region: "global", credentialEnvKey: "GCP_STT_API_KEY" },
   { id: "gcp_tts", name: "케이 음성 합성 (TTS)", category: "TTS", runtime: "Vercel Node", sdk: "GCP TTS REST", paths: ["app/api/voice/tts/route.ts"], fixedModel: "ko-KR-Wavenet-A", fixedEnvKeys: ["GCP_TTS_API_KEY"], region: "global", credentialEnvKey: "GCP_TTS_API_KEY" },
-  { id: "embedding", name: "LLM Wiki 벡터 검색", category: "Embedding", runtime: "Vercel Node + Supabase Edge / Deno", sdk: "@google/genai + npm:@google/genai", paths: ["lib/memory/vectorRetrieval.ts", "supabase/functions/_shared/batch.ts"], role: "embedding", region: "vertex" },
+  { id: "embedding", name: "LLM Wiki 벡터 검색", category: "Embedding", runtime: "Vercel Node + Supabase Edge / Deno", sdk: "@google/genai + npm:@google/genai", paths: ["lib/memory/vectorRetrieval.ts", "supabase/functions/_shared/batch.ts"], fixedModel: "gemini-embedding-001", fixedEnvKeys: [], region: "vertex" },
 ] as const;
 
 function buildEntry(definition: VertexDefinition): LlmStatusEntry {
