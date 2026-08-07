@@ -22,10 +22,8 @@ export interface KChatbotWidgetProps {
 
 type Category = "voc" | "feature" | "bug";
 
-/** 056: 공식 FAQ 페이지 URL. 공개 링크라 NEXT_PUBLIC_ 접두어가 규약상 적합하다(비밀값 아님).
- *  값이 없으면 URL을 임의로 만들지 않고 모달의 이동 버튼을 비활성으로 렌더링한다. */
-const RAW_FAQ_URL = (process.env.NEXT_PUBLIC_FAQ_URL ?? "").trim();
-const FAQ_URL = /^https?:\/\//i.test(RAW_FAQ_URL) ? RAW_FAQ_URL : null;
+/** 056: 공식 FAQ 페이지 URL (고정 운영 URL) */
+const FAQ_URL = "https://beta.k-bestie.com/FAQ";
 
 /** 056: 플로팅 버튼 위치 저장 키. 021/043의 구 스키마({xPercent,yPercent})는 복원 clamp가
  *  0~100 스케일 값을 0~1로 뭉개 세로 위치를 유실시켰으므로, 스키마를 바꾸면서 키도 올린다. */
@@ -628,27 +626,14 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
                   <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col items-center text-center gap-2 mb-2">
                     <h3 className="font-bold text-gray-900">FAQ</h3>
                     <p className="text-sm text-gray-600">사용법이 궁금하면 언제든지 확인해 보세요.</p>
-                    {FAQ_URL ? (
-                      <a
-                        href={FAQ_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
-                      >
-                        FAQ 페이지로 이동
-                      </a>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled
-                          className="mt-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 shadow-sm opacity-50 cursor-not-allowed"
-                        >
-                          FAQ 페이지로 이동
-                        </button>
-                        <p className="text-xs text-gray-400">FAQ 페이지 준비 중입니다.</p>
-                      </>
-                    )}
+                    <a
+                      href={FAQ_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-bold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+                    >
+                      FAQ 페이지로 이동
+                    </a>
                   </div>
 
                   <div className="flex gap-2">
