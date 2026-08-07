@@ -6,7 +6,7 @@ import { Menu, X, ChevronDown, ChevronRight } from "lucide-react";
 // "parent-questions"/"parent-query-router"는 이 파일이 관여하지 않는 별도 티켓 소관
 // 페이지다(app/admin/(dashboard)/page.tsx가 참조). 그 티켓의 컴포넌트 파일이 아직
 // git에 없어 여기서는 타입 호환만 유지하고 네비게이션 항목은 추가하지 않는다.
-export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "account-restore" | "inquiries" | "suggestions" | "bugs" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-attendance-roulette" | "events-reward-fulfillments" | "trash" | "parent-questions" | "parent-query-router" | "push-test" | "acquisition-links" | "acquisition-dashboard";
+export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "users" | "account-restore" | "inquiries" | "suggestions" | "bugs" | "beta-applications" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-attendance-roulette" | "events-reward-fulfillments" | "trash" | "parent-questions" | "parent-query-router" | "push-test" | "acquisition-links" | "acquisition-dashboard";
 
 type AdminMenuItem = { id: AdminPageId; label: string; badgeKey?: string };
 type AdminMenuGroup = { id: string; label: string; items: AdminMenuItem[] };
@@ -26,9 +26,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
     id: "users",
     label: "사용자 관리",
     items: [
-      { id: "account-restore", label: "계정 복구 승인" },
-      { id: "plan-change-requests", label: "요금제 변경 요청" },
-      { id: "child-approval-requests", label: "아이 승인 요청" },
+      { id: "users", label: "사용자 관리" },
     ]
   },
   {
@@ -175,7 +173,11 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
                       key={item.id}
                       data-admin-menu-id={item.id}
                       onClick={() => {
-                        onMenuChange(item.id);
+                        if (item.id === "users" && window.location.pathname !== "/admin/users") {
+                          window.location.assign("/admin/users");
+                        } else {
+                          onMenuChange(item.id);
+                        }
                         if (isMobile) {
                           setIsMobileMenuOpen(false);
                         }

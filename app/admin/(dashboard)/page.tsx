@@ -34,7 +34,7 @@ import {
 } from "recharts";
 
 import { MODE_LABELS, ALL_MODE_BUCKETS, type ModeBucket } from "@/lib/plan/conversationMode";
-import { AdminShell, type AdminPageId } from "@/components/admin/shell/AdminShell";
+import { ADMIN_NAV_ITEMS, AdminShell, type AdminPageId } from "@/components/admin/shell/AdminShell";
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminKpiCard } from "@/components/admin/shell/AdminKpiCard";
@@ -1482,6 +1482,13 @@ function AdminDashboard() {
   // 어느 탭에서 열든 동일한 우측 슬라이드 패널이 열리고, 탭을 전환해도 패널은 유지된다.
   // period는 클릭 시점 값을 캡처해 패널이 자체 보유(탭 목록의 현재 period를 따르지 않음).
   const [selectedChildUser, setSelectedChildUser] = useState<ChildDetailSelection | null>(null);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("menu") as AdminPageId | null;
+    if (requested && requested !== "users" && ADMIN_NAV_ITEMS.some((item) => item.id === requested)) {
+      setPage(requested);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
