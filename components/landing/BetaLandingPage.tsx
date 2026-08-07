@@ -38,13 +38,22 @@ export default function BetaLandingPage() {
         <div className="relative h-8 w-28 md:h-10 md:w-36">
           <Image src="/Images/logo/Logo.png" alt="내친구 케이" fill priority className="object-contain object-left" />
         </div>
-        <Link
-          href="/login"
-          className="shrink-0 px-4 py-2 md:px-5 md:py-2.5 rounded-full text-xs md:text-sm font-bold border transition-colors"
-          style={{ borderColor: "var(--color-k-navy)", color: "var(--color-k-navy)" }}
-        >
-          기존 회원 로그인
-        </Link>
+        <nav className="shrink-0 flex items-center gap-2" aria-label="계정 메뉴">
+          <Link
+            href="/login"
+            className="px-3 py-2 md:px-4 md:py-2.5 rounded-full text-xs md:text-sm font-bold transition-colors"
+            style={{ color: "var(--color-k-navy)" }}
+          >
+            로그인
+          </Link>
+          <Link
+            href="/login"
+            className="px-3 py-2 md:px-4 md:py-2.5 rounded-full text-xs md:text-sm font-bold border transition-colors"
+            style={{ borderColor: "var(--color-k-navy)", color: "var(--color-k-navy)" }}
+          >
+            회원가입
+          </Link>
+        </nav>
       </header>
 
       <main className="w-full">
@@ -75,14 +84,6 @@ export default function BetaLandingPage() {
                 >
                   시작하기
                 </Link>
-
-                <a
-                  href="#features"
-                  className="w-full sm:w-auto text-center px-7 py-3.5 rounded-full font-bold text-sm md:text-base border transition-colors"
-                  style={{ borderColor: "var(--color-k-navy)", color: "var(--color-k-navy)" }}
-                >
-                  서비스 미리보기
-                </a>
               </div>
             </div>
             <div className="relative h-[220px] w-[220px] md:h-[480px] md:w-[480px] shrink-0 order-1 md:order-2">

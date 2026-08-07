@@ -4,6 +4,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { getSupabaseUrl, getSupabaseAnonKey } from "@/lib/supabase/env";
 import { createServiceClient } from "@/lib/supabase/server";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
+import { safeReturnUrl } from "@/lib/auth/safeReturnUrl";
 
 export async function GET(request: Request) {
   const { searchParams, origin: rawOrigin } = new URL(request.url);
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
   console.log("[auth/callback] resolved origin  :", origin);
 
   const code = searchParams.get("code");
-  const returnUrl = searchParams.get("returnUrl") || "/";
+  const returnUrl = safeReturnUrl(searchParams.get("returnUrl"));
 
   if (code) {
     const cookieStore = await cookies();
