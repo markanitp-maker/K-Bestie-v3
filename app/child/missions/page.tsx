@@ -1244,6 +1244,10 @@ function MissionInner() {
           } else {
             attemptSilentRecoveryOrShowRetry();
           }
+        } else {
+          resetToIdle(false);
+          setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+          setShowRetryButton(true);
         }
       } finally {
         if (currentEpoch === answerEpochRef.current) {
@@ -2630,7 +2634,11 @@ function MissionInner() {
   const retryOverlay = showRetryButton && (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/10 px-6">
       <div className="bg-white rounded-2xl shadow-lg p-5 flex flex-col items-center gap-3 max-w-xs">
-        <p className="text-sm font-bold text-gray-700 text-center">케이랑 접속이 끊겼네?</p>
+        <p className="text-sm font-bold text-gray-700 text-center">
+          {errorMsg.startsWith("대화를 저장하는 중")
+            ? "대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요."
+            : "케이랑 접속이 끊겼네?"}
+        </p>
         <div className="flex gap-2 w-full">
           <button
             onClick={async () => {

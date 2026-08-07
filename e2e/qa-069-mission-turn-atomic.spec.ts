@@ -170,13 +170,8 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
   await page.evaluate((childId) => localStorage.setItem("k_child_id", childId), CHILD_ID);
   await page.goto(`${DEV_URL}/child/missions?childId=${CHILD_ID}&roundType=round1_day`, { waitUntil: "domcontentloaded" });
   const resume = page.getByRole("button", { name: /진행 중인 미션 이어하기/ });
-  if (await resume.isVisible({ timeout: 10_000 }).catch(() => false)) {
-    await resume.click();
-  }
-  const continueMission = page.getByRole("button", { name: "이어하기", exact: true });
-  if (await continueMission.isVisible({ timeout: 10_000 }).catch(() => false)) {
-    await continueMission.click({ force: true });
-  }
+  await expect(resume).toBeVisible({ timeout: 20_000 });
+  await resume.click({ force: true });
   const textMode = page.getByRole("button", { name: "텍스트로 답하기" }).first();
   await expect(textMode).toBeEnabled({ timeout: 20_000 });
   await textMode.click({ force: true });
