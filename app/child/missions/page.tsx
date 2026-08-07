@@ -101,7 +101,7 @@ function MissionInner() {
   // confirm_restart_after_completion(022): 오늘 이미 완료한 라운드에 재진입 시 "다시 할까요?"
   // 확인 없이 조용히 새 세션이 만들어지던 문제 수정 — 서버가 requiresConfirmation을 반환하면
   // 이 phase로 멈추고 확인 UI를 보여준다(진행 중/미완료 세션에는 영향 없음).
-  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "confirm_restart_after_completion" | "locked_completed">("loading");
+  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "turn_retry" | "confirm_restart_after_completion" | "locked_completed">("loading");
   // 031: MISSION_SCHEDULE_ENFORCED(Production 전용) 여부 — 서버(/api/config/child-time-restrictions)가
   // 계산해 내려준 값을 그대로 저장해 "closed"/완료잠금 화면의 문구 분기에만 쓴다.
   const [scheduleEnforced, setScheduleEnforced] = useState(false);
@@ -472,6 +472,7 @@ function MissionInner() {
     sttSetMicEnabledRef.current?.(false);
     setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
     setShowRetryButton(true);
+    setPhase("turn_retry");
   }, [setTurnPhase]);
 
   const isAutoRef = useRef(true);
@@ -2558,6 +2559,32 @@ function MissionInner() {
           style={{ background: "var(--color-k-orange)" }}
         >
           홈으로 돌아가기
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === "turn_retry") {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
+        <p className="text-5xl">🔄</p>
+        <p className="text-base font-bold text-gray-800">대화를 저장하는 중 문제가 생겼어요.</p>
+        <p className="text-xs text-gray-500">연결을 확인하고 현재 대화만 다시 시도해 주세요.</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          style={{ background: "var(--color-k-orange)" }}
+        >
+          다시 시도
+        </button>
+        <button
+          onClick={() => {
+            setSessionActive(false);
+            router.replace("/child/home");
+          }}
+          className="w-full max-w-xs py-3 rounded-2xl font-bold text-gray-500 text-sm active:scale-[0.98] transition-transform cursor-pointer"
+        >
+          미션 나가기
         </button>
       </div>
     );
