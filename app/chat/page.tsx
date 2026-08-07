@@ -765,14 +765,15 @@ export default function ChatPage() {
           {!isKeyboardOpen && (
           <div className="relative w-full shrink-0 h-[clamp(135px,20dvh,155px)] transition-all duration-300 flex items-center justify-center">
             {mode === "text" ? (
-              /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 명확한 '✕ 채팅창 닫기' CTA 노출 */
+              /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 크게 따뜻한 코랄 레드 #E85D5D '✕ 채팅창 닫기' CTA 노출 */
               <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
                 <button
                   onClick={switchToVoice}
-                  className="h-[48px] px-7 rounded-full bg-[#1E293B] hover:bg-[#0F172A] text-white font-bold text-[15px] shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all border border-slate-700/50"
+                  style={{ backgroundColor: "#E85D5D" }}
+                  className="h-[62px] min-w-[230px] px-8 rounded-full text-white font-[700] text-[19px] shadow-lg shadow-red-200/50 flex items-center justify-center gap-2.5 cursor-pointer active:scale-95 hover:bg-[#D44C4C] transition-all border border-red-300/30"
                   aria-label="채팅창 닫기"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                   <span>채팅창 닫기</span>
                 </button>
               </div>
@@ -833,14 +834,14 @@ export default function ChatPage() {
           <div className="h-[clamp(16px,2.5dvh,24px)] w-full shrink-0" />
           )}
 
-          {/* Bottom Inputs Area */}
+          {/* Bottom Inputs Area - 기존 UI 원본 100% 복원 (주황색 테두리 input + 주황색 52px 전송 버튼 + 흰색 52px X 버튼) */}
           <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(54px,8dvh,66px)+env(safe-area-inset-bottom))]">
             {mode === "text" ? (
               <div
-                className="w-full min-w-0 flex gap-2 box-border items-center"
+                className="w-full min-w-0 flex gap-2 box-border"
                 style={{
-                  paddingLeft: "max(12px, env(safe-area-inset-left))",
-                  paddingRight: "max(12px, env(safe-area-inset-right))",
+                  paddingLeft: "max(16px, env(safe-area-inset-left))",
+                  paddingRight: "max(16px, env(safe-area-inset-right))",
                 }}
               >
                 <input
@@ -853,24 +854,23 @@ export default function ChatPage() {
                   }}
                   placeholder="케이에게 텍스트로 답하기..."
                   disabled={isConnecting || isEnded}
-                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-3.5 py-3 rounded-2xl text-[15px] font-medium text-gray-800 shadow-sm border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1E293B] focus:border-[#1E293B] transition-colors disabled:opacity-50"
+                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[16px] font-medium text-gray-800 shadow-sm border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-k-orange)] focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
                   maxLength={200}
                 />
                 <button
                   onClick={handleSendText}
                   disabled={!textInput.trim() || isConnecting || isEnded}
-                  className="h-[48px] px-3.5 shrink-0 rounded-2xl flex items-center justify-center text-white font-bold disabled:opacity-40 cursor-pointer shadow-md bg-[#1E293B] active:scale-95 transition-all text-[14px] gap-1"
+                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center text-white disabled:opacity-40 cursor-pointer shadow-md bg-[var(--color-k-orange)] active:scale-95 transition-all"
                   aria-label="전송"
                 >
-                  <span>전송</span>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
                 <button
                   onClick={switchToVoice}
-                  className="w-[48px] h-[48px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40"
+                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40 transition-all"
                   aria-label="텍스트 입력창 닫기"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
             ) : (
