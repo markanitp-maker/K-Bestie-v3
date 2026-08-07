@@ -252,7 +252,7 @@ test("069 server turn is atomic, idempotent, and completes with reward", async (
     const body = request.postDataJSON();
     if (body?.clientTurnId) recoveredIds.push(body.clientTurnId);
   });
-  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "다시 시도" }).click();
   await expect.poll(() => recoveredIds.includes(pending.clientTurnId), { timeout: 20_000 }).toBe(true);
   await expect.poll(async () => page.evaluate(async () => new Promise<boolean>((resolve) => {
     const open = indexedDB.open("k-bestie-mission-recovery", 1);

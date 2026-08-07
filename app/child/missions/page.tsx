@@ -463,6 +463,9 @@ function MissionInner() {
 
   const showTurnPersistenceRetry = useCallback(() => {
     recoveryAttemptedRef.current = true;
+    if (activeChildTurnIdRef.current) {
+      sessionStorage.setItem("mission-turn-retry-exhausted", activeChildTurnIdRef.current);
+    }
     answerInFlightRef.current = false;
     setIsProcessingAnswer(false);
     setIsAutoListening(false);
@@ -1890,6 +1893,12 @@ function MissionInner() {
       const pendingTurn = await readPendingMissionTurn().catch(() => null);
       if (pendingTurn && pendingTurn.sessionId === data.sessionId) {
         const pending = pendingTurn;
+        if (sessionStorage.getItem("mission-turn-retry-exhausted") === pending.clientTurnId) {
+          setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+          setShowRetryButton(true);
+          setPhase("turn_retry");
+          return;
+        }
         const replayResponse = await postMissionTurnWithRetry({
           body: { action: "start", ...pending },
           signal,
@@ -1911,6 +1920,7 @@ function MissionInner() {
             signal,
           });
           if (finalizeResponse.ok) {
+            sessionStorage.removeItem("mission-turn-retry-exhausted");
             await clearPendingMissionTurn(pending.clientTurnId);
             window.location.reload();
             return;
@@ -2571,7 +2581,10 @@ function MissionInner() {
         <p className="text-base font-bold text-gray-800">대화를 저장하는 중 문제가 생겼어요.</p>
         <p className="text-xs text-gray-500">연결을 확인하고 현재 대화만 다시 시도해 주세요.</p>
         <button
-          onClick={() => window.location.reload()}
+          onClick={() => {
+            sessionStorage.removeItem("mission-turn-retry-exhausted");
+            window.location.reload();
+          }}
           className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
           style={{ background: "var(--color-k-orange)" }}
         >
