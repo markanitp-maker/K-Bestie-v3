@@ -4,6 +4,7 @@ import Link from "next/link";
 import { DemoFrame } from "../components/DemoFrame";
 import { useDemoView } from "../components/DemoViewContext";
 import { ParentNav } from "../components/ParentNav";
+import KChatbotWidget from "@/components/KChatbotWidget";
 import { demoProfile, dashboardCards } from "../lib/mockData";
 
 export default function DemoParentDashboardPage() {
@@ -80,6 +81,7 @@ export default function DemoParentDashboardPage() {
         </div>
 
         <ParentNav />
+        <KChatbotWidget appSurface="parent" />
       </div>
     </DemoFrame>
   );
