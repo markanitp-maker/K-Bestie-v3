@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 
 const TARGETS = [
   "초등학교 1~6학년 자녀가 있는 가정",
@@ -40,14 +41,16 @@ export default function BetaLandingPage() {
         </div>
         <nav className="shrink-0 flex items-center gap-2" aria-label="계정 메뉴">
           <Link
-            href="/login"
+            href="/login?entry=header_login"
+            onClick={() => void logAuthFlowEvent("header_login_clicked")}
             className="px-3 py-2 md:px-4 md:py-2.5 rounded-full text-xs md:text-sm font-bold transition-colors"
             style={{ color: "var(--color-k-navy)" }}
           >
             로그인
           </Link>
           <Link
-            href="/login"
+            href="/login?entry=header_signup"
+            onClick={() => void logAuthFlowEvent("header_signup_clicked")}
             className="px-3 py-2 md:px-4 md:py-2.5 rounded-full text-xs md:text-sm font-bold border transition-colors"
             style={{ borderColor: "var(--color-k-navy)", color: "var(--color-k-navy)" }}
           >
@@ -78,7 +81,8 @@ export default function BetaLandingPage() {
               </p>
               <div className="mt-7 flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                 <Link
-                  href="/login"
+                  href="/login?entry=landing_start"
+                  onClick={() => void logAuthFlowEvent("landing_start_clicked")}
                   className="w-full sm:w-auto text-center px-7 py-3.5 rounded-full font-bold text-white text-sm md:text-base transition-opacity active:opacity-80"
                   style={{ background: "var(--color-k-orange)" }}
                 >
@@ -193,7 +197,8 @@ export default function BetaLandingPage() {
 
             <div className="mt-9 flex justify-center">
               <Link
-                href="/login"
+                href="/login?entry=landing_start"
+                onClick={() => void logAuthFlowEvent("landing_start_clicked")}
                 className="w-full sm:w-auto text-center px-8 py-3.5 rounded-full font-bold text-white text-sm md:text-base"
                 style={{ background: "var(--color-k-orange)" }}
               >

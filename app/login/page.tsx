@@ -7,6 +7,7 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 import { safeReturnUrl } from "@/lib/auth/safeReturnUrl";
+import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 
 function LoginContent() {
   const router = useRouter();
@@ -21,7 +22,10 @@ function LoginContent() {
   useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam === "auth") {
-      setError("소셜 로그인 중 문제가 발생했어요. 다시 시도해주세요.");
+      setError("로그인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      void logAuthFlowEvent("social_auth_failed");
+    } else if (errorParam === "cancelled") {
+      setError("로그인이 취소되었습니다. 다시 시도해 주세요.");
     }
   }, [searchParams]);
 
@@ -31,6 +35,7 @@ function LoginContent() {
     const supabase = createClient();
     
     localStorage.setItem("login_role", "owner");
+    await logAuthFlowEvent("social_auth_provider_selected", { provider });
 
     // 접속한 실제 도메인을 그대로 사용; 0.0.0.0만 localhost로 치환
     const appOrigin = window.location.origin.replace("//0.0.0.0", "//localhost");
@@ -111,6 +116,10 @@ function LoginContent() {
           아이의 마음을 함께 돌봐요
         </p>
       </div>
+
+      <Link href="/" className="mb-4 text-sm font-medium text-gray-500 hover:text-gray-700">
+        ← 뒤로 가기
+      </Link>
 
       <div className="w-full flex flex-col gap-6 bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-white/50">
         {error && (

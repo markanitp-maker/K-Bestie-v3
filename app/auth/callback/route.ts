@@ -31,6 +31,10 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const returnUrl = safeReturnUrl(searchParams.get("returnUrl"));
 
+  if (searchParams.get("error") === "access_denied") {
+    return NextResponse.redirect(`${origin}/login?error=cancelled`);
+  }
+
   if (code) {
     const cookieStore = await cookies();
     const targetRedirect = `${origin}${returnUrl}`;
@@ -66,6 +70,13 @@ export async function GET(request: Request) {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         if (user && !userError) {
           const serviceSupabase = createServiceClient();
+          await logBehaviorEvent({
+            eventName: "social_auth_completed",
+            actorType: "parent",
+            actorId: user.id,
+            feature: "auth",
+            route: "/auth/callback",
+          });
           const { error: upsertError } = await serviceSupabase
             .from("parents")
             .upsert(

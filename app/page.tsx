@@ -6,6 +6,7 @@ import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { isStandaloneDisplay } from "@/lib/pwa/standalone";
 import BetaLandingPage from "@/components/landing/BetaLandingPage";
+import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 
 const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 
@@ -140,10 +141,12 @@ export default function HubPage() {
 
         // 3순위: 활성 기존 계정
         if (status.state === "ACTIVE_PARENT") {
+          void logAuthFlowEvent("existing_user_routed_to_login");
           await routePastPwaGate("/parent/home", router);
           return;
         }
         if (status.state === "ACTIVE_CHILD") {
+          void logAuthFlowEvent("existing_user_routed_to_login");
           if (status.childId) localStorage.setItem("k_child_id", status.childId);
           await routePastPwaGate("/child/home", router);
           return;
@@ -173,7 +176,11 @@ export default function HubPage() {
         }
 
         // 4순위: 가입 미완료 계정 (onboarding step)
-        router.replace(`/signup?step=${status.onboardingStep ?? "consent"}`);
+        const signupStep = status.onboardingStep ?? "consent";
+        void logAuthFlowEvent(
+          signupStep === "consent" ? "new_user_routed_to_signup" : "incomplete_user_resumed_signup"
+        );
+        router.replace(`/signup?step=${signupStep}`);
         return;
       } catch (err) {
         console.error("Hub page initialization error:", err);
