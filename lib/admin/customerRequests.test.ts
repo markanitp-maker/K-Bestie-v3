@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { canTransitionStatus, isCustomerRequestCategory, kstDateRange } from "./customerRequests";
+import { canTransitionStatus, isCustomerRequestCategory, kstDateRange, normalizeSubmissionCategory } from "./customerRequests";
 
 describe("customer request policy", () => {
   it("accepts the three new categories and preserved legacy voc", () => {
@@ -14,6 +14,13 @@ describe("customer request policy", () => {
     assert.equal(canTransitionStatus("resolved", "closed"), true);
     assert.equal(canTransitionStatus("open", "resolved"), false);
     assert.equal(canTransitionStatus("resolved", "open"), false);
+  });
+
+  it("normalizes stale client categories without storing new voc rows", () => {
+    assert.equal(normalizeSubmissionCategory("voc"), "inquiry");
+    assert.equal(normalizeSubmissionCategory("feature"), "suggestion");
+    assert.equal(normalizeSubmissionCategory("bug"), "bug");
+    assert.equal(normalizeSubmissionCategory("technical"), null);
   });
 
   it("uses KST day boundaries", () => {

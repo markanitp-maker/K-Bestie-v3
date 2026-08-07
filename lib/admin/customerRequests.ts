@@ -26,6 +26,14 @@ export function isCustomerRequestStatus(value: unknown): value is CustomerReques
   return typeof value === "string" && CUSTOMER_REQUEST_STATUSES.includes(value as CustomerRequestStatus);
 }
 
+/** 배포 중 이미 열린 구버전 폼도 DB에는 반드시 새 category로만 저장한다. */
+export function normalizeSubmissionCategory(value: unknown): Exclude<CustomerRequestCategory, "voc"> | null {
+  if (value === "inquiry" || value === "voc") return "inquiry";
+  if (value === "suggestion" || value === "feature") return "suggestion";
+  if (value === "bug") return "bug";
+  return null;
+}
+
 export function canTransitionStatus(from: CustomerRequestStatus, to: CustomerRequestStatus): boolean {
   if (from === to) return true;
   return CUSTOMER_REQUEST_STATUSES.indexOf(to) === CUSTOMER_REQUEST_STATUSES.indexOf(from) + 1;
