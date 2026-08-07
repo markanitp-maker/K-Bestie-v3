@@ -154,9 +154,8 @@ export default function AttendanceRouletteLoginModal({
     if (!response.ok) throw new Error("status_unavailable");
     const next = await response.json() as AttendanceRouletteStatus;
     setStatus(next);
-    onBalanceChange?.(next.balance);
     return next;
-  }, [childId, onBalanceChange]);
+  }, [childId]);
 
   const refreshWithRetry = useCallback(async () => {
     let lastError: unknown;
@@ -224,8 +223,6 @@ export default function AttendanceRouletteLoginModal({
       setDisplayedResult(settled.resultCode);
       setStatus((current) => {
         if (!current) return current;
-        const nextBalance = current.balance + settled.keyReward;
-        onBalanceChange?.(nextBalance);
         return {
           ...current,
           attendanceDate: settled.attendanceDate,
@@ -241,7 +238,7 @@ export default function AttendanceRouletteLoginModal({
             keyReward: settled.keyReward,
             settledAt: settled.settledAt,
           },
-          balance: nextBalance,
+          balance: current.balance + settled.keyReward,
         };
       });
       // 서버 정본으로 다시 맞추되, 이 조회가 일시 실패해도 이미 확정된 spin 결과와
@@ -260,6 +257,7 @@ export default function AttendanceRouletteLoginModal({
 
   const closeCompleted = () => {
     if (spinning || status?.canSpin) return;
+    if (status) onBalanceChange?.(status.balance);
     setVisible(false);
     resolveGate();
   };
