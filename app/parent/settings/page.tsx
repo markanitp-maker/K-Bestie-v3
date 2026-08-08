@@ -23,6 +23,7 @@ import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { revokeCurrentPushInstallation, usePushSubscription } from "@/lib/notifications/usePushSubscription";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { ChildStartGuideModal, type ChildStartGuideChild } from "@/components/parent/ChildStartGuide";
+import { FamilyInviteManager } from "@/components/family/FamilyInviteManager";
 
 function formatRetentionLabel(tier: Tier): string {
   const retention = getEffectiveRetention(tier, 0);
@@ -108,7 +109,6 @@ export default function ParentSettingsPage() {
   const [loginGuideChild, setLoginGuideChild] = useState<ChildStartGuideChild | null>(null);
 
   // 구성원 추가 폼 상태
-  const [inviteEmail, setInviteEmail] = useState("");
   const [addFamilyName, setAddFamilyName] = useState("");
   const [addGivenName, setAddGivenName] = useState("");
   const [addUsername, setAddUsername] = useState("");
@@ -740,34 +740,12 @@ export default function ParentSettingsPage() {
     }
   };
 
-  const handleInviteParent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError(null);
-    if (!inviteEmail.trim()) return;
-
-    setAddLoading(true);
-    try {
-      const res = await fetch(`/api/families/${store.activeFamilyId}/invite-member`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail.trim() })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setAddError(data.error || "초대에 실패했습니다.");
-        return;
-      }
-
-      setInviteEmail("");
-      alert("초대장을 전송했습니다!");
-      await loadFamilyMembers();
-      await loadSentInvites();
-    } catch {
-      setAddError("네트워크 에러가 발생했습니다.");
-    } finally {
-      setAddLoading(false);
-    }
+  const cancelLegacyInvite = async (inviteId: string) => {
+    if (!store.activeFamilyId || !window.confirm("기존 이메일 초대를 취소할까요?")) return;
+    const response = await fetch(`/api/families/${store.activeFamilyId}/sent-invites/${inviteId}/cancel`, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) setAddError(data.error || "기존 초대를 취소하지 못했습니다.");
+    else await loadSentInvites();
   };
 
   const handleSaveNickname = async () => {
@@ -1390,12 +1368,11 @@ export default function ParentSettingsPage() {
                         {sentInvites.map((invite) => (
                           <div key={invite.id} className="flex justify-between items-center bg-white border border-gray-100 rounded-xl p-2.5">
                             <div>
-                              <p className="text-xs font-bold text-gray-800">{invite.target_email}</p>
+                              <p className="text-xs font-bold text-gray-800">기존 방식 초대 · 재발급 필요</p>
+                              <p className="text-[9px] text-gray-400">{invite.target_email}</p>
                               <p className="text-[9px] text-gray-400">초대 일시: {invite.created_at ? new Date(invite.created_at).toLocaleDateString() : ""}</p>
                             </div>
-                            <span className="text-[9px] bg-yellow-50 text-yellow-600 font-bold px-2 py-1 rounded-lg text-center shrink-0">
-                              초대 대기중
-                            </span>
+                            <button type="button" onClick={() => cancelLegacyInvite(invite.id)} className="text-[9px] bg-red-50 text-red-600 font-bold px-2 py-2 rounded-lg text-center shrink-0">취소</button>
                           </div>
                         ))}
                       </div>
@@ -1408,26 +1385,9 @@ export default function ParentSettingsPage() {
                       </p>
                     )}
 
-                    {/* 4. 초대 폼 (isOwner이고 배우자 초대가 가능한 상태인 경우 그대로 유지) */}
+                    {/* 4. 이메일 매칭 없는 1회용 링크 초대 */}
                     {isOwner && familyMembers.filter(m => m.role !== "child").length < 2 && (
-                      <div className="mt-2 pt-2 border-t border-gray-100">
-                        <p className="text-[9px] text-gray-400 mb-1.5">보호자(배우자) 이메일 초대</p>
-                        <form onSubmit={handleInviteParent} className="flex gap-2">
-                          <input
-                            type="email"
-                            placeholder="spouse@example.com"
-                            value={inviteEmail}
-                            onChange={(e) => setInviteEmail(e.target.value)}
-                            className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-xl outline-none bg-white"
-                          />
-                          <button
-                            type="submit"
-                            className="px-4 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
-                          >
-                            초대
-                          </button>
-                        </form>
-                      </div>
+                      <FamilyInviteManager familyId={store.activeFamilyId!} />
                     )}
                   </div>
                 )}

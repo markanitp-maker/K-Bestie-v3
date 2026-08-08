@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
-import { createClient } from "@/lib/supabase/client";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
 import { ParentHomeHeader } from "./components/ParentHomeHeader";
@@ -63,14 +62,8 @@ export default function ParentHomePage() {
   const [invitePopupLoading, setInvitePopupLoading] = useState(true);
   const [inviteActionLoading, setInviteActionLoading] = useState(false);
   const [inviteActionError, setInviteActionError] = useState<string | null>(null);
-  const [currentUserEmail, setCurrentUserEmail] = useState("");
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setCurrentUserEmail(user?.email?.trim().toLowerCase() ?? "");
-    });
-
     const checkPendingInvite = async () => {
       try {
         setInvitePopupLoading(true);
@@ -596,17 +589,10 @@ export default function ParentHomePage() {
               <div>
                 <p className="text-base font-bold text-gray-800">가족 구성원으로 참여하기</p>
                 <p className="text-xs mt-1.5 leading-relaxed text-gray-500">
-                  기존 가족 구성원에게 아래 이메일로 초대를 요청해 주세요.
+                  가족 오너에게 1회용 초대 링크나 초대 코드를 받아 주세요.
                 </p>
               </div>
               <div className="w-full max-w-xs flex flex-col gap-3">
-                <div className="w-full rounded-2xl px-4 py-3.5 border border-gray-200 bg-white text-center">
-                  <p className="text-[11px] font-semibold text-gray-400 mb-1">내 로그인 이메일</p>
-                  <p className="text-sm font-bold text-gray-800 break-all">
-                    {currentUserEmail || "이메일을 확인하고 있어요..."}
-                  </p>
-                </div>
-
                 {invitePopupLoading ? (
                   <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-4">
                     <p className="text-xs font-semibold text-gray-600">도착한 초대를 확인하고 있어요...</p>
@@ -650,8 +636,11 @@ export default function ParentHomePage() {
                   <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-4">
                     <p className="text-sm font-bold text-gray-800">아직 도착한 초대가 없어요</p>
                     <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                      가족 대표가 보호자를 추가한 뒤, 새로 고침을 하면 초대장을 확인하실 수 있어요.
+                      받은 링크를 열거나 초대 코드 입력 화면에서 참여할 수 있어요.
                     </p>
+                    <Link href="/family/invite" className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[var(--color-k-navy)] text-white text-sm font-bold">
+                      초대 코드 입력하기
+                    </Link>
                   </div>
                 )}
                 <button

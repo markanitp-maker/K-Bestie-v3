@@ -291,6 +291,11 @@ type PendingFamilyInvite = {
   inviterName: string;
 };
 
+type OneTimeFamilyInvite = {
+  familyName: string;
+  inviterName: string;
+};
+
 function FamilyStep({
   onCreated,
   onJoined,
@@ -299,14 +304,14 @@ function FamilyStep({
   onJoined: () => void;
 }) {
   const [name, setName] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(true);
   const [createError, setCreateError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [pendingInvite, setPendingInvite] = useState<PendingFamilyInvite | null>(null);
-  const [joinRequestSent, setJoinRequestSent] = useState(false);
+  const [oneTimeInvite, setOneTimeInvite] = useState<OneTimeFamilyInvite | null>(null);
 
   const loadPendingInvite = async () => {
     setInviteLoading(true);
@@ -326,6 +331,14 @@ function FamilyStep({
 
   useEffect(() => {
     void loadPendingInvite();
+    fetch("/api/family-invites/session", { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data?.state === "pending") {
+          setOneTimeInvite({ familyName: data.familyName || "가족", inviterName: data.inviterName || "가족 대표" });
+        }
+      })
+      .catch(() => {});
     // 최초 진입 시 한 번만 기존 초대를 확인한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -383,21 +396,21 @@ function FamilyStep({
     }
   };
 
-  const requestToJoin = async () => {
-    if (!ownerEmail.trim()) return;
+  const joinWithInviteCode = async () => {
+    if (!inviteCode.trim()) return;
     setJoinLoading(true);
     setJoinError(null);
     try {
-      const res = await fetch("/api/family-join-requests", {
+      const res = await fetch("/api/family-invites/context", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner_email: ownerEmail.trim() }),
+        body: JSON.stringify({ code: inviteCode.trim() }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "가족 참여 요청을 보내지 못했습니다.");
-      setJoinRequestSent(true);
+      if (!res.ok) throw new Error(data.error || "초대 코드를 확인하지 못했습니다.");
+      window.location.assign("/family/invite/continue");
     } catch (e: any) {
-      setJoinError(e.message || "가족 참여 요청을 보내지 못했습니다.");
+      setJoinError(e.message || "초대 코드를 확인하지 못했습니다.");
     } finally {
       setJoinLoading(false);
     }
@@ -453,6 +466,20 @@ function FamilyStep({
 
         {inviteLoading ? (
           <p className="py-4 text-center text-xs text-gray-500">도착한 가족 초대를 확인하고 있어요...</p>
+        ) : oneTimeInvite ? (
+          <div className="rounded-xl border border-sky-100 bg-white p-3">
+            <p className="text-xs font-bold text-gray-800">{oneTimeInvite.familyName} 가족 초대가 확인됐어요</p>
+            <p className="text-[11px] text-gray-500 mt-1">{oneTimeInvite.inviterName}님의 가족에 보호자로 참여합니다.</p>
+            <button
+              type="button"
+              onClick={() => window.location.assign("/family/invite/continue")}
+              disabled={joinLoading}
+              className="w-full mt-3 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
+              style={{ background: "var(--color-k-navy)" }}
+            >
+              가족 참여 완료하기 →
+            </button>
+          </div>
         ) : pendingInvite ? (
           <div className="rounded-xl border border-sky-100 bg-white p-3">
             <p className="text-xs font-bold text-gray-800">{pendingInvite.familyName} 가족에서 초대가 왔어요</p>
@@ -467,35 +494,24 @@ function FamilyStep({
               {joinLoading ? "참여 처리 중..." : "초대 수락하고 참여하기 →"}
             </button>
           </div>
-        ) : joinRequestSent ? (
-          <div className="rounded-xl border border-sky-100 bg-white p-3 text-center">
-            <p className="text-xs font-bold text-gray-800">가족 대표에게 참여 요청을 보냈어요</p>
-            <p className="text-[11px] text-gray-500 mt-1">대표 보호자가 승인하면 아이 등록 없이 바로 시작할 수 있어요.</p>
-            <button
-              type="button"
-              onClick={checkJoinStatus}
-              disabled={joinLoading}
-              className="w-full mt-3 py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-700 disabled:opacity-50 cursor-pointer"
-            >
-              {joinLoading ? "확인 중..." : "승인 여부 확인"}
-            </button>
-          </div>
         ) : (
           <>
+            <p className="text-[11px] text-gray-600 text-center">가족에게 받은 초대 링크를 열거나 8자리 초대 코드를 입력해 주세요.</p>
             <input
-              type="email"
-              placeholder="가족 대표의 로그인 이메일"
-              value={ownerEmail}
-              onChange={(e) => setOwnerEmail(e.target.value)}
+              type="text"
+              placeholder="K7P4-29DX"
+              value={inviteCode}
+              maxLength={9}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
               className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white text-center"
             />
             <button
               type="button"
-              onClick={requestToJoin}
-              disabled={joinLoading || !ownerEmail.trim()}
+              onClick={joinWithInviteCode}
+              disabled={joinLoading || !inviteCode.trim()}
               className="w-full py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-700 disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
             >
-              {joinLoading ? "요청 보내는 중..." : "가족 참여 요청 보내기"}
+              {joinLoading ? "초대 확인 중..." : "초대 코드로 참여하기"}
             </button>
             <button
               type="button"
@@ -503,7 +519,7 @@ function FamilyStep({
               disabled={joinLoading}
               className="text-[11px] font-semibold text-gray-500 underline underline-offset-2 cursor-pointer disabled:opacity-50"
             >
-              이미 초대받았다면 다시 확인
+              기존 방식 초대를 받았다면 다시 확인
             </button>
           </>
         )}
