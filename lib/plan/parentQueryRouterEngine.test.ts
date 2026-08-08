@@ -34,20 +34,19 @@ function mockAi(responseText: string, opts?: { shouldThrow?: boolean }): GenAILi
 // 이 엔진을 재사용해 자체 테스트를 갖는다. 여기서는 엔진 자체의 매개변수화 동작만 검증한다.
 const TEST_CONFIG: RouterPolicyConfig = {
   policyVersion: "PQR-TEST-1.0",
-  applicableGrade: 99,
+  applicableGrade: 4,
   greenRules: [
     { id: "G-01", area: "interest", parentDraftText: "관심사 물어볼까요?", childQuestionText: "관심사 뭐야?" },
     { id: "G-02", area: "school_fun", parentDraftText: "학교 재밌었던 거 물어볼까요?", childQuestionText: "학교 재밌었어?" },
   ],
   redRules: [
     {
-      id: "R-01",
+      id: "R-02",
       area: "peer_conflict",
       pattern: /누구랑\s*싸웠/,
       coachingText: "친구 갈등은 캐묻지 않아요.",
-      safeAlternativeGreenId: "G-02",
     },
-    { id: "R-02", area: "fallback", pattern: null, coachingText: "허용 목록에 없어요.", safeAlternativeGreenId: null },
+    { id: "R-09", area: "fallback", pattern: null, coachingText: "허용 목록에 없어요." },
   ],
   greenAreaPromptGuide: "interest, school_fun",
   redAreaPromptGuide: "peer_conflict",
@@ -65,9 +64,10 @@ test("Red 결정론 패턴은 LLM 호출 없이 즉시 RED, safeAlternative 정�
   const result = await routeParentQuery(TEST_CONFIG, ai, "fake-model", "누구랑 싸웠는지 알아봐");
   assert.equal(result.route, "RED");
   if (result.route === "RED") {
-    assert.equal(result.ruleId, "R-01");
+    assert.equal(result.ruleId, "R-02");
     assert.ok(result.safeAlternative);
-    assert.equal(result.safeAlternative?.id, "G-02");
+    assert.equal(result.safeAlternative?.alternativeId, "SA-G4-PEER-01");
+    assert.equal(result.safeAlternative?.alternativeArea, "peer_relationship_safe");
   }
   assert.equal((ai as any).calls, 0);
 });
@@ -76,7 +76,7 @@ test("LLM UNCLEAR → default RED(fallback)", async () => {
   const ai = mockAi(json({ candidate_route: "UNCLEAR", question_count: 1 }));
   const result = await routeParentQuery(TEST_CONFIG, ai, "fake-model", "애매한 질문");
   assert.equal(result.route, "RED");
-  if (result.route === "RED") assert.equal(result.ruleId, "R-02");
+  if (result.route === "RED") assert.equal(result.ruleId, "R-09");
 });
 
 test("LLM GREEN + 유효 조건 충족 → GREEN 확정", async () => {
@@ -97,7 +97,7 @@ test("LLM detected_red_area로 특정 RED 규칙에 정확히 매핑(fallback �
   );
   const result = await routeParentQuery(TEST_CONFIG, ai, "fake-model", "친구랑 뭔가 있었는지 캐물어봐");
   assert.equal(result.route, "RED");
-  if (result.route === "RED") assert.equal(result.ruleId, "R-01");
+  if (result.route === "RED") assert.equal(result.ruleId, "R-02");
 });
 
 test("다중 질문 감지 시 MULTI_QUESTION_SELECT, 자동 선택 없음", async () => {

@@ -8,14 +8,15 @@ import { classifyParentKChatIntent } from "@/lib/parentKChat/intentClassifier";
 import { filterParentQuestion } from "@/lib/plan/parentQuestionFilter";
 import { checkAndDeductQuota, refundQuota, peekQuota, WEEKLY_QUESTION_LIMIT } from "@/lib/plan/parentQuestionQuota";
 import { classifyAndRewriteParentQuestion, DEFAULT_BLOCKED_MESSAGE, FORBIDDEN_PATTERNS, isHardPreFilterBlock } from "@/lib/plan/parentQuestionRewrite";
-import { routeParentQueryGrade4, getGreenRuleById as getGreenRuleByIdGrade4 } from "@/lib/plan/parentQueryRouterGrade4";
-import { routeParentQueryGrade1, getGreenRuleById as getGreenRuleByIdGrade1 } from "@/lib/plan/parentQueryRouterGrade1";
-import { routeParentQueryGrade2, getGreenRuleById as getGreenRuleByIdGrade2 } from "@/lib/plan/parentQueryRouterGrade2";
-import { routeParentQueryGrade3, getGreenRuleById as getGreenRuleByIdGrade3 } from "@/lib/plan/parentQueryRouterGrade3";
-import { routeParentQueryGrade5, getGreenRuleById as getGreenRuleByIdGrade5 } from "@/lib/plan/parentQueryRouterGrade5";
-import { routeParentQueryGrade6, getGreenRuleById as getGreenRuleByIdGrade6 } from "@/lib/plan/parentQueryRouterGrade6";
+import { routeParentQueryGrade4, getGreenRuleById as getGreenRuleByIdGrade4, getSafeAlternativeById as getSafeAlternativeByIdGrade4 } from "@/lib/plan/parentQueryRouterGrade4";
+import { routeParentQueryGrade1, getGreenRuleById as getGreenRuleByIdGrade1, getSafeAlternativeById as getSafeAlternativeByIdGrade1 } from "@/lib/plan/parentQueryRouterGrade1";
+import { routeParentQueryGrade2, getGreenRuleById as getGreenRuleByIdGrade2, getSafeAlternativeById as getSafeAlternativeByIdGrade2 } from "@/lib/plan/parentQueryRouterGrade2";
+import { routeParentQueryGrade3, getGreenRuleById as getGreenRuleByIdGrade3, getSafeAlternativeById as getSafeAlternativeByIdGrade3 } from "@/lib/plan/parentQueryRouterGrade3";
+import { routeParentQueryGrade5, getGreenRuleById as getGreenRuleByIdGrade5, getSafeAlternativeById as getSafeAlternativeByIdGrade5 } from "@/lib/plan/parentQueryRouterGrade5";
+import { routeParentQueryGrade6, getGreenRuleById as getGreenRuleByIdGrade6, getSafeAlternativeById as getSafeAlternativeByIdGrade6 } from "@/lib/plan/parentQueryRouterGrade6";
 import { classifyParentQueryCandidate } from "@/lib/plan/parentQueryRouterGrade4";
 import type { GreenRule, ParentQueryRouterResult, GenAILikeClient } from "@/lib/plan/parentQueryRouterEngine";
+import type { SafeAlternative } from "@/lib/plan/parentQuerySafeAlternatives";
 import { parseGrade } from "@/lib/mission/selectQuestions";
 import { getSupabaseTarget } from "@/lib/supabase/env";
 import { isDetailAllowed } from "@/lib/plan/requireDetailAccess";
@@ -31,18 +32,28 @@ import * as crypto from "crypto";
 interface GradeRouterEntry {
   route: (ai: GenAILikeClient, model: string, text: string) => Promise<ParentQueryRouterResult>;
   getGreenRuleById: (ruleId: string) => GreenRule | null;
+  getSafeAlternativeById: (alternativeId: string) => SafeAlternative | null;
   policyVersion: string;
   defaultProductionEnabled: boolean;
   productionEnabledEnvVar: string;
 }
 
 const GRADE_ROUTER_CONFIG: Record<number, GradeRouterEntry> = {
-  1: { route: routeParentQueryGrade1, getGreenRuleById: getGreenRuleByIdGrade1, policyVersion: "PQR-G1-1.0", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE1_PRODUCTION_ENABLED" },
-  2: { route: routeParentQueryGrade2, getGreenRuleById: getGreenRuleByIdGrade2, policyVersion: "PQR-G2-1.0", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE2_PRODUCTION_ENABLED" },
-  3: { route: routeParentQueryGrade3, getGreenRuleById: getGreenRuleByIdGrade3, policyVersion: "PQR-G3-1.0", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE3_PRODUCTION_ENABLED" },
-  4: { route: routeParentQueryGrade4, getGreenRuleById: getGreenRuleByIdGrade4, policyVersion: "PQR-G4-1.0", defaultProductionEnabled: true, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE4_PRODUCTION_ENABLED" },
-  5: { route: routeParentQueryGrade5, getGreenRuleById: getGreenRuleByIdGrade5, policyVersion: "PQR-G5-1.0", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE5_PRODUCTION_ENABLED" },
-  6: { route: routeParentQueryGrade6, getGreenRuleById: getGreenRuleByIdGrade6, policyVersion: "PQR-G6-1.0", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE6_PRODUCTION_ENABLED" },
+  1: { route: routeParentQueryGrade1, getGreenRuleById: getGreenRuleByIdGrade1, getSafeAlternativeById: getSafeAlternativeByIdGrade1, policyVersion: "PQR-G1-1.1", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE1_PRODUCTION_ENABLED" },
+  2: { route: routeParentQueryGrade2, getGreenRuleById: getGreenRuleByIdGrade2, getSafeAlternativeById: getSafeAlternativeByIdGrade2, policyVersion: "PQR-G2-1.1", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE2_PRODUCTION_ENABLED" },
+  3: { route: routeParentQueryGrade3, getGreenRuleById: getGreenRuleByIdGrade3, getSafeAlternativeById: getSafeAlternativeByIdGrade3, policyVersion: "PQR-G3-1.1", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE3_PRODUCTION_ENABLED" },
+  4: { route: routeParentQueryGrade4, getGreenRuleById: getGreenRuleByIdGrade4, getSafeAlternativeById: getSafeAlternativeByIdGrade4, policyVersion: "PQR-G4-1.1", defaultProductionEnabled: true, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE4_PRODUCTION_ENABLED" },
+  5: { route: routeParentQueryGrade5, getGreenRuleById: getGreenRuleByIdGrade5, getSafeAlternativeById: getSafeAlternativeByIdGrade5, policyVersion: "PQR-G5-1.1", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE5_PRODUCTION_ENABLED" },
+  6: { route: routeParentQueryGrade6, getGreenRuleById: getGreenRuleByIdGrade6, getSafeAlternativeById: getSafeAlternativeByIdGrade6, policyVersion: "PQR-G6-1.1", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE6_PRODUCTION_ENABLED" },
+};
+
+const PARENT_QUERY_AREA_LABELS: Readonly<Record<string, string>> = {
+  interest: "관심사", school_fun: "학교생활", subject_like: "좋아하는 과목",
+  food_pref: "음식 취향", pride: "자랑거리", content: "영상/게임",
+  weekend: "주말 계획", dream: "장래희망", peer_relationship: "친구 관계",
+  emotion_cause: "감정·사건", peer_conflict: "친구 관계", academic_pressure: "공부 고민",
+  secret: "비밀 확인", family_complaint: "가족 관계", appearance_body: "외모·몸·식사",
+  romance: "이성 관계", sns_control: "SNS·온라인 관계",
 };
 
 function resolveActiveGradeRouter(realGrade: number | null): GradeRouterEntry | null {
@@ -361,14 +372,7 @@ export async function POST(request: Request) {
       if (candidate) {
         requested_area = candidate.candidateArea || candidate.detectedRedArea || null;
         if (requested_area) {
-          const areaToTopicMap: Record<string, string> = {
-            "interest": "관심사", "school_fun": "학교생활", "subject_like": "좋아하는 과목",
-            "food_pref": "음식 취향", "pride": "자랑거리", "content": "영상/게임",
-            "weekend": "주말 계획", "dream": "장래희망", "peer_relationship": "친구 관계",
-            "emotion_cause": "감정 원인", "peer_conflict": "친구 갈등", "academic_pressure": "학업 스트레스",
-            "secret": "비밀 확인", "family_complaint": "가족 불만"
-          };
-          requested_topic = areaToTopicMap[requested_area] || requested_area;
+          requested_topic = PARENT_QUERY_AREA_LABELS[requested_area] || requested_area;
         }
       }
 
@@ -590,17 +594,42 @@ JSON 스키마:
           // 안전 대안을 부모가 바로 선택했을 때 클라이언트가 추가 왕복 없이 곧장 초안
           // 모달을 열 수 있도록 quota 정보도 함께 내려준다(등록/차감은 아직 없음).
           const quotaPeekForRed = await peekQuota(serviceClient, child_id);
+          const resolvedRequestedArea = routed.area === "fallback"
+            ? (typeof requested_area === "string" && requested_area ? requested_area : routed.area)
+            : routed.area;
+          const resolvedRequestedTopic =
+            typeof requested_topic === "string" && requested_topic && requested_area === resolvedRequestedArea
+              ? requested_topic
+              : (PARENT_QUERY_AREA_LABELS[resolvedRequestedArea] || resolvedRequestedArea);
+          const safeAlternative = routed.safeAlternative;
           return NextResponse.json(
             {
               error: routed.coachingText,
               classification: "RED",
               ruleId: routed.ruleId,
-              safeAlternative: routed.safeAlternative
+              requestedTopic: resolvedRequestedTopic,
+              requestedArea: resolvedRequestedArea,
+              requested_topic: resolvedRequestedTopic,
+              requested_area: resolvedRequestedArea,
+              red_id: routed.ruleId,
+              red_reason_code: routed.area,
+              safe_alternative_allowed: safeAlternative !== null,
+              safe_alternative_area: safeAlternative?.alternativeArea ?? null,
+              safe_alternative_id: safeAlternative?.alternativeId ?? null,
+              safe_alternative_text: safeAlternative?.childQuestionText ?? null,
+              policy_version: routed.policyVersion,
+              source_grade: realGrade,
+              expert_review_status: safeAlternative?.expertReviewStatus ?? null,
+              production_enabled: safeAlternative?.productionEnabled ?? false,
+              safeAlternative: safeAlternative
                 ? {
-                    ruleId: routed.safeAlternative.id,
-                    area: routed.safeAlternative.area,
-                    parentDraftText: routed.safeAlternative.parentDraftText,
-                    childQuestionText: routed.safeAlternative.childQuestionText,
+                    ruleId: safeAlternative.alternativeId,
+                    area: safeAlternative.alternativeArea,
+                    parentDraftText: safeAlternative.parentDraftText,
+                    childQuestionText: safeAlternative.childQuestionText,
+                    requestedArea: safeAlternative.requestedArea,
+                    expertReviewStatus: safeAlternative.expertReviewStatus,
+                    productionEnabled: safeAlternative.productionEnabled,
                   }
                 : null,
               weeklyUsedCount: quotaPeekForRed.weeklyUsedCount,
@@ -710,7 +739,16 @@ JSON 스키마:
         }
         const routerRuleId = typeof body.routerRuleId === "string" ? body.routerRuleId : null;
         const greenRule = routerRuleId ? activeGradeRouter.getGreenRuleById(routerRuleId) : null;
-        if (!greenRule || trimmedQuestion !== greenRule.childQuestionText) {
+        const safeAlternative = routerRuleId ? activeGradeRouter.getSafeAlternativeById(routerRuleId) : null;
+        const submittedRequestedArea = typeof body.requestedArea === "string" ? body.requestedArea : null;
+        if (safeAlternative && submittedRequestedArea !== safeAlternative.requestedArea) {
+          return NextResponse.json({ error: "Safe alternative does not match the requested topic" }, { status: 400 });
+        }
+        const approvedChildQuestionText = greenRule?.childQuestionText ?? safeAlternative?.childQuestionText ?? null;
+        const approvedParentDraftText = greenRule?.parentDraftText ?? safeAlternative?.parentDraftText ?? null;
+        const approvedArea = greenRule?.area ?? safeAlternative?.alternativeArea ?? null;
+        const approvedRuleId = greenRule?.id ?? safeAlternative?.alternativeId ?? null;
+        if (!approvedChildQuestionText || !approvedParentDraftText || !approvedArea || !approvedRuleId || trimmedQuestion !== approvedChildQuestionText) {
           return NextResponse.json({ error: "Question text does not match the approved whitelist entry" }, { status: 400 });
         }
 
@@ -723,7 +761,7 @@ JSON 스키마:
         }
 
         const originalQuestionRaw =
-          typeof body.originalQuestion === "string" ? body.originalQuestion.trim().slice(0, 300) : greenRule.parentDraftText;
+          typeof body.originalQuestion === "string" ? body.originalQuestion.trim().slice(0, 300) : approvedParentDraftText;
         const clientIdempotencyKey = typeof body.idempotencyKey === "string" && body.idempotencyKey.trim() ? body.idempotencyKey.trim() : null;
         const normalizationKey =
           clientIdempotencyKey || `ask_child_pqr_${child_id}_${crypto.createHash("md5").update(originalQuestionRaw).digest("hex")}`;
@@ -734,14 +772,14 @@ JSON 스키마:
             child_id,
             parent_id: user.id,
             original_question_text: originalQuestionRaw,
-            question_text: greenRule.childQuestionText,
+            question_text: approvedChildQuestionText,
             status: "ai_generated",
             request_idempotency_key: normalizationKey,
             source: "PARENT_QUERY_ROUTER",
             source_grade: realGrade,
             router_route: "GREEN",
-            router_area: greenRule.area,
-            router_rule_id: greenRule.id,
+            router_area: approvedArea,
+            router_rule_id: approvedRuleId,
             router_policy_version: activeGradeRouter.policyVersion,
           })
           .select("id, question_text, status")
@@ -765,7 +803,7 @@ JSON 스키마:
                 weeklyLimit: WEEKLY_QUESTION_LIMIT,
               });
             }
-            return NextResponse.json({ error: "Already queued", convertedQuestion: greenRule.childQuestionText }, { status: 409 });
+            return NextResponse.json({ error: "Already queued", convertedQuestion: approvedChildQuestionText }, { status: 409 });
           }
           console.error("parent_questions 저장 실패(PQR):", insertErr);
           return NextResponse.json({ error: "Failed to save question" }, { status: 500 });

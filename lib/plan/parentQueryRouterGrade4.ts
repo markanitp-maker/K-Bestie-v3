@@ -3,7 +3,13 @@
 // LLM은 후보 판정만 하고, 최종 route 결정은 이 파일의 결정론적 게이트가 내린다(§2 규칙1,
 // §5.1 "LLM 단독 판정 금지"). 애매하거나 근거 부족이면 항상 RED로 fail-closed한다.
 
-export const POLICY_VERSION = "PQR-G4-1.0";
+import {
+  getApprovedSafeAlternativeById,
+  resolveApprovedSafeAlternative,
+  type SafeAlternative,
+} from "./parentQuerySafeAlternatives";
+
+export const POLICY_VERSION = "PQR-G4-1.1";
 export const APPLICABLE_GRADE = 4;
 
 export type ParentQueryRoute = "CRISIS" | "RED" | "GREEN";
@@ -102,6 +108,9 @@ export type RedAreaId =
   | "academic_pressure"
   | "secret"
   | "family_complaint"
+  | "appearance_body"
+  | "romance"
+  | "sns_control"
   | "fallback";
 
 export interface RedRule {
@@ -109,17 +118,15 @@ export interface RedRule {
   area: RedAreaId;
   pattern: RegExp | null; // fallback(R-06)은 패턴이 없다 — LLM 미매칭 시 기본값으로만 쓰인다.
   coachingText: string;
-  safeAlternativeGreenId: string | null; // R-04는 대안 제안 없음
 }
 
 export const RED_RULES: readonly RedRule[] = [
   {
     id: "R-01",
     area: "emotion_cause",
-    pattern: /(때문인\s*것\s*같|왜\s*그런지|무슨\s*일\s*있었는지\s*캐|기분\s*안\s*좋.{0,10}(이유|원인))/,
+    pattern: /(때문인\s*것\s*같|왜\s*그런지|무슨\s*일\s*있었는지\s*캐|기분\s*안\s*좋.{0,10}(이유|원인)|속상한\s*일\s*있었)/,
     coachingText:
       "케이가 원인을 대신 캐묻기는 어려워요. 아이의 기분을 미리 정하지 말고 편하게 이야기할 여지를 남겨 주세요.",
-    safeAlternativeGreenId: "G-02",
   },
   {
     id: "R-02",
@@ -127,7 +134,6 @@ export const RED_RULES: readonly RedRule[] = [
     pattern: /(누구랑\s*싸웠|친구.{0,10}(싸운|다퉜|괴롭|따돌|왕따))/,
     coachingText:
       "케이가 친구 관계를 대신 캐물으면 아이가 마음을 닫을 수 있어요. 걱정이 이어지면 담임이나 상담 선생님과 상의해 주세요.",
-    safeAlternativeGreenId: "G-02",
   },
   {
     id: "R-03",
@@ -135,7 +141,6 @@ export const RED_RULES: readonly RedRule[] = [
     pattern: /(시험\s*점수|성적.{0,10}(왜|떨어|올랐)|숙제.{0,10}(안\s*했|왜)|학원.{0,10}(태도|성실))/,
     coachingText:
       "공부 이야기를 추궁하면 아이가 대화를 피할 수 있어요. 압박보다 아이가 느끼는 난이도나 흥미를 직접 물어보세요.",
-    safeAlternativeGreenId: "G-03",
   },
   {
     id: "R-04",
@@ -143,27 +148,42 @@ export const RED_RULES: readonly RedRule[] = [
     pattern: /(숨기는\s*(거|게|것)|비밀.{0,10}(있|캐|확인)|거짓말.{0,10}(했는지|인지)|몰래.{0,10}(뭐|무엇|무슨))/,
     coachingText:
       "케이는 아이 몰래 무언가를 알아내는 도구가 아니에요. 아이와의 신뢰를 지키기 위해 이 요청은 전달하지 않아요.",
-    safeAlternativeGreenId: null,
   },
   {
     id: "R-05",
     area: "family_complaint",
     pattern: /((엄마|아빠|할머니|할아버지|부모님).{0,10}(싫어|미워|나쁘|불만)|가족.{0,10}(불만|평가))/,
     coachingText: "가족에 대한 아이 마음을 케이가 대신 캐묻지 않아요. 편안한 자리에서 직접 이야기해 주세요.",
-    safeAlternativeGreenId: "G-07",
   },
   {
     id: "R-06",
+    area: "appearance_body",
+    pattern: /(살\s*쪘|뚱뚱|말랐|다이어트|몸무게|체중.{0,10}(몇|얼마)|(살|체중|몸무게|다이어트).{0,15}(얼마나\s*먹|적게\s*먹))/,
+    coachingText: "외모·몸·식사 관련은 케이가 대신 캐묻지 않아요. 걱정되는 점은 아이를 평가하지 않는 말로 직접 살펴봐 주세요.",
+  },
+  {
+    id: "R-07",
+    area: "romance",
+    pattern: /(남자\s*친구|여자\s*친구|사귀는|좋아하는\s*애|누구\s*좋아하|썸\s*타)/,
+    coachingText: "누구를 좋아하는지는 케이가 대신 캐묻지 않아요. 아이가 먼저 말할 때 편하게 들어 주세요.",
+  },
+  {
+    id: "R-08",
+    area: "sns_control",
+    pattern: /(인스타|틱톡|SNS|DM|디엠|팔로워|누구랑\s*연락|카톡.{0,10}(누구|확인))/i,
+    coachingText: "온라인 대화를 케이가 감시하거나 캐묻지 않아요. 사용 규칙은 아이와 함께 정해 주세요.",
+  },
+  {
+    id: "R-09",
     area: "fallback",
     pattern: null,
     coachingText:
       "이 질문은 4학년 Green List에 명확히 해당하지 않아 아이에게 전달하지 않아요. 아이를 추궁하지 않는 관심사·학교의 즐거운 경험·먹고 싶은 것·주말 계획 같은 질문으로 바꿔 주세요.",
-    safeAlternativeGreenId: null,
   },
 ];
 
 const RED_RULES_BY_AREA = new Map(RED_RULES.map((r) => [r.area, r]));
-const RED_FALLBACK = RED_RULES.find((r) => r.id === "R-06")!;
+const RED_FALLBACK = RED_RULES.find((r) => r.id === "R-09")!;
 const GREEN_RULES_BY_AREA = new Map(GREEN_RULES.map((r) => [r.area, r]));
 
 // §8.1 위기 감지 범위 — 결정론적 정규식(1차 방어). 자해/자살/학대/성적피해/폭력/따돌림/
@@ -211,14 +231,17 @@ export const PARENT_QUERY_ROUTER_SYSTEM_PROMPT = `당신은 초등학교 4학년
    - interest(관심사/요즘 빠진 것), school_fun(학교에서 재밌었던 것), subject_like(좋아하는
      과목/수업), food_pref(먹고 싶은 것), pride(잘한 것/자랑거리), content(보는 영상/게임),
      weekend(주말 계획), dream(장래희망)
-3. 아래 5개 위험 영역 중 하나에 해당하면 candidate_route를 "RED"로, detected_red_area에
+3. 아래 위험 영역 중 하나에 해당하면 candidate_route를 "RED"로, detected_red_area에
    해당 영역 코드를 적고, detected_risks에 구체적 신호를 적는다
    - emotion_cause: 기분/감정의 원인을 캐묻거나 단정
    - peer_conflict: 친구 갈등·다툼·따돌림 확인
    - academic_pressure: 성적·공부·숙제·학원 태도 추궁
    - secret: 비밀·거짓말 적발, 숨긴 것 확인
    - family_complaint: 가족에 대한 불만이나 평가 요구
-   위 5개 중 어디에도 정확히 들어맞지 않지만 그래도 위험하다고 판단되면 detected_red_area는
+   - appearance_body: 외모·몸무게·식사량 캐묻기
+   - romance: 이성 관계 캐묻기
+   - sns_control: SNS 통제·감시
+   위 영역 중 어디에도 정확히 들어맞지 않지만 그래도 위험하다고 판단되면 detected_red_area는
    null로 두고 detected_risks에만 이유를 적는다.
 4. 명확한 위험 신호도 없고 8개 영역에도 해당하지 않으면 candidate_route를 "UNCLEAR"로
 5. 원문에 서로 다른 질문이 여러 개 섞여 있으면 question_count에 개수를 적고,
@@ -230,7 +253,7 @@ export const PARENT_QUERY_ROUTER_SYSTEM_PROMPT = `당신은 초등학교 4학년
 {
   "candidate_route": "GREEN" | "RED" | "UNCLEAR",
   "candidate_area": "GREEN일 때만 8개 영역 중 하나, 그 외에는 null",
-  "detected_red_area": "RED일 때 emotion_cause|peer_conflict|academic_pressure|secret|family_complaint 중 하나 또는 null, GREEN/UNCLEAR면 항상 null",
+  "detected_red_area": "RED일 때 emotion_cause|peer_conflict|academic_pressure|secret|family_complaint|appearance_body|romance|sns_control 중 하나 또는 null, GREEN/UNCLEAR면 항상 null",
   "confidence": 0.0~1.0,
   "matched_evidence": ["판단 근거 짧은 구절"],
   "detected_risks": ["감지된 위험 신호 설명, 없으면 빈 배열"],
@@ -346,7 +369,7 @@ export type ParentQueryRouterResult =
       ruleId: string;
       area: RedAreaId;
       coachingText: string;
-      safeAlternative: GreenRule | null;
+      safeAlternative: SafeAlternative | null;
       policyVersion: string;
     }
   | {
@@ -380,6 +403,18 @@ function greenRuleFromArea(area: string | null): GreenRule | null {
   return GREEN_RULES_BY_AREA.get(area as GreenAreaId) ?? null;
 }
 
+function safeAlternativeForRed(rule: RedRule): SafeAlternative | null {
+  return resolveApprovedSafeAlternative({
+    sourceGrade: APPLICABLE_GRADE,
+    redId: rule.id,
+    requestedArea: rule.area,
+  });
+}
+
+export function getSafeAlternativeById(alternativeId: string): SafeAlternative | null {
+  return getApprovedSafeAlternativeById(APPLICABLE_GRADE, alternativeId);
+}
+
 /**
  * 4학년 전용 부모 질문 라우터. 판정 순서 고정: CRISIS → RED(결정론) → LLM 후보 → RED(LLM
  * 시맨틱/위험신호) → GREEN 화이트리스트 검증 → DEFAULT_RED. 애매하면 항상 RED다.
@@ -405,9 +440,7 @@ export async function routeParentQueryGrade4(
       ruleId: redMatch.id,
       area: redMatch.area,
       coachingText: redMatch.coachingText,
-      // safeAlternativeGreenId는 green_id(예: "G-02")이지 area가 아니다 — id로 조회한다
-      // (실측 검증에서 발견: greenRuleFromArea를 잘못 써서 항상 null이 되던 버그).
-      safeAlternative: getGreenRuleById(redMatch.safeAlternativeGreenId ?? ""),
+      safeAlternative: safeAlternativeForRed(redMatch),
       policyVersion: POLICY_VERSION,
     };
   }
@@ -430,7 +463,7 @@ export async function routeParentQueryGrade4(
       ruleId: rule.id,
       area: rule.area,
       coachingText: rule.coachingText,
-      safeAlternative: getGreenRuleById(rule.safeAlternativeGreenId ?? ""),
+      safeAlternative: safeAlternativeForRed(rule),
       policyVersion: POLICY_VERSION,
     };
   }

@@ -49,11 +49,11 @@ test("Red 결정론 패턴이 있으면 LLM 호출 없이 즉시 RED (Green 키�
   assert.equal((ai as any).calls, 0, "Red 결정론 매칭 시 LLM을 호출하지 않아야 한다");
 });
 
-test("Green 근거 없음(UNCLEAR) → default Red(R-06)", async () => {
+test("Green 근거 없음(UNCLEAR) → default Red(R-09)", async () => {
   const ai = mockAi(json({ candidate_route: "UNCLEAR", candidate_area: null, confidence: 0.2, matched_evidence: [], detected_risks: [], question_count: 1 }));
   const result = await routeParentQueryGrade4(ai, "fake-model", "그냥 아무거나 물어봐줘");
   assert.equal(result.route, "RED");
-  if (result.route === "RED") assert.equal(result.ruleId, "R-06");
+  if (result.route === "RED") assert.equal(result.ruleId, "R-09");
 });
 
 test("LLM confidence가 높아도 whitelist 미매칭(area=null) → Red", async () => {
@@ -104,7 +104,7 @@ test("LLM이 candidate_route=RED + detected_red_area로 판정하면 해당 area
   }
 });
 
-test("detected_red_area가 없으면(null) LLM RED 판정도 fallback(R-06)으로 안전하게 처리", async () => {
+test("detected_red_area가 없으면(null) LLM RED 판정도 fallback(R-09)으로 안전하게 처리", async () => {
   const ai = mockAi(
     json({
       candidate_route: "RED",
@@ -118,7 +118,7 @@ test("detected_red_area가 없으면(null) LLM RED 판정도 fallback(R-06)으�
   );
   const result = await routeParentQueryGrade4(ai, "fake-model", "뭔가 애매하게 위험해 보이는 질문");
   assert.equal(result.route, "RED");
-  if (result.route === "RED") assert.equal(result.ruleId, "R-06");
+  if (result.route === "RED") assert.equal(result.ruleId, "R-09");
 });
 
 test("detected_red_area에 유효하지 않은 값이 오면 null로 정규화된다", () => {
@@ -194,21 +194,25 @@ test("R-05 결정론 패턴: 엄마를 싫어하는지 물어봐", () => {
   assert.equal(rule?.id, "R-05");
 });
 
-test("실측 검증에서 발견한 회귀: R-02 결정론 매칭 시 safeAlternative가 G-02 규칙 전체 객체로 채워진다(null 아님)", async () => {
+test("R-02 결정론 매칭 시 같은 주제의 승인된 안전 대안만 제공한다", async () => {
   const ai = mockAi(json({ candidate_route: "GREEN", candidate_area: "interest" }));
   const result = await routeParentQueryGrade4(ai, "fake-model", "누구랑 싸웠는지 알아봐");
   assert.equal(result.route, "RED");
   if (result.route === "RED") {
-    assert.ok(result.safeAlternative, "safeAlternative가 null이면 안 된다(green_id를 area로 잘못 조회하던 버그)");
-    assert.equal(result.safeAlternative?.id, "G-02");
-    assert.equal(result.safeAlternative?.childQuestionText, "오늘 학교에서 제일 재밌었던 순간이 뭐였어?");
+    assert.ok(result.safeAlternative);
+    assert.equal(result.safeAlternative?.alternativeId, "SA-G4-PEER-01");
+    assert.equal(result.safeAlternative?.requestedArea, "peer_conflict");
+    assert.equal(result.safeAlternative?.alternativeArea, "peer_relationship_safe");
+    assert.equal(result.safeAlternative?.childQuestionText, "요즘 친구들과 지내는 건 어때?");
+    assert.notEqual(result.safeAlternative?.alternativeArea, "school_fun");
   }
 });
 
-test("RED_RULES 6개 전부 존재, R-04는 안전 대안 없음", () => {
-  assert.equal(RED_RULES.length, 6);
-  const r04 = RED_RULES.find((r) => r.id === "R-04");
-  assert.equal(r04?.safeAlternativeGreenId, null);
+test("RED_RULES 9개 전부 존재하고 민감 영역에는 임의 대안 규칙이 없다", () => {
+  assert.equal(RED_RULES.length, 9);
+  for (const id of ["R-04", "R-05", "R-06", "R-07", "R-08", "R-09"]) {
+    assert.ok(RED_RULES.some((rule) => rule.id === id));
+  }
 });
 
 // ── §15.4 다중 질문 ─────────────────────────────────────────────────────

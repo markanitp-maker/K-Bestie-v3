@@ -12,6 +12,7 @@ import { AskChildDraftModal } from "@/components/parent/AskChildDraftModal";
 import { RedCoachingModal } from "@/components/parent/RedCoachingModal";
 import { MultiQuestionSelectModal, type MultiQuestionCandidate } from "@/components/parent/MultiQuestionSelectModal";
 import { RegisteredQuestionsList, type Question } from "@/components/RegisteredQuestionsList";
+import { SAFE_ALTERNATIVE_ALLOWED_AREA_MAP } from "@/lib/plan/parentQuerySafeAlternatives";
 
 type Message = {
   id: string;
@@ -64,7 +65,18 @@ interface RedCoachingState {
   originalQuestion: string;
   variant: "RED" | "CRISIS";
   coachingText: string;
-  safeAlternative: { ruleId: string; area: string; parentDraftText: string; childQuestionText: string } | null;
+  requestedTopic: string | null;
+  requestedArea: string | null;
+  redId: string | null;
+  safeAlternative: {
+    ruleId: string;
+    area: string;
+    parentDraftText: string;
+    childQuestionText: string;
+    requestedArea: string;
+    expertReviewStatus: "APPROVED";
+    productionEnabled: true;
+  } | null;
   weeklyUsedCount: number;
   weeklyLimit: number;
   dailyUsedToday: boolean;
@@ -411,12 +423,24 @@ export default function ParentGuidePage() {
       }
 
       if (!res.ok && data.classification === "RED") {
+        const responseRequestedArea = data.requestedArea ?? data.requested_area ?? null;
+        const rawSafeAlternative = data.safeAlternative ?? null;
+        const safeAlternativeIsAllowed =
+          data.safe_alternative_allowed === true &&
+          data.expert_review_status === "APPROVED" &&
+          data.production_enabled === true &&
+          typeof responseRequestedArea === "string" &&
+          rawSafeAlternative?.requestedArea === responseRequestedArea &&
+          (SAFE_ALTERNATIVE_ALLOWED_AREA_MAP[responseRequestedArea] ?? []).includes(rawSafeAlternative?.area);
         setRedCoaching({
           messageId: msgId,
           originalQuestion,
           variant: "RED",
           coachingText: data.error || "이 질문은 케이가 아이에게 대신 묻지 않아요.",
-          safeAlternative: data.safeAlternative ?? null,
+          requestedTopic: data.requestedTopic ?? data.requested_topic ?? null,
+          requestedArea: responseRequestedArea,
+          redId: data.red_id ?? data.ruleId ?? null,
+          safeAlternative: safeAlternativeIsAllowed ? rawSafeAlternative : null,
           weeklyUsedCount: data.weeklyUsedCount ?? 0,
           weeklyLimit: data.weeklyLimit ?? 3,
           dailyUsedToday: !!data.dailyUsedToday,
@@ -430,6 +454,9 @@ export default function ParentGuidePage() {
           originalQuestion,
           variant: "CRISIS",
           coachingText: data.error || "이 질문은 케이가 대신 전달할 수 없어요.",
+          requestedTopic: null,
+          requestedArea: null,
+          redId: null,
           safeAlternative: null,
           weeklyUsedCount: 0,
           weeklyLimit: 3,
@@ -527,8 +554,8 @@ export default function ParentGuidePage() {
       ruleId: alt.ruleId,
       editable: false,
       idempotencyKey: `ask-child-${redCoaching.messageId}`,
-      requestedTopic: redCoaching.safeAlternative?.area,
-      requestedArea: redCoaching.safeAlternative?.area,
+      requestedTopic: redCoaching.requestedTopic ?? undefined,
+      requestedArea: redCoaching.requestedArea ?? undefined,
     });
     setRedCoaching(null);
   };
@@ -589,6 +616,7 @@ export default function ParentGuidePage() {
           originalQuestion: draftModal.originalQuestion,
           idempotencyKey: draftModal.idempotencyKey,
           ...(isRouterSourced ? { source: "PARENT_QUERY_ROUTER", routerRuleId: draftModal.ruleId } : {}),
+          ...(isRouterSourced ? { requestedTopic: draftModal.requestedTopic, requestedArea: draftModal.requestedArea } : {}),
         }),
       });
       const data = await res.json();
@@ -908,6 +936,8 @@ export default function ParentGuidePage() {
         <RedCoachingModal
           variant={redCoaching.variant}
           coachingText={redCoaching.coachingText}
+          requestedTopic={redCoaching.requestedTopic}
+          requestedArea={redCoaching.requestedArea}
           safeAlternativeText={redCoaching.safeAlternative?.parentDraftText ?? null}
           onClose={handleCloseRedCoaching}
           onUseSafeAlternative={redCoaching.safeAlternative ? handleUseSafeAlternative : null}

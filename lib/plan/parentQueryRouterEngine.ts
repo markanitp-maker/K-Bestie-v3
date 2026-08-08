@@ -5,6 +5,12 @@
 // 공용 엔진만 새로 만든다. 판정 순서(CRISIS→RED→GREEN→DEFAULT_RED)·fail-closed 원칙·
 // LLM 역할 분리는 모든 학년 지시서가 동일하게 요구하므로 이 파일 하나로 공유한다.
 
+import {
+  getApprovedSafeAlternativeById,
+  resolveApprovedSafeAlternative,
+  type SafeAlternative,
+} from "./parentQuerySafeAlternatives";
+
 export type ParentQueryRoute = "CRISIS" | "RED" | "GREEN";
 
 export interface GreenRule {
@@ -19,7 +25,6 @@ export interface RedRule {
   area: string;
   pattern: RegExp | null;
   coachingText: string;
-  safeAlternativeGreenId: string | null;
 }
 
 // §8.1 위기 감지 범위 — 모든 학년 지시서가 문구까지 동일하게 명시(자해/자살/학대/성적피해/
@@ -210,7 +215,7 @@ export type ParentQueryRouterResult =
       ruleId: string;
       area: string;
       coachingText: string;
-      safeAlternative: GreenRule | null;
+      safeAlternative: SafeAlternative | null;
       policyVersion: string;
     }
   | {
@@ -237,6 +242,21 @@ export function normalizeParentQueryText(text: string): string {
 
 export function getGreenRuleById(config: RouterPolicyConfig, ruleId: string): GreenRule | null {
   return config.greenRules.find((r) => r.id === ruleId) ?? null;
+}
+
+export function getSafeAlternativeById(
+  config: RouterPolicyConfig,
+  alternativeId: string,
+): SafeAlternative | null {
+  return getApprovedSafeAlternativeById(config.applicableGrade, alternativeId);
+}
+
+function safeAlternativeForRed(config: RouterPolicyConfig, rule: RedRule): SafeAlternative | null {
+  return resolveApprovedSafeAlternative({
+    sourceGrade: config.applicableGrade,
+    redId: rule.id,
+    requestedArea: rule.area,
+  });
 }
 
 function greenRuleFromArea(config: RouterPolicyConfig, area: string | null): GreenRule | null {
@@ -275,7 +295,7 @@ export async function routeParentQuery(
       ruleId: redMatch.id,
       area: redMatch.area,
       coachingText: redMatch.coachingText,
-      safeAlternative: getGreenRuleById(config, redMatch.safeAlternativeGreenId ?? ""),
+      safeAlternative: safeAlternativeForRed(config, redMatch),
       policyVersion: config.policyVersion,
     };
   }
@@ -292,7 +312,7 @@ export async function routeParentQuery(
       ruleId: rule.id,
       area: rule.area,
       coachingText: rule.coachingText,
-      safeAlternative: getGreenRuleById(config, rule.safeAlternativeGreenId ?? ""),
+      safeAlternative: safeAlternativeForRed(config, rule),
       policyVersion: config.policyVersion,
     };
   }

@@ -5,6 +5,7 @@
 import {
   routeParentQuery,
   getGreenRuleById as getGreenRuleByIdGeneric,
+  getSafeAlternativeById as getSafeAlternativeByIdGeneric,
   type GreenRule,
   type RedRule,
   type RouterPolicyConfig,
@@ -12,7 +13,7 @@ import {
   type ParentQueryRouterResult,
 } from "./parentQueryRouterEngine";
 
-export const POLICY_VERSION = "PQR-G5-1.0";
+export const POLICY_VERSION = "PQR-G5-1.1";
 export const APPLICABLE_GRADE = 5;
 
 export const GREEN_RULES: readonly GreenRule[] = [
@@ -33,9 +34,8 @@ export const RED_RULES: readonly RedRule[] = [
   {
     id: "R-01",
     area: "emotion_cause",
-    pattern: /(때문인\s*것\s*같|왜\s*그런지|무슨\s*일\s*있었는지\s*캐|기분\s*안\s*좋.{0,10}(이유|원인))/,
+    pattern: /(때문인\s*것\s*같|왜\s*그런지|무슨\s*일\s*있었는지\s*캐|기분\s*안\s*좋.{0,10}(이유|원인)|속상한\s*일\s*있었)/,
     coachingText: "5학년은 원인을 캐물으면 방어가 생길 수 있어요. 케이는 대신 캐묻지 않고, 직접은 '무슨 일 있으면 언제든 이야기해'처럼 여지만 열어 주세요.",
-    safeAlternativeGreenId: "G-02",
   },
   {
     id: "R-02",
@@ -43,28 +43,24 @@ export const RED_RULES: readonly RedRule[] = [
     pattern: /(누구랑\s*싸웠|친구.{0,10}(싸운|다퉜|괴롭|따돌|왕따|소외))/,
     coachingText:
       "이 나이에는 친구 문제를 캐물으면 입을 닫을 수 있어요. 판단 없이 들을 준비를 보여 주고, 소외·괴롭힘이 의심되면 담임·상담 선생님과 상의해 주세요.",
-    safeAlternativeGreenId: "G-02",
   },
   {
     id: "R-03",
     area: "academic_pressure",
     pattern: /(시험\s*점수|성적.{0,10}(왜|떨어|올랐)|숙제.{0,10}(안\s*했|왜)|학원.{0,10}(태도|성실)|중학.{0,5}(대비|준비))/,
     coachingText: "성적 압박은 대화를 끊을 수 있어요. 결과보다 노력과 아이가 느끼는 부담을 존중해 주세요.",
-    safeAlternativeGreenId: "G-03",
   },
   {
     id: "R-04",
     area: "secret",
     pattern: /(숨기는\s*(거|게|것)|비밀.{0,10}(있|캐|확인)|거짓말.{0,10}(했는지|인지)|몰래[\s\S]{0,10}?(캐|알아내|확인|훔쳐|감시))/,
     coachingText: "케이는 아이 몰래 알아내는 도구가 아니에요. 신뢰를 지키기 위해 이 요청은 전달하지 않아요.",
-    safeAlternativeGreenId: null,
   },
   {
     id: "R-05",
     area: "family_complaint",
     pattern: /((엄마|아빠|할머니|할아버지|부모님).{0,10}(싫어|미워|나쁘|불만)|가족.{0,10}(불만|평가))/,
     coachingText: "가족에 대한 아이 마음은 케이가 대신 캐묻지 않아요. 아이가 먼저 꺼낼 여지를 두세요.",
-    safeAlternativeGreenId: "G-07",
   },
   {
     id: "R-06",
@@ -75,28 +71,24 @@ export const RED_RULES: readonly RedRule[] = [
     // 판정(detected_risks)에 맡긴다(설계 의도대로).
     pattern: /(살\s*쪘|뚱뚱|말랐|다이어트|몸무게|체중.{0,10}(몇|얼마)|(살|체중|몸무게|다이어트).{0,15}(얼마나\s*먹|적게\s*먹))/,
     coachingText: "외모·몸·식사 관련은 케이가 대신 캐묻지 않고 리포트에도 수치로 다루지 않아요. 우려되면 전문 상담을 권해요.",
-    safeAlternativeGreenId: null,
   },
   {
     id: "R-07",
     area: "romance",
-    pattern: /(남자\s*친구|여자\s*친구|사귀는|좋아하는\s*애|썸\s*타)/,
+    pattern: /(남자\s*친구|여자\s*친구|사귀는|좋아하는\s*애|누구\s*좋아하|썸\s*타)/,
     coachingText: "이성 관계는 케이가 대신 캐묻지 않아요. 사생활 존중이 신뢰의 핵심이에요.",
-    safeAlternativeGreenId: null,
   },
   {
     id: "R-08",
     area: "sns_control",
     pattern: /(인스타|틱톡|SNS|DM|디엠|팔로워|누구랑\s*연락|카톡.{0,10}(누구|확인))/i,
     coachingText: "SNS 사용을 케이가 감시하거나 캐묻지 않아요. 규칙은 아이와 함께 정하시길 권해요.",
-    safeAlternativeGreenId: null,
   },
   {
     id: "R-09",
     area: "fallback",
     pattern: null,
     coachingText: "이 질문은 이 학년 허용 질문에 명확히 해당하지 않아 아이에게 전달하지 않아요. 추궁하지 않는 다른 질문으로 바꾸거나 리포트를 확인해 주세요.",
-    safeAlternativeGreenId: null,
   },
 ];
 
@@ -113,6 +105,10 @@ const CONFIG: RouterPolicyConfig = {
 
 export function getGreenRuleById(ruleId: string): GreenRule | null {
   return getGreenRuleByIdGeneric(CONFIG, ruleId);
+}
+
+export function getSafeAlternativeById(alternativeId: string) {
+  return getSafeAlternativeByIdGeneric(CONFIG, alternativeId);
 }
 
 export async function routeParentQueryGrade5(
