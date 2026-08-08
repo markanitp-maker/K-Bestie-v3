@@ -17,7 +17,12 @@ import { isDateInRange } from "@/lib/admin/retentionPeriod";
 //   raw mission_start 이벤트를 그대로 세던 기존 방식은 이 dedupe가 전혀 없었다.
 export interface ChildActivityMetrics {
   activeDaysTotal: number;
+  /** 선택 기간 내 존재한 고유 미션 슬롯 수. 기존 missionCount 의미를 유지한다. */
   missionCount: number;
+  /** 선택 기간 내 status='COMPLETED'인 고유 미션 슬롯 수. */
+  completedMissionCount: number;
+  /** 선택 기간 내 완료되지 않은 고유 미션 슬롯 수. */
+  incompleteMissionCount: number;
   freechatCount: number;
   playCount: number;
   lastActivityAt: string | null;
@@ -32,6 +37,90 @@ const ROUND_TYPE_TO_SLOT: Record<string, "mission1" | "mission2"> = {
   round2_night: "mission2",
 };
 
+export type MissionProgressMetricRow = {
+  child_id: string;
+  business_date: string;
+  round_type: string;
+  status: string | null;
+  updated_at: string | null;
+};
+
+type MissionDayFlags = {
+  mission1: boolean;
+  mission2: boolean;
+  completedMission1: boolean;
+  completedMission2: boolean;
+};
+
+export type MissionSlotAggregate = {
+  missionCount: number;
+  completedMissionCount: number;
+  incompleteMissionCount: number;
+  activeDates: string[];
+  lastActivityAt: string | null;
+  missionByDate: Record<string, { mission1: boolean; mission2: boolean }>;
+};
+
+/**
+ * 동일한 아이·날짜·라운드에 재입장 세션이 여러 개 있어도 한 슬롯으로 센다.
+ * 그중 하나라도 COMPLETED면 해당 슬롯은 완료로 센다.
+ */
+export function aggregateMissionProgressRows(
+  rows: MissionProgressMetricRow[],
+  range: RetentionPeriodRange
+): Map<string, MissionSlotAggregate> {
+  const daysByChild = new Map<string, Map<string, MissionDayFlags>>();
+  const lastActivityByChild = new Map<string, string>();
+
+  for (const row of rows) {
+    if (!row.business_date || !isDateInRange(row.business_date, range)) continue;
+    const slot = ROUND_TYPE_TO_SLOT[row.round_type];
+    if (!slot) continue;
+
+    if (!daysByChild.has(row.child_id)) daysByChild.set(row.child_id, new Map());
+    const dateMap = daysByChild.get(row.child_id)!;
+    const flags = dateMap.get(row.business_date) ?? {
+      mission1: false,
+      mission2: false,
+      completedMission1: false,
+      completedMission2: false,
+    };
+    flags[slot] = true;
+    if (row.status === "COMPLETED") {
+      flags[slot === "mission1" ? "completedMission1" : "completedMission2"] = true;
+    }
+    dateMap.set(row.business_date, flags);
+
+    if (row.updated_at) {
+      const previous = lastActivityByChild.get(row.child_id);
+      if (!previous || new Date(row.updated_at).getTime() > new Date(previous).getTime()) {
+        lastActivityByChild.set(row.child_id, row.updated_at);
+      }
+    }
+  }
+
+  const result = new Map<string, MissionSlotAggregate>();
+  for (const [childId, dateMap] of daysByChild) {
+    let missionCount = 0;
+    let completedMissionCount = 0;
+    const missionByDate: Record<string, { mission1: boolean; mission2: boolean }> = {};
+    for (const [date, flags] of dateMap) {
+      missionByDate[date] = { mission1: flags.mission1, mission2: flags.mission2 };
+      missionCount += Number(flags.mission1) + Number(flags.mission2);
+      completedMissionCount += Number(flags.completedMission1) + Number(flags.completedMission2);
+    }
+    result.set(childId, {
+      missionCount,
+      completedMissionCount,
+      incompleteMissionCount: missionCount - completedMissionCount,
+      activeDates: [...dateMap.keys()].sort(),
+      lastActivityAt: lastActivityByChild.get(childId) ?? null,
+      missionByDate,
+    });
+  }
+  return result;
+}
+
 export async function computeChildActivityMetrics(
   service: any,
   childIds: string[],
@@ -40,45 +129,32 @@ export async function computeChildActivityMetrics(
   const result = new Map<string, ChildActivityMetrics>();
   if (childIds.length === 0) return result;
 
-  const missionDatesByChild = new Map<string, Map<string, { mission1: boolean; mission2: boolean }>>();
   const activeDatesByChild = new Map<string, Set<string>>();
   const freechatCountByChild = new Map<string, number>();
   const playCountByChild = new Map<string, number>();
   const lastActivityByChild = new Map<string, string>();
 
   const ensure = (childId: string) => {
-    if (!missionDatesByChild.has(childId)) missionDatesByChild.set(childId, new Map());
     if (!activeDatesByChild.has(childId)) activeDatesByChild.set(childId, new Set());
   };
 
   // 1. mission_progress — child_id+business_date+round_type 기준 dedupe.
-  const missionRows = await fetchInChunks<{ child_id: string; business_date: string; round_type: string; updated_at: string }>(
+  const missionRows = await fetchInChunks<MissionProgressMetricRow>(
     (chunk, from, to) =>
       service
         .from("mission_progress")
-        .select("child_id, business_date, round_type, updated_at")
+        .select("child_id, business_date, round_type, status, updated_at")
         .in("child_id", chunk)
         .order("child_id")
         .range(from, to),
     childIds
   );
 
-  for (const row of missionRows) {
-    if (!row.business_date || !isDateInRange(row.business_date, range)) continue;
-    const slot = ROUND_TYPE_TO_SLOT[row.round_type];
-    if (!slot) continue; // 알 수 없는 round_type은 안전하게 집계에서 제외(과대집계 방지)
-    ensure(row.child_id);
-    const dateMap = missionDatesByChild.get(row.child_id)!;
-    const entry = dateMap.get(row.business_date) || { mission1: false, mission2: false };
-    entry[slot] = true;
-    dateMap.set(row.business_date, entry);
-    activeDatesByChild.get(row.child_id)!.add(row.business_date);
-    if (row.updated_at) {
-      const prev = lastActivityByChild.get(row.child_id);
-      if (!prev || new Date(row.updated_at).getTime() > new Date(prev).getTime()) {
-        lastActivityByChild.set(row.child_id, row.updated_at);
-      }
-    }
+  const missionAggregates = aggregateMissionProgressRows(missionRows, range);
+  for (const [childId, aggregate] of missionAggregates) {
+    ensure(childId);
+    for (const date of aggregate.activeDates) activeDatesByChild.get(childId)!.add(date);
+    if (aggregate.lastActivityAt) lastActivityByChild.set(childId, aggregate.lastActivityAt);
   }
 
   // 2. behavior_events — freechat_start/play_start (활성일수 산입 + 원시 카운트).
@@ -111,23 +187,19 @@ export async function computeChildActivityMetrics(
   }
 
   for (const childId of childIds) {
-    const missionByDate = missionDatesByChild.get(childId) || new Map();
     const activeDates = Array.from(activeDatesByChild.get(childId) || new Set<string>()).sort();
-    let missionCount = 0;
-    const missionByDateObj: Record<string, { mission1: boolean; mission2: boolean }> = {};
-    for (const [date, flags] of missionByDate.entries()) {
-      missionByDateObj[date] = flags;
-      missionCount += (flags.mission1 ? 1 : 0) + (flags.mission2 ? 1 : 0);
-    }
+    const mission = missionAggregates.get(childId);
 
     result.set(childId, {
       activeDaysTotal: activeDates.length,
-      missionCount,
+      missionCount: mission?.missionCount ?? 0,
+      completedMissionCount: mission?.completedMissionCount ?? 0,
+      incompleteMissionCount: mission?.incompleteMissionCount ?? 0,
       freechatCount: freechatCountByChild.get(childId) || 0,
       playCount: playCountByChild.get(childId) || 0,
       lastActivityAt: lastActivityByChild.get(childId) || null,
       activeDates,
-      missionByDate: missionByDateObj,
+      missionByDate: mission?.missionByDate ?? {},
     });
   }
 

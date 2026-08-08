@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
   const header = [
     "사용자 유형", "이름", "로그인 아이디", "최초 사용일", "마지막 활동일",
-    "D1", "D3", "D7", "W2", "활동일 수", "미션 수", "자유대화 수", "놀이 수", "내부 테스트 계정 여부",
+    "D1", "D3", "D7", "W2", "활동일 수", "미션 시도", "미션 완료", "30일 이벤트", "자유대화 수", "놀이 수", "내부 테스트 계정 여부",
   ];
   const rows: string[] = [header.join(",")];
 
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
         boolCell(p.d7Retained),
         boolCell(p.w2Retained),
         p.activeDaysTotal ?? 0,
-        "", "", "", // 부모는 미션/자유대화/놀이 개념이 없음
+        "", "", "", "", "", // 부모는 미션/자유대화/놀이 개념이 없음
         p.isTestAccount ? "O" : "X",
       ].join(","));
     }
@@ -77,6 +77,8 @@ export async function GET(req: NextRequest) {
         boolCell(c.w2Retained),
         c.activeDaysTotal ?? 0,
         c.missionCount ?? 0,
+        c.completedMissionCount ?? 0,
+        `${c.missionEventCompletedCount ?? 0}/60`,
         c.freechatCount ?? 0,
         c.playCount ?? 0,
         c.isTestAccount ? "O" : "X",
