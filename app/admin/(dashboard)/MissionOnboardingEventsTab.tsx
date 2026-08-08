@@ -120,8 +120,9 @@ export default function MissionOnboardingEventsTab({
                   onClick={(event) => event.stopPropagation()}
                   style={{ fontWeight: 700, color: "var(--admin-primary)", textDecoration: "none" }}
                 >
-                  {row.childName || "이름 미등록"}{row.isInternalTest ? " · 테스트" : ""}
+                  {row.childName || "이름 미등록"}
                 </a>
+                {row.isInternalTest && <span style={{ marginLeft: 6 }}><AdminStatusBadge text="[테스트]" variant="neutral" /></span>}
                 <div style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{row.loginId} · {row.familyName}</div>
               </div>
             ) },

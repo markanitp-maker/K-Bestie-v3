@@ -158,7 +158,7 @@ export default function QuizLeaderboardEventsTab({
               { key: "child", header: "아이", render: (r) => {
                 const label = r.childName || "이름 미등록";
                 if (r.isSeedUser) return `${label} (더미)`;
-                return <div><a href={`/admin/users?tab=children&search=${encodeURIComponent(label)}`} style={{ color: "var(--admin-primary)", fontWeight: 700, textDecoration: "none" }}>{label}{r.isInternalTest ? " · 테스트" : ""}</a><br/><span style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{r.loginId || "미등록"} · {r.familyName || "가족 미등록"}</span></div>;
+                return <div><a href={`/admin/users?tab=children&search=${encodeURIComponent(label)}`} style={{ color: "var(--admin-primary)", fontWeight: 700, textDecoration: "none" }}>{label}</a>{r.isInternalTest && <span style={{ marginLeft: 6 }}><AdminStatusBadge text="[테스트]" variant="neutral" /></span>}<br/><span style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{r.loginId || "미등록"} · {r.familyName || "가족 미등록"}</span></div>;
               } },
               { key: "score", header: "점수", render: (r) => r.score },
               { key: "correct", header: "정답 수", render: (r) => r.correctCount },
