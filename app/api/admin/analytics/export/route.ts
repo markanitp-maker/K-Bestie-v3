@@ -75,7 +75,12 @@ function exportRows(payload: any) {
   }));
   const children: Row[] = safeRows(payload.retention?.details?.children).map((row) => ({
     ...common, type: "child", name: row.displayLabel, last_activity: row.lastVisitAt, active_days: row.activeDaysTotal,
-    mission: row.missionCount, freechat: row.freechatCount, play: row.playCount, d1: row.d1Retained, d3: row.d3Retained, d7: row.d7Retained,
+    mission: row.missionCount,
+    mission_attempts: row.missionCount,
+    mission_completed: row.completedMissionCount,
+    mission_incomplete: row.incompleteMissionCount,
+    mission_event_progress: row.missionEventCompletedCount == null ? null : `${row.missionEventCompletedCount}/60`,
+    freechat: row.freechatCount, play: row.playCount, d1: row.d1Retained, d3: row.d3Retained, d7: row.d7Retained,
   }));
   return { summary, daily, cohorts, quality, reporting, details: [...families, ...parents, ...children] };
 }

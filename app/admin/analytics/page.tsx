@@ -92,9 +92,9 @@ function AdminAnalyticsContent() {
 
   const detailRows = useMemo(() => {
     const details = data?.retention?.details ?? {};
-    const families = safeArray<any>(details.families).map((row) => ({ ...row, _type: "family", _key: `family:${row.familyId}`, _name: row.displayLabel, _last: row.lastChildActivityAt || row.lastParentActivityAt, _active: row.activeDaysTotal, _mission: row.missionCount, _freechat: row.freechatCount, _play: row.playCount }));
+    const families = safeArray<any>(details.families).map((row) => ({ ...row, _type: "family", _key: `family:${row.familyId}`, _name: row.displayLabel, _last: row.lastChildActivityAt || row.lastParentActivityAt, _active: row.activeDaysTotal, _missionAttempt: row.missionCount, _missionCompleted: row.completedMissionCount, _missionEvent: row.missionEventCompletedCount, _freechat: row.freechatCount, _play: row.playCount }));
     const parents = safeArray<any>(details.parents).map((row) => ({ ...row, _type: "parent", _key: `parent:${row.actorId}`, _name: row.displayLabel, _last: row.lastVisitAt, _active: row.activeDaysTotal, _mission: null, _freechat: null, _play: null }));
-    const children = safeArray<any>(details.children).map((row) => ({ ...row, _type: "child", _key: `child:${row.childId}`, _name: row.displayLabel, _last: row.lastVisitAt || row.lastActivityAt, _active: row.activeDaysTotal, _mission: row.missionCount, _freechat: row.freechatCount, _play: row.playCount, _report: reportByChild.get(row.childId) }));
+    const children = safeArray<any>(details.children).map((row) => ({ ...row, _type: "child", _key: `child:${row.childId}`, _name: row.displayLabel, _last: row.lastVisitAt || row.lastActivityAt, _active: row.activeDaysTotal, _missionAttempt: row.missionCount, _missionCompleted: row.completedMissionCount, _missionEvent: row.missionEventCompletedCount, _freechat: row.freechatCount, _play: row.playCount, _report: reportByChild.get(row.childId) }));
     if (detailTab === "family") return families;
     if (detailTab === "parent") return parents;
     if (detailTab === "child") return children;
@@ -109,7 +109,9 @@ function AdminAnalyticsContent() {
     { key: "name", header: "이름", render: (row: any) => <strong>{row._name}</strong> },
     { key: "last", header: "최근 활동일", render: (row: any) => date(row._last) },
     { key: "active", header: "활성 일수", render: (row: any) => row._active ?? "-" },
-    { key: "mission", header: "미션", render: (row: any) => row._mission ?? "-" },
+    { key: "missionAttempt", header: "미션 시도", render: (row: any) => row._missionAttempt ?? "-" },
+    { key: "missionCompleted", header: "미션 완료", render: (row: any) => row._missionCompleted ?? "-" },
+    { key: "missionEvent", header: "30일 이벤트", render: (row: any) => row._missionEvent == null ? "-" : `${row._missionEvent}/60` },
     { key: "free", header: "자유대화", render: (row: any) => row._freechat ?? "-" },
     { key: "play", header: "놀이", render: (row: any) => row._play ?? "-" },
     { key: "report", header: "리포트", render: (row: any) => row._report ? <Status value={row._report.status} /> : "-" },

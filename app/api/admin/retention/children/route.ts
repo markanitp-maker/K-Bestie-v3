@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { getOffsetDateStr } from "@/lib/analytics/kstDate";
+import { fetchInChunks, getOffsetDateStr } from "@/lib/analytics/kstDate";
 import { toDisplayFields } from "@/lib/admin/retentionDisplay";
 import { resolveRetentionPeriodRange } from "@/lib/admin/retentionPeriod";
 import { computeChildActivityMetrics } from "@/lib/admin/retentionChildMetrics";
+import { getAppEventEnvironment } from "@/lib/events/environment";
 
 export const runtime = "nodejs";
 
@@ -116,12 +117,26 @@ export async function GET(req: NextRequest) {
   // 규칙을 쓰므로 activeDaysTotal·missionCount가 서로 다른 기준으로 벌어지지 않는다.
   const displayMetrics = await computeChildActivityMetrics(service, childIds, displayRange);
   const allTimeMetrics = await computeChildActivityMetrics(service, childIds, allTimeRange);
+  // 30일 이벤트는 관리자 화면의 선택 기간과 무관한 이벤트 자체 cutoff/기간 원장값이다.
+  const missionEventRows = await fetchInChunks<{ child_id: string; mission_completed_count: number }>(
+    async (chunk, from, to) => await service
+      .from("child_mission_onboarding_events")
+      .select("child_id, mission_completed_count")
+      .eq("environment", getAppEventEnvironment())
+      .in("child_id", chunk)
+      .order("child_id")
+      .range(from, to),
+    childIds
+  );
+  const missionEventCountByChild = new Map(
+    missionEventRows.map((row) => [row.child_id, row.mission_completed_count])
+  );
 
   const childrenResult = [];
   for (const c of validChildren) {
     const authUserId = c.member_id ? authUserIdByMemberRowId.get(c.member_id) : undefined;
     const username = authUserId ? usernameMap.get(authUserId) : undefined;
-    const display = displayMetrics.get(c.id) || { activeDaysTotal: 0, missionCount: 0, freechatCount: 0, playCount: 0, lastActivityAt: null, activeDates: [], missionByDate: {} };
+    const display = displayMetrics.get(c.id) || { activeDaysTotal: 0, missionCount: 0, completedMissionCount: 0, incompleteMissionCount: 0, freechatCount: 0, playCount: 0, lastActivityAt: null, activeDates: [], missionByDate: {} };
     const allTime = allTimeMetrics.get(c.id) || { activeDates: [] as string[] };
 
     const stats: any = {
@@ -133,6 +148,9 @@ export async function GET(req: NextRequest) {
       lastVisitAt: lastVisitByChild.get(c.id) || null,
       activeDaysTotal: display.activeDaysTotal,
       missionCount: display.missionCount,
+      completedMissionCount: display.completedMissionCount,
+      incompleteMissionCount: display.incompleteMissionCount,
+      missionEventCompletedCount: missionEventCountByChild.get(c.id) ?? 0,
       freechatCount: display.freechatCount,
       playCount: display.playCount,
       d1Retained: null,
