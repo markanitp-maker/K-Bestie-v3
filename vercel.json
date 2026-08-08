@@ -9,6 +9,10 @@
       "schedule": "55 14 * * *"
     },
     {
+      "path": "/api/batch/v3/reconcile",
+      "schedule": "5 * * * *"
+    },
+    {
       "path": "/api/events/mission-onboarding/finalize",
       "schedule": "5 15 * * *"
     },
