@@ -218,13 +218,12 @@ const RELATIONSHIP_OPTIONS = [
 
 function ProfileStep({ onNext }: { onNext: () => void }) {
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
   const [relationship, setRelationship] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = name.trim() && phone.trim() && relationship && confirmed;
+  const canSubmit = name.trim() && relationship && confirmed;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -234,7 +233,7 @@ function ProfileStep({ onNext }: { onNext: () => void }) {
       const res = await fetch("/api/signup/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone, relationship, legalGuardianConfirmed: confirmed }),
+        body: JSON.stringify({ name, relationship, legalGuardianConfirmed: confirmed }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -260,13 +259,6 @@ function ProfileStep({ onNext }: { onNext: () => void }) {
         placeholder="보호자 이름"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
-      />
-      <input
-        type="tel"
-        placeholder="휴대전화 번호 (예: 010-1234-5678)"
-        value={phone}
-        onChange={(e) => setPhone(e.target.value)}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
       />
       <select

@@ -198,10 +198,10 @@ async function resolveIncompleteStep(
 
   if (!consentRes.data) return "consent";
 
-  // 2. 보호자 정보 (전화번호) 확인
+  // 2. 보호자 기본정보 확인.
   const parentRes = await svc
     .from("parents")
-    .select("phone_number, onboarding_completed_at")
+    .select("name, relationship_to_child, legal_guardian_confirmed_at, onboarding_completed_at")
     .eq("id", userId)
     .maybeSingle();
 
@@ -210,7 +210,14 @@ async function resolveIncompleteStep(
     throw new Error("MEMBERSHIP_RESOLUTION_FAILED");
   }
 
-  if (!(parentRes.data as { phone_number?: string | null } | null)?.phone_number) return "profile";
+  const profile = parentRes.data as {
+    name?: string | null;
+    relationship_to_child?: string | null;
+    legal_guardian_confirmed_at?: string | null;
+  } | null;
+  if (!profile?.name?.trim() || !profile.relationship_to_child || !profile.legal_guardian_confirmed_at) {
+    return "profile";
+  }
 
   // 3. 가족 생성/소속 확인
   if (!familyId) return "family";
