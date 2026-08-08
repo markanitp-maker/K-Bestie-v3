@@ -26,6 +26,14 @@ interface RewardRow {
   delivered_at: string | null;
   admin_note: string | null;
   created_at: string;
+  auditHistory?: Array<{
+    action: string;
+    admin_email: string;
+    before_snapshot: { status?: string } | null;
+    after_snapshot: { status?: string; requested_status?: string; result?: string } | null;
+    created_at: string;
+    request_id: string | null;
+  }>;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -291,6 +299,19 @@ export default function RewardFulfillmentsTab({
               <dt>전달 완료 시각</dt><dd>{formatDateTime(selected.delivered_at)}</dd>
               <dt>관리자 메모</dt><dd>{selected.admin_note ?? "-"}</dd>
             </dl>
+            <h4 className="mb-3 mt-8 text-base font-black">상태 변경 이력</h4>
+            {(selected.auditHistory ?? []).length === 0 ? (
+              <p className="text-sm text-[var(--admin-text-secondary)]">기록된 상태 변경이 없습니다.</p>
+            ) : (
+              <ol className="space-y-3">
+                {(selected.auditHistory ?? []).map((history, index) => (
+                  <li key={`${history.created_at}-${index}`} className="rounded-lg border border-[var(--admin-border)] p-3 text-sm">
+                    <div className="font-bold">{history.before_snapshot?.status ?? "-"} → {history.after_snapshot?.status ?? history.after_snapshot?.requested_status ?? "-"}</div>
+                    <div className="mt-1 text-[var(--admin-text-secondary)]">{history.admin_email || "관리자"} · {formatDateTime(history.created_at)}{history.after_snapshot?.result && ` · ${history.after_snapshot.result}`}</div>
+                  </li>
+                ))}
+              </ol>
+            )}
             <a className="mt-8 inline-flex min-h-11 items-center rounded-lg bg-[var(--admin-primary)] px-4 font-bold text-white" href={`/admin/users?tab=children&search=${encodeURIComponent(selected.childName || selected.loginId)}`}>사용자 관리에서 보기</a>
           </aside>
         </div>

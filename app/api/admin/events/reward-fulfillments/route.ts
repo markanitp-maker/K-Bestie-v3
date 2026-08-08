@@ -6,6 +6,16 @@ import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 
 export const runtime = "nodejs";
 
+interface RewardAuditHistoryRow {
+  resource_id: string;
+  action: string;
+  admin_email: string;
+  before_snapshot: Record<string, unknown> | null;
+  after_snapshot: Record<string, unknown> | null;
+  created_at: string;
+  request_id: string | null;
+}
+
 // GET /api/admin/events/reward-fulfillments?status=pending|approved|scheduled|delivered|on_hold|cancelled
 export async function GET(req: NextRequest) {
   const denied = await requireAdmin();
@@ -35,6 +45,7 @@ export async function GET(req: NextRequest) {
   }
 
   const childIds = [...new Set((rows ?? []).map((r) => r.child_id))];
+  const rewardIds = (rows ?? []).map((row) => row.id);
   const { data: children } = childIds.length
     ? await service.from("child_profiles").select("id, name, member_id, family_id, is_internal_test, is_test_account").in("id", childIds)
     : { data: [] };
@@ -55,6 +66,22 @@ export async function GET(req: NextRequest) {
   const usernameByAccountId = new Map((accounts ?? []).map((account) => [account.id, account.username]));
   const familyNameById = new Map((families ?? []).map((family) => [family.id, family.name]));
 
+  const { data: audits, error: auditError } = rewardIds.length
+    ? await service
+        .from("admin_audit_log")
+        .select("resource_id,action,admin_email,before_snapshot,after_snapshot,created_at,request_id")
+        .eq("resource_type", "event_reward_fulfillments")
+        .in("resource_id", rewardIds)
+        .order("created_at", { ascending: false })
+    : { data: [], error: null };
+  if (auditError) console.error("[admin/events/reward-fulfillments] audit history error:", auditError.message);
+  const auditsByReward = new Map<string, RewardAuditHistoryRow[]>();
+  for (const audit of (audits ?? []) as RewardAuditHistoryRow[]) {
+    const history = auditsByReward.get(audit.resource_id) ?? [];
+    history.push(audit);
+    auditsByReward.set(audit.resource_id, history);
+  }
+
   const result = (rows ?? []).filter((row) => childById.has(row.child_id)).map((row) => {
     const child = childById.get(row.child_id);
     const accountId = child?.member_id ? accountIdByMemberId.get(child.member_id) : null;
@@ -64,6 +91,7 @@ export async function GET(req: NextRequest) {
       loginId: accountId ? usernameByAccountId.get(accountId) ?? "미등록" : "미등록",
       familyName: child?.family_id ? familyNameById.get(child.family_id) ?? "이름 없는 가족" : "가족 미등록",
       isInternalTest: Boolean(child?.is_internal_test || child?.is_test_account || (child?.family_id && testFamilyIds.has(child.family_id))),
+      auditHistory: auditsByReward.get(row.id) ?? [],
     };
   });
   return NextResponse.json(result);
