@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/batch/v3/reconcile",
-      "schedule": "5 * * * *"
+      "schedule": "10 15 * * *"
     },
     {
       "path": "/api/events/mission-onboarding/finalize",
