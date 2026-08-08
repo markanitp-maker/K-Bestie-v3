@@ -48,12 +48,19 @@ const statusLabel = {
   COMPLETED: "참여 완료",
 };
 
-export default function AttendanceRouletteAdminTab() {
+export default function AttendanceRouletteAdminTab({
+  externalSearch,
+  externalIncludeTestAccounts,
+}: {
+  externalSearch?: string;
+  externalIncludeTestAccounts?: boolean;
+} = {}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [includeTestAccounts, setIncludeTestAccounts] = useState(false);
+  const [localIncludeTestAccounts, setLocalIncludeTestAccounts] = useState(false);
+  const includeTestAccounts = externalIncludeTestAccounts ?? localIncludeTestAccounts;
   const [selected, setSelected] = useState<Record<string, AttendanceRouletteResultCode>>({});
   const [savingChildId, setSavingChildId] = useState<string | null>(null);
   const [historyDate, setHistoryDate] = useState("");
@@ -80,10 +87,10 @@ export default function AttendanceRouletteAdminTab() {
   useEffect(() => { void load(); }, [load]);
 
   const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = [externalSearch, search].filter(Boolean).join(" ").trim().toLowerCase();
     if (!query) return data?.children ?? [];
     return (data?.children ?? []).filter((child) => child.name.toLowerCase().includes(query) || child.username.toLowerCase().includes(query));
-  }, [data?.children, search]);
+  }, [data?.children, externalSearch, search]);
 
   const filteredHistory = useMemo(() => {
     const childQuery = historyChild.trim().toLowerCase();
@@ -174,15 +181,15 @@ export default function AttendanceRouletteAdminTab() {
           <h3 style={{ fontSize: 17, fontWeight: 800 }}>아이별 운영</h3>
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름 또는 로그인 ID 검색" style={{ minWidth: 260, padding: "9px 12px", border: "1px solid var(--admin-border)", borderRadius: 8 }} />
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {externalIncludeTestAccounts === undefined && <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
               <input
                 type="checkbox"
                 checked={includeTestAccounts}
                 disabled={loading}
-                onChange={(event) => setIncludeTestAccounts(event.target.checked)}
+                onChange={(event) => setLocalIncludeTestAccounts(event.target.checked)}
               />
               내부 테스트 계정 포함
-            </label>
+            </label>}
             {loading && data && <span role="status" style={{ color: "var(--admin-text-secondary)", fontSize: 12 }}>필터 적용 중…</span>}
           </div>
         </div>
@@ -250,7 +257,7 @@ export default function AttendanceRouletteAdminTab() {
             <div key={row.id} style={{ padding: 10, border: "1px solid var(--admin-border)", borderRadius: 8, fontSize: 12 }}>
               <strong>{row.childName}</strong> · {row.action}
               {row.after_state?.resultCode ? ` · ${String(row.after_state.resultCode)}` : ""}
-              {row.actor_email ? ` · 관리자 ${row.actor_email}` : row.actor_user_id ? ` · 관리자 ${row.actor_user_id.slice(0, 8)}` : ""}
+              {row.actor_email ? ` · 관리자 ${row.actor_email}` : row.actor_user_id ? " · 관리자 확인 불가" : ""}
               {row.override_id ? " · override" : ""} · {new Date(row.created_at).toLocaleString("ko-KR")}
             </div>
           ))}

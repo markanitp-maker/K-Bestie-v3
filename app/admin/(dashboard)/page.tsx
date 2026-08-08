@@ -1490,7 +1490,21 @@ function AdminDashboard() {
   const [selectedChildUser, setSelectedChildUser] = useState<ChildDetailSelection | null>(null);
 
   useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get("menu") as AdminPageId | null;
+    const params = new URLSearchParams(window.location.search);
+    const requested = (params.get("menu") ?? params.get("page")) as AdminPageId | null;
+    const eventTabByLegacyPage: Partial<Record<AdminPageId, string>> = {
+      "events-overview": "overview",
+      "events-mission-onboarding": "missions",
+      "events-quiz-leaderboard": "leaderboard",
+      "events-attendance-roulette": "attendance",
+      "events-reward-fulfillments": "fulfillments",
+      "events-rewards": "overview",
+    };
+    const eventTab = requested ? eventTabByLegacyPage[requested] : null;
+    if (eventTab) {
+      window.location.replace(`/admin/events-rewards?tab=${eventTab}`);
+      return;
+    }
     if (requested === "retention") {
       window.location.replace("/admin/analytics?section=retention");
       return;
@@ -1538,8 +1552,16 @@ function AdminDashboard() {
   };
   const closeChildPanel = () => setSelectedChildUser(null);
 
+  const handleMenuChange = (nextPage: AdminPageId) => {
+    if (nextPage === "events-rewards") {
+      window.location.assign("/admin/events-rewards");
+      return;
+    }
+    setPage(nextPage);
+  };
+
   return (
-    <AdminShell activeMenuId={page} onMenuChange={setPage}>
+    <AdminShell activeMenuId={page} onMenuChange={handleMenuChange}>
       <div style={{ minWidth: 0 }}>
         {page === "llm-status" ? (
           <LlmStatusTab />

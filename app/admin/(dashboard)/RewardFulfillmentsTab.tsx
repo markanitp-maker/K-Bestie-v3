@@ -17,6 +17,9 @@ interface RewardRow {
   event_type: "mission_onboarding" | "quiz_leaderboard";
   child_id: string;
   childName: string | null;
+  loginId: string;
+  familyName: string;
+  isInternalTest: boolean;
   reward_amount: number;
   status: "pending" | "approved" | "scheduled" | "delivered" | "on_hold" | "cancelled";
   delivery_method: string;
@@ -51,21 +54,32 @@ function formatDateTime(iso: string | null): string {
   return new Date(iso).toLocaleString("ko-KR");
 }
 
-export default function RewardFulfillmentsTab() {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+export default function RewardFulfillmentsTab({
+  includeTestAccounts = false,
+  externalSearch = "",
+  initialStatus = "all",
+}: {
+  includeTestAccounts?: boolean;
+  externalSearch?: string;
+  initialStatus?: string;
+} = {}) {
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [rows, setRows] = useState<RewardRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
-    const qs = statusFilter === "all" ? "" : `?status=${statusFilter}`;
+    const params = new URLSearchParams();
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (includeTestAccounts) params.set("includeTestAccounts", "true");
+    const qs = params.size ? `?${params.toString()}` : "";
     fetch(`/api/admin/events/reward-fulfillments${qs}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => setRows(Array.isArray(d) ? d : []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [statusFilter]);
+  }, [includeTestAccounts, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -73,7 +87,7 @@ export default function RewardFulfillmentsTab() {
     let adminNote: string | undefined;
     if (nextStatus === "delivered") {
       const confirmed = window.confirm(
-        `${row.childName ?? row.child_id}에게 ${won(row.reward_amount)}을(를) 오프라인으로 전달 완료 처리할까요?\n(실제 전달이 완료된 후에만 눌러주세요)`
+        `${row.childName || "이름 미등록"}에게 ${won(row.reward_amount)}을(를) 오프라인으로 전달 완료 처리할까요?\n(실제 전달이 완료된 후에만 눌러주세요)`
       );
       if (!confirmed) return;
       adminNote = window.prompt("전달 관련 메모(선택):") ?? undefined;
@@ -115,14 +129,19 @@ export default function RewardFulfillmentsTab() {
     statusFilter !== "all" ? `상태=${statusFilter}` : ""
   );
   const pageRows = rows ?? [];
-  const pageIds = pageRows.map((row: any) => row.id as string);
-  const allSelected = pageIds.length > 0 && pageIds.every((id: string) => softDelete.isSelected(id));
   const toTarget = (row: any) => ({
     id: row.id as string,
-    identity: `${row.childName ?? String(row.child_id).slice(0, 8)} / ${EVENT_TYPE_LABELS[row.event_type] ?? row.event_type}`,
+    identity: `${row.childName || "이름 미등록"} / ${EVENT_TYPE_LABELS[row.event_type] ?? row.event_type}`,
     summary: won(row.reward_amount),
     status: STATUS_LABELS[row.status] ?? row.status,
   });
+
+  const visibleRows = pageRows.filter((row) => {
+    const needle = externalSearch.trim().toLocaleLowerCase("ko");
+    return !needle || [row.childName, row.loginId, row.familyName].join(" ").toLocaleLowerCase("ko").includes(needle);
+  });
+  const pageIds = visibleRows.map((row: any) => row.id as string);
+  const allSelected = pageIds.length > 0 && pageIds.every((id: string) => softDelete.isSelected(id));
 
   return (
     <div>
@@ -159,7 +178,7 @@ export default function RewardFulfillmentsTab() {
           allSelected={allSelected}
           onSelectAll={(checked) => softDelete.setPageSelection(pageIds, checked)}
           onClear={softDelete.clearSelection}
-          onBulkDelete={() => softDelete.requestBulkDelete(pageRows.filter((r: any) => softDelete.isSelected(r.id)).map(toTarget))}
+          onBulkDelete={() => softDelete.requestBulkDelete(visibleRows.filter((r: any) => softDelete.isSelected(r.id)).map(toTarget))}
           disabled={softDelete.busy}
         />
         <AdminResponsiveTable mobileStrategy="card"
@@ -168,7 +187,12 @@ export default function RewardFulfillmentsTab() {
               <SoftDeleteRowCheckbox checked={softDelete.isSelected(row.id)} onChange={() => softDelete.toggleSelected(row.id)} />
             ) },
             { key: "event_type", header: "이벤트 유형", render: (row) => EVENT_TYPE_LABELS[row.event_type] },
-            { key: "child", header: "아이", render: (row) => row.childName ?? row.child_id.slice(0, 8) },
+            { key: "child", header: "아이", render: (row) => (
+              <div>
+                <div style={{ fontWeight: 700 }}>{row.childName || "이름 미등록"}{row.isInternalTest ? " · 테스트" : ""}</div>
+                <div style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{row.loginId} · {row.familyName}</div>
+              </div>
+            ) },
             { key: "amount", header: "지급 금액", render: (row) => won(row.reward_amount) },
             { key: "status", header: "상태", render: (row) => <AdminStatusBadge text={STATUS_LABELS[row.status]} variant={STATUS_VARIANT[row.status]} /> },
             { key: "approved_at", header: "승인 시각", render: (row) => formatDateTime(row.approved_at) },
@@ -212,7 +236,7 @@ export default function RewardFulfillmentsTab() {
               },
             },
           ]}
-          data={rows ?? []}
+          data={visibleRows}
           isLoading={loading}
           keyExtractor={(row) => row.id}
           emptyMessage="표시할 지급 건이 없습니다."

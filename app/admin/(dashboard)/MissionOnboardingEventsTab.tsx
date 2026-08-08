@@ -10,6 +10,9 @@ interface EventRow {
   id: string;
   child_id: string;
   childName: string | null;
+  loginId: string;
+  familyName: string;
+  isInternalTest: boolean;
   status: "active" | "max_completed" | "completed";
   started_at: string;
   ends_at: string;
@@ -31,7 +34,13 @@ function won(n: number | null): string {
   return `${(n ?? 0).toLocaleString("ko-KR")}원`;
 }
 
-export default function MissionOnboardingEventsTab() {
+export default function MissionOnboardingEventsTab({
+  includeTestAccounts = false,
+  externalSearch = "",
+}: {
+  includeTestAccounts?: boolean;
+  externalSearch?: string;
+} = {}) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<EventRow[] | null>(null);
@@ -39,19 +48,23 @@ export default function MissionOnboardingEventsTab() {
 
   const load = useCallback(() => {
     setLoading(true);
-    const qs = statusFilter === "all" ? "" : `?status=${statusFilter}`;
+    const params = new URLSearchParams();
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (includeTestAccounts) params.set("includeTestAccounts", "true");
+    const qs = params.size ? `?${params.toString()}` : "";
     fetch(`/api/admin/events/mission-onboarding${qs}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => setRows(Array.isArray(d) ? d : []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [statusFilter]);
+  }, [includeTestAccounts, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
   const filtered = (rows ?? []).filter((row) => {
-    if (!search.trim()) return true;
-    return (row.childName ?? "").toLowerCase().includes(search.trim().toLowerCase());
+    const needle = [externalSearch, search].filter(Boolean).join(" ").trim().toLocaleLowerCase("ko");
+    if (!needle) return true;
+    return [row.childName, row.loginId, row.familyName].join(" ").toLocaleLowerCase("ko").includes(needle);
   });
 
   return (
@@ -91,7 +104,12 @@ export default function MissionOnboardingEventsTab() {
       <div style={{ marginTop: "var(--admin-space-16)" }}>
         <AdminResponsiveTable mobileStrategy="card"
           columns={[
-            { key: "child", header: "아이", render: (row) => row.childName ?? row.child_id.slice(0, 8) },
+            { key: "child", header: "아이", render: (row) => (
+              <div>
+                <div style={{ fontWeight: 700 }}>{row.childName || "이름 미등록"}{row.isInternalTest ? " · 테스트" : ""}</div>
+                <div style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{row.loginId} · {row.familyName}</div>
+              </div>
+            ) },
             { key: "status", header: "상태", render: (row) => <AdminStatusBadge text={STATUS_LABELS[row.status]} variant={STATUS_VARIANT[row.status]} /> },
             { key: "started_at", header: "최초 미션 완료", render: (row) => formatDateTime(row.started_at) },
             { key: "ends_at", header: "종료 시각", render: (row) => formatDateTime(row.ends_at) },

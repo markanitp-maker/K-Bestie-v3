@@ -12,6 +12,9 @@ interface EntryRow {
   childId?: string;
   child_id?: string;
   childName?: string | null;
+  loginId?: string | null;
+  familyName?: string | null;
+  isInternalTest?: boolean;
   score: number;
   correctCount?: number;
   correct_count?: number;
@@ -35,19 +38,25 @@ interface LeaderboardResponse {
   lastKnownGoodAt?: string | null;
 }
 
-export default function QuizLeaderboardEventsTab() {
+export default function QuizLeaderboardEventsTab({
+  externalSearch = "",
+  includeTestAccounts = false,
+}: {
+  externalSearch?: string;
+  includeTestAccounts?: boolean;
+} = {}) {
   const [period, setPeriod] = useState(PERIODS[0]);
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch(`/api/admin/events/quiz-leaderboard?period=${period}`)
+    fetch(`/api/admin/events/quiz-leaderboard?period=${period}${includeTestAccounts ? "&includeTestAccounts=true" : ""}`)
       .then((r) => r.json())
       .then(setData)
       .catch(() => setData({ period, status: "unavailable", error: "request_failed" }))
       .finally(() => setLoading(false));
-  }, [period]);
+  }, [includeTestAccounts, period]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -55,13 +64,20 @@ export default function QuizLeaderboardEventsTab() {
     rank: e.rank,
     childId: e.childId ?? e.child_id ?? "",
     childName: e.childName ?? null,
+    loginId: e.loginId ?? null,
+    familyName: e.familyName ?? null,
+    isInternalTest: e.isInternalTest ?? false,
     score: e.score,
     correctCount: e.correctCount ?? e.correct_count ?? 0,
     completedQuizCount: e.completedQuizCount ?? e.completed_quiz_count ?? 0,
     isSeedUser: e.isSeedUser ?? e.is_seed_user ?? false,
     rewardEligible: e.rewardEligible ?? e.reward_eligible ?? true,
     rewardAmount: e.rewardAmount ?? e.reward_amount ?? 0,
-  }));
+  })).filter((entry) => {
+    const needle = externalSearch.trim().toLocaleLowerCase("ko");
+    return !needle || [entry.childName, entry.loginId, entry.familyName].join(" ").toLocaleLowerCase("ko").includes(needle);
+  });
+  const rewardTop3 = entries.filter((entry) => !entry.isSeedUser && entry.rewardEligible).slice(0, 3);
 
   return (
     <div>
@@ -109,12 +125,23 @@ export default function QuizLeaderboardEventsTab() {
             {data.scoringVersion && <span>산식: {data.scoringVersion}</span>}
             {data.finalizedAt && <span>확정 시각: {new Date(data.finalizedAt).toLocaleString("ko-KR")}</span>}
           </div>
+          {rewardTop3.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10, marginBottom: "var(--admin-space-16)" }}>
+              {rewardTop3.map((entry) => (
+                <div key={entry.childId} style={{ padding: 14, border: "1px solid var(--admin-border)", borderRadius: 12, background: "var(--admin-surface)" }}>
+                  <strong>{entry.rank}위 · {entry.childName || "이름 미등록"}</strong>
+                  <div style={{ color: "var(--admin-text-secondary)", marginTop: 4 }}>{entry.score.toLocaleString("ko-KR")}점 · {entry.rewardAmount.toLocaleString("ko-KR")}원</div>
+                </div>
+              ))}
+            </div>
+          )}
           <AdminResponsiveTable mobileStrategy="card"
             columns={[
               { key: "rank", header: "순위", render: (r) => r.rank },
               { key: "child", header: "아이", render: (r) => {
-                const label = r.childName ?? r.childId.slice(0, 8);
-                return r.isSeedUser ? `${label} (더미)` : label;
+                const label = r.childName || "이름 미등록";
+                if (r.isSeedUser) return `${label} (더미)`;
+                return <div><strong>{label}{r.isInternalTest ? " · 테스트" : ""}</strong><br/><span style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{r.loginId || "미등록"} · {r.familyName || "가족 미등록"}</span></div>;
               } },
               { key: "score", header: "점수", render: (r) => r.score },
               { key: "correct", header: "정답 수", render: (r) => r.correctCount },

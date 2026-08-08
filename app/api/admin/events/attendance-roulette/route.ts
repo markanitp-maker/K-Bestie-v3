@@ -98,6 +98,8 @@ export async function GET(req: NextRequest) {
   const recentSpinByChild = new Map<string, LatestSpin>(latestSpins.map((spin) => [spin.child_id, spin]));
   const balanceByChild = new Map<string, number>();
   for (const key of filteredKeys) balanceByChild.set(key.child_id, (balanceByChild.get(key.child_id) ?? 0) + 1);
+  const attendanceKeysByChild = new Map<string, number>();
+  for (const key of filteredAttendanceKeys) attendanceKeysByChild.set(key.child_id, (attendanceKeysByChild.get(key.child_id) ?? 0) + 1);
 
   const leaderboardEntries = leaderboardRes.ok
     ? leaderboardRes.data.entries
@@ -120,6 +122,7 @@ export async function GET(req: NextRequest) {
       score: leader?.score ?? 0,
       gapFromFirst: Math.max(0, firstScore - (leader?.score ?? 0)),
       balance: balanceByChild.get(child.id) ?? 0,
+      todayKeysGranted: attendanceKeysByChild.get(child.id) ?? 0,
       todayStatus: !day?.base_spin_used ? "NOT_STARTED" : (day.retry_credits_granted - day.retry_credits_used) > 0 ? "RETRY_AVAILABLE" : "COMPLETED",
       recentResult: recentSpinByChild.get(child.id)?.result_code ?? null,
       recentResultAt: recentSpinByChild.get(child.id)?.settled_at ?? null,
