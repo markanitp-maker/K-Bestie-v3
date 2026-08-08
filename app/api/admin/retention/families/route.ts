@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
+import { toKSTDateStr } from "@/lib/analytics/kstDate";
+import { isDateInRange, resolveRetentionPeriodRange } from "@/lib/admin/retentionPeriod";
 
 export const runtime = "nodejs";
 
@@ -10,7 +12,15 @@ export async function GET(req: NextRequest) {
   if (denied) return denied;
 
   const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
+  const periodParam = req.nextUrl.searchParams.get("period");
+  const fromParam = req.nextUrl.searchParams.get("from");
+  const toParam = req.nextUrl.searchParams.get("to");
   const service = createServiceClient();
+
+  const nowKST = new Date();
+  nowKST.setHours(nowKST.getHours() + 9);
+  const todayStr = nowKST.toISOString().slice(0, 10);
+  const displayRange = resolveRetentionPeriodRange(periodParam, todayStr, fromParam, toParam);
 
   const toMs = (iso: string) => new Date(iso).getTime();
 
@@ -82,8 +92,9 @@ export async function GET(req: NextRequest) {
       .in("event_name", [
         "parent_report_view", "parent_conversation_topic_view",
         "mission_start", "freechat_start", "play_start"
-      ])
-      .range(eOffset, eOffset + 999);
+      ]);
+    if (displayRange.fromStr) q = q.gte("occurred_at", `${displayRange.fromStr}T00:00:00+09:00`);
+    q = q.lte("occurred_at", `${displayRange.toStr}T23:59:59.999+09:00`).range(eOffset, eOffset + 999);
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: `behavior_events 조회 실패: ${error.message}` }, { status: 500 });
     if (!data || data.length === 0) break;
@@ -96,12 +107,6 @@ export async function GET(req: NextRequest) {
     allEvents = allEvents.filter(e => !e.family_id || !testFamilyIds.has(e.family_id));
   }
 
-  // 절대 시간(과거 7일 이내였는지)만 필요하므로 KST 보정 없는 실제 UTC epoch을 그대로
-  // 쓴다 — nowKST.getTime()을 쓰면 실제 시각보다 9시간 앞선 값이 돼 "최근 7일" 창이
-  // 실제로는 6.625일로 좁아지는 버그가 된다(다른 라우트에서 이미 발견·수정된 것과 같은
-  // 패턴).
-  const sevenDaysAgoMs = Date.now() - (7 * 24 * 60 * 60 * 1000);
-
   const parentEventNames = ["parent_report_view", "parent_conversation_topic_view"];
   const childEventNames = ["mission_start", "freechat_start", "play_start"];
 
@@ -110,7 +115,7 @@ export async function GET(req: NextRequest) {
     const parentCount = fMembers.length;
     const childCount = childProfiles.filter(cp => cp.family_id === f.id && (!cp.is_internal_test || includeTestAccounts)).length;
     
-    const fEvents = allEvents.filter(e => e.family_id === f.id);
+    const fEvents = allEvents.filter(e => e.family_id === f.id && isDateInRange(toKSTDateStr(e.occurred_at), displayRange));
     const parentEvents = fEvents.filter(e => parentEventNames.includes(e.event_name));
     const childEvents = fEvents.filter(e => childEventNames.includes(e.event_name));
 
@@ -134,9 +139,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const hasParent7d = parentEvents.some(e => toMs(e.occurred_at) >= sevenDaysAgoMs);
-    const hasChild7d = childEvents.some(e => toMs(e.occurred_at) >= sevenDaysAgoMs);
-    const dualActive7d = hasParent7d && hasChild7d;
+    const hasParentActivity = parentEvents.length > 0;
+    const hasChildActivity = childEvents.length > 0;
+    const dualActivePeriod = hasParentActivity && hasChildActivity;
+    const activeDaysTotal = new Set(fEvents.map(e => toKSTDateStr(e.occurred_at))).size;
 
     const repParentId = representativeParentIdByFamily.get(f.id);
     const repInfo = repParentId ? parentInfoMap.get(repParentId) : undefined;
@@ -153,7 +159,13 @@ export async function GET(req: NextRequest) {
       childCount,
       lastParentActivityAt,
       lastChildActivityAt,
-      dualActive7d,
+      dualActive7d: dualActivePeriod,
+      dualActivePeriod,
+      activeDaysTotal,
+      missionCount: childEvents.filter(e => e.event_name === "mission_start").length,
+      freechatCount: childEvents.filter(e => e.event_name === "freechat_start").length,
+      playCount: childEvents.filter(e => e.event_name === "play_start").length,
+      reportViewCount: parentEvents.filter(e => e.event_name === "parent_report_view").length,
       representativeParentName: repParentName,
       representativeLoginId: repLoginId,
       displayLabel: familyDisplayLabel,
@@ -166,7 +178,8 @@ export async function GET(req: NextRequest) {
     meta: {
       testAccountsExcluded: !includeTestAccounts,
       timezone: "Asia/Seoul",
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      period: { key: periodParam || "7d", from: displayRange.fromStr, to: displayRange.toStr },
     }
   });
 }

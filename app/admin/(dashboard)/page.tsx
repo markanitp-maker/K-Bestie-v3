@@ -1491,6 +1491,10 @@ function AdminDashboard() {
 
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("menu") as AdminPageId | null;
+    if (requested === "retention") {
+      window.location.replace("/admin/analytics?section=retention");
+      return;
+    }
     if (requested && requested !== "users" && ADMIN_NAV_ITEMS.some((item) => item.id === requested)) {
       setPage(requested);
     }
