@@ -20,6 +20,14 @@ export interface MembershipResult {
 }
 
 /**
+ * 가족을 새로 만든 owner_parent는 최초 아이 등록까지 온보딩 중이지만,
+ * 기존 가족에 합류한 parent는 별도 아이 등록 없이 즉시 정상 보호자다.
+ */
+export function isCompletedParentMembership(role: string | null | undefined, childCount: number): boolean {
+  return role === "parent" || (role === "owner_parent" && childCount > 0);
+}
+
+/**
  * 서버 검증된 auth 사용자(userId)의 회원가입/멤버십 상태를 판정한다.
  *
  * 라우팅 우선순위 (요청서 엄수):
@@ -130,6 +138,16 @@ export async function resolveMembershipState(userId: string): Promise<Membership
     }
   }
 
+  // 기존 가족에 보호자 구성원으로 합류한 사용자는 그 가족의 아이를 공유한다.
+  // 새 가족 소유자와 달리 별도 아이 등록을 강제하지 않고 즉시 활성 보호자로 판정한다.
+  if (isCompletedParentMembership(parentMembership?.role, 0)) {
+    return {
+      state: "ACTIVE_PARENT",
+      familyId: familyId ?? undefined,
+      role: "parent",
+    };
+  }
+
   let childCount = 0;
   if (familyId) {
     const childRes = await svc
@@ -147,7 +165,8 @@ export async function resolveMembershipState(userId: string): Promise<Membership
   // 가족이나 부모 멤버십만 만들어진 상태는 가입 완료가 아니다. 실제 아이가 있어야
   // 기존 보호자로 확정한다. 그래야 가족 생성 후 아이 등록 전 사용자가 /signup?step=child로
   // 정확히 복귀하며, 레거시 계정은 onboarding_completed_at이 없어도 기존 아이로 판별된다.
-  const isExistingParent = childCount > 0;
+  const isExistingParent = isCompletedParentMembership(parentMembership?.role, childCount)
+    || (!parentMembership && childCount > 0);
 
   if (isExistingParent) {
     return {

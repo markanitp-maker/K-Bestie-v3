@@ -48,15 +48,35 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── 오너 이메일로 가족 찾기 (parents 테이블 경유) ─────────────────
-  // parents.email = auth.users.email (가입 트리거로 복사)
-  // kbestie.local 내부 이메일은 오너가 될 수 없으므로 제외
-  const { data: familyRow } = await svc
-    .from("families")
-    .select("id, name, created_by, parents!inner(email)")
-    .eq("parents.email", normalizedOwnerEmail)
-    .not("parents.email", "ilike", "%@kbestie.local")
+  // ── 오너 이메일로 가족 찾기 (parents → families 순서) ──────────────
+  // 실제 스키마에서 families와 parents의 관계 조인을 가정하지 않고, 기존 created_by
+  // 외래키를 명시적으로 사용한다. 이메일은 Supabase Auth가 소문자로 정규화해 저장한다.
+  // kbestie.local 내부 이메일은 오너 조회 대상에서 제외한다.
+  const { data: ownerParent, error: ownerLookupError } = await svc
+    .from("parents")
+    .select("id")
+    .eq("email", normalizedOwnerEmail)
+    .not("email", "ilike", "%@kbestie.local")
     .maybeSingle();
+
+  if (ownerLookupError) {
+    return NextResponse.json({ error: ownerLookupError.message }, { status: 500 });
+  }
+
+  const { data: familyRow, error: familyLookupError } = ownerParent
+    ? await svc
+        .from("families")
+        .select("id, name, created_by")
+        .eq("created_by", ownerParent.id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+    : { data: null, error: null };
+
+  if (familyLookupError) {
+    return NextResponse.json({ error: familyLookupError.message }, { status: 500 });
+  }
 
   if (!familyRow) {
     return NextResponse.json(

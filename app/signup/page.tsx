@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
@@ -11,7 +11,7 @@ const STEP_INDEX: Record<Step, number> = { consent: 1, profile: 2, family: 3, ch
 const STEP_LABEL: Record<Step, string> = {
   consent: "약관 동의",
   profile: "보호자 정보",
-  family: "가족 만들기",
+  family: "가족 선택",
   child: "아이 등록",
 };
 
@@ -284,27 +284,66 @@ function ProfileStep({ onNext }: { onNext: () => void }) {
   );
 }
 
-function FamilyStep({ onNext }: { onNext: (familyId: string) => void }) {
-  const [name, setName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type PendingFamilyInvite = {
+  id: string;
+  familyName: string;
+  inviterName: string;
+};
 
-  // 가입 중단 후 재개 시, 이미 가족이 만들어져 있는지 먼저 확인한다(요청서 §5.3 재개 요구사항).
+function FamilyStep({
+  onCreated,
+  onJoined,
+}: {
+  onCreated: (familyId: string) => void;
+  onJoined: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(true);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<PendingFamilyInvite | null>(null);
+  const [joinRequestSent, setJoinRequestSent] = useState(false);
+
+  const loadPendingInvite = async () => {
+    setInviteLoading(true);
+    try {
+      const res = await fetch("/api/families/pending-invite", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "초대 정보를 확인하지 못했습니다.");
+      setPendingInvite(data.invite ?? null);
+      return data.invite as PendingFamilyInvite | null;
+    } catch (e: any) {
+      setJoinError(e.message || "초대 정보를 확인하지 못했습니다.");
+      return null;
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetch("/api/families")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const existing = data?.families?.[0]?.family_id;
-        if (existing) onNext(existing);
-      })
-      .catch(() => {});
+    void loadPendingInvite();
+    // 최초 진입 시 한 번만 기존 초대를 확인한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const submit = async () => {
+  const verifyJoinedMembership = async () => {
+    const res = await fetch("/api/auth/membership-status", { cache: "no-store" });
+    const status = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(status.error || "가족 참여 상태를 확인하지 못했습니다.");
+    if (status.state === "ACTIVE_PARENT" && status.role === "parent") {
+      onJoined();
+      return true;
+    }
+    return false;
+  };
+
+  const submitCreate = async () => {
     if (!name.trim()) return;
-    setLoading(true);
-    setError(null);
+    setCreateLoading(true);
+    setCreateError(null);
     try {
       const res = await fetch("/api/families", {
         method: "POST",
@@ -315,31 +354,159 @@ function FamilyStep({ onNext }: { onNext: (familyId: string) => void }) {
       if (!res.ok) {
         throw new Error(data.error || "가족을 만들지 못했습니다. 다시 시도해 주세요.");
       }
-      onNext(data.family.id);
+      onCreated(data.family.id);
     } catch (e: any) {
-      setError(e.message || "잠시 후 다시 시도해 주세요. 입력한 내용은 안전하게 보관되어 있습니다.");
+      setCreateError(e.message || "잠시 후 다시 시도해 주세요. 입력한 내용은 안전하게 보관되어 있습니다.");
     } finally {
-      setLoading(false);
+      setCreateLoading(false);
+    }
+  };
+
+  const acceptInvite = async () => {
+    if (!pendingInvite) return;
+    setJoinLoading(true);
+    setJoinError(null);
+    try {
+      const res = await fetch(`/api/families/pending-invite/${pendingInvite.id}/accept`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "가족 초대를 수락하지 못했습니다.");
+      if (!(await verifyJoinedMembership())) {
+        throw new Error("가족 연결은 완료됐지만 가입 상태 확인이 지연되고 있습니다. 다시 확인해 주세요.");
+      }
+    } catch (e: any) {
+      setJoinError(e.message || "가족 초대를 수락하지 못했습니다.");
+    } finally {
+      setJoinLoading(false);
+    }
+  };
+
+  const requestToJoin = async () => {
+    if (!ownerEmail.trim()) return;
+    setJoinLoading(true);
+    setJoinError(null);
+    try {
+      const res = await fetch("/api/family-join-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner_email: ownerEmail.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "가족 참여 요청을 보내지 못했습니다.");
+      setJoinRequestSent(true);
+    } catch (e: any) {
+      setJoinError(e.message || "가족 참여 요청을 보내지 못했습니다.");
+    } finally {
+      setJoinLoading(false);
+    }
+  };
+
+  const checkJoinStatus = async () => {
+    setJoinLoading(true);
+    setJoinError(null);
+    try {
+      if (await verifyJoinedMembership()) return;
+      const invite = await loadPendingInvite();
+      if (!invite) {
+        setJoinError("아직 가족 대표의 승인을 기다리고 있어요.");
+      }
+    } catch (e: any) {
+      setJoinError(e.message || "가족 참여 상태를 확인하지 못했습니다.");
+    } finally {
+      setJoinLoading(false);
     }
   };
 
   return (
     <>
       <div>
-        <p className="text-base font-bold text-gray-800">가족 만들기</p>
-        <p className="text-xs mt-1 text-gray-500">가족 이름은 나중에 바꿀 수 있어요.</p>
+        <p className="text-base font-bold text-gray-800">가족 시작 방법을 선택해 주세요</p>
+        <p className="text-xs mt-1 text-gray-500">새 가족을 만들거나 기존 가족의 보호자로 참여할 수 있어요.</p>
       </div>
-      <ErrorBanner message={error} />
-      <input
-        type="text"
-        placeholder="예) 안형진님의 가족"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="w-full rounded-2xl px-4 py-3.5 text-sm border border-gray-200 outline-none bg-white text-center"
-      />
-      <PrimaryButton onClick={submit} disabled={!name.trim()} loading={loading}>
-        가족 만들기 →
-      </PrimaryButton>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-4 flex flex-col gap-3">
+        <div>
+          <p className="text-sm font-bold text-gray-800">1. 가족 만들기</p>
+          <p className="text-[11px] mt-1 text-gray-500">새 가족을 만든 뒤 최초 아이를 등록합니다.</p>
+        </div>
+        <ErrorBanner message={createError} />
+        <input
+          type="text"
+          placeholder="예) 안형진님의 가족"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white text-center"
+        />
+        <PrimaryButton onClick={submitCreate} disabled={!name.trim()} loading={createLoading}>
+          가족 만들기 →
+        </PrimaryButton>
+      </section>
+
+      <section className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 flex flex-col gap-3">
+        <div>
+          <p className="text-sm font-bold text-gray-800">2. 가족 구성원으로 참여하기</p>
+          <p className="text-[11px] mt-1 text-gray-500">기존 가족의 아이와 리포트를 함께 보며, 새 아이를 등록하지 않습니다.</p>
+        </div>
+        <ErrorBanner message={joinError} onRetry={checkJoinStatus} />
+
+        {inviteLoading ? (
+          <p className="py-4 text-center text-xs text-gray-500">도착한 가족 초대를 확인하고 있어요...</p>
+        ) : pendingInvite ? (
+          <div className="rounded-xl border border-sky-100 bg-white p-3">
+            <p className="text-xs font-bold text-gray-800">{pendingInvite.familyName} 가족에서 초대가 왔어요</p>
+            <p className="text-[11px] text-gray-500 mt-1">{pendingInvite.inviterName}님이 보호자로 초대했습니다.</p>
+            <button
+              type="button"
+              onClick={acceptInvite}
+              disabled={joinLoading}
+              className="w-full mt-3 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
+              style={{ background: "var(--color-k-navy)" }}
+            >
+              {joinLoading ? "참여 처리 중..." : "초대 수락하고 참여하기 →"}
+            </button>
+          </div>
+        ) : joinRequestSent ? (
+          <div className="rounded-xl border border-sky-100 bg-white p-3 text-center">
+            <p className="text-xs font-bold text-gray-800">가족 대표에게 참여 요청을 보냈어요</p>
+            <p className="text-[11px] text-gray-500 mt-1">대표 보호자가 승인하면 아이 등록 없이 바로 시작할 수 있어요.</p>
+            <button
+              type="button"
+              onClick={checkJoinStatus}
+              disabled={joinLoading}
+              className="w-full mt-3 py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-700 disabled:opacity-50 cursor-pointer"
+            >
+              {joinLoading ? "확인 중..." : "승인 여부 확인"}
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              type="email"
+              placeholder="가족 대표의 로그인 이메일"
+              value={ownerEmail}
+              onChange={(e) => setOwnerEmail(e.target.value)}
+              className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white text-center"
+            />
+            <button
+              type="button"
+              onClick={requestToJoin}
+              disabled={joinLoading || !ownerEmail.trim()}
+              className="w-full py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-700 disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
+            >
+              {joinLoading ? "요청 보내는 중..." : "가족 참여 요청 보내기"}
+            </button>
+            <button
+              type="button"
+              onClick={loadPendingInvite}
+              disabled={joinLoading}
+              className="text-[11px] font-semibold text-gray-500 underline underline-offset-2 cursor-pointer disabled:opacity-50"
+            >
+              이미 초대받았다면 다시 확인
+            </button>
+          </>
+        )}
+      </section>
     </>
   );
 }
@@ -578,7 +745,7 @@ function SignupContent() {
   const [loadingFamily, setLoadingFamily] = useState(true);
 
 
-  const finish = () => {
+  const finish = useCallback(() => {
     const destination = returnUrl === "/" ? "/parent/home" : returnUrl;
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("k_pwa_intro_seen");
@@ -586,19 +753,23 @@ function SignupContent() {
     } else {
       router.replace(destination);
     }
-  };
+  }, [returnUrl, router]);
 
-  // 기존 소유/소속 가족 자동 조회 및 familyId 복원
+  // 서버의 단일 멤버십 판정으로 중단된 가입 단계를 복원한다. 기존 가족에 role=parent로
+  // 합류한 보호자는 ACTIVE_PARENT이므로 child 단계로 보내지 않고 바로 보호자 홈으로 간다.
   useEffect(() => {
-    fetch("/api/families", { cache: "no-store" })
+    fetch("/api/auth/membership-status", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const existing = data?.families?.[0]?.family_id;
-        if (existing) {
-          setFamilyId(existing);
-          // 이미 가족이 존재하는 온보딩 보호자가 family 단계에 접근 시 child 단계로 자동 전이
-          if (step === "family") {
-            setStep("child");
+      .then((status) => {
+        if (!status) return;
+        if (status.state === "ACTIVE_PARENT") {
+          finish();
+          return;
+        }
+        if (status.state === "AUTHENTICATED_INCOMPLETE") {
+          if (status.familyId) setFamilyId(status.familyId);
+          if (["consent", "profile", "family", "child"].includes(status.onboardingStep)) {
+            setStep(status.onboardingStep as Step);
           }
         }
       })
@@ -606,7 +777,7 @@ function SignupContent() {
       .finally(() => {
         setLoadingFamily(false);
       });
-  }, [step]);
+  }, [finish]);
 
   useEffect(() => {
     const link_id = searchParams.get("link_id");
@@ -669,10 +840,11 @@ function SignupContent() {
       {step === "profile" && <ProfileStep onNext={() => setStep("family")} />}
       {step === "family" && (
         <FamilyStep
-          onNext={(id) => {
+          onCreated={(id) => {
             setFamilyId(id);
             setStep("child");
           }}
+          onJoined={finish}
         />
       )}
       {step === "child" &&
@@ -688,10 +860,11 @@ function SignupContent() {
           </div>
         ) : (
           <FamilyStep
-            onNext={(id) => {
+            onCreated={(id) => {
               setFamilyId(id);
               setStep("child");
             }}
+            onJoined={finish}
           />
         ))}
     </Shell>
