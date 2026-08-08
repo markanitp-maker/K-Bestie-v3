@@ -135,7 +135,7 @@ function ChildAnnouncementBody() {
 
       {/* 이벤트 1 카드 */}
       <div
-        className="rounded-2xl p-4 mb-4"
+        className="rounded-2xl p-3 mb-3"
         style={{ background: "#FFF3E0", border: "1px solid rgba(255,159,69,0.3)" }}
       >
         <div className="flex items-center gap-2 mb-2">
@@ -151,25 +151,14 @@ function ChildAnnouncementBody() {
         </div>
 
         <div className="text-sm leading-relaxed space-y-1" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-          <p>첫 미션을 끝까지 완료하면 시작돼요.</p>
-          <p>30일 동안 미션을 완료한 횟수에 따라 선물을 받아요.</p>
+          <p>미션을 하면서 30일 동안 케이와 더 친해져요.</p>
+          <p>많이 참여할수록 더 좋은 상품을 받을 수 있어요.</p>
         </div>
-
-        <div className="mt-3 space-y-1 text-sm font-bold" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-          <p>10번 이상 완료 → 상품권 1,000원</p>
-          <p>30번 이상 완료 → 상품권 3,000원</p>
-          <p>50번 이상 완료 → 상품권 5,000원</p>
-          <p>60번 완료 → 상품권 10,000원</p>
-        </div>
-
-        <p className="text-xs mt-3" style={{ color: "var(--color-k-sky-blue, #6B8CAE)" }}>
-          여러 선물을 모두 받는 것이 아니라 30일 동안 달성한 가장 높은 단계의 선물 1개를 받아요.
-        </p>
       </div>
 
       {/* 이벤트 2 카드 */}
       <div
-        className="rounded-2xl p-4 mb-4"
+        className="rounded-2xl p-3 mb-3"
         style={{ background: "#E9F3FF", border: "1px solid rgba(107,140,174,0.3)" }}
       >
         <div className="flex items-center gap-2 mb-2">
@@ -184,24 +173,15 @@ function ChildAnnouncementBody() {
           </p>
         </div>
 
-        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-          8월, 9월, 10월마다 퀴즈 점수 순위를 새로 겨뤄요.
-        </p>
-
-        <div className="mt-3 space-y-1 text-sm font-bold" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-          <p>1등 → 상품권 5,000원</p>
-          <p>2등 → 상품권 3,000원</p>
-          <p>3등 → 상품권 1,000원</p>
+        <div className="text-sm leading-relaxed space-y-1" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+          <p>퀴즈 점수를 쌓아 친구들과 순위에 도전해요.</p>
+          <p>높은 순위를 하면 상품을 받을 수 있어요.</p>
         </div>
-
-        <p className="text-xs mt-3" style={{ color: "var(--color-k-sky-blue, #6B8CAE)" }}>
-          한 달이 끝나면 그 달 순위가 정해지고, 다음 달에는 점수가 0점부터 다시 시작돼요.
-        </p>
       </div>
 
       {/* 이벤트 3 카드 — 확률과 관리자 one-shot 정책은 아이에게 노출하지 않는다. */}
       <div
-        className="rounded-2xl p-4"
+        className="rounded-2xl p-3"
         style={{ background: "#FFF8D9", border: "1px solid rgba(245,158,11,0.3)" }}
       >
         <div className="flex items-center gap-2 mb-2">
@@ -215,13 +195,14 @@ function ChildAnnouncementBody() {
           </p>
         </div>
         <div className="text-sm leading-relaxed space-y-1" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-          <p>매일 출석하면 하루 한 번 룰렛을 돌릴 수 있어요.</p>
+          <p>매일 출석하면 하루 한 번 룰렛에 참여할 수 있어요.</p>
           <p>황금열쇠를 모아서 퀴즈에 더 많이 도전해보세요!</p>
         </div>
-        <p className="text-xs mt-3 font-semibold text-amber-800">
-          꽝 · 한번 더 · 황금열쇠 +1 · +3 · +5 · +7 · +9
-        </p>
       </div>
+
+      <p className="mt-3 text-center text-sm font-bold" style={{ color: "var(--color-k-orange, #FF9F45)" }}>
+        재미있게 참여해보자!
+      </p>
     </>
   );
 }
