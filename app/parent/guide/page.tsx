@@ -265,6 +265,7 @@ export default function ParentGuidePage() {
           child_id: requestChildId,
           question: textToSend,
           priorAskChildProposal: pendingAskChildProposal,
+          conversationContext: messages.slice(-6).map((message) => ({ role: message.role, text: message.text })),
         }),
       });
 
@@ -303,7 +304,7 @@ export default function ParentGuidePage() {
       sendInFlightRef.current = false;
       if (childIdRef.current === requestChildId) setIsLoading(false);
     }
-  }, [childId, stopListening]);
+  }, [childId, stopListening, messages, pendingAskChildProposal]);
 
   // requests/request-parent-k-stt-input-focus-fix-dev-prod.md — 최종 음성 인식 결과는
   // document.activeElement/입력창 focus 여부와 무관하게 채팅 입력 state(inputText)에

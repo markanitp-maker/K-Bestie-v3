@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { GoogleGenAI } from "@google/genai";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { getLlmModel } from "@/lib/llm/modelRouter";
-import { searchMemoryFactsDetailed, formatMemoryFactsForPrompt } from "@/lib/memory/vectorRetrieval";
+import { retrieveParentKContext, type ParentConversationTurn } from "@/lib/parentKChat/parentKnowledgeRetrieval";
 import { classifyParentKChatIntent } from "@/lib/parentKChat/intentClassifier";
 import { filterParentQuestion } from "@/lib/plan/parentQuestionFilter";
 import { checkAndDeductQuota, refundQuota, peekQuota, WEEKLY_QUESTION_LIMIT } from "@/lib/plan/parentQuestionQuota";
@@ -18,6 +18,7 @@ import { classifyParentQueryCandidate } from "@/lib/plan/parentQueryRouterGrade4
 import type { GreenRule, ParentQueryRouterResult, GenAILikeClient } from "@/lib/plan/parentQueryRouterEngine";
 import { parseGrade } from "@/lib/mission/selectQuestions";
 import { getSupabaseTarget } from "@/lib/supabase/env";
+import { isDetailAllowed } from "@/lib/plan/requireDetailAccess";
 import * as crypto from "crypto";
 
 // requests/request-parent-query-router-grade{1,2,3,4,5,6}-v1.md — 학년별 라우터 디스패치.
@@ -117,6 +118,17 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { action, child_id, question, priorAskChildProposal } = body;
+    const conversationContext: ParentConversationTurn[] = Array.isArray(body.conversationContext)
+      ? body.conversationContext
+          .slice(-6)
+          .filter((turn: unknown): turn is { role: "user" | "k"; text: string } => {
+            if (!turn || typeof turn !== "object") return false;
+            const candidate = turn as Record<string, unknown>;
+            return (candidate.role === "user" || candidate.role === "k") && typeof candidate.text === "string";
+          })
+          .map((turn: { role: "user" | "k"; text: string }) => ({ role: turn.role, text: turn.text.trim().slice(0, 300) }))
+          .filter((turn: ParentConversationTurn) => turn.text.length > 0)
+      : [];
     const trimmedPriorAskChildProposal =
       typeof priorAskChildProposal === "string" && priorAskChildProposal.trim().length > 0
         ? priorAskChildProposal.trim().slice(0, 300)
@@ -146,7 +158,7 @@ export async function POST(request: Request) {
     // 권한 검증: 로그인 보호자와 child_id 연결 관계 검증 (가족 구성원 권한)
     const { data: childProfileForAuth } = await serviceClient
       .from("child_profiles")
-      .select("family_id, grade")
+      .select("family_id, grade, tier")
       .eq("id", child_id)
       .single();
     const { data: member } = await serviceClient
@@ -309,13 +321,21 @@ export async function POST(request: Request) {
         });
       }
 
-      // intent === "CHILD_INFORMATION_QUERY" — 기존 RAG 흐름(§4-B).
-      const retrievalResult = await searchMemoryFactsDetailed(serviceClient, child_id, trimmedQuestion, 5);
+      // intent === "CHILD_INFORMATION_QUERY" — 부모에게 이미 공개된 리포트·대시보드와
+      // 누적 Memory Fact를 하나의 폐쇄형 RAG 근거로 합친다. raw/corrected 대화 원문은
+      // 이 경로에서 조회하지 않으며, 상세 필드는 실제 요금제 접근권한이 있을 때만 사용한다.
+      const retrievalResult = await retrieveParentKContext(serviceClient, {
+        childId: child_id,
+        query: trimmedQuestion,
+        conversationContext,
+        allowDetailedReports: isDetailAllowed(Number(childProfileForAuth?.tier ?? 1)),
+        topK: 10,
+      });
 
       if (retrievalResult.status === "error") {
         logTurn({
           retrievalAttempted: true,
-          retrievalSource: ["search_memory_facts"],
+          retrievalSource: ["parent_unified_knowledge"],
           retrievalResultCount: 0,
           responseMode: "RETRIEVAL_ERROR",
           fallbackReason: retrievalResult.reason,
@@ -355,7 +375,7 @@ export async function POST(request: Request) {
       const fallbackResponse = {
         answerable: false,
         confidence: 0,
-        answer: "제가 확인할 수 있는 기록에는 관련된 구체적인 내용이 남아 있지 않아요. 학교생활, 친구, 기분 중 궁금한 부분을 말씀해 주시면 그 범위로 다시 확인해 볼게요.",
+        answer: "제가 확인할 수 있는 리포트와 누적 기록에는 아직 관련 내용이 없어요. 필요하시면 아이에게 자연스럽게 물어볼 내용을 함께 준비해 드릴게요.",
         suggestedParentQuestion: null,
         evidenceIds: [],
         askChildProposal: trimmedQuestion, // 하드코딩된 school_fun fallback 질문을 제거하고 원래 질문을 유지한다.
@@ -367,18 +387,16 @@ export async function POST(request: Request) {
       };
 
       if (retrievalResult.status === "no_data") {
-        logTurn({ retrievalAttempted: true, retrievalSource: ["search_memory_facts"], retrievalResultCount: 0, responseMode: "NO_RESULT", fallbackReason: "NO_DATA" });
+        logTurn({ retrievalAttempted: true, retrievalSource: ["daily_report", "dashboard", "weekly_report", "detailed_report", "memory_fact"], retrievalResultCount: 0, responseMode: "NO_RESULT", fallbackReason: "NO_DATA" });
         return NextResponse.json(fallbackResponse);
       }
 
-      const facts = retrievalResult.facts;
-      const maxConfidence = Math.max(...facts.map(f => f.confidence));
-      if (maxConfidence < 0.3) {
-        logTurn({ retrievalAttempted: true, retrievalSource: ["search_memory_facts"], retrievalResultCount: facts.length, responseMode: "NO_RESULT", fallbackReason: "LOW_CONFIDENCE" });
-        return NextResponse.json(fallbackResponse);
-      }
-
-      const evidenceContext = formatMemoryFactsForPrompt(facts);
+      const evidence = retrievalResult.evidence;
+      const evidenceContext = retrievalResult.contextText;
+      const retrievalSources = Array.from(new Set(evidence.map((item) => item.source)));
+      const conversationContextText = conversationContext
+        .map((turn) => `${turn.role === "user" ? "부모" : "케이"}: ${turn.text}`)
+        .join("\n");
       
       const systemPrompt = `
 당신은 부모용 케이(폐쇄형 RAG 챗봇)입니다.
@@ -386,6 +404,8 @@ export async function POST(request: Request) {
 
 [검색된 근거]
 ${evidenceContext}
+
+${conversationContextText ? `[현재 부모-케이 대화 맥락]\n${conversationContextText}\n` : ""}
 
 [규칙]
 1. 제공된 검색 근거 밖의 내용을 답하지 마세요. 모델의 일반 지식으로 보완하지 마세요.
@@ -395,7 +415,10 @@ ${evidenceContext}
 5. 관련 근거가 불충분하면 반드시 answerable=false를 반환하세요.
 6. 답변은 2~4문장으로 작성하고, 부모가 이해하기 쉽게 부드러운 말투를 사용하세요.
 7. 필요 시 부모가 아이에게 사용할 수 있는 부드러운 질문 1개를 제안하세요. (추궁, 검증, 통제, 비밀 확인을 유도하는 질문 금지)
-8. 결과는 반드시 JSON 스키마를 준수하여 작성하세요.
+8. 최근 리포트 근거와 누적 기억을 구분하세요. 최근 관찰만 있고 장기 근거가 없으면 예전부터 그랬다고 단정하지 마세요.
+9. source와 날짜를 참고해 "최근 리포트", "이번 주", "누적 기억"처럼 자연스럽게 근거 시점을 밝혀 주세요.
+10. 현재 대화 맥락은 후속 질문의 주제를 이해하는 데만 사용하고, 사실 근거는 검색된 근거에 한정하세요.
+11. 결과는 반드시 JSON 스키마를 준수하여 작성하세요.
 
 JSON 스키마:
 {
@@ -422,7 +445,7 @@ JSON 스키마:
         aiResponseText = response.text || "";
       } catch (err) {
         console.error("LLM 호출 실패:", err);
-        logTurn({ retrievalAttempted: true, retrievalSource: ["search_memory_facts"], retrievalResultCount: facts.length, responseMode: "RETRIEVAL_ERROR", fallbackReason: "LLM_ERROR" });
+        logTurn({ retrievalAttempted: true, retrievalSource: retrievalSources, retrievalResultCount: evidence.length, responseMode: "RETRIEVAL_ERROR", fallbackReason: "LLM_ERROR" });
         return NextResponse.json({ error: "Failed to generate answer" }, { status: 500 });
       }
 
@@ -449,15 +472,22 @@ JSON 스키마:
 
       // 비정상 결과 차단 (answerable=false인데 근거가 남아있거나 등)
       if (!parsed.answerable) {
-        logTurn({ retrievalAttempted: true, retrievalSource: ["search_memory_facts"], retrievalResultCount: facts.length, responseMode: "NO_RESULT", fallbackReason: "LLM_JUDGED_UNANSWERABLE" });
-        return NextResponse.json(fallbackResponse);
+        logTurn({ retrievalAttempted: true, retrievalSource: retrievalSources, retrievalResultCount: evidence.length, responseMode: "NO_RESULT", fallbackReason: "LLM_JUDGED_UNANSWERABLE" });
+        return NextResponse.json({
+          ...fallbackResponse,
+          answer: "관련된 기록은 일부 확인되지만 지금 질문에 답할 만큼 근거가 충분하지는 않아요. 확인된 범위를 더 구체적으로 말씀해 주시면 다시 살펴볼게요.",
+          askChildProposal: null,
+          retrievalStatus: "INSUFFICIENT_EVIDENCE",
+        });
       }
 
       // 날짜 범위 추출
-      const dates = facts.map(f => new Date(f.sourceDate)).sort((a, b) => a.getTime() - b.getTime());
+      const dates = evidence
+        .flatMap((item) => item.date.match(/20\d{2}-\d{2}-\d{2}/g) ?? [])
+        .sort();
       const evidenceDateRange = dates.length > 0 ? {
-        from: dates[0].toISOString().slice(0, 10),
-        to: dates[dates.length - 1].toISOString().slice(0, 10),
+        from: dates[0],
+        to: dates[dates.length - 1],
       } : null;
 
       const finalResponse = {
@@ -465,15 +495,22 @@ JSON 스키마:
         confidence: parsed.confidence,
         answer: parsed.answer,
         suggestedParentQuestion: parsed.suggestedParentQuestion || null,
-        evidenceIds: facts.map(f => f.factId),
+        evidenceIds: evidence.map((item) => item.id),
         askChildProposal: null,
         evidenceDateRange,
         intent,
         requestedTopic: requested_topic,
         requestedArea: requested_area,
+        retrievalStatus: "HAS_EVIDENCE",
+        retrievedSources: evidence.map((item) => ({
+          source: item.source,
+          date: item.date,
+          area: item.area,
+          relevance: item.relevance,
+        })),
       };
 
-      logTurn({ retrievalAttempted: true, retrievalSource: ["search_memory_facts"], retrievalResultCount: facts.length, responseMode: "HAS_RESULT", fallbackReason: null });
+      logTurn({ retrievalAttempted: true, retrievalSource: retrievalSources, retrievalResultCount: evidence.length, responseMode: "HAS_RESULT", fallbackReason: null });
       return NextResponse.json(finalResponse);
     }
     
