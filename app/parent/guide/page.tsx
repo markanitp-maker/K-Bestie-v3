@@ -914,7 +914,9 @@ export default function ParentGuidePage() {
         
         <RealParentNav active="케이와 대화" />
       </div>
-      <KChatbotWidget appSurface="parent" />
+      {/* 하단 입력 composer가 일반 하단 내비보다 높으므로 FAQ 버튼의 예약 영역을
+          넓혀 전송·음성 버튼을 가리지 않게 한다. */}
+      <KChatbotWidget appSurface="parent" bottomReservedPx={160} />
       {draftModal?.isOpen && (
         <AskChildDraftModal
           childName={childName || "아이"}

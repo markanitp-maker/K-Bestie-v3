@@ -18,6 +18,9 @@ export interface KChatbotWidgetProps {
    *  지정하면 뷰포트가 이 값+24px보다 넓을 때 그 중앙 컬럼의 우측 끝에 맞춰 정렬되고,
    *  더 좁을 때(모바일)는 자동으로 기본 뷰포트 우측 정렬로 되돌아간다. */
   containerMaxWidthPx?: number;
+  /** 하단 고정 입력창처럼 화면별 주요 조작 영역이 더 높은 경우, 플로팅 버튼이 그
+   * 영역을 침범하지 않도록 확보할 하단 높이. 기본 하단 내비게이션은 90px이다. */
+  bottomReservedPx?: number;
 }
 
 type Category = "inquiry" | "suggestion" | "bug";
@@ -31,13 +34,18 @@ const POSITION_STORAGE_KEY = "k_faq_button_position_v1";
 /** 드래그로 인정하는 최소 이동 거리(px). 이하는 탭으로 보고 모달을 연다. */
 const DRAG_THRESHOLD_PX = 8;
 /** 하단 메뉴/주요 조작 버튼 영역으로 예약해 버튼이 침범하지 못하게 하는 높이(px). */
-const BOTTOM_RESERVED_PX = 90;
+const DEFAULT_BOTTOM_RESERVED_PX = 90;
 /** 아이콘 전용 버튼의 48px 터치 영역 높이. 하단 clamp 계산에도 같은 값을 쓴다. */
 const BUTTON_HEIGHT_PX = 48;
 
 type ButtonPosition = { edge: "left" | "right"; yRatio: number };
 
-export default function KChatbotWidget({ appSurface, topOffsetPx = 56, containerMaxWidthPx }: KChatbotWidgetProps) {
+export default function KChatbotWidget({
+  appSurface,
+  topOffsetPx = 56,
+  containerMaxWidthPx,
+  bottomReservedPx = DEFAULT_BOTTOM_RESERVED_PX,
+}: KChatbotWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [category, setCategory] = useState<Category>("inquiry");
   const [subject, setSubject] = useState("");
@@ -524,7 +532,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
         top: "auto",
         right: defaultRight,
         left: "auto",
-        bottom: `calc(90px + env(safe-area-inset-bottom))`,
+        bottom: `calc(${bottomReservedPx}px + env(safe-area-inset-bottom))`,
         transform: "translateY(0)",
       };
     }
@@ -543,7 +551,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
     // 못하게 CSS clamp로 가둔다. JS로 픽셀을 계산하지 않고 env()/dvh를 그대로 쓰기 때문에
     // 키보드가 올라오거나(dvh 축소) 화면이 회전해도 브라우저가 다시 안전 범위로 되돌린다.
     const minTop = `calc(${topOffsetPx + pcMockupPaddingTopPx}px + env(safe-area-inset-top))`;
-    const maxTop = `calc(100dvh - ${BOTTOM_RESERVED_PX + BUTTON_HEIGHT_PX}px - env(safe-area-inset-bottom))`;
+    const maxTop = `calc(100dvh - ${bottomReservedPx + BUTTON_HEIGHT_PX}px - env(safe-area-inset-bottom))`;
     // clamp()는 MIN > MAX인 극단적으로 낮은 뷰포트에서도 MIN을 채택하므로 별도 방어가 필요 없다.
     style.top = `clamp(${minTop}, ${(position.yRatio * 100).toFixed(2)}dvh, ${maxTop})`;
     style.bottom = "auto";
