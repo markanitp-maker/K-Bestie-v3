@@ -27,8 +27,9 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const targetDate = body.targetDate;
     const today = toKSTDateStr(new Date().toISOString());
-    if (!isValidDateString(targetDate) || targetDate < getOffsetDateStr(today, -6) || targetDate > today) {
-      return NextResponse.json({ error: "targetDate must be within the latest 7 KST dates" }, { status: 400 });
+    const latestCompletedDate = getOffsetDateStr(today, -1);
+    if (!isValidDateString(targetDate) || targetDate < getOffsetDateStr(latestCompletedDate, -6) || targetDate > latestCompletedDate) {
+      return NextResponse.json({ error: "targetDate must be within the latest 7 completed KST dates" }, { status: 400 });
     }
     return NextResponse.json({ success: true, ...(await reconcilePipelineV3(targetDate)) });
   } catch (error) {

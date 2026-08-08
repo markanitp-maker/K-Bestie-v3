@@ -269,6 +269,24 @@ BEGIN
   IF p_business_date IS NULL OR p_execution_id IS NULL THEN RAISE EXCEPTION 'INVALID_INPUT'; END IF;
   IF p_business_date > (now() AT TIME ZONE 'Asia/Seoul')::date THEN RAISE EXCEPTION 'FUTURE_DATE'; END IF;
 
+  -- 과거 버그로 C2는 존재하지만 C1 marker만 없는 night-only 행도 정규화한다.
+  -- 기존 C2/downstream completed 작업은 절대 재생성하지 않는다.
+  FOR v_child IN
+    SELECT p.child_id
+    FROM public.pipeline_jobs p
+    WHERE p.business_date = p_business_date
+      AND p.job_type = 'collection_2'
+      AND NOT EXISTS (
+        SELECT 1 FROM public.pipeline_jobs c1
+        WHERE c1.child_id = p.child_id
+          AND c1.business_date = p.business_date
+          AND c1.job_type = 'collection_1'
+      )
+  LOOP
+    PERFORM public.ensure_collection_1_zero_marker_v3(v_child.child_id, p_business_date, p_execution_id, 1);
+    v_normalized_c1 := v_normalized_c1 + 1;
+  END LOOP;
+
   FOR v_child IN
     WITH candidates AS (
       SELECT child_id FROM public.pipeline_jobs

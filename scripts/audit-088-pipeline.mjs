@@ -71,7 +71,7 @@ const states = await query(`
   from targets t
   left join jobs j using(child_id,business_date)
   left join public.raw_daily_conversations_v3 r using(child_id,business_date)
-  where j.c1 is null or j.c2 is null
+  where j.c2 is null
      or (j.c2='completed' and coalesce(r.collection_2_status,'') <> 'completed')
      or (j.c2='completed' and r.collection_2_status='completed' and j.correction is null)
      or (j.correction='completed' and j.memory is null)
