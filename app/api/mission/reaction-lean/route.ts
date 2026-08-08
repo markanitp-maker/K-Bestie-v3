@@ -10,6 +10,7 @@ import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 import { getLlmModel } from "@/lib/llm/modelRouter";
 import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
 import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
+import { buildRelationshipContext } from "@/lib/relationship/relationshipContext";
 
 // respond/route.ts, respond-lean/route.ts와 동일 패턴 — 기억 회상 답변에 프롬프트/
 // 시스템 지시가 새어나온 흔적이 있는지 검사한다.
@@ -47,28 +48,11 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { questionText, answerText, sessionId, childTurnId, childContext } = body;
+    const { questionText, answerText, sessionId, childTurnId } = body;
 
     if (typeof questionText !== "string" || typeof answerText !== "string" || !questionText || !answerText) {
       return new Response("Bad Request", { status: 400 });
     }
-
-    const knownContextMsg = childContext && childContext.givenName
-      ? `너는 아이의 이름을 이미 알고 있다. 아이의 이름은 '${childContext.givenName}'이며, ${childContext.grade}학년이다.`
-      : "";
-    const identityAnswerRule = childContext && childContext.givenName
-      ? `\n- 아이가 자기 이름이나 학년을 물어보면, 이미 알고 있는 정보(${childContext.givenName}, ${childContext.grade}학년)를 활용해 자연스럽게 대답해라. 모른다고 하거나 다시 묻지 마라.`
-      : "";
-
-    // 대표님은 30~50자를 요청했으나, LLM 생성 시간 증가로 인한 응답 속도 저하(1초 내 첫 반응)를 막기 위해 20~35자로 절충함.
-    const systemInstruction = `너는 아이와 대화하는 케이야. 아래 "질문"과 아이의 "답변"만 보고, 답변 내용에 어울리는 아주 짧은 반응 1문장만 만들어라.
-${knownContextMsg}
-- 아이 답변에서 화남·짜증·거부·슬픔·외로움 같은 부정적 감정이 뚜렷하면, 내용에 대한 일반적 공감 대신 사과하며 다시 말해달라고 자연스럽게 요청하는 반응을 해라. 정해진 문장을 그대로 쓰지 말고 매번 다른 표현으로 새로 만들어라.${identityAnswerRule}
-- 그 외의 경우엔 아이가 답변에서 말한 구체적인 내용(단어)을 자연스럽게 반영한 공감 반응을 해라.
-- 절대 새로운 질문을 만들지 마라. 물음표(?) 사용 금지.
-- 한국어로 딱 1문장, 약 20~35자.
-- 감정을 과도하게 단정하지 말고, 답변에 드러난 내용에 맞게만 반응해라.
-- 반응 문장 외에 다른 말은 절대 출력하지 마라(설명, 따옴표, 라벨 없이 반응 문장만).`;
 
     const userPrompt = `질문: "${questionText}"\n아이의 답변: "${answerText}"`;
 
@@ -111,6 +95,7 @@ ${knownContextMsg}
     // 생성 대신 저장된 기억 기반 답변으로 대체한다. 실패/기억 없음이면 아래의 일반
     // 리액션 생성으로 그대로 폴백한다.
     let usedMemoryRecall = false;
+    let systemInstruction = "";
     if (isMemoryRecallQuery(answerText)) {
       const memoryRes = await generateMemoryRecallResponse(createServiceClient(), authResult.childId, answerText);
       if (memoryRes && memoryRes.text && !containsPromptLeak(memoryRes.text)) {
@@ -119,6 +104,29 @@ ${knownContextMsg}
         tokenOut = memoryRes.tokenOut;
         usedMemoryRecall = true;
       }
+    }
+
+    if (!usedMemoryRecall) {
+      // 클라이언트 childContext는 신뢰하지 않는다. 인증된 childId와 sessionId로 공통
+      // Relationship Context를 새로 구성해 형제자매 혼입과 프로필 스푸핑을 막는다.
+      const relationshipContext = await buildRelationshipContext(createServiceClient(), {
+        childId: authResult.childId,
+        sessionId: typeof sessionId === "string" ? sessionId : null,
+        currentText: answerText,
+        mode: "mission",
+      });
+
+      // 대표님은 30~50자를 요청했으나, LLM 생성 시간 증가로 인한 응답 속도 저하(1초 내 첫 반응)를 막기 위해 20~35자로 절충함.
+      systemInstruction = `너는 아이와 대화하는 케이야. 아래 "질문"과 아이의 "답변"만 보고, 답변 내용에 어울리는 아주 짧은 반응 1문장만 만들어라.
+
+${relationshipContext.fragment}
+
+- 아이 답변에서 화남·짜증·거부·슬픔·외로움 같은 부정적 감정이 뚜렷하면, 내용에 대한 일반적 공감 대신 사과하며 다시 말해달라고 자연스럽게 요청하는 반응을 해라. 정해진 문장을 그대로 쓰지 말고 매번 다른 표현으로 새로 만들어라.
+- 그 외의 경우엔 아이가 답변에서 말한 구체적인 내용(단어)을 자연스럽게 반영한 공감 반응을 해라.
+- 절대 새로운 질문을 만들지 마라. 물음표(?) 사용 금지.
+- 한국어로 딱 1문장, 약 20~35자.
+- 감정을 과도하게 단정하지 말고, 답변에 드러난 내용에 맞게만 반응해라.
+- 반응 문장 외에 다른 말은 절대 출력하지 마라(설명, 따옴표, 라벨 없이 반응 문장만).`;
     }
 
     const doGenerate = async (isFallback: boolean) => {

@@ -18,6 +18,7 @@ import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallRespond
 import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
 import { getActiveVacationContext, resolveSchoolQuestionBlockState, getVacationFollowUpQuestion, getSchoolStartConfirmationQuestion, markVacationQuestionAsked, filterSchoolRequiredQuestion } from "@/lib/plan/vacationSchoolContext";
 import { parseGrade } from "@/lib/mission/selectQuestions";
+import { buildRelationshipContext } from "@/lib/relationship/relationshipContext";
 
 export const runtime = "nodejs";
 
@@ -453,14 +454,17 @@ export async function POST(req: NextRequest) {
     ? `아이의 이름은 '${verifiedIdentity.givenName}'이고 ${verifiedIdentity.persona.gradeLabel}입니다. 아이가 자기 이름이나 학년을 물어보면 모른다고 하지 말고 알고 있는 정보를 자연스럽게 말해주세요.\n`
     : "";
 
-  const systemInstruction = `
+  const createSystemInstruction = (relationshipContextFragment = "") => `
 ${MISSION_CHAT_SYSTEM_PROMPT}
 
 ${buildKPeerPersonaFragment(verifiedIdentity.persona, { compact: true })}
 
+${relationshipContextFragment}
+
 ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말에 대한 매우 짧은 공감이나 감탄사(리액션)만 딱 1~2문장(최대 15자)으로 생성하세요. 물음표(?)는 절대 사용 금지.
 예: "우와, 정말 재밌었겠다!", "그렇구나!", "대단한데!"
 `.trim();
+  let systemInstruction = createSystemInstruction();
 
   try {
     if (body.sessionId && childTurnId) {
@@ -491,6 +495,19 @@ ${knownContextMsg}절대 질문을 생성하지 마세요. 아이의 이전 말�
         tokenOut = memoryRes.tokenOut;
         usedMemoryRecall = true;
       }
+    }
+
+    // 명시적 회상 답변이 확정되지 않은 일반 미션 턴은 모두 같은 Relationship Context
+    // Builder를 거친다. parentQuestionOnly는 위에서 이미 반환되므로 parent_questions의
+    // 전달 우선순위와 질문 상태머신은 이 개인화 context가 절대 바꾸지 않는다.
+    if (!usedMemoryRecall && lastChildTurn?.text) {
+      const relationshipContext = await buildRelationshipContext(authService, {
+        childId: session.child_id,
+        sessionId: body.sessionId,
+        currentText: lastChildTurn.text,
+        mode: "mission",
+      });
+      systemInstruction = createSystemInstruction(relationshipContext.fragment);
     }
 
     const attemptGeneration = async (isFallback: boolean, customInstruction?: string) => {

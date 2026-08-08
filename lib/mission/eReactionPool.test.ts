@@ -2,10 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { E_REACTION_POOL, pickNonRepeatingReaction } from "./eReactionPool";
 
-test("E_REACTION_POOL: 정확히 4개 고정 문구만 존재", () => {
-  assert.equal(E_REACTION_POOL.length, 4);
+test("E_REACTION_POOL: 확정된 7개 짧은 공감 문구만 존재", () => {
+  assert.equal(E_REACTION_POOL.length, 7);
   assert.deepEqual([...E_REACTION_POOL], [
-    "그랬구나!", "이야기해 줘서 고마워!", "그런 일이 있었구나!", "알겠어!",
+    "그랬구나.",
+    "아 그렇구나.",
+    "재밌었겠다.",
+    "정말 궁금했겠다.",
+    "그럴 수 있지.",
+    "와, 신기하다.",
+    "좋았겠다.",
   ]);
 });
 

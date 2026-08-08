@@ -26,6 +26,7 @@ import {
 import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
 import { getActiveVacationContext, resolveSchoolQuestionBlockState, getVacationFollowUpQuestion, getSchoolStartConfirmationQuestion, markVacationQuestionAsked } from "@/lib/plan/vacationSchoolContext";
 import { parseGrade } from "@/lib/mission/selectQuestions";
+import { buildRelationshipContext } from "@/lib/relationship/relationshipContext";
 
 export const runtime = "nodejs";
 
@@ -129,7 +130,6 @@ export async function POST(req: NextRequest) {
   // 조회한 학년만 페르소나 프롬프트에 쓴다. 형제자매가 번갈아 로그인해도 매 요청마다
   // 새로 조회하므로 정보가 섞이지 않는다.
   const kPeerPersona = await fetchKPeerPersonaForChild(service, session.child_id);
-  const freeChatSystemPrompt = `${FREE_CHAT_SYSTEM_PROMPT}\n\n${buildKPeerPersonaFragment(kPeerPersona)}`;
 
   const consentBlocked = await checkConsentForSession(sessionId);
   if (consentBlocked) return consentBlocked;
@@ -270,6 +270,21 @@ export async function POST(req: NextRequest) {
       model: "wiki_only_guard",
     });
   }
+
+  // 071 Relationship Context — 안전·저신뢰·명시적 memory recall 같은 전용 경로를
+  // 제외한 모든 일반 자유대화 턴에서 관련 memory를 조용히 검색한다. childId/sessionId는
+  // 위 인증을 통과한 서버 값만 사용하며, 리포트 계열 데이터는 builder 원천에 없다.
+  const relationshipContext = await buildRelationshipContext(service, {
+    childId: session.child_id,
+    sessionId,
+    currentText: childText,
+    mode: "free_chat",
+  });
+  const freeChatSystemPrompt = [
+    FREE_CHAT_SYSTEM_PROMPT,
+    buildKPeerPersonaFragment(kPeerPersona),
+    relationshipContext.fragment,
+  ].join("\n\n");
 
   try {
     const ai = createGenAIClient({ provider: "vertex" });

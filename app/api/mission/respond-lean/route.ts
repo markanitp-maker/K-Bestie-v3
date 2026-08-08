@@ -18,6 +18,7 @@ import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 import { isMemoryRecallQuery } from "@/lib/freechat/memoryRecallTrigger";
 import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallResponder";
+import { buildRelationshipContext } from "@/lib/relationship/relationshipContext";
 
 export const runtime = "nodejs";
 
@@ -91,11 +92,14 @@ async function generateLeanReaction(params: {
   contents: Content[];
   sessionId: string;
   childTurnId: string | null;
+  relationshipContextFragment: string;
 }): Promise<LeanResult> {
-  const { contents, sessionId, childTurnId } = params;
+  const { contents, sessionId, childTurnId, relationshipContextFragment } = params;
 
   const systemInstruction = `
 ${MISSION_CHAT_SYSTEM_PROMPT}
+
+${relationshipContextFragment}
 
 절대 질문을 생성하지 마세요. 아이의 이전 말에 대한 매우 짧은 공감이나 감탄사(리액션)만 딱 1~2문장(최대 15자)으로 생성하세요. 물음표(?)는 절대 사용 금지.
 예: "우와, 정말 재밌었겠다!", "그렇구나!", "대단한데!"
@@ -348,7 +352,18 @@ export async function POST(req: NextRequest) {
         };
       }
     }
-    return generateLeanReaction({ contents, sessionId, childTurnId });
+    const relationshipContext = await buildRelationshipContext(authService, {
+      childId: session.child_id,
+      sessionId,
+      currentText: lastChildTurn?.text ?? "",
+      mode: "mission",
+    });
+    return generateLeanReaction({
+      contents,
+      sessionId,
+      childTurnId,
+      relationshipContextFragment: relationshipContext.fragment,
+    });
   };
 
   let resultPromise: Promise<LeanResult>;
