@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { AdminDataTable } from "@/components/admin/shell/AdminDataTable";
 import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminStatusBadge, type AdminStatusVariant } from "@/components/admin/shell/AdminStatusBadge";
@@ -23,7 +22,12 @@ interface EventRow {
   final_reward_amount: number | null;
 }
 
-const STATUS_LABELS: Record<string, string> = { active: "진행 중", max_completed: "최고 달성", completed: "종료" };
+const STATUS_LABELS: Record<string, string> = {
+  active: "진행 중",
+  max_completed: "60회 달성",
+  completed: "종료",
+  ending_soon: "7일 내 종료",
+};
 const STATUS_VARIANT: Record<string, AdminStatusVariant> = { active: "info", max_completed: "success", completed: "neutral" };
 
 function formatDateTime(iso: string | null): string {
@@ -45,11 +49,12 @@ export default function MissionOnboardingEventsTab({
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<EventRow[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<EventRow | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (["active", "max_completed", "completed"].includes(statusFilter)) params.set("status", statusFilter);
     if (includeTestAccounts) params.set("includeTestAccounts", "true");
     const qs = params.size ? `?${params.toString()}` : "";
     fetch(`/api/admin/events/mission-onboarding${qs}`)
@@ -62,6 +67,10 @@ export default function MissionOnboardingEventsTab({
   useEffect(() => { load(); }, [load]);
 
   const filtered = (rows ?? []).filter((row) => {
+    if (statusFilter === "ending_soon") {
+      const remaining = new Date(row.ends_at).getTime() - Date.now();
+      if (row.status === "completed" || remaining <= 0 || remaining > 7 * 86_400_000) return false;
+    }
     const needle = [externalSearch, search].filter(Boolean).join(" ").trim().toLocaleLowerCase("ko");
     if (!needle) return true;
     return [row.childName, row.loginId, row.familyName].join(" ").toLocaleLowerCase("ko").includes(needle);
@@ -83,7 +92,7 @@ export default function MissionOnboardingEventsTab({
             style={{ width: "100%", padding: "var(--admin-space-8) var(--admin-space-12)", fontSize: "var(--admin-text-sm)", borderRadius: 8, border: "1px solid var(--admin-border)" }}
           />
         }
-        filterNodes={(["all", "active", "max_completed", "completed"] as const).map((s) => (
+        filterNodes={(["all", "active", "max_completed", "completed", "ending_soon"] as const).map((s) => (
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
@@ -106,7 +115,13 @@ export default function MissionOnboardingEventsTab({
           columns={[
             { key: "child", header: "아이", render: (row) => (
               <div>
-                <div style={{ fontWeight: 700 }}>{row.childName || "이름 미등록"}{row.isInternalTest ? " · 테스트" : ""}</div>
+                <a
+                  href={`/admin/users?tab=children&search=${encodeURIComponent(row.childName || row.loginId)}`}
+                  onClick={(event) => event.stopPropagation()}
+                  style={{ fontWeight: 700, color: "var(--admin-primary)", textDecoration: "none" }}
+                >
+                  {row.childName || "이름 미등록"}{row.isInternalTest ? " · 테스트" : ""}
+                </a>
                 <div style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{row.loginId} · {row.familyName}</div>
               </div>
             ) },
@@ -120,9 +135,36 @@ export default function MissionOnboardingEventsTab({
           data={filtered}
           isLoading={loading}
           keyExtractor={(row) => row.id}
+          onRowClick={setSelected}
           emptyMessage="표시할 이벤트가 없습니다."
         />
       </div>
+
+      {selected && (
+        <div className="fixed inset-0 z-[200] flex justify-end bg-black/40" onClick={() => setSelected(null)}>
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="미션 30일 상세"
+            className="h-full w-full overflow-y-auto bg-white p-6 shadow-2xl sm:max-w-lg"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="float-right min-h-11 min-w-11" aria-label="상세 닫기" onClick={() => setSelected(null)}>✕</button>
+            <h3 className="mb-6 text-xl font-black">{selected.childName || "이름 미등록"}</h3>
+            <dl className="grid grid-cols-2 gap-4 text-sm">
+              <dt>로그인 ID</dt><dd>{selected.loginId}</dd>
+              <dt>가족</dt><dd>{selected.familyName}</dd>
+              <dt>상태</dt><dd>{STATUS_LABELS[selected.status]}</dd>
+              <dt>최초 미션 완료</dt><dd>{formatDateTime(selected.started_at)}</dd>
+              <dt>종료 예정</dt><dd>{formatDateTime(selected.ends_at)}</dd>
+              <dt>완료 횟수</dt><dd>{selected.mission_completed_count}/60</dd>
+              <dt>현재 보상 구간</dt><dd>{won(selected.current_reward_amount)}</dd>
+              <dt>최종 보상</dt><dd>{selected.final_reward_amount == null ? "-" : won(selected.final_reward_amount)}</dd>
+            </dl>
+            <a className="mt-8 inline-flex min-h-11 items-center rounded-lg bg-[var(--admin-primary)] px-4 font-bold text-white" href={`/admin/users?tab=children&search=${encodeURIComponent(selected.childName || selected.loginId)}`}>사용자 관리에서 보기</a>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

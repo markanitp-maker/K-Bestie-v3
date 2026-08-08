@@ -26,7 +26,7 @@ interface AttendanceResponse {
   children: Array<{ name: string; username: string; todayStatus: "NOT_STARTED" | "RETRY_AVAILABLE" | "COMPLETED"; todayKeysGranted: number }>;
 }
 interface LeaderboardResponse {
-  entries?: Array<{ rank: number; childName: string | null; loginId?: string | null; familyName?: string | null; score: number; isSeedUser: boolean; rewardEligible: boolean; rewardAmount?: number }>;
+  entries?: Array<{ rank: number; childId?: string; childName: string | null; loginId?: string | null; familyName?: string | null; score: number; isSeedUser: boolean; rewardEligible: boolean; rewardAmount?: number }>;
 }
 
 function currentKstPeriod() {
@@ -115,7 +115,7 @@ export default function EventsOverviewTab({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 14, marginTop: 24 }}>
         <section style={{ padding: 16, borderRadius: 12, border: "1px solid var(--admin-border)", background: "var(--admin-surface)" }}>
           <h3 style={{ margin: "0 0 10px", fontSize: 16 }}>퀴즈 리더보드 TOP3</h3>
-          {leaderboard === null ? <p>조회 실패</p> : top3.length === 0 ? <p>표시할 실제 사용자가 없습니다.</p> : top3.map((entry) => <p key={`${entry.rank}-${entry.childName}`} style={{ margin: "6px 0" }}>{entry.rank}위 · {entry.childName || "이름 미등록"} · {entry.score.toLocaleString("ko-KR")}점</p>)}
+          {leaderboard === null ? <p>조회 실패</p> : top3.length === 0 ? <p>표시할 실제 사용자가 없습니다.</p> : top3.map((entry) => <p key={`${entry.rank}-${entry.childName}`} style={{ margin: "6px 0" }}>{entry.rank}위 · <a href={`/admin/users?tab=children&search=${encodeURIComponent(entry.childName || entry.loginId || "")}`} style={{ color: "var(--admin-primary)", fontWeight: 700 }}>{entry.childName || "이름 미등록"}</a> · {entry.score.toLocaleString("ko-KR")}점</p>)}
         </section>
         <section style={{ padding: 16, borderRadius: 12, border: "1px solid var(--admin-border)", background: "var(--admin-surface)" }}>
           <h3 style={{ margin: "0 0 10px", fontSize: 16 }}>출석 룰렛 오늘 현황</h3>
@@ -124,6 +124,7 @@ export default function EventsOverviewTab({
         <section style={{ padding: 16, borderRadius: 12, border: "1px solid var(--admin-border)", background: "var(--admin-surface)" }}>
           <h3 style={{ margin: "0 0 10px", fontSize: 16 }}>보상 지급 현황</h3>
           <p style={{ margin: 0 }}>확인 {byStatus("pending")} · 승인 {byStatus("approved")} · 예정 {byStatus("scheduled")} · 전달 완료 {byStatus("delivered")} · 보류 {byStatus("on_hold")}</p>
+          <a href="/admin/events-rewards?tab=fulfillments" style={{ display: "inline-flex", marginTop: 10, color: "var(--admin-primary)", fontWeight: 700 }}>지급 관리에서 보기</a>
         </section>
       </div>
     </div>

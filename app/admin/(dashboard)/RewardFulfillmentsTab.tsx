@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { AdminDataTable } from "@/components/admin/shell/AdminDataTable";
 import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
 import { AdminStatusBadge, type AdminStatusVariant } from "@/components/admin/shell/AdminStatusBadge";
@@ -14,7 +13,7 @@ import {
 
 interface RewardRow {
   id: string;
-  event_type: "mission_onboarding" | "quiz_leaderboard";
+  event_type: string;
   child_id: string;
   childName: string | null;
   loginId: string;
@@ -67,6 +66,8 @@ export default function RewardFulfillmentsTab({
   const [rows, setRows] = useState<RewardRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [eventTypeFilter, setEventTypeFilter] = useState("all");
+  const [selected, setSelected] = useState<RewardRow | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -137,6 +138,8 @@ export default function RewardFulfillmentsTab({
   });
 
   const visibleRows = pageRows.filter((row) => {
+    if (eventTypeFilter === "other" && ["mission_onboarding", "quiz_leaderboard"].includes(row.event_type)) return false;
+    if (!["all", "other"].includes(eventTypeFilter) && row.event_type !== eventTypeFilter) return false;
     const needle = externalSearch.trim().toLocaleLowerCase("ko");
     return !needle || [row.childName, row.loginId, row.familyName].join(" ").toLocaleLowerCase("ko").includes(needle);
   });
@@ -153,22 +156,36 @@ export default function RewardFulfillmentsTab({
       </p>
 
       <AdminFilterBar
-        filterNodes={(["all", "pending", "approved", "scheduled", "delivered", "on_hold", "cancelled"] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setStatusFilter(s)}
-            style={{
-              padding: "var(--admin-space-6) var(--admin-space-12)", borderRadius: 8, fontSize: "var(--admin-text-sm)",
-              fontWeight: statusFilter === s ? "var(--admin-weight-bold)" : "normal",
-              border: statusFilter === s ? "1px solid var(--admin-focus)" : "1px solid var(--admin-border)",
-              background: statusFilter === s ? "var(--admin-focus)" : "var(--admin-surface)",
-              color: statusFilter === s ? "var(--admin-bg)" : "var(--admin-text-secondary)",
-              cursor: "pointer",
-            }}
-          >
-            {s === "all" ? "전체" : STATUS_LABELS[s]}
-          </button>
-        ))}
+        filterNodes={[
+            ...(["all", "pending", "approved", "scheduled", "delivered", "on_hold", "cancelled"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                style={{
+                  padding: "var(--admin-space-6) var(--admin-space-12)", borderRadius: 8, fontSize: "var(--admin-text-sm)",
+                  fontWeight: statusFilter === s ? "var(--admin-weight-bold)" : "normal",
+                  border: statusFilter === s ? "1px solid var(--admin-focus)" : "1px solid var(--admin-border)",
+                  background: statusFilter === s ? "var(--admin-focus)" : "var(--admin-surface)",
+                  color: statusFilter === s ? "var(--admin-bg)" : "var(--admin-text-secondary)",
+                  cursor: "pointer",
+                }}
+              >
+                {s === "all" ? "전체" : STATUS_LABELS[s]}
+              </button>
+            )),
+            <select
+              key="event-type"
+              aria-label="이벤트 출처"
+              value={eventTypeFilter}
+              onChange={(event) => setEventTypeFilter(event.target.value)}
+              style={{ minHeight: 38, padding: "var(--admin-space-6) var(--admin-space-12)", borderRadius: 8, border: "1px solid var(--admin-border)" }}
+            >
+              <option value="all">모든 이벤트 출처</option>
+              <option value="mission_onboarding">미션 30일</option>
+              <option value="quiz_leaderboard">퀴즈 리더보드</option>
+              <option value="other">기타</option>
+            </select>,
+        ]}
       />
 
       <div style={{ marginTop: "var(--admin-space-16)" }}>
@@ -189,7 +206,13 @@ export default function RewardFulfillmentsTab({
             { key: "event_type", header: "이벤트 유형", render: (row) => EVENT_TYPE_LABELS[row.event_type] },
             { key: "child", header: "아이", render: (row) => (
               <div>
-                <div style={{ fontWeight: 700 }}>{row.childName || "이름 미등록"}{row.isInternalTest ? " · 테스트" : ""}</div>
+                <a
+                  href={`/admin/users?tab=children&search=${encodeURIComponent(row.childName || row.loginId)}`}
+                  onClick={(event) => event.stopPropagation()}
+                  style={{ fontWeight: 700, color: "var(--admin-primary)", textDecoration: "none" }}
+                >
+                  {row.childName || "이름 미등록"}{row.isInternalTest ? " · 테스트" : ""}
+                </a>
                 <div style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{row.loginId} · {row.familyName}</div>
               </div>
             ) },
@@ -202,7 +225,7 @@ export default function RewardFulfillmentsTab({
               key: "action", header: "액션", render: (row) => {
                 const action = NEXT_ACTION[row.status];
                 return (
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 6 }} onClick={(event) => event.stopPropagation()}>
                     {action && (
                       <button
                         onClick={() => handleTransition(row, action.nextStatus)}
@@ -239,11 +262,38 @@ export default function RewardFulfillmentsTab({
           data={visibleRows}
           isLoading={loading}
           keyExtractor={(row) => row.id}
+          onRowClick={setSelected}
           emptyMessage="표시할 지급 건이 없습니다."
         />
       </div>
 
       {softDelete.modals}
+      {selected && (
+        <div className="fixed inset-0 z-[200] flex justify-end bg-black/40" onClick={() => setSelected(null)}>
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="지급 상세"
+            className="h-full w-full overflow-y-auto bg-white p-6 shadow-2xl sm:max-w-lg"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="float-right min-h-11 min-w-11" aria-label="상세 닫기" onClick={() => setSelected(null)}>✕</button>
+            <h3 className="mb-6 text-xl font-black">{selected.childName || "이름 미등록"}</h3>
+            <dl className="grid grid-cols-2 gap-4 text-sm">
+              <dt>로그인 ID</dt><dd>{selected.loginId}</dd>
+              <dt>가족</dt><dd>{selected.familyName}</dd>
+              <dt>이벤트 출처</dt><dd>{EVENT_TYPE_LABELS[selected.event_type] ?? "기타"}</dd>
+              <dt>지급 금액</dt><dd>{won(selected.reward_amount)}</dd>
+              <dt>현재 상태</dt><dd>{STATUS_LABELS[selected.status]}</dd>
+              <dt>전달 방식</dt><dd>{selected.delivery_method === "offline" ? "오프라인 전달" : selected.delivery_method}</dd>
+              <dt>승인 시각</dt><dd>{formatDateTime(selected.approved_at)}</dd>
+              <dt>전달 완료 시각</dt><dd>{formatDateTime(selected.delivered_at)}</dd>
+              <dt>관리자 메모</dt><dd>{selected.admin_note ?? "-"}</dd>
+            </dl>
+            <a className="mt-8 inline-flex min-h-11 items-center rounded-lg bg-[var(--admin-primary)] px-4 font-bold text-white" href={`/admin/users?tab=children&search=${encodeURIComponent(selected.childName || selected.loginId)}`}>사용자 관리에서 보기</a>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

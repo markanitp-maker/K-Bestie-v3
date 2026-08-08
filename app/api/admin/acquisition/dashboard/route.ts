@@ -2,21 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
+import { toKSTDateStr } from "@/lib/analytics/kstDate";
+import { resolveAcquisitionPeriodRange, type AcquisitionPeriod } from "@/lib/admin/operationsConsole";
 
 export const runtime = "nodejs";
-
-function toKSTDateStr(iso: string) {
-  const d = new Date(iso);
-  d.setHours(d.getHours() + 9);
-  return d.toISOString().slice(0, 10);
-}
 
 export async function GET(req: NextRequest) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
   const url = new URL(req.url);
-  const period = url.searchParams.get("period") || "30d";
+  const rawPeriod = url.searchParams.get("period");
+  const allowedPeriods: AcquisitionPeriod[] = ["today", "7d", "14d", "30d", "month", "last_month", "all", "custom"];
+  const period: AcquisitionPeriod = allowedPeriods.includes(rawPeriod as AcquisitionPeriod) ? rawPeriod as AcquisitionPeriod : "30d";
   const attribution = url.searchParams.get("attribution") || "signup"; // "signup" or "first"
   const includeTestAccounts = url.searchParams.get("includeTestAccounts") === "true";
   
@@ -25,38 +23,15 @@ export async function GET(req: NextRequest) {
   const filterMedium = url.searchParams.get("medium");
   const filterCampaign = url.searchParams.get("campaign");
 
-  const now = new Date();
-  let from = new Date(now);
-  let to = new Date(now);
-
-  if (period === "today") {
-    from.setHours(0, 0, 0, 0);
-  } else if (period === "7d") {
-    from.setDate(from.getDate() - 7);
-  } else if (period === "14d") {
-    from.setDate(from.getDate() - 14);
-  } else if (period === "30d") {
-    from.setDate(from.getDate() - 30);
-  } else if (period === "month") {
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-  } else if (period === "last_month") {
-    from.setMonth(from.getMonth() - 1);
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-    to = new Date(from);
-    to.setMonth(to.getMonth() + 1);
-    to.setDate(0);
-    to.setHours(23, 59, 59, 999);
-  } else if (period === "all") {
-    from = new Date(0); // Epoch
-  } else if (period === "custom") {
-    const startDate = url.searchParams.get("startDate");
-    const endDate = url.searchParams.get("endDate");
-    if (startDate) from = new Date(startDate + "T00:00:00+09:00");
-    if (endDate) {
-      to = new Date(endDate + "T23:59:59+09:00");
-    }
+  let range;
+  try {
+    range = resolveAcquisitionPeriodRange({
+      period,
+      startDate: url.searchParams.get("startDate"),
+      endDate: url.searchParams.get("endDate"),
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid date range" }, { status: 400 });
   }
 
   const supabase = createServiceClient();
@@ -98,8 +73,8 @@ export async function GET(req: NextRequest) {
   // 3. Fetch Visits (for clicks & unique visitors)
   let visitsQuery = supabase.from("acquisition_visits")
     .select("link_id, visitor_id, is_internal_test")
-    .gte("occurred_at", from.toISOString())
-    .lte("occurred_at", to.toISOString());
+    .lte("occurred_at", range.toIso);
+  if (range.fromIso) visitsQuery = visitsQuery.gte("occurred_at", range.fromIso);
   
   if (!includeTestAccounts) {
     visitsQuery = visitsQuery.eq("is_internal_test", false);
@@ -110,10 +85,11 @@ export async function GET(req: NextRequest) {
   }
 
   // 4. Fetch Events (for signup started, child added, etc.)
-  const { data: eventsData, error: eventsErr } = await supabase.from("acquisition_events")
+  let eventsQuery = supabase.from("acquisition_events")
     .select("event_type, link_id, visitor_id, parent_user_id, occurred_at")
-    .gte("occurred_at", from.toISOString())
-    .lte("occurred_at", to.toISOString());
+    .lte("occurred_at", range.toIso);
+  if (range.fromIso) eventsQuery = eventsQuery.gte("occurred_at", range.fromIso);
+  const { data: eventsData, error: eventsErr } = await eventsQuery;
   if (eventsErr) {
     return NextResponse.json({ error: "Failed to fetch events" }, { status: 500 });
   }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminKpiCard } from "@/components/admin/shell/AdminKpiCard";
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
 import { AdminFilterBar } from "@/components/admin/shell/AdminFilterBar";
@@ -107,7 +108,7 @@ export default function AcquisitionDashboardTab({ sharedState, onSharedStateChan
       
         <AdminFilterBar 
           filterNodes={[
-            <div key="period-group" style={{ display: "flex", gap: 8 }}>
+            <div key="period-group" style={{ display: "flex", gap: 8, maxWidth: "100%", overflowX: "auto", paddingBottom: 2 }}>
               {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
                 <button
                   key={p}
@@ -173,7 +174,7 @@ export default function AcquisitionDashboardTab({ sharedState, onSharedStateChan
           </div>
 
           {/* Charts Row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 16, marginBottom: 24 }}>
             <div style={{ background: "var(--admin-surface)", border: "1px solid var(--admin-border)", borderRadius: 12, padding: 16 }}>
               <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--admin-text-primary)" }}>채널별 부모 가입 수 (Signup Touch)</div>
               <div style={{ height: 260 }}>
@@ -234,7 +235,8 @@ export default function AcquisitionDashboardTab({ sharedState, onSharedStateChan
 
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--admin-text-primary)" }}>채널별 성과표</div>
-            <AdminDataTable
+            <AdminResponsiveTable
+              mobileStrategy="card"
               columns={columns}
               data={channelTable}
               keyExtractor={(r) => r.channel}

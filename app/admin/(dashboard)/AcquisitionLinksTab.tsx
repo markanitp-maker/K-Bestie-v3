@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAdminSoftDelete, SoftDeleteRowCheckbox, SoftDeleteSelectionBar } from "@/components/admin/AdminSoftDelete";
-import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
+import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
 
 interface AcquisitionLinksTabProps {
@@ -246,7 +247,8 @@ export default function AcquisitionLinksTab({ channelFilter = "", onChannelFilte
 
       {loadError && <div style={{ padding: 24, textAlign: "center", color: "var(--admin-danger)", border: "1px solid var(--admin-border)", borderRadius: 12 }}>{loadError}<button type="button" onClick={load} style={{ display: "block", margin: "10px auto 0", padding: "8px 14px", borderRadius: 8, border: "1px solid var(--admin-border)", background: "var(--admin-surface)", cursor: "pointer" }}>다시 시도</button></div>}
       {!loadError && <div style={{ background: "var(--admin-surface)", borderRadius: "12px", border: "1px solid var(--admin-border)", overflow: "hidden" }}>
-        <AdminDataTable
+        <AdminResponsiveTable
+          mobileStrategy="card"
           columns={columns}
           data={visibleLinks}
           keyExtractor={(r) => r.id}
@@ -258,7 +260,7 @@ export default function AcquisitionLinksTab({ channelFilter = "", onChannelFilte
       {isCreateModalOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} onClick={() => setIsCreateModalOpen(false)} />
-          <div style={{ position: "relative", width: 400, background: "var(--admin-surface)", borderRadius: 12, padding: 24 }}>
+          <div role="dialog" aria-modal="true" aria-label="신규 유입 링크 생성" style={{ position: "relative", width: "min(400px, calc(100vw - 32px))", maxHeight: "calc(100dvh - 32px)", overflowY: "auto", background: "var(--admin-surface)", borderRadius: 12, padding: 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>신규 링크 생성</h3>
             <form onSubmit={handleCreateSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <input required placeholder="채널명 (예: 인스타그램)" value={formData.channel_name} onChange={e => setFormData({...formData, channel_name: e.target.value})} style={{ padding: "8px", borderRadius: "6px", border: "1px solid var(--admin-border)", fontSize: "14px" }} />

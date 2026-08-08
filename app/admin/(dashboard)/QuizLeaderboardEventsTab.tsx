@@ -1,11 +1,25 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { AdminDataTable } from "@/components/admin/shell/AdminDataTable";
 import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
 
-const PERIODS = ["2026-08", "2026-09", "2026-10"];
+function currentKstPeriod(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+  }).format(new Date()).slice(0, 7);
+}
+
+function shiftPeriod(period: string, monthOffset: number): string {
+  const [year, month] = period.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1 + monthOffset, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+const CURRENT_PERIOD = currentKstPeriod();
+const PERIODS = Array.from({ length: 7 }, (_, index) => shiftPeriod(CURRENT_PERIOD, index - 3));
 
 interface EntryRow {
   rank: number;
@@ -45,7 +59,7 @@ export default function QuizLeaderboardEventsTab({
   externalSearch?: string;
   includeTestAccounts?: boolean;
 } = {}) {
-  const [period, setPeriod] = useState(PERIODS[0]);
+  const [period, setPeriod] = useState(CURRENT_PERIOD);
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -85,7 +99,7 @@ export default function QuizLeaderboardEventsTab({
         퀴즈 리더보드
       </h2>
 
-      <div style={{ display: "flex", gap: "var(--admin-space-8)", marginBottom: "var(--admin-space-16)" }}>
+      <div style={{ display: "flex", gap: "var(--admin-space-8)", marginBottom: "var(--admin-space-16)", overflowX: "auto", paddingBottom: 4 }}>
         {PERIODS.map((p) => (
           <button
             key={p}
@@ -126,14 +140,17 @@ export default function QuizLeaderboardEventsTab({
             {data.finalizedAt && <span>확정 시각: {new Date(data.finalizedAt).toLocaleString("ko-KR")}</span>}
           </div>
           {rewardTop3.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10, marginBottom: "var(--admin-space-16)" }}>
-              {rewardTop3.map((entry) => (
-                <div key={entry.childId} style={{ padding: 14, border: "1px solid var(--admin-border)", borderRadius: 12, background: "var(--admin-surface)" }}>
-                  <strong>{entry.rank}위 · {entry.childName || "이름 미등록"}</strong>
-                  <div style={{ color: "var(--admin-text-secondary)", marginTop: 4 }}>{entry.score.toLocaleString("ko-KR")}점 · {entry.rewardAmount.toLocaleString("ko-KR")}원</div>
-                </div>
-              ))}
-            </div>
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 10, marginBottom: 8 }}>
+                {rewardTop3.map((entry) => (
+                  <div key={entry.childId} style={{ padding: 14, border: "1px solid var(--admin-border)", borderRadius: 12, background: "var(--admin-surface)" }}>
+                    <strong>{entry.rank}위 · {entry.childName || "이름 미등록"}</strong>
+                    <div style={{ color: "var(--admin-text-secondary)", marginTop: 4 }}>{entry.score.toLocaleString("ko-KR")}점 · {entry.rewardAmount.toLocaleString("ko-KR")}원</div>
+                  </div>
+                ))}
+              </div>
+              <a href="/admin/events-rewards?tab=fulfillments" style={{ display: "inline-flex", marginBottom: "var(--admin-space-16)", color: "var(--admin-primary)", fontWeight: 700 }}>지급 관리에서 보기</a>
+            </>
           )}
           <AdminResponsiveTable mobileStrategy="card"
             columns={[
@@ -141,7 +158,7 @@ export default function QuizLeaderboardEventsTab({
               { key: "child", header: "아이", render: (r) => {
                 const label = r.childName || "이름 미등록";
                 if (r.isSeedUser) return `${label} (더미)`;
-                return <div><strong>{label}{r.isInternalTest ? " · 테스트" : ""}</strong><br/><span style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{r.loginId || "미등록"} · {r.familyName || "가족 미등록"}</span></div>;
+                return <div><a href={`/admin/users?tab=children&search=${encodeURIComponent(label)}`} style={{ color: "var(--admin-primary)", fontWeight: 700, textDecoration: "none" }}>{label}{r.isInternalTest ? " · 테스트" : ""}</a><br/><span style={{ color: "var(--admin-text-secondary)", fontSize: "var(--admin-text-xs)" }}>{r.loginId || "미등록"} · {r.familyName || "가족 미등록"}</span></div>;
               } },
               { key: "score", header: "점수", render: (r) => r.score },
               { key: "correct", header: "정답 수", render: (r) => r.correctCount },
