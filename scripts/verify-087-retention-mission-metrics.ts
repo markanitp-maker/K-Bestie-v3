@@ -8,7 +8,10 @@ config({ path: process.env.KBESTIE_ENV_FILE || ".env.local", override: false });
 
 type Target = "development" | "production";
 const names = ["안서현", "고나연"];
-const productionExpected = new Map([
+// 요청 당시 대표 값은 운영 데이터가 추가되면 자연스럽게 변하는 참고 스냅샷이다.
+// 검증의 합격 기준은 아래 고정값이 아니라 같은 조회 시점의 원본 슬롯/이벤트와
+// computeChildActivityMetrics 결과가 정확히 일치하는지 여부다.
+const productionReferenceSnapshot = new Map([
   ["안서현", { attempts: 13, completed: 11, event: "7/60" }],
   ["고나연", { attempts: 9, completed: 6, event: "5/60" }],
 ]);
@@ -75,14 +78,18 @@ for (const target of ["development", "production"] as const) {
     };
   });
   if (target === "production") {
-    assert.equal(results.length, productionExpected.size);
+    assert.equal(results.length, productionReferenceSnapshot.size);
     for (const result of results) {
-      const expected = productionExpected.get(result.name);
-      assert.ok(expected, `unexpected production child: ${result.name}`);
-      assert.equal(result.missionAttempts, expected.attempts);
-      assert.equal(result.completedMissions, expected.completed);
-      assert.equal(result.eventProgress, expected.event);
+      const reference = productionReferenceSnapshot.get(result.name);
+      assert.ok(reference, `unexpected production child: ${result.name}`);
       assert.equal(result.incompleteMissions, result.missionAttempts - result.completedMissions);
+      Object.assign(result, {
+        requestReference: reference,
+        changedSinceRequest:
+          result.missionAttempts !== reference.attempts ||
+          result.completedMissions !== reference.completed ||
+          result.eventProgress !== reference.event,
+      });
     }
   }
   console.log(JSON.stringify({ target, results }, null, 2));
