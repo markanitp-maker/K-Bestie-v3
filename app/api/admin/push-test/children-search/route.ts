@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
+import { isPushTestChild } from "@/lib/admin/pushTestEligibility";
 
 export const runtime = "nodejs";
 
@@ -14,14 +16,22 @@ export async function GET(req: NextRequest) {
   // 1. Fetch child_profiles
   const { data: children, error: childErr } = await service
     .from("child_profiles")
-    .select("id, name, grade, family_id, member_id");
+    .select("id, name, grade, family_id, member_id, is_internal_test, is_test_account");
     
   if (childErr) return NextResponse.json({ error: childErr.message }, { status: 500 });
   if (!children || children.length === 0) return NextResponse.json({ children: [] });
+  let testFamilyIds: Set<string>;
+  try {
+    testFamilyIds = await getTestFamilyIds(service);
+  } catch (error) {
+    console.error("[admin/push-test/children-search] test family lookup failed", error instanceof Error ? error.message : "unknown");
+    return NextResponse.json({ error: "테스트 계정 조회 실패" }, { status: 500 });
+  }
+  const testChildren = children.filter((child) => isPushTestChild(child, testFamilyIds));
 
   // 2. Fetch member accounts (for child username)
   // child_profiles.member_id points to family_members.id
-  const memberRowIds = Array.from(new Set(children.map(c => c.member_id).filter(Boolean)));
+  const memberRowIds = Array.from(new Set(testChildren.map(c => c.member_id).filter(Boolean)));
   const authUserIdByMemberRowId = new Map<string, string>();
   if (memberRowIds.length > 0) {
     const { data: fmRows } = await service.from("family_members").select("id, user_id").eq("role", "child").in("id", memberRowIds);
@@ -37,7 +47,7 @@ export async function GET(req: NextRequest) {
   }
 
   // 3. Fetch parent email
-  const familyIds = Array.from(new Set(children.map(c => c.family_id).filter(Boolean)));
+  const familyIds = Array.from(new Set(testChildren.map(c => c.family_id).filter(Boolean)));
   const parentEmailByFamilyId = new Map<string, string>();
   if (familyIds.length > 0) {
     const { data: parentFmRows } = await service
@@ -69,7 +79,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const result = children.map(c => {
+  const result = testChildren.map(c => {
     const authUserId = c.member_id ? authUserIdByMemberRowId.get(c.member_id) : undefined;
     const username = authUserId ? usernameMap.get(authUserId) : undefined;
     const parentEmail = c.family_id ? parentEmailByFamilyId.get(c.family_id) : undefined;
@@ -79,7 +89,8 @@ export async function GET(req: NextRequest) {
       name: c.name,
       username: username || "",
       grade: c.grade,
-      parentEmail: parentEmail || ""
+      parentEmail: parentEmail || "",
+      isTest: true,
     };
   });
 

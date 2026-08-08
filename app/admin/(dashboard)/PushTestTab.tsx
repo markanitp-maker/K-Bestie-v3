@@ -37,7 +37,7 @@ export default function PushTestTab() {
     return () => clearTimeout(timeoutId);
   }, [searchQuery, isModalOpen]);
   
-  const handleTest = async (missionType: number) => {
+  const handleTest = async (missionType: 1 | 2) => {
     if (!childId.trim()) {
       alert("아이를 선택하세요.");
       return;
@@ -46,12 +46,16 @@ export default function PushTestTab() {
     setLoading(missionType);
     setStatus("발송 중...");
     try {
-      const res = await fetch(`/api/cron/mission-start?missionType=${missionType}&testChildId=${childId.trim()}`);
+      const res = await fetch("/api/admin/push-test/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ childId: childId.trim(), missionType }),
+      });
       const data = await res.json();
       if (res.ok) {
-        setStatus(`성공: 대상 ${data.targets}명 중 ${data.sent}건 발송됨\n${JSON.stringify(data, null, 2)}`);
+        setStatus(`발송 성공\n아이: ${data.childName || selectedChildInfo?.name || "이름 미등록"}\n미션: ${missionType}\n성공 구독: ${data.successfulSubscriptions ?? 0}\n실패 구독: ${data.failedSubscriptions ?? 0}`);
       } else {
-        setStatus(`실패: ${data.error || JSON.stringify(data, null, 2)}`);
+        setStatus(`발송 실패\n원인: ${data.error || "요청을 처리하지 못했습니다."}`);
       }
     } catch (e: any) {
       setStatus(`오류: ${e.message}`);
@@ -184,7 +188,7 @@ export default function PushTestTab() {
                       onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontWeight: 600, fontSize: 14 }}>{child.name || "이름없음"} <span style={{ color: "var(--admin-text-secondary)", fontSize: 13 }}>({child.username || "아이디없음"})</span></span>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{child.name || "이름없음"} <span style={{ color: "var(--admin-text-secondary)", fontSize: 13 }}>({child.username || "아이디없음"})</span> <span style={{ color: "var(--admin-primary)", fontSize: 12 }}>[테스트]</span></span>
                         <span style={{ fontSize: 12, background: "var(--admin-border)", padding: "2px 6px", borderRadius: 4 }}>{child.grade || "학년미상"}</span>
                       </div>
                       <div style={{ fontSize: 12, color: "var(--admin-text-secondary)" }}>
