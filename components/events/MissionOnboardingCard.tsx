@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 interface MissionEventStatus {
   status: "not_started" | "active" | "max_completed" | "completed";
@@ -50,18 +49,12 @@ export default function MissionOnboardingCard() {
       </p>
 
       {data.status === "not_started" && (
-        <div className="flex items-center justify-between gap-2 mt-1.5">
-          <p className="text-xs leading-relaxed flex-1 min-w-0" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+        <div className="mt-1.5">
+          <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
             첫 미션을 완료하면 30일 이벤트가 시작돼요.
+            <br />
             30일 동안 최대 60번의 미션에 도전해 보세요.
           </p>
-          <Link
-            href="/child/missions"
-            className="shrink-0 px-3 py-2 rounded-xl text-xs font-bold text-white whitespace-nowrap"
-            style={{ background: "var(--color-k-orange, #FF9F45)" }}
-          >
-            미션 시작하기
-          </Link>
         </div>
       )}
 
