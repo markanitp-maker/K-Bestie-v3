@@ -39,10 +39,6 @@ interface NoShowResponse {
 
 type StatusResponse = ChildStatusResponse | ParentStatusResponse | NoShowResponse;
 
-function won(n?: number): string {
-  return `${(n ?? 0).toLocaleString("ko-KR")}원`;
-}
-
 // 로그인 이벤트 안내 팝업 — 요청서 §6. 아이/부모 홈 데이터 로딩 완료 직후 마운트한다.
 // audience는 서버 판정 결과를 그대로 따른다(클라이언트가 미리 알 필요 없음).
 // React Strict Mode 중복 호출 방지를 위해 ref로 in-flight/이미 확인 처리를 가드한다.
@@ -110,7 +106,7 @@ export default function AppEventAnnouncementModal({
           {status.audience === "child" ? (
             <ChildAnnouncementBody />
           ) : (
-            <ParentAnnouncementBody children={status.children ?? []} />
+            <ParentAnnouncementBody />
           )}
         </div>
         <div className="px-6 pb-6 pt-2 border-t border-gray-100">
@@ -230,53 +226,24 @@ function ChildAnnouncementBody() {
   );
 }
 
-function ParentAnnouncementBody({ children: childSummaries }: { children: ParentChildSummary[] }) {
+function ParentAnnouncementBody() {
   return (
     <>
       <h2 className="text-lg font-bold mb-3" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
         내친구 케이 이벤트 안내
       </h2>
       <div className="text-sm leading-relaxed space-y-2" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-        <p>아이들이 케이와 자연스럽게 친해질 수 있도록 세 가지 이벤트를 진행합니다.</p>
-        <p className="font-bold mt-3">1. 케이와 친해지는 30일 미션</p>
         <p>
-          자녀가 최초 미션을 정상 완료한 순간부터 30일이 시작됩니다.
-          <br />
-          자녀별로 한 번만 진행되며 30일 종료 후 다시 시작되지 않습니다.
-          <br />
-          30일 동안 완료한 미션 횟수에 따라 가장 높은 달성 구간의 상품권 1개를 지급합니다.
-          <br />
-          10회 1,000원 / 30회 3,000원 / 50회 5,000원 / 60회 10,000원
+          아이들이 케이와 더 즐겁게 만나고 꾸준히 참여할 수 있도록 다양한 이벤트를 진행하고 있어요.
+          이벤트에 참여하고 목표를 달성하면 다양한 상품도 받을 수 있습니다.
         </p>
+        <p className="font-bold mt-3">1. 케이와 친해지는 30일</p>
+        <p>30일 동안 케이와 미션을 꾸준히 완료하며 목표에 도전해요. 미션 달성 정도에 따라 상품을 받을 수 있습니다.</p>
         <p className="font-bold mt-3">2. 월별 퀴즈 리더보드</p>
-        <p>
-          2026년 8월 31일, 9월 30일, 10월 31일 23:59:59 KST 기준으로 월별 순위를 확정합니다.
-          <br />
-          매월 1위 5,000원 / 2위 3,000원 / 3위 1,000원 상품권을 지급합니다.
-        </p>
+        <p>매달 퀴즈 점수를 모아 친구들과 순위에 도전해요. 상위 순위를 달성한 아이에게 상품을 제공합니다.</p>
         <p className="font-bold mt-3">3. 매일 출석 황금열쇠 룰렛</p>
-        <p>
-          아이 계정으로 매일 접속하면 KST 기준 하루 한 번 룰렛에 참여할 수 있습니다.
-          <br />
-          획득한 황금열쇠는 아이가 퀴즈에 다시 도전할 때 사용할 수 있습니다.
-        </p>
-        <p className="mt-2 text-xs" style={{ color: "var(--color-k-sky-blue, #6B8CAE)" }}>
-          상품권은 보호자에게 전달하며, 관리자 확인 후 지급 상태를 안내합니다.
-        </p>
-
-        {childSummaries.length > 0 && (
-          <div className="mt-4 pt-3 border-t border-gray-100 space-y-1">
-            {childSummaries.map((c) => (
-              <p key={c.childId} className="text-xs">
-                <span className="font-bold">{c.name}</span>
-                {": "}
-                {c.missionEvent.status === "not_started"
-                  ? "미션 이벤트 시작 전"
-                  : `${c.missionEvent.completedCount ?? 0}/60 완료 · 현재 ${won(c.missionEvent.currentRewardAmount)} 구간`}
-              </p>
-            ))}
-          </div>
-        )}
+        <p>매일 접속하면 룰렛을 돌려 황금열쇠를 받을 수 있어요. 모은 황금열쇠로 퀴즈에 더 많이 도전할 수 있습니다.</p>
+        <p className="font-semibold mt-4">아이들이 재미있게 참여하고 목표에 도전할 수 있도록 많이 응원해 주세요!</p>
       </div>
     </>
   );
