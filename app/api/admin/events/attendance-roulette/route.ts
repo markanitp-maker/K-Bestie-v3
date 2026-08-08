@@ -2,8 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { requireAdminActor } from "@/lib/admin/adminActor";
+import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
+import {
+  attendanceParticipationSummary,
+  attendanceResultCounts,
+  filterAttendanceRows,
+  selectAttendanceRouletteChildren,
+} from "@/lib/admin/attendanceRouletteFilter";
+import { getOffsetDateStr, toKSTDateStr } from "@/lib/analytics/kstDate";
 import { fetchQuizLeaderboard } from "@/lib/events/quizLeaderboardClient";
-import { isAttendanceRouletteResult, kstDateKey } from "@/lib/events/attendanceRoulette";
+import { isAttendanceRouletteResult } from "@/lib/events/attendanceRoulette";
 
 export const runtime = "nodejs";
 
@@ -17,31 +25,45 @@ type LatestSpin = {
   settled_at: string;
 };
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
   const service = createServiceClient();
-  const today = kstDateKey();
+  const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
+  const today = toKSTDateStr(new Date().toISOString());
+  const tomorrow = getOffsetDateStr(today, 1);
+  const dayStart = new Date(`${today}T00:00:00+09:00`).toISOString();
+  const dayEnd = new Date(`${tomorrow}T00:00:00+09:00`).toISOString();
   const period = today.slice(0, 7);
-  const [childrenRes, daysRes, spinsRes, latestSpinsRes, overridesRes, keysRes, auditRes, leaderboardRes] = await Promise.all([
-    service.from("child_profiles").select("id, name, member_id").order("name"),
+  const [childrenRes, daysRes, spinsRes, latestSpinsRes, overridesRes, keysRes, attendanceKeysRes, auditRes, leaderboardRes] = await Promise.all([
+    service.from("child_profiles").select("id, name, member_id, family_id, is_internal_test").order("name"),
     service.from("attendance_roulette_days").select("child_id, base_spin_used, retry_credits_granted, retry_credits_used").eq("attendance_date", today),
     service.from("attendance_roulette_spins").select("id, child_id, result_code, key_reward, source, used_manual_override, settled_at").eq("attendance_date", today).order("settled_at", { ascending: false }),
     service.rpc("get_attendance_roulette_latest_spins"),
     service.from("attendance_roulette_overrides").select("id, child_id, result_code, status, created_at, updated_at, consumed_at, cancelled_at, admin_note, created_by_email").eq("status", "PENDING"),
     service.from("gold_key_ledger").select("child_id").eq("consumed", false).gt("expires_at", new Date().toISOString()),
+    service.from("gold_key_ledger").select("child_id").eq("reason", "attendance").gte("earned_at", dayStart).lt("earned_at", dayEnd),
     service.from("attendance_roulette_audit_log").select("id, action, child_id, spin_id, override_id, actor_user_id, actor_email, before_state, after_state, created_at").order("created_at", { ascending: false }).limit(100),
     fetchQuizLeaderboard(period),
   ]);
 
-  const firstError = [childrenRes, daysRes, spinsRes, latestSpinsRes, overridesRes, keysRes, auditRes].find((result) => result.error)?.error;
+  const firstError = [childrenRes, daysRes, spinsRes, latestSpinsRes, overridesRes, keysRes, attendanceKeysRes, auditRes].find((result) => result.error)?.error;
   if (firstError) {
     console.error("[admin/attendance-roulette] query failed", firstError.code);
     return NextResponse.json({ error: "data_unavailable" }, { status: 500 });
   }
 
-  const children = childrenRes.data ?? [];
+  let testFamilyIds: Set<string>;
+  try {
+    testFamilyIds = await getTestFamilyIds(service);
+  } catch (error) {
+    console.error("[admin/attendance-roulette] internal test lookup failed", error instanceof Error ? error.message : "unknown");
+    return NextResponse.json({ error: "data_unavailable" }, { status: 500 });
+  }
+
+  const children = selectAttendanceRouletteChildren(childrenRes.data ?? [], testFamilyIds, includeTestAccounts);
+  const allowedChildIds = new Set(children.map((child) => child.id));
   const memberIds = children.map((child) => child.member_id).filter(Boolean) as string[];
   const usernameByMemberId = new Map<string, string>();
   if (memberIds.length > 0) {
@@ -64,18 +86,27 @@ export async function GET(_req: NextRequest) {
     }
   }
 
-  const dayByChild = new Map((daysRes.data ?? []).map((day) => [day.child_id, day]));
-  const pendingByChild = new Map((overridesRes.data ?? []).map((override) => [override.child_id, override]));
-  const latestSpins = (latestSpinsRes.data ?? []) as LatestSpin[];
+  const filteredDays = filterAttendanceRows(daysRes.data ?? [], allowedChildIds);
+  const filteredSpins = filterAttendanceRows(spinsRes.data ?? [], allowedChildIds);
+  const filteredOverrides = filterAttendanceRows(overridesRes.data ?? [], allowedChildIds);
+  const filteredKeys = filterAttendanceRows(keysRes.data ?? [], allowedChildIds);
+  const filteredAttendanceKeys = filterAttendanceRows(attendanceKeysRes.data ?? [], allowedChildIds);
+  const filteredAudit = filterAttendanceRows(auditRes.data ?? [], allowedChildIds);
+  const dayByChild = new Map(filteredDays.map((day) => [day.child_id, day]));
+  const pendingByChild = new Map(filteredOverrides.map((override) => [override.child_id, override]));
+  const latestSpins = filterAttendanceRows((latestSpinsRes.data ?? []) as LatestSpin[], allowedChildIds);
   const recentSpinByChild = new Map<string, LatestSpin>(latestSpins.map((spin) => [spin.child_id, spin]));
   const balanceByChild = new Map<string, number>();
-  for (const key of keysRes.data ?? []) balanceByChild.set(key.child_id, (balanceByChild.get(key.child_id) ?? 0) + 1);
+  for (const key of filteredKeys) balanceByChild.set(key.child_id, (balanceByChild.get(key.child_id) ?? 0) + 1);
 
-  const leaderboardEntries = leaderboardRes.ok ? leaderboardRes.data.entries.filter((entry) => !entry.isSeedUser) : [];
+  const leaderboardEntries = leaderboardRes.ok
+    ? leaderboardRes.data.entries
+        .filter((entry) => !entry.isSeedUser && allowedChildIds.has(entry.childId))
+        .map((entry, index) => ({ ...entry, rank: index + 1 }))
+    : [];
   const leaderByChild = new Map(leaderboardEntries.map((entry) => [entry.childId, entry]));
   const firstScore = leaderboardEntries[0]?.score ?? 0;
-  const resultCounts = Object.fromEntries(["LOSE", "RETRY", "KEY_1", "KEY_3", "KEY_5", "KEY_7", "KEY_9"].map((code) => [code, 0]));
-  for (const spin of spinsRes.data ?? []) resultCounts[spin.result_code] = (resultCounts[spin.result_code] ?? 0) + 1;
+  const resultCounts = attendanceResultCounts(filteredSpins);
 
   const rows = children.map((child) => {
     const day = dayByChild.get(child.id);
@@ -84,6 +115,7 @@ export async function GET(_req: NextRequest) {
       childId: child.id,
       name: child.name,
       username: child.member_id ? usernameByMemberId.get(child.member_id) ?? "" : "",
+      isInternalTest: child.isInternalTest,
       rank: leader?.rank ?? null,
       score: leader?.score ?? 0,
       gapFromFirst: Math.max(0, firstScore - (leader?.score ?? 0)),
@@ -97,15 +129,14 @@ export async function GET(_req: NextRequest) {
 
   return NextResponse.json({
     attendanceDate: today,
+    includeTestAccounts,
     summary: {
-      targetChildren: children.length,
-      participatedChildren: daysRes.data?.filter((day) => day.base_spin_used).length ?? 0,
-      notParticipatedChildren: children.length - (daysRes.data?.filter((day) => day.base_spin_used).length ?? 0),
-      totalKeysGranted: (spinsRes.data ?? []).reduce((sum, spin) => sum + spin.key_reward, 0),
+      ...attendanceParticipationSummary(children.length, filteredDays),
+      totalKeysGranted: filteredAttendanceKeys.length,
       resultCounts,
     },
     children: rows,
-    history: (auditRes.data ?? []).map((row) => ({ ...row, childName: children.find((child) => child.id === row.child_id)?.name ?? "알 수 없음" })),
+    history: filteredAudit.map((row) => ({ ...row, childName: children.find((child) => child.id === row.child_id)?.name ?? "알 수 없음" })),
   }, { headers: { "Cache-Control": "no-store" } });
 }
 

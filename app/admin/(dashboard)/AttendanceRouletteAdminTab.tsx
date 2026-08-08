@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
 import { ATTENDANCE_ROULETTE_LABELS, ATTENDANCE_ROULETTE_RESULTS, type AttendanceRouletteResultCode } from "@/lib/events/attendanceRoulette";
 
 type ChildRow = {
   childId: string;
   name: string;
   username: string;
+  isInternalTest: boolean;
   rank: number | null;
   score: number;
   gapFromFirst: number;
@@ -19,6 +21,7 @@ type ChildRow = {
 
 type DashboardData = {
   attendanceDate: string;
+  includeTestAccounts: boolean;
   summary: {
     targetChildren: number;
     participatedChildren: number;
@@ -50,6 +53,7 @@ export default function AttendanceRouletteAdminTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [includeTestAccounts, setIncludeTestAccounts] = useState(false);
   const [selected, setSelected] = useState<Record<string, AttendanceRouletteResultCode>>({});
   const [savingChildId, setSavingChildId] = useState<string | null>(null);
   const [historyDate, setHistoryDate] = useState("");
@@ -62,15 +66,16 @@ export default function AttendanceRouletteAdminTab() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/admin/events/attendance-roulette", { cache: "no-store" });
+      const query = includeTestAccounts ? "?includeTestAccounts=true" : "";
+      const response = await fetch(`/api/admin/events/attendance-roulette${query}`, { cache: "no-store" });
       if (!response.ok) throw new Error("load_failed");
       setData(await response.json());
     } catch {
-      setError("출석 룰렛 운영 정보를 불러오지 못했습니다.");
+      setError("출석 룰렛 현황을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [includeTestAccounts]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -137,7 +142,7 @@ export default function AttendanceRouletteAdminTab() {
         <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>매일 출석 황금열쇠 룰렛</h2>
         <p style={{ color: "var(--admin-text-secondary)", fontSize: 13 }}>KST {data?.attendanceDate} · 기본 확률 +1 80% / 한번 더 20%</p>
       </div>
-      {error && <div role="alert" style={{ padding: 12, borderRadius: 10, background: "#fee2e2", color: "#991b1b" }}>{error}</div>}
+      {error && <div role="alert" style={{ padding: 12, borderRadius: 10, background: "#fee2e2", color: "#991b1b" }}>{error} <button onClick={() => void load()} style={{ marginLeft: 8, fontWeight: 800, textDecoration: "underline" }}>다시 시도</button></div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
         {[
@@ -167,7 +172,19 @@ export default function AttendanceRouletteAdminTab() {
       <section>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
           <h3 style={{ fontSize: 17, fontWeight: 800 }}>아이별 운영</h3>
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름 또는 로그인 ID 검색" style={{ minWidth: 260, padding: "9px 12px", border: "1px solid var(--admin-border)", borderRadius: 8 }} />
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="이름 또는 로그인 ID 검색" style={{ minWidth: 260, padding: "9px 12px", border: "1px solid var(--admin-border)", borderRadius: 8 }} />
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={includeTestAccounts}
+                disabled={loading}
+                onChange={(event) => setIncludeTestAccounts(event.target.checked)}
+              />
+              내부 테스트 계정 포함
+            </label>
+            {loading && data && <span role="status" style={{ color: "var(--admin-text-secondary)", fontSize: 12 }}>필터 적용 중…</span>}
+          </div>
         </div>
         <div style={{ overflowX: "auto", border: "1px solid var(--admin-border)", borderRadius: 12 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1120, fontSize: 13 }}>
@@ -178,7 +195,13 @@ export default function AttendanceRouletteAdminTab() {
               {filtered.map((child) => (
                 <tr key={child.childId} style={{ borderTop: "1px solid var(--admin-border)" }}>
                   <td style={{ padding: 10 }}>{child.rank ?? "-"}</td>
-                  <td style={{ padding: 10 }}><strong>{child.name}</strong><br/><span style={{ color: "var(--admin-text-secondary)" }}>{child.username || "아이디 없음"}</span></td>
+                  <td style={{ padding: 10 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <strong>{child.name}</strong>
+                      {child.isInternalTest && <AdminStatusBadge variant="neutral" text="[테스트]" icon={false} />}
+                    </span>
+                    <br/><span style={{ color: "var(--admin-text-secondary)" }}>{child.username || "아이디 없음"}</span>
+                  </td>
                   <td style={{ padding: 10 }}>{child.score}</td>
                   <td style={{ padding: 10 }}>{child.gapFromFirst}</td>
                   <td style={{ padding: 10 }}>{child.balance}</td>
@@ -200,6 +223,9 @@ export default function AttendanceRouletteAdminTab() {
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={9} style={{ padding: 24, textAlign: "center", color: "var(--admin-text-secondary)" }}>조건에 맞는 아이가 없습니다.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
