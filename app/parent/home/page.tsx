@@ -54,6 +54,14 @@ export default function ParentHomePage() {
   const [insightsData, setInsightsData] = useState<any>(null);
   const [todaysQuote, setTodaysQuote] = useState<string | null>(null);
   const [showChildStartGuide, setShowChildStartGuide] = useState(false);
+  const [showEventFromNotification, setShowEventFromNotification] = useState(false);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("event") === "announcement") {
+      setShowEventFromNotification(true);
+      window.history.replaceState({}, "", "/parent/home");
+    }
+  }, []);
 
   // 가족 초대 팝업 관련 상태
   const [pendingInvite, setPendingInvite] = useState<{ id: string; familyName: string; inviterName: string } | null>(null);
@@ -705,7 +713,14 @@ export default function ParentHomePage() {
   return (
     <DemoFrame>
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
-        <AppEventAnnouncementModal />
+        {!showEventFromNotification && <AppEventAnnouncementModal />}
+        {showEventFromNotification && (
+          <AppEventAnnouncementModal
+            manualOpen
+            manualAudience="parent"
+            onClose={() => setShowEventFromNotification(false)}
+          />
+        )}
         <ParentHomeHeader />
         <NotificationOnboarding role="parent" />
 

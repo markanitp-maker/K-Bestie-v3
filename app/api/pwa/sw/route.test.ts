@@ -23,3 +23,20 @@ test("SW 응답은 build별 shell cache와 no-cache 정책을 유지한다", asy
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.equal(response.headers.get("service-worker-allowed"), "/");
 });
+
+test("Push는 notificationId를 보존하고 클릭할 때 서버 읽음 처리 후 이동한다", async () => {
+  const response = await GET();
+  const source = await response.text();
+  assert.match(source, /notificationId: data\.notificationId/);
+  assert.match(source, /\/api\/notifications\/" \+ encodeURIComponent\(notificationId\) \+ "\/read/);
+  assert.match(source, /method: "POST"/);
+  assert.match(source, /self\.clients\.openWindow\(targetUrl\)/);
+});
+
+test("Push 수신 시 서버 unreadCount로 앱 배지를 동기화한다", async () => {
+  const response = await GET();
+  const source = await response.text();
+  assert.match(source, /fetch\("\/api\/notifications\?limit=1"/);
+  assert.match(source, /self\.navigator\.setAppBadge/);
+  assert.match(source, /self\.navigator\.clearAppBadge/);
+});

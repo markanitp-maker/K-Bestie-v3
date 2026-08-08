@@ -66,6 +66,7 @@ export const viewport: Viewport = {
 };
 
 import { PwaServiceWorker } from "@/components/PwaServiceWorker";
+import { NotificationBadgeSync } from "@/components/notifications/NotificationBadgeSync";
 
 export default function RootLayout({
   children,
@@ -77,6 +78,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <DemoViewProvider>{children}</DemoViewProvider>
         <PwaServiceWorker />
+        <NotificationBadgeSync />
       </body>
     </html>
   );
