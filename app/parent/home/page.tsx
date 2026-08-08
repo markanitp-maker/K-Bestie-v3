@@ -16,6 +16,7 @@ import { InsightGrid } from "./components/InsightGrid";
 import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementModal";
 import { ParentMissionEventStatus } from "@/components/events/ParentMissionEventStatus";
 import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
+import { ChildStartGuideModal } from "@/components/parent/ChildStartGuide";
 
 interface Report {
   id: string;
@@ -52,6 +53,7 @@ export default function ParentHomePage() {
   const [reportError, setReportError] = useState<{ status: number; message: string } | null>(null);
   const [insightsData, setInsightsData] = useState<any>(null);
   const [todaysQuote, setTodaysQuote] = useState<string | null>(null);
+  const [showChildStartGuide, setShowChildStartGuide] = useState(false);
 
   // 가족 초대 팝업 관련 상태
   const [pendingInvite, setPendingInvite] = useState<{ id: string; familyName: string; inviterName: string } | null>(null);
@@ -752,6 +754,22 @@ export default function ParentHomePage() {
             </div>
           ) : (
             <>
+              <section className="mb-4 rounded-[20px] border border-[#10315B]/10 bg-white p-4 shadow-sm" aria-label="아이 로그인 안내">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FFF3E9] text-xl" aria-hidden="true">🧒</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-extrabold text-[#10315B]">아이와 케이 시작하기</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-gray-500">아이 기기에서 로그인하거나 이 기기에서 바로 시작할 수 있어요.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowChildStartGuide(true)}
+                    className="min-h-10 shrink-0 rounded-xl bg-[#10315B] px-3 text-[11px] font-bold text-white"
+                  >
+                    아이 시작하기
+                  </button>
+                </div>
+              </section>
               <TodayConversationGuide guideText={todaysQuote ?? undefined} />
               <ParentMissionEventStatus childId={activeChild?.id ?? null} childName={activeChild?.name ?? ""} />
               <InsightGrid insights={insightsData} view={view} />
@@ -762,6 +780,11 @@ export default function ParentHomePage() {
         <RealParentNav active="홈" />
       </div>
       {renderInvitePopup()}
+      <ChildStartGuideModal
+        open={showChildStartGuide}
+        onClose={() => setShowChildStartGuide(false)}
+        children={children}
+      />
     
         <KChatbotWidget appSurface="parent" />
       </DemoFrame>

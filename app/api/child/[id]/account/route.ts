@@ -29,13 +29,13 @@ export async function GET(
     return NextResponse.json({ error: "자녀 프로필을 찾을 수 없습니다" }, { status: 404 });
   }
 
-  // ── 4단계: family_members에서 family_id + user_id=현재유저 + role='owner_parent' 검증 ────────────────
+  // ── 4단계: family_members에서 family_id + 현재 보호자 소속을 검증 ────────────────
   const { data: ownerMember } = await svc
     .from("family_members")
     .select("role")
     .eq("family_id", childProfile.family_id)
     .eq("user_id", user.id)
-    .eq("role", "owner_parent")
+    .in("role", ["owner_parent", "parent"])
     .maybeSingle();
 
   if (!ownerMember) {

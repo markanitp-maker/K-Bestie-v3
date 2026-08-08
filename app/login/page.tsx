@@ -21,6 +21,11 @@ function LoginContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const loginId = searchParams.get("login_id")?.trim();
+    if (loginId) setUsername(loginId);
+  }, [searchParams]);
+
+  useEffect(() => {
     const errorParam = searchParams.get("error");
     if (errorParam === "auth") {
       setError("로그인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");

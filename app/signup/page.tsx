@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
+import { ChildStartGuide } from "@/components/parent/ChildStartGuide";
 
 
 type Step = "consent" | "profile" | "family" | "child";
@@ -523,7 +524,7 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
   const [consent, setConsent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [approved, setApproved] = useState(false);
+  const [approvedChild, setApprovedChild] = useState<{ id: string; name: string; grade: string } | null>(null);
 
   const toggleInterest = (v: string) => {
     setInterests((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
@@ -564,7 +565,11 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
         throw new Error(data.error || "아이 등록을 완료하지 못했습니다. 이미 사용 중인 아이디인지 확인해 주세요.");
       }
       if (data.autoApproved) {
-        setApproved(true);
+        setApprovedChild({
+          id: data.child.id,
+          name: `${familyName.trim()}${givenName.trim()}`,
+          grade,
+        });
       } else {
         throw new Error(data.error || "아이 계정 생성에 실패했습니다. 이미 존재하거나 다른 아이디로 시도해 주세요.");
       }
@@ -597,19 +602,13 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
     }
   };
 
-  if (approved) {
+  if (approvedChild) {
     return (
-      <div className="flex flex-col items-center text-center gap-4 py-4">
-        <p className="text-5xl">🎉</p>
-        <p className="text-base font-bold text-gray-800">승인되었습니다</p>
-        <p className="text-xs text-gray-500 leading-relaxed">
-          아이 등록 내용을 확인했어요. 이제 바로 케이와 대화를 시작할 수 있어요.
-        </p>
-        <ErrorBanner message={error} />
-        <PrimaryButton onClick={handleStart} loading={confirmingStatus}>
-          시작하기 →
-        </PrimaryButton>
-      </div>
+      <ChildStartGuide
+        children={[approvedChild]}
+        initialChildId={approvedChild.id}
+        onParentHome={handleStart}
+      />
     );
   }
 
@@ -743,6 +742,7 @@ function SignupContent() {
   );
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [loadingFamily, setLoadingFamily] = useState(true);
+  const [showJoinedHandoff, setShowJoinedHandoff] = useState(false);
 
 
   const finish = useCallback(() => {
@@ -833,6 +833,16 @@ function SignupContent() {
     );
   }
 
+  if (showJoinedHandoff) {
+    return (
+      <div className="min-h-dvh bg-[var(--color-k-surface)] px-5 py-8">
+        <div className="mx-auto w-full max-w-md rounded-3xl bg-white p-6 shadow-sm">
+          <ChildStartGuide onParentHome={finish} />
+        </div>
+      </div>
+    );
+  }
+
   return (
 
     <Shell step={step}>
@@ -844,7 +854,7 @@ function SignupContent() {
             setFamilyId(id);
             setStep("child");
           }}
-          onJoined={finish}
+          onJoined={() => setShowJoinedHandoff(true)}
         />
       )}
       {step === "child" &&
@@ -864,7 +874,7 @@ function SignupContent() {
               setFamilyId(id);
               setStep("child");
             }}
-            onJoined={finish}
+            onJoined={() => setShowJoinedHandoff(true)}
           />
         ))}
     </Shell>

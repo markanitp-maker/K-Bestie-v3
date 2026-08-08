@@ -22,6 +22,7 @@ import { CONSENT_DOCUMENT_TEXT } from "@/lib/plan/consentDocument";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { revokeCurrentPushInstallation, usePushSubscription } from "@/lib/notifications/usePushSubscription";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { ChildStartGuideModal, type ChildStartGuideChild } from "@/components/parent/ChildStartGuide";
 
 function formatRetentionLabel(tier: Tier): string {
   const retention = getEffectiveRetention(tier, 0);
@@ -104,6 +105,7 @@ export default function ParentSettingsPage() {
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
   const [isOwner, setIsOwner] = useState(false);
   const [loadingMembers, setLoadingMembers] = useState(true);
+  const [loginGuideChild, setLoginGuideChild] = useState<ChildStartGuideChild | null>(null);
 
   // 구성원 추가 폼 상태
   const [inviteEmail, setInviteEmail] = useState("");
@@ -1190,6 +1192,13 @@ export default function ParentSettingsPage() {
                                 <span className={isMobileCard ? "block w-full text-[10px] bg-red-50 text-red-500 font-bold py-2 rounded-lg text-center" : "text-[10px] bg-red-50 text-red-500 font-bold px-2.5 py-1 rounded-lg text-center"}>
                                   동의 철회됨
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setLoginGuideChild({ id: m.childId, name: m.displayName, grade: m.grade })}
+                                  className={isMobileCard ? "block w-full text-[10px] bg-[#EFF4FA] text-[#10315B] font-bold py-2 rounded-lg text-center" : "text-[10px] bg-[#EFF4FA] text-[#10315B] font-bold px-2.5 py-1 rounded-lg text-center whitespace-nowrap"}
+                                >
+                                  로그인 방법
+                                </button>
                                 {isOwner && (
                                   <button
                                     onClick={() => {
@@ -1249,8 +1258,16 @@ export default function ParentSettingsPage() {
                                   동의 철회
                                 </button>
                               </div>
-                              {/* Block 3: 아이 삭제 (모바일 전체 너비 w-full 독립 블록) */}
-                              {isOwner && (
+                              {/* Block 3: 로그인 안내·아이 삭제 */}
+                              <div className={isMobileCard ? "grid grid-cols-1 gap-2 w-full" : "flex items-center gap-1.5 w-auto"}>
+                                <button
+                                  type="button"
+                                  onClick={() => setLoginGuideChild({ id: m.childId, name: m.displayName, grade: m.grade })}
+                                  className={isMobileCard ? "block w-full text-[10px] bg-[#EFF4FA] text-[#10315B] font-bold py-2 rounded-lg text-center whitespace-nowrap" : "text-[10px] bg-[#EFF4FA] text-[#10315B] font-bold px-2.5 py-1 rounded-lg text-center whitespace-nowrap"}
+                                >
+                                  로그인 방법
+                                </button>
+                                {isOwner && (
                                 <button
                                   onClick={() => {
                                     setDeleteChildError(null);
@@ -1261,7 +1278,8 @@ export default function ParentSettingsPage() {
                                 >
                                   아이 삭제
                                 </button>
-                              )}
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -2184,6 +2202,12 @@ export default function ParentSettingsPage() {
             </div>
           </div>
         )}
+        <ChildStartGuideModal
+          open={loginGuideChild !== null}
+          onClose={() => setLoginGuideChild(null)}
+          children={loginGuideChild ? [loginGuideChild] : []}
+          initialChildId={loginGuideChild?.id ?? null}
+        />
       </div>
     
         <KChatbotWidget appSurface="parent" />
