@@ -141,3 +141,25 @@ test("context 저장소가 예외를 던져도 대화를 막지 않고 안전 co
     console.error = originalError;
   }
 });
+
+test("학년이 바뀌어도 같은 child memory는 유지되고 persona 표현만 성장한다", () => {
+  const sharedMemory = [{ ...baseFact, content: "로봇 대회에 나가고 싶어 함" }];
+  const grade1 = formatRelationshipContext({
+    profile: { givenName: "서아", grade: "1학년", interests: ["로봇"] },
+    recentSession: [],
+    recentEpisode: null,
+    memoryFacts: sharedMemory,
+  });
+  const grade6 = formatRelationshipContext({
+    profile: { givenName: "서아", grade: "6학년", interests: ["로봇"] },
+    recentSession: [],
+    recentEpisode: null,
+    memoryFacts: sharedMemory,
+  });
+
+  assert.match(grade1.fragment, /놀이 친구/);
+  assert.match(grade6.fragment, /판단 없는 친구/);
+  assert.match(grade1.fragment, /로봇 대회에 나가고 싶어 함/);
+  assert.match(grade6.fragment, /로봇 대회에 나가고 싶어 함/);
+  assert.equal(grade1.memoryFactCount, grade6.memoryFactCount);
+});

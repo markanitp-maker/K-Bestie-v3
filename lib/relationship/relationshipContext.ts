@@ -4,6 +4,10 @@ import {
   type RetrievedMemoryFact,
   type SearchMemoryFactsResult,
 } from "@/lib/memory/vectorRetrieval";
+import {
+  buildGradeAdaptivePersonaFragment,
+  resolveGradeAdaptivePersona,
+} from "@/lib/persona/gradeAdaptivePersona";
 
 export type RelationshipConversationMode = "mission" | "free_chat";
 
@@ -99,6 +103,11 @@ export function formatRelationshipContext(snapshot: RelationshipContextSnapshot)
         : "",
     ].filter(Boolean);
     if (profileParts.length > 0) lines.push(`프로필: ${profileParts.join(" / ")}`);
+
+    const gradePersona = resolveGradeAdaptivePersona(snapshot.profile.grade);
+    if (gradePersona) {
+      lines.push(buildGradeAdaptivePersonaFragment(gradePersona));
+    }
   }
 
   if (snapshot.recentSession.length > 0) {
