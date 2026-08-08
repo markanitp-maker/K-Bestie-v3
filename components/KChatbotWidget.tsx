@@ -32,8 +32,8 @@ const POSITION_STORAGE_KEY = "k_faq_button_position_v1";
 const DRAG_THRESHOLD_PX = 8;
 /** 하단 메뉴/주요 조작 버튼 영역으로 예약해 버튼이 침범하지 못하게 하는 높이(px). */
 const BOTTOM_RESERVED_PX = 90;
-/** 버튼 자체 높이(px, py-2 + text-sm 기준). 하단 clamp 계산에 쓴다. */
-const BUTTON_HEIGHT_PX = 40;
+/** 아이콘 전용 버튼의 48px 터치 영역 높이. 하단 clamp 계산에도 같은 값을 쓴다. */
+const BUTTON_HEIGHT_PX = 48;
 
 type ButtonPosition = { edge: "left" | "right"; yRatio: number };
 
@@ -501,7 +501,7 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
       : "0.75rem";
 
     const baseStyle: React.CSSProperties = {
-      background: "var(--color-k-navy)",
+      background: "var(--color-k-orange)",
       touchAction: "none",
       transition: isDragging ? "none" : "top 0.3s, left 0.3s, right 0.3s, bottom 0.3s, transform 0.3s",
     };
@@ -558,7 +558,8 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
           않고(13개 페이지마다 헤더 구조가 달라 공용 컴포넌트가 그 내부구조를 알 수 없음)
           fixed로 고정 배치해 모든 페이지에서 동일하게 동작하게 한다. topOffsetPx로 페이지별
           헤더 높이/기존 우측 요소(연결상태 표시 등)와의 겹침을 피한다.
-          056: 라벨 "문의"→"FAQ". 세로 위치는 드래그로 자유롭게 옮길 수 있고 localStorage에 남는다. */}
+          025: FAQ 텍스트를 제거하고 브랜드 오렌지의 아이콘 전용 48px 버튼으로 정돈했다.
+          세로 위치는 드래그로 자유롭게 옮길 수 있고 localStorage에 남는다. */}
       <button
         ref={triggerRef}
         onClick={handleClick}
@@ -566,12 +567,11 @@ export default function KChatbotWidget({ appSurface, topOffsetPx = 56, container
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        className="fixed z-50 flex items-center gap-1.5 px-3 py-2 rounded-full shadow-md text-white transition-colors select-none focus:outline-none focus-visible:outline-3 focus-visible:outline-k-sky-blue focus-visible:outline-offset-2"
+        className="fixed z-50 flex h-12 w-12 items-center justify-center rounded-full shadow-md text-white transition-colors select-none focus:outline-none focus-visible:outline-3 focus-visible:outline-k-sky-blue focus-visible:outline-offset-2"
         style={getButtonStyles()}
         aria-label="FAQ 열기"
       >
-        <span className="text-base leading-none">💬</span>
-        <span className="font-bold text-sm whitespace-nowrap">FAQ</span>
+        <span className="text-xl leading-none" aria-hidden="true">💬</span>
       </button>
 
       {isOpen && (
