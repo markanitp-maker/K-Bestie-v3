@@ -5,6 +5,7 @@ import { getSupabaseUrl, getSupabaseAnonKey } from "@/lib/supabase/env";
 import { createServiceClient } from "@/lib/supabase/server";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
+import { FAMILY_INVITE_COOKIE } from "@/lib/familyInvites/oneTimeInvite";
 
 export async function GET(request: Request) {
   const { searchParams, origin: rawOrigin } = new URL(request.url);
@@ -15,18 +16,23 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const returnUrl = safePostAuthReturnUrl(searchParams.get("returnUrl"));
   const returnQuery = returnUrl === "/" ? "" : `&returnUrl=${encodeURIComponent(returnUrl)}`;
+  const cookieStore = await cookies();
+  const hasFamilyInviteContext = cookieStore.has(FAMILY_INVITE_COOKIE);
 
   if (searchParams.get("error") === "access_denied") {
-    return NextResponse.redirect(`${origin}/login?error=cancelled${returnQuery}`);
+    return NextResponse.redirect(hasFamilyInviteContext
+      ? `${origin}/family/invite/continue?error=cancelled`
+      : `${origin}/login?error=cancelled${returnQuery}`);
   }
 
   if (code) {
-    const cookieStore = await cookies();
     // callback에서 원래 목적지로 직접 보내면 신규·미완료 사용자도 회원상태 판정을
     // 우회할 수 있다. 항상 허브(/)를 먼저 거쳐 서버 검증 결과가 ACTIVE일 때만 복원한다.
-    const targetRedirect = returnUrl === "/"
-      ? `${origin}/`
-      : `${origin}/?returnUrl=${encodeURIComponent(returnUrl)}`;
+    const targetRedirect = hasFamilyInviteContext
+      ? `${origin}/family/invite/continue`
+      : returnUrl === "/"
+        ? `${origin}/`
+        : `${origin}/?returnUrl=${encodeURIComponent(returnUrl)}`;
     const response = NextResponse.redirect(targetRedirect);
 
     const supabase = createServerClient(
