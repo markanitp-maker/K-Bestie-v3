@@ -28,8 +28,8 @@ const PRECACHE_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  // 새 Service Worker 설치 시 대기 없이 즉시 활성화 준비 (skipWaiting)
-  self.skipWaiting();
+  // 설치가 끝난 새 worker는 waiting 상태를 유지한다. 사용자 확인 뒤 message handler 한 곳에서만
+  // skipWaiting을 실행해 기존 active worker와 현재 앱을 먼저 보존한다.
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
       await Promise.all(
