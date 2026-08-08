@@ -61,6 +61,7 @@ const rows = await query(`
       position('memory_batch' in (select zero_def from defs)) > 0
       and position('daily_report' in (select zero_def from defs)) > 0
       and position('NO_CONVERSATION' in (select zero_def from defs)) > 0
+      and exists(select 1 from pg_trigger where tgname='trg_sync_completed_collection_2_raw_status_v3' and not tgisinternal)
     union all
     select 5, 'repeated enqueue/poll duplicate zero',
       exists(select 1 from pg_indexes where schemaname='public' and indexname='uq_pipeline_jobs_child_date_type_generation')

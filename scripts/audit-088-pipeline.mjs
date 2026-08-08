@@ -39,12 +39,12 @@ const qaAccounts = await query(`
 
 const states = await query(`
   with dates as (
-    select generate_series(((now() at time zone 'Asia/Seoul')::date - 6), (now() at time zone 'Asia/Seoul')::date, interval '1 day')::date as business_date
+    select generate_series(((now() at time zone 'Asia/Seoul')::date - 7), ((now() at time zone 'Asia/Seoul')::date - 1), interval '1 day')::date as business_date
   ), source as (
     select s.child_id, (m.created_at at time zone 'Asia/Seoul')::date as business_date, count(*)::int as source_count
     from public.chat_messages m
     join public.chat_sessions s on s.id=m.session_id
-    where (m.created_at at time zone 'Asia/Seoul')::date between ((now() at time zone 'Asia/Seoul')::date - 6) and (now() at time zone 'Asia/Seoul')::date
+    where (m.created_at at time zone 'Asia/Seoul')::date between ((now() at time zone 'Asia/Seoul')::date - 7) and ((now() at time zone 'Asia/Seoul')::date - 1)
     group by s.child_id, (m.created_at at time zone 'Asia/Seoul')::date
   ), targets as (
     select cp.id as child_id, cp.name, d.business_date, coalesce(src.source_count,0) as source_count
@@ -59,7 +59,7 @@ const states = await query(`
       max(status) filter(where job_type='memory_batch') as memory,
       max(status) filter(where job_type='daily_report') as report
     from public.pipeline_jobs
-    where business_date between ((now() at time zone 'Asia/Seoul')::date - 6) and (now() at time zone 'Asia/Seoul')::date
+    where business_date between ((now() at time zone 'Asia/Seoul')::date - 7) and ((now() at time zone 'Asia/Seoul')::date - 1)
     group by child_id,business_date
   )
   select t.name, t.business_date, t.source_count,
@@ -89,7 +89,7 @@ const named = await query(`
       max(status) filter(where job_type='memory_batch') as memory,
       max(status) filter(where job_type='daily_report') as report
     from public.pipeline_jobs
-    where business_date between ((now() at time zone 'Asia/Seoul')::date - 6) and (now() at time zone 'Asia/Seoul')::date
+    where business_date between ((now() at time zone 'Asia/Seoul')::date - 7) and ((now() at time zone 'Asia/Seoul')::date - 1)
     group by child_id,business_date
   ), counts as (
     select collection_job_id, count(*)::int as message_count
@@ -106,4 +106,14 @@ const named = await query(`
   order by j.business_date,cp.name;
 `);
 
-console.log(JSON.stringify({ target, schema: schema[0], qaAccounts, affected: states, named }, null, 2));
+const duplicates = await query(`
+  select
+    (select count(*) from (select source_message_id from public.raw_daily_conversation_messages_v3 group by source_message_id having count(*) > 1) d) as raw_messages,
+    (select count(*) from (select source_message_id from public.corrected_daily_conversation_messages_v3 group by source_message_id having count(*) > 1) d) as corrected_messages,
+    (select count(*) from (select idempotency_key from public.memory_facts where idempotency_key is not null group by idempotency_key having count(*) > 1) d) as memory_facts,
+    (select count(*) from (select memory_fact_id, source_date from public.memory_evidence where source_date is not null group by memory_fact_id, source_date having count(*) > 1) d) as memory_evidence,
+    (select count(*) from (select memory_fact_id, model from public.memory_embeddings group by memory_fact_id, model having count(*) > 1) d) as memory_embeddings,
+    (select count(*) from (select child_id, business_date from public.daily_reports group by child_id, business_date having count(*) > 1) d) as daily_reports;
+`);
+
+console.log(JSON.stringify({ target, schema: schema[0], qaAccounts, affected: states, named, duplicates: duplicates[0] }, null, 2));
