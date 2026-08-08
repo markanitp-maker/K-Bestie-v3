@@ -1492,6 +1492,17 @@ function AdminDashboard() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requested = (params.get("menu") ?? params.get("page")) as AdminPageId | null;
+    const operationsByLegacyPage: Partial<Record<AdminPageId, string>> = {
+      "push-test": "push",
+      "acquisition-dashboard": "acquisition&sub=dashboard",
+      "acquisition-links": "acquisition&sub=links",
+      "trash": "trash",
+    };
+    const operationsTab = requested ? operationsByLegacyPage[requested] : null;
+    if (operationsTab) {
+      window.location.replace(`/admin/operations?tab=${operationsTab}`);
+      return;
+    }
     const eventTabByLegacyPage: Partial<Record<AdminPageId, string>> = {
       "events-overview": "overview",
       "events-mission-onboarding": "missions",
@@ -1555,6 +1566,10 @@ function AdminDashboard() {
   const handleMenuChange = (nextPage: AdminPageId) => {
     if (nextPage === "events-rewards") {
       window.location.assign("/admin/events-rewards");
+      return;
+    }
+    if (nextPage === "operations") {
+      window.location.assign("/admin/operations");
       return;
     }
     setPage(nextPage);

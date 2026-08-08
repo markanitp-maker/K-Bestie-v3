@@ -3,9 +3,15 @@ import { useAdminSoftDelete, SoftDeleteRowCheckbox, SoftDeleteSelectionBar } fro
 import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/shell/AdminDataTable";
 import { AdminStatusBadge } from "@/components/admin/shell/AdminStatusBadge";
 
-export default function AcquisitionLinksTab() {
+interface AcquisitionLinksTabProps {
+  channelFilter?: string;
+  onChannelFilterChange?: (channel: string) => void;
+}
+
+export default function AcquisitionLinksTab({ channelFilter = "", onChannelFilterChange }: AcquisitionLinksTabProps = {}) {
   const [links, setLinks] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   
   // Custom Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -19,21 +25,27 @@ export default function AcquisitionLinksTab() {
     return () => clearTimeout(t);
   }, [resultToast]);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoading(true);
-    fetch("/api/admin/acquisition/links")
-      .then(r => r.json())
-      .then(d => {
-        setLinks(Array.isArray(d.links) ? d.links : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    setLoadError("");
+    try {
+      const response = await fetch("/api/admin/acquisition/links");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "유입 링크를 불러오지 못했습니다.");
+      setLinks(Array.isArray(payload.links) ? payload.links : []);
+    } catch (reason) {
+      setLoadError(reason instanceof Error ? reason.message : "유입 링크를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const softDelete = useAdminSoftDelete("acquisition_links", "유입 링크", load, "전체");
-  const deletableRows = (links || []).filter((r: any) => !!r.id);
+  const visibleLinks = (links || []).filter((r: any) => !channelFilter || r.channel_name === channelFilter);
+  const channelOptions = Array.from(new Set((links || []).map((r: any) => String(r.channel_name)))).sort();
+  const deletableRows = visibleLinks.filter((r: any) => !!r.id);
   const pageIds = deletableRows.map((r: any) => r.id as string);
   const allSelected = pageIds.length > 0 && pageIds.every((id: string) => softDelete.isSelected(id));
   const selectedTargets = deletableRows
@@ -193,12 +205,17 @@ export default function AcquisitionLinksTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {toast}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>회원가입 유입 링크 관리</h2>
           <p style={{ fontSize: 13, color: "var(--admin-text-secondary)", marginTop: 4 }}>홍보 채널별 회원가입 링크를 생성하고 클릭·가입 성과를 관리합니다.</p>
         </div>
-        <button
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <select value={channelFilter} onChange={(event) => onChannelFilterChange?.(event.target.value)} aria-label="채널 필터" style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--admin-border)", background: "var(--admin-surface)" }}>
+            <option value="">모든 채널</option>
+            {channelOptions.map((channel) => <option key={channel} value={channel}>{channel}</option>)}
+          </select>
+          <button
           onClick={() => setIsCreateModalOpen(true)}
           style={{
             padding: "8px 16px",
@@ -210,9 +227,10 @@ export default function AcquisitionLinksTab() {
             border: "none",
             cursor: "pointer",
           }}
-        >
-          + 신규 링크 생성
-        </button>
+          >
+            + 신규 링크 생성
+          </button>
+        </div>
       </div>
 
       <SoftDeleteSelectionBar
@@ -226,15 +244,16 @@ export default function AcquisitionLinksTab() {
       />
       {softDelete.modals}
 
-      <div style={{ background: "var(--admin-surface)", borderRadius: "12px", border: "1px solid var(--admin-border)", overflow: "hidden" }}>
+      {loadError && <div style={{ padding: 24, textAlign: "center", color: "var(--admin-danger)", border: "1px solid var(--admin-border)", borderRadius: 12 }}>{loadError}<button type="button" onClick={load} style={{ display: "block", margin: "10px auto 0", padding: "8px 14px", borderRadius: 8, border: "1px solid var(--admin-border)", background: "var(--admin-surface)", cursor: "pointer" }}>다시 시도</button></div>}
+      {!loadError && <div style={{ background: "var(--admin-surface)", borderRadius: "12px", border: "1px solid var(--admin-border)", overflow: "hidden" }}>
         <AdminDataTable
           columns={columns}
-          data={links || []}
+          data={visibleLinks}
           keyExtractor={(r) => r.id}
         />
-        {!links && <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "var(--admin-text-secondary)" }}>불러오는 중...</div>}
-        {links?.length === 0 && <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "var(--admin-text-secondary)" }}>유입 링크가 없습니다.</div>}
-      </div>
+        {loading && !links && <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "var(--admin-text-secondary)" }}>불러오는 중...</div>}
+        {links && visibleLinks.length === 0 && <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "var(--admin-text-secondary)" }}>조건에 맞는 유입 링크가 없습니다.</div>}
+      </div>}
 
       {isCreateModalOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>

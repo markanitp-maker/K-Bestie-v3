@@ -6,7 +6,7 @@ import { Menu, X, ChevronDown, ChevronRight } from "lucide-react";
 // "parent-questions"/"parent-query-router"는 이 파일이 관여하지 않는 별도 티켓 소관
 // 페이지다(app/admin/(dashboard)/page.tsx가 참조). 그 티켓의 컴포넌트 파일이 아직
 // git에 없어 여기서는 타입 호환만 유지하고 네비게이션 항목은 추가하지 않는다.
-export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "users" | "customer-requests" | "account-restore" | "inquiries" | "suggestions" | "bugs" | "beta-applications" | "analytics" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-rewards" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-attendance-roulette" | "events-reward-fulfillments" | "trash" | "parent-questions" | "parent-query-router" | "push-test" | "acquisition-links" | "acquisition-dashboard";
+export type AdminPageId = "overview" | "revenue" | "cost" | "llm-status" | "users" | "customer-requests" | "account-restore" | "inquiries" | "suggestions" | "bugs" | "beta-applications" | "analytics" | "manual-reporting" | "plan-change-requests" | "child-approval-requests" | "retention" | "events-rewards" | "events-overview" | "events-mission-onboarding" | "events-quiz-leaderboard" | "events-attendance-roulette" | "events-reward-fulfillments" | "operations" | "trash" | "parent-questions" | "parent-query-router" | "push-test" | "acquisition-links" | "acquisition-dashboard";
 
 type AdminMenuItem = { id: AdminPageId; label: string; badgeKey?: string };
 type AdminMenuGroup = { id: string; label: string; items: AdminMenuItem[] };
@@ -55,10 +55,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
     id: "ops",
     label: "운영 도구",
     items: [
-      { id: "push-test", label: "푸시 발송 테스트" },
-      { id: "acquisition-links", label: "회원가입 유입 링크 관리" },
-      { id: "acquisition-dashboard", label: "회원가입 유입 현황" },
-      { id: "trash", label: "휴지통" },
+      { id: "operations", label: "운영 도구" },
     ]
   }
 ];
@@ -175,6 +172,8 @@ export function AdminShell({ children, activeMenuId, onMenuChange }: AdminShellP
                           window.location.assign("/admin/analytics");
                         } else if (item.id === "events-rewards" && window.location.pathname !== "/admin/events-rewards") {
                           window.location.assign("/admin/events-rewards");
+                        } else if (item.id === "operations" && window.location.pathname !== "/admin/operations") {
+                          window.location.assign("/admin/operations");
                         } else {
                           onMenuChange(item.id);
                         }

@@ -15,6 +15,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
+import type { AcquisitionSharedState } from "@/lib/admin/operationsConsole";
 
 type Period = "today" | "7d" | "14d" | "30d" | "month" | "last_month" | "all" | "custom";
 const PERIOD_LABELS: Record<Period, string> = {
@@ -28,32 +29,56 @@ const PERIOD_LABELS: Record<Period, string> = {
   custom: "사용자 지정",
 };
 
-export default function AcquisitionDashboardTab() {
-  const [period, setPeriod] = useState<Period>("30d");
-  const [attribution, setAttribution] = useState<"signup" | "first">("signup");
-  const [includeTestAccounts, setIncludeTestAccounts] = useState(false);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+interface AcquisitionDashboardTabProps {
+  sharedState?: AcquisitionSharedState;
+  onSharedStateChange?: (next: AcquisitionSharedState) => void;
+  onChannelDrillDown?: (channel: string) => void;
+}
+
+const DEFAULT_STATE: AcquisitionSharedState = {
+  period: "30d",
+  attribution: "signup",
+  includeTestAccounts: false,
+  channelFilter: "",
+  startDate: "",
+  endDate: "",
+};
+
+export default function AcquisitionDashboardTab({ sharedState, onSharedStateChange, onChannelDrillDown }: AcquisitionDashboardTabProps = {}) {
+  const [localState, setLocalState] = useState<AcquisitionSharedState>(DEFAULT_STATE);
+  const state = sharedState ?? localState;
+  const { period, attribution, includeTestAccounts, channelFilter, startDate, endDate } = state;
+  const updateState = (patch: Partial<AcquisitionSharedState>) => {
+    const next = { ...state, ...patch };
+    if (!sharedState) setLocalState(next);
+    onSharedStateChange?.(next);
+  };
 
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setError("");
     let url = `/api/admin/acquisition/dashboard?period=${period}&attribution=${attribution}&includeTestAccounts=${includeTestAccounts}`;
+    if (channelFilter) url += `&channel=${encodeURIComponent(channelFilter)}`;
     if (period === "custom") {
       if (startDate) url += `&startDate=${startDate}`;
       if (endDate) url += `&endDate=${endDate}`;
     }
     
-    fetch(url)
-      .then(r => r.json())
-      .then(d => {
-        setData(d);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [period, attribution, includeTestAccounts, startDate, endDate]);
+    try {
+      const response = await fetch(url);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "유입 현황을 불러오지 못했습니다.");
+      setData(payload);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "유입 현황을 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }, [period, attribution, includeTestAccounts, channelFilter, startDate, endDate]);
 
   useEffect(() => {
     if (period === "custom" && (!startDate || !endDate)) return;
@@ -62,9 +87,10 @@ export default function AcquisitionDashboardTab() {
 
   const kpi = data?.kpi || {};
   const channelTable = data?.channelTable || [];
+  const channelOptions = Array.from(new Set<string>(channelTable.map((row: any) => String(row.channel))));
   
   const columns: AdminDataTableColumn<any>[] = [
-    { key: "channel", header: "채널", render: (r) => <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ fontWeight: 600, color: "var(--admin-primary)", textDecoration: "none" }}>{r.channel}</a> },
+    { key: "channel", header: "채널", render: (r) => onChannelDrillDown ? <button type="button" onClick={() => onChannelDrillDown(r.channel)} style={{ padding: 0, border: 0, background: "transparent", fontWeight: 700, color: "var(--admin-primary)", cursor: "pointer" }}>{r.channel}</button> : <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ fontWeight: 600, color: "var(--admin-primary)", textDecoration: "none" }}>{r.channel}</a> },
     { key: "uniqueVisitors", header: "고유 방문자", render: (r) => r.uniqueVisitors.toLocaleString() },
     { key: "signupStarted", header: "가입 시작", render: (r) => r.signupStarted.toLocaleString() },
     { key: "parentSignup", header: "부모 가입", render: (r) => <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ color: "var(--admin-primary)", textDecoration: "none" }}>{r.parentSignup.toLocaleString()}</a> },
@@ -85,7 +111,7 @@ export default function AcquisitionDashboardTab() {
               {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
                 <button
                   key={p}
-                  onClick={() => setPeriod(p)}
+                  onClick={() => updateState({ period: p })}
                   style={{
                     padding: "6px 12px",
                     borderRadius: 999,
@@ -104,27 +130,33 @@ export default function AcquisitionDashboardTab() {
             </div>,
             period === "custom" && (
               <div key="custom-date" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)" }} />
+                <input type="date" value={startDate} onChange={e => updateState({ startDate: e.target.value })} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)" }} />
                 <span style={{color: "var(--admin-text-secondary)"}}>~</span>
-                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)" }} />
+                <input type="date" value={endDate} onChange={e => updateState({ endDate: e.target.value })} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)" }} />
               </div>
             ),
             <div key="div-1" style={{ width: "1px", height: 24, background: "var(--admin-border)", margin: "0 4px" }} />,
             <div key="attr" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 13, color: "var(--admin-text-secondary)", whiteSpace: "nowrap" }}>Attribution:</span>
-              <select value={attribution} onChange={e => setAttribution(e.target.value as "signup" | "first")} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)" }}>
+              <select value={attribution} onChange={e => updateState({ attribution: e.target.value as "signup" | "first" })} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)" }}>
                 <option value="signup">Signup Touch</option>
                 <option value="first">First Touch</option>
               </select>
             </div>,
             <label key="test-acc" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--admin-text-secondary)", cursor: "pointer", whiteSpace: "nowrap" }}>
-              <input type="checkbox" checked={includeTestAccounts} onChange={e => setIncludeTestAccounts(e.target.checked)} />
+              <input type="checkbox" checked={includeTestAccounts} onChange={e => updateState({ includeTestAccounts: e.target.checked })} />
               내부 테스트 포함
-            </label>
+            </label>,
+            <select key="channel" value={channelFilter} onChange={e => updateState({ channelFilter: e.target.value })} style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid var(--admin-border)" }} aria-label="채널 필터">
+              <option value="">모든 채널</option>
+              {channelOptions.map((channel) => <option key={channel} value={channel}>{channel}</option>)}
+            </select>
           ].filter(Boolean)}
         />
 
-      {loading && !data ? (
+      {error ? (
+        <div style={{ padding: 40, textAlign: "center", color: "var(--admin-danger)" }}>{error}<button type="button" onClick={load} style={{ display: "block", margin: "12px auto 0", padding: "8px 14px", borderRadius: 8, border: "1px solid var(--admin-border)", background: "var(--admin-surface)", cursor: "pointer" }}>다시 시도</button></div>
+      ) : loading && !data ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--admin-text-secondary)" }}>로딩 중...</div>
       ) : data ? (
         <>

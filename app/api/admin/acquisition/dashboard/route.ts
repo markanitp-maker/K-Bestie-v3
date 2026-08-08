@@ -135,6 +135,7 @@ export async function GET(req: NextRequest) {
   
   type ChannelStat = { 
     uniqueVisitors: Set<string>; 
+    convertedVisitors: Set<string>;
     clicks: number; 
     signupStarted: number;
     parentSignup: Set<string>;
@@ -149,6 +150,7 @@ export async function GET(req: NextRequest) {
     if (!channelStats.has(channel)) {
       channelStats.set(channel, {
         uniqueVisitors: new Set(),
+        convertedVisitors: new Set(),
         clicks: 0,
         signupStarted: 0,
         parentSignup: new Set(),
@@ -176,6 +178,7 @@ export async function GET(req: NextRequest) {
   let signupStartedCount = 0;
   let childAddedCount = 0;
   const parentSignupSet = new Set<string>();
+  const convertedVisitorSet = new Set<string>();
   let unknownSignupsCount = 0;
 
   const dailyTrendMap = new Map<string, number>();
@@ -228,6 +231,13 @@ export async function GET(req: NextRequest) {
         const channel = linkIdToChannel.get(linkId) || "알 수 없음";
         const cs = getChannelStat(channel);
         cs.parentSignup.add(e.parent_user_id);
+        // 전환율은 같은 조회 기간 안에 실제 방문이 확인된 visitor cohort만 사용한다.
+        // 전체 부모 가입(미확인·과거 방문 포함)을 기간 내 방문자 수로 나누면 100%를
+        // 넘을 수 있으므로, 부모 가입 KPI와 전환 cohort를 분리한다.
+        if (e.visitor_id && uniqueVisitorsSet.has(e.visitor_id) && cs.uniqueVisitors.has(e.visitor_id)) {
+          convertedVisitorSet.add(e.visitor_id);
+          cs.convertedVisitors.add(e.visitor_id);
+        }
         if (!cs.lastSignupAt || new Date(e.occurred_at) > new Date(cs.lastSignupAt)) {
           cs.lastSignupAt = e.occurred_at;
         }
@@ -249,7 +259,8 @@ export async function GET(req: NextRequest) {
     uniqueVisitors: uniqueVisitorsSet.size,
     signupStarted: signupStartedCount,
     parentSignup: parentSignupSet.size,
-    conversionRate: uniqueVisitorsSet.size > 0 ? (parentSignupSet.size / uniqueVisitorsSet.size) * 100 : 0,
+    conversionCompletedVisitors: convertedVisitorSet.size,
+    conversionRate: uniqueVisitorsSet.size > 0 ? (convertedVisitorSet.size / uniqueVisitorsSet.size) * 100 : 0,
     childAdded: childAddedCount,
     parentToChildRatio: parentSignupSet.size > 0 ? childAddedCount / parentSignupSet.size : 0,
     unknownSignups: unknownSignupsCount,
@@ -262,7 +273,7 @@ export async function GET(req: NextRequest) {
   for (const [channel, stat] of channelStats.entries()) {
     const parentSignupCount = stat.parentSignup.size;
     const uvs = stat.uniqueVisitors.size;
-    const conv = uvs > 0 ? (parentSignupCount / uvs) * 100 : 0;
+    const conv = uvs > 0 ? (stat.convertedVisitors.size / uvs) * 100 : 0;
     
     channelTable.push({
       channel,
