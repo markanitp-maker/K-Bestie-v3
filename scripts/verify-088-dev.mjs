@@ -25,6 +25,7 @@ const rows = await query(`
       pg_get_functiondef('public.reconcile_pipeline_v3(date,uuid)'::regprocedure) as reconcile_def,
       pg_get_functiondef('public.ensure_collection_1_zero_marker_v3(uuid,date,uuid,integer)'::regprocedure) as marker_def,
       pg_get_functiondef('public.complete_context_correction_job_v3_no_conversation(uuid,text)'::regprocedure) as zero_def,
+      pg_get_functiondef('public.complete_memory_batch_job_v3(uuid,text,text)'::regprocedure) as memory_complete_def,
       pg_get_functiondef('public.enqueue_pipeline_job_v3(text,uuid,date,uuid,integer,timestamptz)'::regprocedure) as job_def
   ), fixture(name, c1_completed, uncollected_before, uncollected_after, c2_exists) as (
     values
@@ -64,6 +65,7 @@ const rows = await query(`
     select 5, 'repeated enqueue/poll duplicate zero',
       exists(select 1 from pg_indexes where schemaname='public' and indexname='uq_pipeline_jobs_child_date_type_generation')
       and (select n from duplicate_groups) = 0
+      and position('ALREADY_COMPLETED' in (select memory_complete_def from defs)) > 0
     union all
     select 6, 'missed 23:55 cron reconciliation',
       position('candidates AS' in (select reconcile_def from defs)) > 0
