@@ -716,16 +716,16 @@ export default function ChatPage() {
             </div>
           </div>
         )}
-        <div className="w-full max-w-[480px] min-w-0 box-border h-[100dvh] flex flex-col relative shrink-0" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+        <div className="w-full max-w-[480px] min-w-0 box-border h-[100dvh] relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto]" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
           
           {/* Decorations */}
-          <div className="absolute inset-0 pointer-events-none opacity-30 overflow-hidden">
-            <div className="absolute top-[10%] left-[10%] w-16 h-8 bg-white rounded-full blur-[2px]" />
-            <div className="absolute top-[20%] right-[15%] w-12 h-6 bg-white rounded-full blur-[2px]" />
-            <div className="absolute top-[15%] left-[50%] w-2 h-2 bg-yellow-200 rounded-full blur-[1px]" />
-            <div className="absolute top-[40%] left-[20%] w-3 h-3 bg-yellow-100 rounded-full blur-[1px]" />
-            <div className="absolute top-[60%] right-[10%] w-10 h-10 bg-white/50 rounded-lg rotate-12 blur-[1px]" />
-            <div className="absolute top-[75%] left-[15%] w-8 h-8 bg-white/40 rounded-full blur-[1px]" />
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+            <div className="absolute top-[9%] left-[7%] w-[clamp(48px,15vw,64px)] h-[clamp(22px,7vw,30px)] bg-white/25 rounded-full blur-[2px]" />
+            <div className="absolute top-[18%] right-[9%] w-[clamp(40px,12vw,54px)] h-[clamp(18px,5vw,24px)] bg-white/30 rounded-full blur-[2px]" />
+            <div className="absolute top-[14%] left-[52%] w-[clamp(6px,2vw,10px)] h-[clamp(6px,2vw,10px)] bg-[#F6C85F]/45 rounded-full" />
+            <div className="absolute top-[37%] left-[8%] text-[clamp(14px,4vw,20px)] text-[#F6C85F]/40">✦</div>
+            <div className="absolute top-[51%] right-[8%] text-[clamp(12px,3.5vw,18px)] text-[#F6A21A]/35 rotate-12">✦</div>
+            <div className="absolute top-[68%] left-[12%] w-[clamp(16px,5vw,24px)] h-[clamp(16px,5vw,24px)] bg-white/20 rounded-full blur-[1px]" />
           </div>
 
           {/* 공통 헤더 */}
@@ -738,20 +738,25 @@ export default function ChatPage() {
           </div>
 
           {/* Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-          <div className={`flex-1 min-h-0 w-full flex flex-col items-center justify-end z-20 px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[clamp(38px,6.5dvh,48px)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
-            {olderKText && (
-              <div className="mb-[clamp(10px,2vw,14px)] text-gray-400 text-[clamp(14px,4vw,16px)] leading-[1.45] text-center max-w-[80%] font-medium shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
-                {olderKText}
+          <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[clamp(4px,1dvh,10px)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
+            <div className="absolute top-[calc(58px+env(safe-area-inset-top))] left-0 w-full h-[clamp(18px,3dvh,24px)] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
+            {(olderKText || prevKText) && (
+              <div className="mt-auto flex flex-col justify-end items-center min-h-0 overflow-hidden w-full shrink mb-[clamp(10px,1.5dvh,14px)]">
+                {olderKText && (
+                  <div className="mb-[clamp(8px,1.2dvh,10px)] text-gray-400/70 text-[clamp(14px,3.7vw,15px)] leading-[1.45] text-center max-w-[82%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                    {olderKText}
+                  </div>
+                )}
+                {prevKText && (
+                  <div className="bg-white/75 backdrop-blur-md px-[clamp(16px,4.5vw,18px)] py-[clamp(11px,1.7dvh,13px)] rounded-[18px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[80%] text-center shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                    {prevKText}
+                  </div>
+                )}
               </div>
             )}
-            {prevKText && (
-              <div className="mb-[clamp(10px,1.6dvh,14px)] bg-white/70 backdrop-blur-md px-[18px] py-[14px] rounded-[16px] text-[clamp(15px,4.5vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[75%] text-center shrink-0 h-auto overflow-visible" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "break-word" }}>
-                {prevKText}
-              </div>
-            )}
-            <div className="relative w-[clamp(240px,78.9vw,270px)] max-w-[79%] bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[20px] py-[17px] flex flex-col min-h-[65px] shrink-0 h-auto overflow-visible">
+            <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 w-[clamp(84%,86%,88%)] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[clamp(20px,5.5vw,22px)] py-[clamp(16px,2.2dvh,18px)] flex flex-col min-w-0 shrink-0`}>
               <div className="w-full">
-                <p className="text-left text-[#3a2f2a] text-[clamp(17px,5.1vw,20px)] font-[700] leading-[1.45] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "break-word" }}>
+                <p className="text-left text-[#3a2f2a] text-[clamp(18px,5vw,21px)] font-[700] leading-[1.43] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                   {currentQuestionText}
                 </p>
               </div>
@@ -763,7 +768,7 @@ export default function ChatPage() {
 
           {/* Mascot Area & Side Cards OR Text-Mode Closed-Keyboard CTA */}
           {!isKeyboardOpen && (
-          <div className="relative w-full shrink-0 h-[clamp(135px,20dvh,155px)] transition-all duration-300 flex items-center justify-center">
+          <div className="relative z-10 w-full shrink-0 h-[clamp(178px,23dvh,202px)] transition-all duration-300 flex items-center justify-center">
             {mode === "text" ? (
               /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 시원하고 명확한 코랄 레드 #EF5350 '✕ 채팅창 닫기' pill CTA 노출 */
               <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
@@ -781,33 +786,34 @@ export default function ChatPage() {
               /* mode !== "text": 케이 캐릭터 & Platform & 상태 카드 정상 노출 */
               <>
                 {/* Mascot & Platform - Centered strictly */}
-                <div className="absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
+                <div className="free-chat-mascot-group absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
                    {/* Halo */}
-                   <div className="absolute top-[5%] w-[150px] h-[150px] rounded-full bg-[#c0e0ff]/60 blur-xl pointer-events-none" />
+                   <div className="absolute top-[3%] w-[clamp(170px,47vw,198px)] h-[clamp(170px,47vw,198px)] rounded-full bg-[#FAD98A]/20 blur-2xl pointer-events-none" />
+                   <div className="absolute top-[8%] w-[clamp(154px,43vw,178px)] h-[clamp(154px,43vw,178px)] rounded-full border border-[#F6C85F]/25 bg-[#FFF5E8]/30 pointer-events-none" />
                    
                    {/* Mascot */}
-                   <div className="relative z-10 flex justify-center items-end pb-[clamp(38px,6.2dvh,46px)]">
-                     <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={140} className="!w-[clamp(115px,39.2vw,145px)] !h-[clamp(115px,39.2vw,145px)] object-contain" />
+                   <div className="relative z-10 flex justify-center items-end pb-[clamp(24px,3.2dvh,30px)]">
+                     <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={152} className="!w-[clamp(135px,39vw,160px)] !h-auto object-contain" />
                    </div>
                    
                    {/* Platform */}
-                   <div className="absolute bottom-0 w-[clamp(145px,50.9vw,185px)] h-[clamp(38px,6.1dvh,46px)] pointer-events-none">
+                   <div className="absolute bottom-0 w-[clamp(175px,49vw,205px)] h-[clamp(34px,5.3dvh,46px)] pointer-events-none">
                      <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
-                     <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-sm" />
+                     <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-[0_5px_8px_rgba(145,106,62,0.12)]" />
                      <div className="absolute top-[15%] left-[15%] w-[70%] h-[35%] bg-black/5 rounded-[100%] z-10 blur-sm" />
                    </div>
                 </div>
 
                 {/* Right State Card - Independent Absolute Overlay */}
-                <div className="absolute right-[clamp(24px,8.7vw,36px)] top-[clamp(24px,4.1dvh,32px)]">
+                <div className="absolute right-[clamp(16px,5vw,24px)] top-[clamp(36px,5.5dvh,48px)]">
                   <div
-                    className="relative z-20 bg-[#D5ECFF]/60 backdrop-blur-md rounded-[16px] flex flex-col items-center justify-center w-[clamp(58px,19.5vw,72px)] h-[clamp(76px,12dvh,86px)] py-[10px] shadow-sm pointer-events-auto"
+                    className="relative z-20 bg-[#D5ECFF]/45 backdrop-blur-sm rounded-[18px] flex flex-col items-center justify-center w-[clamp(64px,18vw,72px)] min-h-[clamp(72px,18vw,80px)] py-[clamp(7px,1dvh,9px)] shadow-[0_2px_8px_rgba(75,85,99,0.06)] pointer-events-auto"
                     aria-live="polite"
                   >
-                     <div className="w-[clamp(30px,8.5vw,38px)] h-[clamp(30px,8.5vw,38px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1.5 shrink-0">
+                     <div className="w-[clamp(36px,9.5vw,40px)] h-[clamp(36px,9.5vw,40px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1 shrink-0">
                        {StateIcon}
                      </div>
-                     <span className="text-[clamp(12px,3.6vw,14px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
+                     <span className="text-[clamp(14px,3.8vw,16px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
                   </div>
                 </div>
               </>
@@ -817,15 +823,17 @@ export default function ChatPage() {
 
           {/* Auto/Manual Mode Toggles */}
           {mode !== "text" && !isKeyboardOpen && (
-          <div className="relative z-20 flex justify-center gap-2 mt-[clamp(6px,1dvh,10px)] h-[clamp(44px,6dvh,48px)] shrink-0">
-             <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+          <div className="relative z-20 flex justify-center -mt-[clamp(6px,1dvh,10px)] h-[clamp(38px,5dvh,42px)] shrink-0">
+            <div className="flex w-[clamp(130px,36vw,145px)] h-full p-1 rounded-full bg-white/90 border border-[#F1D5BE] shadow-[0_2px_7px_rgba(145,106,62,0.10)]">
+             <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
                {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
              </button>
-             <button onClick={() => handleModeChange('manual')} disabled={isConnecting} aria-pressed={!isAuto} className={`flex items-center justify-center min-w-[64px] px-2 h-full rounded-[14px] border-[1.5px] transition-colors cursor-pointer ${!isAuto ? 'bg-[#fff0e6] border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'bg-white border-gray-200 text-gray-500 font-semibold'} shadow-sm text-[13px] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+             <button onClick={() => handleModeChange('manual')} disabled={isConnecting} aria-pressed={!isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${!isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                수동
                {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
              </button>
+            </div>
           </div>
           )}
 
@@ -874,12 +882,12 @@ export default function ChatPage() {
                 </button>
               </div>
             ) : (
-              <div className="w-full flex items-center justify-center h-[clamp(72px,11vw,82px)] relative">
+              <div className="w-full flex items-center justify-center h-[clamp(88px,13vw,100px)] relative">
                 {/* Keyboard Button */}
                 <button 
                   onClick={switchToText}
                   disabled={isConnecting}
-                  className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(44px,11vw,54px)] h-[clamp(44px,11vw,54px)] bg-white/80 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-sm border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" 
+                  className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(46px,12vw,50px)] h-[clamp(46px,12vw,50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="텍스트로 답하기"
                 >
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
@@ -889,21 +897,21 @@ export default function ChatPage() {
                 <div className="relative flex items-center justify-center">
                   {isRecording && (
                     <>
-                      <div className="absolute w-[clamp(90px,13vw,100px)] h-[clamp(90px,13vw,100px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
-                      <div className="absolute w-[clamp(108px,16vw,120px)] h-[clamp(108px,16vw,120px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
+                      <div className="absolute w-[clamp(102px,27vw,112px)] h-[clamp(102px,27vw,112px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
+                      <div className="absolute w-[clamp(116px,31vw,128px)] h-[clamp(116px,31vw,128px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
                     </>
                   )}
 
                   {isLive && !isAuto ? (
                     <button
                       onClick={handleCentralButtonClick}
-                      className={`w-[clamp(72px,11vw,82px)] h-[clamp(72px,11vw,82px)] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)] ${isRecording ? 'rounded-2xl' : 'rounded-[50%]'}`}
+                      className={`w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)] ${isRecording ? 'rounded-2xl' : 'rounded-full'}`}
                       aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
                     >
                       {isRecording ? (
                         <div className="w-[24px] h-[24px] rounded-sm bg-white" />
                       ) : (
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
                       )}
                     </button>
                   ) : isLive && isAuto ? (
@@ -912,10 +920,10 @@ export default function ChatPage() {
                     // 사용 불가" 회색 처리로 떨어지면 정상 자동 청취 중에도 고장난 것처럼
                     // 보이므로, 클릭 불가한 정적 활성 표시만 보여준다.
                     <div
-                      className="w-[clamp(72px,11vw,82px)] h-[clamp(72px,11vw,82px)] rounded-[50%] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 bg-[var(--color-k-orange)]"
+                      className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 bg-[var(--color-k-orange)]"
                       aria-label="자동으로 듣고 있어요"
                     >
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
                     </div>
                   ) : (!isLive && !isConnecting) ? (
                     isAuto && micPermission === "denied" ? (
@@ -930,19 +938,19 @@ export default function ChatPage() {
                     ) : (
                       <button 
                         onClick={handleStart} 
-                        className={`w-[clamp(72px,11vw,82px)] h-[clamp(72px,11vw,82px)] rounded-[50%] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)]`}
+                        className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)]"
                         aria-label="대화 시작하기"
                       >
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
                       </button>
                     )
                   ) : (
                     <button 
                       disabled 
-                      className={`w-[clamp(72px,11vw,82px)] h-[clamp(72px,11vw,82px)] rounded-[50%] flex items-center justify-center text-white shadow-[0_4px_16px_rgba(224,90,63,0.3)] z-10 transition-all duration-200 opacity-60 cursor-not-allowed bg-gray-400`}
+                      className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 opacity-60 cursor-not-allowed bg-gray-400"
                       aria-label="마이크 사용 불가"
                     >
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+                      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
                     </button>
                   )}
                 </div>
