@@ -69,12 +69,12 @@ function StepFooterNav({
   nextLoading?: boolean;
 }) {
   return (
-    <div className="w-full grid grid-cols-[38fr_62fr] gap-2 items-stretch">
+    <div className="w-full grid grid-cols-[35fr_65fr] gap-2 items-stretch">
       <button
         type="button"
         onClick={onBack}
         className="rounded-2xl border border-gray-200 bg-white font-bold text-gray-500 active:scale-[0.98] transition-transform cursor-pointer whitespace-nowrap overflow-hidden"
-        style={{ padding: "14px 8px", fontSize: "clamp(12px, 3.6vw, 14px)" }}
+        style={{ padding: "14px 4px", fontSize: "clamp(12px, 3.4vw, 14px)" }}
       >
         ← 이전
       </button>
@@ -83,7 +83,7 @@ function StepFooterNav({
         onClick={onNext}
         disabled={nextDisabled || nextLoading}
         className="rounded-2xl font-bold text-white disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer whitespace-nowrap overflow-hidden"
-        style={{ padding: "14px 8px", fontSize: "clamp(12px, 3.6vw, 14px)", background: "var(--color-k-navy)" }}
+        style={{ padding: "14px 6px", fontSize: "clamp(11px, 3.2vw, 14px)", background: "var(--color-k-navy)" }}
       >
         {nextLoading ? "처리 중..." : nextLabel}
       </button>
