@@ -5,6 +5,13 @@ import { getCurrentKstDateStr, getWeekBoundsKst, getDaysSinceStart } from "@/lib
 
 export const runtime = "nodejs";
 
+// week_start가 토요일(대표 확정 주간 정책, requests/029)이 아닌 행은 구 정책(월~일 등)의
+// 잔존 데이터다. 삭제하지 않고 그대로 보존하되, 새 정책과 기간이 겹쳐 카드가 중복
+// 표시되는 것을 막기 위해 부모 노출 API에서만 걸러낸다.
+function isSaturdayWeekStart(weekStart: string): boolean {
+  return new Date(`${weekStart}T00:00:00Z`).getUTCDay() === 6;
+}
+
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -52,7 +59,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Add summaryState for the calendar
-    const mapped = (weeklies ?? []).map(w => {
+    const mapped = (weeklies ?? []).filter(w => isSaturdayWeekStart(w.week_start)).map(w => {
       let summary_state = "평소와 비슷했어요";
       if (w.mood_average != null) {
         if (w.mood_average >= 8) summary_state = "편안한 한 주였어요";
@@ -76,7 +83,7 @@ export async function GET(req: NextRequest) {
       .select("id, week_start, week_end, summary_text, mood_average, highlights, parent_guide, weekend_activity_recommendation, created_at")
       .eq("child_id", childId)
       .order("week_start", { ascending: false })
-      .limit(6); // get up to 6 just in case the current week is already generated (it shouldn't be until Sat)
+      .limit(6); // 카드 표시는 5개(아래 slice)지만 여유분 1개를 더 가져온다
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -85,36 +92,30 @@ export async function GET(req: NextRequest) {
     const currentKstDate = getCurrentKstDateStr();
     const { weekStart: currWeekStart, weekEnd: currWeekEnd } = getWeekBoundsKst(currentKstDate);
 
-    // Is the current week already completed?
-    let currentCompleted = false;
-    let recentWeeklies = weeklies ?? [];
-    if (recentWeeklies.length > 0 && recentWeeklies[0].week_start === currWeekStart) {
-      currentCompleted = true;
-      // We still include it in weeklySummaries.
-    }
+    // 배치는 토요일 06:00 KST에 "직전 완료 주간"만 생성하므로, 진행 중인 현재 주간
+    // (currWeekStart)에 대한 weekly_summaries 행은 절대 존재하지 않는다.
+    // 구 정책(월~일 등) 잔존 행은 새 토~금 주간과 기간이 겹쳐 카드가 중복 표시되므로 제외한다.
+    const recentWeeklies = (weeklies ?? []).filter(w => isSaturdayWeekStart(w.week_start));
 
-    let currentAggregation = null;
-    if (!currentCompleted) {
-      // Fetch current week conversation count (sessions with turn_count > 0)
-      const currentWeekStartKst = `${currWeekStart}T00:00:00+09:00`;
-      const currentWeekEndKst = `${currWeekEnd}T23:59:59.999+09:00`;
+    // 현재(진행 중) 주간의 실시간 대화 집계 — 아직 리포트가 없으므로 항상 계산한다.
+    const currentWeekStartKst = `${currWeekStart}T00:00:00+09:00`;
+    const currentWeekEndKst = `${currWeekEnd}T23:59:59.999+09:00`;
 
-      const { count: sessionCount, error: sessionErr } = await supabase
-        .from("chat_sessions")
-        .select("id", { count: "exact", head: true })
-        .eq("child_id", childId)
-        .gt("turn_count", 0)
-        .gte("started_at", currentWeekStartKst)
-        .lte("started_at", currentWeekEndKst);
-      
-      currentAggregation = {
-        week_start: currWeekStart,
-        week_end: currWeekEnd,
-        currentDayIndex: getDaysSinceStart(currWeekStart, currentKstDate),
-        currentConversationCount: sessionCount ?? 0,
-        expectedCompletionLabel: "금요일 밤에 완성돼요"
-      };
-    }
+    const { count: sessionCount, error: sessionErr } = await supabase
+      .from("chat_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("child_id", childId)
+      .gt("turn_count", 0)
+      .gte("started_at", currentWeekStartKst)
+      .lte("started_at", currentWeekEndKst);
+
+    const currentAggregation = {
+      week_start: currWeekStart,
+      week_end: currWeekEnd,
+      currentDayIndex: getDaysSinceStart(currWeekStart, currentKstDate),
+      currentConversationCount: sessionCount ?? 0,
+      expectedCompletionLabel: "다음 토요일 오전 6시에 완성돼요"
+    };
 
     // Add summaryState for cards
     const mapped = recentWeeklies.slice(0, 5).map(w => {

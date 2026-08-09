@@ -75,6 +75,7 @@ export interface DailyReportResult {
 export interface WeeklySummaryResult {
   created: string[];
   skipped: string[];
+  existing: string[];
   errors: { childId: string; error: string }[];
 }
 
@@ -408,17 +409,17 @@ export async function generateDailyReports(db: SupabaseClient, targetDate: strin
   return result;
 }
 
-/** targetDate가 속한 주의 월요일/일요일 DATE 문자열 */
-function getWeekBounds(targetDate: string): { weekStart: string; weekEnd: string } {
+/** 토요일 06:00 KST 실행일을 기준으로 직전 완료 주간(토요일~금요일)을 반환. */
+function getCompletedWeekBounds(targetDate: string): { weekStart: string; weekEnd: string } {
   const d = new Date(`${targetDate}T12:00:00Z`);
   const dow = d.getUTCDay();
-  const diffToMon = dow === 0 ? -6 : 1 - dow;
-  const mon = new Date(d);
-  mon.setUTCDate(d.getUTCDate() + diffToMon);
-  const sun = new Date(mon);
-  sun.setUTCDate(mon.getUTCDate() + 6);
+  const diffToCurrentSat = dow === 6 ? 0 : -dow - 1;
+  const previousSat = new Date(d);
+  previousSat.setUTCDate(d.getUTCDate() + diffToCurrentSat - 7);
+  const previousFri = new Date(previousSat);
+  previousFri.setUTCDate(previousSat.getUTCDate() + 6);
   const fmt = (dt: Date) => dt.toISOString().slice(0, 10);
-  return { weekStart: fmt(mon), weekEnd: fmt(sun) };
+  return { weekStart: fmt(previousSat), weekEnd: fmt(previousFri) };
 }
 
 interface WeeklyReportJson {
@@ -495,10 +496,11 @@ async function fallbackFromDailyReports(
   console.error(`[generateWeeklySummary] 원문 재분석 실패 — child ${childId}는 daily_reports 요약 이어붙이기로 폴백`);
   const { data: reports } = await db
     .from("daily_reports")
-    .select("summary_line, mood_score, emotion_tags, chat_sessions!inner(child_id)")
-    .eq("chat_sessions.child_id", childId)
-    .gte("created_at", `${weekStart}T00:00:00Z`)
-    .lte("created_at", `${weekEnd}T23:59:59Z`);
+    .select("summary_line, mood_score, emotion_tags")
+    .eq("child_id", childId)
+    .gte("business_date", weekStart)
+    .lte("business_date", weekEnd)
+    .is("deleted_at", null);
 
   const dailySummaries = (reports ?? [])
     .map((r: { summary_line: string; mood_score: number; emotion_tags: string[] }, i: number) =>
@@ -510,24 +512,29 @@ async function fallbackFromDailyReports(
 
 /** Step 3: 주간 리포트 — 그 주 대화 원문 전체를 재분석해 요약+상세를 함께 생성(이어붙이기 금지).
  *  토큰 상한 초과 시 청크 맵-리듀스, 그래도 실패하면 daily_reports 요약으로 자동 강등.
- *  토요일(6) 또는 forceWeekly */
+ *  토요일(6) 또는 forceWeekly 실행 시 직전 완료 주간을 처리한다. */
 export async function generateWeeklySummary(
   db: SupabaseClient,
   targetDate: string,
   forceWeekly = false,
 ): Promise<WeeklySummaryResult> {
-  const result: WeeklySummaryResult = { created: [], skipped: [], errors: [] };
+  const result: WeeklySummaryResult = { created: [], skipped: [], existing: [], errors: [] };
 
   const dow = new Date(`${targetDate}T12:00:00Z`).getUTCDay();
   if (!forceWeekly && dow !== 6) return result;
 
-  const { weekStart, weekEnd } = getWeekBounds(targetDate);
+  const { weekStart, weekEnd } = getCompletedWeekBounds(targetDate);
+  // weekEnd 당일 23:59:59.999를 넘는 마이크로초 정밀도 세션까지 포함하기 위해 반개구간으로 조회.
+  const weekEndExclusive = new Date(new Date(`${weekEnd}T00:00:00Z`).getTime() + 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
 
   const { data: sessionsWithChild, error: fetchErr } = await db
     .from("chat_sessions")
-    .select("id, child_id")
-    .gte("started_at", `${weekStart}T00:00:00Z`)
-    .lte("started_at", `${weekEnd}T23:59:59Z`);
+    .select("id, child_id, child_profiles!inner(guardian_consent_withdrawn_at)")
+    .gte("started_at", `${weekStart}T00:00:00+09:00`)
+    .lt("started_at", `${weekEndExclusive}T00:00:00+09:00`)
+    .is("child_profiles.guardian_consent_withdrawn_at", null);
 
   if (fetchErr) throw new Error(`generateWeeklySummary: 세션 조회 실패 — ${fetchErr.message}`);
   if (!sessionsWithChild?.length) return result;
@@ -538,11 +545,27 @@ export async function generateWeeklySummary(
     sessionsByChild.get(s.child_id)!.push(s.id);
   }
 
+  const childIds = [...sessionsByChild.keys()];
+  // DB 제약은 UNIQUE(child_id, week_start) 하나뿐이므로 그 키만으로 조회한다(week_end까지 걸면
+  // 제약보다 좁아져 INSERT가 23505로 실패할 수 있음). deleted_at 필터도 걸지 않는다 — soft-delete된
+  // 행도 이 제약에 걸리므로, 필터를 걸면 오히려 재생성 시도 후 INSERT 충돌로 이어진다.
+  const { data: existingRows, error: existingErr } = await db
+    .from("weekly_summaries")
+    .select("child_id")
+    .in("child_id", childIds)
+    .eq("week_start", weekStart);
+  if (existingErr) throw new Error(`generateWeeklySummary: 기존 리포트 조회 실패 — ${existingErr.message}`);
+  const existingChildIds = new Set((existingRows ?? []).map((row: { child_id: string }) => row.child_id));
+
   const weekRange = `${weekStart} ~ ${weekEnd}`;
   const reportModel = await resolveGroupAModel(db, "weeklyReport");
 
   for (const [childId, sessionIds] of sessionsByChild) {
     try {
+      if (existingChildIds.has(childId)) {
+        result.existing.push(childId);
+        continue;
+      }
       if (!sessionIds.length) {
         result.skipped.push(childId);
         continue;
@@ -576,7 +599,7 @@ export async function generateWeeklySummary(
 
       const { data: inserted, error: insertErr } = await db
         .from("weekly_summaries")
-        .upsert(
+        .insert(
           {
             child_id: childId,
             week_start: weekStart,
@@ -589,7 +612,6 @@ export async function generateWeeklySummary(
             parent_guide: report.parent_guide ?? "",
             weekend_activity_recommendation: report.weekend_activity_recommendation ?? "",
           },
-          { onConflict: "child_id,week_start" },
         )
         .select("id")
         .single();

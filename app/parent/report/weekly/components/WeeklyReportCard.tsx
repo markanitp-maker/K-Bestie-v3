@@ -44,7 +44,7 @@ export function WeeklyReportCard({
           </h2>
           {isFeatured && isLastWeek && (
             <span className="text-xs font-bold px-2.5 py-1 rounded-full text-white" style={{ background: "var(--color-k-mascot-orange)" }}>
-              지난주
+              지난 완료 주간
             </span>
           )}
         </div>

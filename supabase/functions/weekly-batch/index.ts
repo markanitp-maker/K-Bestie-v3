@@ -1,5 +1,5 @@
 // 주간 배치 Edge Function — 매주 토요일 06:00 KST pg_cron 호출
-//   Step 3: 주간 요약 생성(일일요약 7개 재종합 + weekend_activity_recommendation)
+//   Step 3: 직전 완료 주간(토요일~금요일) 요약 생성
 //   크론이 토요일로 고정 호출하므로 forceWeekly=true 로 실행(요일 경계 흔들림 방지).
 //   순서: 같은 토요일 04:00 일일 배치(daily-batch) 이후 06:00 에 실행 — 일일→주간 순서 유지.
 //
