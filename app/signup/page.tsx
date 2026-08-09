@@ -581,7 +581,8 @@ function ChildStep({
 
 function SignupContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const rawSearchParams = useSearchParams();
+  const searchParams = rawSearchParams ?? new URLSearchParams();
   const [authChecking, setAuthChecking] = useState(true);
   const returnUrl = safePostAuthReturnUrl(searchParams.get("returnUrl"));
 

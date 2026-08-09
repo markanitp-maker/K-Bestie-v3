@@ -95,7 +95,8 @@ async function playClosingLineViaTts(text: string, sessionId: string | null): Pr
 
 function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: boolean) => void }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const rawSearchParams = useSearchParams();
+  const searchParams = rawSearchParams ?? new URLSearchParams();
   const { quality: connectionQuality, recordStageResult, recordNormalTurn } = usePipelineConnectionQuality();
 
   // confirm_restart_after_completion(022): 오늘 이미 완료한 라운드에 재진입 시 "다시 할까요?"

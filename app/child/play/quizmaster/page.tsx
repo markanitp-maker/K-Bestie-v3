@@ -7,7 +7,8 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 
 function QuizmasterWrapperContent() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const searchParams = useSearchParams();
+  const rawSearchParams = useSearchParams();
+  const searchParams = rawSearchParams ?? new URLSearchParams();
   const resumeAttemptId = searchParams.get("resume");
 
   const iframeSrc = resumeAttemptId 

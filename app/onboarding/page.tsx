@@ -15,7 +15,8 @@ const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 // 사용자는 애초에 여기 도달하지 않고 /signup으로 간다.
 function OnboardingContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const rawSearchParams = useSearchParams();
+  const searchParams = rawSearchParams ?? new URLSearchParams();
   const requestedNext = safePostAuthReturnUrl(searchParams.get("next"));
   const next = requestedNext === "/" ? "/parent/home" : requestedNext;
   const isChild = next === "/child/home" || next.startsWith("/child/");

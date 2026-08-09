@@ -5,13 +5,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
-import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 
 function LoginContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const rawSearchParams = useSearchParams();
+  const searchParams = rawSearchParams ?? new URLSearchParams();
   const returnUrl = safePostAuthReturnUrl(searchParams.get("returnUrl"));
   const childLoginOnly = searchParams.get("role") === "child";
   const oauthInFlightRef = useRef(false);
@@ -111,7 +111,6 @@ function LoginContent() {
       className="min-h-dvh flex flex-col items-center justify-center px-5 md:max-w-[420px] md:mx-auto w-full py-8"
       style={{ background: "var(--color-k-surface)" }}
     >
-      <KakaoInAppBrowserNotice />
       <div className="text-center mb-8">
         <div className="relative w-[112px] h-[112px] mx-auto mb-3">
           <Image

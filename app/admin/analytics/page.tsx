@@ -40,7 +40,8 @@ function Status({ value }: { value: string }) {
 
 function AdminAnalyticsContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const rawSearchParams = useSearchParams();
+  const searchParams = useMemo(() => rawSearchParams ?? new URLSearchParams(), [rawSearchParams]);
   const [period, setPeriod] = useState<AnalyticsPeriod>((searchParams.get("period") as AnalyticsPeriod) || "7d");
   const [scope, setScope] = useState<AnalyticsScope>((searchParams.get("scope") as AnalyticsScope) || "all");
   const [internalTest, setInternalTest] = useState<InternalTestMode>((searchParams.get("internalTest") as InternalTestMode) || "exclude");
