@@ -6,8 +6,9 @@ import { getCurrentKstDateStr, getWeekBoundsKst, getDaysSinceStart } from "@/lib
 export const runtime = "nodejs";
 
 // week_start가 토요일(대표 확정 주간 정책, requests/029)이 아닌 행은 구 정책(월~일 등)의
-// 잔존 데이터다. 삭제하지 않고 그대로 보존하되, 새 정책과 기간이 겹쳐 카드가 중복
-// 표시되는 것을 막기 위해 부모 노출 API에서만 걸러낸다.
+// 잔존 데이터다. 삭제하지 않고 그대로 보존한다. "최근 카드" 목록(list)에서는 새 토~금
+// 주간과 기간이 겹쳐 중복 카드로 보이므로 걸러내지만, "지난 기록 보기" 달력(calendar)에서는
+// 대표님 확인대로 구 정책 리포트도 그대로 선택해 볼 수 있어야 하므로 걸러내지 않는다.
 function isSaturdayWeekStart(weekStart: string): boolean {
   return new Date(`${weekStart}T00:00:00Z`).getUTCDay() === 6;
 }
@@ -58,8 +59,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Add summaryState for the calendar
-    const mapped = (weeklies ?? []).filter(w => isSaturdayWeekStart(w.week_start)).map(w => {
+    // Add summaryState for the calendar — 구 정책(월~일) 리포트도 달력에서는 그대로 노출한다.
+    const mapped = (weeklies ?? []).map(w => {
       let summary_state = "평소와 비슷했어요";
       if (w.mood_average != null) {
         if (w.mood_average >= 8) summary_state = "편안한 한 주였어요";
