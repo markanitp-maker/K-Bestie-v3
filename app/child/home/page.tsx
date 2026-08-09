@@ -310,14 +310,14 @@ export default function ChildHomePage() {
         <div className="flex-1 w-full max-w-[430px] mx-auto px-4 pb-20 flex flex-col relative z-10 child-home-content">
           
           {/* Mascot Area */}
-          <div className="flex flex-col items-center justify-center relative" style={{ height: '160px' }}>
+          <div className="flex flex-col items-center justify-center relative" style={{ height: '120px' }}>
             <Image
               src="/Images/mascot/mascot-standing.png"
               alt="케이 마스코트"
               width={205}
               height={205}
               className="object-contain drop-shadow-md z-10"
-              style={{ width: "clamp(120px, 42%, 164px)", height: "auto" }}
+              style={{ width: "clamp(96px, 34%, 128px)", height: "auto" }}
               priority
             />
             {/* Oval shadow under mascot */}
@@ -325,8 +325,8 @@ export default function ChildHomePage() {
           </div>
 
           {/* Greeting Area */}
-          <div className="flex flex-col items-center text-center mt-2 mb-2">
-            <h1 className="font-brand text-[24px] font-extrabold leading-[1.35]">
+          <div className="flex flex-col items-center text-center mt-1 mb-1.5">
+            <h1 className="font-brand text-[24px] font-extrabold leading-[1.3]">
               {greetingTitle}<br/>오늘은 뭐 하고 놀까?
             </h1>
           </div>
@@ -334,7 +334,7 @@ export default function ChildHomePage() {
           <MissionOnboardingCard />
 
           {/* Status Bubble */}
-          <div className="flex justify-center mb-3">
+          <div className="flex justify-center mb-2">
             <div className="relative bg-white px-4 py-2.5 rounded-full border border-[var(--color-k-orange)] shadow-sm text-[15px] font-medium inline-block max-w-[80%] text-center">
               {missionBubble}
               {/* Triangle pointer */}
@@ -343,14 +343,14 @@ export default function ChildHomePage() {
           </div>
 
           {/* Primary Action Cards */}
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
             {/* Mission Card (Primary) */}
             <Link 
               href={missionUrl}
-              className="flex items-center gap-3 rounded-[22px] px-4 py-3 shadow-sm transition-transform active:scale-[0.98] w-full"
+              className="flex items-center gap-3 rounded-[22px] px-4 py-2.5 shadow-sm transition-transform active:scale-[0.98] w-full"
               style={{ background: "var(--color-k-orange)" }}
             >
-              <div className="w-[52px] h-[52px] rounded-[18px] flex items-center justify-center text-[28px] shrink-0 bg-white/25">
+              <div className="w-[46px] h-[46px] rounded-[18px] flex items-center justify-center text-[28px] shrink-0 bg-white/25">
                 🎯
               </div>
               <div className="flex-1 text-left min-w-0">
@@ -369,7 +369,7 @@ export default function ChildHomePage() {
               {/* Talk Card */}
               <Link 
                 href="/chat"
-                className="flex flex-col items-start gap-2.5 rounded-[20px] px-3.5 py-3.5 shadow-sm transition-transform active:scale-[0.98] w-full"
+                className="flex flex-col items-start gap-2 rounded-[20px] px-3.5 py-3 shadow-sm transition-transform active:scale-[0.98] w-full"
                 style={{ background: "var(--color-k-mascot-orange)" }}
               >
                 <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-[22px] shrink-0 bg-white/30">
@@ -384,7 +384,7 @@ export default function ChildHomePage() {
               {/* Play Card */}
               <Link 
                 href="/child/play"
-                className="flex flex-col items-start gap-2.5 rounded-[20px] px-3.5 py-3.5 shadow-sm transition-transform active:scale-[0.98] w-full"
+                className="flex flex-col items-start gap-2 rounded-[20px] px-3.5 py-3 shadow-sm transition-transform active:scale-[0.98] w-full"
                 style={{ background: "var(--color-k-sky-blue)" }}
               >
                 <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-[22px] shrink-0 bg-white/25">

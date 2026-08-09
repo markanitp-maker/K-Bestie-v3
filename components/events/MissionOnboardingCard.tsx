@@ -41,7 +41,7 @@ export default function MissionOnboardingCard() {
 
   return (
     <div
-      className="w-full max-w-[430px] mx-auto rounded-[20px] px-4 py-3 mb-2 shadow-sm"
+      className="w-full max-w-[430px] mx-auto rounded-[20px] px-3.5 py-2.5 mb-1.5 shadow-sm"
       style={{ background: "linear-gradient(135deg, #FFF3E0 0%, #FFE8CC 100%)", border: "1px solid rgba(255,159,69,0.25)" }}
     >
       <p className="text-sm font-bold" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
@@ -69,23 +69,16 @@ export default function MissionOnboardingCard() {
               style={{ width: `${Math.min(100, (count / 60) * 100)}%`, background: "var(--color-k-orange, #FF9F45)" }}
             />
           </div>
-          <p className="text-xs mt-2" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-            케이와 벌써 {count}번 이야기했어요!
-            <br />
-            현재 {won(data.current_reward_amount)} 구간을 달성했어요.
-            {data.nextTierRemaining && (
-              <>
-                <br />
-                {data.nextTierRemaining.remaining}번 더 완료하면 {won(data.nextTierRemaining.nextTier)} 구간이에요.
-              </>
-            )}
-            {remaining !== null && (
-              <>
-                <br />
-                이벤트 종료까지 {remaining}일 남았어요.
-              </>
-            )}
-          </p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2">
+            <div className="text-xs leading-snug" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+              <p>케이와 벌써 {count}번 이야기했어요!</p>
+              <p>현재 {won(data.current_reward_amount)} 구간을 달성했어요.</p>
+            </div>
+            <div className="text-xs leading-snug" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
+              {data.nextTierRemaining && <p>{data.nextTierRemaining.remaining}번 더 완료하면 {won(data.nextTierRemaining.nextTier)} 구간이에요.</p>}
+              {remaining !== null && <p>이벤트 종료까지 {remaining}일 남았어요.</p>}
+            </div>
+          </div>
         </>
       )}
 
