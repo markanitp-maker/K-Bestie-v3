@@ -35,8 +35,6 @@
     {
       "path": "/api/cron/mission-start?missionType=2",
       "schedule": "0 9 * * *"
-    },
-    { "path": "/api/batch/v3/worker", "schedule": "58 8 * * *" },
-    { "path": "/api/batch/v3/worker", "schedule": "58 14 * * *" }
+    }
   ]
 }
