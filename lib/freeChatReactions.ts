@@ -52,6 +52,21 @@ const VIOLENCE_KEYWORDS = [
   "폭행", "학대", "발로 찼", "손찌검",
 ];
 
+// "맞다"는 "(맞아서) 아프다"와 "(점수를) 맞다/맞히다"라는 서로 무관한 두 뜻을 공유한다.
+// "100점 맞았어"(성취) 같은 흔한 표현이 VIOLENCE_KEYWORDS의 "맞았"/"맞고"에 그대로
+// 걸려 폭력 오탐(성적 자랑 → "심각한 일이니 부모님께 꼭 말해줘" 오응답)이 발생했다
+// (agy E2E QA로 실제 재현·확인).
+// 단순 부분문자열 제거(split/join)는 "문제 다 맞았어"처럼 채점 명사와 "맞다" 사이에
+// "다/거의/전부/모두" 같은 말이 끼어들면 놓친다(codex-rv 2차 지적으로 발견 — "문제 맞았"가
+// 연속 부분문자열이 아니라 그대로 남아 violence로 오분류됨). 그래서 정규식으로 "채점
+// 명사 + (조사)? + (끼임말)? + 맞다 어간"을 통째로 지운다. "다 맞았"처럼 채점 명사 없이
+// "다"만 있는 경우는 절대 넣지 않는다 — "다 같이 맞았어"처럼 실제 폭력 신호와 겹칠 수
+// 있어 안전 쪽으로 기운다(미탐이 오탐보다 위험). 단독 "점"도 넣지 않는다 — "약점 맞았어"
+// 처럼 실제 타격 의미의 문장까지 지워버릴 수 있어(codex-rv 3차 지적), 숫자가 바로 앞에
+// 붙거나 "몇 점"일 때만 점수 문맥으로 인정한다.
+const VIOLENCE_SCORING_CONTEXT_PATTERN =
+  /(점수|정답|문제|만점|백점|빵점|\d+\s*점|몇\s*점)\s*(을|를|이나|도)?\s*(다|거의|전부|모두|하나)?\s*맞(았|고|을까)/g;
+
 const THREAT_KEYWORDS = ["협박", "협박당했", "위협", "위협받았", "죽인다고 했", "가만 안 둔다고"];
 
 const INAPPROPRIATE_CONTACT_KEYWORDS = [
@@ -100,7 +115,8 @@ function detectSafetySubcategory(text: string): SafetySubcategory | null {
   const strippedForSelfHarm = SELF_HARM_IDIOM_EXCLUSIONS.reduce((t, idiom) => t.split(idiom).join(""), text);
   if (includesAny(strippedForSelfHarm, SELF_HARM_KEYWORDS)) return "self_harm";
 
-  if (includesAny(text, VIOLENCE_KEYWORDS)) return "violence";
+  const strippedForViolence = text.replace(VIOLENCE_SCORING_CONTEXT_PATTERN, "");
+  if (includesAny(strippedForViolence, VIOLENCE_KEYWORDS)) return "violence";
 
   // 폭력/괴롭힘 키워드가 있어도 명백히 제3자 얘기이고 본인 얘기라는 단서가 없으면 안전 카테고리에서 제외
   if (includesAny(text, BULLYING_KEYWORDS)) {
