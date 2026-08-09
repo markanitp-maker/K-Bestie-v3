@@ -23,6 +23,7 @@ import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { revokeCurrentPushInstallation, usePushSubscription } from "@/lib/notifications/usePushSubscription";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { ChildStartGuideModal, type ChildStartGuideChild } from "@/components/parent/ChildStartGuide";
+import { FamilyInviteManager } from "@/components/family/FamilyInviteManager";
 
 function formatRetentionLabel(tier: Tier): string {
   const retention = getEffectiveRetention(tier, 0);
@@ -108,7 +109,6 @@ export default function ParentSettingsPage() {
   const [loginGuideChild, setLoginGuideChild] = useState<ChildStartGuideChild | null>(null);
 
   // 구성원 추가 폼 상태
-  const [inviteEmail, setInviteEmail] = useState("");
   const [addFamilyName, setAddFamilyName] = useState("");
   const [addGivenName, setAddGivenName] = useState("");
   const [addUsername, setAddUsername] = useState("");
@@ -233,12 +233,6 @@ export default function ParentSettingsPage() {
       setShowUnsavedGate(false);
     }
   }, [editChild]);
-
-  // 가입 신청 목록 및 로딩 상태
-  const [joinRequests, setJoinRequests] = useState<any[]>([]);
-  const [loadingRequests, setLoadingRequests] = useState(true);
-  const [sentInvites, setSentInvites] = useState<any[]>([]);
-  const [loadingSentInvites, setLoadingSentInvites] = useState(true);
 
   // 닉네임 수정 상태
   const [nicknameInput, setNicknameInput] = useState("");
@@ -396,38 +390,6 @@ export default function ParentSettingsPage() {
     }
   };
 
-  const loadJoinRequests = async () => {
-    if (!store.activeFamilyId || !isOwner) {
-      setLoadingRequests(false);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/families/${store.activeFamilyId}/join-requests?status=pending`);
-      if (res.ok) {
-        const data = await res.json();
-        setJoinRequests(data.requests ?? []);
-      }
-    } catch {} finally {
-      setLoadingRequests(false);
-    }
-  };
-
-  const loadSentInvites = async () => {
-    if (!store.activeFamilyId || !isOwner) {
-      setLoadingSentInvites(false);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/families/${store.activeFamilyId}/sent-invites?status=pending`);
-      if (res.ok) {
-        const data = await res.json();
-        setSentInvites(data.invites ?? []);
-      }
-    } catch {} finally {
-      setLoadingSentInvites(false);
-    }
-  };
-
   const loadApprovalRequests = async () => {
     if (!store.activeFamilyId) {
       setApprovalRequests([]);
@@ -446,16 +408,6 @@ export default function ParentSettingsPage() {
     loadFamilyMembers();
     loadApprovalRequests();
   }, [store.activeFamilyId]);
-
-  useEffect(() => {
-    if (store.activeFamilyId && isOwner) {
-      loadJoinRequests();
-      loadSentInvites();
-    } else {
-      setLoadingRequests(false);
-      setLoadingSentInvites(false);
-    }
-  }, [store.activeFamilyId, isOwner]);
 
   const validateChildProfile = () => {
     const errors: { familyName?: string; givenName?: string; grade?: string; interests?: string } = {};
@@ -733,36 +685,6 @@ export default function ParentSettingsPage() {
       }
       await loadApprovalRequests();
       await loadFamilyMembers(); // Reload members to show the newly approved child immediately
-    } catch {
-      setAddError("네트워크 에러가 발생했습니다.");
-    } finally {
-      setAddLoading(false);
-    }
-  };
-
-  const handleInviteParent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError(null);
-    if (!inviteEmail.trim()) return;
-
-    setAddLoading(true);
-    try {
-      const res = await fetch(`/api/families/${store.activeFamilyId}/invite-member`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail.trim() })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setAddError(data.error || "초대에 실패했습니다.");
-        return;
-      }
-
-      setInviteEmail("");
-      alert("초대장을 전송했습니다!");
-      await loadFamilyMembers();
-      await loadSentInvites();
     } catch {
       setAddError("네트워크 에러가 발생했습니다.");
     } finally {
@@ -1366,7 +1288,7 @@ export default function ParentSettingsPage() {
                 </div>
 
                 {/* [가족 구성원 보호자 리스트 및 초대 섹션] */}
-                {(additionalGuardianCount >= 1 || sentInvites.length > 0 || isOwner) && (
+                {(additionalGuardianCount >= 1 || isOwner) && (
                   <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
                     <p className="text-[10px] font-bold text-gray-500">가족 구성원 보호자</p>
                     
@@ -1384,50 +1306,16 @@ export default function ParentSettingsPage() {
                       </div>
                     )}
 
-                    {/* 2. 등록된 배우자가 없고, 대기 중인 초대가 있는 경우 대기 UI 표시 */}
-                    {additionalGuardianCount === 0 && sentInvites.length > 0 && (
-                      <div className="flex flex-col gap-1.5">
-                        {sentInvites.map((invite) => (
-                          <div key={invite.id} className="flex justify-between items-center bg-white border border-gray-100 rounded-xl p-2.5">
-                            <div>
-                              <p className="text-xs font-bold text-gray-800">{invite.target_email}</p>
-                              <p className="text-[9px] text-gray-400">초대 일시: {invite.created_at ? new Date(invite.created_at).toLocaleDateString() : ""}</p>
-                            </div>
-                            <span className="text-[9px] bg-yellow-50 text-yellow-600 font-bold px-2 py-1 rounded-lg text-center shrink-0">
-                              초대 대기중
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* 3. 등록된 배우자도 없고 대기 중인 초대도 없을 때, 오너이면 안내 문구 표시 */}
-                    {additionalGuardianCount === 0 && sentInvites.length === 0 && isOwner && (
+                    {/* 기존 이메일 초대는 보존만 하고 신규 UI에서는 1회용 링크만 사용한다. */}
+                    {additionalGuardianCount === 0 && isOwner && (
                       <p className="text-[11px] text-gray-500 py-1">
                         아직 연결된 다른 보호자가 없습니다. 보호자를 초대해보세요!
                       </p>
                     )}
 
-                    {/* 4. 초대 폼 (isOwner이고 배우자 초대가 가능한 상태인 경우 그대로 유지) */}
+                    {/* 이메일 매칭 없는 1회용 링크 초대 */}
                     {isOwner && familyMembers.filter(m => m.role !== "child").length < 2 && (
-                      <div className="mt-2 pt-2 border-t border-gray-100">
-                        <p className="text-[9px] text-gray-400 mb-1.5">보호자(배우자) 이메일 초대</p>
-                        <form onSubmit={handleInviteParent} className="flex gap-2">
-                          <input
-                            type="email"
-                            placeholder="spouse@example.com"
-                            value={inviteEmail}
-                            onChange={(e) => setInviteEmail(e.target.value)}
-                            className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-xl outline-none bg-white"
-                          />
-                          <button
-                            type="submit"
-                            className="px-4 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
-                          >
-                            초대
-                          </button>
-                        </form>
-                      </div>
+                      <FamilyInviteManager familyId={store.activeFamilyId!} />
                     )}
                   </div>
                 )}

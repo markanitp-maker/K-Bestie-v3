@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 const RELATIONSHIPS = ["mother", "father", "legal_guardian", "other_legal_guardian"] as const;
 // POST /api/signup/profile — 회원가입 2단계(보호자 기본정보) 저장.
-// Body: { name, relationship, legalGuardianConfirmed }
+// Body: { name, relationship }. 법정대리인 권한은 1단계의 서버 동의 원장을 재사용한다.
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
   let body: {
     name?: string;
     relationship?: string;
-    legalGuardianConfirmed?: boolean;
   };
   try {
     body = await req.json();
@@ -32,11 +31,28 @@ export async function POST(req: NextRequest) {
   if (!relationship || !RELATIONSHIPS.includes(relationship as (typeof RELATIONSHIPS)[number])) {
     return NextResponse.json({ error: "아이와의 관계를 선택해주세요." }, { status: 400 });
   }
-  if (body.legalGuardianConfirmed !== true) {
-    return NextResponse.json({ error: "법정대리인 확인이 필요합니다." }, { status: 400 });
-  }
-
   const svc = createServiceClient();
+  const { data: guardianConsents, error: consentError } = await svc
+    .from("signup_consents")
+    .select("consent_type, agreed_at")
+    .eq("user_id", user.id)
+    .eq("agreed", true)
+    .is("withdrawn_at", null)
+    .in("consent_type", ["guardian_u14", "guardian_authority"]);
+
+  if (consentError) {
+    console.error("[signup/profile] guardian consent query error:", consentError);
+    return NextResponse.json({ error: "동의 기록을 확인하지 못했습니다." }, { status: 500 });
+  }
+  const consentByType = new Map((guardianConsents ?? []).map((row) => [row.consent_type, row.agreed_at]));
+  if (!consentByType.has("guardian_u14") || !consentByType.has("guardian_authority")) {
+    return NextResponse.json(
+      { error: "1단계 법정대리인 동의를 먼저 완료해 주세요." },
+      { status: 409 },
+    );
+  }
+  const guardianConfirmedAt = consentByType.get("guardian_authority") ?? new Date().toISOString();
+
   // upsert only allowed profile input fields — administrative/membership fields are not touched.
   // account_status transitions to ONBOARDING (from AUTHENTICATED_INCOMPLETE) to signal active onboarding.
   // It will only transition to ACTIVE once family + child are fully created.
@@ -47,7 +63,7 @@ export async function POST(req: NextRequest) {
       email: user.email ?? "",
       name,
       relationship_to_child: relationship,
-      legal_guardian_confirmed_at: new Date().toISOString(),
+      legal_guardian_confirmed_at: guardianConfirmedAt,
       account_status: "ONBOARDING",
     }, { onConflict: "id" });
 

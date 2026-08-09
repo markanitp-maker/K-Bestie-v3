@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { requireActiveAccount } from "@/lib/auth/requireActiveAccount";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,9 @@ export async function GET(
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const activeCheck = await requireActiveAccount(user.id);
+  if (activeCheck) return activeCheck;
 
   const svc = createServiceClient();
 
@@ -36,11 +40,12 @@ export async function GET(
     .eq("family_id", childProfile.family_id)
     .eq("user_id", user.id)
     .in("role", ["owner_parent", "parent"])
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!ownerMember) {
     return NextResponse.json(
-      { error: "가족 오너만 자녀 계정을 조회할 수 있습니다" },
+      { error: "활성 보호자만 자녀 계정을 조회할 수 있습니다" },
       { status: 403 }
     );
   }
@@ -56,6 +61,7 @@ export async function GET(
     .eq("id", childProfile.member_id)
     .eq("family_id", childProfile.family_id)
     .eq("role", "child")
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!familyMember || !familyMember.user_id) {

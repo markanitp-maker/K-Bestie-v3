@@ -29,5 +29,17 @@ export default defineConfig({
         }
       },
     },
+    {
+      name: "android-chrome",
+      use: {
+        ...devices["Pixel 5"],
+      },
+    },
+    {
+      name: "iphone-webkit",
+      use: {
+        ...devices["iPhone 13"],
+      },
+    },
   ],
 });

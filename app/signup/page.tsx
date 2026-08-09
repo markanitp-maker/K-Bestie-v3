@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
@@ -12,16 +12,23 @@ const STEP_INDEX: Record<Step, number> = { consent: 1, profile: 2, family: 3, ch
 const STEP_LABEL: Record<Step, string> = {
   consent: "약관 동의",
   profile: "보호자 정보",
-  family: "가족 선택",
+  family: "가족 만들기",
   child: "아이 등록",
 };
 
 const GRADES = ["1학년", "2학년", "3학년", "4학년", "5학년", "6학년"];
-// 관심사 목록 — app/parent/settings/page.tsx의 기존 INTERESTS와 완전히 동일한 값(요청서
-// "새로운 별도 관심사 분류 체계를 중복 생성하지 않는다"). 두 파일이 공통 상수 모듈을
-// import하는 구조가 아니라서(기존 관례상 각 화면 파일에 인라인 선언, docs/conventions.md
-// "타입정의" 절 참고) 여기도 동일한 관례를 따라 값만 그대로 복사한다.
-const INTERESTS = ["공룡", "우주", "동물", "그림", "음악", "스포츠", "요리", "게임", "과학", "책"];
+
+type ProfileDraft = { name: string; relationship: string };
+type ChildDraft = {
+  familyName: string;
+  givenName: string;
+  gender: string;
+  username: string;
+  password: string;
+  passwordConfirm: string;
+  grade: string;
+  consent: boolean;
+};
 
 function StepHeader({ step }: { step: Step }) {
   return (
@@ -72,6 +79,18 @@ function PrimaryButton({
   );
 }
 
+function SecondaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full py-3 rounded-2xl border border-gray-200 bg-white text-sm font-bold text-gray-500 active:scale-[0.98] transition-transform cursor-pointer"
+    >
+      {children}
+    </button>
+  );
+}
+
 function ErrorBanner({ message, onRetry }: { message: string | null; onRetry?: () => void }) {
   if (!message) return null;
   return (
@@ -102,8 +121,17 @@ const OPTIONAL_CONSENTS = [
   { key: "event_notice", label: "이벤트·혜택 알림 동의 (선택)" },
 ] as const;
 
-function ConsentStep({ onNext }: { onNext: () => void }) {
-  const [agreements, setAgreements] = useState<Record<string, boolean>>({});
+function ConsentStep({
+  agreements,
+  onAgreementsChange,
+  onNext,
+  onBack,
+}: {
+  agreements: Record<string, boolean>;
+  onAgreementsChange: (agreements: Record<string, boolean>) => void;
+  onNext: () => void;
+  onBack: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,17 +139,17 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
     try {
       const saved = sessionStorage.getItem("k_saved_agreements");
       if (saved) {
-        setAgreements(JSON.parse(saved));
+        onAgreementsChange(JSON.parse(saved));
       }
     } catch {}
-  }, []);
+  }, [onAgreementsChange]);
 
   const allRequired = REQUIRED_CONSENTS.every((c) => agreements[c.key]);
 
   const toggleAll = (checked: boolean) => {
     const next: Record<string, boolean> = {};
     [...REQUIRED_CONSENTS, ...OPTIONAL_CONSENTS].forEach((c) => (next[c.key] = checked));
-    setAgreements(next);
+    onAgreementsChange(next);
   };
 
   const submit = async () => {
@@ -179,7 +207,7 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
             <input
               type="checkbox"
               checked={!!agreements[c.key]}
-              onChange={(e) => setAgreements((a) => ({ ...a, [c.key]: e.target.checked }))}
+              onChange={(e) => onAgreementsChange({ ...agreements, [c.key]: e.target.checked })}
               className="mt-0.5"
             />
             <span>
@@ -196,7 +224,7 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
             <input
               type="checkbox"
               checked={!!agreements[c.key]}
-              onChange={(e) => setAgreements((a) => ({ ...a, [c.key]: e.target.checked }))}
+              onChange={(e) => onAgreementsChange({ ...agreements, [c.key]: e.target.checked })}
               className="mt-0.5"
             />
             <span>{c.label}</span>
@@ -206,6 +234,7 @@ function ConsentStep({ onNext }: { onNext: () => void }) {
       <PrimaryButton onClick={submit} disabled={!allRequired} loading={loading}>
         다음 →
       </PrimaryButton>
+      <SecondaryButton onClick={onBack}>← 이전</SecondaryButton>
     </>
   );
 }
@@ -217,14 +246,21 @@ const RELATIONSHIP_OPTIONS = [
   { value: "other_legal_guardian", label: "기타 법정대리인" },
 ];
 
-function ProfileStep({ onNext }: { onNext: () => void }) {
-  const [name, setName] = useState("");
-  const [relationship, setRelationship] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
+function ProfileStep({
+  draft,
+  onDraftChange,
+  onNext,
+  onBack,
+}: {
+  draft: ProfileDraft;
+  onDraftChange: (draft: ProfileDraft) => void;
+  onNext: () => void;
+  onBack: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = name.trim() && relationship && confirmed;
+  const canSubmit = draft.name.trim() && draft.relationship;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -234,7 +270,7 @@ function ProfileStep({ onNext }: { onNext: () => void }) {
       const res = await fetch("/api/signup/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, relationship, legalGuardianConfirmed: confirmed }),
+        body: JSON.stringify({ name: draft.name, relationship: draft.relationship }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -258,13 +294,13 @@ function ProfileStep({ onNext }: { onNext: () => void }) {
       <input
         type="text"
         placeholder="보호자 이름"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
+        value={draft.name}
+        onChange={(e) => onDraftChange({ ...draft, name: e.target.value })}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
       />
       <select
-        value={relationship}
-        onChange={(e) => setRelationship(e.target.value)}
+        value={draft.relationship}
+        onChange={(e) => onDraftChange({ ...draft, relationship: e.target.value })}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white"
       >
         <option value="">아이와의 관계를 선택해주세요</option>
@@ -274,75 +310,32 @@ function ProfileStep({ onNext }: { onNext: () => void }) {
           </option>
         ))}
       </select>
-      <label className="flex items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
-        <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5" />
-        <span>본인은 위 아이의 법정대리인이거나 적법한 동의 권한을 보유하고 있음을 확인합니다.</span>
-      </label>
       <PrimaryButton onClick={submit} disabled={!canSubmit} loading={loading}>
         다음 →
       </PrimaryButton>
+      <SecondaryButton onClick={onBack}>← 이전</SecondaryButton>
     </>
   );
 }
 
-type PendingFamilyInvite = {
-  id: string;
-  familyName: string;
-  inviterName: string;
-};
-
 function FamilyStep({
+  name,
+  onNameChange,
   onCreated,
-  onJoined,
+  onBack,
 }: {
+  name: string;
+  onNameChange: (name: string) => void;
   onCreated: (familyId: string) => void;
-  onJoined: () => void;
+  onBack: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [ownerEmail, setOwnerEmail] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
-  const [joinLoading, setJoinLoading] = useState(false);
-  const [inviteLoading, setInviteLoading] = useState(true);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [pendingInvite, setPendingInvite] = useState<PendingFamilyInvite | null>(null);
-  const [joinRequestSent, setJoinRequestSent] = useState(false);
-
-  const loadPendingInvite = async () => {
-    setInviteLoading(true);
-    try {
-      const res = await fetch("/api/families/pending-invite", { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "초대 정보를 확인하지 못했습니다.");
-      setPendingInvite(data.invite ?? null);
-      return data.invite as PendingFamilyInvite | null;
-    } catch (e: any) {
-      setJoinError(e.message || "초대 정보를 확인하지 못했습니다.");
-      return null;
-    } finally {
-      setInviteLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadPendingInvite();
-    // 최초 진입 시 한 번만 기존 초대를 확인한다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const verifyJoinedMembership = async () => {
-    const res = await fetch("/api/auth/membership-status", { cache: "no-store" });
-    const status = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(status.error || "가족 참여 상태를 확인하지 못했습니다.");
-    if (status.state === "ACTIVE_PARENT" && status.role === "parent") {
-      onJoined();
-      return true;
-    }
-    return false;
-  };
+  const submittingRef = useRef(false);
 
   const submitCreate = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || submittingRef.current) return;
+    submittingRef.current = true;
     setCreateLoading(true);
     setCreateError(null);
     try {
@@ -359,76 +352,21 @@ function FamilyStep({
     } catch (e: any) {
       setCreateError(e.message || "잠시 후 다시 시도해 주세요. 입력한 내용은 안전하게 보관되어 있습니다.");
     } finally {
+      submittingRef.current = false;
       setCreateLoading(false);
-    }
-  };
-
-  const acceptInvite = async () => {
-    if (!pendingInvite) return;
-    setJoinLoading(true);
-    setJoinError(null);
-    try {
-      const res = await fetch(`/api/families/pending-invite/${pendingInvite.id}/accept`, {
-        method: "POST",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "가족 초대를 수락하지 못했습니다.");
-      if (!(await verifyJoinedMembership())) {
-        throw new Error("가족 연결은 완료됐지만 가입 상태 확인이 지연되고 있습니다. 다시 확인해 주세요.");
-      }
-    } catch (e: any) {
-      setJoinError(e.message || "가족 초대를 수락하지 못했습니다.");
-    } finally {
-      setJoinLoading(false);
-    }
-  };
-
-  const requestToJoin = async () => {
-    if (!ownerEmail.trim()) return;
-    setJoinLoading(true);
-    setJoinError(null);
-    try {
-      const res = await fetch("/api/family-join-requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner_email: ownerEmail.trim() }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "가족 참여 요청을 보내지 못했습니다.");
-      setJoinRequestSent(true);
-    } catch (e: any) {
-      setJoinError(e.message || "가족 참여 요청을 보내지 못했습니다.");
-    } finally {
-      setJoinLoading(false);
-    }
-  };
-
-  const checkJoinStatus = async () => {
-    setJoinLoading(true);
-    setJoinError(null);
-    try {
-      if (await verifyJoinedMembership()) return;
-      const invite = await loadPendingInvite();
-      if (!invite) {
-        setJoinError("아직 가족 대표의 승인을 기다리고 있어요.");
-      }
-    } catch (e: any) {
-      setJoinError(e.message || "가족 참여 상태를 확인하지 못했습니다.");
-    } finally {
-      setJoinLoading(false);
     }
   };
 
   return (
     <>
       <div>
-        <p className="text-base font-bold text-gray-800">가족 시작 방법을 선택해 주세요</p>
-        <p className="text-xs mt-1 text-gray-500">새 가족을 만들거나 기존 가족의 보호자로 참여할 수 있어요.</p>
+        <p className="text-base font-bold text-gray-800">가족 만들기</p>
+        <p className="text-xs mt-1 text-gray-500">새 가족을 만든 뒤 아이를 등록해 주세요.</p>
       </div>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-4 flex flex-col gap-3">
         <div>
-          <p className="text-sm font-bold text-gray-800">1. 가족 만들기</p>
+          <p className="text-sm font-bold text-gray-800">우리 가족 이름</p>
           <p className="text-[11px] mt-1 text-gray-500">새 가족을 만든 뒤 최초 아이를 등록합니다.</p>
         </div>
         <ErrorBanner message={createError} />
@@ -436,99 +374,36 @@ function FamilyStep({
           type="text"
           placeholder="예) 안형진님의 가족"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => onNameChange(e.target.value)}
           className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white text-center"
         />
         <PrimaryButton onClick={submitCreate} disabled={!name.trim()} loading={createLoading}>
           가족 만들기 →
         </PrimaryButton>
       </section>
-
-      <section className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 flex flex-col gap-3">
-        <div>
-          <p className="text-sm font-bold text-gray-800">2. 가족 구성원으로 참여하기</p>
-          <p className="text-[11px] mt-1 text-gray-500">기존 가족의 아이와 리포트를 함께 보며, 새 아이를 등록하지 않습니다.</p>
-        </div>
-        <ErrorBanner message={joinError} onRetry={checkJoinStatus} />
-
-        {inviteLoading ? (
-          <p className="py-4 text-center text-xs text-gray-500">도착한 가족 초대를 확인하고 있어요...</p>
-        ) : pendingInvite ? (
-          <div className="rounded-xl border border-sky-100 bg-white p-3">
-            <p className="text-xs font-bold text-gray-800">{pendingInvite.familyName} 가족에서 초대가 왔어요</p>
-            <p className="text-[11px] text-gray-500 mt-1">{pendingInvite.inviterName}님이 보호자로 초대했습니다.</p>
-            <button
-              type="button"
-              onClick={acceptInvite}
-              disabled={joinLoading}
-              className="w-full mt-3 py-3 rounded-xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
-              style={{ background: "var(--color-k-navy)" }}
-            >
-              {joinLoading ? "참여 처리 중..." : "초대 수락하고 참여하기 →"}
-            </button>
-          </div>
-        ) : joinRequestSent ? (
-          <div className="rounded-xl border border-sky-100 bg-white p-3 text-center">
-            <p className="text-xs font-bold text-gray-800">가족 대표에게 참여 요청을 보냈어요</p>
-            <p className="text-[11px] text-gray-500 mt-1">대표 보호자가 승인하면 아이 등록 없이 바로 시작할 수 있어요.</p>
-            <button
-              type="button"
-              onClick={checkJoinStatus}
-              disabled={joinLoading}
-              className="w-full mt-3 py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-700 disabled:opacity-50 cursor-pointer"
-            >
-              {joinLoading ? "확인 중..." : "승인 여부 확인"}
-            </button>
-          </div>
-        ) : (
-          <>
-            <input
-              type="email"
-              placeholder="가족 대표의 로그인 이메일"
-              value={ownerEmail}
-              onChange={(e) => setOwnerEmail(e.target.value)}
-              className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white text-center"
-            />
-            <button
-              type="button"
-              onClick={requestToJoin}
-              disabled={joinLoading || !ownerEmail.trim()}
-              className="w-full py-3 rounded-xl font-bold text-sm bg-white border border-gray-200 text-gray-700 disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
-            >
-              {joinLoading ? "요청 보내는 중..." : "가족 참여 요청 보내기"}
-            </button>
-            <button
-              type="button"
-              onClick={loadPendingInvite}
-              disabled={joinLoading}
-              className="text-[11px] font-semibold text-gray-500 underline underline-offset-2 cursor-pointer disabled:opacity-50"
-            >
-              이미 초대받았다면 다시 확인
-            </button>
-          </>
-        )}
-      </section>
+      <SecondaryButton onClick={onBack}>← 이전</SecondaryButton>
     </>
   );
 }
 
-function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void }) {
-  const [familyName, setFamilyName] = useState("");
-  const [givenName, setGivenName] = useState("");
-  const [gender, setGender] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [grade, setGrade] = useState("");
-  const [interests, setInterests] = useState<string[]>([]);
-  const [consent, setConsent] = useState(false);
+function ChildStep({
+  familyId,
+  draft,
+  onDraftChange,
+  onDone,
+  onBack,
+}: {
+  familyId: string;
+  draft: ChildDraft;
+  onDraftChange: (draft: ChildDraft) => void;
+  onDone: () => void;
+  onBack: () => void;
+}) {
+  const { familyName, givenName, gender, username, password, passwordConfirm, grade, consent } = draft;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approvedChild, setApprovedChild] = useState<{ id: string; name: string; grade: string } | null>(null);
-
-  const toggleInterest = (v: string) => {
-    setInterests((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
-  };
+  const submittingRef = useRef(false);
 
   const canSubmit =
     familyName.trim() &&
@@ -538,11 +413,11 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
     password.length >= 6 &&
     password === passwordConfirm &&
     grade &&
-    interests.length > 0 &&
     consent;
 
   const submit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -556,7 +431,6 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
           username: username.trim(),
           password,
           grade,
-          interests,
           guardian_consent: consent,
         }),
       });
@@ -576,6 +450,7 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
     } catch (e: any) {
       setError(e.message || "아이 등록을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -624,14 +499,14 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
           type="text"
           placeholder="성"
           value={familyName}
-          onChange={(e) => setFamilyName(e.target.value)}
+          onChange={(e) => onDraftChange({ ...draft, familyName: e.target.value })}
           className="w-full rounded-xl px-3 py-3 text-sm border border-gray-200 outline-none"
         />
         <input
           type="text"
           placeholder="이름"
           value={givenName}
-          onChange={(e) => setGivenName(e.target.value)}
+          onChange={(e) => onDraftChange({ ...draft, givenName: e.target.value })}
           className="w-full rounded-xl px-3 py-3 text-sm border border-gray-200 outline-none"
         />
       </div>
@@ -643,7 +518,7 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
           <button
             key={g.v}
             type="button"
-            onClick={() => setGender(g.v)}
+            onClick={() => onDraftChange({ ...draft, gender: g.v })}
             className={`flex-1 py-2.5 rounded-xl text-xs font-bold border cursor-pointer ${
               gender === g.v ? "text-white border-transparent" : "text-gray-600 border-gray-200 bg-white"
             }`}
@@ -655,7 +530,7 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
       </div>
       <select
         value={grade}
-        onChange={(e) => setGrade(e.target.value)}
+        onChange={(e) => onDraftChange({ ...draft, grade: e.target.value })}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white"
       >
         <option value="">학년을 선택해주세요</option>
@@ -665,21 +540,6 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
           </option>
         ))}
       </select>
-      <div className="flex flex-wrap gap-1.5">
-        {INTERESTS.map((i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => toggleInterest(i)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-bold border cursor-pointer ${
-              interests.includes(i) ? "text-white border-transparent" : "text-gray-600 border-gray-200 bg-white"
-            }`}
-            style={interests.includes(i) ? { background: "var(--color-k-navy)" } : undefined}
-          >
-            {i}
-          </button>
-        ))}
-      </div>
       <p
         className="text-center text-xs sm:text-sm font-medium py-1 whitespace-nowrap"
         style={{ color: "var(--color-k-orange)" }}
@@ -690,30 +550,31 @@ function ChildStep({ familyId, onDone }: { familyId: string; onDone: () => void 
         type="text"
         placeholder="아이 로그인 아이디"
         value={username}
-        onChange={(e) => setUsername(e.target.value)}
+        onChange={(e) => onDraftChange({ ...draft, username: e.target.value })}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
       />
       <input
         type="password"
         placeholder="비밀번호 (6자 이상)"
         value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        onChange={(e) => onDraftChange({ ...draft, password: e.target.value })}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
       />
       <input
         type="password"
         placeholder="비밀번호 확인"
         value={passwordConfirm}
-        onChange={(e) => setPasswordConfirm(e.target.value)}
+        onChange={(e) => onDraftChange({ ...draft, passwordConfirm: e.target.value })}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
       />
       <label className="flex items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
-        <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5" />
+        <input type="checkbox" checked={consent} onChange={(e) => onDraftChange({ ...draft, consent: e.target.checked })} className="mt-0.5" />
         <span>법정대리인으로서 위 아이의 정보 등록에 동의합니다.</span>
       </label>
       <PrimaryButton onClick={submit} disabled={!canSubmit} loading={loading}>
         아이 등록하고 시작하기 →
       </PrimaryButton>
+      <SecondaryButton onClick={onBack}>← 이전</SecondaryButton>
     </>
   );
 }
@@ -737,12 +598,43 @@ function SignupContent() {
   }, [returnUrl]);
 
   const initialStep = (searchParams.get("step") as Step) ?? "consent";
+  const familyInviteRequested = searchParams.get("familyInvite") === "1";
   const [step, setStep] = useState<Step>(
     ["consent", "profile", "family", "child"].includes(initialStep) ? initialStep : "consent"
   );
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [loadingFamily, setLoadingFamily] = useState(true);
-  const [showJoinedHandoff, setShowJoinedHandoff] = useState(false);
+  const [agreements, setAgreements] = useState<Record<string, boolean>>({});
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft>({ name: "", relationship: "" });
+  const [familyName, setFamilyName] = useState("");
+  const [childDraft, setChildDraft] = useState<ChildDraft>({
+    familyName: "",
+    givenName: "",
+    gender: "",
+    username: "",
+    password: "",
+    passwordConfirm: "",
+    grade: "",
+    consent: false,
+  });
+
+  const navigateStep = useCallback((nextStep: Step) => {
+    setStep(nextStep);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("step", nextStep);
+    router.replace(`/signup?${params.toString()}`);
+  }, [router, searchParams]);
+
+  const continueInviteIfPending = useCallback(async (): Promise<boolean> => {
+    if (!familyInviteRequested) return false;
+    const response = await fetch("/api/family-invites/session", { cache: "no-store" });
+    const body = await response.json().catch(() => ({}));
+    if (response.ok && body.state === "pending") {
+      window.location.replace("/family/invite/continue");
+      return true;
+    }
+    return false;
+  }, [familyInviteRequested]);
 
 
   const finish = useCallback(() => {
@@ -760,7 +652,7 @@ function SignupContent() {
   useEffect(() => {
     fetch("/api/auth/membership-status", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((status) => {
+      .then(async (status) => {
         if (!status) return;
         if (status.state === "ACTIVE_PARENT") {
           finish();
@@ -768,6 +660,13 @@ function SignupContent() {
         }
         if (status.state === "AUTHENTICATED_INCOMPLETE") {
           if (status.familyId) setFamilyId(status.familyId);
+          if (
+            familyInviteRequested
+            && (status.onboardingStep === "family" || status.onboardingStep === "child")
+            && await continueInviteIfPending()
+          ) {
+            return;
+          }
           if (["consent", "profile", "family", "child"].includes(status.onboardingStep)) {
             setStep(status.onboardingStep as Step);
           }
@@ -777,7 +676,11 @@ function SignupContent() {
       .finally(() => {
         setLoadingFamily(false);
       });
-  }, [finish]);
+  }, [continueInviteIfPending, familyInviteRequested, finish]);
+
+  useEffect(() => {
+    if (!loadingFamily && step === "child" && !familyId) navigateStep("family");
+  }, [familyId, loadingFamily, navigateStep, step]);
 
   useEffect(() => {
     const link_id = searchParams.get("link_id");
@@ -833,33 +736,49 @@ function SignupContent() {
     );
   }
 
-  if (showJoinedHandoff) {
-    return (
-      <div className="min-h-dvh bg-[var(--color-k-surface)] px-5 py-8">
-        <div className="mx-auto w-full max-w-md rounded-3xl bg-white p-6 shadow-sm">
-          <ChildStartGuide onParentHome={finish} />
-        </div>
-      </div>
-    );
-  }
-
   return (
 
     <Shell step={step}>
-      {step === "consent" && <ConsentStep onNext={() => setStep("profile")} />}
-      {step === "profile" && <ProfileStep onNext={() => setStep("family")} />}
+      {step === "consent" && (
+        <ConsentStep
+          agreements={agreements}
+          onAgreementsChange={setAgreements}
+          onNext={() => navigateStep("profile")}
+          onBack={() => router.replace("/login")}
+        />
+      )}
+      {step === "profile" && (
+        <ProfileStep
+          draft={profileDraft}
+          onDraftChange={setProfileDraft}
+          onNext={() => {
+            void continueInviteIfPending().then((continued) => {
+              if (!continued) navigateStep("family");
+            });
+          }}
+          onBack={() => navigateStep("consent")}
+        />
+      )}
       {step === "family" && (
         <FamilyStep
+          name={familyName}
+          onNameChange={setFamilyName}
           onCreated={(id) => {
             setFamilyId(id);
-            setStep("child");
+            navigateStep("child");
           }}
-          onJoined={() => setShowJoinedHandoff(true)}
+          onBack={() => navigateStep("profile")}
         />
       )}
       {step === "child" &&
         (familyId ? (
-          <ChildStep familyId={familyId} onDone={finish} />
+          <ChildStep
+            familyId={familyId}
+            draft={childDraft}
+            onDraftChange={setChildDraft}
+            onDone={finish}
+            onBack={() => navigateStep("family")}
+          />
         ) : loadingFamily ? (
           <div className="flex flex-col items-center justify-center py-10">
             <div
@@ -868,15 +787,7 @@ function SignupContent() {
             />
             <p className="text-xs text-gray-400 mt-3">가족 정보를 확인하는 중...</p>
           </div>
-        ) : (
-          <FamilyStep
-            onCreated={(id) => {
-              setFamilyId(id);
-              setStep("child");
-            }}
-            onJoined={() => setShowJoinedHandoff(true)}
-          />
-        ))}
+        ) : null)}
     </Shell>
   );
 }

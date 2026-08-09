@@ -152,7 +152,8 @@ export function ChildStartGuide({
     setError(null);
     try {
       const supabase = createClient();
-      await supabase.auth.signOut({ scope: "local" });
+      const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+      if (signOutError) throw signOutError;
       clearStore();
       window.location.replace(childLoginUrl);
     } catch {
@@ -268,7 +269,7 @@ export function ChildStartGuide({
                 {copied === "username" ? "복사됐어요" : "아이디 복사"}
               </button>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-gray-500">비밀번호는 보호자님이 만든 비밀번호를 사용해요.</p>
+            <p className="mt-2 text-[11px] leading-relaxed text-gray-500">비밀번호는 조금 전에 보호자님이 만든 비밀번호를 사용해요.</p>
           </section>
         </>
       ) : null}

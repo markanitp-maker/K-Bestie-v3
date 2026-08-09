@@ -13,7 +13,9 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnUrl = safePostAuthReturnUrl(searchParams.get("returnUrl"));
+  const childLoginOnly = searchParams.get("role") === "child";
   const oauthInFlightRef = useRef(false);
+  const childIdInputRef = useRef<HTMLInputElement>(null);
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +25,8 @@ function LoginContent() {
   useEffect(() => {
     const loginId = searchParams.get("login_id")?.trim();
     if (loginId) setUsername(loginId);
-  }, [searchParams]);
+    if (childLoginOnly) window.requestAnimationFrame(() => childIdInputRef.current?.focus());
+  }, [childLoginOnly, searchParams]);
 
   useEffect(() => {
     const errorParam = searchParams.get("error");
@@ -139,8 +142,8 @@ function LoginContent() {
           </div>
         )}
 
-        {/* ── 오너 소셜 로그인 섹션 ── */}
-        <div className="flex flex-col gap-2.5">
+        {/* QR/Handoff의 role=child 진입에서는 아이 로그인만 바로 보여준다. */}
+        {!childLoginOnly && <div className="flex flex-col gap-2.5">
           <p className="text-xs font-bold text-gray-500 mb-1 px-1">보호자 로그인</p>
           
           <button
@@ -187,14 +190,14 @@ function LoginContent() {
             </svg>
             {loadingProvider === "google" ? "연결 중..." : "구글로 계속하기"}
           </button>
-        </div>
+        </div>}
 
         {/* 구분선 */}
-        <div className="flex items-center gap-3 py-1">
+        {!childLoginOnly && <div className="flex items-center gap-3 py-1">
           <div className="flex-1 h-px bg-gray-100" />
           <span className="text-[10px] font-bold text-gray-400">또는</span>
           <div className="flex-1 h-px bg-gray-100" />
-        </div>
+        </div>}
 
         {/* ── 구성원 일반 로그인 섹션 ── */}
         <form onSubmit={handleMemberLogin} className="flex flex-col gap-3">
@@ -202,6 +205,7 @@ function LoginContent() {
           
           <div>
             <input
+              ref={childIdInputRef}
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -241,7 +245,7 @@ function LoginContent() {
 
       <div className="mt-8 text-center">
         <p className="text-xs text-gray-400">
-          오너가 먼저 아이 계정을 발급해 주어야 로그인할 수 있어요.
+          보호자가 먼저 아이 계정을 만들어 주어야 로그인할 수 있어요.
         </p>
       </div>
     </div>
