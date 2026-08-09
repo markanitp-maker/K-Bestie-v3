@@ -11,6 +11,7 @@ import AttendanceRouletteLoginModal from "@/components/events/AttendanceRoulette
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { appendVocative } from "@/lib/utils/koreanParticle";
 import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
+import { useNotificationInbox } from "@/lib/notifications/useNotificationInbox";
 import { revokeCurrentPushInstallation } from "@/lib/notifications/usePushSubscription";
 
 // 이 프로젝트는 아이콘 라이브러리(lucide-react/heroicons)를 설치하지 않고 인라인
@@ -61,8 +62,16 @@ export default function ChildHomePage() {
   const [showPwaBanner, setShowPwaBanner] = useState(false);
   const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const { unreadCount: notificationUnreadCount } = useNotificationInbox({ loadItems: false });
   const [rouletteGateResolved, setRouletteGateResolved] = useState(false);
   const handleRouletteGateResolved = useCallback(() => setRouletteGateResolved(true), []);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("event") === "announcement") {
+      setIsEventModalOpen(true);
+      window.history.replaceState({}, "", "/child/home");
+    }
+  }, []);
 
   useEffect(() => {
     // 1. /api/child/me를 호출하여 세션 기반의 아이 프로필 확인
@@ -263,7 +272,7 @@ export default function ChildHomePage() {
           />
         )}
         <NotificationOnboarding role="child" />
-        {rouletteGateResolved && <AppEventAnnouncementModal />}
+        {rouletteGateResolved && !isEventModalOpen && <AppEventAnnouncementModal />}
         {isEventModalOpen && <AppEventAnnouncementModal manualOpen onClose={() => setIsEventModalOpen(false)} />}
 
         {/* Background Clouds (decorative) */}
@@ -274,14 +283,14 @@ export default function ChildHomePage() {
         
         {/* Top Action Bar */}
         <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top)] mt-4 relative z-10 w-full max-w-[430px] mx-auto child-home-content">
-          <button
-            onClick={() => setIsEventModalOpen(true)}
-            className="flex items-center gap-1.5 h-[44px] px-3 rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
-            aria-label="이벤트 안내 보기"
+          <Link
+            href="/child/notifications"
+            className="relative flex h-[44px] w-[44px] items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
+            aria-label={notificationUnreadCount > 0 ? `알림 ${notificationUnreadCount}개` : "알림"}
           >
             <Bell size={18} color="var(--color-k-navy)" />
-            <span className="text-sm font-bold text-[var(--color-k-navy)]">이벤트</span>
-          </button>
+            {notificationUnreadCount > 0 && <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-[#E25B12] px-1 text-[10px] font-bold text-white">{notificationUnreadCount > 99 ? "99+" : notificationUnreadCount}</span>}
+          </Link>
           {/* Mission Event Pill (Hidden as requested: "이 영역은 숨김 처리") */}
           <div className="invisible">
             <div className="px-4 py-1.5 bg-white/70 rounded-full border border-[var(--color-k-navy)] shadow-sm text-sm font-semibold">

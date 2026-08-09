@@ -137,9 +137,22 @@ self.addEventListener("push", (event) => {
       body: data.body,
       icon: "/icons/icon-192-v4.png",
       badge: "/icons/icon-192-v4.png",
-      data: { url: data.url || "/" },
+      data: { url: data.url || "/", notificationId: data.notificationId || data.notification_id || null },
     };
-    event.waitUntil(self.registration.showNotification(title, options));
+    event.waitUntil((async () => {
+      await self.registration.showNotification(title, options);
+      try {
+        const response = await fetch("/api/notifications?limit=1", { credentials: "include", cache: "no-store" });
+        if (response.ok) {
+          const inbox = await response.json();
+          const unreadCount = Number(inbox.unreadCount || 0);
+          if (unreadCount > 0 && self.navigator.setAppBadge) await self.navigator.setAppBadge(unreadCount);
+          if (unreadCount === 0 && self.navigator.clearAppBadge) await self.navigator.clearAppBadge();
+        }
+      } catch (error) {
+        console.warn("[SW] badge sync failed", error);
+      }
+    })());
   } catch (e) {
     console.error("Error parsing push data", e);
   }
@@ -148,8 +161,26 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const target = (event.notification.data && event.notification.data.url) || "/";
+  const notificationId = event.notification.data && event.notification.data.notificationId;
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
+    (async () => {
+      if (notificationId) {
+        try {
+          const response = await fetch("/api/notifications/" + encodeURIComponent(notificationId) + "/read", {
+            method: "POST",
+            credentials: "include",
+          });
+          if (response.ok) {
+            const result = await response.json();
+            const unreadCount = Number(result.unreadCount || 0);
+            if (unreadCount > 0 && self.navigator.setAppBadge) await self.navigator.setAppBadge(unreadCount);
+            if (unreadCount === 0 && self.navigator.clearAppBadge) await self.navigator.clearAppBadge();
+          }
+        } catch (error) {
+          console.warn("[SW] notification read sync failed", error);
+        }
+      }
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const targetUrl = new URL(target, self.location.origin).href;
       const sameOrigin = windows.find((client) => new URL(client.url).origin === self.location.origin);
       if (sameOrigin) {
@@ -157,7 +188,7 @@ self.addEventListener("notificationclick", (event) => {
         return sameOrigin.focus();
       }
       return self.clients.openWindow(targetUrl);
-    })
+    })()
   );
 });
 `;

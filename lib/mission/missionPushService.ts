@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getPushErrorStatus, sendPushNotificationWithRetry } from "@/lib/notifications/push";
+import { childAuthUserId, createInboxNotification } from "@/lib/notifications/inbox";
 
 export type MissionPushType = 1 | 2;
 export type MissionPushSource = "cron" | "admin_test";
@@ -49,6 +50,21 @@ export async function sendMissionStartPushToChild({
   const { data: child, error: childError } = await db.from("child_profiles").select("id").eq("id", childId).maybeSingle();
   if (childError) throw new Error("CHILD_LOOKUP_FAILED");
   if (!child) throw new Error("CHILD_NOT_FOUND");
+
+  const childUserId = await childAuthUserId(db, childId);
+  const inboxNotification = childUserId
+    ? await createInboxNotification(db, {
+        userId: childUserId,
+        childId,
+        role: "child",
+        type: "mission",
+        title: template.title,
+        body: template.body,
+        targetUrl: template.url,
+        sourceId: `${businessDate}:${template.roundType}:${source}`,
+        idempotencyKey: `mission:${childId}:${businessDate}:${template.roundType}:${source}`,
+      })
+    : null;
 
   const { data: existing, error: existingError } = await db
     .from("mission_notification_logs")
@@ -110,7 +126,7 @@ export async function sendMissionStartPushToChild({
     try {
       await sendPushNotificationWithRetry(
         { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-        { title: template.title, body: template.body, url: template.url }
+        { title: template.title, body: template.body, url: template.url, notificationId: inboxNotification?.id ?? null }
       );
       successfulSubscriptions += 1;
     } catch (error) {

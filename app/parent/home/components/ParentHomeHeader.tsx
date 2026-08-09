@@ -5,14 +5,15 @@ import Link from "next/link";
 import Image from "next/image";
 import { useStore } from "@/hooks/useStore";
 import { setStore } from "@/lib/store";
+import { useNotificationInbox } from "@/lib/notifications/useNotificationInbox";
 
 export function ParentHomeHeader() {
   const store = useStore();
-  const { children, activeChildId, notifications } = store;
+  const { children, activeChildId } = store;
+  const { unreadCount } = useNotificationInbox({ loadItems: false });
   const [showPicker, setShowPicker] = useState(false);
 
   const activeChild = children.find((c) => c.id === activeChildId) ?? children[0] ?? null;
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleSelect = (id: string) => {
     setStore({ activeChildId: id });
@@ -86,7 +87,7 @@ export function ParentHomeHeader() {
         >
           <span className="text-[20px]" style={{ color: "var(--color-k-navy, #10315B)" }}>🔔</span>
           {unreadCount > 0 && (
-            <span className="absolute top-2 right-2 w-2 h-2 bg-[#E25B12] rounded-full border-2 border-white" />
+            <span className="absolute top-0 right-0 min-w-5 h-5 px-1 bg-[#E25B12] text-white text-[10px] font-bold rounded-full border-2 border-white flex items-center justify-center">{unreadCount > 99 ? "99+" : unreadCount}</span>
           )}
         </Link>
       </div>

@@ -44,13 +44,15 @@ type StatusResponse = ChildStatusResponse | ParentStatusResponse | NoShowRespons
 // React Strict Mode 중복 호출 방지를 위해 ref로 in-flight/이미 확인 처리를 가드한다.
 export default function AppEventAnnouncementModal({
   manualOpen = false,
+  manualAudience = "child",
   onClose,
 }: {
   manualOpen?: boolean;
+  manualAudience?: "child" | "parent";
   onClose?: () => void;
 } = {}) {
   const [status, setStatus] = useState<StatusResponse | null>(
-    manualOpen ? { shouldShow: true, audience: "child" } : null
+    manualOpen ? { shouldShow: true, audience: manualAudience } : null
   );
   const [visible, setVisible] = useState(manualOpen);
   const [closing, setClosing] = useState(false);
@@ -59,7 +61,7 @@ export default function AppEventAnnouncementModal({
   useEffect(() => {
     if (manualOpen) {
       setVisible(true);
-      setStatus({ shouldShow: true, audience: "child" });
+      setStatus({ shouldShow: true, audience: manualAudience });
       return;
     }
 
@@ -75,15 +77,13 @@ export default function AppEventAnnouncementModal({
       .catch(() => {
         // 팝업 조회 실패가 로그인 자체를 막지 않는다(§6.1) — 조용히 숨긴다.
       });
-  }, [manualOpen]);
+  }, [manualAudience, manualOpen]);
 
   const handleAcknowledge = async () => {
     if (closing) return;
     setClosing(true);
     try {
-      if (!manualOpen) {
-        await fetch("/api/events/announcements/acknowledge", { method: "POST" });
-      }
+      await fetch("/api/events/announcements/acknowledge", { method: "POST" });
     } catch {
       // 실패해도 다음 로그인에서 재노출되는 것으로 충분 — 여기서 사용자를 막지 않는다.
     } finally {
