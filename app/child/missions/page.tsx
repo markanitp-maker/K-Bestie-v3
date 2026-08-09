@@ -395,6 +395,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
     const checkAndScheduleExpiry = () => {
       if (forcedExpiryHandledRef.current) return;
+      // scheduleEnforced=false(Dev)에서는 시간 Gate 자체가 비활성이므로 강제 만료
+      // 계산·타이머 생성을 하지 않는다 — Production(scheduleEnforced=true) 로직은 그대로.
+      if (!scheduleEnforced) return;
 
       const nowUtc = Date.now();
       const kstNow = new Date(nowUtc + 9 * 3600000);
@@ -451,7 +454,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       document.removeEventListener("visibilitychange", handleRecheck);
       window.removeEventListener("focus", handleRecheck);
     };
-  }, [handleForcedExpiry]);
+  }, [handleForcedExpiry, scheduleEnforced]);
 
   // 011 2차: 일시적 인식 실패/timeout/fallback 공용 처리 — 이 턴에서 아직 조용한 재시도를
   // 안 써봤으면(recoveryAttemptedRef=false) 문구·배너 없이 한 번 더 기회를 준다(마이크를
