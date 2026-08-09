@@ -77,7 +77,7 @@ export default function ParentWeeklyReportPage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
         <ParentHeader />
 
         <div className="shrink-0">
@@ -122,7 +122,7 @@ export default function ParentWeeklyReportPage() {
                 <button
                   ref={calendarTriggerRef}
                   onClick={() => setIsCalendarOpen(true)}
-                  className="flex items-center gap-1 text-[13px] font-bold text-[#10315B] px-4 py-2 active:bg-gray-200 rounded-full transition-colors"
+                  className="flex items-center gap-1 text-[13px] font-bold text-[var(--color-k-navy)] px-4 py-2 active:bg-gray-200 rounded-full transition-colors"
                 >
                   지난 기록 보기<span className="text-[10px]">⌄</span>
                 </button>

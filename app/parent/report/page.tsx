@@ -199,7 +199,7 @@ export default function ParentReportPage() {
       if (item.type === 'report') {
         const m = getMonthHeading(item.date);
         if (m !== lastMonth) {
-          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-lg font-bold text-[#10315B] mt-6 mb-3 ml-1">{m}</h3>);
+          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-lg font-bold text-[var(--color-k-navy)] mt-6 mb-3 ml-1">{m}</h3>);
           lastMonth = m;
         }
         
@@ -212,13 +212,13 @@ export default function ParentReportPage() {
             className="block w-full text-left bg-white rounded-[20px] p-5 active:scale-[0.99] transition-transform shadow-sm border border-gray-200 mb-5"
           >
             <div className="flex items-start justify-between gap-3 mb-4">
-              <p className="text-xl font-bold text-[#10315B] sm:hidden">{formatDateShort(item.date)}</p>
-              <p className="hidden text-xl font-bold text-[#10315B] sm:block">{formatDateFull(item.date)}</p>
+              <p className="text-xl font-bold text-[var(--color-k-navy)] sm:hidden">{formatDateShort(item.date)}</p>
+              <p className="hidden text-xl font-bold text-[var(--color-k-navy)] sm:block">{formatDateFull(item.date)}</p>
               <span className="shrink-0 rounded-full bg-[var(--color-k-info-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--color-k-text-secondary)]">{rel}</span>
             </div>
             <div className="mb-3 flex items-center gap-2">
-              <span className="inline-flex rounded-full bg-[var(--color-k-navy-tint)] px-3 py-1.5 text-base font-bold text-[#10315B]">
-                <span className="mr-2 text-[#4298D3]" aria-hidden="true">●</span>
+              <span className="inline-flex rounded-full bg-[var(--color-k-navy-tint)] px-3 py-1.5 text-base font-bold text-[var(--color-k-navy)]">
+                <span className="mr-2 text-[var(--color-k-sky-blue)]" aria-hidden="true">●</span>
                 {item.report.emotion_hint || "오늘의 마음"}
               </span>
               {Number.isFinite(item.report.mood_score) && (
@@ -230,13 +230,13 @@ export default function ParentReportPage() {
                 {item.report.summary_line}
               </p>
             )}
-            <span className="mt-4 flex min-h-10 items-center justify-end text-sm font-bold text-[#10315B]">자세히 보기 &gt;</span>
+            <span className="mt-4 flex min-h-10 items-center justify-end text-sm font-bold text-[var(--color-k-navy)]">자세히 보기 &gt;</span>
           </button>
         );
       } else if (item.type === 'gap') {
         const m = getMonthHeading(item.dates[0].date); // Most recent date in gap
         if (m !== lastMonth) {
-          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-lg font-bold text-[#10315B] mt-6 mb-3 ml-1">{m}</h3>);
+          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-lg font-bold text-[var(--color-k-navy)] mt-6 mb-3 ml-1">{m}</h3>);
           lastMonth = m;
         }
         
@@ -249,7 +249,7 @@ export default function ParentReportPage() {
         
         renderedList.push(
           <div key={`gap-${item.dates[0].date}`} className="flex justify-center items-center py-2 mb-5">
-            <span className="text-sm font-semibold text-gray-500 bg-[#f3f4f6] px-4 py-2 rounded-full border border-gray-100">
+            <span className="text-sm font-semibold text-gray-500 bg-[var(--color-k-surface)] px-4 py-2 rounded-full border border-gray-100">
               {dateStr} · {gapText}
             </span>
           </div>
@@ -275,8 +275,8 @@ export default function ParentReportPage() {
           {summary && (
             <section className="bg-white rounded-[20px] p-5 shadow-sm border border-gray-200 mb-5" aria-label="이번 주 대화 요약">
             <div className="mb-5">
-              <h2 className="text-lg font-bold text-[#10315B]">이번 주 대화</h2>
-              <p className="mt-1 text-4xl font-bold leading-none text-[#10315B]">{conversationDayCount}<span className="ml-1 text-xl">일</span></p>
+              <h2 className="text-lg font-bold text-[var(--color-k-navy)]">이번 주 대화</h2>
+              <p className="mt-1 text-4xl font-bold leading-none text-[var(--color-k-navy)]">{conversationDayCount}<span className="ml-1 text-xl">일</span></p>
             </div>
             
             <div className="flex justify-between items-center px-1">
@@ -288,16 +288,16 @@ export default function ParentReportPage() {
                 let dotColor = "text-gray-200";
                 let ariaLabel = "리포트 없음";
                 if (d.hasReport) {
-                  dotColor = "text-[#4298D3]"; // K-Sky Blue
+                  dotColor = "text-[var(--color-k-sky-blue)]"; // K-Sky Blue
                   ariaLabel = "리포트 있음";
                 } else if (d.hasSession) {
-                  dotColor = "text-[#F19122]"; // K-Mascot Orange
+                  dotColor = "text-[var(--color-k-mascot-orange)]"; // K-Mascot Orange
                   ariaLabel = "리포트 준비 중";
                 }
                 
                 return (
                   <div key={d.date} className="flex flex-col items-center gap-2" aria-label={`${dow}요일, ${ariaLabel}${isToday ? ", 오늘" : ""}`}>
-                    <span className={`text-xs font-bold ${isToday ? "text-[#10315B]" : "text-gray-400"}`}>{dow}</span>
+                    <span className={`text-xs font-bold ${isToday ? "text-[var(--color-k-navy)]" : "text-gray-400"}`}>{dow}</span>
                     <span className={`flex h-6 w-6 items-center justify-center rounded-full text-base ${d.hasReport || d.hasSession ? dotColor : "border-2 border-gray-200 text-transparent"}`}>{d.hasReport || d.hasSession ? "●" : "○"}</span>
                   </div>
                 );
@@ -312,7 +312,7 @@ export default function ParentReportPage() {
           <button
             ref={calendarTriggerRef}
             onClick={() => setIsCalendarOpen(true)}
-            className="flex items-center gap-1 text-[13px] font-bold text-[#10315B] px-4 py-2 active:bg-gray-200 rounded-full transition-colors"
+            className="flex items-center gap-1 text-[13px] font-bold text-[var(--color-k-navy)] px-4 py-2 active:bg-gray-200 rounded-full transition-colors"
           >
             지난 이력 보기<span className="text-[10px]">⌄</span>
           </button>
@@ -324,7 +324,7 @@ export default function ParentReportPage() {
 
   return (
     <DemoFrame>
-      <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-surface)" }}>
         <ParentHeader />
 
         <div className="shrink-0">
