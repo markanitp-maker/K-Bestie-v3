@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
 import { ReportDetailModal } from "@/components/ReportDetailModal";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
@@ -9,6 +8,7 @@ import { ParentHeader } from "@/components/ParentHeader";
 import { SkeletonBox } from "@/components/Skeleton";
 import { useStore } from "@/hooks/useStore";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { ReportPeriodTabs } from "@/components/parent/report/ReportPeriodTabs";
 import { CurrentWeekAggregationCard } from "./components/CurrentWeekAggregationCard";
 import { WeeklyReportCard, WeeklyReportSummary } from "./components/WeeklyReportCard";
 import { WeeklyHistoryCalendarSheet } from "./components/WeeklyHistoryCalendarSheet";
@@ -80,16 +80,12 @@ export default function ParentWeeklyReportPage() {
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         <ParentHeader />
 
-        <div className="flex items-center gap-2 px-4 pt-3 pb-1 shrink-0">
-          <Link href="/parent/report" className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white text-gray-500" aria-selected="false" role="tab">
-            일간
-          </Link>
-          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "var(--color-k-navy, #10315B)" }} aria-selected="true" role="tab">
-            주간
-          </span>
+        <div className="shrink-0">
+          <ReportPeriodTabs activePeriod="weekly" />
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 pb-7">
+          <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col">
           {loading ? (
             <div className="flex flex-col gap-3">
               <SkeletonBox className="h-24 rounded-[16px]" />
@@ -108,7 +104,7 @@ export default function ParentWeeklyReportPage() {
                   <WeeklyReportCard report={weeklies[0]} isFeatured={true} isLastWeek={true} onClick={handleOpenModal} />
                   
                   {weeklies.length > 1 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
                       {weeklies.slice(1).map(w => (
                         <WeeklyReportCard key={w.id} report={w} isFeatured={false} onClick={handleOpenModal} />
                       ))}
@@ -133,6 +129,7 @@ export default function ParentWeeklyReportPage() {
               </div>
             </>
           )}
+          </div>
         </div>
 
         <RealParentNav active="리포트" />

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import Link from "next/link";
 import { ReportDetailModal } from "@/components/ReportDetailModal";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
@@ -9,6 +8,7 @@ import { ParentHeader } from "@/components/ParentHeader";
 import { SkeletonBox } from "@/components/Skeleton";
 import { useStore } from "@/hooks/useStore";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { ReportPeriodTabs } from "@/components/parent/report/ReportPeriodTabs";
 import { ReportHistoryCalendarSheet } from "./components/ReportHistoryCalendarSheet";
 
 interface Report {
@@ -133,35 +133,30 @@ export default function ParentReportPage() {
   const renderContent = () => {
     if (loading) {
       return (
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
-          <SkeletonBox className="h-28 rounded-2xl" />
-          <div className="py-2" />
-          {Array.from({ length: 3 }).map((_, i) => (
-            <SkeletonBox key={i} className="h-24 rounded-2xl" />
-          ))}
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+          <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col gap-3">
+            <SkeletonBox className="h-28 rounded-2xl" />
+            <div className="py-2" />
+            {Array.from({ length: 3 }).map((_, i) => (
+              <SkeletonBox key={i} className="h-24 rounded-2xl" />
+            ))}
+          </div>
         </div>
       );
     }
 
     if (error) {
       return (
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col items-center justify-center">
-          <p className="text-sm font-semibold text-gray-600 mb-2">일간 리포트를 불러오지 못했어요.</p>
-          <p className="text-xs text-gray-400 mb-4">잠시 후 다시 시도해 주세요.</p>
-          <button onClick={() => window.location.reload()} className="px-4 py-2 bg-gray-200 rounded-full text-xs font-bold text-gray-600 active:bg-gray-300">
-            재시도
-          </button>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+          <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col items-center justify-center">
+            <p className="text-sm font-semibold text-gray-600 mb-2">일간 리포트를 불러오지 못했어요.</p>
+            <p className="text-xs text-gray-400 mb-4">잠시 후 다시 시도해 주세요.</p>
+            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-gray-200 rounded-full text-xs font-bold text-gray-600 active:bg-gray-300">
+              재시도
+            </button>
+          </div>
         </div>
       );
-    }
-
-    let diffText = "이전 7일과 비슷해요";
-    if (summary) {
-      if (summary.recentCount > summary.prevCount) {
-        diffText = `이전 7일 ${summary.prevCount}회보다 증가`;
-      } else if (summary.recentCount < summary.prevCount) {
-        diffText = `이전 7일보다 ${summary.prevCount - summary.recentCount}회 적어요`;
-      }
     }
 
     type ListItem = 
@@ -204,7 +199,7 @@ export default function ParentReportPage() {
       if (item.type === 'report') {
         const m = getMonthHeading(item.date);
         if (m !== lastMonth) {
-          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-sm font-bold text-[#10315B] mt-4 mb-2 ml-1">{m}</h3>);
+          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-lg font-bold text-[#10315B] mt-6 mb-3 ml-1">{m}</h3>);
           lastMonth = m;
         }
         
@@ -214,29 +209,34 @@ export default function ParentReportPage() {
           <button
             key={`report-${item.date}`}
             onClick={(e) => handleOpenModal(e, item.report.id)}
-            className="block w-full text-left bg-white rounded-[16px] p-[16px] active:scale-[0.99] transition-transform shadow-sm border border-gray-200 mb-3"
+            className="block w-full text-left bg-white rounded-[20px] p-5 active:scale-[0.99] transition-transform shadow-sm border border-gray-200 mb-5"
           >
-            <p className="text-[12px] text-gray-500 mb-2 sm:hidden">
-              {formatDateShort(item.date)} · {rel}
-            </p>
-            <p className="text-[12px] text-gray-500 mb-2 hidden sm:block">
-              {formatDateFull(item.date)} · {rel}
-            </p>
-            <p className="text-[14px] font-bold text-[#10315B] mb-1">
-              <span className="text-[#4298D3] mr-1.5">●</span>
-              {item.report.emotion_hint || item.report.summary_line}
-            </p>
-            {(!item.report.emotion_hint || item.report.emotion_hint !== item.report.summary_line) && (
-              <p className="text-[14px] text-gray-800 leading-snug line-clamp-2">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <p className="text-xl font-bold text-[#10315B] sm:hidden">{formatDateShort(item.date)}</p>
+              <p className="hidden text-xl font-bold text-[#10315B] sm:block">{formatDateFull(item.date)}</p>
+              <span className="shrink-0 rounded-full bg-[var(--color-k-info-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--color-k-text-secondary)]">{rel}</span>
+            </div>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="inline-flex rounded-full bg-[var(--color-k-navy-tint)] px-3 py-1.5 text-base font-bold text-[#10315B]">
+                <span className="mr-2 text-[#4298D3]" aria-hidden="true">●</span>
+                {item.report.emotion_hint || "오늘의 마음"}
+              </span>
+              {Number.isFinite(item.report.mood_score) && (
+                <span className="text-sm font-semibold text-gray-500">{item.report.mood_score}점</span>
+              )}
+            </div>
+            {item.report.summary_line && item.report.emotion_hint !== item.report.summary_line && (
+              <p className="text-base text-gray-800 leading-7 line-clamp-3">
                 {item.report.summary_line}
               </p>
             )}
+            <span className="mt-4 flex min-h-10 items-center justify-end text-sm font-bold text-[#10315B]">자세히 보기 &gt;</span>
           </button>
         );
       } else if (item.type === 'gap') {
         const m = getMonthHeading(item.dates[0].date); // Most recent date in gap
         if (m !== lastMonth) {
-          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-sm font-bold text-[#10315B] mt-4 mb-2 ml-1">{m}</h3>);
+          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-lg font-bold text-[#10315B] mt-6 mb-3 ml-1">{m}</h3>);
           lastMonth = m;
         }
         
@@ -248,8 +248,8 @@ export default function ParentReportPage() {
         const gapText = hasSession ? "리포트 준비 중" : "대화 없음";
         
         renderedList.push(
-          <div key={`gap-${item.dates[0].date}`} className="flex justify-center items-center py-2 mb-3">
-            <span className="text-xs font-semibold text-gray-400 bg-[#f3f4f6] px-4 py-1.5 rounded-full border border-gray-100">
+          <div key={`gap-${item.dates[0].date}`} className="flex justify-center items-center py-2 mb-5">
+            <span className="text-sm font-semibold text-gray-500 bg-[#f3f4f6] px-4 py-2 rounded-full border border-gray-100">
               {dateStr} · {gapText}
             </span>
           </div>
@@ -258,6 +258,7 @@ export default function ParentReportPage() {
     });
 
     const hasAnyReport = reports.length > 0;
+    const conversationDayCount = summary?.dates.filter((date) => date.hasSession).length ?? 0;
     if (summary && !hasAnyReport) {
        renderedList.length = 0;
        renderedList.push(
@@ -269,14 +270,14 @@ export default function ParentReportPage() {
     }
 
     return (
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col">
-        {summary && (
-          <div className="bg-white rounded-[16px] p-4 shadow-sm border border-gray-200 mb-4">
-            <div className="flex justify-between items-start mb-2">
-              <h2 className="text-[14px] font-bold text-[#10315B]">최근 7일</h2>
-              <span className="text-[14px] font-bold text-gray-800">{summary.recentCount}회</span>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 pb-7">
+        <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col">
+          {summary && (
+            <section className="bg-white rounded-[20px] p-5 shadow-sm border border-gray-200 mb-5" aria-label="이번 주 대화 요약">
+            <div className="mb-5">
+              <h2 className="text-lg font-bold text-[#10315B]">이번 주 대화</h2>
+              <p className="mt-1 text-4xl font-bold leading-none text-[#10315B]">{conversationDayCount}<span className="ml-1 text-xl">일</span></p>
             </div>
-            <p className="text-[12px] text-gray-500 mb-4">{diffText}</p>
             
             <div className="flex justify-between items-center px-1">
               {summary.dates.map((d, i) => {
@@ -295,19 +296,19 @@ export default function ParentReportPage() {
                 }
                 
                 return (
-                  <div key={d.date} className="flex flex-col items-center gap-1.5" aria-label={`${dow}요일, ${ariaLabel}${isToday ? ", 오늘" : ""}`}>
-                    <span className={`text-[10px] font-bold ${isToday ? "text-[#10315B]" : "text-gray-400"}`}>{dow}</span>
-                    <span className={`text-xs ${dotColor}`}>{d.hasReport || d.hasSession ? "●" : "○"}</span>
+                  <div key={d.date} className="flex flex-col items-center gap-2" aria-label={`${dow}요일, ${ariaLabel}${isToday ? ", 오늘" : ""}`}>
+                    <span className={`text-xs font-bold ${isToday ? "text-[#10315B]" : "text-gray-400"}`}>{dow}</span>
+                    <span className={`flex h-6 w-6 items-center justify-center rounded-full text-base ${d.hasReport || d.hasSession ? dotColor : "border-2 border-gray-200 text-transparent"}`}>{d.hasReport || d.hasSession ? "●" : "○"}</span>
                   </div>
                 );
               })}
             </div>
-          </div>
-        )}
-        
-        {renderedList}
-        
-        <div className="mt-4 mb-6 flex justify-center">
+          </section>
+            )}
+          
+          {renderedList}
+          
+          <div className="mt-4 mb-6 flex justify-center">
           <button
             ref={calendarTriggerRef}
             onClick={() => setIsCalendarOpen(true)}
@@ -315,6 +316,7 @@ export default function ParentReportPage() {
           >
             지난 이력 보기<span className="text-[10px]">⌄</span>
           </button>
+          </div>
         </div>
       </div>
     );
@@ -325,13 +327,8 @@ export default function ParentReportPage() {
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "#f3f4f6" }}>
         <ParentHeader />
 
-        <div className="flex items-center gap-2 px-4 pt-3 pb-1 shrink-0">
-          <span className="text-xs font-bold px-3 py-1.5 rounded-full text-white" style={{ background: "var(--color-k-navy, #10315B)" }} aria-selected="true" role="tab">
-            일간
-          </span>
-          <Link href="/parent/report/weekly" className="text-xs font-semibold px-3 py-1.5 rounded-full bg-white text-gray-500" aria-selected="false" role="tab">
-            주간
-          </Link>
+        <div className="shrink-0">
+          <ReportPeriodTabs activePeriod="daily" />
         </div>
 
         {renderContent()}

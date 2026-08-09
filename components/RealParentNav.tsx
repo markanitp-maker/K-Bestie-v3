@@ -60,7 +60,7 @@ export function RealParentNav({ active }: { active?: string }) {
   }, [pathname]);
 
   return (
-    <div className="shrink-0 sticky bottom-0 z-20 flex items-stretch border-t bg-k-surface border-k-border">
+    <nav className="shrink-0 sticky bottom-0 z-20 flex min-h-[76px] items-stretch border-t bg-k-surface border-k-border pb-[env(safe-area-inset-bottom)]" aria-label="부모 주요 메뉴">
       {NAV_ITEMS.map((item) => {
         const isActive =
           item.label === active ||
@@ -73,20 +73,22 @@ export function RealParentNav({ active }: { active?: string }) {
           <Link
             key={item.label}
             href={item.href}
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 select-none cursor-pointer relative"
+            aria-current={isActive ? "page" : undefined}
+            className={`flex-1 flex min-h-[72px] flex-col items-center justify-center gap-1.5 px-1 pt-2 pb-2 select-none cursor-pointer relative ${isActive ? "text-k-navy" : ""}`}
           >
+            {isActive && <span className="absolute inset-x-3 top-0 h-1 rounded-b-full bg-k-navy" aria-hidden="true" />}
             {item.label === "케이와 대화" && hasNewQuestion && (
               <span className="absolute top-1.5 right-[calc(50%-12px)] w-2 h-2 bg-k-danger rounded-full animate-pulse shadow-sm" />
             )}
-            <span className="text-lg" style={{ opacity: isActive ? 1 : 0.55 }}>
+            <span className="text-2xl leading-none" style={{ opacity: isActive ? 1 : 0.55 }}>
               {item.icon}
             </span>
-            <span className={`text-[10px] font-bold ${isActive ? "text-k-navy" : "text-k-text-k-sky-blue"}`}>
+            <span className={`text-xs font-bold leading-none ${isActive ? "text-k-navy" : "text-k-text-k-sky-blue"}`}>
               {item.label}
             </span>
           </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }
