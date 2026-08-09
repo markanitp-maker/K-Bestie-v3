@@ -18,6 +18,18 @@ function urlBase64ToUint8Array(value: string): BufferSource {
   return Uint8Array.from([...raw].map((char) => char.charCodeAt(0))).buffer as ArrayBuffer;
 }
 
+function applicationServerKeyMatches(current: ArrayBuffer | null, desired: BufferSource): boolean {
+  if (!current) return false;
+  const currentBytes = new Uint8Array(current);
+  const desiredBytes =
+    desired instanceof ArrayBuffer ? new Uint8Array(desired) : new Uint8Array(desired.buffer, desired.byteOffset, desired.byteLength);
+  if (currentBytes.length !== desiredBytes.length) return false;
+  for (let i = 0; i < currentBytes.length; i += 1) {
+    if (currentBytes[i] !== desiredBytes[i]) return false;
+  }
+  return true;
+}
+
 function getInstallationId() {
   const key = "kbestie_push_installation_id";
   let id = localStorage.getItem(key);
@@ -50,9 +62,18 @@ async function registerSubscription(installationId: string): Promise<boolean> {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   if (!publicKey) return false;
   const registration = await navigator.serviceWorker.ready;
+  const desiredKey = urlBase64ToUint8Array(publicKey);
   let subscription = await registration.pushManager.getSubscription();
+  if (subscription && !applicationServerKeyMatches(subscription.options.applicationServerKey, desiredKey)) {
+    // 서버 VAPID 키가 교체된 뒤에도 브라우저가 예전 키로 만든 구독을 캐시하고 있으면
+    // 발송이 계속 403으로 실패한다 — 안전하게 구독 해지 후 현재 키로 재구독한다.
+    // unsubscribe()가 실패(false/reject)하면 브라우저에 예전 구독이 그대로 남아있을 수
+    // 있으므로, 곧바로 null 처리하지 말고 실제로 사라졌는지 다시 확인한다.
+    await subscription.unsubscribe().catch(() => false);
+    subscription = await registration.pushManager.getSubscription();
+  }
   if (!subscription) {
-    subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+    subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: desiredKey });
   }
   const json = subscription.toJSON();
   const response = await fetch("/api/notifications/subscribe", {

@@ -133,8 +133,20 @@ export async function sendMissionStartPushToChild({
       failedSubscriptions += 1;
       const status = getPushErrorStatus(error);
       lastErrorCode = status ? `PUSH_${status}` : "PUSH_FAILED";
-      if (status === 404 || status === 410) {
-        await db.from("push_subscriptions").update({ is_active: false, revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", subscription.id);
+      // 404/410(구독 만료)뿐 아니라 403도 비활성화한다 — VAPID 키 교체 이후 브라우저가
+      // 예전 키로 만든 구독을 그대로 들고 있으면 발송이 계속 403(공개키 불일치)으로
+      // 실패하는데, 여기서 정리하지 않으면 같은 구독이 "활성"으로 남아 매번 같은
+      // 실패를 반복하고 클라이언트도 재구독이 필요하다는 신호를 받지 못한다.
+      // 401은 제외한다 — RFC 8292 기준 401은 VAPID 헤더 자체의 누락/형식 오류 같은
+      // 서버 전역 설정 문제일 수 있어, 401만으로 정상 구독을 대량 비활성화하면 안 된다.
+      if (status === 404 || status === 410 || status === 403) {
+        const { error: deactivateError } = await db
+          .from("push_subscriptions")
+          .update({ is_active: false, revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq("id", subscription.id);
+        if (deactivateError) {
+          console.error("[missionPushService] failed to deactivate stale subscription", subscription.id, deactivateError.message);
+        }
       }
     }
   }
