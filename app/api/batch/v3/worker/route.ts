@@ -16,7 +16,7 @@ const MAX_ITERATIONS = 20;
 // final_reconcile)에 영영 못 도달할 수 있다(claude-review 지적, 2026-08-09).
 const LLM_STAGE_MAX_ITERATIONS = 5;
 // Vercel 기본 서버리스 타임아웃(300초)보다 여유를 두고 남은 예산이 없으면 이후 스테이지를
-// 건너뛴다 — lease 타임아웃(5분) 덕에 다음 10분 폴에서 안전하게 이어지지만(§18 충족),
+// 건너뛴다 — lease 타임아웃(5분) 덕에 다음 스케줄 폴에서 안전하게 이어지지만(§18 충족),
 // 강제 타임아웃으로 죽는 대신 항상 정상 JSON 응답으로 "여기까지 하고 멈췄다"를 알린다.
 const TIME_BUDGET_MS = 240_000;
 
@@ -88,7 +88,7 @@ const runCollectionStage = async (phase: 1 | 2): Promise<StageResult> => {
 // LLM 호출이 섞인 3개 스테이지(correction/memory/daily_report)는 job당 비용이 훨씬 커서
 // collection과 같은 MAX_ITERATIONS(20)를 쓰면 대량 백로그에서 뒤쪽 스테이지에 영영 도달하지
 // 못할 위험이 있다 — LLM_STAGE_MAX_ITERATIONS(5)로 낮춰 한 invocation의 시간 예산을 앞쪽
-// 스테이지가 다 써버리지 않게 한다. 남은 backlog는 lease 타임아웃(5분) 뒤 다음 10분 폴에서
+// 스테이지가 다 써버리지 않게 한다. 남은 backlog는 lease 타임아웃(5분) 뒤 다음 스케줄 폴에서
 // claim RPC가 그대로 다시 집어간다(§18 lazy 복구, 물리적 job 유실 없음).
 const runCorrectionStage = async (): Promise<StageResult> => {
   const workerId = `worker_corr_${randomUUID()}`;
@@ -162,7 +162,7 @@ const handleWorker = async (req: Request) => {
 
   // 남은 시간 예산이 없으면 이후 스테이지를 실행하지 않고 SKIPPED_STAGE로 표시한다.
   // 이미 실행된 앞 스테이지의 claim은 그대로 유효(원자적 claim, §14)하고, 못 간 스테이지의
-  // job은 lease 타임아웃 뒤 다음 10분 폴이 다시 집어간다 — 데이터 유실이나 이중 처리 없음.
+  // job은 lease 타임아웃 뒤 다음 스케줄 폴이 다시 집어간다 — 데이터 유실이나 이중 처리 없음.
   const runIfBudget = async (
     name: string,
     operation: () => Promise<StageResult>
