@@ -199,8 +199,11 @@ async function proxyToMbtiUpstream(request: NextRequest): Promise<Response> {
     responseHeaders.set("location", `${target.pathname}${target.search}${target.hash}`);
   }
 
+  const isStaticImageAsset = pathname.startsWith(`${MBTI_PATH_PREFIX}/images/`);
   const isImmutableAsset = pathname.startsWith(`${MBTI_PATH_PREFIX}/_next/static/`);
-  if (!isImmutableAsset) {
+  if (isStaticImageAsset) {
+    responseHeaders.set("cache-control", "public, max-age=31536000, immutable");
+  } else if (!isImmutableAsset) {
     responseHeaders.set("cache-control", "private, no-store");
   }
 
