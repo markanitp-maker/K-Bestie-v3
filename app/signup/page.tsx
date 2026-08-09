@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
-import { ChildStartGuide } from "@/components/parent/ChildStartGuide";
+import { ChildStartGuide, type ChildStartGuideChild } from "@/components/parent/ChildStartGuide";
 
 
 type Step = "consent" | "profile" | "family" | "child";
@@ -381,19 +381,18 @@ function ChildStep({
   familyId,
   draft,
   onDraftChange,
-  onDone,
+  onChildApproved,
   onBack,
 }: {
   familyId: string;
   draft: ChildDraft;
   onDraftChange: (draft: ChildDraft) => void;
-  onDone: () => void;
+  onChildApproved: (child: ChildStartGuideChild) => void;
   onBack: () => void;
 }) {
   const { familyName, givenName, gender, username, password, passwordConfirm, grade, consent } = draft;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [approvedChild, setApprovedChild] = useState<{ id: string; name: string; grade: string } | null>(null);
   const submittingRef = useRef(false);
 
   const canSubmit =
@@ -430,7 +429,7 @@ function ChildStep({
         throw new Error(data.error || "아이 등록을 완료하지 못했습니다. 이미 사용 중인 아이디인지 확인해 주세요.");
       }
       if (data.autoApproved) {
-        setApprovedChild({
+        onChildApproved({
           id: data.child.id,
           name: `${familyName.trim()}${givenName.trim()}`,
           grade,
@@ -438,45 +437,13 @@ function ChildStep({
       } else {
         throw new Error(data.error || "아이 계정 생성에 실패했습니다. 이미 존재하거나 다른 아이디로 시도해 주세요.");
       }
-    } catch (e: any) {
-      setError(e.message || "아이 등록을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "아이 등록을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       submittingRef.current = false;
       setLoading(false);
     }
   };
-
-  const [confirmingStatus, setConfirmingStatus] = useState(false);
-
-  const handleStart = async () => {
-    setConfirmingStatus(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/auth/membership-status", { cache: "no-store" });
-      if (res.ok) {
-        const status = await res.json();
-        if (status.state === "ACTIVE_PARENT") {
-          onDone();
-          return;
-        }
-      }
-      setError("가입 상태 확인 중입니다. 잠시 후 다시 시작하기를 눌러주세요.");
-    } catch {
-      setError("상태 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
-    } finally {
-      setConfirmingStatus(false);
-    }
-  };
-
-  if (approvedChild) {
-    return (
-      <ChildStartGuide
-        children={[approvedChild]}
-        initialChildId={approvedChild.id}
-        onParentHome={handleStart}
-      />
-    );
-  }
 
   return (
     <>
@@ -606,6 +573,9 @@ function SignupContent() {
     grade: "",
     consent: false,
   });
+  const [approvedChild, setApprovedChild] = useState<ChildStartGuideChild | null>(null);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const handoffNavigatingRef = useRef(false);
 
   const navigateStep = useCallback((nextStep: Step) => {
     setStep(nextStep);
@@ -637,6 +607,27 @@ function SignupContent() {
       router.replace(destination);
     }
   }, [returnUrl, router]);
+
+  const handleParentHomeFromHandoff = useCallback(async () => {
+    if (handoffNavigatingRef.current) return;
+    handoffNavigatingRef.current = true;
+    setHandoffError(null);
+    try {
+      const res = await fetch("/api/auth/membership-status", { cache: "no-store" });
+      if (res.ok) {
+        const status = await res.json();
+        if (status.state === "ACTIVE_PARENT") {
+          finish();
+          return;
+        }
+      }
+      setHandoffError("가입 상태 확인 중입니다. 잠시 후 다시 시작하기를 눌러주세요.");
+    } catch {
+      setHandoffError("상태 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      handoffNavigatingRef.current = false;
+    }
+  }, [finish]);
 
   // 서버의 단일 멤버십 판정으로 중단된 가입 단계를 복원한다. 기존 가족에 role=parent로
   // 합류한 보호자는 ACTIVE_PARENT이므로 child 단계로 보내지 않고 바로 보호자 홈으로 간다.
@@ -727,6 +718,29 @@ function SignupContent() {
     );
   }
 
+  if (step === "child" && approvedChild) {
+    return (
+      <main
+        className="flex min-h-dvh justify-center overflow-x-hidden px-4 py-5 sm:items-center sm:px-6 sm:py-8"
+        style={{ background: "linear-gradient(155deg, #F3F7FF 0%, #F7F4FF 52%, #FFF7F0 100%)" }}
+      >
+        <div className="w-full max-w-[440px] self-start rounded-[30px] border border-white/80 bg-white/90 px-5 py-5 shadow-[0_22px_60px_rgba(16,49,91,0.12)] backdrop-blur-sm sm:self-auto sm:px-7 sm:py-6">
+          <ChildStartGuide
+            children={[approvedChild]}
+            initialChildId={approvedChild.id}
+            onParentHome={handleParentHomeFromHandoff}
+            showCompletionPill
+          />
+          {handoffError && (
+            <div className="mt-3">
+              <ErrorBanner message={handoffError} />
+            </div>
+          )}
+        </div>
+      </main>
+    );
+  }
+
   return (
 
     <Shell step={step}>
@@ -767,7 +781,7 @@ function SignupContent() {
             familyId={familyId}
             draft={childDraft}
             onDraftChange={setChildDraft}
-            onDone={finish}
+            onChildApproved={setApprovedChild}
             onBack={() => navigateStep("family")}
           />
         ) : loadingFamily ? (
