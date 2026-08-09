@@ -310,47 +310,54 @@ export default function ChildHomePage() {
         <div className="flex-1 w-full max-w-[430px] mx-auto px-4 pb-20 flex flex-col relative z-10 child-home-content">
           
           {/* Mascot Area */}
-          <div className="flex flex-col items-center justify-center relative" style={{ height: '120px' }}>
+          <div
+            data-testid="child-home-mascot"
+            className="relative flex h-[202px] shrink-0 items-end justify-center"
+          >
+            {/* Bright pedestal keeps the mascot grounded, as in the target composition. */}
+            <div className="absolute bottom-1 h-[30px] w-[205px] rounded-[50%] border border-white/80 bg-gradient-to-b from-white to-[#DCE8F1] shadow-[0_9px_20px_rgba(48,91,124,0.18)]" />
             <Image
               src="/Images/mascot/mascot-standing.png"
               alt="케이 마스코트"
               width={205}
               height={205}
-              className="object-contain drop-shadow-md z-10"
-              style={{ width: "clamp(96px, 34%, 128px)", height: "auto" }}
+              className="relative z-10 mb-2 h-auto object-contain drop-shadow-[0_7px_5px_rgba(32,71,102,0.18)]"
+              style={{ width: "clamp(160px, 44vw, 178px)" }}
               priority
             />
-            {/* Oval shadow under mascot */}
-            <div className="absolute bottom-0 w-32 h-4 bg-black/5 rounded-[50%] blur-[2px]"></div>
           </div>
 
           {/* Greeting Area */}
-          <div className="flex flex-col items-center text-center mt-1 mb-1.5">
-            <h1 className="font-brand text-[24px] font-extrabold leading-[1.3]">
+          <div
+            data-testid="child-home-greeting"
+            className="mt-3 flex flex-col items-center px-3 text-center"
+          >
+            <h1 className="font-brand text-[25px] font-extrabold leading-[1.45] tracking-[0.02em]">
               {greetingTitle}<br/>오늘은 뭐 하고 놀까?
             </h1>
           </div>
 
-          <MissionOnboardingCard />
-
           {/* Status Bubble */}
-          <div className="flex justify-center mb-2">
-            <div className="relative bg-white px-4 py-2.5 rounded-full border border-[var(--color-k-orange)] shadow-sm text-[15px] font-medium inline-block max-w-[80%] text-center">
+          <div data-testid="mission-status-bubble" className="mb-3 mt-3 flex justify-center">
+            <div className="relative inline-block max-w-[88%] rounded-full border border-black/5 bg-white px-5 py-2.5 text-center text-[15px] font-medium shadow-[0_4px_10px_rgba(42,66,86,0.15)]">
               {missionBubble}
               {/* Triangle pointer */}
-              <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-[var(--color-k-orange)] transform rotate-45"></div>
+              <div className="absolute -bottom-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-b border-r border-black/5 bg-white" />
             </div>
           </div>
 
+          <MissionOnboardingCard />
+
           {/* Primary Action Cards */}
-          <div className="flex flex-col gap-2">
+          <div className="mt-2 flex flex-col gap-2.5">
             {/* Mission Card (Primary) */}
             <Link 
               href={missionUrl}
-              className="flex items-center gap-3 rounded-[22px] px-4 py-2.5 shadow-sm transition-transform active:scale-[0.98] w-full"
+              data-testid="mission-primary-card"
+              className="flex min-h-[74px] w-full items-center gap-3 rounded-[22px] px-4 py-3 shadow-[0_6px_14px_rgba(197,77,9,0.20)] transition-transform active:scale-[0.98]"
               style={{ background: "var(--color-k-orange)" }}
             >
-              <div className="w-[46px] h-[46px] rounded-[18px] flex items-center justify-center text-[28px] shrink-0 bg-white/25">
+              <div className="flex h-[48px] w-[48px] shrink-0 items-center justify-center rounded-[17px] bg-white/25 text-[28px] shadow-inner">
                 🎯
               </div>
               <div className="flex-1 text-left min-w-0">
@@ -365,17 +372,17 @@ export default function ChildHomePage() {
             </Link>
 
             {/* Sub Cards (Grid) */}
-            <div className="grid grid-cols-2 gap-2.5">
+            <div data-testid="child-home-action-grid" className="grid grid-cols-2 gap-2.5">
               {/* Talk Card */}
               <Link 
                 href="/chat"
-                className="flex flex-col items-start gap-2 rounded-[20px] px-3.5 py-3 shadow-sm transition-transform active:scale-[0.98] w-full"
+                className="flex min-h-[88px] w-full items-center gap-2.5 rounded-[20px] px-3 py-3.5 shadow-[0_5px_12px_rgba(136,82,25,0.14)] transition-transform active:scale-[0.98]"
                 style={{ background: "var(--color-k-mascot-orange)" }}
               >
-                <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-[22px] shrink-0 bg-white/30">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-white/30 text-[22px] shadow-inner">
                   💬
                 </div>
-                <div className="flex-1 text-left min-w-0 w-full mt-1">
+                <div className="min-w-0 flex-1 text-left">
                   <p className="text-[var(--color-k-navy)] font-bold text-[16px] leading-tight">대화하기</p>
                   <p className="text-[var(--color-k-navy)]/80 text-[13px] mt-1 leading-snug line-clamp-2">케이랑 이야기 나눠요</p>
                 </div>
@@ -384,19 +391,29 @@ export default function ChildHomePage() {
               {/* Play Card */}
               <Link 
                 href="/child/play"
-                className="flex flex-col items-start gap-2 rounded-[20px] px-3.5 py-3 shadow-sm transition-transform active:scale-[0.98] w-full"
+                className="flex min-h-[88px] w-full items-center gap-2.5 rounded-[20px] px-3 py-3.5 shadow-[0_5px_12px_rgba(35,102,145,0.16)] transition-transform active:scale-[0.98]"
                 style={{ background: "var(--color-k-sky-blue)" }}
               >
-                <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-[22px] shrink-0 bg-white/25">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-white/25 text-[22px] shadow-inner">
                   🎮
                 </div>
-                <div className="flex-1 text-left min-w-0 w-full mt-1">
-                  <p className="text-[var(--color-k-navy)] font-bold text-[16px] leading-tight">케이와 놀이</p>
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="text-[var(--color-k-navy)] font-bold text-[16px] leading-tight">게임 참여</p>
                   <p className="text-[var(--color-k-navy)]/80 text-[13px] mt-1 leading-snug line-clamp-2">
                     {goldKeyBalance !== null ? `🔑 ${goldKeyBalance}개 보유` : "재미있는 놀이를 해봐요"}
                   </p>
                 </div>
               </Link>
+            </div>
+
+            <div
+              data-testid="gold-key-expiry-notice"
+              className="mt-1 flex min-h-[62px] items-center justify-center gap-3 rounded-[18px] border border-white/80 bg-[#FFF0DE]/90 px-4 py-3 text-center shadow-[0_5px_14px_rgba(139,83,34,0.12)]"
+            >
+              <span aria-hidden="true" className="text-[34px] leading-none drop-shadow-sm">🔑</span>
+              <p className="text-[14px] font-bold leading-relaxed text-[#A8521F]">
+                황금열쇠는 받은 날부터 7일 안에<br className="hidden min-[360px]:block" /> 사용하지 않으면 사라져요
+              </p>
             </div>
           </div>
         </div>
