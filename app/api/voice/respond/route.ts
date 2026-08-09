@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { pickReaction } from "@/lib/freeChatReactions";
-import { generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
 import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
@@ -10,67 +8,50 @@ import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallRespond
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { after } from "next/server";
-import { FREE_CHAT_SYSTEM_PROMPT } from "@/app/api/_lib/prompts";
-import { fetchKPeerPersonaForChild, buildKPeerPersonaFragment } from "@/lib/persona/kPeerPersona";
-import {
-  createGenAIClient,
-  FREE_CHAT_MAX_OUTPUT_TOKENS,
-  FREE_CHAT_MODEL_ID,
-} from "@/app/api/_lib/ai";
-import {
-  buildFreeChatContents,
-  validateFreeChatResponse,
-  normalizeFreeChatResponse,
-  FREE_CHAT_UNKNOWN_CONTENT_PHRASE,
-} from "@/lib/freechat/geminiPolicy";
+import { fetchKPeerPersonaForChild } from "@/lib/persona/kPeerPersona";
+import { createGenAIClient, FREE_CHAT_MODEL_ID } from "@/app/api/_lib/ai";
 import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
-import { getActiveVacationContext, resolveSchoolQuestionBlockState, getVacationFollowUpQuestion, getSchoolStartConfirmationQuestion, markVacationQuestionAsked } from "@/lib/plan/vacationSchoolContext";
+import {
+  getActiveVacationContext,
+  resolveSchoolQuestionBlockState,
+  getVacationFollowUpQuestion,
+  getSchoolStartConfirmationQuestion,
+  markVacationQuestionAsked,
+} from "@/lib/plan/vacationSchoolContext";
 import { parseGrade } from "@/lib/mission/selectQuestions";
-import { buildRelationshipContext } from "@/lib/relationship/relationshipContext";
+import { respond as respondWithEngine, checkSafetyPreflight, type GenerateArgs } from "@/lib/k-conversation";
 
 export const runtime = "nodejs";
 
-
-// 047 QA 리뷰 지적([복잡]): direct_question/저신뢰ASR/Gemini 예외 폴백 등 규칙 엔진 응답은
-// validateFreeChatResponse/normalizeFreeChatResponse를 거치지 않아, 자유대화에서도
-// "그건 잘 모르겠어. 네가 알려줄래?"류 질문형 문장이 그대로 노출되고 있었다(원본 버그
-// 리포트가 지적한 것과 동일 유형). 자유대화(session_type==="free_chat")로 나가는 모든
-// 응답 경로가 반드시 이 함수를 거치도록 통일한다 — 검증 실패 시 고정 안전 폴백으로
-// 대체하고, 미션 등 자유대화가 아닌 세션에는 전혀 영향을 주지 않는다.
-function finalizeFreeChatText(text: string, sessionType: string | null | undefined): string {
-  if (sessionType !== "free_chat") return text;
-  if (!validateFreeChatResponse(text)) {
-    return normalizeFreeChatResponse(text);
-  }
-  return text;
-}
-
-// 자유대화 응답 순서:
-// 1) 안전 신호는 기존 규칙 엔진이 즉시 처리하고 보호자 이벤트를 기록한다.
-// 2) 저신뢰 음성·앱 모드 질문은 사실성이 중요한 고정 응답을 사용한다.
-// 3) 기억 회상은 저장된 기억만 근거로 Gemini 2.5 Flash Lite가 응답한다.
-// 4) 일반 대화는 Gemini 2.5 Flash Lite가 응답하며, 호출 실패·무효 출력이면 기존
-//    반영적 경청 엔진으로 폴백한다.
-
+// 071 자유대화 v2 — K Conversation Engine Free Chat Adapter.
+// 이 route는 이제 "어떻게 말할지"를 직접 결정하지 않는다(Persona/Memory/Boredom/Action/
+// Response 생성은 전부 lib/k-conversation이 담당). 이 route에 남는 책임은:
+//   1) 인증/동의/승인 같은 요청 단위 가드
+//   2) Safety preflight — 방학·기억회상처럼 Engine 호출 전에 조기 반환하는 모든 경로보다
+//      Safety가 먼저 실행되도록 강제한다(codex-rv 지적: 조기 반환 경로가 Safety를 완전히
+//      건너뛰는 회귀가 있었다 — 절대 재발 금지).
+//   3) Engine 범위 밖의 결정론적 규칙(방학/개학 후속 질문) — Goal이 아니라 순수 규칙이라
+//      071 §3의 "Goal 관련 로직만 금지" 경계 밖에 있다
+//   4) "기억나?" 전용 하이-그라운딩 응답(memoryRecallResponder) — 071이 흡수하라고
+//      명시하지 않은 특수 안전 경로라 그대로 유지한다(계획서 §Phase 0 결정)
+//   5) usage_events 과금 로깅, API 응답 포맷 번역
 const LOW_ASR_CONFIDENCE_THRESHOLD = 0.55;
 
 interface HistoryTurn { role: "child" | "k"; text: string }
 
-function recordLlmUsage(
-  sessionId: string,
-  tokenIn: number,
-  tokenOut: number
-) {
+function isValidHistoryTurn(value: unknown): value is HistoryTurn {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return (row.role === "child" || row.role === "k") && typeof row.text === "string";
+}
+
+function recordLlmUsage(sessionId: string, tokenIn: number, tokenOut: number) {
   after(async () => {
     try {
       const ctx = await resolveUsageContext(sessionId);
       if (!ctx) return;
       const serviceRole = createServiceClient();
-      const estCostKrw = estimateCost({
-        kind: "llm",
-        tokenIn,
-        tokenOut,
-      });
+      const estCostKrw = estimateCost({ kind: "llm", tokenIn, tokenOut });
       await serviceRole.from("usage_events").insert({
         child_id: ctx.childId,
         tier: ctx.tier,
@@ -82,10 +63,7 @@ function recordLlmUsage(
         conversation_mode: null,
       });
     } catch (err) {
-      console.error(
-        "[voice/respond] usage_events insert failed:",
-        (err as Error).message
-      );
+      console.error("[voice/respond] usage_events insert failed:", (err as Error).message);
     }
   });
 }
@@ -95,14 +73,29 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { history?: HistoryTurn[]; sessionId?: string; asrConfidence?: number; appMode?: string };
+  let body: { history?: unknown; sessionId?: string; asrConfidence?: number; appMode?: string };
   try {
-    body = await req.json();
+    const parsed: unknown = await req.json();
+    // codex-rv 지적: JSON 본문이 null/배열/원시값이면 이후 body.history 접근에서 500이 난다.
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
+    body = parsed as typeof body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const history = Array.isArray(body.history) ? body.history : [];
+  // codex-rv 지적: asrConfidence는 0~1 범위 밖 값(음수·1 초과)을 검증 없이 그대로 받았다.
+  if (
+    body.asrConfidence !== undefined &&
+    (typeof body.asrConfidence !== "number" || body.asrConfidence < 0 || body.asrConfidence > 1)
+  ) {
+    return NextResponse.json({ error: "asrConfidence must be a number between 0 and 1" }, { status: 400 });
+  }
+
+  // codex-rv 지적: history 원소를 검증 없이 신뢰하면 숫자형 등 잘못된 text가 .trim()에서
+  // 500을 낸다. 형식이 맞는 turn만 통과시킨다.
+  const history = Array.isArray(body.history) ? body.history.filter(isValidHistoryTurn) : [];
   if (history.length === 0) {
     return NextResponse.json({ error: "history required" }, { status: 400 });
   }
@@ -126,10 +119,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // 요청서(케이 동갑내기 페르소나) — 이미 검증된 session.child_id로 서버가 새로
-  // 조회한 학년만 페르소나 프롬프트에 쓴다. 형제자매가 번갈아 로그인해도 매 요청마다
-  // 새로 조회하므로 정보가 섞이지 않는다.
-  const kPeerPersona = await fetchKPeerPersonaForChild(service, session.child_id);
+  // 073 Mission Adapter가 아직 없다 — Goal Layer 없이 이 route가 mission 세션에 쓰이면
+  // 안 된다(codex-rv 지적). 미션은 자기 전용 엔드포인트(/api/mission/respond 등)를 쓴다.
+  // codex-rv 2차 지적: 소유권 확인(authCheck) 뒤로 옮겨서, 타 사용자가 세션 ID만으로
+  // 404/400/403 상태코드 차이를 이용해 세션 존재·유형을 추측할 수 없게 한다.
+  if (session.session_type !== "free_chat") {
+    return NextResponse.json({ error: "This endpoint only serves free_chat sessions" }, { status: 400 });
+  }
 
   const consentBlocked = await checkConsentForSession(sessionId);
   if (consentBlocked) return consentBlocked;
@@ -141,29 +137,22 @@ export async function POST(req: NextRequest) {
   if (!lastChild) {
     return NextResponse.json({ error: "no child utterance in history" }, { status: 400 });
   }
-  const lastK = [...history].reverse().find((t) => t.role === "k" && t.text?.trim());
+  const childText = lastChild.text.trim();
 
-  // 1) 안전 검사 최우선 — 걸리면 반영적 경청 엔진은 아예 보지 않고 기존 안전 응답을 그대로 사용.
-  const safetyCheck = pickReaction(lastChild.text.trim(), lastK?.text?.trim());
-
-  if (safetyCheck.flaggedForParent) {
-    const service = createServiceClient();
-    const { error: insertError } = await service.from("safety_events").insert({
-      session_id: sessionId,
-      subcategory: safetyCheck.safetySubcategory,
-      child_text: lastChild.text.trim(),
-    });
-    if (insertError) {
-      console.error("[voice/respond] safety_events insert failed:", insertError.message);
-    }
+  // Safety preflight — 이 아래의 모든 조기 반환 경로(방학 규칙/기억회상)보다 반드시 먼저
+  // 실행한다. 걸리면 그 무엇보다 우선해 즉시 반환한다.
+  const safetyResult = await checkSafetyPreflight(service, sessionId, childText);
+  if (safetyResult) {
     return NextResponse.json({
-      text: safetyCheck.text,
-      category: safetyCheck.category,
-      flaggedForParent: true,
+      text: safetyResult.text,
+      category: safetyResult.category,
+      flaggedForParent: safetyResult.safetyFlagged ?? false,
+      model: "rule_engine",
     });
   }
 
-  // 068: 방학/개학일 후속 질문 및 개학 확인 질문 연결
+  // 068: 방학/개학일 후속 질문 및 개학 확인 질문 — Engine 범위 밖의 순수 캘린더 규칙.
+  const kPeerPersona = await fetchKPeerPersonaForChild(service, session.child_id);
   const businessDate = getKstBusinessDate();
   const activeVacationContext = await getActiveVacationContext(service, session.child_id);
   const vacationBlockState = resolveSchoolQuestionBlockState(activeVacationContext, businessDate);
@@ -171,183 +160,63 @@ export async function POST(req: NextRequest) {
 
   if (vacationBlockState.needsSchoolStartDateQuestion) {
     const followUpQ = getVacationFollowUpQuestion(realGrade);
-    const finalizedText = finalizeFreeChatText(followUpQ, session.session_type);
     await markVacationQuestionAsked(service, session.child_id, businessDate);
-    return NextResponse.json({
-      text: finalizedText,
-      category: "vacation_followup",
-      flaggedForParent: false,
-      model: "vacation_rule",
-    });
+    return NextResponse.json({ text: followUpQ, category: "vacation_followup", flaggedForParent: false, model: "vacation_rule" });
   } else if (vacationBlockState.needsSchoolStartConfirmationQuestion) {
     const confirmQ = getSchoolStartConfirmationQuestion(realGrade);
-    const finalizedText = finalizeFreeChatText(confirmQ, session.session_type);
     await markVacationQuestionAsked(service, session.child_id, businessDate);
-    return NextResponse.json({
-      text: finalizedText,
-      category: "vacation_confirmation",
-      flaggedForParent: false,
-      model: "vacation_rule",
-    });
+    return NextResponse.json({ text: confirmQ, category: "vacation_confirmation", flaggedForParent: false, model: "vacation_rule" });
   }
 
-
-
-  // 1.5) 기억 회상(Memory Recall) 질의 감지 및 처리
-  const childText = lastChild.text.trim();
+  // 기억 회상(Memory Recall) 질의 — 저장된 기억 밖 내용을 지어내면 안 되는 특수 경로라
+  // 071 Engine에 흡수하지 않고 전용 하이-그라운딩 응답기를 그대로 유지한다.
   if (isMemoryRecallQuery(childText)) {
     const memoryRes = await generateMemoryRecallResponse(service, session.child_id, childText);
     if (memoryRes && memoryRes.text) {
       recordLlmUsage(sessionId, memoryRes.tokenIn, memoryRes.tokenOut);
-
-      return NextResponse.json({
-        text: memoryRes.text,
-        category: "memory_recall",
-        flaggedForParent: false,
-        model: FREE_CHAT_MODEL_ID,
-      });
+      return NextResponse.json({ text: memoryRes.text, category: "memory_recall", flaggedForParent: false, model: FREE_CHAT_MODEL_ID });
     }
-    // 기억이 없거나 오류 시 자연스럽게 아래의 반영적 경청 엔진으로 폴백
+    // 기억이 없거나 오류 시 자연스럽게 아래 Engine 경로로 폴백
   }
 
-
-  // 규칙 엔진 결과는 저신뢰 음성·앱 모드의 정확한 응답 및 Gemini 장애 폴백에 사용한다.
-  const recentKTexts = history
-    .filter((t): t is HistoryTurn & { role: "k" } => t.role === "k" && !!t.text?.trim())
-    .slice(-20)
-    .map((t) => t.text.trim());
-
+  // 나머지 전부(Persona/Memory/Boredom/Action/Response — Safety는 위에서 이미 확인했고
+  // Engine 내부에서 다시 확인해도 부작용 없음)는 K Conversation Engine이 처리한다.
   const isLowConfidenceAsr =
     typeof body.asrConfidence === "number" && body.asrConfidence < LOW_ASR_CONFIDENCE_THRESHOLD;
 
-  const reflective = generateReflectiveReaction(lastChild.text.trim(), recentKTexts, { isLowConfidenceAsr });
+  // codex-rv 지적: createGenAIClient()를 여기서 즉시 생성하면 자격증명 문제가 결정론적
+  // 경로(unclear_audio/app_mode_question)까지 500으로 만든다. Engine이 실제로 Gemini를
+  // 호출하는 순간(generateResponse 내부)에만 클라이언트를 만들도록 지연시킨다.
+  const lazyAi: GenerateArgs["ai"] = {
+    models: {
+      generateContent: (params) => createGenAIClient({ provider: "vertex" }).models.generateContent(params),
+    },
+  };
 
-  if (isLowConfidenceAsr) {
-    return NextResponse.json({
-      text: finalizeFreeChatText(reflective.text, session.session_type),
-      category: reflective.category,
-      flaggedForParent: false,
-      model: "rule_fallback",
-    });
-  }
-
-  if (reflective.category === "app_mode_question") {
-    const modeText = body.appMode === "manual" ? "수동" : "자동";
-    return NextResponse.json({
-      text: finalizeFreeChatText(`응, 지금은 ${modeText} 모드야.`, session.session_type),
-      category: reflective.category,
-      flaggedForParent: false,
-      model: "rule_fallback",
-    });
-  }
-
-  // 요청서(케이 동갑내기 페르소나) — "몇 살이야?/몇 학년이야?/동갑이야?"는 direct_question
-  // (모르는 지식 질문)이 아니라 케이 자신의 정체성 질문이다. LLM 없이 서버 검증된
-  // kPeerPersona로 결정론적으로 답해 나이·학년을 절대 지어내지 않는다.
-  if ((reflective.category as string) === "k_identity_question") {
-
-    const text = kPeerPersona.hasGrade
-      ? `나도 ${kPeerPersona.gradeLabel} ${kPeerPersona.peerAge}살이야!`
-      : "학년 확인이 필요해!";
-    return NextResponse.json({
-      text: finalizeFreeChatText(text, session.session_type),
-      category: reflective.category,
-      flaggedForParent: false,
-      model: "rule_fallback",
-    });
-  }
-
-  // 일반 지식·설명 질문에는 모델의 사전지식을 사용하지 않는다. 과거 대화에 대한
-  // 질문은 위의 LLM WIKI 회상 경로에서 먼저 처리되며, 근거가 없거나 그 밖의 질문은
-  // 정답을 지어내지 않고 아이에게 알려달라고 요청한다.
-  if (reflective.category === "direct_question") {
-    // 고정 문구는 직접 작성한 것이라 검증(물음표 금지 등)을 거치지 않고 그대로 반환한다
-    // (finalizeFreeChatText를 거치면 이 문구 자체가 검증에 걸려 폴백으로 대체돼버린다).
-    return NextResponse.json({
-      text: FREE_CHAT_UNKNOWN_CONTENT_PHRASE,
-      category: reflective.category,
-      flaggedForParent: false,
-      model: "wiki_only_guard",
-    });
-  }
-
-  // 071 Relationship Context — 안전·저신뢰·명시적 memory recall 같은 전용 경로를
-  // 제외한 모든 일반 자유대화 턴에서 관련 memory를 조용히 검색한다. childId/sessionId는
-  // 위 인증을 통과한 서버 값만 사용하며, 리포트 계열 데이터는 builder 원천에 없다.
-  const relationshipContext = await buildRelationshipContext(service, {
-    childId: session.child_id,
-    sessionId,
-    currentText: childText,
-    mode: "free_chat",
-  });
-  const freeChatSystemPrompt = [
-    FREE_CHAT_SYSTEM_PROMPT,
-    buildKPeerPersonaFragment(kPeerPersona),
-    relationshipContext.fragment,
-  ].join("\n\n");
-
-  try {
-    const ai = createGenAIClient({ provider: "vertex" });
-    const contents = buildFreeChatContents(history);
-    const baseConfig = {
-      systemInstruction: {
-        parts: [{ text: freeChatSystemPrompt }],
-      },
-      thinkingConfig: { thinkingBudget: 0 },
-      temperature: 0.7,
-      maxOutputTokens: FREE_CHAT_MAX_OUTPUT_TOKENS,
-    };
-    let result = await ai.models.generateContent({
-      model: FREE_CHAT_MODEL_ID,
-      contents,
-      config: baseConfig,
-    });
-    let text = result.text?.trim() ?? "";
-
-    if (session.session_type === "free_chat") {
-      if (!validateFreeChatResponse(text)) {
-        result = await ai.models.generateContent({
-          model: FREE_CHAT_MODEL_ID,
-          contents,
-          config: {
-            ...baseConfig,
-            systemInstruction: {
-              parts: [
-                {
-                  text: `${freeChatSystemPrompt}\n\n이전 출력이 길이 또는 형식 규칙을 어겼습니다. 반드시 자연스러운 한국어 1줄, 30자 이내, 질문 없이 공감만으로 다시 답하세요.`,
-                },
-              ],
-            },
-            temperature: 0.4,
-          },
-        });
-        text = result.text?.trim() ?? "";
-      }
-      text = normalizeFreeChatResponse(text);
-    } else {
-      // If used outside of free_chat, just return text as is (or apply some minimal fallback if empty)
-      if (!text) text = "응, 듣고 있어.";
-    }
-
-    recordLlmUsage(
+  const engineOutput = await respondWithEngine(
+    {
+      childId: session.child_id,
       sessionId,
-      result.usageMetadata?.promptTokenCount ?? 0,
-      result.usageMetadata?.candidatesTokenCount ?? 0
-    );
+      mode: "FREE_CHAT",
+      currentUtterance: childText,
+      asrConfidence: isLowConfidenceAsr ? 0 : 1,
+      appMode: body.appMode === "manual" ? "manual" : "auto",
+    },
+    {
+      db: service,
+      ai: lazyAi,
+      modelId: FREE_CHAT_MODEL_ID,
+    },
+  );
 
-    return NextResponse.json({
-      text,
-      category: reflective.category,
-      flaggedForParent: false,
-      model: FREE_CHAT_MODEL_ID,
-    });
-  } catch (err) {
-    console.error("[voice/respond] Gemini fallback:", (err as Error).message);
-    return NextResponse.json({
-      text: finalizeFreeChatText(reflective.text, session.session_type),
-      category: reflective.category,
-      flaggedForParent: false,
-      model: "rule_fallback",
-    });
+  if (engineOutput.tokenIn > 0 || engineOutput.tokenOut > 0) {
+    recordLlmUsage(sessionId, engineOutput.tokenIn, engineOutput.tokenOut);
   }
+
+  return NextResponse.json({
+    text: engineOutput.text,
+    category: engineOutput.category,
+    flaggedForParent: engineOutput.safetyFlagged ?? false,
+    model: engineOutput.category === "generated" ? FREE_CHAT_MODEL_ID : "rule_engine",
+  });
 }
