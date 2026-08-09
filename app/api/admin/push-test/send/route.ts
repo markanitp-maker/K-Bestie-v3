@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     const result = await sendMissionStartPushToChild({ childId, missionType: missionType as MissionPushType, source: "admin_test" });
     await db.from("admin_audit_log").update({ after_snapshot: { missionType, result: result.outcome, successfulSubscriptions: result.successfulSubscriptions, failedSubscriptions: result.failedSubscriptions } }).eq("id", audit.id);
     if (result.outcome === "duplicate") return NextResponse.json({ error: "같은 발송 요청이 이미 처리 중입니다.", code: "duplicate_request" }, { status: 409 });
-    if (result.outcome === "no_subscription") return NextResponse.json({ error: "활성 푸시 구독이 없습니다.", code: "no_subscription", childName: child.name, missionType }, { status: 409 });
+    if (result.outcome === "no_subscription") return NextResponse.json({ error: "활성 푸시 구독이 없습니다.", code: "NO_SUBSCRIPTION", childName: child.name, missionType }, { status: 409 });
     if (result.outcome === "failed") return NextResponse.json({ error: "푸시 발송에 실패했습니다.", code: result.errorCode, childName: child.name, missionType, successfulSubscriptions: result.successfulSubscriptions, failedSubscriptions: result.failedSubscriptions }, { status: 502 });
     return NextResponse.json({ ok: true, childName: child.name, missionType, successfulSubscriptions: result.successfulSubscriptions, failedSubscriptions: result.failedSubscriptions });
   } catch (error) {

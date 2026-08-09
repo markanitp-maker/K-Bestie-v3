@@ -26,7 +26,11 @@ export async function sendPushNotification(subscription: webPush.PushSubscriptio
   try {
     await webPush.sendNotification(subscription, JSON.stringify(payload));
   } catch (err) {
-    console.error('Failed to send push notification', err);
+    const statusCode = getPushErrorStatus(err);
+    console.error('[push] notification failed', {
+      code: statusCode === null ? 'PUSH_FAILED' : `PUSH_${statusCode}`,
+      statusCode,
+    });
     throw err;
   }
 }

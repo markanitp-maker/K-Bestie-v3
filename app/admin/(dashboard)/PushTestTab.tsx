@@ -3,9 +3,39 @@
 import { useState, useEffect } from "react";
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
 
+type PushSubscriptionStatus = "알림 등록됨" | "구독 없음" | "권한 거부" | "구독 만료 또는 해제됨";
+
+type PushTestChild = {
+  id: string;
+  name: string | null;
+  username: string;
+  grade: string | null;
+  parentEmail: string;
+  isTest: true;
+  pushSubscriptionStatus: PushSubscriptionStatus;
+};
+
+type PushTestResponse = {
+  childName?: string | null;
+  code?: string;
+  error?: string;
+  successfulSubscriptions?: number;
+  failedSubscriptions?: number;
+};
+
+const providerErrorMessage = (code: string | undefined) => {
+  const messages: Record<string, string> = {
+    PUSH_401: "푸시 인증 설정을 확인해 주세요.",
+    PUSH_403: "푸시 인증 설정이 구독 정보와 일치하지 않습니다.",
+    PUSH_410: "푸시 구독이 만료되었습니다. QA 기기에서 알림을 다시 등록해 주세요.",
+    NO_SUBSCRIPTION: "활성 푸시 구독이 없습니다.",
+  };
+  return code && messages[code] ? `${code}\n${messages[code]}` : "요청을 처리하지 못했습니다.";
+};
+
 export default function PushTestTab() {
   const [childId, setChildId] = useState("");
-  const [selectedChildInfo, setSelectedChildInfo] = useState<{name: string, username: string} | null>(null);
+  const [selectedChildInfo, setSelectedChildInfo] = useState<Pick<PushTestChild, "name" | "username" | "pushSubscriptionStatus"> | null>(null);
   
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState<number | null>(null);
@@ -13,8 +43,9 @@ export default function PushTestTab() {
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<PushTestChild[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const hasActiveSubscription = selectedChildInfo?.pushSubscriptionStatus === "알림 등록됨";
 
   useEffect(() => {
     if (!isModalOpen) return;
@@ -23,7 +54,7 @@ export default function PushTestTab() {
       setIsSearching(true);
       try {
         const res = await fetch(`/api/admin/push-test/children-search?q=${encodeURIComponent(searchQuery)}`);
-        const data = await res.json();
+        const data = await res.json() as { children?: PushTestChild[] };
         if (res.ok) {
           setSearchResults(data.children || []);
         }
@@ -51,22 +82,22 @@ export default function PushTestTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ childId: childId.trim(), missionType }),
       });
-      const data = await res.json();
+      const data = await res.json() as PushTestResponse;
       if (res.ok) {
         setStatus(`발송 성공\n아이: ${data.childName || selectedChildInfo?.name || "이름 미등록"}\n미션: ${missionType}\n성공 구독: ${data.successfulSubscriptions ?? 0}\n실패 구독: ${data.failedSubscriptions ?? 0}`);
       } else {
-        setStatus(`발송 실패\n원인: ${data.error || "요청을 처리하지 못했습니다."}`);
+        setStatus(`발송 실패\n${providerErrorMessage(data.code)}`);
       }
-    } catch (e: any) {
-      setStatus(`오류: ${e.message}`);
+    } catch (error: unknown) {
+      setStatus(`오류: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
     } finally {
       setLoading(null);
     }
   };
 
-  const handleSelectChild = (child: any) => {
+  const handleSelectChild = (child: PushTestChild) => {
     setChildId(child.id);
-    setSelectedChildInfo({ name: child.name, username: child.username });
+    setSelectedChildInfo({ name: child.name, username: child.username, pushSubscriptionStatus: child.pushSubscriptionStatus });
     setIsModalOpen(false);
   };
 
@@ -81,7 +112,7 @@ export default function PushTestTab() {
           </label>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: "1px solid var(--admin-border)", fontSize: 14, background: "var(--admin-bg)" }}>
-              {selectedChildInfo ? `선택된 아이: ${selectedChildInfo.name} (${selectedChildInfo.username})` : "선택 안 됨"}
+              {selectedChildInfo ? `선택된 아이: ${selectedChildInfo.name || "이름 미등록"} (${selectedChildInfo.username}) · ${selectedChildInfo.pushSubscriptionStatus}` : "선택 안 됨"}
             </div>
             <button 
               onClick={() => {
@@ -99,7 +130,7 @@ export default function PushTestTab() {
         <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
           <button 
             onClick={() => handleTest(1)}
-            disabled={loading !== null || !childId}
+            disabled={loading !== null || !childId || !hasActiveSubscription}
             style={{ 
               flex: 1,
               padding: "12px", 
@@ -108,15 +139,15 @@ export default function PushTestTab() {
               borderRadius: 8, 
               border: "none",
               fontWeight: 700,
-              cursor: (loading !== null || !childId) ? "not-allowed" : "pointer",
-              opacity: (loading !== null || !childId) ? 0.7 : 1
+              cursor: (loading !== null || !childId || !hasActiveSubscription) ? "not-allowed" : "pointer",
+              opacity: (loading !== null || !childId || !hasActiveSubscription) ? 0.7 : 1
             }}
           >
             {loading === 1 ? "발송 중..." : "미션 1 즉시 발송"}
           </button>
           <button 
             onClick={() => handleTest(2)}
-            disabled={loading !== null || !childId}
+            disabled={loading !== null || !childId || !hasActiveSubscription}
             style={{ 
               flex: 1,
               padding: "12px", 
@@ -125,13 +156,19 @@ export default function PushTestTab() {
               borderRadius: 8, 
               border: "1px solid var(--admin-primary)",
               fontWeight: 700,
-              cursor: (loading !== null || !childId) ? "not-allowed" : "pointer",
-              opacity: (loading !== null || !childId) ? 0.7 : 1
+              cursor: (loading !== null || !childId || !hasActiveSubscription) ? "not-allowed" : "pointer",
+              opacity: (loading !== null || !childId || !hasActiveSubscription) ? 0.7 : 1
             }}
           >
             {loading === 2 ? "발송 중..." : "미션 2 즉시 발송"}
           </button>
         </div>
+
+        {selectedChildInfo && !hasActiveSubscription && (
+          <p style={{ margin: "-12px 0 16px", fontSize: 12, color: "var(--admin-danger, #b91c1c)" }}>
+            활성 푸시 구독이 없어 발송할 수 없습니다. QA 기기에서 알림을 다시 등록해 주세요.
+          </p>
+        )}
         
         {status && (
           <div style={{ marginTop: 16 }}>
@@ -172,7 +209,7 @@ export default function PushTestTab() {
                 <div style={{ padding: 16, textAlign: "center", color: "var(--admin-text-secondary)", fontSize: 13 }}>결과가 없습니다.</div>
               ) : (
                 <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                  {searchResults.map((child: any) => (
+                  {searchResults.map((child) => (
                     <li 
                       key={child.id}
                       onClick={() => handleSelectChild(child)}
@@ -192,7 +229,7 @@ export default function PushTestTab() {
                         <span style={{ fontSize: 12, background: "var(--admin-border)", padding: "2px 6px", borderRadius: 4 }}>{child.grade || "학년미상"}</span>
                       </div>
                       <div style={{ fontSize: 12, color: "var(--admin-text-secondary)" }}>
-                        부모 계정: {child.parentEmail || "알 수 없음"}
+                        부모 계정: {child.parentEmail || "알 수 없음"} · 푸시: {child.pushSubscriptionStatus}
                       </div>
                     </li>
                   ))}

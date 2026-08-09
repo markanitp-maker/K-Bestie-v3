@@ -5,9 +5,9 @@ export type PushTestChildFlags = {
 };
 
 export function isPushTestChild(child: PushTestChildFlags, testFamilyIds: ReadonlySet<string>) {
-  return Boolean(
-    child.is_internal_test ||
-    child.is_test_account ||
-    (child.family_id && testFamilyIds.has(child.family_id))
+  const belongsToInternalTestFamily = Boolean(
+    child.family_id && testFamilyIds.has(child.family_id)
   );
+
+  return child.is_internal_test === true || belongsToInternalTestFamily;
 }

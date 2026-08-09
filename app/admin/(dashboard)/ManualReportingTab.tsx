@@ -5,6 +5,13 @@ import { AdminDataTable, type AdminDataTableColumn } from "@/components/admin/sh
 import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
 import { AdminKpiCard, AdminKpiGrid } from "@/components/admin/shell/AdminKpiCard";
 
+type MissionProgressDisplay = {
+  started: boolean;
+  validTurns: number;
+  targetTurns: number;
+  completed: boolean;
+};
+
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("ko-KR");
 }
@@ -229,7 +236,7 @@ export default function ManualReportingTab() {
     return true;
   });
 
-    const getStatusUI = (job: any, count: number, isCollection: boolean = false) => {
+  const getStatusUI = (job: any, count: number, isCollection: boolean = false) => {
     if (!job) return <span style={{ color: "var(--admin-text-secondary)" }}>대기</span>;
     let color = "var(--admin-text-secondary)";
     let text = "대기";
@@ -266,14 +273,41 @@ export default function ManualReportingTab() {
     );
   };
 
+  const formatMissionProgress = (mission?: MissionProgressDisplay) => {
+    if (!mission?.started) return <span style={{ color: "var(--admin-text-secondary)" }}>미시작</span>;
+    const validTurns = Math.min(mission.validTurns ?? 0, mission.targetTurns ?? 10);
+    const targetTurns = mission.targetTurns ?? 10;
+    const completed = mission.completed || validTurns >= targetTurns;
+    const status = completed ? "완료" : validTurns === 0 ? "시작만" : "미완료";
+    const color = completed ? "var(--admin-success)" : validTurns === 0 ? "var(--admin-text-secondary)" : "var(--admin-warning)";
+
+    return <span style={{ color, fontWeight: 600 }}>{validTurns}/{targetTurns} {status}</span>;
+  };
+
+  const formatMessageCount = (count?: number) => `${count ?? 0}건`;
+
   const columns: AdminDataTableColumn<any>[] = [
     { key: "select", header: "선택", render: (c) => (
       <input type="radio" checked={selectedChildId === c.childId} readOnly style={{ cursor: "pointer" }} />
     )},
     { key: "name", header: "이름", render: (c) => c.name },
-    { key: "sessions", header: "세션 (미션/자유)", render: (c) => `${c.missionSessionCount} / ${c.freeChatSessionCount}` },
-    { key: "col1", header: "1차 수집 18:00", render: (c) => getStatusUI(c.jobs?.collection_1, c.collection1Count, true) },
-    { key: "col2", header: "2차 수집 23:59:59", render: (c) => getStatusUI(c.jobs?.collection_2, c.collection2Count, true) },
+    { key: "mission1Progress", header: "미션1 진행", render: (c) => formatMissionProgress(c.mission1) },
+    { key: "mission1Saved", header: "미션1 저장", render: (c) => formatMessageCount(c.mission1?.savedMessageCount) },
+    { key: "mission1Collected", header: "1차 수집", render: (c) => (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <span>{formatMessageCount(c.mission1?.collectedMessageCount)}</span>
+        {getStatusUI(c.jobs?.collection_1, c.mission1?.collectedMessageCount ?? 0, false)}
+      </div>
+    ) },
+    { key: "mission2Progress", header: "미션2 진행", render: (c) => formatMissionProgress(c.mission2) },
+    { key: "mission2Saved", header: "미션2 저장", render: (c) => formatMessageCount(c.mission2?.savedMessageCount) },
+    { key: "mission2Collected", header: "2차 수집", render: (c) => (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <span>{formatMessageCount(c.mission2?.collectedMessageCount)}</span>
+        {getStatusUI(c.jobs?.collection_2, c.mission2?.collectedMessageCount ?? 0, false)}
+      </div>
+    ) },
+    { key: "freeChat", header: "자유대화", render: (c) => `${c.freeChatSessionCount}회` },
     { key: "corr", header: "보정", render: (c) => getStatusUI(c.jobs?.context_correction, 0) },
     { key: "mem", header: "Memory Batch", render: (c) => getStatusUI(c.jobs?.memory_batch, 0) },
     { key: "report", header: "리포트", render: (c) => (

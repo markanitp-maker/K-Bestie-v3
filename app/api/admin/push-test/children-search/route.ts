@@ -6,6 +6,15 @@ import { isPushTestChild } from "@/lib/admin/pushTestEligibility";
 
 export const runtime = "nodejs";
 
+type PushSubscriptionStatus = "알림 등록됨" | "구독 없음" | "권한 거부" | "구독 만료 또는 해제됨";
+
+function getPushSubscriptionStatus(rows: Array<{ is_active: boolean; permission_status: string; revoked_at: string | null }>): PushSubscriptionStatus {
+  if (rows.some((row) => row.is_active && row.permission_status === "granted")) return "알림 등록됨";
+  if (rows.some((row) => row.permission_status === "denied")) return "권한 거부";
+  if (rows.some((row) => row.revoked_at)) return "구독 만료 또는 해제됨";
+  return "구독 없음";
+}
+
 export async function GET(req: NextRequest) {
   const denied = await requireAdmin();
   if (denied) return denied;
@@ -28,6 +37,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "테스트 계정 조회 실패" }, { status: 500 });
   }
   const testChildren = children.filter((child) => isPushTestChild(child, testFamilyIds));
+  const testChildIds = testChildren.map((child) => child.id);
+
+  const subscriptionsByChildId = new Map<string, Array<{ is_active: boolean; permission_status: string; revoked_at: string | null }>>();
+  if (testChildIds.length > 0) {
+    const { data: subscriptions, error: subscriptionError } = await service
+      .from("push_subscriptions")
+      .select("child_id,is_active,permission_status,revoked_at")
+      .eq("role", "child")
+      .in("child_id", testChildIds);
+    if (subscriptionError) return NextResponse.json({ error: "푸시 구독 상태 조회 실패" }, { status: 500 });
+    for (const subscription of subscriptions ?? []) {
+      if (!subscription.child_id) continue;
+      const rows = subscriptionsByChildId.get(subscription.child_id) ?? [];
+      rows.push(subscription);
+      subscriptionsByChildId.set(subscription.child_id, rows);
+    }
+  }
 
   // 2. Fetch member accounts (for child username)
   // child_profiles.member_id points to family_members.id
@@ -91,6 +117,7 @@ export async function GET(req: NextRequest) {
       grade: c.grade,
       parentEmail: parentEmail || "",
       isTest: true,
+      pushSubscriptionStatus: getPushSubscriptionStatus(subscriptionsByChildId.get(c.id) ?? []),
     };
   });
 
