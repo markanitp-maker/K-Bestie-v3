@@ -26,28 +26,30 @@ export function CurrentWeekAggregationCard({ data }: { data: CurrentAggregation 
   if (!data) return null;
 
   return (
-    <div className="bg-[#f0f9ff] border border-[#bae6fd] rounded-[16px] p-4 mb-3 border-dashed shadow-sm">
-      <div className="flex justify-between items-start mb-2">
-        <h2 className="text-[14px] font-bold text-[#10315B]">
+    <section className="bg-[var(--color-k-info-bg)] border border-[var(--color-k-sky-blue)]/30 rounded-[20px] p-5 mb-5 border-dashed shadow-sm" aria-label="이번 주 대화 집계">
+      <div className="flex justify-between items-start mb-4">
+        <h2 className="text-lg font-bold text-[var(--color-k-navy)]">
           {formatWeekRange(data.week_start, data.week_end)}
         </h2>
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md text-white" style={{ background: "#10315B" }}>
+        <span className="text-xs font-bold px-2.5 py-1 rounded-full text-white" style={{ background: "var(--color-k-navy)" }}>
           이번 주
         </span>
       </div>
       
-      <div className="flex items-center gap-1.5 text-[14px] font-bold text-[#10315B] mb-1">
-        <span>⏳</span>
-        <span>집계 중 · {data.currentDayIndex}일째{data.currentConversationCount > 0 ? ` · 대화 ${data.currentConversationCount}회` : ""}</span>
+      <p className="text-lg font-bold text-[var(--color-k-navy)]">이번 주 대화</p>
+      <p className="mt-1 text-4xl font-bold leading-none text-[var(--color-k-navy)]">{data.currentConversationCount}<span className="ml-1 text-xl">회</span></p>
+      <div className="mt-4 flex items-center gap-1.5 text-sm font-bold text-[var(--color-k-navy)]">
+        <span aria-hidden="true">⏳</span>
+        <span>집계 중 · {data.currentDayIndex}일째</span>
       </div>
       
       {data.currentConversationCount === 0 ? (
-        <p className="text-[13px] text-gray-500 leading-snug">아직 이번 주 대화가 없어요<br/><span className="text-[12px] text-gray-400">아이가 케이와 이야기하면 주간 리포트에 반영돼요</span></p>
+        <p className="mt-2 text-base text-gray-600 leading-6">아직 이번 주 대화가 없어요</p>
       ) : (
-        <p className="text-[13px] text-gray-500">
+        <p className="mt-2 text-base text-gray-600">
           {data.expectedCompletionLabel}
         </p>
       )}
-    </div>
+    </section>
   );
 }

@@ -226,7 +226,7 @@ export default function ParentReportPage() {
               )}
             </div>
             {item.report.summary_line && item.report.emotion_hint !== item.report.summary_line && (
-              <p className="text-base text-gray-800 leading-7 line-clamp-3">
+              <p className="text-base text-gray-800 leading-7 whitespace-pre-line">
                 {item.report.summary_line}
               </p>
             )}
