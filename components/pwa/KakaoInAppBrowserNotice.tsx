@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isIOSDevice, isKakaoInAppBrowser } from "@/lib/pwa/standalone";
+import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
+import { getBrowserContext, isIOSDevice, isStandaloneDisplay, type BrowserContext } from "@/lib/pwa/standalone";
 
-async function copyCurrentAddress(address: string) {
+type BrowserState = "checking" | BrowserContext;
+
+async function copyExternalBrowserAddress(): Promise<void> {
+  const target = new URL(window.location.href);
+  // 개인정보나 인증 정보 없이, 원래의 invite/link_id/returnUrl 문맥을 그대로 보존한다.
+  target.searchParams.set("kakao_external", "1");
+  const address = target.toString();
+
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(address);
     return;
@@ -19,34 +27,55 @@ async function copyCurrentAddress(address: string) {
   textarea.remove();
 }
 
-export function KakaoInAppBrowserNotice() {
-  const [browser, setBrowser] = useState<"checking" | "not-kakao" | "ios" | "other">(
-    "checking"
-  );
+/**
+ * 카카오톡 인앱 브라우저에서는 인증·초대 UI보다 먼저 외부 브라우저 안내만 보여준다.
+ * 비공식 kakaotalk:// scheme은 사용하지 않는다. 복사한 원 URL은 기존 초대 토큰과
+ * returnUrl/link_id를 보존하므로 별도 개인정보 토큰을 만들 필요가 없다.
+ */
+export function KakaoInAppBrowserNotice({ children }: { children: React.ReactNode }) {
+  const [browser, setBrowser] = useState<BrowserState>("checking");
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
 
   useEffect(() => {
-    const userAgent = navigator.userAgent;
-    if (!isKakaoInAppBrowser(userAgent)) {
-      setBrowser("not-kakao");
+    const context = getBrowserContext(navigator.userAgent, isStandaloneDisplay(window));
+    setBrowser(context);
+
+    if (context === "KAKAO_IN_APP") {
+      void logAuthFlowEvent("kakao_link_open");
+      void logAuthFlowEvent("kakao_inapp_detected");
+      void logAuthFlowEvent("external_browser_cta_view");
       return;
     }
-    setBrowser(isIOSDevice(userAgent) ? "ios" : "other");
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("kakao_external") === "1") {
+      void logAuthFlowEvent("external_browser_arrived");
+      url.searchParams.delete("kakao_external");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+
+    if (context === "PWA_STANDALONE" && !window.sessionStorage.getItem("k_pwa_first_launch_logged")) {
+      window.sessionStorage.setItem("k_pwa_first_launch_logged", "1");
+      void logAuthFlowEvent("pwa_first_launch");
+    }
   }, []);
 
-  if (browser === "checking" || browser === "not-kakao") return null;
+  if (browser !== "KAKAO_IN_APP") {
+    // UA를 읽기 전에는 가입·OAuth 버튼이 잠깐 노출되지 않도록 한다.
+    if (browser === "checking") {
+      return <div className="min-h-dvh bg-[var(--color-k-surface)]" aria-busy="true" />;
+    }
+    return <>{children}</>;
+  }
 
-  const handleOpenExternal = () => {
-    const target = window.location.href;
-    window.location.href = `kakaotalk://web/openExternal?url=${encodeURIComponent(target)}`;
-  };
-
-  const handleCopy = async () => {
+  const ios = isIOSDevice(navigator.userAgent, Boolean((window as unknown as { MSStream?: unknown }).MSStream));
+  const handleContinue = async () => {
     try {
-      await copyCurrentAddress(window.location.href);
+      await copyExternalBrowserAddress();
       setCopied(true);
       setCopyFailed(false);
+      void logAuthFlowEvent("external_browser_cta_click");
     } catch {
       setCopied(false);
       setCopyFailed(true);
@@ -54,40 +83,31 @@ export function KakaoInAppBrowserNotice() {
   };
 
   return (
-    <aside
-      className="w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-left"
-      aria-label="카카오톡 브라우저 안내"
-    >
-      <p className="text-sm font-bold" style={{ color: "var(--color-k-navy)" }}>
-        카카오톡 브라우저에서는 앱 설치가 제한될 수 있어요
-      </p>
-      <p className="mt-1.5 text-xs leading-relaxed text-gray-600">
-        {browser === "ios"
-          ? "오른쪽 아래 ···를 누른 뒤 ‘Safari로 열기’를 선택해 주세요."
-          : "메뉴의 ···를 누른 뒤 ‘다른 브라우저로 열기’를 선택해 주세요."}
-      </p>
-      <div className="mt-3 grid grid-cols-2 gap-2">
+    <main className="min-h-dvh bg-[var(--color-k-surface)] px-5 py-8 flex items-center justify-center">
+      <section className="w-full max-w-md rounded-3xl bg-white border border-gray-100 shadow-sm p-6 text-center">
+        <p className="text-4xl" aria-hidden>🌐</p>
+        <h1 className="mt-4 text-xl font-black text-gray-900">브라우저에서 계속해 주세요</h1>
+        <p className="mt-3 text-sm leading-6 text-gray-600">
+          내친구 케이는 Safari 또는 Chrome에서 회원가입하면 더 안정적으로 이용할 수 있어요.
+          <br />가입을 완료한 뒤 앱 설치도 간단하게 도와드릴게요.
+        </p>
         <button
           type="button"
-          onClick={handleOpenExternal}
-          className="min-h-11 rounded-xl px-3 text-xs font-bold text-white"
-          style={{ background: "var(--color-k-navy)" }}
+          onClick={() => void handleContinue()}
+          className="mt-6 min-h-12 w-full rounded-2xl bg-[var(--color-k-navy)] font-bold text-white active:scale-[0.98]"
         >
-          외부 브라우저로 열기
+          브라우저에서 계속하기
         </button>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-700"
-        >
-          {copied ? "주소 복사 완료" : "주소 복사"}
-        </button>
-      </div>
-      <p className="mt-2 text-[10px] leading-relaxed text-gray-500" aria-live="polite">
-        {copyFailed
-          ? "주소를 복사하지 못했어요. 카카오톡 메뉴에서 외부 브라우저로 열어 주세요."
-          : "외부 브라우저 버튼이 동작하지 않으면 주소를 복사해 Safari나 Chrome에 붙여 넣어 주세요."}
-      </p>
-    </aside>
+        <p className="mt-4 text-xs leading-5 text-gray-500" aria-live="polite">
+          {copied
+            ? "주소를 복사했어요. 카카오톡 메뉴에서 다른 브라우저로 열거나 Safari·Chrome 주소창에 붙여 넣어 주세요."
+            : copyFailed
+              ? "주소를 복사하지 못했어요. 카카오톡 메뉴에서 다른 브라우저로 열어 주세요."
+              : ios
+                ? "카카오톡 메뉴에서 ‘Safari로 열기’를 선택해 주세요."
+                : "버튼으로 이동되지 않으면 카카오톡 메뉴에서 ‘다른 브라우저로 열기’를 선택해 주세요."}
+        </p>
+      </section>
+    </main>
   );
 }

@@ -8,6 +8,7 @@ import {
   isStandaloneDisplay,
   isIOSDevice,
   isKakaoInAppBrowser,
+  getBrowserContext,
 } from "./standalone.js";
 
 function makeWin(opts: {
@@ -83,4 +84,10 @@ test("일반 Safari·Chrome은 카카오톡 인앱 브라우저가 아님", () =
   );
   assert.equal(isKakaoInAppBrowser("Mozilla/5.0 Chrome/126 Mobile Safari/537.36"), false);
   assert.equal(isKakaoInAppBrowser(undefined), false);
+});
+
+test("카카오 인앱·일반 브라우저·설치 PWA를 안전하게 구분한다", () => {
+  assert.equal(getBrowserContext("KAKAOTALK/10.8.3 (INAPP)", false), "KAKAO_IN_APP");
+  assert.equal(getBrowserContext("Mozilla/5.0 Chrome/126", false), "NORMAL_BROWSER");
+  assert.equal(getBrowserContext("KAKAOTALK/10.8.3 (INAPP)", true), "PWA_STANDALONE");
 });

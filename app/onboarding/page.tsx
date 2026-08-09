@@ -3,7 +3,8 @@
 import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
-import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
+import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
+import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 
 const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 
@@ -15,8 +16,14 @@ const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 function OnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") === "/child/home" ? "/child/home" : "/parent/home";
+  const requestedNext = safePostAuthReturnUrl(searchParams.get("next"));
+  const next = requestedNext === "/" ? "/parent/home" : requestedNext;
+  const isChild = next === "/child/home" || next.startsWith("/child/");
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
+
+  useEffect(() => {
+    if (!isStandalone) void logAuthFlowEvent("pwa_install_offer_view");
+  }, [isStandalone]);
 
   useEffect(() => {
     fetch("/api/auth/membership-status", { cache: "no-store" })
@@ -39,8 +46,11 @@ function OnboardingContent() {
   };
 
   const onInstallClick = async () => {
-    await handleInstall();
-    proceed();
+    void logAuthFlowEvent("pwa_install_click");
+    const outcome = await handleInstall();
+    if (outcome === "accepted") void logAuthFlowEvent("pwa_installed");
+    // iOS와 미지원 브라우저는 아래 안내를 읽은 뒤에도 '나중에'로 서비스 이용이 가능하다.
+    if (outcome) proceed();
   };
 
   return (
@@ -49,25 +59,27 @@ function OnboardingContent() {
       style={{ background: "var(--color-k-surface)" }}
     >
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm p-6 flex flex-col gap-6 text-center">
-        <KakaoInAppBrowserNotice />
         <div>
           <p className="text-5xl mb-3">📲</p>
           <h1 className="text-lg font-bold" style={{ color: "var(--color-k-text-primary)" }}>
-            내친구 케이에 오신 것을 환영해요
+            {isChild ? "케이를 홈 화면에 추가해 볼까?" : "내친구 케이를 앱으로 사용해 보세요"}
           </h1>
           <p className="text-xs mt-2 leading-relaxed" style={{ color: "var(--color-k-text-secondary)" }}>
-            홈 화면에 추가하면 앱처럼 더 빠르고 편하게 이용할 수 있어요.
+            {isChild
+              ? "앱으로 설치하면 미션이 시작될 때 케이가 알려줄 수 있어."
+              : "홈 화면에 설치하면 매일 아침 아이 리포트가 준비됐을 때 알려드려요."}
           </p>
         </div>
 
         {!isStandalone && (
           <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: "var(--color-k-surface)", border: "1px solid var(--color-k-border)" }}>
             {isIOS ? (
-              <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-text-secondary)" }}>
-                Safari 하단에 <strong>공유 버튼</strong>을 누른 뒤, <strong>&quot;더 보기&quot;</strong> 버튼을 누르세요.
-                <br />
-                맨 아래 <strong>&quot;홈 화면에 추가&quot;</strong>를 선택하시면 됩니다.
-              </p>
+              <>
+                <button type="button" onClick={onInstallClick} className="w-full py-3 rounded-xl text-white text-sm font-bold active:scale-95 transition-transform" style={{ background: "var(--color-k-navy)" }}>앱 설치하기</button>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-text-secondary)" }}>
+                  Safari의 공유 버튼을 누른 뒤 <strong>&quot;홈 화면에 추가&quot;</strong>를 선택해 주세요.
+                </p>
+              </>
             ) : installPrompt ? (
               <button
                 type="button"
@@ -75,7 +87,7 @@ function OnboardingContent() {
                 className="w-full py-3 rounded-xl text-white text-sm font-bold active:scale-95 transition-transform"
                 style={{ background: "var(--color-k-navy)" }}
               >
-                홈 화면에 추가하기
+                앱 설치하기
               </button>
             ) : (
               <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-text-secondary)" }}>
@@ -87,7 +99,7 @@ function OnboardingContent() {
 
         <button
           type="button"
-          onClick={proceed}
+          onClick={() => { void logAuthFlowEvent("pwa_install_dismiss"); proceed(); }}
           className="w-full py-3.5 rounded-2xl font-bold text-sm active:scale-[0.98] transition-transform"
           style={
             isStandalone

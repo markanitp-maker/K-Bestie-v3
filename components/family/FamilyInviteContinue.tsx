@@ -23,7 +23,8 @@ export function FamilyInviteContinue({ oauthCancelled = false }: { oauthCancelle
         }
         if (!response.ok) throw new Error(body.error || "가족 참여에 실패했습니다.");
         setMessage(body.alreadyMember ? "이미 가족에 참여되어 있어요." : "가족 참여가 완료됐어요!");
-        window.setTimeout(() => window.location.replace("/parent/home"), 700);
+        // 가족 연결이 완료된 뒤 허브를 거쳐 PWA 설치 제안을 한 번만 보여준다.
+        window.setTimeout(() => window.location.replace("/"), 700);
       })
       .catch((reason: Error) => {
         setError(reason.message);

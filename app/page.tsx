@@ -16,7 +16,7 @@ const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 // 완료 및 로그인 이후에만 표시한다"에 대응. 이미 설치됐거나(standalone) 이미 본 적
 // 있으면 목적지로 바로 이동한다.
 async function routePastPwaGate(
-  destination: "/parent/home" | "/child/home",
+  destination: string,
   router: ReturnType<typeof useRouter>
 ) {
   if (typeof window === "undefined") {
@@ -44,11 +44,7 @@ export default function HubPage() {
     );
 
     const routeVerifiedUser = async (fallback: "/parent/home" | "/child/home") => {
-      if (returnUrl !== "/") {
-        router.replace(returnUrl);
-        return;
-      }
-      await routePastPwaGate(fallback, router);
+      await routePastPwaGate(returnUrl === "/" ? fallback : returnUrl, router);
     };
 
     const routeActiveMembership = async (status: {

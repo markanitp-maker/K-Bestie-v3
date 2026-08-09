@@ -28,6 +28,19 @@ const ALLOWED_EVENTS = new Set([
   "new_user_routed_to_signup",
   "incomplete_user_resumed_signup",
   "social_auth_failed",
+  "kakao_link_open",
+  "kakao_inapp_detected",
+  "external_browser_cta_view",
+  "external_browser_cta_click",
+  "external_browser_arrived",
+  "pwa_install_offer_view",
+  "pwa_install_click",
+  "pwa_install_dismiss",
+  "pwa_installed",
+  "pwa_first_launch",
+  "notification_onboarding_view",
+  "notification_permission_granted",
+  "notification_permission_denied",
 ]);
 
 export async function POST(request: NextRequest) {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePushSubscription } from "@/lib/notifications/usePushSubscription";
 import { shouldShowNotificationOnboarding, shouldShowNotificationRecovery } from "@/lib/notifications/policy";
+import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 
 export function NotificationOnboarding({ role }: { role: "parent" | "child" }) {
   const { permission, status, loading, requestAndSubscribe, defer } = usePushSubscription();
@@ -13,11 +14,20 @@ export function NotificationOnboarding({ role }: { role: "parent" | "child" }) {
   const denied = permission === "denied";
   const unsupported = permission === "unsupported";
 
+  useEffect(() => {
+    if (showModal) void logAuthFlowEvent("notification_onboarding_view");
+  }, [showModal]);
+
   const enable = async () => {
     setBusy(true);
     const result = await requestAndSubscribe();
     setBusy(false);
-    if (result === "granted") setDismissed(true);
+    if (result === "granted") {
+      void logAuthFlowEvent("notification_permission_granted");
+      setDismissed(true);
+    } else if (result === "denied") {
+      void logAuthFlowEvent("notification_permission_denied");
+    }
   };
   const later = async () => { setDismissed(true); await defer(); };
 

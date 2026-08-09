@@ -36,3 +36,17 @@ export function isKakaoInAppBrowser(userAgent: string | undefined): boolean {
   if (!userAgent) return false;
   return /KAKAOTALK/i.test(userAgent);
 }
+
+export type BrowserContext = "KAKAO_IN_APP" | "NORMAL_BROWSER" | "PWA_STANDALONE";
+
+/**
+ * 가입 전에 외부 브라우저 전환이 필요한지 판정한다. standalone을 먼저 확인해
+ * 설치된 PWA가 카카오 UA 표식을 우연히 포함하더라도 서비스 진입을 막지 않는다.
+ */
+export function getBrowserContext(
+  userAgent: string | undefined,
+  isStandalone: boolean,
+): BrowserContext {
+  if (isStandalone) return "PWA_STANDALONE";
+  return isKakaoInAppBrowser(userAgent) ? "KAKAO_IN_APP" : "NORMAL_BROWSER";
+}

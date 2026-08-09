@@ -638,7 +638,9 @@ function SignupContent() {
 
 
   const finish = useCallback(() => {
-    const destination = returnUrl === "/" ? "/parent/home" : returnUrl;
+    // 필수 가입 단계가 끝난 뒤에만 허브의 PWA 설치 제안 게이트를 통과한다.
+    // returnUrl은 허브가 설치 제안 후 복원하므로 기존 초대·목적지 정책은 바꾸지 않는다.
+    const destination = returnUrl === "/" ? "/" : `/?returnUrl=${encodeURIComponent(returnUrl)}`;
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("k_pwa_intro_seen");
       window.location.replace(destination);

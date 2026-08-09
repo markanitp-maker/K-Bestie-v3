@@ -7,7 +7,20 @@ export type AuthFlowEvent =
   | "existing_user_routed_to_login"
   | "new_user_routed_to_signup"
   | "incomplete_user_resumed_signup"
-  | "social_auth_failed";
+  | "social_auth_failed"
+  | "kakao_link_open"
+  | "kakao_inapp_detected"
+  | "external_browser_cta_view"
+  | "external_browser_cta_click"
+  | "external_browser_arrived"
+  | "pwa_install_offer_view"
+  | "pwa_install_click"
+  | "pwa_install_dismiss"
+  | "pwa_installed"
+  | "pwa_first_launch"
+  | "notification_onboarding_view"
+  | "notification_permission_granted"
+  | "notification_permission_denied";
 
 export function logAuthFlowEvent(
   eventName: AuthFlowEvent,
