@@ -65,7 +65,7 @@ export default function KChatbotWidget({
   const [attachments, setAttachments] = useState<AttachmentState[]>([]);
 
 
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const modalRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   // 모달을 열 때(또는 제출 성공 후 폼 리셋 시) 1회 생성해, 같은 제출 시도(연타/네트워크

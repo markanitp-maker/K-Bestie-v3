@@ -55,7 +55,7 @@ const TABS = [
 ];
 
 export default function ParentTabBar() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const store = useStore();
 
   const [mounted, setMounted] = useState(false);

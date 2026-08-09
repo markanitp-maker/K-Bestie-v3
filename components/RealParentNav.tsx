@@ -12,7 +12,7 @@ const NAV_ITEMS = [
 ];
 
 export function RealParentNav({ active }: { active?: string }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const [hasNewQuestion, setHasNewQuestion] = useState(false);
 
   useEffect(() => {

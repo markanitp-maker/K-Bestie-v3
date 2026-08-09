@@ -34,7 +34,7 @@ function debugLog(event: string) {
 
 export function PwaServiceWorker() {
   const [pwaState, setPwaState] = useState<PwaState>("idle");
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const pathnameRef = useRef(pathname);
   const registrationRef = useRef<ServiceWorkerRegistration | null>(null);
   const waitingWorkerRef = useRef<ServiceWorker | null>(null);

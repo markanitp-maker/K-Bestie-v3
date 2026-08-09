@@ -19,5 +19,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "supabase/functions", "services", "scratch", "e2e", "**/*.test.ts", "scratch_v3", "scripts/verify-admin-v3.ts", "scripts/verify-daily-report-v3.ts", "candidate-release"]
+  "exclude": ["node_modules", "supabase/functions", "services", "scratch", "e2e", "**/*.test.ts", "scratch_v3", "scripts/verify-admin-v3.ts", "scripts/verify-daily-report-v3.ts", "candidate-release", "worktrees", ".claude/worktrees"]
 }
