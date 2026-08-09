@@ -55,39 +55,39 @@ function Shell({ step, children }: { step: Step; children: React.ReactNode }) {
   );
 }
 
-function PrimaryButton({
-  onClick,
-  disabled,
-  loading,
-  children,
+function StepFooterNav({
+  onBack,
+  onNext,
+  nextLabel,
+  nextDisabled,
+  nextLoading,
 }: {
-  onClick: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-  children: React.ReactNode;
+  onBack: () => void;
+  onNext: () => void;
+  nextLabel: string;
+  nextDisabled?: boolean;
+  nextLoading?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled || loading}
-      className="w-full py-3.5 rounded-2xl font-bold text-white text-sm disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer"
-      style={{ background: "var(--color-k-navy)" }}
-    >
-      {loading ? "처리 중..." : children}
-    </button>
-  );
-}
-
-function SecondaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full py-3 rounded-2xl border border-gray-200 bg-white text-sm font-bold text-gray-500 active:scale-[0.98] transition-transform cursor-pointer"
-    >
-      {children}
-    </button>
+    <div className="w-full grid grid-cols-[38fr_62fr] gap-2 items-stretch">
+      <button
+        type="button"
+        onClick={onBack}
+        className="rounded-2xl border border-gray-200 bg-white font-bold text-gray-500 active:scale-[0.98] transition-transform cursor-pointer whitespace-nowrap overflow-hidden"
+        style={{ padding: "14px 8px", fontSize: "clamp(12px, 3.6vw, 14px)" }}
+      >
+        ← 이전
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={nextDisabled || nextLoading}
+        className="rounded-2xl font-bold text-white disabled:opacity-50 active:scale-[0.98] transition-transform cursor-pointer whitespace-nowrap overflow-hidden"
+        style={{ padding: "14px 8px", fontSize: "clamp(12px, 3.6vw, 14px)", background: "var(--color-k-navy)" }}
+      >
+        {nextLoading ? "처리 중..." : nextLabel}
+      </button>
+    </div>
   );
 }
 
@@ -231,10 +231,7 @@ function ConsentStep({
           </label>
         ))}
       </div>
-      <PrimaryButton onClick={submit} disabled={!allRequired} loading={loading}>
-        다음 →
-      </PrimaryButton>
-      <SecondaryButton onClick={onBack}>← 이전</SecondaryButton>
+      <StepFooterNav onBack={onBack} onNext={submit} nextLabel="다음 →" nextDisabled={!allRequired} nextLoading={loading} />
     </>
   );
 }
@@ -310,10 +307,7 @@ function ProfileStep({
           </option>
         ))}
       </select>
-      <PrimaryButton onClick={submit} disabled={!canSubmit} loading={loading}>
-        다음 →
-      </PrimaryButton>
-      <SecondaryButton onClick={onBack}>← 이전</SecondaryButton>
+      <StepFooterNav onBack={onBack} onNext={submit} nextLabel="다음 →" nextDisabled={!canSubmit} nextLoading={loading} />
     </>
   );
 }
@@ -377,11 +371,8 @@ function FamilyStep({
           onChange={(e) => onNameChange(e.target.value)}
           className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white text-center"
         />
-        <PrimaryButton onClick={submitCreate} disabled={!name.trim()} loading={createLoading}>
-          가족 만들기 →
-        </PrimaryButton>
       </section>
-      <SecondaryButton onClick={onBack}>← 이전</SecondaryButton>
+      <StepFooterNav onBack={onBack} onNext={submitCreate} nextLabel="가족 만들기 →" nextDisabled={!name.trim()} nextLoading={createLoading} />
     </>
   );
 }
@@ -571,10 +562,7 @@ function ChildStep({
         <input type="checkbox" checked={consent} onChange={(e) => onDraftChange({ ...draft, consent: e.target.checked })} className="mt-0.5" />
         <span>법정대리인으로서 위 아이의 정보 등록에 동의합니다.</span>
       </label>
-      <PrimaryButton onClick={submit} disabled={!canSubmit} loading={loading}>
-        아이 등록하고 시작하기 →
-      </PrimaryButton>
-      <SecondaryButton onClick={onBack}>← 이전</SecondaryButton>
+      <StepFooterNav onBack={onBack} onNext={submit} nextLabel="아이 등록하고 시작하기 →" nextDisabled={!canSubmit} nextLoading={loading} />
     </>
   );
 }
