@@ -1,25 +1,37 @@
-# K-Bestie-v3 오케스트레이션 규칙 (CLAUDE.md — v12: 대시보드 = 큐 상태표)
+# K-Bestie-v3 오케스트레이션 규칙 (CLAUDE.md — v13.1)
 
-> 최종 수정: 2026-08-03 변경 요지: **(v12 신규) `_dashboard.md`를 큐 루트 지시서 전체의 `대기중`/`진행중`/`완료` 상태표로 확장 — 대표님이 진행 상황을 물으면 이 표를 최신화해서 보여준다.** (v11) `_dashboard.md`는 항상 `requests/` 큐 루트(아직 `_done`/`_failed` 미이동)에 대한 항목만 담는다 — 참조 지시서가 `_done`/`_failed`로 이동하면 그 즉시 대시보드 항목을 삭제하고, 완료 건의 잔여 노트는 `_log.md`에만 남긴다. (v10) §1-A 처리 절차 3번 — Production 배포가 대표님 승인으로 예정된 지시서는 2단 게이트 통과·Dev 배포만으로 `_done`에 이동하지 않고, 실제 Production 배포 완료를 확인한 뒤에만 이동한다. (v9) §1-A에 `_dashboard.md` 특이사항 대시보드 추가 — 지시서 전체를 스스로 완결할 수 없을 때(대표님 결정 필요 / 기술 이슈·의존성 충돌·정보 부족) `_done`·`_failed` 어디로도 옮기지 않고 3단 템플릿으로 기록한 뒤 다음 큐로 넘어간다. 기존 `_blocked.md`(지시서 일부만 판단 보류하고 나머지는 정상 완료하는 경우)와 역할을 분리한다. 검증은 **2단 게이트로 분리** — ① **codex = 정적 코드리뷰**(diff를 읽어 로직·보안·정합성 검증), ② **agy = 동적 E2E QA**(Playwright로 실제 앱을 띄워 기능 동작 검증). codex는 “코드가 맞게 쓰였는가”, agy QA는 "실제로 동작하는가"를 본다. 셀프통과 금지 유지 — agy가 짠 코드는 별도 agy QA 세션이 검증한다. Playwright 셋업 규칙(§16). 서브에이전트 헬스체크·자동 복구 규칙(§14) — resilient-coding-agent 스킬 기반, 10분 주기 생사 판정, codex는 자동 resume·agy는 fresh 재실행. v7의 requests 큐·유연 리뷰 체계는 유지.
+> 최종 수정: 2026-08-08
+> **(v13.1) 세 규칙 파일 상호참조 정합.** AGENTS.md v9 / GEMINI.md v9 개정으로 어긋난 섹션 참조를 바로잡고, 규약의 단일 출처를 AGENTS.md와 docs/conventions.md로 역할 분리했다. 하드룰 3 표의 agy 리뷰 담당을 AGENTS.md §2와 일치시켰다. 설계·라우팅·게이트 구조는 v13과 동일하다.
+> (v13) 1차 코딩 주체를 agy → Codex(gpt-5.6-terra)로 이관. agy는 E2E QA·리서치·잡무 전담으로 축소하고 모델을 Gemini 3.6 Flash (High)로 고정. Claude는 effort 다이얼(medium 기본 / xhigh 설계·난제)로 운용하며 토큰 예산을 Claude 30 / Codex 60 / agy 10으로 재배분. 큐 대기 폴링 삭제(OS 크론 이관). 상세 운영 절차는 `docs/ops/`로 분리.
+> (v12) `_dashboard.md`를 큐 루트 지시서 전체의 상태표로 확장. (v11) 대시보드는 큐 루트 항목만 유지. (v10) Production 배포 예정 건은 실제 배포 확인 후 `_done` 이동. (v9) `_dashboard.md` 신설. 검증은 2단 게이트(① 정적 코드리뷰 ② 동적 E2E QA) 유지, 셀프통과 금지 유지.
 
 ---
 
 ## 0. 절대 규칙 (하드룰 — 위반 시 즉시 중단)
 
-- **[하드룰 1] 코딩은 agy 우선.** 1차 코드 작성·수정은 agy(안티그라비티) tmux 세션에 위임하는 것을 기본으로 한다. 단, 아래에 해당하면 Claude Code가 직접 개발할 수 있다.
-    - 로직/알고리즘 오류, 아키텍처 결함, 여러 파일이 얽힌 설계 문제
-    - agy가 동일 작업에 2회 이상 실패
+- **[하드룰 1] 1차 코딩은 Codex에 위임한다.** 구현 위임의 기본 대상은 codex `gpt-5.6-terra`(effort medium)다. 아키텍처에 민감하거나 여러 파일이 얽힌 구현은 `gpt-5.6-sol`(effort high)로 올린다. 아래는 예외로 Claude Code가 직접 개발한다.
+    - Codex가 동일 작업에 2회 이상 실패
+    - 아키텍처 전환 판단이 필요한 경우
+    - 여러 모듈 통합·충돌 해결
     - 위임 오버헤드가 작업 자체보다 큰 소규모 수정
-    - 긴급 처리가 필요한 건. Claude가 직접 개발한 경우 §4-B의 `claude-review` 검증을 반드시 거친다.
-- **[하드룰 2] 검증 게이트 없이 완료 보고 금지.** 모든 코드 변경은 §4에 정의된 **2단 게이트**(① 정적 코드리뷰 → ② 동적 E2E QA)를 해당 경로대로 **실제로 실행**해 통과해야 한다. 게이트 로그(리뷰 로그 + QA 실행 로그/스크린샷)가 없으면 "완료"라고 보고할 수 없다.
-- **[하드룰 3] 셀프 통과 금지.** 코드를 생성한 주체가 자기 결과물을 검증해 통과시킬 수 없다. 생성한 모델은 자기 맹점을 못 본다.
-    - agy가 만든 코드 → 정적 리뷰는 codex(가용 시) 또는 메인 Claude, 동적 QA는 **별도 agy QA 세션**(코딩 세션과 분리)
-    - 메인 Claude가 만든 코드 → 정적 리뷰는 `claude-review` 인스턴스, 동적 QA는 agy QA 세션
-    - 어떤 경우에도 "만든 주체 = 통과시킨 주체"가 되어서는 안 된다. **동적 QA에도 이 원칙이 적용된다 — agy가 짠 코드를 같은 agy 세션이 QA하지 않는다.**
-- **[하드룰 4] Claude의 토큰 우선순위.** Claude의 토큰은 계획 수립·작업 분해·agy 지시·리뷰 판단·최종 통합에 우선 배분한다. 단순 반복 코딩에 토큰을 소모하지 않는다. 직접 코딩은 하드룰 1의 조건에 해당할 때만 한다.
+    - 긴급 처리가 필요한 건
+  Claude가 직접 개발한 경우 §4-B의 `claude-review` 검증을 반드시 거친다.
+  **agy는 1차 코딩 주체가 아니다.** agy의 코딩 범위는 문서·시드데이터·유틸 스크립트·기계적 리팩터링 등 비-코어 잡무로 한정하며, `app/`·`components/`·`lib/`의 비즈니스 로직 신규 작성을 위임하지 않는다.
+- **[하드룰 2] 검증 게이트 없이 완료 보고 금지.** 모든 코드 변경은 §4의 **2단 게이트**(① 정적 코드리뷰 → ② 동적 E2E QA)를 해당 경로대로 **실제로 실행**해 통과해야 한다. 게이트 로그(리뷰 로그 + QA 실행 로그/스크린샷)가 없으면 "완료"라고 보고할 수 없다.
+- **[하드룰 3] 셀프 통과 금지.** 코드를 생성한 주체가 자기 결과물을 검증해 통과시킬 수 없다. 구현 주체별 게이트① 담당은 아래로 고정한다.
+
+    | 구현 주체 | 게이트① 정적리뷰 담당 | 게이트② 동적 QA |
+    |---|---|---|
+    | Codex Terra | `[복잡]` Sol / `[단순]` Terra **별도 세션** | agy QA 세션 |
+    | Codex Sol | **claude-review (Opus 5, high)** — Codex로 넘기지 않는다 | agy QA 세션 |
+    | 메인 Claude | Codex Sol (미가용 시 claude-review) | agy QA 세션 |
+    | agy (잡무) | **Codex Terra** (비즈니스 로직 포함 시 Sol) | 해당 시 별도 agy QA 세션 |
+
+  구현 세션과 리뷰 세션은 어떤 경우에도 같은 tmux 세션을 재사용하지 않는다. **동적 QA에도 이 원칙이 적용된다 — agy가 손댄 코드를 같은 agy 세션이 QA하지 않는다.** 이 표는 AGENTS.md §2와 동일 내용이며, 어긋나면 이 표가 우선한다(§9).
+- **[하드룰 4] Claude의 토큰 우선순위.** Claude의 토큰은 계획 수립·작업 분해·위임 지시·리뷰 판단·최종 통합에 우선 배분한다. 단순 반복 코딩·대량 파일 탐색·보일러플레이트에 토큰을 소모하지 않는다. 직접 코딩은 하드룰 1의 예외 조건에 해당할 때만 한다. **effort를 명시하지 않은 채 Opus를 돌리지 않는다(§1-B).**
 - **[하드룰 5] 큐를 비우기 전에 턴을 끝내지 않는다.** `requests/`에 처리 대기 지시서가 하나라도 남아 있으면 Claude는 턴을 종료하지 않는다. 한 지시서를 끝낼 때마다 반드시 `requests/`를 다시 나열해 신규 파일을 확인한다(§1-A).
-- **[하드룰 6] 정적·동적 검증은 서로 대체하지 못한다.** codex 정적 코드리뷰를 통과했다고 "동작 확인 완료"가 아니고, agy E2E QA를 통과했다고 "코드가 규칙상 옳다"가 아니다. **사용자 동작(로그인/버튼/화면 전이/재화 차감 등)에 영향을 주는 변경은 반드시 두 게이트를 모두 거친다.** 순수 내부 로직·문서·비-UI 변경은 정적 게이트만으로 충분할 수 있으며, 이때 QA 생략 사유를 `_log.md`에 남긴다.
-- **[하드룰 7] (2026-07-28) 2단 게이트를 통과하면 무조건 Dev Vercel에 배포한다.** 로컬/dev tmux 서버 검증만으로 끝내지 않는다. §2 ⑦ 통합 게이트 통과 직후, 대표님께 배포 여부를 다시 묻지 않고 곧바로 격리 워크트리 + `vercel --prod`(§환경 상수의 `k-bestie-v3-dev` 프로젝트, `.vercel/project.json`의 projectName이 정확히 `k-bestie-v3-dev`인지 배포 직전 재확인 — [[feedback_vercel_project_json_shared_hazard]])로 Dev에 배포하고, 배포 URL과 `readyState`/alias 결과를 `_log.md`에 기록한다. 배포 자체가 실패하면(빌드 에러 등) §12-D에 따라 원인과 함께 보고하되, "코드는 끝났지만 아직 배포 안 함" 상태로 조용히 턴을 마치지 않는다. **단, git push는 이 규칙과 무관하게 원격 `origin`(github.com/markanitp-maker)에만 하고, `legacy-origin`(github.com/markytb79-cpu)에는 어떤 경우에도 push하지 않는다** — `vercel --prod` 직접 배포는 git push를 거치지 않으므로 이 제약과 무관하게 항상 진행 가능하다. Production(`k-bestie-v3`) 배포는 이 하드룰 대상이 아니며 기존 안전장치(대표 명시 승인) 그대로 유지한다.
+- **[하드룰 6] 정적·동적 검증은 서로 대체하지 못한다.** 정적 코드리뷰를 통과했다고 "동작 확인 완료"가 아니고, E2E QA를 통과했다고 "코드가 규칙상 옳다"가 아니다. **사용자 동작(로그인/버튼/화면 전이/재화 차감 등)에 영향을 주는 변경은 반드시 두 게이트를 모두 거친다.** 순수 내부 로직·문서·비-UI 변경은 정적 게이트만으로 충분할 수 있으며, 이때 QA 생략 사유를 `_log.md`에 남긴다.
+- **[하드룰 7] 2단 게이트를 통과하면 무조건 Dev Vercel에 배포한다.** 로컬/dev tmux 서버 검증만으로 끝내지 않는다. §2 ⑦ 통합 게이트 통과 직후, 대표님께 배포 여부를 다시 묻지 않고 곧바로 격리 워크트리 + `vercel --prod`(`k-bestie-v3-dev` 프로젝트, `.vercel/project.json`의 projectName이 정확히 `k-bestie-v3-dev`인지 배포 직전 재확인)로 Dev에 배포하고, 배포 URL과 `readyState`/alias 결과를 `_log.md`에 기록한다. 배포 자체가 실패하면 §12-D에 따라 원인과 함께 보고하되, "코드는 끝났지만 아직 배포 안 함" 상태로 조용히 턴을 마치지 않는다. **git push는 원격 `origin`(github.com/markanitp-maker)에만 하고 `legacy-origin`에는 어떤 경우에도 push하지 않는다.** Production(`k-bestie-v3`) 배포는 이 하드룰 대상이 아니며 대표 명시 승인 그대로 유지한다.
 
 ---
 
@@ -35,38 +47,39 @@
 
 - 한 지시서를 끝낼 때마다 **반드시 `requests/`를 다시 나열(ls)한다.** 기억이나 캐시에 의존하지 않는다.
 - 처리 대기 파일이 하나라도 남아 있으면 **턴을 종료하지 않는다.** 큐가 빌 때까지 계속 진행한다.
-- **큐가 비어 대기 상태로 들어가면 최소 10분마다 `requests/`를 재확인한다.** 긴 작업(agy 위임, 배포, 조사) 도중에는 자연스럽게 여러 번 재나열하게 되므로 별도 타이머가 필요 없지만, 할 일이 없어 대기만 하는 상태라면 10분 주기로 큐를 다시 열어본다(예: ScheduleWakeup 또는 `/loop` 활용). 새 파일이 보이면 즉시 §1-A 처리 절차를 시작한다.
+- **큐가 비면 폴링하지 말고 턴을 종료한다.** 대기 상태에서 Claude가 주기적으로 큐를 다시 여는 것은 토큰 낭비이므로 금지한다. 신규 지시서 감지는 OS 크론(§14-G)이 담당하며, 크론이 새 파일을 발견하면 새 세션을 기동한다.
 
 ### 처리 절차
 
 1. `requests/`를 나열하고 처리 대상을 확정한다.
 2. 가장 앞선 파일을 읽고, 그 내용을 **§2 표준 작업 흐름**에 투입한다.
-3. **2단 게이트 통과 후** 해당 파일을 `requests/_done/`으로 이동하고 `_log.md`에 [일시 / 파일명 / 개발주체 / 정적리뷰주체 / QA주체 / 변경파일 / 결과]를 기록한다. **(v10 신규) 단, 해당 건이 Production 배포 대상(대표님이 Production 배포를 명시 승인한 경우)이면 2단 게이트 통과·Dev 배포만으로는 `_done`으로 옮기지 않는다 — 실제 Production 배포가 완료된 것을 확인한 뒤에만 이동한다.** Production 배포 승인이 없는(Dev 검증만으로 완결되는) 지시서는 기존과 동일하게 게이트 통과 직후 바로 `_done`으로 이동한다.
-4. **(v9 신규) 지시서 전체를 이번 턴에 완료할 수 없는 특이사항**(대표님 결정 필요, 또는 기술적 이슈·의존성 충돌·정보 부족 등 스스로 판단·해결 불가)이 발생하면 `_done`·`_failed` 어디로도 옮기지 않고 아래 "특이사항 대시보드" 절차에 따라 `requests/_dashboard.md`에 기록한 뒤, 해당 건은 건너뛰고 다음 큐로 진행한다.
-5. §12-D 기준으로 재시도를 모두 소진하고도 기술적으로 실패가 확정되면(4번과 달리 실제로 시도했으나 안 되는 경우) `requests/_failed/`로 이동하고 `_log.md`에 사유를 기록한다.
+3. **2단 게이트 통과 후** 해당 파일을 `requests/_done/`으로 이동하고 `_log.md`에 [일시 / 파일명 / 개발주체(모델·effort) / 정적리뷰주체 / QA주체 / 변경파일 / 결과]를 기록한다. **단, 해당 건이 Production 배포 대상(대표님이 Production 배포를 명시 승인한 경우)이면 2단 게이트 통과·Dev 배포만으로는 `_done`으로 옮기지 않는다 — 실제 Production 배포 완료를 확인한 뒤에만 이동한다.** Production 배포 승인이 없는 지시서는 게이트 통과 직후 바로 `_done`으로 이동한다.
+4. **지시서 전체를 이번 턴에 완료할 수 없는 특이사항**(대표님 결정 필요, 또는 기술적 이슈·의존성 충돌·정보 부족 등 스스로 판단·해결 불가)이 발생하면 `_done`·`_failed` 어디로도 옮기지 않고 아래 "특이사항 대시보드" 절차에 따라 `requests/_dashboard.md`에 기록한 뒤, 해당 건은 건너뛰고 다음 큐로 진행한다.
+5. §12-D 기준으로 재시도를 모두 소진하고도 기술적으로 실패가 확정되면 `requests/_failed/`로 이동하고 `_log.md`에 사유를 기록한다.
 6. 1번으로 돌아간다. 작업 중 새로 생성된 파일도 이 시점에 발견되어 처리된다.
-7. 큐가 비면 §15 김비서 보고를 실행한 뒤 종료한다. `_dashboard.md`에 항목이 하나라도 있으면 이 보고에 대표님 확인·결정 필요 사항으로 반드시 포함한다.
+7. 큐가 비면 §15 김비서 보고를 실행한 뒤 **종료한다.** `_dashboard.md`에 항목이 하나라도 있으면 이 보고에 대표님 확인·결정 필요 사항으로 반드시 포함한다.
 
 ### 큐 항목의 병렬 처리
 
-- 파일 범위가 겹치지 않는 지시서가 2개 이상 대기 중이면 **여러 agy tmux 세션을 동시 실행**한다. 최대 3개. (§13과 동일 원칙)
+- 파일 범위가 겹치지 않는 지시서가 2개 이상 대기 중이면 **여러 codex 구현 세션을 동시 실행**한다. 최대 3개(§13).
 - 공유 파일(라우터 인덱스 / 공통 타입 / 설정파일 / package.json)을 건드리는 지시서는 단독으로 순차 처리한다.
 - 판단이 애매하면 병렬로 묶지 말고 순차로 처리한다.
 - 병렬로 처리했더라도 검증은 **묶음 단위로 한 번** 올린다(§2 기능 단위 게이트 원칙 유지).
 
 ### 작업 규칙
 
-- 지시서 착수 전 `docs/conventions.md`를 먼저 읽고 그 규약을 따른다. agy 지시문에도 이 규약을 명시해 전달한다.
+- 지시서 착수 전 `docs/conventions.md`(코드베이스 현황)와 AGENTS.md §6~§10(코딩 규약)을 확인하고 그에 따른다. **구현 지시문에도 핵심 규약을 명시해 전달한다(§3-A).**
 - 각 지시서는 `## 범위`에 명시된 경로 안에서만 파일을 생성·수정한다.
 - 공유 파일은 지시서의 `## 공유파일 수정`에 명시된 경우에만 수정한다.
-- 판단이 필요한 지점은 임의로 결정하지 않는다. 지시서의 **일부 세부 판단**만 보류해도 나머지로 정상 완료(`_done` 이동)할 수 있으면 `requests/_blocked.md`에 [파일명 / 질문 / 보류 지점]을 기록하고 그 부분만 건너뛴 뒤 나머지를 완료한다. 반면 **지시서 전체**가 그 판단 없이는 진행 자체가 불가능하면 `_blocked.md`가 아니라 아래 "특이사항 대시보드" 절차를 따른다.
+- 판단이 필요한 지점은 임의로 결정하지 않는다. 지시서의 **일부 세부 판단**만 보류해도 나머지로 정상 완료할 수 있으면 `requests/_blocked.md`에 [파일명 / 질문 / 보류 지점]을 기록하고 그 부분만 건너뛴 뒤 나머지를 완료한다. **지시서 전체**가 그 판단 없이는 진행 불가능하면 아래 "특이사항 대시보드"를 따른다.
 
-### 특이사항 대시보드 (`_dashboard.md`, v9 신규)
+### 특이사항 대시보드 (`_dashboard.md`)
 
-- **대상**: 지시서 전체를 이번 턴에 완료할 수 없는 경우 — 대표님의 결정이 필요하거나, 기술적 이슈·의존성 충돌·정보 부족 등 스스로 판단·해결할 수 없는 상황.
-- **`_failed/`와의 구분**: §12-D는 실제로 시도(agy 재시도 등)했으나 소진 후에도 기술적으로 실패가 확정된 경우다. `_dashboard.md`는 그 이전 단계 — 진행 자체가 막혀 시도조차 못 하는 경우에 쓴다.
-- 해당 지시서를 `_done/`으로 옮기지 말고 `requests/_dashboard.md`를 생성(이미 있으면 이어서 추가)한다. 지시서 파일 자체는 `requests/`에 그대로 남고, 처리 제외 목록(큐 정의)에 포함되므로 다음 순회에서 무한 재처리되지 않는다.
-- 각 미완료 건마다 아래 3단 템플릿을 반드시 채운다.
+- **대상**: 지시서 전체를 이번 턴에 완료할 수 없는 경우 — 대표님 결정 필요, 또는 기술적 이슈·의존성 충돌·정보 부족으로 스스로 판단·해결 불가.
+- **`_failed/`와의 구분**: §12-D는 실제로 시도했으나 소진 후 기술적 실패가 확정된 경우다. `_dashboard.md`는 그 이전 단계 — 진행 자체가 막혀 시도조차 못 하는 경우.
+- 해당 지시서를 `_done/`으로 옮기지 말고 `requests/_dashboard.md`에 기록한다. 지시서 파일 자체는 `requests/`에 남고 처리 제외 목록에 포함되므로 무한 재처리되지 않는다.
+- **`_dashboard.md`는 큐 루트에 있는 모든 지시서의 현재 상태를 `대기중`/`진행중`/`완료` 3단계 표로 항상 유지한다.** 상태가 바뀔 때마다(착수 시 `대기중`→`진행중`, 2단 게이트+배포 완료 시 `진행중`→`완료`) 갱신하고, 대표님이 "진행 상황 체크"를 요청하면 이 표를 최신화해 보여준다.
+- 실제로 판단이 막힌 건에만 아래 3단 템플릿을 표 아래에 추가로 붙인다.
 
     ```markdown
     ## <지시서 파일명> (예: 003-결제연동.md)
@@ -78,10 +91,8 @@
     - 기술 이슈면: 필요한 조치·정보
     ```
 
-- 기록 후 해당 건은 건너뛰고 다음 큐로 진행하며, 처리 가능한 나머지 파일은 계속 정상 처리한다.
-- **(v11) 이 파일은 항상 `requests/` 큐 루트(아직 `_done`/`_failed`로 이동하지 않은 지시서)에 대한 항목만 담는다.** 참조 대상 지시서가 `_done`이나 `_failed`로 이동하면 그 즉시 해당 대시보드 항목을 삭제한다 — 완료된 작업의 후속 참고사항·잔여 리스크는 `_dashboard.md`가 아니라 `_log.md`에만 남긴다.
-- **(v12 신규) `_dashboard.md`는 "막힌 건만" 기록하는 좁은 용도를 넘어, 큐 루트에 있는 모든 지시서의 현재 상태를 `대기중`/`진행중`/`완료` 3단계 표로 항상 유지한다.** 위 3단 템플릿(사유/필요 조치)은 실제로 판단이 막힌 건에만 추가로 붙인다. 표는 지시서 처리 절차 진행 중 상태가 바뀔 때마다(착수 시 `대기중`→`진행중`, 2단 게이트+배포 완료 시 `진행중`→`완료`) 갱신하고, 대표님이 "진행 상황 체크"를 요청하면 이 표를 최신화해 보여준다. `_done`/`_failed`로 실제 이동하면 그 행은 삭제한다(v11과 동일 원칙).
-- 큐를 모두 순회한 뒤 `_done/` 이동 목록과 `_dashboard.md` 미완료 목록을 각각 요약해 보고한다(§ 보고 참조). `_dashboard.md`에 항목이 하나라도 있으면 §15 김비서 보고로 대표님께 확인·결정 필요 사항을 알린다.
+- **참조 대상 지시서가 `_done`이나 `_failed`로 이동하면 그 즉시 해당 행·항목을 삭제한다.** 완료된 작업의 후속 참고사항·잔여 리스크는 `_dashboard.md`가 아니라 `_log.md`에만 남긴다.
+- 큐를 모두 순회한 뒤 `_done/` 이동 목록과 `_dashboard.md` 미완료 목록을 각각 요약해 보고한다.
 
 ### 긴급 요청 처리
 
@@ -92,21 +103,47 @@
 ### 보고
 
 - 각 지시서 처리 후 [파일명 / 개발주체 / 정적리뷰주체 / QA주체 / 변경 파일 목록 / 상태]를 한 줄로 출력한다.
-- 큐가 비면 처리 결과 전체를 표로 출력하고, `_done/`으로 이동한 파일 목록과 `_dashboard.md`에 올라간 미완료 건 목록을 각각 요약한 뒤 §15 김비서 보고를 실행한다.
+- 큐가 비면 처리 결과 전체를 표로 출력하고, `_done/` 이동 목록과 `_dashboard.md` 미완료 건 목록을 각각 요약한 뒤 §15 김비서 보고를 실행한다.
 
 ---
 
-## 1-B. 역할 분담
+## 1-B. 역할 분담 및 모델 라우팅
 
-- **agy (안티그라비티 / Gemini 3.1 Pro (High)) = 1차 코딩 주체 + 동적 E2E QA 주체.**
-    - 코딩: 신규 작성, 기능 추가, 대량 수정, 리팩터링, 단순 작업 — 코딩은 agy가 먼저 한다.
-    - QA: Playwright 기반 E2E로 실제 앱 동작을 검증한다(§4-D, §16). **단, 자기가 짠 코드는 자기가 QA하지 않는다(하드룰 3) — 별도 agy QA 세션에서 수행한다.**
-    - 설정: `~/.gemini/antigravity-cli/settings.json` (model: `Gemini 3.1 Pro (High)`).
-- **메인 Claude Code = 지휘자 + 정적 리뷰어 + 어려운 문제 해결사 + 큐 운영자.** 전체 오케스트레이션과 `requests/` 큐 운영을 담당한다. agy 코드의 1차 정적 리뷰(codex 미가용 시)를 수행하며, 하드룰 1의 조건에 해당하면 직접 개발한다. QA 시나리오를 정의해 agy QA 세션에 전달한다.
-- **claude-review (별도 Claude Code 인스턴스) = 메인 Claude 개발분 정적 검증 게이트 (읽기 전용).** 메인 Claude가 직접 작성·수정한 코드만 검증한다. 직접 파일 수정 금지.
-- **codex = 정적 코드리뷰 게이트 (읽기 전용).** diff를 읽어 로직·보안·정합성을 검증하고 `[QA 인계]` 시나리오를 남긴다(AGENTS.md §5). 한도 초과 등으로 미가용이면 메인 Claude가 정적 리뷰를 대신한다 — codex 미가용이 큐 진행을 막는 사유가 될 수 없다.
+### 역할
 
-**모델 라우팅:** 설계/계획 = Opus, 오케스트레이션/지휘/정적리뷰 = Sonnet, 1차 코드 실행 + E2E QA = Gemini 3.1 Pro (High).
+- **Codex = 1차 코딩 주체 + 정적 코드리뷰 게이트.**
+    - 구현: 신규 작성, 기능 추가, 대량 수정, 리팩터링, 테스트 작성. `docs/plans/` 또는 큐 지시서 기반으로 구현한다. 구현 완료 전 셀프검증 게이트를 통과한다(AGENTS.md §5).
+    - 정적 리뷰: diff를 읽어 로직·보안·정합성을 검증하고 `[QA 인계]` 시나리오를 남긴다. **체크리스트는 AGENTS.md §11, 보고 형식은 AGENTS.md §12-B.**
+    - **구현 세션과 리뷰 세션은 완전히 분리한다(하드룰 3).** 자신이 구현한 코드의 게이트①을 맡지 않는다.
+- **메인 Claude Code = 지휘자 + 설계자 + 리뷰 판단자 + 난제 해결사 + 큐 운영자.** 전체 오케스트레이션과 `requests/` 큐 운영, 계획서 작성, 게이트 결과 판단, 최종 통합·배포를 담당한다. 하드룰 1의 예외 조건에 해당하면 직접 개발한다. QA 시나리오를 정의해 agy QA 세션에 전달한다.
+- **claude-review (별도 Claude Code 인스턴스) = 메인 Claude 개발분 및 Codex Sol 개발분의 정적 검증 게이트 (읽기 전용).** 직접 파일 수정 금지.
+- **agy (안티그라비티) = 동적 E2E QA 주체 + 리서처 + 잡무 담당.**
+    - QA: Playwright 기반 E2E로 실제 앱 동작을 검증한다(§4-D, GEMINI.md §5, docs/ops/playwright-setup.md).
+    - 잡무: 문서화, 시드 데이터, 유틸 스크립트, 기계적 리팩터링, 외부 리서치.
+    - **비즈니스 로직 신규 작성 금지(하드룰 1).** 코드 구현 요청을 받으면 거절하고 Claude에게 반려 사유를 보고한다(GEMINI.md §1-B).
+    - 설정: `~/.gemini/antigravity-cli/settings.json` (model: `Gemini 3.6 Flash (High)`).
+
+### 모델·노력도 라우팅 (2026-08 기준, 이 표가 단일 기준)
+
+| 용도 | 모델 | effort |
+|---|---|---|
+| 설계·아키텍처·계획서 작성 | Opus 5 | xhigh |
+| 오케스트레이션·큐 운영·위임·게이트 판단 | Opus 5 | medium |
+| 난제 직접 구현(하드룰1 예외) | Opus 5 | xhigh |
+| 문서 정리·커밋 메시지·`_log.md` 기록 | Sonnet 5 | low |
+| 1차 코딩 (기본) | gpt-5.6-terra | medium |
+| 1차 코딩 (복잡·아키텍처 민감) | gpt-5.6-sol | high |
+| 게이트① 정적리뷰 `[복잡]` | gpt-5.6-sol | high |
+| 게이트① 정적리뷰 `[단순]` | gpt-5.6-terra | medium |
+| E2E QA·외부 리서치·잡무 | Gemini 3.6 Flash | High |
+
+- **토큰 예산: Claude 30 / Codex 60 / agy 10.**
+- **effort를 명시하지 않은 채 Opus를 돌리지 않는다.** 세션 기본은 `/effort medium`. 설계·난제 구간에서만 `/effort xhigh`로 올리고 끝나면 즉시 medium으로 되돌린다.
+- 모델 전환은 `/model`, 노력도 전환은 `/effort`. **둘 다 프롬프트 캐시를 무효화하므로 한 턴 안에서 반복 전환하지 않는다.**
+- **Gemini 3.1 Pro 사용 금지.** agy 모델은 3.6 Flash (High) 고정.
+- **Agent Teams 사용 안 함.** 사유: 본 하네스의 tmux 기반 위임 구조와 기능이 중복되어 관리 복잡도만 증가한다.
+- 5개 이상 파일을 훑어야 하는 조사·대량 수정·보일러플레이트는 Claude가 직접 읽지 말고 Codex에 위임한다.
+- 컨텍스트가 50%를 넘으면 `/compact` 또는 새 세션을 권고한다.
 
 ---
 
@@ -117,158 +154,219 @@
 **예외 — 아래 5종은 묶어두지 않고 발생 즉시 게이트 대상으로 올린다:** 아키텍처 변경 / 보안 관련 변경 / DB 스키마 변경 / 데이터 손실 가능성 변경 / 다른 모듈에 영향이 큰 변경.
 
 ```
-① 개발 주체 결정
-   ├─ 기본 → agy tmux 세션 위임 (§3, 동적 timeout)
-   └─ 하드룰 1 조건 해당 → 메인 Claude 직접 개발
+① 계획 확정 (Opus 5 · xhigh)
+   → 큐 지시서 또는 docs/plans/plan-<기능>.md 로 구현 범위 확정
+   → 파일 경로 / 함수 시그니처 / 에러 처리 / 완료 조건 / 금지 파일 명시
+   → "적절히", "필요하면" 같은 애매 표현 금지
 
-② 자체 테스트 (기능 묶음 완료 후)
+② 개발 주체 결정 (Opus 5 · medium)
+   ├─ 기본            → codex-impl 세션, gpt-5.6-terra (medium)
+   ├─ 복잡·아키텍처 민감 → codex-impl 세션, gpt-5.6-sol (high)
+   └─ 하드룰 1 예외    → 메인 Claude 직접 개발 (/effort xhigh)
 
-③ 게이트 ① — 정적 코드리뷰 (§4, 필수)
-   ├─ agy 개발분      → codex (가용) / 없으면 메인 Claude
-   └─ 메인 Claude 개발분 → claude-review 인스턴스 (tmux)
+③ 자체 테스트 (기능 묶음 완료 후)
+   → Codex 구현분은 AGENTS.md §5 셀프검증 7항목 통과 후 반환
+
+④ 게이트 ① — 정적 코드리뷰 (§4, 필수) ※ 담당은 하드룰 3 표를 따른다
+   ├─ Terra 개발분 → codex-rv (Sol/Terra 별도 세션)
+   ├─ Sol 개발분   → claude-review 인스턴스
+   └─ Claude 개발분 → codex-rv (Sol) / codex 미가용 시 claude-review
    → 산출물: [단순]/[복잡] 문제 목록 + [QA 인계] 시나리오
 
-④ 게이트 ① 결과 분기
+⑤ 게이트 ① 결과 분기
    ├─ [통과] → 게이트 ②로
-   ├─ [단순 문제] → 개발 주체에게 되돌려 재수정 → 다시 ③
-   └─ [복잡 문제] → 메인 Claude가 그 부분만 직접 수정
-                    → 리뷰 주체가 claude-review로 전환 (하드룰 3) → 다시 ③
+   ├─ [단순 문제] → 개발 주체에게 되돌려 재수정 → 다시 ④
+   └─ [복잡 문제] → 메인 Claude가 그 부분만 직접 수정 (/effort xhigh)
+                    → 리뷰 주체를 claude-review로 전환 (하드룰 3) → 다시 ④
 
-⑤ 게이트 ② — 동적 E2E QA (§4-D, 사용자 동작 영향 변경 시 필수)
-   → 별도 agy QA 세션(코딩 세션과 분리)이 Playwright로
+⑥ 게이트 ② — 동적 E2E QA (§4-D, 사용자 동작 영향 변경 시 필수)
+   → agy QA 세션(Gemini 3.6 Flash High)이 Playwright로
      [QA 인계] 시나리오를 headless 실행, 스크린샷/로그 증거 저장
    ├─ [통과] → 완료
-   ├─ [단순 실패] → 개발 주체 재수정 후 ③부터 재실행
-   └─ [복잡 실패] → 메인 Claude 직접 수정 후 ③부터 재실행
+   ├─ [단순 실패] → 개발 주체 재수정 후 ④부터 재실행
+   └─ [복잡 실패] → 메인 Claude 직접 수정 후 ④부터 재실행
    ※ 순수 내부 로직·문서·비-UI 변경은 QA 생략 가능(하드룰 6). 생략 시 _log.md에 사유 기록.
 
-⑥ 재검증-수정 루프는 게이트당 최대 2회. 그래도 안 되면 §15로 대표 보고.
+⑦ 재검증-수정 루프는 게이트당 최대 2회. 그래도 안 되면 §15로 대표 보고.
 
-⑦ 모든 기능 묶음 병합 후 → 전체 통합 게이트(필수)
-   ├─ 통합 정적 리뷰: claude-review 인스턴스 (codex 가용 시 병행)
+⑧ 모든 기능 묶음 병합 후 → 전체 통합 게이트(필수)
+   ├─ 통합 정적 리뷰: codex-rv (Sol · high) + claude-review 병행
+   │   ※ 묶음에 Sol 구현분이 포함돼 있으면 최종 판정은 claude-review 결과를
+   │      우선한다(하드룰 3 — Sol이 자기 코드를 판정하지 못하게 한다).
    └─ 통합 E2E QA: agy QA 세션이 핵심 사용자 플로우 회귀 실행
 
-⑦-A (하드룰 7, 필수) → Dev Vercel 배포. 격리 워크트리 + `vercel --prod`로
-     k-bestie-v3-dev에 배포하고 alias/URL을 _log.md에 기록. 대표님께 배포
-     여부를 묻지 않고 곧바로 진행한다.
+⑨ (하드룰 7, 필수) → Dev Vercel 배포. 격리 워크트리 + `vercel --prod`로
+   k-bestie-v3-dev에 배포하고 alias/URL을 _log.md에 기록. 대표님께 배포
+   여부를 묻지 않고 곧바로 진행한다.
 
-⑧ 완료 → 큐 항목이면 §1-A 3번(_done 이동 + _log 기록) 수행 후 §1-A 1번으로 복귀
+⑩ 완료 → 큐 항목이면 §1-A 3번(_done 이동 + _log 기록) 수행 후 §1-A 1번으로 복귀
 ```
 
 **단순 vs 복잡 판단 기준:**
 
-- 단순: 타입 에러, 오타, import 누락, null/빈배열 방어 추가, 포맷, 단순 누락분. → agy 재수정.
-- 복잡: 로직/알고리즘 오류, 아키텍처 문제, 여러 파일 얽힌 설계 결함, agy 2회 실패. → 메인 Claude 직접 수정.
+- 단순: 타입 에러, 오타, import 누락, null/빈배열 방어 추가, 포맷, 단순 누락분. → 개발 주체(Codex) 재수정.
+- 복잡: 로직/알고리즘 오류, 아키텍처 문제, 여러 파일 얽힌 설계 결함, Codex 2회 실패. → 메인 Claude 직접 수정.
 - **E2E QA 실패**: 화면이 안 뜸/버튼 무반응/재화 이중 차감 등 실제 동작 실패는 대개 [복잡]에 가깝지만, 원인이 단순 오타·null 누락이면 [단순]. 최종 분류는 QA 로그를 근거로 메인 Claude가 한다.
 
 ---
 
-## 3. agy 위임 규칙 (tmux 필수, 동적 timeout)
+## 3. 위임 규칙 (tmux 필수)
 
-`nohup`/`&` 금지. 반드시 tmux 세션. **timeout은 작업 규모에 맞게 선택한다.**
+`nohup`/`&` 금지. 반드시 tmux 세션. 모든 위임 명령 끝에 `; echo '__TASK_DONE__'`를 붙이고 출력을 `tee`로 로그에 남긴다(§14 전제조건).
 
-|작업 규모|timeout|
-|---|---|
-|소규모 수정·단순 버그 수정|300~600초|
-|단일 기능 구현|900초|
-|여러 파일 연동·DB 변경·테스트 포함 작업|1800초|
-|대규모 기능 통합·리팩터링·배포 준비|최대 3600초|
-|**E2E QA 실행(§4-D)**|**600~1800초 (시나리오 수에 비례)**|
+### 3-A. Codex 구현 위임 (1차 코딩, 기본 경로)
 
 ```bash
-# 코딩 위임 (완료 마커 + 로그 저장 필수 — §14 헬스체크와 연동)
-tmux new-session -d -s agy-<task> "timeout <규모별 값> agy --dangerously-skip-permissions \
-  --add-dir /mnt/e/VibeCoding/K-Bestie-v3 \
-  --model='Gemini 3.1 Pro (High)' \
-  -p '<지시문>' 2>&1 | tee /tmp/agy-<task>.log; echo '__TASK_DONE__'"
-```
-
-- 위임 명령 끝에 반드시 `; echo '__TASK_DONE__'`를 붙인다(§14 정상완료/크래시 구분용). `&&`가 아니라 `;`를 써서 timeout·에러로 중단돼도 마커 판정 로직이 동작하게 한다.
-- 출력은 항상 `tee /tmp/agy-<task>.log`로 파일에 남긴다(A안, §14 크래시 원인 파악용).
-- 지시문 필수 포함: 대상 파일 목록, 요구사항, 제약(범위 밖 파일 수정 금지), `docs/conventions.md` 준수, 셀프검증 게이트, 결과 보고 형식.
-- 큐 지시서에서 위임할 때는 지시서의 `## 범위`를 그대로 “범위 밖 파일 수정 금지” 제약으로 전달한다.
-
----
-
-## 4. 게이트 규칙
-
-### 4-A. 게이트① — agy 개발분 정적 코드리뷰 (codex 우선, 없으면 메인 Claude)
-
-```bash
-# codex 가용 시 — 세션 ID를 확보해 §14 자동 resume이 가능하게 한다.
+# 기본 — Terra · medium
 TMPDIR_CODEX=$(mktemp -d) && chmod 700 "$TMPDIR_CODEX"
-tmux new-session -d -s codex-<target> "codex exec -s read-only --json \
-  '<검증 지시문 + §5 체크리스트. [단순]/[복잡] 태그와 [QA 인계] 시나리오를 반드시 포함해 보고하라>' \
-  2>&1 | tee $TMPDIR_CODEX/events.jsonl | tee /tmp/codex-<target>.log; echo '__TASK_DONE__'"
+tmux new-session -d -s codex-impl-<task> "codex exec --full-auto --json \
+  --model gpt-5.6-terra -c model_reasoning_effort=medium \
+  '<구현 지시문>' \
+  2>&1 | tee $TMPDIR_CODEX/events.jsonl | tee /tmp/codex-impl-<task>.log; echo '__TASK_DONE__'"
 
-# 세션 ID 추출 → /tmp/codex-<target>.codex-session-id (monitor.sh가 읽는 경로)
-until [ -s "/tmp/codex-<target>.codex-session-id" ]; do
+# 복잡·아키텍처 민감 — Sol · high (--model / effort만 교체, 나머지 동일)
+#   --model gpt-5.6-sol -c model_reasoning_effort=high
+
+# 세션 ID 추출 → /tmp/codex-impl-<task>.codex-session-id (§14-C resume용)
+until [ -s "/tmp/codex-impl-<task>.codex-session-id" ]; do
   if command -v jq &>/dev/null; then
-    jq -r 'select(.thread_id) | .thread_id' "$TMPDIR_CODEX/events.jsonl" 2>/dev/null | head -n 1 > "/tmp/codex-<target>.codex-session-id"
+    jq -r 'select(.thread_id) | .thread_id' "$TMPDIR_CODEX/events.jsonl" 2>/dev/null | head -n 1 > "/tmp/codex-impl-<task>.codex-session-id"
   else
-    grep -oE '"thread_id":"[^"]+"' "$TMPDIR_CODEX/events.jsonl" 2>/dev/null | head -n 1 | cut -d'"' -f4 > "/tmp/codex-<target>.codex-session-id"
+    grep -oE '"thread_id":"[^"]+"' "$TMPDIR_CODEX/events.jsonl" 2>/dev/null | head -n 1 | cut -d'"' -f4 > "/tmp/codex-impl-<task>.codex-session-id"
   fi
   sleep 1
 done
 ```
 
-- codex 미가용이면 메인 Claude가 §5 체크리스트로 `git diff`를 직접 읽어 검증한다.
-- 결과를 [통과] / [단순 문제 목록] / [복잡 문제 목록] + [QA 인계] 시나리오로 분류해 §2 ④에서 분기한다.
-- **주의(2026-07-22 실측 확인):** 이 codex CLI 버전에서 `-p`는 프롬프트가 아니라 `--profile`(설정 프로파일) 옵션이다. 프롬프트는 위치 인자로 전달하고, 읽기전용 강제는 `-s read-only`(또는 `--sandbox read-only`)를 쓴다. `--read-only`나 `-p '<프롬프트>'` 형태는 인자 에러로 즉시 실패한다.
-- **`--json`은 §14-C 자동 resume용 세션 ID 확보를 위해 추가한 것이다.** 세션 ID 파일 경로는 monitor.sh 규약(`/tmp/<session>.codex-session-id`)을 그대로 따른다.
+**구현 지시문 필수 포함 항목 (하나라도 빠지면 위임하지 않는다):**
 
-### 4-B. 게이트① — 메인 Claude 개발분 정적 검증 (claude-review, tmux 필수)
+1. 대상 파일 목록과 정확한 경로
+2. 요구사항 및 완료 조건
+3. **범위 밖 파일 수정 금지** — 큐 지시서의 `## 범위`를 그대로 전달
+4. `docs/conventions.md`(현재 코드베이스 구조·타입 위치·API 응답 포맷·네이밍 실태) 확인 지시
+5. **프로젝트 코드 규약 5종 재확인** (전문은 AGENTS.md §6~§10. 지시문에 다시 적는 것은 중복이 아니라 안전장치다.)
+   - `src/` 디렉터리 생성 금지
+   - AI SDK는 `@google/genai`만 사용
+   - `responseMimeType` 사용 금지 (JSON은 프롬프트 스키마 강제 + `extractJSON`)
+   - AI 키에 `NEXT_PUBLIC_` 접두사 금지
+   - Supabase 테이블은 anon/authenticated에 GRANT ALL
+6. **셀프검증 게이트 7항목 통과 후 반환** (AGENTS.md §5)
+7. 결과 보고 형식 (AGENTS.md §12-A)
+
+**작업 규모별 참고 시간** (Codex는 자체 타임아웃을 쓰므로 `timeout` 래핑은 하지 않되, §14 헬스체크 상한 판단에 쓴다):
+
+| 작업 규모 | 예상 소요 |
+|---|---|
+| 소규모 수정·단순 버그 | 5~10분 |
+| 단일 기능 구현 | 15분 |
+| 여러 파일 연동·DB 변경·테스트 포함 | 30분 |
+| 대규모 기능 통합·리팩터링 | 최대 60분 |
+
+### 3-B. agy 위임 (QA·리서치·잡무 전용)
+
+```bash
+tmux new-session -d -s agy-<용도>-<target> "timeout <규모별 값> agy --dangerously-skip-permissions \
+  --add-dir /mnt/e/VibeCoding/K-Bestie-v3 \
+  --model='Gemini 3.6 Flash (High)' \
+  -p '<지시문>' 2>&1 | tee /tmp/agy-<용도>-<target>.log; echo '__TASK_DONE__'"
+```
+
+- 용도는 `qa`(E2E QA, §4-D) / `research`(외부 리서치) / `chore`(문서·시드·스크립트)만 허용한다.
+- timeout: 잡무·리서치 300~900초, E2E QA 600~1800초(시나리오 수 비례).
+- **비즈니스 로직 구현을 agy에 위임하지 않는다(하드룰 1).** 잡무 지시문에도 "`app/`·`components/`·`hooks/`·`lib/`·`services/`·`supabase/functions/`의 비즈니스 로직을 신규 작성하지 마라. 필요하다고 판단되면 작성하지 말고 보고하라"를 반드시 포함한다.
+- **`--model` 문자열은 첫 실행 시 `agy --help` 또는 settings.json 표기와 일치하는지 확인한다.** 모델명 오타는 조용히 기본 모델로 폴백될 수 있다.
+
+---
+
+## 4. 게이트 규칙
+
+### 4-A. 게이트① — 정적 코드리뷰 (Codex, 읽기 전용)
+
+```bash
+# [복잡] 리뷰 — Sol · high
+TMPDIR_CODEX=$(mktemp -d) && chmod 700 "$TMPDIR_CODEX"
+tmux new-session -d -s codex-rv-<target> "codex exec -s read-only --json \
+  --model gpt-5.6-sol -c model_reasoning_effort=high \
+  '<검증 지시문. AGENTS.md §11 체크리스트로 검토하고 §12-B 형식으로 보고하라. \
+    [단순]/[복잡] 태그와 [QA 인계] 시나리오를 반드시 포함하라>' \
+  2>&1 | tee $TMPDIR_CODEX/events.jsonl | tee /tmp/codex-rv-<target>.log; echo '__TASK_DONE__'"
+
+# [단순] 리뷰 — Terra · medium (--model / effort만 교체)
+#   --model gpt-5.6-terra -c model_reasoning_effort=medium
+
+# 세션 ID 추출 → /tmp/codex-rv-<target>.codex-session-id (§3-A와 동일 로직)
+```
+
+- **리뷰 등급 판단**: 아키텍처·보안·DB 스키마·데이터 손실 가능성·다중 모듈 영향 중 하나라도 걸리면 `[복잡]`(Sol). 그 외 단일 기능·UI·타입 수준이면 `[단순]`(Terra). 애매하면 Sol을 쓴다.
+- **하드룰 3 확인**: 리뷰 세션의 모델이 구현 세션의 모델과 같으면 반드시 **별도 tmux 세션**이어야 한다. Sol이 구현한 건은 Codex로 리뷰하지 않고 §4-B claude-review로 보낸다.
+- codex 미가용이면 메인 Claude가 §5 체크리스트로 `git diff`를 직접 읽어 검증한다.
+- 결과를 [통과] / [단순 문제 목록] / [복잡 문제 목록] + [QA 인계] 시나리오로 분류해 §2 ⑤에서 분기한다.
+- **주의(2026-07-22 실측):** 이 codex CLI 버전에서 `-p`는 프롬프트가 아니라 `--profile`이다. 프롬프트는 위치 인자로 전달하고, 읽기전용 강제는 `-s read-only`를 쓴다. `--read-only`나 `-p '<프롬프트>'` 형태는 인자 에러로 즉시 실패한다.
+- **`--model`·`-c model_reasoning_effort` 표기는 최초 1회 `codex exec --help`로 확인한 뒤 사용한다.** 위 `-p` 사고와 동일 유형의 실패를 방지한다. 확인 결과가 다르면 이 문서를 즉시 수정하고 커밋한다(§9).
+
+### 4-B. 게이트① — claude-review (메인 Claude / Codex Sol 개발분, tmux 필수)
 
 ```bash
 tmux new-session -d -s claude-review-<target> "claude -p \
   '<검증 지시문 + §5 체크리스트>. 읽기 전용으로 검토만 하고 파일을 수정하지 마라. \
    결과를 [통과] 또는 [단순]/[복잡] 태그를 붙인 문제 목록으로 출력하고, [QA 인계] 시나리오를 덧붙여라.' \
-  --permission-mode plan 2>&1 | tee /tmp/claude-review-<target>.log; echo '__TASK_DONE__'"
+  --permission-mode plan --model opus 2>&1 | tee /tmp/claude-review-<target>.log; echo '__TASK_DONE__'"
+
+# [단순] 리뷰 폴백 — Sonnet 5 · low (§4-C, Codex 쿼터 소진 시)
+#   --model opus  →  --model sonnet 으로 교체
+#   세션명은 claude-review-simple-<target> 으로 구분해 로그가 섞이지 않게 한다.
 ```
 
 - `--permission-mode plan`으로 읽기 전용을 강제한다.
-- 이 로그가 없으면 메인 Claude 개발분은 완료 처리할 수 없다(하드룰 2·3).
+- 이 로그가 없으면 메인 Claude 개발분·Codex Sol 개발분은 완료 처리할 수 없다(하드룰 2·3).
+- **advisor는 게이트가 아니다.** `/advisor`는 게이트①을 대체하지 못하며, 구현·설계 중 판단 지점의 자문용으로만 쓴다. advisor 호출은 advisor 모델 요율로 별도 과금되므로 기본 비활성으로 두고, 아키텍처 전환·난제 디버깅 구간에서만 켜고 끝나면 `/advisor off`.
 
-### 4-C. codex 정적 리뷰 가용성
+### 4-C. codex 가용성
 
-- codex는 정적 코드리뷰의 1순위 주체다. 다만 한도 초과 시 게이트①을 메인 Claude가 대신 수행하므로 **큐를 멈추지 않는다.**
-- codex 호출 실패 시 `_log.md`에 "codex 미가용 — 메인 Claude 정적리뷰 대체"로 기록하고 진행한다.
+- Codex는 1차 코딩 주체이자 정적 리뷰 1순위 주체다.
+- **Codex 한도 초과 시 폴백 순서**: ① 구현 → 메인 Claude 직접 개발(`/effort xhigh`), ② `[복잡]` 리뷰 → claude-review(Opus), ③ `[단순]` 리뷰 → claude-review(Sonnet 5 · low, §4-B 폴백 명령). 어느 경우에도 큐를 멈추지 않는다.
+- codex 호출 실패 시 `_log.md`에 "codex 미가용 — <대체 주체>로 대체"로 기록하고 진행한다.
+- **Codex 쿼터가 자주 먼저 소진되면** `[단순]` 리뷰를 상시 claude-review(Sonnet 5 · low)로 이관하고 §1-B 라우팅 표를 수정·커밋한다.
 
 ### 4-D. 게이트② — 동적 E2E QA (agy Playwright, tmux 필수)
 
 ```bash
-# QA 세션은 코딩 세션과 반드시 분리한다 (하드룰 3)
 tmux new-session -d -s agy-qa-<target> "timeout <600~1800> agy --dangerously-skip-permissions \
   --add-dir /mnt/e/VibeCoding/K-Bestie-v3 \
-  --model='Gemini 3.1 Pro (High)' \
-  -p 'QA 전용 세션이다. 코드를 수정하지 마라(읽기 + 테스트 실행만). \
-      [QA 인계] 시나리오: <codex/claude-review가 남긴 시나리오>. \
+  --model='Gemini 3.6 Flash (High)' \
+  -p 'QA 전용 세션이다. GEMINI.md §5를 따른다. 코드를 수정하지 마라(읽기 + 테스트 실행만). \
+      [QA 인계] 시나리오: <게이트①이 남긴 시나리오>. \
       Playwright로 이 시나리오의 E2E 테스트를 작성·실행하고(headless), \
       실패 시 스크린샷/로그를 /tmp/agy-qa-<target>/ 에 저장하라. \
-      결과를 [QA 통과] 또는 [QA 실패: 시나리오/원인/증거경로] 로 보고하라.' \
+      결과를 GEMINI.md §5.5 형식([QA 통과] 또는 [QA 실패: 시나리오/원인/증거경로])으로 보고하라. \
+      검증하지 않은 항목을 통과로 표기하지 마라 — 미검증은 [미검증]으로 명시하라.' \
   2>&1 | tee /tmp/agy-qa-<target>.log; echo '__TASK_DONE__'"
 ```
 
 - **대상**: 사용자 동작(로그인/버튼/화면 전이/재화 차감 등)에 영향을 주는 변경(하드룰 6).
-- **입력**: 게이트①에서 codex/claude-review가 남긴 `[QA 인계]` 시나리오.
-- **세션 분리 원칙**: agy 코딩 세션(`agy-<task>`)과 QA 세션(`agy-qa-<target>`)은 별개로 띄운다. 같은 코드를 짠 세션이 QA하지 않는다.
-- **QA 세션은 코드를 수정하지 않는다.** 테스트 코드 작성·실행·증거 저장까지만. 실패가 나오면 개발 주체(agy 코딩 세션 또는 Claude)에게 되돌린다.
-- **증거 필수**: 실패 시 스크린샷/로그를 `/tmp/agy-qa-<target>/`에 남겨 §15 보고에 첨부 근거로 쓴다.
-- Playwright 미설치 시 §16의 셋업 절차를 수행한 뒤 진행한다.
+- **입력**: 게이트①에서 남긴 `[QA 인계]` 시나리오.
+- **세션 분리 원칙**: agy 잡무 세션과 QA 세션은 별개로 띄운다. agy가 손댄 코드를 같은 agy 세션이 QA하지 않는다(하드룰 3).
+- **QA 세션은 코드를 수정하지 않는다.** 테스트 코드 작성·실행·증거 저장까지만. 실패가 나오면 개발 주체(Codex 또는 Claude)에게 되돌린다.
+- **증거 필수**: 실패 시 스크린샷/로그를 `/tmp/agy-qa-<target>/`에 남겨 §15 보고 근거로 쓴다. 증거 없는 "정상 동작 확인" 보고는 통과로 인정하지 않는다.
+- Playwright 미설치 시 `docs/ops/playwright-setup.md`의 절차를 수행한 뒤 진행한다(§16).
 
 ---
 
-## 5. 검증 체크리스트 (모든 게이트 공통 — 정적)
+## 5. 검증 체크리스트 (정적 게이트 공통 — 요약)
 
-- AI SDK는 `@google/genai`만 사용 / 병렬 호출은 `Promise.allSettled` 선호
-- `responseMimeType` 사용 금지 / AI 키에 `NEXT_PUBLIC_` 접두사 금지
+> 전문은 **AGENTS.md §11**이다. 아래는 메인 Claude가 직접 리뷰하거나 claude-review를 띄울 때 쓰는 요약본이며, 두 문서가 어긋나면 AGENTS.md §11이 우선한다.
+
+- AI SDK는 `@google/genai`만 사용 (구버전 `@google/generative-ai`·REST 직접 호출 금지)
+- **병렬 호출은 `Promise.allSettled` 필수 — `Promise.all` 금지**
+- `responseMimeType` 사용 금지 / JSON은 스키마 강제 + `extractJSON` 파싱
+- AI 키에 `NEXT_PUBLIC_` 접두사 금지
 - Supabase 테이블은 anon/authenticated에 GRANT ALL
-- GEMINI.md 경로 규칙 준수 (**`src/` 디렉터리 생성 금지**)
-- 요청된 파일만 수정 / DB 스키마와 코드 컬럼 일치
-- 미완성 구현·엣지케이스(null/빈배열/레이스)·로직 오류 점검
-- `docs/conventions.md` 규약 준수 (타입 위치, API 응답 포맷, 네이밍)
+- **`src/` 디렉터리 생성 금지**
+- 요청된 파일만 수정 / DB 스키마와 코드 컬럼 일치(없는 컬럼 조회로 조용히 실패하는 패턴 색출)
+- 미완성 구현·엣지케이스(null/빈배열/레이스)·로직 오류 점검, 하드코딩 스텁·TODO 잔존 확인
+- `docs/conventions.md`의 실제 구조·타입 위치·API 응답 포맷·네이밍과 일치
 - 큐 지시서의 `## 범위` 밖 파일이 수정되지 않았는지 확인
-- 정적 리뷰 산출물에 `[QA 인계]` 시나리오 포함 — 사용자 동작 영향 변경이면 게이트②로 넘길 시나리오를 1~3줄로 명시(없으면 “없음”).
+- 정적 리뷰 산출물에 `[QA 인계]` 시나리오 포함 — 사용자 동작 영향 변경이면 게이트②로 넘길 시나리오를 1~3줄로 명시(없으면 "없음").
 
 ---
 
@@ -283,7 +381,11 @@ requests/
   _failed/             ← 실패한 지시서 보관
   _log.md              ← 처리 이력
   _blocked.md          ← 판단 보류 항목(지시서 일부만 보류, 나머지는 정상 완료)
-  _dashboard.md        ← 특이사항 대시보드(지시서 전체 완료 불가, v9 신규, §1-A 참조)
+  _dashboard.md        ← 큐 루트 지시서 상태표 + 특이사항(§1-A)
+docs/
+  conventions.md       ← 코드베이스 "현황" 단일 출처 (§9)
+  plans/               ← Claude가 작성하는 구현 계획서
+  ops/                 ← 운영 절차 상세 (§8)
 ```
 
 지시서 양식(`_TEMPLATE.md`):
@@ -317,102 +419,155 @@ requests/
 `docs/conventions.md` 작성·갱신 시 폴더 구조를 조사할 때 다음을 따른다.
 
 - **`src/`를 전제하지 않는다.** 이 프로젝트는 `src/` 디렉터리 생성 금지 규칙이 있다.
-- `src/`가 존재하면 그 내용을 확인하되, 없으면 루트의 실제 구조를 조사한다: `app/`, `components/`, `lib/`, `hooks/`, `types/`, `utils/`, `supabase/` 등.
+- `src/`가 존재하면 그 내용을 확인하되, 없으면 루트의 실제 구조를 조사한다: `app/`, `components/`, `lib/`, `hooks/`, `services/`, `supabase/`, `e2e/` 등.
 - 루트 디렉터리를 먼저 나열해 실제 존재하는 폴더만 대상으로 삼는다. 관례적 경로를 추측해 기록하지 않는다.
 - 확인되지 않은 항목은 `미확인`으로 표기한다.
+- **이 스캔은 Claude가 직접 하지 않고 Codex(Terra)에 위임한다(하드룰 4).**
 
 ---
 
-## 9. 규칙 파일 관리
+## 8. 운영 절차 상세 (`docs/ops/` 인덱스)
 
-- CLAUDE.md / GEMINI.md / AGENTS.md 수정 시 **즉시 커밋.**
-- 세 파일 절대 삭제·이름변경 금지. 위임 전 존재 확인.
-- `docs/conventions.md`는 코드베이스 규약의 단일 출처다. 스택·구조 변경 시 즉시 갱신하고 커밋한다.
+v13에서 본문 분량 감축을 위해 아래 절차를 분리했다. 해당 상황에 진입하면 반드시 원문을 열어 확인한다.
+
+| 파일 | 내용 | 참조 지점 |
+|---|---|---|
+| `docs/ops/health-check.md` | 서브에이전트 헬스체크·자동 복구 상세, resilient-coding-agent 스킬 설치·제약 | §14 |
+| `docs/ops/playwright-setup.md` | Playwright 설치·실행 절차 전문, WSL2 의존성 이슈 대응 | §4-D, §16 |
+| `docs/ops/production-account-policy.md` | Production 계정 보호 정책 전문 | 하단 요약 섹션 |
+| `docs/ops/tmux-death-investigation.md` | tmux 서버 반복 종료 원인 조사(로깅 도입, 배제된 원인, 가설, 판정 기준, 3일 수집 기간) | §14 |
+
+- `docs/ops/*` 수정 시에도 §9 즉시 커밋 원칙을 적용한다.
+- 새 운영 문서를 추가하면 이 표에 행을 추가한다. 표에 없는 ops 문서는 존재하지 않는 것으로 간주한다.
+
+---
+
+## 9. 규칙 파일 관리 및 단일 출처 원칙
+
+### 즉시 커밋
+
+- CLAUDE.md / GEMINI.md / AGENTS.md / `docs/ops/*` / `docs/conventions.md` 수정 시 **즉시 커밋.**
+- 세 규칙 파일 절대 삭제·이름변경 금지. 위임 전 존재 확인.
+
+### 단일 출처 (v13.1 — 역할 분리)
+
+- **AGENTS.md §6~§10 = 코딩 규약의 단일 출처.** 기술 스택, 디렉터리 규칙, 네이밍, `@google/genai` SDK 사용법, `extractJSON`, Supabase 규칙, 보안·`.env`·인코딩·Git 규칙. Codex 세션에 자동 로드되므로 **규약은 여기에만 정의한다.**
+- **`docs/conventions.md` = 코드베이스 현황의 단일 출처.** 실제 폴더 구조, 타입 파일 위치, API 응답 포맷, 네이밍 실태 등 "지금 이 저장소가 어떻게 생겼는가"만 기록한다. **규약을 중복 기재하지 않는다.**
+- 두 문서가 충돌하면 **규약은 AGENTS.md, 구조 사실은 conventions.md**가 우선한다.
+- **모델·effort 지정이 세 파일 간 어긋나면 CLAUDE.md §1-B 라우팅 표가 우선한다.** 발견 즉시 나머지 두 파일을 맞추고 커밋한다.
+- **셀프통과 담당 매핑이 어긋나면 CLAUDE.md 하드룰 3 표가 우선한다.**
+
+### 상호참조 규칙 (v13.1 신설)
+
+- 다른 규칙 파일의 섹션을 참조할 때는 **번호와 함께 제목을 병기한다.** 예: `AGENTS.md §11(정적 리뷰 체크리스트)`. 번호만 적으면 개정 시 조용히 깨진다.
+- **규칙 파일의 섹션 번호를 재배치하는 개정을 할 때는, 그 파일을 참조하는 나머지 두 파일을 같은 커밋에서 함께 수정한다.** 한 파일만 고치고 넘어가지 않는다.
+
+---
+
+## 10. (결번)
+
+> v13에서 내용이 §1-B 라우팅 표와 §8 ops 인덱스로 흡수되었다. 기존 상호참조 보존을 위해 번호는 재사용하지 않는다.
 
 ---
 
 ## 11. 워커 실행 규칙
 
-- agy(코딩) / agy-qa(E2E QA) / claude-review / codex는 반드시 tmux.
-- 세션명: `agy-<task>` / `agy-qa-<target>` / `claude-review-<target>` / `codex-<target>`. 완료 후 kill.
-- **agy 코딩 세션과 agy QA 세션은 반드시 분리한다(하드룰 3).**
-- 모든 위임 명령 끝에 `; echo '__TASK_DONE__'`를 붙이고 출력을 `tee`로 로그에 남긴다(§14 헬스체크 전제조건).
+- codex-impl(구현) / codex-rv(정적리뷰) / claude-review / agy-qa / agy-chore / agy-research는 반드시 tmux.
+- 세션명 규칙:
+
+    | 용도 | 세션명 |
+    |---|---|
+    | Codex 구현 | `codex-impl-<task>` |
+    | Codex 정적리뷰 | `codex-rv-<target>` |
+    | Claude 정적리뷰 | `claude-review-<target>` |
+    | Claude 정적리뷰(Sonnet 폴백) | `claude-review-simple-<target>` |
+    | agy E2E QA | `agy-qa-<target>` |
+    | agy 잡무 | `agy-chore-<task>` |
+    | agy 리서치 | `agy-research-<topic>` |
+
+- 완료 후 kill.
+- **구현 세션과 리뷰 세션은 어떤 경우에도 같은 세션을 재사용하지 않는다(하드룰 3).**
+- 모든 위임 명령 끝에 `; echo '__TASK_DONE__'`를 붙이고 출력을 `tee`로 로그에 남긴다(§14 전제조건).
+- 활성 목록 확인: `tmux list-sessions 2>/dev/null | grep -E '^(codex-impl|codex-rv|claude-review|agy-qa|agy-chore|agy-research)-'`
 
 ---
 
 ## 12. 실패 자동 처리
 
-- **12-A 사전 분할**: 큰 미션은 30~60분 원자 태스크로 쪼갠 뒤 agy에 배분(대상 파일·성공 기준 명시).
+- **12-A 사전 분할**: 큰 미션은 30~60분 원자 태스크로 쪼갠 뒤 Codex에 배분(대상 파일·성공 기준 명시).
 - **12-B 에러 분류**: 재시도 가능(타임아웃 124/일시적 5xx/네트워크) → 최대 3회, 백오프 10s→20s→60s. 재시도 불가(인증 만료/자격 소실/쿼터 초과) → 즉시 대표 알림 + 복구 명령.
-- **12-C 반복 실패**: agy가 같은 작업 3회 실패 → §2의 "복잡한 문제"로 간주, 메인 Claude가 직접 개입.
+- **12-C 구현 반복 실패**:
+    - codex-impl **1회 실패** → 지시문의 모호한 부분을 특정해 보강 후 재위임(같은 모델).
+    - codex-impl **2회 실패** → Terra였다면 Sol(high)로 1회 승격 재시도. Sol에서도 실패하면 §2의 "복잡한 문제"로 간주해 메인 Claude가 `/effort xhigh`로 직접 개입(하드룰 1 예외).
+    - **게이트① 반려 3회 연속** → 구현이 아니라 계획서가 틀린 것으로 간주하고 `docs/plans/` 재작성부터 다시 시작한다.
+    - **agy E2E QA 3회 실패** → 구현 결함 가능성. 게이트①을 Sol로 재실행한 뒤 판단한다.
 - **12-D 큐 항목 실패**: 위 절차를 모두 소진하고도 실패하면 해당 지시서를 `_failed/`로 이동하고 `_log.md`에 원인·마지막 성공 지점을 기록한 뒤, **큐를 멈추지 말고 다음 지시서로 넘어간다.** 실패 건은 §15 보고의 🟡 항목에 포함한다.
-- **12-E codex 쿼터 초과**: 재시도하지 않는다. `_log.md`에 "codex 미가용 — 메인 Claude 정적리뷰 대체"로 1줄 기록하고 즉시 진행한다. 대표 알림 대상이 아니다.
-- **12-F E2E QA 인프라 실패**: Playwright 브라우저/의존성 문제로 QA 실행 자체가 안 되면, §16 셋업 절차를 1회 재시도한다. 그래도 실패하면(특히 시스템 라이브러리 부재로 자동화가 해결 불가능한 경우) QA를 [복잡]으로 간주해 §15로 보고한다(QA 미실행 상태를 "통과"로 위장 금지).
+- **12-E Codex 쿼터 초과**: 재시도하지 않는다. §4-C 폴백 순서를 적용하고 `_log.md`에 1줄 기록 후 즉시 진행한다. **단, 구현까지 Claude로 폴백되는 상황은 토큰 예산 이탈이므로 §15 보고의 🟡 항목에 포함한다.**
+- **12-F E2E QA 인프라 실패**: Playwright 브라우저/의존성 문제로 QA 실행 자체가 안 되면 `docs/ops/playwright-setup.md` 절차를 1회 재시도한다. 그래도 실패하면(특히 시스템 라이브러리 부재로 자동화 해결 불가) QA를 [복잡]으로 간주해 §15로 보고한다. **QA 미실행 상태를 "통과"로 위장 금지.**
 
 ---
 
 ## 13. 병렬 실행
 
-- 작업들이 서로 다른 파일 → 여러 agy tmux 세션 동시 실행. 최대 3개.
+- 작업들이 서로 다른 파일 → 여러 codex-impl 세션 동시 실행. 최대 3개.
 - 파일이 겹치면 → 순차 실행.
 - 큐 지시서 간 병렬 판단 기준은 §1-A "큐 항목의 병렬 처리"를 따른다.
-- **E2E QA 세션은 코딩 세션 슬롯과 별도로 센다** — 단, 총 동시 tmux 부하를 고려해 QA 병렬은 최대 2개로 제한한다.
+- **게이트 세션(codex-rv / claude-review / agy-qa)은 구현 세션 슬롯과 별도로 센다.** 단, 총 동시 tmux 부하를 고려해 게이트 병렬은 최대 3개(정적 2 + QA 2 중 합계 3)로 제한한다.
 
 ---
 
-## 14. 서브에이전트 헬스체크 & 자동 복구 (resilient-coding-agent 스킬 기반)
+## 14. 서브에이전트 헬스체크 & 자동 복구
 
 > 전역 설치된 `~/.agents/skills/resilient-coding-agent` 스킬의 tmux 헬스체크·복구 로직을 사용한다.
-> agy·codex·claude-review를 tmux에 위임한 뒤 **주기적으로 생사를 판정하고, 죽으면 대표님께 묻지 않고 자동 복구한다.**
 > **수동 `while sleep` 폴링 루프 금지**(토큰 낭비 안티패턴). 스킬의 `scripts/monitor.sh` 검증 로직을 사용한다.
-> **스킬은 컴퓨터당 1회 global 설치가 필요**하다(새 PC/새 WSL이면 `npx skills add cosformula/resilient-coding-agent-skill` → Global → Symlink). 현재 개발 PC는 설치 완료(2026-07-28, 보안 스캔 Safe/0 alerts/Low Risk).
+> **상세 절차·설치 방법·제약은 `docs/ops/health-check.md` 참조(§8).** 아래는 매 위임 시 지켜야 할 요약이다.
 
-### 14-A. 위임 시 필수 전제조건 (모든 서브에이전트)
+### 14-A. 위임 시 필수 전제조건
 
-- 세션명은 §11 규칙(`agy-<task>` / `agy-qa-<target>` / `codex-<target>` / `claude-review-<target>`)을 따른다.
-- **완료/크래시 구분 마커**: 위임 명령 끝에 반드시 `; echo '__TASK_DONE__'`. 마커가 찍히면 정상 종료, 마커 없이 셸 프롬프트로 돌아왔으면 크래시로 판정한다.
-- **작업 로그 저장(A안)**: agy 코딩·QA 세션 출력은 `tee /tmp/agy-<task>.log`(QA는 `/tmp/agy-qa-<target>.log`)로 항상 남긴다. agy는 resume에 세션 ID가 필요 없지만, 크래시 원인 파악에 이 로그를 쓴다.
-- **codex 세션 ID 확보**: codex는 §4-A대로 `--json` 출력에서 세션 ID를 추출해 `/tmp/codex-<target>.codex-session-id`에 저장한다(monitor.sh가 읽는 경로).
+- 세션명은 §11 표를 따른다.
+- **완료/크래시 구분 마커**: 위임 명령 끝에 반드시 `; echo '__TASK_DONE__'`. `&&`가 아니라 `;`를 써서 timeout·에러로 중단돼도 판정이 동작하게 한다.
+- **작업 로그 저장**: 모든 세션 출력을 `tee /tmp/<세션명>.log`로 남긴다.
+- **codex 세션 ID 확보**: codex-impl·codex-rv 모두 `--json` 출력에서 세션 ID를 추출해 `/tmp/<세션명>.codex-session-id`에 저장한다(§3-A 스니펫).
 
-### 14-B. 헬스체크 폴링 (기본 10분 주기)
+### 14-B. 헬스체크 판정 (10분 주기)
 
-- **10분마다** 각 활성 세션을 체크한다(대표님 지정 주기).
-- monitor.sh 판정 로직 그대로 사용:
-    - `tmux has-session -t <세션>` — 세션 생존 확인.
-    - `tmux capture-pane -t <세션> -p -S -120` 최근 출력에서 판정:
-        - `__TASK_DONE__` 마커 있음 → **정상 완료** → 게이트(§4)/§2 다음 단계로.
-        - 마지막 줄이 셸 프롬프트(`$ `/`% `/`# `/`> `)로 복귀, 또는 exit 신호(`exit code N`/`exited with`/`exit status ≥1`) → **크래시** → 개발 주체별 자동 복구(14-C/14-D).
-        - 그 외(출력·대상 파일 mtime 변화 있음) → **작업 중** → 다음 주기까지 대기.
-- 연속 크래시 시 백오프로 점검 간격을 늘리고(§12-B), 정상 동작 감지되면 간격을 리셋한다. monitor.sh 기본 상한은 5시간(wall-clock)이나, 본 프로젝트는 §3 규모별 timeout을 우선한다.
+- `tmux has-session -t <세션>`으로 생존 확인 후 `tmux capture-pane -t <세션> -p -S -120`으로 판정:
+    - `__TASK_DONE__` 마커 있음 → **정상 완료** → §2 다음 단계로.
+    - 마지막 줄이 셸 프롬프트(`$ `/`% `/`# `/`> `) 복귀, 또는 exit 신호 → **크래시** → 14-C/14-D.
+    - 그 외(출력·대상 파일 mtime 변화) → **작업 중** → 다음 주기 대기.
+- 연속 크래시 시 백오프로 간격을 늘리고(§12-B), 정상 감지되면 리셋한다. §3-A 규모별 예상 소요를 상한 판단에 쓴다.
 
 ### 14-C. codex·claude-review 크래시 → 자동 resume (사람 확인 없음)
 
-- **codex**: 크래시 감지 시 확보해둔 세션 ID로 **즉시 자동 이어받기**.
-  `tmux send-keys -t codex-<target> "codex exec resume $(cat /tmp/codex-<target>.codex-session-id) \"Continue the previous task\"" Enter`
-  세션 ID 파일이 없거나 형식이 깨졌으면 resume 불가로 보고 codex를 재실행(fresh)한다.
-- **claude-review**: 크래시 감지 시 `tmux send-keys -t claude-review-<target> 'claude --resume' Enter`로 자동 이어받기.
-- 위 복구는 **대표님께 묻지 않고 자동 수행**한다. 자동화 원칙상 죽으면 이어가는 것이 기본이다.
+- **codex(impl·rv 공통)**: `tmux send-keys -t <세션> "codex exec resume $(cat /tmp/<세션>.codex-session-id) \"Continue the previous task\"" Enter`
+  세션 ID 파일이 없거나 깨졌으면 fresh 재실행한다.
+- **claude-review**: `tmux send-keys -t claude-review-<target> 'claude --resume' Enter`
+- **1차 코딩이 Codex로 이관되면서 구현 세션도 resume이 가능해졌다.** 크래시 시 통째로 재실행하지 말고 반드시 resume을 먼저 시도한다.
+- 위 복구는 **대표님께 묻지 않고 자동 수행**한다.
 
-### 14-D. agy 크래시 → fresh 재실행 (resume 불가 → 새로 실행)
+### 14-D. agy 크래시 → fresh 재실행
 
-> agy는 headless(`-p`)에서 세션 ID가 노출되지 않아 특정 세션 resume이 원천 불가능하다(2026-07-28 리서치·공식 이슈 확인). 따라서 이어받지 않고 **깔끔하게 버리고 새로 시작**한다. 이 역시 대표님께 묻지 않고 자동 수행한다.
+> agy는 headless(`-p`)에서 세션 ID가 노출되지 않아 resume이 원천 불가능하다(2026-07-28 확인).
 
-1. `tmux kill-session -t agy-<task>`(또는 `agy-qa-<target>`)로 세션을 강제 종료·폐기한다.
-2. 진행 중이던 미완료 중간물은 **되돌리려 하지 않는다.** git 롤백/복구 없이 그대로 버린다(대표님 결정 2026-07-28: 미완료 중간물의 git checkout 복구는 오히려 위험하고, agy 토큰은 여유가 있어 재실행이 안전하다).
-3. 같은 지시서(`requests/<번호>-*.md`)를 **fresh agy 세션에 통째로 재할당**한다(중단 지점 이어받기 아님 = "지시서 전체 재실행").
-4. §12-B 백오프(10s→20s→60s) 적용, §12-C대로 같은 작업 3회 실패 시 [복잡]으로 간주해 메인 Claude 직접 개입.
-5. 최종 실패 시 §12-D(`_failed/` 이동 + `_log.md` 기록) 후 §15 보고(트리거 6: 하위 작업자 실패).
+1. `tmux kill-session -t <세션>`으로 강제 종료·폐기한다.
+2. 미완료 중간물은 **되돌리려 하지 않는다.** git 롤백 없이 그대로 버린다.
+3. 같은 작업을 fresh agy 세션에 통째로 재할당한다.
+4. §12-B 백오프 적용, 3회 실패 시 §12-C에 따라 처리한다.
 
-### 14-E. 인터랙티브 프롬프트 방지 (스킬 Limitations 반영)
+### 14-E. 인터랙티브 프롬프트 방지
 
-- agy 위임은 항상 `--dangerously-skip-permissions` + `-p`(headless)로 실행해 y/n·승인 프롬프트에서 멈추지 않게 한다.
-- 그럼에도 입력 대기(인증 등)로 멈춘 것이 감지되면, `tmux send-keys`로 해당 입력을 전송한 뒤 재감시한다. 자동 해결 불가한 인증 만료는 §12-B(재시도 불가)로 처리한다.
+- agy 위임은 항상 `--dangerously-skip-permissions` + `-p`(headless)로 실행한다.
+- 입력 대기로 멈춘 것이 감지되면 `tmux send-keys`로 입력을 전송한 뒤 재감시한다. 자동 해결 불가한 인증 만료는 §12-B(재시도 불가)로 처리한다.
 
 ### 14-F. 정리 & 제약
 
-- 완료·폐기 세션은 `tmux kill-session`으로 정리한다. 활성 목록: `tmux list-sessions 2>/dev/null | grep -E '^(agy|agy-qa|codex|claude-review)-'`.
-- **머신 재부팅 시 tmux 세션은 모두 소멸**한다. 재부팅 후 codex/claude-review는 native resume 가능, agy는 해당 지시서를 재실행한다.
-- 인증 헬스체크·행(hang)은 §12-B에 따라 처리하며, 자동 복구 외의 임의 코드 수정은 하지 않는다.
+- 완료·폐기 세션은 `tmux kill-session`으로 정리한다.
+- **머신 재부팅 시 tmux 세션은 모두 소멸**한다. 재부팅 후 codex·claude-review는 native resume 가능, agy는 재실행한다.
+
+### 14-G. 큐 감시 크론
+
+- Claude 대기 폴링을 대체한다. 큐에 신규 `.md`가 생기면 새 Claude 세션을 기동하도록 OS 크론(또는 Antigravity scheduled task)에 등록한다.
+- **미설정 상태라면 대표님께 §15로 1회 안내하고, 그때까지는 대표님이 채팅으로 착수를 지시하는 방식으로 운용한다.** Claude가 스스로 폴링하지 않는다.
 
 ---
 
@@ -429,7 +584,7 @@ requests/
 3. 검증·빌드·배포 결과가 나왔을 때
 4. 오류·권한·환경·의존성 문제로 진행이 막혔을 때
 5. 대표님 판단·승인·추가 정보가 필요할 때
-6. agy·codex 등 하위 작업자가 완료·실패·중단했을 때
+6. Codex·agy 등 하위 작업자가 완료·실패·중단했을 때
 7. 작업 큐가 비거나, 다음 우선순위를 기다릴 때
 
 **절대 규칙:**
@@ -466,50 +621,14 @@ requests/
 
 ---
 
-## 16. Playwright E2E QA 셋업 규칙 (WSL2)
+## 16. Playwright E2E QA 셋업
 
-agy E2E QA(§4-D)를 실행하려면 Playwright가 필요하다. 셋업은 **컴퓨터 최초 1회(사람)**와 **프로젝트마다(agy 자동)**로 나뉜다.
-
-### 16-A. 컴퓨터 최초 1회 셋업 (사람이 직접, 새 PC·새 WSL일 때만)
-
-새 컴퓨터/새 WSL에서 처음 Playwright를 쓸 때, 브라우저 시스템 라이브러리(`libnss3`·`libgbm1`·`libasound2` 등 20여 개)를 전역에 한 번 설치한다. 이 단계는 **sudo 비밀번호 입력이 필요하므로 반드시 사람이 직접** 실행한다.
-
-```bash
-# 아무 프로젝트 폴더에서 1회 (사람이 실행, 비밀번호 입력 필요)
-npx playwright install --with-deps --only-shell chromium
-```
-
-- 이 라이브러리는 `~/.cache` 아래가 아니라 OS 전역에 깔리며, **이후 모든 프로젝트가 공유**한다. 즉 이 단계는 컴퓨터당 1회면 끝이다.
-- **완료 확인**: `npx playwright install --list`로 chromium headless shell이 잡히면 성공.
-- (2026-07-28 현재 K-Bestie-v3 개발 PC는 이 단계가 이미 완료됨.)
-
-### 16-B. 프로젝트마다 자동 셋업 (agy가 QA 위임 시 자동 실행)
-
-새 프로젝트에서 agy가 QA 위임을 받았는데 Playwright가 없으면, 아래를 **자동으로** 실행한 뒤 진행한다. **사람 개입(비밀번호)이 필요한 명령은 절대 실행하지 않는다.**
-
-```bash
-# 프로젝트 루트에서 (가볍고, sudo 불필요)
-npm i -D @playwright/test
-npx playwright install --only-shell chromium
-```
-
-- **`--with-deps`를 붙이지 않는다.** 시스템 라이브러리는 16-A에서 이미 전역 설치돼 있다. `--with-deps`는 sudo 비밀번호를 요구하는데 tmux 자동화 세션에는 입력할 사람이 없어 거기서 멈춘다. 따라서 자동 셋업에서는 절대 쓰지 않는다.
-- 브라우저는 `~/.cache/ms-playwright`에 전역 캐싱되므로, 프로젝트 버전에 맞는 브라우저가 이미 있으면 다운로드를 건너뛴다(몇 초).
-- **예외 감지 — 16-A 미완료 환경**: `npx playwright install --only-shell chromium` 후 실제 실행에서 `Host system is missing dependencies` 에러가 나면, 이는 자동화가 해결할 수 없는 최초 1회 셋업 문제다. 코드로 우회하지 말고 즉시 `_log.md`에 기록 후 §15로 **“16-A 최초 1회 시스템 셋업 필요(사람이 `npx playwright install --with-deps chromium` 1회 실행)”**를 보고하고 멈춘다.
-
-### 16-C. 참고 (WSL 함정 · 실측·공식 문서 확인됨)
-
-- **`sudo npx ...` 금지**: nvm으로 node를 관리하는 WSL에서 `sudo npx`는 `sudo: npx: command not found`로 실패한다. 16-A처럼 sudo가 필요한 경우도 `sudo`를 앞에 붙이지 말고 그냥 `npx playwright install --with-deps ...`로 실행하면 Playwright가 내부적으로 권한을 상승시킨다.
-- **Ubuntu 24.04 주의**: 라이브러리 이름 변경(`libasound2`→`libasound2t64`)으로 16-A가 실패할 수 있다. 실패 시 `npm i -D @playwright/test@latest`로 올린 뒤 재시도. 안정 우선이면 Ubuntu 22.04 LTS 유지.
-- **headless 전용**: `xvfb`(가상 디스플레이) 불필요.
-- 브라우저 바이너리는 `~/.cache/ms-playwright`에 캐싱되어 버전당 최초 1회만 다운로드한다.
-
-### 16-D. config 원칙
-
-- `playwright.config.ts`에 chromium headless 프로젝트 하나만 정의.
-- `webServer` 옵션으로 dev 서버를 자동 기동하되, 개발 서버 동작 중 빌드 금지 규칙과 충돌하지 않게 QA는 별도 포트/기존 dev 서버 재사용을 우선.
-- 테스트 계정은 반드시 `QA테스트` 계정만 사용(테스트 계정 운영 규칙 준수).
-- **셋업/설정 변경 시 커밋**: `package.json`, `playwright.config.ts`, 테스트 파일 추가는 `[설정] Playwright E2E QA 도입` 형식으로 커밋한다.
+- 게이트②(§4-D) 실행에 Playwright가 필요하다. **명령·절차 전문은 `docs/ops/playwright-setup.md`가 단일 출처다.** 이 문서와 GEMINI.md §5.4에는 아래 원칙만 둔다.
+    1. **컴퓨터 최초 1회 셋업(`npx playwright install --with-deps --only-shell chromium`)은 sudo 비밀번호가 필요하므로 반드시 사람이 실행한다.** (2026-07-28 현재 개발 PC 완료)
+    2. **프로젝트 자동 셋업에서는 `--with-deps`를 절대 붙이지 않는다.** tmux 자동화 세션에는 비밀번호를 입력할 사람이 없어 거기서 멈춘다.
+    3. `Host system is missing dependencies` 에러가 나면 자동화가 해결할 수 없는 문제다. 코드로 우회하지 말고 §15로 "최초 1회 시스템 셋업 필요"를 보고하고 멈춘다.
+- 테스트 계정은 반드시 `QA테스트` 계정만 사용한다.
+- 셋업·설정 변경 시 `[설정] Playwright E2E QA 도입` 형식으로 커밋한다.
 
 ---
 
@@ -517,7 +636,7 @@ npx playwright install --only-shell chromium
 
 - **개발 서버**: `k-bestie-v3-dev` — https://k-bestie-v3-dev.vercel.app, Supabase ref `mkrsaaedxqrcrktapaus`
 - **운영 서버**: `k-bestie-v3` — https://app.k-bestie.com, Supabase ref `fetvnhhjicndmxvhrffk`
-- **git 원격(2026-07-28 확정)**: push는 `origin`(github.com/markanitp-maker/K-Bestie-v3)에만 한다. `legacy-origin`(github.com/markytb79-cpu/K-Bestie-v3)에는 어떤 경우에도 push하지 않는다 — 대표님이 명시적으로 배포 금지를 지시했다. `vercel --prod` 직접 배포(하드룰 7)는 git push를 거치지 않으므로 이 제약과 무관하다.
+- **git 원격(2026-07-28 확정)**: push는 `origin`(github.com/markanitp-maker/K-Bestie-v3)에만 한다. `legacy-origin`(github.com/markytb79-cpu/K-Bestie-v3)에는 어떤 경우에도 push하지 않는다. `vercel --prod` 직접 배포(하드룰 7)는 git push를 거치지 않으므로 이 제약과 무관하다.
 
 ---
 
@@ -527,11 +646,12 @@ npx playwright install --only-shell chromium
 
 ---
 
-## Production QA 테스트 계정 운영 및 실제 사용자 보호 원칙 (공통 정책)
+## Production 계정 보호 정책 (요약 — 전문은 `docs/ops/production-account-policy.md`)
 
-- **Production QA 전용 고정 계정 재사용**: Production 환경에서 QA 또는 개발 테스트를 수행할 때는 무조건 지정된 전용 QA 가족 및 고정 3개 계정(`qa-parent@kbestie.local`, `testa@kbestie.local`, `testb@kbestie.local`)만 재사용한다. 2026-08-07 정리 직후의 현황(24개 Auth, 7개 가족)은 일시적 현황일 뿐 상한선이나 영구 화이트리스트가 아니며, 향후 가입하는 실제 사용자와 가족은 계속 증가할 수 있다.
-- **신규 Production 테스트 계정 임의 생성 금지**: Antigravity, Codex, Claude Code 및 모든 개발 에이전트는 **대표님의 명시적 승인 없이** 신규 Production 테스트 Auth 계정, 부모/아이 프로필, `family_members`, `child_profiles`, `families`를 생성해서는 안 된다. 테스트 시 신규 사용자 상태가 필요하면 우선 기존 QA 가족의 테스트 데이터를 안전하게 초기화하거나 재사용하며, 신규 테스트 계정 생성이 불가피한 경우 반드시 대표님 승인을 받는다.
-- **실제 사용자 및 가입 진행 사용자 절대 보호**: 실제 사용자, 현재 가입 진행 중 사용자, 실제 사용자가 생성한 가족 및 자녀는 이메일 패턴, 가족 미소속 상태, 온보딩 미완료 상태, 계정 총수 등을 이유로 임의로 테스트 계정으로 판단하거나 자동 삭제·수정·차단해서는 안 된다. 특히 가입 진행 중인 `jih0405@nate.com` 계정과 같이 실제 사용자의 가입/온보딩 정보는 절대적인 보호 대상이다.
+- **Production QA는 지정된 전용 고정 계정만 재사용한다**: `qa-parent@kbestie.local`, `testa@kbestie.local`, `testb@kbestie.local`.
+- **신규 Production 테스트 계정 임의 생성 금지.** Claude Code·Codex·agy 및 모든 에이전트는 대표님 명시 승인 없이 Production의 Auth 계정·부모/아이 프로필·`family_members`·`child_profiles`·`families`를 생성하지 않는다. 신규 사용자 상태가 필요하면 기존 QA 가족 데이터를 안전하게 초기화·재사용한다.
+- **실제 사용자 절대 보호.** 이메일 패턴·가족 미소속·온보딩 미완료·계정 총수 등을 이유로 실제 사용자나 가입 진행 중 사용자를 테스트 계정으로 임의 판단하거나 삭제·수정·차단하지 않는다. 특히 가입 진행 중인 `jih0405@nate.com`은 절대 보호 대상이다.
+- **Production 계정·비밀번호 변경 절대 금지(2026-08-03).** 지정 테스트 계정을 포함해 어떤 계정이든 Production 인증정보를 자동화·스크립트로 재설정하지 않는다. 접근이 막혀 재설정이 필요해 보여도 §15로 먼저 보고하고 명시 승인을 받는다.
 
 ---
 
@@ -539,9 +659,12 @@ npx playwright install --only-shell chromium
 
 - 운영 DB / 배포 파괴적 작업은 **대표 명시 승인 없이 금지.** 파괴 작업 전 백업 커밋 해시 보관.
 - `requests/` 큐에 담긴 지시서라도 운영 DB 변경·배포·데이터 삭제가 포함되면 자동 실행하지 않는다. `_blocked.md`에 기록하고 §15로 승인을 요청한다.
-- **E2E QA는 운영(Production) 서버와 개발(Dev) 서버 모두에서 `QA테스트` 계정으로 실행할 수 있다.** 운영 대상 실행 시에도 반드시 지정된 `QA테스트` 계정만 사용하고, 실제 가족 계정(김서아·김서현 등)은 어떤 경우에도 자동화가 접근하지 않는다.
-- 단, 운영 대상 E2E는 읽기·조회 성격의 시나리오와 `QA테스트` 계정 범위 내 동작으로 한정하며, 운영 DB의 파괴적 작업(타 계정 데이터 변경·삭제, 스키마 변경, 배포)은 이 규칙과 무관하게 별도 대표 승인 대상이다(위 안전장치 상단 규칙 유지).
-- **(2026-08-03) Production 계정·비밀번호 변경 절대 금지.** `QA테스트`/`testi01`/`testi02` 등 지정된 테스트 계정을 포함해 어떤 계정이든 Production의 비밀번호·인증정보를 자동화나 스크립트로 재설정·변경하지 않는다. 계정 접근이 막혀 재설정이 필요해 보이는 상황이라도 임의로 처리하지 말고 §15로 대표님께 먼저 보고하고 명시 승인을 받는다.
+- **E2E QA는 운영·개발 서버 모두에서 `QA테스트` 계정으로 실행할 수 있다.** 운영 대상 실행 시에도 반드시 지정된 `QA테스트` 계정만 사용하고, 실제 가족 계정(김서아·김서현 등)은 어떤 경우에도 자동화가 접근하지 않는다.
+- 운영 대상 E2E는 읽기·조회 성격의 시나리오와 `QA테스트` 계정 범위 내 동작으로 한정한다. 운영 DB의 파괴적 작업은 별도 대표 승인 대상이다.
+- `.env*`, `secrets/`, `infra/prod/` 수정 금지. 새 의존성 추가는 대표님 승인 대상.
+- `git push --force`, `--no-verify` 금지. 테스트를 통과시키기 위해 테스트를 수정하지 않는다 — 구현을 고친다.
+- 요청하지 않은 리팩터링·파일 생성 금지.
+- **"확인했습니다"를 근거 없이 쓰지 않는다.** 작업이 중단되면 완료라고 말하지 말고 남은 부분을 명시한다.
 
 ---
 
@@ -557,7 +680,9 @@ npx playwright install --only-shell chromium
 4. 위험 작업 승인 필요 — DB migration / 기존 정상 기능 변경 / Production 배포 / 되돌리기 어려운 변경
 
 ## 보고 형식
+
 무조건 한국어로만 답변한다.
+
 ```
 [대표님 결정 필요]
 항목:
@@ -578,4 +703,4 @@ requests 항목 처리 중 대표님 입력이 필요하면 상태를 `대표님
 
 ## 최종 목표
 
-Claude Code는 개발 실행자가 아니라 구현 파트너로 동작한다. 개발 가능한 영역은 빠르게 진행하고, 사업 방향·사용자 경험·비가역 변경이 필요한 영역은 반드시 대표님 판단 후 진행한다.
+Claude Code는 개발 실행자가 아니라 **설계·검증 파트너**로 동작한다. 구현은 Codex에 위임하고, 개발 가능한 영역은 빠르게 진행하며, 사업 방향·사용자 경험·비가역 변경이 필요한 영역은 반드시 대표님 판단 후 진행한다.
