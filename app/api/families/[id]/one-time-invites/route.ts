@@ -6,6 +6,7 @@ import {
   deriveInviteCredentials,
   inviteUrl,
 } from "@/lib/familyInvites/oneTimeInvite";
+import { requireActiveAccount } from "@/lib/auth/requireActiveAccount";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,8 @@ async function requireOwner(familyId: string) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  const activeCheck = await requireActiveAccount(user.id);
+  if (activeCheck) return { error: activeCheck };
   const service = createServiceClient();
   const { data: member } = await service
     .from("family_members")
@@ -72,7 +75,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       created_at: row.created_at,
       expires_at: row.expires_at,
       invite_url: inviteUrl(origin, credentials.token),
-      invite_code: credentials.code,
     };
   });
   return NextResponse.json({ invites });
@@ -156,7 +158,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     invite: {
       ...invite,
       invite_url: inviteUrl(origin, credential.token),
-      invite_code: credential.code,
     },
   }, { status: 201 });
 }

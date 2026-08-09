@@ -23,10 +23,7 @@ export function familyInviteRequestKey(request: Request, action: string): string
 }
 
 function signingSecret(): string {
-  const value =
-    process.env.FAMILY_INVITE_SIGNING_SECRET ||
-    process.env.CHILD_APPROVAL_PASSWORD_ENC_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const value = process.env.FAMILY_INVITE_SIGNING_SECRET;
   if (!value) throw new Error("Family invite signing secret is not configured");
   return value;
 }

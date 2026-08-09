@@ -76,10 +76,11 @@ test("전화번호 없이 보호자 정보 2/4에서 가족 만들기 3/4로 진
     await expect(page.getByText("보호자 기본정보", { exact: true })).toBeVisible();
     await expect(page.locator('input[type="tel"]')).toHaveCount(0);
     await expect(page.getByPlaceholder(/휴대전화|전화번호/)).toHaveCount(0);
+    await expect(page.getByText(/법정대리인이거나 적법한 동의 권한/)).toHaveCount(0);
+    await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
 
     await page.getByPlaceholder("보호자 이름").fill(original.name || "QA 보호자");
     await page.locator("select").selectOption(original.relationship_to_child || "legal_guardian");
-    await page.locator('input[type="checkbox"]').check();
 
     const responsePromise = page.waitForResponse((response) =>
       response.url().endsWith("/api/signup/profile") && response.request().method() === "POST"
@@ -91,9 +92,9 @@ test("전화번호 없이 보호자 정보 2/4에서 가족 만들기 3/4로 진
     expect(body).toMatchObject({
       name: original.name || "QA 보호자",
       relationship: original.relationship_to_child || "legal_guardian",
-      legalGuardianConfirmed: true,
     });
     expect(body).not.toHaveProperty("phone");
+    expect(body).not.toHaveProperty("legalGuardianConfirmed");
 
     await expect(page.getByText("3 / 4 가족 만들기", { exact: true })).toBeVisible();
     await expect(page.getByText("가족 만들기", { exact: true })).toBeVisible();

@@ -31,7 +31,7 @@ export async function resolveOneTimeInvite(
     .maybeSingle();
   if (error || !invite) return { state: "invalid" };
 
-  if (invite.status === "approved") {
+  if (invite.status === "consumed" || (invite.status === "approved" && invite.consumed_by_user_id)) {
     return {
       state: "consumed",
       inviteId: invite.id,
@@ -40,7 +40,7 @@ export async function resolveOneTimeInvite(
       credentialHash: hash,
     };
   }
-  if (invite.status === "cancelled" || invite.revoked_at) {
+  if (invite.status === "revoked" || invite.status === "cancelled" || invite.revoked_at) {
     return { state: "revoked", inviteId: invite.id, credentialHash: hash };
   }
 

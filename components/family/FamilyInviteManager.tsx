@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 
-type Invite = { id: string; invite_url: string; invite_code: string; created_at: string; expires_at: string };
+type Invite = { id: string; invite_url: string; created_at: string; expires_at: string };
 
 async function copyText(value: string) {
   if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
@@ -19,7 +19,7 @@ export function FamilyInviteManager({ familyId }: { familyId: string }) {
   const [invite, setInvite] = useState<Invite | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<"link" | "code" | null>(null);
+  const [copied, setCopied] = useState<"link" | null>(null);
   const [showQr, setShowQr] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -88,10 +88,6 @@ export function FamilyInviteManager({ familyId }: { familyId: string }) {
             <button type="button" onClick={() => setShowQr((value) => !value)} className="min-h-10 rounded-xl bg-white border border-gray-200 text-xs font-bold">QR 코드</button>
             <button type="button" onClick={revokeInvite} className="min-h-10 rounded-xl bg-white border border-red-100 text-red-600 text-xs font-bold">초대 취소</button>
           </div>
-          <button type="button" onClick={async () => { await copyText(invite.invite_code); setCopied("code"); }} className="rounded-xl bg-white border border-gray-100 p-3 text-left">
-            <span className="block text-[9px] text-gray-400">초대 코드 · 눌러서 복사</span>
-            <span className="block mt-1 font-black tracking-[0.18em] text-gray-900">{copied === "code" ? "복사됐어요" : invite.invite_code}</span>
-          </button>
           {showQr && <div className="bg-white rounded-xl p-3 flex justify-center"><canvas ref={canvasRef} aria-label="가족 초대 QR 코드" /></div>}
         </div>
       )}

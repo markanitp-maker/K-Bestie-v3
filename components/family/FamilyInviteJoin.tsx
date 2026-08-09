@@ -8,15 +8,13 @@ type InviteState = "loading" | "pending" | "consumed" | "revoked" | "expired" | 
 
 export function FamilyInviteJoin({ initialToken }: { initialToken?: string }) {
   const [token] = useState(initialToken || "");
-  const [code, setCode] = useState("");
-  const [submittedCode, setSubmittedCode] = useState("");
   const [state, setState] = useState<InviteState>(initialToken ? "loading" : "invalid");
   const [familyName, setFamilyName] = useState("");
   const [inviterName, setInviterName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loadingProvider, setLoadingProvider] = useState<"google" | "kakao" | "session" | null>(null);
 
-  const credential = token ? { token } : submittedCode ? { code: submittedCode } : null;
+  const credential = token ? { token } : null;
 
   useEffect(() => {
     if (!credential) return;
@@ -45,7 +43,7 @@ export function FamilyInviteJoin({ initialToken }: { initialToken?: string }) {
     return () => { cancelled = true; };
     // credential values are stable strings; object identity must not retrigger resolution.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, submittedCode]);
+  }, [token]);
 
   async function saveContext(): Promise<void> {
     if (!credential) throw new Error("초대 정보가 없습니다.");
@@ -101,22 +99,6 @@ export function FamilyInviteJoin({ initialToken }: { initialToken?: string }) {
           <h1 className="text-xl font-black text-gray-900 mt-2">가족에 초대받았어요</h1>
         </div>
 
-        {!initialToken && !submittedCode && (
-          <form onSubmit={(event) => { event.preventDefault(); setSubmittedCode(code.trim()); }} className="flex flex-col gap-3">
-            <p className="text-sm text-gray-600 text-center">가족에게 받은 8자리 초대 코드를 입력해 주세요.</p>
-            <input
-              value={code}
-              onChange={(event) => setCode(event.target.value.toUpperCase())}
-              placeholder="K7P4-29DX"
-              maxLength={9}
-              className="w-full rounded-xl border border-gray-200 px-4 py-3 text-center font-bold tracking-widest outline-none"
-            />
-            <button type="submit" disabled={!code.trim()} className="min-h-12 rounded-xl bg-[var(--color-k-navy)] text-white font-bold disabled:opacity-40">
-              초대 확인
-            </button>
-          </form>
-        )}
-
         {state === "loading" && <p className="py-8 text-center text-sm text-gray-500">초대 링크를 확인하고 있어요...</p>}
 
         {state === "pending" && (
@@ -149,7 +131,7 @@ export function FamilyInviteJoin({ initialToken }: { initialToken?: string }) {
 
         {state === "expired" && <StateMessage title="이 초대 링크는 만료되었습니다" body="가족 오너에게 새로운 초대를 요청해 주세요." />}
         {state === "revoked" && <StateMessage title="취소된 초대 링크입니다" body="가족 오너에게 새로운 초대를 요청해 주세요." />}
-        {state === "invalid" && (initialToken || submittedCode) && <StateMessage title="유효하지 않은 초대입니다" body="링크나 초대 코드를 다시 확인해 주세요." />}
+        {state === "invalid" && <StateMessage title={initialToken ? "유효하지 않은 초대 링크입니다" : "초대 링크를 열어 주세요"} body={initialToken ? "가족 오너에게 새로운 초대 링크를 요청해 주세요." : "가족 오너가 공유한 1회용 초대 링크로만 참여할 수 있습니다."} />}
         {error && <p role="alert" className="text-sm text-red-600 text-center">{error}</p>}
         <Link href="/login" className="text-center text-xs font-semibold text-gray-500 underline underline-offset-4">로그인 화면으로</Link>
       </section>

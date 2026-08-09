@@ -234,12 +234,6 @@ export default function ParentSettingsPage() {
     }
   }, [editChild]);
 
-  // 가입 신청 목록 및 로딩 상태
-  const [joinRequests, setJoinRequests] = useState<any[]>([]);
-  const [loadingRequests, setLoadingRequests] = useState(true);
-  const [sentInvites, setSentInvites] = useState<any[]>([]);
-  const [loadingSentInvites, setLoadingSentInvites] = useState(true);
-
   // 닉네임 수정 상태
   const [nicknameInput, setNicknameInput] = useState("");
   const [savingNickname, setSavingNickname] = useState(false);
@@ -396,38 +390,6 @@ export default function ParentSettingsPage() {
     }
   };
 
-  const loadJoinRequests = async () => {
-    if (!store.activeFamilyId || !isOwner) {
-      setLoadingRequests(false);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/families/${store.activeFamilyId}/join-requests?status=pending`);
-      if (res.ok) {
-        const data = await res.json();
-        setJoinRequests(data.requests ?? []);
-      }
-    } catch {} finally {
-      setLoadingRequests(false);
-    }
-  };
-
-  const loadSentInvites = async () => {
-    if (!store.activeFamilyId || !isOwner) {
-      setLoadingSentInvites(false);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/families/${store.activeFamilyId}/sent-invites?status=pending`);
-      if (res.ok) {
-        const data = await res.json();
-        setSentInvites(data.invites ?? []);
-      }
-    } catch {} finally {
-      setLoadingSentInvites(false);
-    }
-  };
-
   const loadApprovalRequests = async () => {
     if (!store.activeFamilyId) {
       setApprovalRequests([]);
@@ -446,16 +408,6 @@ export default function ParentSettingsPage() {
     loadFamilyMembers();
     loadApprovalRequests();
   }, [store.activeFamilyId]);
-
-  useEffect(() => {
-    if (store.activeFamilyId && isOwner) {
-      loadJoinRequests();
-      loadSentInvites();
-    } else {
-      setLoadingRequests(false);
-      setLoadingSentInvites(false);
-    }
-  }, [store.activeFamilyId, isOwner]);
 
   const validateChildProfile = () => {
     const errors: { familyName?: string; givenName?: string; grade?: string; interests?: string } = {};
@@ -738,14 +690,6 @@ export default function ParentSettingsPage() {
     } finally {
       setAddLoading(false);
     }
-  };
-
-  const cancelLegacyInvite = async (inviteId: string) => {
-    if (!store.activeFamilyId || !window.confirm("기존 이메일 초대를 취소할까요?")) return;
-    const response = await fetch(`/api/families/${store.activeFamilyId}/sent-invites/${inviteId}/cancel`, { method: "POST" });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) setAddError(data.error || "기존 초대를 취소하지 못했습니다.");
-    else await loadSentInvites();
   };
 
   const handleSaveNickname = async () => {
@@ -1344,7 +1288,7 @@ export default function ParentSettingsPage() {
                 </div>
 
                 {/* [가족 구성원 보호자 리스트 및 초대 섹션] */}
-                {(additionalGuardianCount >= 1 || sentInvites.length > 0 || isOwner) && (
+                {(additionalGuardianCount >= 1 || isOwner) && (
                   <div className="flex flex-col gap-2 p-3 bg-gray-50/50 rounded-xl border border-gray-150">
                     <p className="text-[10px] font-bold text-gray-500">가족 구성원 보호자</p>
                     
@@ -1362,30 +1306,14 @@ export default function ParentSettingsPage() {
                       </div>
                     )}
 
-                    {/* 2. 등록된 배우자가 없고, 대기 중인 초대가 있는 경우 대기 UI 표시 */}
-                    {additionalGuardianCount === 0 && sentInvites.length > 0 && (
-                      <div className="flex flex-col gap-1.5">
-                        {sentInvites.map((invite) => (
-                          <div key={invite.id} className="flex justify-between items-center bg-white border border-gray-100 rounded-xl p-2.5">
-                            <div>
-                              <p className="text-xs font-bold text-gray-800">기존 방식 초대 · 재발급 필요</p>
-                              <p className="text-[9px] text-gray-400">{invite.target_email}</p>
-                              <p className="text-[9px] text-gray-400">초대 일시: {invite.created_at ? new Date(invite.created_at).toLocaleDateString() : ""}</p>
-                            </div>
-                            <button type="button" onClick={() => cancelLegacyInvite(invite.id)} className="text-[9px] bg-red-50 text-red-600 font-bold px-2 py-2 rounded-lg text-center shrink-0">취소</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* 3. 등록된 배우자도 없고 대기 중인 초대도 없을 때, 오너이면 안내 문구 표시 */}
-                    {additionalGuardianCount === 0 && sentInvites.length === 0 && isOwner && (
+                    {/* 기존 이메일 초대는 보존만 하고 신규 UI에서는 1회용 링크만 사용한다. */}
+                    {additionalGuardianCount === 0 && isOwner && (
                       <p className="text-[11px] text-gray-500 py-1">
                         아직 연결된 다른 보호자가 없습니다. 보호자를 초대해보세요!
                       </p>
                     )}
 
-                    {/* 4. 이메일 매칭 없는 1회용 링크 초대 */}
+                    {/* 이메일 매칭 없는 1회용 링크 초대 */}
                     {isOwner && familyMembers.filter(m => m.role !== "child").length < 2 && (
                       <FamilyInviteManager familyId={store.activeFamilyId!} />
                     )}

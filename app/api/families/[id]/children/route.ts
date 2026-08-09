@@ -44,7 +44,8 @@ export async function GET(
 }
 
 // POST /api/families/[id]/children — 아이 아이디+비밀번호 계정 발급
-// Body: { username, password, name, grade, interests[], guardian_consent: true }
+// Body: { username, password, name, grade, guardian_consent: true }.
+// interests는 기존 설정 화면과 레거시 호출의 선택 입력으로만 호환한다.
 // Returns: { child, member: { id, username, must_change_password: true } }
 export async function POST(
   req: NextRequest,
@@ -62,7 +63,7 @@ export async function POST(
     givenName?: string;
     gender: string;
     grade: string;
-    interests: string[];
+    interests?: string[];
     guardian_consent: boolean;
   };
   try {
@@ -71,7 +72,8 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { username, password, grade, interests, guardian_consent } = body;
+  const { username, password, grade, guardian_consent } = body;
+  const interests = Array.isArray(body.interests) ? body.interests : [];
   const familyName = body.familyName;
   const givenName = body.givenName;
   const gender = typeof body.gender === "string" ? body.gender.trim() : "";
@@ -79,9 +81,8 @@ export async function POST(
   if (!familyName?.trim() || !givenName?.trim() || !["male", "female"].includes(gender)) {
     return NextResponse.json({ error: "성, 이름, 성별을 모두 입력해주세요" }, { status: 400 });
   }
-  if (!username?.trim() || !password || !grade ||
-      !Array.isArray(interests) || interests.length === 0) {
-    return NextResponse.json({ error: "username, password, grade, interests 필수" }, { status: 400 });
+  if (!username?.trim() || !password || !grade) {
+    return NextResponse.json({ error: "username, password, grade 필수" }, { status: 400 });
   }
   if (!USERNAME_REGEX.test(username)) {
     return NextResponse.json(

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { requireActiveAccount } from "@/lib/auth/requireActiveAccount";
 
 export const runtime = "nodejs";
 
@@ -8,6 +9,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const activeCheck = await requireActiveAccount(user.id);
+  if (activeCheck) return activeCheck;
   const service = createServiceClient();
   const { data: member } = await service
     .from("family_members")
@@ -22,7 +25,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const { data, error } = await service
     .from("family_join_requests")
-    .update({ status: "cancelled", revoked_at: new Date().toISOString(), reviewed_by: user.id, reviewed_at: new Date().toISOString() })
+    .update({ status: "revoked", revoked_at: new Date().toISOString(), reviewed_by: user.id, reviewed_at: new Date().toISOString() })
     .eq("id", inviteId)
     .eq("family_id", familyId)
     .eq("invite_kind", "one_time_link")

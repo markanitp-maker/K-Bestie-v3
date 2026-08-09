@@ -51,7 +51,7 @@ export function FamilyInviteContinue({ oauthCancelled = false }: { oauthCancelle
         {!error ? <p className="mt-4 text-sm text-gray-600">{message}</p> : (
           <>
             <p role="alert" className="mt-4 text-sm text-red-600">{error}</p>
-            <Link href="/family/invite" className="inline-flex mt-5 min-h-12 px-5 items-center justify-center rounded-xl bg-[var(--color-k-navy)] text-white font-bold">초대 코드 다시 입력</Link>
+            <Link href="/login" className="inline-flex mt-5 min-h-12 px-5 items-center justify-center rounded-xl bg-[var(--color-k-navy)] text-white font-bold">로그인 화면으로</Link>
           </>
         )}
         {oauthCancelled && (
