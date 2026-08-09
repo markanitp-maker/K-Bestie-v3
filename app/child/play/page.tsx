@@ -467,7 +467,7 @@ export default function ChildPlayPage() {
       <div className="h-full flex flex-col overflow-hidden relative" style={{ background: "var(--background-page, #FFF9F2)" }}>
 
         {/* 공통 헤더 */}
-        <AppTopHeader title="케이와 놀이" />
+        <AppTopHeader title="게임 참여" />
 
         {/* 메인 스크롤 영역 (046: 하단 CTA를 자연스러운 흐름 안으로 이동, 큰 고정 pb 제거) */}
         <div className="flex-1 overflow-y-auto w-full max-w-[430px] mx-auto px-3 relative z-10">

@@ -315,7 +315,7 @@ export default function ChildHomePage() {
             className="relative flex h-[202px] shrink-0 items-end justify-center"
           >
             {/* Bright pedestal keeps the mascot grounded, as in the target composition. */}
-            <div className="absolute bottom-1 h-[30px] w-[205px] rounded-[50%] border border-white/80 bg-gradient-to-b from-white to-[#DCE8F1] shadow-[0_9px_20px_rgba(48,91,124,0.18)]" />
+            <div className="absolute bottom-1 left-1/2 h-[30px] w-[205px] -translate-x-1/2 rounded-[50%] border border-white/80 bg-gradient-to-b from-white to-[#DCE8F1] shadow-[0_9px_20px_rgba(48,91,124,0.18)]" />
             <Image
               src="/Images/mascot/mascot-standing.png"
               alt="케이 마스코트"
@@ -338,7 +338,7 @@ export default function ChildHomePage() {
           </div>
 
           {/* Status Bubble */}
-          <div data-testid="mission-status-bubble" className="mb-3 mt-3 flex justify-center">
+          <div data-testid="mission-status-bubble" className="mb-5 mt-3 flex justify-center">
             <div className="relative inline-block max-w-[88%] rounded-full border border-black/5 bg-white px-5 py-2.5 text-center text-[15px] font-medium shadow-[0_4px_10px_rgba(42,66,86,0.15)]">
               {missionBubble}
               {/* Triangle pointer */}
