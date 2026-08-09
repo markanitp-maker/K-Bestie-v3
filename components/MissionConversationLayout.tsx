@@ -225,35 +225,41 @@ export function MissionConversationLayout({
             </div>
           </div>
 
-          {/* Spacer above conversation */}
-          <div className="h-[clamp(8px,1.5dvh,12px)] w-full shrink-0" />
+          {/* Keep the conversation close to the progress display without crowding it. */}
+          <div className="h-[clamp(12px,2dvh,20px)] w-full shrink-0" />
         </div>
 
-        {/* Grid Row 2: Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-        <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(14px,4vw,22px)] pb-[clamp(3px,0.7dvh,7px)] ${isTextMode ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
+        {/* Grid Row 2: bottom-anchored conversation stack. The current bubble is pinned to the
+            bottom (fixed gap to the mascot below via pb-*), so older turns are the ones that
+            get visually clipped off the top edge when the stack is taller than the available
+            height — matching the spec's "전전 발화부터 잘림" priority without needing exact
+            flex-shrink ratios (codex-rv 재검증 지적: justify-start였을 때 짧은 히스토리에서
+            간격이 불안정했다). */}
+        <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(14px,4vw,22px)] pb-[clamp(56px,6.8dvh,62px)] ${isTextMode ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
           {/* Top fade out for older text when cut off */}
           <div className="absolute top-0 left-0 w-full h-[clamp(18px,3dvh,24px)] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
 
-          {/* History Container (clips overflow) */}
-          {(olderKText || prevKText) && (
-            <div className="mt-auto flex flex-col justify-end items-center min-h-0 overflow-hidden w-full shrink mb-[clamp(8px,1.1dvh,11px)]">
-              {olderKText && (
-                <div className="relative mb-[clamp(7px,1dvh,9px)] text-[#798896]/65 text-[clamp(13px,3.5vw,15px)] leading-[1.42] text-center max-w-[76%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
-                  <span className="absolute -left-[18px] top-1/2 -translate-y-1/2 text-[11px] text-white/85" aria-hidden="true">✦</span>
-                  {olderKText}
-                </div>
-              )}
-              {prevKText && (
-                <div className="relative bg-white/86 backdrop-blur-[2px] px-[clamp(16px,4.5vw,19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,3.8vw,16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
-                  <span className="absolute -left-[27px] top-1/2 -translate-y-1/2 text-[21px] leading-none text-[#F6B33F]/65 -rotate-12" aria-hidden="true">☆</span>
-                  {prevKText}
-                </div>
-              )}
-            </div>
-          )}
+          <div className="flex flex-col items-center w-full min-h-0 max-h-full">
+            {/* History Container: clip the oldest turn before reducing the current bubble. */}
+            {(olderKText || prevKText) && (
+              <div className="flex flex-col justify-start items-center min-h-0 overflow-hidden w-full shrink mb-[clamp(8px,1.1dvh,11px)]">
+                {olderKText && (
+                  <div className="relative min-h-0 mb-[clamp(7px,1dvh,9px)] text-[#798896]/65 text-[clamp(13px,3.5vw,15px)] leading-[1.42] text-center max-w-[76%] font-medium shrink-[2] line-clamp-1" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                    <span className="absolute -left-[18px] top-1/2 -translate-y-1/2 text-[11px] text-white/85" aria-hidden="true">✦</span>
+                    {olderKText}
+                  </div>
+                )}
+                {prevKText && (
+                  <div className="relative min-h-0 bg-white/86 backdrop-blur-[2px] px-[clamp(16px,4.5vw,19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,3.8vw,16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left shrink line-clamp-2" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                    <span className="absolute -left-[27px] top-1/2 -translate-y-1/2 text-[21px] leading-none text-[#F6B33F]/65 -rotate-12" aria-hidden="true">☆</span>
+                    {prevKText}
+                  </div>
+                )}
+              </div>
+            )}
 
-          {/* Current Bubble (never clips) */}
-          <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 flex flex-col items-center w-full min-w-0 max-w-full shrink-0`}>
+            {/* Current Bubble (never yields before the older history) */}
+            <div className="relative z-20 flex flex-col items-center w-full min-w-0 max-w-full shrink-0">
             {entryStatus === "ready_to_start" || entryStatus === "ready_to_resume" ? (
               <button
                 onClick={entryStatus === "ready_to_start" ? onStartMission : onResumeMission}
@@ -284,6 +290,7 @@ export function MissionConversationLayout({
                 <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
               </div>
             )}
+            </div>
           </div>
         </div>
 
@@ -355,7 +362,7 @@ export function MissionConversationLayout({
         )}
 
         {/* Grid Row 4: Bottom Area */}
-        <div className="relative z-20 flex flex-col shrink-0 w-full min-w-0 max-w-full">
+        <div className="relative z-20 row-start-4 flex flex-col shrink-0 w-full min-w-0 max-w-full">
           {/* Auto/Manual Mode Toggles */}
           {!isTextMode && !isKeyboardOpen && (
           <div className="flex justify-center -mt-[clamp(18px,2.4dvh,21px)] h-[clamp(38px,4.8dvh,42px)] shrink-0 relative z-40">
