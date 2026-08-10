@@ -18,14 +18,6 @@ export function getStateColor(state: string) {
   return "#9CA3AF"; // Neutral (평소와 비슷했어요 or 데이터가 아직 적어요)
 }
 
-function getMoodEmoji(score: number | null | undefined) {
-  if (typeof score !== "number" || !Number.isFinite(score)) return "💬";
-  if (score >= 8) return "😊";
-  if (score >= 6) return "🙂";
-  if (score >= 4) return "😐";
-  return "😟";
-}
-
 export function WeeklyReportCard({
   report,
   isFeatured = false,
@@ -37,8 +29,6 @@ export function WeeklyReportCard({
   isLastWeek?: boolean;
   onClick?: (e: React.MouseEvent, id: string) => void;
 }) {
-  const dotColor = getStateColor(report.summary_state);
-
   return (
     <button
       onClick={(e) => onClick?.(e, report.id)}
@@ -58,23 +48,9 @@ export function WeeklyReportCard({
           )}
         </div>
         
-        <section className="mb-5 rounded-[16px] bg-[var(--color-k-navy-tint)] p-4" aria-label="이번 주 전반적 감정">
-          <p className="mb-2 text-sm font-extrabold text-[var(--color-k-text-secondary)]">이번 주 기분</p>
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="shrink-0 text-3xl" aria-hidden="true">{getMoodEmoji(report.mood_average)}</span>
-            <span className="shrink-0 h-2.5 w-2.5 rounded-full" style={{ background: dotColor }} aria-hidden="true" />
-            <p className="min-w-0 flex-1 break-words text-lg font-extrabold leading-7 text-[var(--color-k-navy)]">
-              {report.summary_state}
-            </p>
-            {Number.isFinite(report.mood_average) && (
-              <span className="shrink-0 text-base font-extrabold text-[var(--color-k-text-secondary)]">{report.mood_average}점</span>
-            )}
-          </div>
-        </section>
-
         <section className="mb-5" aria-label="이번 주 핵심 요약">
           <h3 className="mb-2 text-lg font-extrabold text-[var(--color-k-navy)]">이번 주 핵심 요약</h3>
-          <p className="whitespace-pre-line break-words text-lg font-semibold leading-8 text-gray-800">
+          <p className="line-clamp-2 whitespace-pre-line break-words text-lg font-semibold leading-8 text-gray-800">
             {report.summary_text || "주간 요약이 없습니다."}
           </p>
         </section>
@@ -102,7 +78,7 @@ export function WeeklyReportCard({
           </div>
         </section>
       )}
-      <span className="mt-5 flex min-h-12 items-center justify-end text-base font-extrabold text-[var(--color-k-navy)]">자세히 보기 &gt;</span>
+      <span className="mt-5 flex min-h-12 items-center justify-end text-base font-extrabold text-[var(--color-k-mascot-orange)]">자세히 보기 &gt;</span>
     </button>
   );
 }
