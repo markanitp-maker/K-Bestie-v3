@@ -5,7 +5,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { useStore } from "@/hooks/useStore";
 import { setStore } from "@/lib/store";
-import { useNotificationInbox } from "@/lib/notifications/useNotificationInbox";
 import { ChildStartGuideModal } from "@/components/parent/ChildStartGuide";
 
 interface ParentHeaderProps {
@@ -19,7 +18,6 @@ interface ParentHeaderProps {
 export function ParentHeader({ onStartChild }: ParentHeaderProps) {
   const store = useStore();
   const { children, activeChildId } = store;
-  const { unreadCount } = useNotificationInbox({ loadItems: false });
   const [showPicker, setShowPicker] = useState(false);
   const [showChildStartGuide, setShowChildStartGuide] = useState(false);
 
@@ -109,13 +107,10 @@ export function ParentHeader({ onStartChild }: ParentHeaderProps) {
           )}
           <Link
             href="/parent/notifications"
-            className="relative flex h-11 w-11 items-center justify-center text-lg cursor-pointer"
-            aria-label={unreadCount > 0 ? `알림 ${unreadCount}개` : "알림 없음"}
+            className="flex h-11 w-11 items-center justify-center text-lg cursor-pointer"
+            aria-label="알림"
           >
-            <span className="text-[20px]" style={{ color: "var(--color-k-navy, #10315B)" }}>🔔</span>
-            {unreadCount > 0 && (
-              <span className="absolute right-0 top-0 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-[#E25B12] px-1 text-[10px] font-bold text-white">{unreadCount > 99 ? "99+" : unreadCount}</span>
-            )}
+            🔔
           </Link>
         </div>
       </div>
