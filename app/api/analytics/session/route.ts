@@ -21,6 +21,25 @@ const ACTIONS = new Set<AppSessionAction>([
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ROUTE_PATTERN = /^\/[A-Za-z0-9\-._~!$&'()*+,;=:@/%]*$/;
 const ALLOWED_BODY_KEYS = new Set(["session_id", "action", "route"]);
+// codex-rv claude-review 지적(§49): 초대 토큰(64자 hex 등)처럼 opaque하고 긴 경로
+// 세그먼트가 그대로 저장되면 Secret 저장 금지 규칙 위반이다. UUID나 20자 이상의
+// hex/URL-safe base64 문자열로만 이뤄진 세그먼트는 위치 기반 플레이스홀더로 치환한다.
+const OPAQUE_SEGMENT_PATTERN = /^[0-9a-zA-Z_-]{20,}$/;
+const HEX_ONLY_PATTERN = /^[0-9a-f]+$/i;
+
+function sanitizeRoute(route: string): string {
+  return route
+    .split("/")
+    .map((segment) => {
+      if (!segment) return segment;
+      if (UUID_PATTERN.test(segment)) return ":id";
+      if (OPAQUE_SEGMENT_PATTERN.test(segment) && (HEX_ONLY_PATTERN.test(segment) || segment.length >= 32)) {
+        return ":token";
+      }
+      return segment;
+    })
+    .join("/");
+}
 
 interface SessionRequestBody {
   session_id: string;
@@ -88,6 +107,7 @@ export async function POST(request: Request) {
   if (!body) {
     return NextResponse.json({ error: "잘못된 세션 계측 요청입니다." }, { status: 400 });
   }
+  const sanitizedRoute = sanitizeRoute(body.route);
 
   try {
     const supabase = await createClient();
@@ -98,9 +118,9 @@ export async function POST(request: Request) {
 
     const actor = await resolveAppSessionActor(user.id);
     if (body.action === "start") {
-      await startAppSession(actor, body.session_id, body.route);
+      await startAppSession(actor, body.session_id, sanitizedRoute);
     } else {
-      await updateAppSession(actor, body.session_id, body.action, body.route);
+      await updateAppSession(actor, body.session_id, body.action, sanitizedRoute);
     }
 
     return NextResponse.json({ ok: true });

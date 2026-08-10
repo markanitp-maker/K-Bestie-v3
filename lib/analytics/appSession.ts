@@ -43,12 +43,13 @@ export async function resolveAppSessionActor(userId: string): Promise<AppSession
   }
 
   if (member.role === "child") {
+    // child_profiles에는 deleted_at(소프트 삭제) 컬럼이 없다(하드 삭제만 존재) —
+    // lib/admin/aggregateExecutionStatus.ts:59 참고. 매칭 행이 없으면 삭제된 아이로 간주.
     const { data: child, error: childError } = await service
       .from("child_profiles")
       .select("id")
       .eq("member_id", member.id)
       .eq("family_id", member.family_id)
-      .is("deleted_at", null)
       .maybeSingle();
 
     if (childError) {
@@ -151,7 +152,7 @@ export async function updateAppSession(
   if (action === "heartbeat") return;
 
   await logBehaviorEvent({
-    eventName: `app_${action}`,
+    eventName: action === "end" ? "app_session_end" : `app_${action}`,
     actorType: actor.actorType,
     actorId: actor.actorId,
     familyId: actor.familyId,

@@ -41,6 +41,12 @@ export function useAppSessionTracking(): void {
             route: routeRef.current,
           }),
         });
+        // 401(로그아웃)·404(세션 만료)는 재시도해도 회복되지 않는다 — 세션 자체를
+        // 종료 처리해 무한 heartbeat 반복을 막는다(codex-rv claude-review 지적).
+        if (response.status === 401 || response.status === 404) {
+          active = false;
+          stopHeartbeat();
+        }
         return response.ok;
       } catch {
         return false;
@@ -79,13 +85,8 @@ export function useAppSessionTracking(): void {
     };
 
     const start = async () => {
+      if (active || disposed) return;
       try {
-        // 익명 랜딩 방문자는 analytics API 호출 자체를 하지 않는다. 이 로컬 세션
-        // 확인은 네트워크 절약용 선행 가드일 뿐이고, actor/멤버십은 API가 다시 검증한다.
-        const supabase = createClient();
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error || !session?.user || disposed) return;
-
         const started = await sendAction("start");
         if (!started || disposed) return;
         active = true;
@@ -97,10 +98,32 @@ export function useAppSessionTracking(): void {
       }
     };
 
-    void start();
+    const supabase = createClient();
+
+    // codex-rv claude-review 지적: 루트 레이아웃이 리마운트되지 않는 SPA 전환(로그인
+    // 후 router.push+refresh 등)에서는 mount-once 체크만으로 방문이 누락된다.
+    // onAuthStateChange로 세션 획득 시점을 직접 감지해 그 시점에 시작한다.
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (disposed) return;
+      if (session?.user && !active) {
+        void start();
+      } else if (!session?.user && active) {
+        active = false;
+        stopHeartbeat();
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        window.removeEventListener("beforeunload", handleBeforeUnload);
+      }
+    });
+
+    // 익명 랜딩 방문자는 analytics API 호출 자체를 하지 않는다. 이 초기 확인은
+    // 네트워크 절약용 선행 가드일 뿐이고, actor/멤버십은 API가 다시 검증한다.
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user && !disposed) void start();
+    });
 
     return () => {
       disposed = true;
+      authListener.subscription.unsubscribe();
       stopHeartbeat();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("beforeunload", handleBeforeUnload);
