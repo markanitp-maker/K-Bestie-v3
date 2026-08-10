@@ -26,27 +26,26 @@ export function CurrentWeekAggregationCard({ data }: { data: CurrentAggregation 
   if (!data) return null;
 
   return (
-    <section className="bg-[var(--color-k-info-bg)] border border-[var(--color-k-sky-blue)]/30 rounded-[20px] p-5 mb-5 border-dashed shadow-sm" aria-label="이번 주 대화 집계">
-      <div className="flex justify-between items-start mb-4">
-        <h2 className="text-lg font-bold text-[var(--color-k-navy)]">
+    <section className="mb-6 rounded-[24px] border border-[var(--color-k-sky-blue)]/30 bg-[var(--color-k-info-bg)] p-5 shadow-sm sm:p-6" aria-label="이번 주 대화 집계">
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <h2 className="text-xl font-extrabold leading-7 text-[var(--color-k-navy)]">
           {formatWeekRange(data.week_start, data.week_end)}
         </h2>
-        <span className="text-xs font-bold px-2.5 py-1 rounded-full text-white" style={{ background: "var(--color-k-navy)" }}>
+        <span className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-extrabold text-white" style={{ background: "var(--color-k-navy)" }}>
           이번 주
         </span>
       </div>
       
-      <p className="text-lg font-bold text-[var(--color-k-navy)]">이번 주 대화</p>
-      <p className="mt-1 text-4xl font-bold leading-none text-[var(--color-k-navy)]">{data.currentConversationCount}<span className="ml-1 text-xl">회</span></p>
-      <div className="mt-4 flex items-center gap-1.5 text-sm font-bold text-[var(--color-k-navy)]">
-        <span aria-hidden="true">⏳</span>
-        <span>집계 중 · {data.currentDayIndex}일째</span>
+      <div className="flex items-end justify-between gap-4">
+        <p className="pb-1 text-xl font-extrabold text-[var(--color-k-navy)]">이번 주 대화</p>
+        <p className="text-[52px] font-extrabold leading-none tracking-[-0.04em] text-[var(--color-k-navy)]">{data.currentConversationCount}<span className="ml-1 text-2xl tracking-normal">회</span></p>
       </div>
+      <p className="mt-5 text-sm font-bold text-[var(--color-k-text-secondary)]">집계 {data.currentDayIndex}일째</p>
       
       {data.currentConversationCount === 0 ? (
-        <p className="mt-2 text-base text-gray-600 leading-6">아직 이번 주 대화가 없어요</p>
+        <p className="mt-2 text-base leading-7 text-gray-600">아직 이번 주 대화가 없어요</p>
       ) : (
-        <p className="mt-2 text-base text-gray-600">
+        <p className="mt-2 text-base leading-7 text-gray-600">
           {data.expectedCompletionLabel}
         </p>
       )}

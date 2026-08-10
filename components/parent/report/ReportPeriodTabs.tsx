@@ -12,8 +12,8 @@ const PERIOD_TABS: Array<{ period: ReportPeriod; label: string; href: string }> 
 ];
 
 export const ReportPeriodTabs = ({ activePeriod }: ReportPeriodTabsProps) => (
-  <nav className="w-full max-w-[var(--max-width-app)] mx-auto px-4 pt-4 pb-1" aria-label="리포트 기간">
-    <div className="grid h-14 grid-cols-2 overflow-hidden rounded-2xl border border-[var(--color-k-border)] bg-white p-1 shadow-sm">
+  <nav className="mx-auto w-full max-w-[var(--max-width-app)] px-4 pb-2 pt-4" aria-label="리포트 기간">
+    <div className="grid h-16 grid-cols-2 overflow-hidden rounded-[18px] border border-[var(--color-k-border)] bg-white p-1 shadow-sm">
       {PERIOD_TABS.map((tab) => {
         const isActive = tab.period === activePeriod;
 
@@ -22,10 +22,10 @@ export const ReportPeriodTabs = ({ activePeriod }: ReportPeriodTabsProps) => (
             key={tab.period}
             href={tab.href}
             aria-current={isActive ? "page" : undefined}
-            className={`flex items-center justify-center rounded-xl text-base font-bold ${
+            className={`flex min-w-0 items-center justify-center rounded-[14px] text-lg font-extrabold transition-colors ${
               isActive
                 ? "bg-k-navy text-white"
-                : "text-[var(--color-k-text-secondary)]"
+                : "text-[var(--color-k-navy)] active:bg-[var(--color-k-navy-tint)]"
             }`}
           >
             {tab.label}

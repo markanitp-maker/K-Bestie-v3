@@ -14,7 +14,7 @@ import { ReportHistoryCalendarSheet } from "./components/ReportHistoryCalendarSh
 interface Report {
   id: string;
   summary_line: string;
-  mood_score: number;
+  mood_score: number | null;
   emotion_hint?: string;
   business_date: string;
 }
@@ -63,6 +63,14 @@ function formatRelative(dateStr: string) {
 function getMonthHeading(dateStr: string) {
   const [y, m] = dateStr.split("-");
   return `${parseInt(m, 10)}월`;
+}
+
+function getMoodEmoji(score: number | null | undefined) {
+  if (typeof score !== "number" || !Number.isFinite(score)) return "💬";
+  if (score >= 8) return "😊";
+  if (score >= 6) return "🙂";
+  if (score >= 4) return "😐";
+  return "😟";
 }
 
 
@@ -135,10 +143,10 @@ export default function ParentReportPage() {
       return (
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
           <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col gap-3">
-            <SkeletonBox className="h-28 rounded-2xl" />
+            <SkeletonBox className="h-44 rounded-[24px]" />
             <div className="py-2" />
             {Array.from({ length: 3 }).map((_, i) => (
-              <SkeletonBox key={i} className="h-24 rounded-2xl" />
+              <SkeletonBox key={i} className="h-52 rounded-[24px]" />
             ))}
           </div>
         </div>
@@ -199,7 +207,7 @@ export default function ParentReportPage() {
       if (item.type === 'report') {
         const m = getMonthHeading(item.date);
         if (m !== lastMonth) {
-          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-lg font-bold text-[var(--color-k-navy)] mt-6 mb-3 ml-1">{m}</h3>);
+          renderedList.push(<h3 key={`month-${m}-${index}`} className="mb-3 ml-1 mt-7 text-xl font-extrabold text-[var(--color-k-navy)]">{m}</h3>);
           lastMonth = m;
         }
         
@@ -209,34 +217,37 @@ export default function ParentReportPage() {
           <button
             key={`report-${item.date}`}
             onClick={(e) => handleOpenModal(e, item.report.id)}
-            className="block w-full text-left bg-white rounded-[20px] p-5 active:scale-[0.99] transition-transform shadow-sm border border-gray-200 mb-5"
+            className="mb-6 block w-full rounded-[24px] border border-gray-200 bg-white p-5 text-left shadow-sm transition-transform active:scale-[0.99] sm:p-6"
           >
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <p className="text-xl font-bold text-[var(--color-k-navy)] sm:hidden">{formatDateShort(item.date)}</p>
-              <p className="hidden text-xl font-bold text-[var(--color-k-navy)] sm:block">{formatDateFull(item.date)}</p>
-              <span className="shrink-0 rounded-full bg-[var(--color-k-info-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--color-k-text-secondary)]">{rel}</span>
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <p className="text-2xl font-extrabold leading-8 text-[var(--color-k-navy)] sm:hidden">{formatDateShort(item.date)}</p>
+              <p className="hidden text-2xl font-extrabold leading-8 text-[var(--color-k-navy)] sm:block">{formatDateFull(item.date)}</p>
+              <span className="shrink-0 rounded-full bg-[var(--color-k-info-bg)] px-3 py-1.5 text-[13px] font-bold text-[var(--color-k-text-secondary)]">{rel}</span>
             </div>
-            <div className="mb-3 flex items-center gap-2">
-              <span className="inline-flex rounded-full bg-[var(--color-k-navy-tint)] px-3 py-1.5 text-base font-bold text-[var(--color-k-navy)]">
-                <span className="mr-2 text-[var(--color-k-sky-blue)]" aria-hidden="true">●</span>
-                {item.report.emotion_hint || "오늘의 마음"}
-              </span>
+            <div className="mb-4 flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-start gap-2.5 rounded-[16px] bg-[var(--color-k-navy-tint)] px-4 py-3">
+                <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--color-k-sky-blue)]" aria-hidden="true" />
+                <span className="shrink-0 text-2xl leading-7" aria-hidden="true">{getMoodEmoji(item.report.mood_score)}</span>
+                <span className="min-w-0 break-words text-lg font-extrabold leading-7 text-[var(--color-k-navy)]">
+                  {item.report.emotion_hint || "오늘의 마음"}
+                </span>
+              </div>
               {Number.isFinite(item.report.mood_score) && (
-                <span className="text-sm font-semibold text-gray-500">{item.report.mood_score}점</span>
+                <span className="shrink-0 text-base font-extrabold text-[var(--color-k-text-secondary)]">{item.report.mood_score}점</span>
               )}
             </div>
             {item.report.summary_line && item.report.emotion_hint !== item.report.summary_line && (
-              <p className="text-base text-gray-800 leading-7 whitespace-pre-line">
+              <p className="whitespace-pre-line break-words text-lg leading-8 text-gray-800">
                 {item.report.summary_line}
               </p>
             )}
-            <span className="mt-4 flex min-h-10 items-center justify-end text-sm font-bold text-[var(--color-k-navy)]">자세히 보기 &gt;</span>
+            <span className="mt-4 flex min-h-12 items-center justify-end text-base font-extrabold text-[var(--color-k-navy)]">자세히 보기 &gt;</span>
           </button>
         );
       } else if (item.type === 'gap') {
         const m = getMonthHeading(item.dates[0].date); // Most recent date in gap
         if (m !== lastMonth) {
-          renderedList.push(<h3 key={`month-${m}-${index}`} className="text-lg font-bold text-[var(--color-k-navy)] mt-6 mb-3 ml-1">{m}</h3>);
+          renderedList.push(<h3 key={`month-${m}-${index}`} className="mb-3 ml-1 mt-7 text-xl font-extrabold text-[var(--color-k-navy)]">{m}</h3>);
           lastMonth = m;
         }
         
@@ -270,35 +281,38 @@ export default function ParentReportPage() {
     }
 
     return (
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 pb-7">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-8">
         <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col">
           {summary && (
-            <section className="bg-white rounded-[20px] p-5 shadow-sm border border-gray-200 mb-5" aria-label="이번 주 대화 요약">
-            <div className="mb-5">
-              <h2 className="text-lg font-bold text-[var(--color-k-navy)]">이번 주 대화</h2>
-              <p className="mt-1 text-4xl font-bold leading-none text-[var(--color-k-navy)]">{conversationDayCount}<span className="ml-1 text-xl">일</span></p>
+            <section className="mb-6 rounded-[24px] border border-gray-200 bg-white p-5 shadow-sm sm:p-6" aria-label="이번 주 대화 요약">
+            <div className="mb-6 flex items-end justify-between gap-4">
+              <h2 className="pb-1 text-xl font-extrabold text-[var(--color-k-navy)]">이번 주 대화</h2>
+              <p className="text-[52px] font-extrabold leading-none tracking-[-0.04em] text-[var(--color-k-navy)]">{conversationDayCount}<span className="ml-1 text-2xl tracking-normal">일</span></p>
             </div>
-            
-            <div className="flex justify-between items-center px-1">
+
+            <div className="grid grid-cols-7 gap-1">
               {summary.dates.map((d, i) => {
                 const dateObj = new Date(d.date + "T00:00:00+09:00");
                 const dow = ["일", "월", "화", "수", "목", "금", "토"][dateObj.getDay()];
                 const isToday = i === 6;
                 
-                let dotColor = "text-gray-200";
                 let ariaLabel = "리포트 없음";
                 if (d.hasReport) {
-                  dotColor = "text-[var(--color-k-sky-blue)]"; // K-Sky Blue
                   ariaLabel = "리포트 있음";
                 } else if (d.hasSession) {
-                  dotColor = "text-[var(--color-k-mascot-orange)]"; // K-Mascot Orange
                   ariaLabel = "리포트 준비 중";
                 }
                 
                 return (
-                  <div key={d.date} className="flex flex-col items-center gap-2" aria-label={`${dow}요일, ${ariaLabel}${isToday ? ", 오늘" : ""}`}>
-                    <span className={`text-xs font-bold ${isToday ? "text-[var(--color-k-navy)]" : "text-gray-400"}`}>{dow}</span>
-                    <span className={`flex h-6 w-6 items-center justify-center rounded-full text-base ${d.hasReport || d.hasSession ? dotColor : "border-2 border-gray-200 text-transparent"}`}>{d.hasReport || d.hasSession ? "●" : "○"}</span>
+                  <div key={d.date} className="flex min-w-0 flex-col items-center gap-2.5" aria-label={`${dow}요일, ${ariaLabel}${isToday ? ", 오늘" : ""}`}>
+                    <span className={`text-sm font-extrabold ${isToday ? "text-[var(--color-k-navy)]" : "text-gray-500"}`}>{dow}</span>
+                    <span className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-base font-extrabold ${
+                      d.hasReport
+                        ? "border-[var(--color-k-sky-blue)] bg-[var(--color-k-sky-blue)] text-white"
+                        : d.hasSession
+                          ? "border-[var(--color-k-mascot-orange)] bg-[var(--color-k-mascot-orange)] text-white"
+                          : "border-gray-200 bg-white text-transparent"
+                    }`}>{d.hasReport || d.hasSession ? "✓" : "○"}</span>
                   </div>
                 );
               })}

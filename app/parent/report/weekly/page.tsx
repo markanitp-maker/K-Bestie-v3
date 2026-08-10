@@ -84,15 +84,15 @@ export default function ParentWeeklyReportPage() {
           <ReportPeriodTabs activePeriod="weekly" />
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 pb-7">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-8">
           <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col">
           {loading ? (
             <div className="flex flex-col gap-3">
-              <SkeletonBox className="h-24 rounded-[16px]" />
-              <SkeletonBox className="h-32 rounded-[16px]" />
-              <div className="grid grid-cols-2 gap-3 mt-1">
-                <SkeletonBox className="h-40 rounded-[16px]" />
-                <SkeletonBox className="h-40 rounded-[16px]" />
+              <SkeletonBox className="h-44 rounded-[24px]" />
+              <SkeletonBox className="h-64 rounded-[24px]" />
+              <div className="mt-1 grid grid-cols-1 gap-3">
+                <SkeletonBox className="h-64 rounded-[24px]" />
+                <SkeletonBox className="h-64 rounded-[24px]" />
               </div>
             </div>
           ) : (
@@ -104,7 +104,7 @@ export default function ParentWeeklyReportPage() {
                   <WeeklyReportCard report={weeklies[0]} isFeatured={true} isLastWeek={true} onClick={handleOpenModal} />
                   
                   {weeklies.length > 1 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+                    <div className="mb-6 grid grid-cols-1 gap-6">
                       {weeklies.slice(1).map(w => (
                         <WeeklyReportCard key={w.id} report={w} isFeatured={false} onClick={handleOpenModal} />
                       ))}

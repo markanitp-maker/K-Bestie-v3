@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { FileText, Home, MessageCircle, Settings } from "lucide-react";
 
 const NAV_ITEMS = [
-  { icon: "🏠", label: "홈", href: "/parent/home" },
-  { icon: "📄", label: "리포트", href: "/parent/report" },
-  { icon: "💬", label: "케이와 대화", href: "/parent/guide" },
-  { icon: "⚙️", label: "설정", href: "/parent/settings" },
+  { icon: Home, label: "홈", href: "/parent/home" },
+  { icon: FileText, label: "리포트", href: "/parent/report" },
+  { icon: MessageCircle, label: "케이와 대화", href: "/parent/guide" },
+  { icon: Settings, label: "설정", href: "/parent/settings" },
 ];
 
 export function RealParentNav({ active }: { active?: string }) {
@@ -60,8 +61,9 @@ export function RealParentNav({ active }: { active?: string }) {
   }, [pathname]);
 
   return (
-    <nav className="shrink-0 sticky bottom-0 z-20 flex min-h-[76px] items-stretch border-t bg-k-surface border-k-border pb-[env(safe-area-inset-bottom)]" aria-label="부모 주요 메뉴">
+    <nav className="sticky bottom-0 z-20 flex shrink-0 items-stretch border-t border-k-border bg-k-surface pb-[env(safe-area-inset-bottom)]" aria-label="부모 주요 메뉴">
       {NAV_ITEMS.map((item) => {
+        const Icon = item.icon;
         const isActive =
           item.label === active ||
           pathname === item.href ||
@@ -74,16 +76,14 @@ export function RealParentNav({ active }: { active?: string }) {
             key={item.label}
             href={item.href}
             aria-current={isActive ? "page" : undefined}
-            className={`flex-1 flex min-h-[72px] flex-col items-center justify-center gap-1.5 px-1 pt-2 pb-2 select-none cursor-pointer relative ${isActive ? "text-k-navy" : ""}`}
+            className={`relative flex min-h-[88px] flex-1 cursor-pointer select-none flex-col items-center justify-center gap-2 px-2 pb-2.5 pt-3 ${isActive ? "text-k-navy" : "text-[var(--color-k-text-secondary)]"}`}
           >
-            {isActive && <span className="absolute inset-x-3 top-0 h-1 rounded-b-full bg-k-navy" aria-hidden="true" />}
+            {isActive && <span className="absolute inset-x-4 top-0 h-1 rounded-b-full bg-k-navy" aria-hidden="true" />}
             {item.label === "케이와 대화" && hasNewQuestion && (
-              <span className="absolute top-1.5 right-[calc(50%-12px)] w-2 h-2 bg-k-danger rounded-full animate-pulse shadow-sm" />
+              <span className="absolute right-[calc(50%-18px)] top-2 h-2.5 w-2.5 animate-pulse rounded-full bg-k-danger shadow-sm" />
             )}
-            <span className="text-2xl leading-none" style={{ opacity: isActive ? 1 : 0.55 }}>
-              {item.icon}
-            </span>
-            <span className={`text-xs font-bold leading-none ${isActive ? "text-k-navy" : "text-k-text-k-sky-blue"}`}>
+            <Icon className="h-[30px] w-[30px] shrink-0" strokeWidth={isActive ? 2.7 : 2.2} aria-hidden="true" />
+            <span className={`text-[clamp(12.5px,3.6vw,14px)] font-extrabold leading-none whitespace-nowrap ${isActive ? "text-k-navy" : "text-[var(--color-k-text-secondary)]"}`}>
               {item.label}
             </span>
           </Link>
