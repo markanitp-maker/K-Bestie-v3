@@ -33,6 +33,10 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["ai.k-bestie.com", "192.168.200.222"],
   env: {
     NEXT_PUBLIC_DEPLOYMENT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || "local",
+    // 공개 boolean feature flag만 client bundle에 명시적으로 주입한다. 둘 다 미설정이면
+    // useSttRouter가 Browser primary를 끄고 기존 GCP-only 경로를 유지한다.
+    BROWSER_STT_PRIMARY_ENABLED: process.env.BROWSER_STT_PRIMARY_ENABLED || "",
+    GCP_STT_FALLBACK_ENABLED: process.env.GCP_STT_FALLBACK_ENABLED || "",
   },
   rewrites,
 };

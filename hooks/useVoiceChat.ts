@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
+import { useSttRouter } from "@/hooks/useSttRouter";
 import { logVoiceEvent, maskText } from "@/lib/voiceTimelineLog";
 
-// Gemini Live 네이티브 오디오 API를 폐기하고 STT(근사 스트리밍) + 텍스트 LLM + TTS 분리 구조로 전환.
-// 구성: 아이 음성 → GCP STT(/api/mission/stt, recognize REST 주기호출) → 텍스트
+// Gemini Live 네이티브 오디오 API와 분리된 일반 음성 경로다.
+// 구성: 아이 음성 → 공용 STT Router(Browser primary, 필요 시 GCP fallback) → 텍스트
 //      → (필요 시) Gemini 2.5 Flash 텍스트(/api/voice/respond) → 케이 응답 텍스트
 //      → GCP TTS(/api/voice/tts, Wavenet) → 음성 재생
 // 자막은 STT/LLM이 돌려주는 텍스트를 그대로 표시하므로 Live transcription 이벤트 문제가 없다.
@@ -37,27 +38,6 @@ export interface UseVoiceChatOptions {
   onPlayResult?: (success: boolean) => void;
 }
 
-const POLL_INTERVAL_MS = 1300;       // 중간 자막 갱신 주기
-const SILENCE_MS_TO_FINALIZE = 900;  // 이만큼 조용하면 발화 종료로 판단
-const RMS_SILENCE_THRESHOLD = 0.012; // 이 이하 진폭은 무음으로 간주
-const CHUNK_MS = 128;                // processor 콜백 1회당 대략적 시간(16kHz, 2048 샘플)
-// 배경 소음·에코 등으로 RMS가 무음 임계값 아래로 절대 안 떨어지면 silenceMsRef가 누적되지
-// 않아 finalizeChildTurn()이 영원히 안 불려 화면이 "듣고 있어"에 무한정 멈춘다(2026-08-02
-// Production 자동모드 무반응 실사용 보고로 확인). 이 시간을 넘겨 계속 "말하는 중"으로
-// 판정되면 무음 감지와 무관하게 강제로 발화를 확정한다(수동 모드에는 적용 안 함).
-const MAX_UTTERANCE_MS = 10000;
-
-function encodePCM16Base64(chunks: Uint8Array[]): string {
-  let total = 0;
-  for (const c of chunks) total += c.length;
-  const merged = new Uint8Array(total);
-  let off = 0;
-  for (const c of chunks) { merged.set(c, off); off += c.length; }
-  let binary = "";
-  for (let i = 0; i < merged.length; i++) binary += String.fromCharCode(merged[i]);
-  return btoa(binary);
-}
-
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -69,7 +49,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<Turn[]>([]);
-  const [interimChildText, setInterimChildText] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const statusRef = useRef<SessionStatus>("idle");
@@ -91,11 +70,9 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   onSpeechBeginRef.current = options?.onSpeechBegin;
   const onSpeechEndRef = useRef<(() => void) | undefined>(undefined);
   onSpeechEndRef.current = options?.onSpeechEnd;
+  const getSessionIdRef = useRef<(() => string | null) | undefined>(undefined);
+  getSessionIdRef.current = options?.getSessionId;
 
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const inputCtxRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const micEnabledRef = useRef(true);
   const inputModeRef = useRef<"auto" | "manual">("auto");
   const speakingRef = useRef(false);
   // 케이 발화(TTS) 재생 전용 AudioContext — 세션 시작(마이크 켜기, 사용자 인터랙션) 시점에
@@ -105,20 +82,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
-  const chunksRef = useRef<Uint8Array[]>([]);
-  const hasSpeechRef = useRef(false);
-  const silenceMsRef = useRef(0);
-  const speechStartedAtRef = useRef(0);
-  const sttBusyRef = useRef(false);
   // 자유대화 respondText() 진행 중(케이 반응 생성 중) 플래그 — 이 동안은 새 녹음을 시작하거나
   // 무음감지로 자동 finalize가 발생하지 않도록 막는다(speakingRef와 동일한 가드 패턴 재사용).
   const respondingRef = useRef(false);
   const [isResponding, setIsResponding] = useState(false);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // 발화(utterance) 세대 카운터 — finalize 시점마다 증가.
-  // 이미 확정(final)된 뒤에 뒤늦게 도착하는 중간(interim) 응답이 확정 말풍선과
-  // 동일 내용으로 다시 표시되는 중복 버그 방지용(경합 시 이전 세대 응답은 폐기).
-  const utteranceEpochRef = useRef(0);
   // speak() 세대 카운터 — 케이 발화(TTS) 호출마다 증가.
   // 새 speak() 호출은 이전 재생 중인 오디오를 즉시 중단시키고, 이전 호출의 응답/재생은
   // 전부 폐기한다(single-audio 보장, 말풍선·음성 중복 표시 방지).
@@ -126,7 +93,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   // appendTurn/seedTranscript가 부여하는 message_id 생성용 순번 — startSession/reset 시 초기화.
   // 배열 index 대신 이 id로 React key를 잡아야 렌더 중 재조정으로 인한 말풍선 오표시를 막는다.
   const turnSeqRef = useRef(0);
-  const sttAbortControllerRef = useRef<AbortController | null>(null);
   function nextTurnId(): string {
     turnSeqRef.current += 1;
     return `t${turnSeqRef.current}`;
@@ -143,79 +109,61 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setTranscript([...transcriptRef.current]);
   }
 
-  async function callStt(audioBase64: string, customSignal?: AbortSignal, childTurnId?: string): Promise<{ text: string; confidence?: number; failureReason?: "network" | "http_error" | "timeout" | "aborted" }> {
-    try {
-      sttAbortControllerRef.current = new AbortController();
-      const signal = customSignal ?? sttAbortControllerRef.current.signal;
-
-      const sessionId = options?.getSessionId?.() ?? null;
-      const res = await fetch("/api/mission/stt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioBase64, sessionId, childTurnId, conversationMode: options?.conversationMode }),
-        signal,
-      });
-      if (signal.aborted) return { text: "", failureReason: "aborted" };
-      if (!res.ok) {
-        console.error("[STT] http error", res.status);
-        return { text: "", failureReason: "http_error" };
-      }
-      const data = await res.json();
-      return { 
-        text: typeof data.transcript === "string" ? data.transcript.trim() : "",
-        confidence: typeof data.confidence === "number" ? data.confidence : undefined
-      };
-    } catch (err) {
-      if ((err as Error).name === "AbortError") {
-        return { text: "", failureReason: "aborted" };
-      }
-      return { text: "", failureReason: "network" };
-    }
-  }
-
-  const finalizeChildTurn = useCallback(async (signal?: AbortSignal) => {
-    logVoiceEvent({ ts: Date.now(), eventType: "finalizeChildTurn_start" });
-    const epoch = ++utteranceEpochRef.current; // 새 세대로 전환 — 이전 세대의 낡은 interim 응답은 이후 전부 무시됨
-    const chunks = chunksRef.current;
-    chunksRef.current = [];
-    hasSpeechRef.current = false;
-    silenceMsRef.current = 0;
-    speechStartedAtRef.current = 0;
-    setInterimChildText("");
-    if (chunks.length === 0) {
-      if (onEmptyAudioRef.current) onEmptyAudioRef.current();
-      return;
-    }
-
-    const audioBase64 = encodePCM16Base64(chunks);
+  function notifySpeechEnd() {
     const predictedTurnId = `t${turnSeqRef.current + 1}`;
-
+    onSpeechEndRef.current?.();
+    logVoiceEvent({ ts: Date.now(), eventType: "finalizeChildTurn_start", childTurnId: predictedTurnId });
     fetch("/api/mission/timing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: options?.getSessionId?.(), turnId: predictedTurnId, eventName: "speech_end" })
+      body: JSON.stringify({
+        sessionId: getSessionIdRef.current?.(),
+        turnId: predictedTurnId,
+        eventName: "speech_end",
+      }),
     }).catch(() => {});
+  }
 
-    console.log("[STT] calling", { turnId: predictedTurnId });
-    logVoiceEvent({ ts: Date.now(), eventType: "stt_request", childTurnId: predictedTurnId });
-    const sttStartedAt = Date.now();
-    const { text, confidence, failureReason } = await callStt(audioBase64, signal, predictedTurnId);
-    const sttLatencyMs = Date.now() - sttStartedAt;
-    logVoiceEvent({ ts: Date.now(), eventType: "stt_response", childTurnId: predictedTurnId, textPreview: maskText(text), extra: { failureReason } });
-    console.log("[STT] result", { turnId: predictedTurnId, hasText: !!text, failureReason });
-    if (epoch !== utteranceEpochRef.current) return; // 그 사이 다음 발화가 이미 시작/확정됐으면 폐기(계측 안 함 - 정상 취소이지 실패가 아님)
-    if (!text) {
-      onSttResultRef.current?.(false, sttLatencyMs);
-      onSttFailedRef.current?.(failureReason);
-      return;
-    }
-    onSttResultRef.current?.(true, sttLatencyMs);
-
-    lastAsrConfidenceRef.current = confidence;
-    logVoiceEvent({ ts: Date.now(), eventType: "appendTurn_voicechat", extra: { role: "child" } });
-    appendTurn({ role: "child", text });
-    onTurnCompleteRef.current?.({ role: "child", text });
-  }, []);
+  const sttRouter = useSttRouter({
+    sessionId: options?.getSessionId?.() ?? "",
+    childTurnId: `t${turnSeqRef.current + 1}`,
+    getSessionId: () => options?.getSessionId?.() ?? "",
+    getChildTurnId: () => `t${turnSeqRef.current + 1}`,
+    getInputMode: () => inputModeRef.current,
+    conversationMode: options?.conversationMode,
+    onSpeechBegin: () => onSpeechBeginRef.current?.(),
+    onSpeechEnd: notifySpeechEnd,
+    onEmptyAudio: () => onEmptyAudioRef.current?.(),
+    onFinalTranscript: (text, meta) => {
+      const predictedTurnId = `t${turnSeqRef.current + 1}`;
+      onSttResultRef.current?.(true, meta.totalLatencyMs);
+      lastAsrConfidenceRef.current = meta.confidence;
+      logVoiceEvent({
+        ts: Date.now(),
+        eventType: "stt_response",
+        childTurnId: predictedTurnId,
+        textPreview: maskText(text),
+        extra: { provider: meta.provider, fallbackTriggered: meta.fallbackTriggered },
+      });
+      logVoiceEvent({ ts: Date.now(), eventType: "appendTurn_voicechat", extra: { role: "child" } });
+      appendTurn({ role: "child", text });
+      onTurnCompleteRef.current?.({ role: "child", text });
+    },
+    onFailure: (reason) => {
+      onSttResultRef.current?.(false, 0);
+      onSttFailedRef.current?.(reason);
+    },
+  });
+  const {
+    interimTranscript: interimChildText,
+    cancel: cancelSttTurn,
+    endTurn: endSttTurn,
+    startCapture: startSttCapture,
+    stopCapture: stopSttCapture,
+    setMicEnabled: setSttMicEnabled,
+    setInputMode: setSttInputMode,
+    setCaptureBlocked,
+  } = sttRouter;
 
   const startSession = useCallback(async () => {
     if (statusRef.current === "live" || statusRef.current === "connecting") return;
@@ -225,21 +173,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     logVoiceEvent({ ts: Date.now(), eventType: "transcript_reset" });
     setTranscript([]);
     turnSeqRef.current = 0;
-    chunksRef.current = [];
-    hasSpeechRef.current = false;
-    silenceMsRef.current = 0;
-    speechStartedAtRef.current = 0;
-    setInterimChildText("");
+    cancelSttTurn();
+    setCaptureBlocked(true);
 
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("마이크를 사용하려면 HTTPS로 접속하세요.");
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
-      });
-      micStreamRef.current = stream;
-
       // 마이크 켜기(사용자 제스처로 시작된 세션)와 같은 시점에 재생용 AudioContext를
       // 만들어두어야 브라우저 Autoplay 정책상 이후 턴들의 speak() 재생도 허용된다.
       if (!audioCtxRef.current) {
@@ -248,88 +185,24 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       if (audioCtxRef.current.state === "suspended") {
         await audioCtxRef.current.resume().catch(() => {});
       }
-
-      const inputCtx = new AudioContext({ sampleRate: 16000 });
-      inputCtxRef.current = inputCtx;
-      const source = inputCtx.createMediaStreamSource(stream);
-      const processor = inputCtx.createScriptProcessor(2048, 1, 1);
-      processorRef.current = processor;
-
-      processor.onaudioprocess = (ev) => {
-        if (statusRef.current !== "live" || !micEnabledRef.current || speakingRef.current || respondingRef.current) return;
-        const float32 = ev.inputBuffer.getChannelData(0);
-
-        // RMS 기반 무음 감지
-        let sumSq = 0;
-        for (let i = 0; i < float32.length; i++) sumSq += float32[i] * float32[i];
-        const rms = Math.sqrt(sumSq / float32.length);
-
-        const buf = new Int16Array(float32.length);
-        for (let i = 0; i < float32.length; i++) {
-          buf[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
-        }
-        chunksRef.current.push(new Uint8Array(buf.buffer.slice(0)));
-
-        if (rms >= RMS_SILENCE_THRESHOLD) {
-          if (!hasSpeechRef.current) {
-            onSpeechBeginRef.current?.();
-            speechStartedAtRef.current = Date.now();
-          }
-          hasSpeechRef.current = true;
-          silenceMsRef.current = 0;
-          if (inputModeRef.current !== "manual" && Date.now() - speechStartedAtRef.current >= MAX_UTTERANCE_MS) {
-            onSpeechEndRef.current?.();
-            logVoiceEvent({ ts: Date.now(), eventType: "max_utterance_forced_finalize" });
-            void finalizeChildTurn();
-          }
-        } else {
-          silenceMsRef.current += CHUNK_MS;
-          if (hasSpeechRef.current && silenceMsRef.current >= SILENCE_MS_TO_FINALIZE && inputModeRef.current !== "manual") {
-            onSpeechEndRef.current?.();
-            logVoiceEvent({ ts: Date.now(), eventType: "silence_detected" });
-            void finalizeChildTurn();
-          }
-        }
-      };
-      source.connect(processor);
-      processor.connect(inputCtx.destination);
-
-      // 중간 자막 갱신 — 말하는 도중 누적된 오디오를 주기적으로 재인식(반투명 임시 표시 전용,
-      // transcript에는 절대 append하지 않음 — 확정 저장은 finalizeChildTurn에서만 1회 수행)
-      pollTimerRef.current = setInterval(() => {
-        if (sttBusyRef.current) return;
-        if (!hasSpeechRef.current || chunksRef.current.length === 0) return;
-        sttBusyRef.current = true;
-        const epoch = utteranceEpochRef.current;
-        const audioBase64 = encodePCM16Base64(chunksRef.current);
-        const predictedTurnId = `t${turnSeqRef.current + 1}`;
-        void callStt(audioBase64, undefined, predictedTurnId).then(({ text }) => {
-          sttBusyRef.current = false;
-          // 이미 finalize되어 다음 세대로 넘어간 뒤 도착한 낡은 응답이면 폐기(중복 표시 방지)
-          if (epoch !== utteranceEpochRef.current) return;
-          if (text) setInterimChildText(text);
-        });
-      }, POLL_INTERVAL_MS);
+      await startSttCapture();
 
       updateStatus("live");
+      setCaptureBlocked(false);
     } catch (err) {
       console.error("[VoiceChat] startSession error:", err);
+      stopSttCapture();
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+      }
       setError((err as Error).message);
       updateStatus("error");
     }
-  }, [finalizeChildTurn]);
+  }, [cancelSttTurn, setCaptureBlocked, startSttCapture, stopSttCapture]);
 
   function teardown() {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    processorRef.current?.disconnect();
-    processorRef.current = null;
-    inputCtxRef.current?.close().catch(() => {});
-    inputCtxRef.current = null;
-    micStreamRef.current?.getTracks().forEach((t) => t.stop());
-    micStreamRef.current = null;
+    stopSttCapture();
     if (currentSourceRef.current) {
       try { currentSourceRef.current.stop(); } catch { /* 이미 정지된 경우 무시 */ }
       currentSourceRef.current = null;
@@ -338,15 +211,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       audioCtxRef.current.close().catch(() => {});
       audioCtxRef.current = null;
     }
-    chunksRef.current = [];
-    hasSpeechRef.current = false;
-    silenceMsRef.current = 0;
-    speechStartedAtRef.current = 0;
     speakingRef.current = false;
     setIsSpeaking(false);
     respondingRef.current = false;
     setIsResponding(false);
-    setInterimChildText("");
     lastAsrConfidenceRef.current = undefined;
   }
 
@@ -377,22 +245,27 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   }, []);
 
   const setMicEnabled = useCallback((enabled: boolean) => {
-    micEnabledRef.current = enabled;
-  }, []);
+    setSttMicEnabled(enabled);
+  }, [setSttMicEnabled]);
 
   const setInputMode = useCallback((mode: "auto" | "manual") => {
     inputModeRef.current = mode;
-  }, []);
+    setSttInputMode(mode);
+  }, [setSttInputMode]);
 
   const manualFinalize = useCallback((signal?: AbortSignal) => {
-    void finalizeChildTurn(signal);
-  }, [finalizeChildTurn]);
+    if (signal?.aborted) {
+      cancelSttTurn();
+      return;
+    }
+    signal?.addEventListener("abort", cancelSttTurn, { once: true });
+    notifySpeechEnd();
+    endSttTurn();
+  }, [cancelSttTurn, endSttTurn]);
 
   const cancelFinalize = useCallback(() => {
-    sttAbortControllerRef.current?.abort();
-    sttAbortControllerRef.current = null;
-    utteranceEpochRef.current++;
-  }, []);
+    cancelSttTurn();
+  }, [cancelSttTurn]);
 
   /** 케이 발화 재생 — TTS 합성 후 오디오 재생. 재생 중엔 마이크 캡처를 잠시 멈춘다(에코 방지).
    *  새 호출 시 이전 재생 중인 오디오를 즉시 중단하고, 이전 호출의 응답/재생은 전부 폐기해서
@@ -419,6 +292,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
     speakingRef.current = true;
     setIsSpeaking(true);
+    setCaptureBlocked(true);
     let spoken = false;
     let ttsOk = false; // TTS 합성 자체가 성공했는지(목소리 테스트 성공/실패 판정용)
 
@@ -508,6 +382,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         speakingRef.current = false;
         setIsSpeaking(false);
         currentSourceRef.current = null;
+        setCaptureBlocked(respondingRef.current);
       }
     }
     return ttsOk;
@@ -520,6 +395,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const respondText = useCallback(async () => {
     respondingRef.current = true;
     setIsResponding(true);
+    setCaptureBlocked(true);
     try {
       const res = await fetch("/api/voice/respond", {
         method: "POST",
@@ -542,6 +418,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     } finally {
       respondingRef.current = false;
       setIsResponding(false);
+      setCaptureBlocked(speakingRef.current);
     }
   }, []);
 
@@ -571,6 +448,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     }
     speakingRef.current = false;
     setIsSpeaking(false);
+    setCaptureBlocked(respondingRef.current);
   }, []);
 
   useEffect(() => {
