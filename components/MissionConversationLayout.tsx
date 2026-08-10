@@ -224,7 +224,12 @@ export function MissionConversationLayout({
   }, [progressCurrent, lastProgress]);
 
   return (
-    <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "hidden" }}>
+    // overflowY 는 의도적으로 hidden이 아니라 auto다: Grid Row 2가 minmax(0,1fr)로
+    // 히스토리부터 줄여가며 현재 발화 공간을 최대한 확보하지만, 현재 발화 자체가
+    // 극단적으로 길어 그 최소 공간조차 넘어서는 경우 hidden이면 상단이 조용히
+    // 잘린다. auto는 그 극단적인 경우에만 스크롤로 전체 표시를 보장하는
+    // 최후 방어선이고, 평소에는 콘텐츠가 뷰포트 안에 들어와 스크롤이 나타나지 않는다.
+    <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "auto" }}>
       <div className="w-full max-w-[480px] min-w-0 h-[100dvh] relative box-border grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]" style={{ background: "linear-gradient(180deg, #D8EEFF 0%, #EAF6FB 46%, #FFF9EE 76%, #FFF4E6 100%)" }}>
         
         {/* Decorations */}
@@ -283,7 +288,7 @@ export function MissionConversationLayout({
             {visibleHistoryCount > 0 && (
               <div className="flex flex-col justify-start items-center w-full shrink-0 mb-[10px]">
                 {visibleHistoryCount === 2 && olderKText && (
-                  <div className="relative min-h-0 mb-[clamp(7px,1dvh,9px)] text-[#798896]/65 text-[clamp(13px,3.5vw,15px)] leading-[1.42] text-center max-w-[76%] font-medium shrink-[2] line-clamp-1" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  <div className="relative min-h-0 mb-[clamp(7px,1dvh,9px)] text-[#798896]/65 text-[clamp(13px,3.5vw,15px)] leading-[1.42] text-center max-w-[76%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     <span className="absolute -left-[18px] top-1/2 -translate-y-1/2 text-[11px] text-white/85" aria-hidden="true">✦</span>
                     {olderKText}
                   </div>
