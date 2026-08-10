@@ -414,5 +414,8 @@ export const persistGoalDecisions = async (
   return { succeeded, failures };
 };
 
+export const countSatisfiedGoals = (goals: ConversationGoal[]): number =>
+  goals.filter((goal) => goal.status === "SATISFIED").length;
+
 export const hasMissionGoalThreshold = (goals: ConversationGoal[]): boolean =>
-  goals.filter((goal) => goal.status === "SATISFIED").length >= 3;
+  countSatisfiedGoals(goals) >= 3;
