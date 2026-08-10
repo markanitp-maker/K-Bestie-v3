@@ -6,10 +6,10 @@ import {
   type ConversationGoal,
 } from "@/lib/mission-v3/goalEngine";
 
-export const MISSION_V3_REWARD_TYPES = [
-  "mission_v3_start",
-  "mission_v3_complete",
-] as const;
+// 마스터 지시서(requests/073-...-master-request.md §16, 439~465행): "미션 시작
+// 보상은 없다." Mission 정상 완료(Goal 3/4 이상) 시에만 지급하는 단일 reward_type만
+// 존재한다.
+export const MISSION_V3_REWARD_TYPES = ["mission_v3_complete"] as const;
 
 export type MissionV3RewardType = typeof MISSION_V3_REWARD_TYPES[number];
 
@@ -54,11 +54,13 @@ const isBusinessDate = (value: string): boolean => {
 /**
  * Fast caller-side policy check. The SQL RPC independently recounts persisted
  * goals and validates the daily_single session before touching the ledger.
+ * `reason` values intentionally match the RPC's return values exactly (no
+ * boredom-specific wording) so a TS pre-check rejection and a DB-side
+ * rejection are indistinguishable to callers — the DB recount is the
+ * authoritative source and has no notion of "boredom" as a stored fact.
  */
 export const evaluateMissionV3RewardEligibility = (input: {
-  rewardType: MissionV3RewardType;
   goals: ConversationGoal[];
-  boredomEarlyExit?: boolean;
 }): MissionV3RewardEligibility => {
   const satisfiedGoalCount = countSatisfiedGoals(input.goals);
 
@@ -66,18 +68,8 @@ export const evaluateMissionV3RewardEligibility = (input: {
     return { eligible: false, reason: "goals_not_initialized", satisfiedGoalCount };
   }
 
-  if (input.rewardType === "mission_v3_start") {
-    return { eligible: true, reason: "eligible", satisfiedGoalCount };
-  }
-
   if (satisfiedGoalCount < 3) {
-    return {
-      eligible: false,
-      reason: input.boredomEarlyExit
-        ? "boredom_goal_threshold_not_met"
-        : "goal_threshold_not_met",
-      satisfiedGoalCount,
-    };
+    return { eligible: false, reason: "goal_threshold_not_met", satisfiedGoalCount };
   }
 
   return { eligible: true, reason: "eligible", satisfiedGoalCount };
@@ -92,10 +84,10 @@ export const awardMissionV3Reward = async (input: {
   childId: string;
   sourceSessionId: string;
   businessDate: string;
-  rewardType: MissionV3RewardType;
   goals: ConversationGoal[];
-  boredomEarlyExit?: boolean;
 }): Promise<MissionV3RewardResult> => {
+  const rewardType: MissionV3RewardType = "mission_v3_complete";
+
   if (!input.childId.trim() || !input.sourceSessionId.trim()) {
     throw new Error("아이와 미션 세션 식별자는 비어 있을 수 없습니다.");
   }
@@ -108,7 +100,7 @@ export const awardMissionV3Reward = async (input: {
     return {
       ...eligibility,
       rewarded: false,
-      rewardType: input.rewardType,
+      rewardType,
       businessDate: input.businessDate,
     };
   }
@@ -116,7 +108,7 @@ export const awardMissionV3Reward = async (input: {
   const { data, error } = await input.db.rpc("award_mission_v3_reward", {
     p_child_id: input.childId,
     p_business_date: input.businessDate,
-    p_reward_type: input.rewardType,
+    p_reward_type: rewardType,
     p_source_session_id: input.sourceSessionId,
   });
   if (error) {
@@ -127,7 +119,7 @@ export const awardMissionV3Reward = async (input: {
   if (!isMissionV3RewardRpcRow(row)) {
     throw new Error("Mission v3 보상 RPC 응답 형식이 올바르지 않습니다.");
   }
-  if (row.applied_reward_type !== input.rewardType
+  if (row.applied_reward_type !== rewardType
       || row.applied_business_date !== input.businessDate) {
     throw new Error("Mission v3 보상 RPC가 요청과 다른 멱등 키를 반환했습니다.");
   }
@@ -137,7 +129,7 @@ export const awardMissionV3Reward = async (input: {
     eligible: row.eligible,
     reason: row.reason,
     satisfiedGoalCount: row.satisfied_goal_count,
-    rewardType: input.rewardType,
+    rewardType,
     businessDate: input.businessDate,
   };
 };

@@ -9,7 +9,6 @@ import type { ConversationGoal } from "./goalEngine.js";
 import {
   awardMissionV3Reward,
   evaluateMissionV3RewardEligibility,
-  type MissionV3RewardType,
 } from "./rewardPolicy.js";
 
 const BUSINESS_DATE = "2026-08-10";
@@ -59,7 +58,7 @@ const createAtomicRewardMock = () => {
           reason: alreadyRewarded ? "already_rewarded" : "rewarded",
           applied_reward_type: rewardType,
           applied_business_date: businessDate,
-          satisfied_goal_count: rewardType === "mission_v3_complete" ? 3 : 0,
+          satisfied_goal_count: 3,
         }],
         error: null,
       };
@@ -73,26 +72,19 @@ const createAtomicRewardMock = () => {
   };
 };
 
-const award = (
-  db: SupabaseClient,
-  rewardType: MissionV3RewardType,
-  satisfiedGoalCount: number,
-  boredomEarlyExit = false,
-) => awardMissionV3Reward({
+const award = (db: SupabaseClient, satisfiedGoalCount: number) => awardMissionV3Reward({
   db,
   childId: CHILD_ID,
   sourceSessionId: SESSION_ID,
   businessDate: BUSINESS_DATE,
-  rewardType,
   goals: makeGoals(satisfiedGoalCount),
-  boredomEarlyExit,
 });
 
 test("같은 idempotency key를 두 번 연속 호출하면 두 번째 지급은 no-op이다", async () => {
   const mock = createAtomicRewardMock();
 
-  const first = await award(mock.db, "mission_v3_start", 0);
-  const second = await award(mock.db, "mission_v3_start", 0);
+  const first = await award(mock.db, 3);
+  const second = await award(mock.db, 3);
 
   assert.equal(first.rewarded, true);
   assert.equal(second.rewarded, false);
@@ -100,10 +92,10 @@ test("같은 idempotency key를 두 번 연속 호출하면 두 번째 지급은
   assert.equal(mock.ledgerKeys.size, 1);
 });
 
-test("동시 재시도는 child+business_date+reward_type당 원장 행을 하나만 만든다", async () => {
+test("동시 재시도는 child+business_date+reward_type당 원장 행을 하나만 만든다 (RPC 래퍼 레벨)", async () => {
   const mock = createAtomicRewardMock();
   const settled = await Promise.allSettled(
-    Array.from({ length: 20 }, () => award(mock.db, "mission_v3_complete", 3)),
+    Array.from({ length: 20 }, () => award(mock.db, 3)),
   );
 
   assert.ok(settled.every((result) => result.status === "fulfilled"));
@@ -116,48 +108,49 @@ test("동시 재시도는 child+business_date+reward_type당 원장 행을 하�
   assert.equal(mock.ledgerKeys.size, 1);
 });
 
-test("reopen에서 start/complete를 재호출해도 하루 보상은 두 행을 넘지 않는다", async () => {
+test("reopen/재완료로 재호출해도 하루 보상은 한 행을 넘지 않는다", async () => {
   const mock = createAtomicRewardMock();
 
-  await award(mock.db, "mission_v3_start", 0);
-  await award(mock.db, "mission_v3_complete", 3);
-  const reopenedStart = await award(mock.db, "mission_v3_start", 3);
-  const reopenedComplete = await award(mock.db, "mission_v3_complete", 3);
+  await award(mock.db, 3);
+  const reopened = await award(mock.db, 3);
 
-  assert.equal(reopenedStart.rewarded, false);
-  assert.equal(reopenedComplete.rewarded, false);
-  assert.equal(mock.ledgerKeys.size, 2);
+  assert.equal(reopened.rewarded, false);
+  assert.equal(mock.ledgerKeys.size, 1);
 });
 
-test("Boredom 조기종료가 Goal 2개 이하이면 complete는 미지급하고 start는 유지한다", async () => {
+test("Boredom 조기종료로 Goal 2개 이하면 complete는 미지급이고 RPC를 호출하지 않는다", async () => {
   const mock = createAtomicRewardMock();
-  const start = await award(mock.db, "mission_v3_start", 2);
-  const complete = await award(mock.db, "mission_v3_complete", 2, true);
+  const result = await award(mock.db, 2);
 
-  assert.equal(start.rewarded, true);
-  assert.deepEqual(complete, {
+  assert.deepEqual(result, {
     rewarded: false,
     eligible: false,
-    reason: "boredom_goal_threshold_not_met",
+    reason: "goal_threshold_not_met",
     satisfiedGoalCount: 2,
     rewardType: "mission_v3_complete",
     businessDate: BUSINESS_DATE,
   });
-  assert.equal(mock.getRpcCallCount(), 1);
-  assert.equal(mock.ledgerKeys.size, 1);
-  assert.ok([...mock.ledgerKeys][0].endsWith(":mission_v3_start"));
+  assert.equal(mock.getRpcCallCount(), 0);
+  assert.equal(mock.ledgerKeys.size, 0);
 });
 
-test("Boredom 종료라도 Goal 3개 이상이면 complete 지급 대상이다", () => {
+test("Goal 3개 이상이면 complete 지급 대상이다", () => {
   assert.deepEqual(evaluateMissionV3RewardEligibility({
-    rewardType: "mission_v3_complete",
     goals: makeGoals(3),
-    boredomEarlyExit: true,
   }), {
     eligible: true,
     reason: "eligible",
     satisfiedGoalCount: 3,
   });
+});
+
+test("TS 사전판정과 RPC 반환 reason 문자열이 정확히 일치한다 (boredom 전용 문구 없음)", () => {
+  const eligibility = evaluateMissionV3RewardEligibility({ goals: makeGoals(2) });
+  assert.equal(eligibility.reason, "goal_threshold_not_met");
+
+  const sql = readFileSync(MIGRATION_PATH, "utf8");
+  assert.match(sql, /'goal_threshold_not_met'/);
+  assert.doesNotMatch(sql, /boredom_goal_threshold_not_met/);
 });
 
 test("Phase 4 migration은 기존 원장에 additive·멱등 제약과 원자 RPC만 추가한다", () => {
@@ -167,7 +160,6 @@ test("Phase 4 migration은 기존 원장에 additive·멱등 제약과 원자 RP
     sql,
     /CREATE UNIQUE INDEX IF NOT EXISTS gold_key_ledger_mission_v3_daily_reward_unique[\s\S]*child_id, business_date, reward_type/i,
   );
-  assert.match(sql, /reward_type IN \('mission_v3_start', 'mission_v3_complete'\)/i);
   assert.match(sql, /CREATE OR REPLACE FUNCTION public\.award_mission_v3_reward/i);
   assert.match(sql, /pg_advisory_xact_lock\(hashtext\(p_child_id::text\)\)/i);
   assert.match(sql, /count\(\*\) FILTER \(WHERE status = 'SATISFIED'\)/i);
@@ -188,4 +180,36 @@ test("Phase 4 migration은 기존 원장에 additive·멱등 제약과 원자 RP
   const closeParentheses = [...withoutCommentsAndStrings].filter((character) => character === ")").length;
   assert.equal(openParentheses, closeParentheses);
   assert.ok(sql.trimEnd().endsWith(";"));
+});
+
+test("R1: 마스터 지시서대로 시작 보상 reward_type이 코드에서 완전히 제거됐다", () => {
+  const sql = readFileSync(MIGRATION_PATH, "utf8");
+  const codeOnly = sql.replace(/--.*$/gm, "");
+  assert.doesNotMatch(codeOnly, /mission_v3_start/);
+});
+
+test("R2: finalize_mission_turn_v1이 v3_single_daily 세션을 레거시 경로로 완료·보상하지 않는다", () => {
+  const sql = readFileSync(MIGRATION_PATH, "utf8");
+  assert.match(
+    sql,
+    /v_completed := v_progress\.mission_policy_version IS DISTINCT FROM 'v3_single_daily'/,
+  );
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.finalize_mission_turn_v1/i);
+});
+
+test("R3: 신규 CHECK가 source_session_id를 요구하지 않아 계정 삭제 FK 캐스케이드와 충돌하지 않는다", () => {
+  const sql = readFileSync(MIGRATION_PATH, "utf8");
+  const checkBlock = sql.match(
+    /ADD CONSTRAINT gold_key_ledger_mission_v3_source_check[\s\S]*?\) NOT VALID/,
+  );
+  assert.ok(checkBlock, "mission_v3_source_check constraint block not found");
+  assert.doesNotMatch(checkBlock![0], /source_session_id IS NOT NULL/);
+});
+
+test("R4: ON CONFLICT DO NOTHING 판정이 RETURNING이 아닌 FOUND를 직접 확인한다", () => {
+  const sql = readFileSync(MIGRATION_PATH, "utf8");
+  const codeOnly = sql.replace(/--.*$/gm, "");
+  assert.doesNotMatch(codeOnly, /RETURNING true INTO v_inserted/);
+  assert.doesNotMatch(codeOnly, /IF NOT v_inserted THEN/);
+  assert.match(codeOnly, /IF NOT FOUND THEN/);
 });
