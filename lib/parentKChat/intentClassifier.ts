@@ -21,6 +21,49 @@ export interface IntentClassification {
   isFollowUpToPendingDraft?: boolean;
 }
 
+export interface ParentQueryContextTurn {
+  role: "user" | "k";
+  text: string;
+}
+
+export interface AskChildProposalContext {
+  proposal: string;
+  requestedTopic: string;
+}
+
+const CONTEXTUAL_QUERY_REQUEST_PATTERN = /^(그럼|그러면|그렇다면|그걸|그거|직접)(?:\s|,)/;
+
+/** 직전 부모 주제를 유지하면서도 부모 문장을 아이 질문으로 직접 전달하지 않는 재작성 입력을 만든다. */
+export function buildAskChildProposal(
+  currentRequest: string,
+  conversationContext: ParentQueryContextTurn[],
+  pendingProposal: string | null,
+  isPendingEdit: boolean,
+): AskChildProposalContext {
+  if (isPendingEdit && pendingProposal) {
+    return {
+      proposal: `${pendingProposal} (수정 요청: ${currentRequest})`.slice(0, 300),
+      requestedTopic: pendingProposal.slice(0, 120),
+    };
+  }
+
+  const previousUserTurn = [...conversationContext]
+    .reverse()
+    .find((turn) => turn.role === "user" && turn.text.trim().length > 0);
+  if (CONTEXTUAL_QUERY_REQUEST_PATTERN.test(currentRequest) && previousUserTurn) {
+    const requestedTopic = previousUserTurn.text.trim().slice(0, 120);
+    return {
+      proposal: `직전 대화 주제: ${requestedTopic}\n부모의 후속 요청: ${currentRequest}`.slice(0, 300),
+      requestedTopic,
+    };
+  }
+
+  return {
+    proposal: currentRequest.slice(0, 300),
+    requestedTopic: currentRequest.slice(0, 120),
+  };
+}
+
 // requests/request-parent-k-query-router-error-analysis-dev-prod.md §5.1(가설 A 확정) —
 // "아이에게 ~ 물어봐줘"는 아이 정보를 검색하는 질문(CHILD_INFORMATION_QUERY)이 아니라
 // 아이에게 새로 물어봐 달라는 요청이다. 기존에는 이 패턴이 아무 규칙에도 안 걸려

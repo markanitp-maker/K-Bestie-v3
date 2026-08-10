@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyParentKChatIntent } from "./intentClassifier";
+import { buildAskChildProposal, classifyParentKChatIntent } from "./intentClassifier";
 
 // requests/request-parent-k-chat-intent-routing-fallback-fix.md §10.1 단위 테스트 표
 const CASES: Array<[string, "GENERAL_CONVERSATION" | "FEEDBACK_OR_CORRECTION" | "CHILD_INFORMATION_QUERY" | "PARENT_QUERY_REQUEST"]> = [
@@ -83,4 +83,32 @@ test("pending draft가 있어도 새로운 '~물어봐줘' 요청은 별개의 �
   const result = classifyParentKChatIntent("친구 관계는 어떤지 물어봐줘", true);
   assert.equal(result.intent, "PARENT_QUERY_REQUEST");
   assert.equal(result.isFollowUpToPendingDraft, undefined);
+});
+
+test("후속 '그럼 아이에게 물어봐줘'는 직전 케이 관계 주제를 유지한다", () => {
+  const result = buildAskChildProposal(
+    "그럼 서현이에게 물어봐줘",
+    [
+      { role: "user", text: "케이랑 매일 대화할 것 같아?" },
+      { role: "k", text: "매일 할지는 아직 단정하기 어려워요." },
+    ],
+    null,
+    false,
+  );
+
+  assert.equal(result.requestedTopic, "케이랑 매일 대화할 것 같아?");
+  assert.match(result.proposal, /직전 대화 주제: 케이랑 매일 대화할 것 같아\?/);
+  assert.match(result.proposal, /부모의 후속 요청: 그럼 서현이에게 물어봐줘/);
+});
+
+test("명시적인 새 질문 요청은 이전 주제로 바꾸지 않는다", () => {
+  const result = buildAskChildProposal(
+    "이번 주말에 뭐 하고 싶은지 물어봐줘",
+    [{ role: "user", text: "케이랑 매일 대화할 것 같아?" }],
+    null,
+    false,
+  );
+
+  assert.equal(result.proposal, "이번 주말에 뭐 하고 싶은지 물어봐줘");
+  assert.equal(result.requestedTopic, "이번 주말에 뭐 하고 싶은지 물어봐줘");
 });
