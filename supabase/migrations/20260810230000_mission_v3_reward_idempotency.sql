@@ -23,6 +23,17 @@
 --       that check never fired. The RPC now drops the RETURNING clause and
 --       checks the statement's own `FOUND` flag directly, which plpgsql sets
 --       to true/false correctly for INSERT row counts.
+--
+-- 2026-08-11 correction (claude-review-073-phase4-r2, F1):
+--   The R2 fix above correctly stopped finalize_mission_turn_v1 from
+--   auto-completing v3_single_daily sessions, but nothing replaced it as a
+--   completion writer — award_mission_v3_reward only *checked* for
+--   status='COMPLETED', it never *set* it, so v3 missions could never
+--   actually complete or get rewarded. Fixed by having this RPC set
+--   status='COMPLETED' itself once Goal 3/4+ is satisfied (the master §16.1
+--   completion criterion), which also fires the existing
+--   trg_mission_progress_event_completion trigger for master §17.4's
+--   "completion = event +1" for free.
 
 BEGIN;
 
@@ -289,12 +300,6 @@ BEGIN
     RETURN;
   END IF;
 
-  IF v_progress.status IS DISTINCT FROM 'COMPLETED' THEN
-    RETURN QUERY SELECT false, false, 'mission_not_completed', p_reward_type,
-      p_business_date, v_satisfied_goal_count;
-    RETURN;
-  END IF;
-
   IF v_satisfied_goal_count < 3 THEN
     -- Boredom early finish with 0-2 goals never creates a completion reward
     -- row. Since there is no start reward, there is nothing to preserve.
@@ -302,6 +307,20 @@ BEGIN
       p_business_date, v_satisfied_goal_count;
     RETURN;
   END IF;
+
+  -- Goal 3/4+ satisfied IS the v3 completion criterion (master §16.1/§17) —
+  -- this RPC is the sole authority for it, since finalize_mission_turn_v1's
+  -- legacy valid_answer_count path was deliberately excluded from
+  -- v3_single_daily sessions. Transitioning status here (rather than
+  -- requiring it as a precondition) also lets the existing
+  -- trg_mission_progress_event_completion AFTER UPDATE trigger fire the
+  -- master §17.4 "completion = event +1" requirement for free, reusing its
+  -- established idempotent record_mission_event_completion call — no
+  -- duplicate event-recording logic needed here.
+  UPDATE public.mission_progress
+  SET status = 'COMPLETED', updated_at = now()
+  WHERE session_id = p_source_session_id
+    AND status IS DISTINCT FROM 'COMPLETED';
 
   SELECT count(*)::integer INTO v_active_balance
   FROM public.gold_key_ledger

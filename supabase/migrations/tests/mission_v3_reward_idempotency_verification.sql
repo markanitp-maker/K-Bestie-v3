@@ -1,6 +1,21 @@
 -- 073 Phase 4 Dev 전용 검증. 모든 fixture/결과는 마지막 ROLLBACK으로 제거한다.
--- claude-review-073-phase4 게이트①의 R5(동시성 테스트가 DB를 전혀 건드리지 않음)
--- 지적에 대응해 award_mission_v3_reward/finalize_mission_turn_v1을 실제로 실행한다.
+-- claude-review-073-phase4 게이트①의 R5 지적에 대응해 award_mission_v3_reward/
+-- finalize_mission_turn_v1을 mock이 아닌 실제 DB에서 실행한다.
+--
+-- 2026-08-11 correction (claude-review-073-phase4-r2, F2/F3/F4):
+--   F2: 2)의 20회 루프는 같은 트랜잭션 내 순차 재호출이다 — "동시" 재시도가
+--       아니다. 실제 동시성 방어는 advisory lock + 유일 인덱스 설계에서
+--       나오며(정적 리뷰로 확인됨), 이 스크립트는 그 설계 위에서 반복
+--       재시도가 안전한지만 순차적으로 검증한다.
+--   F3: effective_at을 v_day_at - interval '1 hour'(당일 08:00 KST 고정)로
+--       두면 00:00~08:00 KST 사이 실행 시 created_at(now() 기본값) < effective_at
+--       CHECK를 첫 INSERT에서 위반한다. now() - interval '1 minute'로 교체 —
+--       실행 시각과 무관하게 항상 과거.
+--   F4: fixture가 mission_progress.status를 'COMPLETED'로 직접 심어
+--       award_mission_v3_reward가 그 값을 요구만 하는 것처럼 보이게
+--       가렸다. F1 수정(RPC가 Goal 3/4+ 충족 시 스스로 COMPLETED로
+--       전이)으로 status는 더 이상 fixture가 미리 심지 않고, RPC 호출 후
+--       실제로 전이됐는지와 이벤트 완료 트리거가 발화했는지를 직접 확인한다.
 BEGIN;
 
 DO $$
@@ -11,7 +26,9 @@ DECLARE
   v_child_message_id uuid;
   v_day date := (now() AT TIME ZONE 'Asia/Seoul')::date;
   v_day_at timestamptz;
+  v_effective_at timestamptz := now() - interval '1 minute';
   v_count integer;
+  v_status text;
   v_reward record;
   v_finalize record;
 BEGIN
@@ -26,18 +43,20 @@ BEGIN
   RETURNING id INTO v_child_id;
 
   -- ── Fixture 1: 정상 완료(Goal 3/4) v3_single_daily 세션, business_date=v_day ──
+  -- status는 심지 않는다(NULL) — award_mission_v3_reward 자신이 COMPLETED로
+  -- 전이시키는지가 F1의 핵심 검증 대상이다.
   INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
   VALUES (v_child_id, 'mission', v_day_at, v_day)
   RETURNING id INTO v_session_id;
 
   INSERT INTO public.mission_progress(
     session_id, child_id, business_date, round_type,
-    mission_policy_version, effective_at, status,
+    mission_policy_version, effective_at,
     required_valid_count, valid_answer_count
   ) VALUES (
     v_session_id, v_child_id, v_day::text, 'daily_single',
-    'v3_single_daily', v_day_at - interval '1 hour', 'COMPLETED',
-    1, 1
+    'v3_single_daily', v_effective_at,
+    1, 0
   );
 
   INSERT INTO public.conversation_goals(
@@ -50,6 +69,12 @@ BEGIN
     CASE WHEN ord <= 3 THEN 0.9 ELSE NULL END,
     CASE WHEN ord <= 3 THEN v_day_at ELSE NULL END
   FROM generate_series(1, 4) AS ord;
+
+  -- trg_mission_progress_record_event_completion은 PostgREST의 request.headers
+  -- Host로 environment(dev/prod)를 판별한다 — apply-migration.js는 Management API로
+  -- 직접 SQL을 보내 이 컨텍스트가 없으므로, 실제 앱 요청을 트랜잭션-로컬로
+  -- 흉내내 트리거의 하위 경로까지 실제로 검증한다.
+  PERFORM set_config('request.headers', '{"host":"mkrsaaedxqrcrktapaus.supabase.co"}', true);
 
   -- 1) 정상 지급: 정확히 1개 행, rewarded=true.
   SELECT * INTO v_reward FROM public.award_mission_v3_reward(
@@ -66,7 +91,24 @@ BEGIN
     RAISE EXCEPTION 'expected exactly 1 ledger row after first award, got %', v_count;
   END IF;
 
-  -- 2) 재시도/reopen: 같은 키로 20회 재호출해도 행은 여전히 1개, 전부 already_rewarded.
+  -- F1 직접 검증: award_mission_v3_reward 스스로 mission_progress를 COMPLETED로
+  -- 전이시켰는가 (finalize_mission_turn_v1 레거시 경로는 이 세션에 관여하지 않았다).
+  SELECT status INTO v_status FROM public.mission_progress WHERE session_id = v_session_id;
+  IF v_status IS DISTINCT FROM 'COMPLETED' THEN
+    RAISE EXCEPTION 'F1 regression: award_mission_v3_reward must transition mission_progress.status to COMPLETED itself, got %', v_status;
+  END IF;
+
+  -- F1 연쇄 검증: status 전이가 trg_mission_progress_event_completion을 통해
+  -- 마스터 §17.4 "정상 완료 = 이벤트 활동 +1"을 실제로 기록했는가.
+  SELECT count(*)::integer INTO v_count
+  FROM public.child_mission_event_completions
+  WHERE source_session_id = v_session_id AND activity_type = 'mission_complete';
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'F1 regression: completion trigger must record exactly 1 mission_complete event row, got %', v_count;
+  END IF;
+
+  -- 2) 재시도/reopen: 같은 키로 20회 순차 재호출해도 행은 여전히 1개, 전부
+  --    already_rewarded. (동시 호출이 아니라 순차 반복 검증 — 위 F2 참고.)
   FOR i IN 1..20 LOOP
     SELECT * INTO v_reward FROM public.award_mission_v3_reward(
       v_child_id, v_day, 'mission_v3_complete', v_session_id
@@ -98,19 +140,19 @@ BEGIN
   END IF;
 
   -- ── Fixture 2: Boredom 조기종료(Goal 2/4), 별도 business_date(v_day+1)로
-  --    fixture 1의 유일 인덱스와 절대 겹치지 않게 한다 ─────────────────────
+  --    fixture 1의 유일 인덱스와 절대 겹치지 않게 한다. status는 심지 않는다. ──
   INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
   VALUES (v_child_id, 'mission', v_day_at + interval '1 day', v_day + 1)
   RETURNING id INTO v_session_id;
 
   INSERT INTO public.mission_progress(
     session_id, child_id, business_date, round_type,
-    mission_policy_version, effective_at, status,
+    mission_policy_version, effective_at,
     required_valid_count, valid_answer_count
   ) VALUES (
     v_session_id, v_child_id, (v_day + 1)::text, 'daily_single',
-    'v3_single_daily', v_day_at - interval '1 hour', 'COMPLETED',
-    1, 1
+    'v3_single_daily', v_effective_at,
+    1, 0
   );
 
   INSERT INTO public.conversation_goals(
@@ -138,6 +180,12 @@ BEGIN
     RAISE EXCEPTION 'boredom rejection must not create any ledger row, got %', v_count;
   END IF;
 
+  -- Boredom 거부는 완료가 아니므로 status도 그대로 미완료 상태여야 한다.
+  SELECT status INTO v_status FROM public.mission_progress WHERE session_id = v_session_id;
+  IF v_status = 'COMPLETED' THEN
+    RAISE EXCEPTION 'boredom rejection must not mark mission_progress as COMPLETED, got %', v_status;
+  END IF;
+
   -- ── Fixture 3: R2 — 레거시 finalize_mission_turn_v1 경로가 v3 세션을
   --    자동완료·보상하지 않는지 직접 검증 (별도 business_date v_day+2) ─────
   INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
@@ -146,11 +194,11 @@ BEGIN
 
   INSERT INTO public.mission_progress(
     session_id, child_id, business_date, round_type,
-    mission_policy_version, effective_at, status,
+    mission_policy_version, effective_at,
     required_valid_count, valid_answer_count
   ) VALUES (
     v_session_id, v_child_id, (v_day + 2)::text, 'daily_single',
-    'v3_single_daily', v_day_at - interval '1 hour', NULL,
+    'v3_single_daily', v_effective_at,
     1, 1  -- valid_answer_count >= required_valid_count: 레거시 기준으로는 "완료"로 보인다
   );
 
