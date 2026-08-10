@@ -143,7 +143,7 @@ test("접두어 오탐이어도 현재 요청이 독립 주제면 참고 문구�
 
 test("현재 요청이 288/289/300자로 길어도 참고+현재요청 조립 결과가 300자를 넘지 않는다", () => {
   for (const len of [288, 289, 300]) {
-    const currentRequest = `직접, ${"나".repeat(len)}`;
+    const currentRequest = `직접, ${"나".repeat(len - 4)}`;
     const result = buildAskChildProposal(
       currentRequest,
       [{ role: "user", text: "케이랑 매일 대화할 것 같아?" }],

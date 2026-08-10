@@ -43,6 +43,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "내친구 케이",
+    url: "https://app.k-bestie.com",
     siteName: "내친구 케이",
     locale: "ko_KR",
     type: "website",
