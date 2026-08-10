@@ -1,8 +1,12 @@
-import { getOffsetDateStr } from "@/lib/analytics/kstDate";
+import {
+  isAnalyticsCalendarDate,
+  resolveAnalyticsKstFilters,
+  type AnalyticsPeriod,
+  type AnalyticsScope,
+  type InternalTestMode,
+} from "@/lib/admin/analyticsKst";
 
-export type AnalyticsPeriod = "today" | "7d" | "14d" | "30d" | "month" | "lastmonth" | "custom";
-export type AnalyticsScope = "all" | "family" | "parent" | "child";
-export type InternalTestMode = "exclude" | "include" | "only";
+export type { AnalyticsPeriod, AnalyticsScope, InternalTestMode } from "@/lib/admin/analyticsKst";
 
 export interface AnalyticsFilters {
   period: AnalyticsPeriod;
@@ -13,50 +17,20 @@ export interface AnalyticsFilters {
   timezone: "Asia/Seoul";
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
 export function isCalendarDate(value: string): boolean {
-  if (!DATE_RE.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return isAnalyticsCalendarDate(value);
 }
 
 export function resolveAnalyticsFilters(params: URLSearchParams, todayStr: string): AnalyticsFilters {
-  const rawPeriod = params.get("period");
-  const period: AnalyticsPeriod = ["today", "7d", "14d", "30d", "month", "lastmonth", "custom"].includes(rawPeriod ?? "")
-    ? rawPeriod as AnalyticsPeriod
-    : "7d";
-  const rawScope = params.get("scope");
-  const scope: AnalyticsScope = ["all", "family", "parent", "child"].includes(rawScope ?? "")
-    ? rawScope as AnalyticsScope
-    : "all";
-  const rawInternal = params.get("internalTest");
-  const internalTest: InternalTestMode = ["exclude", "include", "only"].includes(rawInternal ?? "")
-    ? rawInternal as InternalTestMode
-    : "exclude";
-
-  let from = getOffsetDateStr(todayStr, -6);
-  let to = todayStr;
-  if (period === "today") from = todayStr;
-  if (period === "14d") from = getOffsetDateStr(todayStr, -13);
-  if (period === "30d") from = getOffsetDateStr(todayStr, -29);
-  if (period === "month") from = `${todayStr.slice(0, 7)}-01`;
-  if (period === "lastmonth") {
-    const currentMonthStart = `${todayStr.slice(0, 7)}-01`;
-    to = getOffsetDateStr(currentMonthStart, -1);
-    from = `${to.slice(0, 7)}-01`;
-  }
-  if (period === "custom") {
-    const requestedFrom = params.get("from") ?? "";
-    const requestedTo = params.get("to") ?? "";
-    if (!isCalendarDate(requestedFrom) || !isCalendarDate(requestedTo) || requestedFrom > requestedTo) {
-      throw new Error("직접 기간의 시작일과 종료일을 확인해 주세요.");
-    }
-    from = requestedFrom;
-    to = requestedTo;
-  }
-
-  return { period, scope, internalTest, from, to, timezone: "Asia/Seoul" };
+  const resolved = resolveAnalyticsKstFilters(params, new Date(`${todayStr}T03:00:00+09:00`));
+  return {
+    period: resolved.period,
+    scope: resolved.scope,
+    internalTest: resolved.internalTest,
+    from: resolved.from,
+    to: resolved.to,
+    timezone: resolved.timezone,
+  };
 }
 
 export function retentionParams(filters: AnalyticsFilters, includeTestAccounts: boolean): URLSearchParams {
