@@ -149,16 +149,16 @@ export function KakaoInAppBrowserNotice({ onClose }: { onClose?: () => void }) {
         <p className="mt-3 whitespace-pre-line text-base leading-6 text-gray-600">
           {"내친구 케이 앱을 안정적으로 설치하기\n위해서는 외부 브라우저를 열어 주세요."}
         </p>
-        <div className="mt-6 rounded-2xl bg-[var(--color-k-surface)] p-3 text-left sm:p-4">
-          <h2 className="text-base font-bold text-gray-900">{guide.title}</h2>
-          <ol className={`mt-3 list-decimal pl-4 text-[clamp(0.6875rem,3.75vw,1rem)] leading-5 tracking-[-0.04em] text-gray-700 sm:pl-5 sm:leading-6 sm:tracking-normal ${ios ? "space-y-6" : "space-y-2"}`}>
+        <div className="mt-6 rounded-2xl bg-[var(--color-k-surface)] p-5 text-left sm:p-6">
+          <h2 className="text-xl font-bold text-gray-900">{guide.title}</h2>
+          <ol className="mt-4 list-decimal space-y-6 pl-6 text-lg font-medium leading-8 text-gray-700 sm:pl-7">
             {guide.steps.map((step) => <li key={step} className="whitespace-pre-line">{step}</li>)}
           </ol>
         </div>
         {ios && (
-          <div className="mt-4 rounded-2xl bg-[var(--color-k-surface)] p-3 text-left sm:p-4">
-            <h2 className="text-base font-bold text-gray-900">앱 설치하는 방법</h2>
-            <ol className="mt-3 list-decimal space-y-2 pl-4 text-[clamp(0.6875rem,3.75vw,1rem)] leading-5 tracking-[-0.04em] text-gray-700 sm:pl-5 sm:leading-6 sm:tracking-normal">
+          <div className="mt-4 rounded-2xl bg-[var(--color-k-surface)] p-5 text-left sm:p-6">
+            <h2 className="text-xl font-bold text-gray-900">앱 설치하는 방법</h2>
+            <ol className="mt-4 list-decimal space-y-6 pl-6 text-lg font-medium leading-8 text-gray-700 sm:pl-7">
               <li className="whitespace-pre-line">{"Safari의 공유 버튼을\n눌러 주세요."}</li>
               <li className="whitespace-pre-line">{"홈 화면에 추가를\n선택해 주세요."}</li>
               <li className="whitespace-pre-line">{"웹 앱으로 열기를 켜고\n추가를 눌러 주세요."}</li>
@@ -171,12 +171,12 @@ export function KakaoInAppBrowserNotice({ onClose }: { onClose?: () => void }) {
         <button
           type="button"
           onClick={() => void handleCopyAddress()}
-          className="mt-5 min-h-12 w-full rounded-2xl border border-gray-200 bg-white font-bold text-gray-700 active:scale-[0.98]"
+          className="mt-5 min-h-12 w-full rounded-2xl border border-gray-200 bg-white text-lg font-bold text-gray-700 active:scale-[0.98]"
         >
           주소 복사하기
         </button>
         <p
-          className={`mt-3 min-h-10 whitespace-pre-line text-center text-[clamp(0.75rem,3.75vw,0.875rem)] font-semibold leading-5 tracking-[-0.03em] sm:tracking-normal ${copied ? "text-red-600" : copyFailed ? "text-gray-500" : ""}`}
+          className={`mt-3 min-h-16 whitespace-pre-line text-center text-lg font-bold leading-8 ${copied ? "text-red-600" : copyFailed ? "text-gray-500" : ""}`}
           aria-live="polite"
         >
           {copied
