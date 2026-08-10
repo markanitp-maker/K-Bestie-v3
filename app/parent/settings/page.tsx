@@ -846,14 +846,14 @@ export default function ParentSettingsPage() {
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[23px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 ➕
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>아이 추가</p>
-                <p className="text-[11px]" style={{ color: "#6b7280" }}>새로운 아이 계정을 추가해요</p>
+                <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>아이 추가</p>
+                <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>새로운 아이 계정을 추가해요</p>
               </div>
-              <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "add_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
+              <span className="w-11 h-11 flex items-center justify-center text-lg shrink-0" style={{ color: "#6b7280", transform: activeMenu === "add_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
             </div>
 
             {activeMenu === "add_child" && (
@@ -985,7 +985,7 @@ export default function ParentSettingsPage() {
           {/* 1-1. 아이 승인 요청 상태 (053 - 관리자 승인 전/거절/실패 상태만 조회) */}
           {approvalRequests.length > 0 && (
             <div className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3">
-              <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>아이 승인 요청 현황</p>
+              <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>아이 승인 요청 현황</p>
               <div className="flex flex-col gap-2">
                 {approvalRequests.map((req) => {
                   const statusMeta: Record<string, { label: string; color: string; bg: string }> = {
@@ -998,7 +998,7 @@ export default function ParentSettingsPage() {
                   return (
                     <div key={req.id} className="rounded-xl p-3 border border-gray-100 flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-gray-800 truncate">
+                        <p className="text-[14px] font-bold leading-snug text-gray-800 truncate">
                           {req.profileMissing ? "아이 정보" : `${req.family_name}${req.given_name}`} · {req.grade}
                         </p>
                         {req.status === "rejected" && req.rejected_reason && (
@@ -1012,7 +1012,7 @@ export default function ParentSettingsPage() {
                         )}
                       </div>
                       <span
-                        className="shrink-0 px-2 py-1 rounded-full text-[10px] font-bold"
+                        className="shrink-0 px-2.5 py-1.5 rounded-full text-[12px] font-bold leading-none"
                         style={{ color: meta.color, background: meta.bg }}
                       >
                         {meta.label}
@@ -1079,14 +1079,14 @@ export default function ParentSettingsPage() {
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[23px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 📝
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>아이 정보 관리</p>
-                <p className="text-[11px]" style={{ color: "#6b7280" }}>이름, 학년, 관심사, 요금제를 관리해요</p>
+                <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>아이 정보 관리</p>
+                <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>이름, 학년, 관심사, 요금제를 관리해요</p>
               </div>
-              <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "edit_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
+              <span className="w-11 h-11 flex items-center justify-center text-lg shrink-0" style={{ color: "#6b7280", transform: activeMenu === "edit_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
             </div>
 
             {activeMenu === "edit_child" && (
@@ -1219,14 +1219,14 @@ export default function ParentSettingsPage() {
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[23px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 👨‍👩‍👧
               </div>
               <div className="flex-1">
-                <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>보호자 설정</p>
-                <p className="text-[11px]" style={{ color: "#6b7280" }}>내 이름, 알림, 보호자 구성원을 관리해요</p>
+                <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>보호자 설정</p>
+                <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>내 이름, 알림, 보호자 구성원을 관리해요</p>
               </div>
-              <span className="text-sm" style={{ color: "#6b7280", transform: activeMenu === "family_members" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
+              <span className="w-11 h-11 flex items-center justify-center text-lg shrink-0" style={{ color: "#6b7280", transform: activeMenu === "family_members" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
             </div>
 
             {activeMenu === "family_members" && (
@@ -1465,19 +1465,19 @@ export default function ParentSettingsPage() {
           {/* PWA 설치 안내 카드 */}
           <div className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 mt-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ background: "#f3f4f6" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[23px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 📱
               </div>
               {isStandalone ? (
                 <div className="flex-1">
-                  <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>설치됨</p>
-                  <p className="text-[11px]" style={{ color: "#6b7280" }}>이미 앱으로 이용 중이에요</p>
+                  <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>설치됨</p>
+                  <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>이미 앱으로 이용 중이에요</p>
                 </div>
               ) : (
                 <>
                   <div className="flex-1">
-                    <p className="text-sm font-bold" style={{ color: "var(--color-k-text-primary)" }}>앱 설치하기</p>
-                    <p className="text-[11px]" style={{ color: "#6b7280" }}>
+                    <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>앱 설치하기</p>
+                    <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>
                       {isIOS ? "공유 버튼 → '홈 화면에 추가'를 눌러주세요" : "홈 화면에 추가하여 더 편리하게 이용하세요"}
                     </p>
                   </div>
@@ -1497,7 +1497,7 @@ export default function ParentSettingsPage() {
           {/* 로그아웃 */}
           <button
             onClick={handleLogout}
-            className="w-full py-3.5 rounded-2xl bg-white border border-red-100 text-red-500 text-xs font-bold active:scale-[0.98] transition-transform cursor-pointer shadow-sm mt-3 shrink-0"
+            className="w-full py-3.5 rounded-2xl bg-white border border-red-100 text-red-500 text-sm font-bold active:scale-[0.98] transition-transform cursor-pointer shadow-sm mt-3 shrink-0"
           >
             로그아웃
           </button>
