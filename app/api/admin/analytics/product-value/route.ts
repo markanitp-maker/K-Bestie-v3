@@ -71,7 +71,8 @@ export async function GET(req: NextRequest) {
         .select("parent_id,child_id,created_at").lt("created_at", filters.toExclusiveIso), { column: "created_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<EventRow>(() => service.from("behavior_events")
         .select("event_name,actor_id,child_id,family_id,feature,play_type,duration_seconds,occurred_at")
-        .eq("event_name", "app_session_start").eq("feature", "app_session"), { column: "occurred_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
+        .eq("event_name", "app_session_start").eq("feature", "app_session")
+        .lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const events = settledValue(settled[1], "행동 이벤트").filter((row) =>
