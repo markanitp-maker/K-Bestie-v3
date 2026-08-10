@@ -846,7 +846,7 @@ export default function ParentSettingsPage() {
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[23px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[26px] sm:text-[30px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 ➕
               </div>
               <div className="flex-1">
@@ -1079,7 +1079,7 @@ export default function ParentSettingsPage() {
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[23px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[26px] sm:text-[30px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 📝
               </div>
               <div className="flex-1">
@@ -1219,7 +1219,7 @@ export default function ParentSettingsPage() {
             className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 cursor-pointer"
           >
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[23px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[26px] sm:text-[30px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 👨‍👩‍👧
               </div>
               <div className="flex-1">
@@ -1465,7 +1465,7 @@ export default function ParentSettingsPage() {
           {/* PWA 설치 안내 카드 */}
           <div className="bg-white rounded-2xl px-4 py-4 shadow-sm flex flex-col gap-3 mt-3">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[23px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-[26px] sm:text-[30px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 📱
               </div>
               {isStandalone ? (
