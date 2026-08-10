@@ -726,6 +726,9 @@ export default function ChatPage() {
             <div className="absolute top-[37%] left-[8%] text-[clamp(14px,4vw,20px)] text-[#F6C85F]/40">✦</div>
             <div className="absolute top-[51%] right-[8%] text-[clamp(12px,3.5vw,18px)] text-[#F6A21A]/35 rotate-12">✦</div>
             <div className="absolute top-[68%] left-[12%] w-[clamp(16px,5vw,24px)] h-[clamp(16px,5vw,24px)] bg-white/20 rounded-full blur-[1px]" />
+            <div className="absolute top-[27%] right-[18%] w-[clamp(10px,3vw,14px)] h-[clamp(7px,2vw,10px)] rounded-[3px] bg-[#FF8A6B]/55 rotate-[24deg] shadow-[0_2px_4px_rgba(224,90,63,0.12)]" />
+            <div className="absolute top-[46%] left-[5%] w-[clamp(12px,3.4vw,16px)] h-[clamp(8px,2.2vw,11px)] rounded-[3px] bg-[#8ED7A8]/45 -rotate-[28deg] shadow-[0_2px_4px_rgba(68,130,90,0.10)]" />
+            <div className="absolute top-[62%] right-[16%] w-[clamp(28px,8vw,36px)] h-[clamp(12px,3.5vw,16px)] rounded-full bg-white/30 blur-[1px]" />
           </div>
 
           {/* 공통 헤더 */}
@@ -787,20 +790,29 @@ export default function ChatPage() {
               <>
                 {/* Mascot & Platform - Centered strictly */}
                 <div className="free-chat-mascot-group absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
-                   {/* Halo */}
-                   <div className="absolute top-[3%] w-[clamp(170px,47vw,198px)] h-[clamp(170px,47vw,198px)] rounded-full bg-[#FAD98A]/20 blur-2xl pointer-events-none" />
-                   <div className="absolute top-[8%] w-[clamp(154px,43vw,178px)] h-[clamp(154px,43vw,178px)] rounded-full border border-[#F6C85F]/25 bg-[#FFF5E8]/30 pointer-events-none" />
+                   {/* Soft dimensional halo: diffuse light rather than a visible ring */}
+                   <div
+                     className="absolute top-[-4%] w-[clamp(205px,56vw,238px)] h-[clamp(205px,56vw,238px)] rounded-full blur-[18px] pointer-events-none"
+                     style={{ background: "radial-gradient(circle, rgba(255,245,222,0.82) 0%, rgba(250,217,138,0.30) 42%, rgba(250,217,138,0.08) 63%, transparent 75%)" }}
+                   />
+                   <div
+                     className="absolute top-[6%] w-[clamp(175px,48vw,205px)] h-[clamp(175px,48vw,205px)] rounded-full blur-[9px] pointer-events-none"
+                     style={{ background: "radial-gradient(circle at 50% 42%, rgba(255,255,255,0.72) 0%, rgba(255,245,232,0.46) 47%, rgba(246,200,95,0.12) 72%, transparent 82%)" }}
+                   />
                    
                    {/* Mascot */}
-                   <div className="relative z-10 flex justify-center items-end pb-[clamp(24px,3.2dvh,30px)]">
-                     <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={152} className="!w-[clamp(135px,39vw,160px)] !h-auto object-contain" />
+                   <div className="relative z-10 flex justify-center items-end pb-[clamp(28px,3.7dvh,34px)]">
+                     <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={165} className="!w-[clamp(145px,42vw,172px)] !h-auto object-contain" />
                    </div>
                    
-                   {/* Platform */}
-                   <div className="absolute bottom-0 w-[clamp(175px,49vw,205px)] h-[clamp(34px,5.3dvh,46px)] pointer-events-none">
-                     <div className="absolute top-0 w-full h-[60%] bg-[#FFF5E8] rounded-[100%] border border-[#f0e4d4] shadow-inner z-10" />
-                     <div className="absolute top-[30%] w-full h-[70%] bg-[#f2e1cc] rounded-b-[70px] shadow-[0_5px_8px_rgba(145,106,62,0.12)]" />
-                     <div className="absolute top-[15%] left-[15%] w-[70%] h-[35%] bg-black/5 rounded-[100%] z-10 blur-sm" />
+                   {/* Raised cylinder platform: distinct top plane, shaded side wall, and grounded shadow */}
+                   <div className="absolute bottom-0 w-[clamp(205px,57vw,238px)] h-[clamp(58px,8.2dvh,70px)] pointer-events-none">
+                     <div className="absolute -bottom-[8%] left-[8%] w-[84%] h-[30%] rounded-[50%] bg-[#9B7047]/28 blur-[8px]" />
+                     <div className="absolute top-[25%] w-full h-[60%] rounded-b-[50%] border-x border-b border-[#D7A87A]/70 bg-gradient-to-b from-[#F4CFAB] via-[#E8B98C] to-[#C98755] shadow-[0_9px_10px_rgba(125,79,37,0.24)]" />
+                     <div className="absolute bottom-[3%] left-[3%] w-[94%] h-[30%] rounded-b-[50%] bg-[linear-gradient(90deg,rgba(168,99,48,0.28),transparent_18%,rgba(255,240,214,0.40)_50%,transparent_82%,rgba(147,78,33,0.32))]" />
+                     <div className="absolute top-0 z-10 w-full h-[51%] rounded-[100%] border border-[#E7C49D] shadow-[inset_0_2px_6px_rgba(255,255,255,0.85),0_2px_3px_rgba(167,103,47,0.14)]" style={{ background: "radial-gradient(ellipse at 50% 30%, #fffdf8 0%, #fff4e4 45%, #f3d3ad 77%, #dfad7b 100%)" }} />
+                     <div className="absolute top-[10%] left-[18%] z-20 w-[64%] h-[20%] rounded-[50%] bg-white/60 blur-[3px]" />
+                     <div className="absolute top-[32%] left-[12%] z-20 w-[76%] h-[17%] rounded-[50%] bg-[#B97942]/13 blur-[2px]" />
                    </div>
                 </div>
 
@@ -823,8 +835,8 @@ export default function ChatPage() {
 
           {/* Auto/Manual Mode Toggles */}
           {mode !== "text" && !isKeyboardOpen && (
-          <div className="relative z-20 flex justify-center -mt-[clamp(6px,1dvh,10px)] h-[clamp(38px,5dvh,42px)] shrink-0">
-            <div className="flex w-[clamp(130px,36vw,145px)] h-full p-1 rounded-full bg-white/90 border border-[#F1D5BE] shadow-[0_2px_7px_rgba(145,106,62,0.10)]">
+          <div className="relative z-20 flex justify-center -mt-[clamp(34px,4.5dvh,40px)] h-[clamp(38px,5dvh,42px)] shrink-0 pointer-events-none">
+            <div className="flex w-[clamp(130px,36vw,145px)] h-full p-1 rounded-full bg-white/95 border border-[#E6B77F] shadow-[0_4px_8px_rgba(117,68,28,0.22)] pointer-events-auto">
              <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
                {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
