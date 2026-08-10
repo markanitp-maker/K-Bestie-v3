@@ -97,8 +97,21 @@ test("후속 '그럼 아이에게 물어봐줘'는 직전 케이 관계 주제�
   );
 
   assert.equal(result.requestedTopic, "케이랑 매일 대화할 것 같아?");
-  assert.match(result.proposal, /직전 대화 주제: 케이랑 매일 대화할 것 같아\?/);
-  assert.match(result.proposal, /부모의 후속 요청: 그럼 서현이에게 물어봐줘/);
+  assert.match(result.proposal, /참고\(직전 주제, 확정 아님\): 케이랑 매일 대화할 것 같아\?/);
+  assert.match(result.proposal, /현재 요청\(우선\): 그럼 서현이에게 물어봐줘/);
+});
+
+test("pendingProposal이 300자에 근접해도 수정 요청 전체는 잘리지 않는다", () => {
+  const longPending = "가".repeat(295);
+  const result = buildAskChildProposal(
+    "짧게 다시",
+    [],
+    longPending,
+    true,
+  );
+
+  assert.ok(result.proposal.includes(" (수정 요청: 짧게 다시)"));
+  assert.ok(result.proposal.length <= 300);
 });
 
 test("명시적인 새 질문 요청은 이전 주제로 바꾸지 않는다", () => {

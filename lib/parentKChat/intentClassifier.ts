@@ -33,7 +33,19 @@ export interface AskChildProposalContext {
 
 const CONTEXTUAL_QUERY_REQUEST_PATTERN = /^(그럼|그러면|그렇다면|그걸|그거|직접)(?:\s|,)/;
 
-/** 직전 부모 주제를 유지하면서도 부모 문장을 아이 질문으로 직접 전달하지 않는 재작성 입력을 만든다. */
+const PROPOSAL_MAX_LENGTH = 300;
+const REQUESTED_TOPIC_MAX_LENGTH = 120;
+
+/**
+ * 직전 부모 주제를 유지하면서도 부모 문장을 아이 질문으로 직접 전달하지 않는 재작성 입력을 만든다.
+ * codex-rv 지적 반영: currentRequest(이번 요청)는 재작성 파이프라인이 실제로 반응해야 할
+ * 신규 지시이므로 길이 제한 시 과거 맥락보다 항상 우선 보존한다 — 과거 맥락이 잘리는 것은
+ * 허용하되 currentRequest가 통째로 사라지는 것은 허용하지 않는다(기존엔 pendingProposal이
+ * 이미 300자면 수정 요청 전체가 잘려나갔다). CONTEXTUAL_QUERY_REQUEST_PATTERN은 접두어만
+ * 보는 휴리스틱이라 오탐 가능하므로, 이전 주제는 "참고/확정 아님"으로 표시하고 현재 요청을
+ * "우선"으로 명시해 하위 LLM(classifyAndRewriteParentQuestion)이 오탐 시에도 현재 요청의
+ * 독립 주제를 우선 해석하도록 유도한다.
+ */
 export function buildAskChildProposal(
   currentRequest: string,
   conversationContext: ParentQueryContextTurn[],
@@ -41,9 +53,11 @@ export function buildAskChildProposal(
   isPendingEdit: boolean,
 ): AskChildProposalContext {
   if (isPendingEdit && pendingProposal) {
+    const suffix = ` (수정 요청: ${currentRequest})`.slice(0, PROPOSAL_MAX_LENGTH);
+    const pendingBudget = Math.max(0, PROPOSAL_MAX_LENGTH - suffix.length);
     return {
-      proposal: `${pendingProposal} (수정 요청: ${currentRequest})`.slice(0, 300),
-      requestedTopic: pendingProposal.slice(0, 120),
+      proposal: `${pendingProposal.slice(0, pendingBudget)}${suffix}`.slice(0, PROPOSAL_MAX_LENGTH),
+      requestedTopic: pendingProposal.slice(0, REQUESTED_TOPIC_MAX_LENGTH),
     };
   }
 
@@ -51,16 +65,19 @@ export function buildAskChildProposal(
     .reverse()
     .find((turn) => turn.role === "user" && turn.text.trim().length > 0);
   if (CONTEXTUAL_QUERY_REQUEST_PATTERN.test(currentRequest) && previousUserTurn) {
-    const requestedTopic = previousUserTurn.text.trim().slice(0, 120);
+    const requestedTopic = previousUserTurn.text.trim().slice(0, REQUESTED_TOPIC_MAX_LENGTH);
+    const suffix = `\n현재 요청(우선): ${currentRequest}`.slice(0, PROPOSAL_MAX_LENGTH);
+    const prefixLabel = "참고(직전 주제, 확정 아님): ";
+    const contextBudget = Math.max(0, PROPOSAL_MAX_LENGTH - suffix.length - prefixLabel.length);
     return {
-      proposal: `직전 대화 주제: ${requestedTopic}\n부모의 후속 요청: ${currentRequest}`.slice(0, 300),
+      proposal: `${prefixLabel}${requestedTopic.slice(0, contextBudget)}${suffix}`.slice(0, PROPOSAL_MAX_LENGTH),
       requestedTopic,
     };
   }
 
   return {
-    proposal: currentRequest.slice(0, 300),
-    requestedTopic: currentRequest.slice(0, 120),
+    proposal: currentRequest.slice(0, PROPOSAL_MAX_LENGTH),
+    requestedTopic: currentRequest.slice(0, REQUESTED_TOPIC_MAX_LENGTH),
   };
 }
 
