@@ -115,7 +115,6 @@ export default function ParentSettingsPage() {
   const [addPassword, setAddPassword] = useState("");
   const [addChildGender, setAddChildGender] = useState<string>("");
   const [addChildGrade, setAddChildGrade] = useState("1학년");
-  const [addChildInterests, setAddChildInterests] = useState<string[]>([]);
   const [addChildConsent, setAddChildConsent] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
@@ -640,7 +639,6 @@ export default function ParentSettingsPage() {
     if (!addChildGender) { setAddError("성별을 선택해주세요."); return; }
     if (!addUsername.trim()) { setAddError("아이디를 입력해주세요."); return; }
     if (addPassword.length < 6) { setAddError("비밀번호는 6자 이상이어야 합니다."); return; }
-    if (addChildInterests.length === 0) { setAddError("관심사를 하나 이상 선택해주세요."); return; }
     if (!addChildConsent) { setAddError("법정대리인 동의가 필요합니다."); return; }
 
     setAddLoading(true);
@@ -652,7 +650,6 @@ export default function ParentSettingsPage() {
         givenName: addGivenName.trim(),
         gender: addChildGender,
         grade: addChildGrade,
-        interests: addChildInterests,
         guardian_consent: addChildConsent
       };
 
@@ -673,7 +670,6 @@ export default function ParentSettingsPage() {
       setAddUsername("");
       setAddPassword("");
       setAddChildGender("");
-      setAddChildInterests([]);
       setAddChildConsent(false);
       setActiveMenu(null);
       if (data.request?.status === "approved") {
@@ -791,18 +787,13 @@ export default function ParentSettingsPage() {
     }
   };
 
-  const toggleInterest = (item: string, isEdit: boolean) => {
-    if (isEdit) {
-      setEditInterests((prev) =>
-        prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
-      );
-      if (saveFieldErrors.interests) {
-        setSaveFieldErrors((prev) => ({ ...prev, interests: undefined }));
-      }
-    } else {
-      setAddChildInterests((prev) =>
-        prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
-      );
+  // 기존 아이 정보 관리(편집) 화면 전용 — 아이 추가 화면에는 관심사 선택이 없다.
+  const toggleInterest = (item: string) => {
+    setEditInterests((prev) =>
+      prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
+    );
+    if (saveFieldErrors.interests) {
+      setSaveFieldErrors((prev) => ({ ...prev, interests: undefined }));
     }
   };
 
@@ -923,27 +914,6 @@ export default function ParentSettingsPage() {
                             {g}
                           </button>
                         ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-[10px] font-bold text-gray-500 mb-1 px-1">아이 관심사 선택</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {INTERESTS.map((interest) => {
-                          const has = addChildInterests.includes(interest);
-                          return (
-                            <button
-                              key={interest}
-                              type="button"
-                              onClick={() => toggleInterest(interest, false)}
-                              className={`px-3 py-1 text-[10px] font-bold rounded-full border ${
-                                has ? "bg-[var(--color-k-orange)] text-white border-transparent" : "bg-white border-gray-200 text-gray-600"
-                              }`}
-                            >
-                              {interest}
-                            </button>
-                          );
-                        })}
                       </div>
                     </div>
 
@@ -1587,7 +1557,7 @@ export default function ParentSettingsPage() {
                     return (
                       <button
                         key={interest}
-                        onClick={() => toggleInterest(interest, true)}
+                        onClick={() => toggleInterest(interest)}
                         className={`px-2.5 py-1 text-[9px] font-bold border rounded-full cursor-pointer ${
                           has ? "bg-[var(--color-k-orange)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
                         } ${saveFieldErrors.interests ? "border-red-400" : ""}`}
