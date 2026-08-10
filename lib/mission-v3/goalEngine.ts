@@ -290,7 +290,8 @@ export const initializeConversationGoals = async (input: {
     const { error: resetError } = await input.db
       .from("conversation_goals")
       .delete()
-      .eq("mission_session_id", input.missionSessionId);
+      .eq("mission_session_id", input.missionSessionId)
+      .eq("status", "PENDING");
     if (resetError) {
       throw new Error(`불완전 Conversation Goal 초기화 정리 실패: ${resetError.message}`);
     }
@@ -346,11 +347,15 @@ export const evaluateGoalSatisfaction = (input: {
     if (normalizeSemanticGroup(assessment.semanticGroup) !== normalizeSemanticGroup(goal.semanticGroup)) {
       throw new Error(`Goal semantic group 불일치: ${assessment.goalId}`);
     }
+    // 상태값·confidence 범위 오류는 LLM 분류기의 품질 문제일 수 있어 판정 1건만
+    // 무시하고 넘어간다 — throw하면 같은 턴의 다른 정상 판정까지 통째로 날아간다.
     if (!GOAL_ASSESSMENT_STATUSES.includes(assessment.status)) {
-      throw new Error(`Goal status 값 오류: ${assessment.goalId} (${String(assessment.status)})`);
+      console.error(`[mission-v3/goalEngine] Goal status 값 오류 — 이 판정만 무시: ${assessment.goalId} (${String(assessment.status)})`);
+      return [];
     }
     if (!Number.isFinite(assessment.confidence) || assessment.confidence < 0 || assessment.confidence > 1) {
-      throw new Error(`Goal confidence 범위 오류: ${assessment.goalId}`);
+      console.error(`[mission-v3/goalEngine] Goal confidence 범위 오류 — 이 판정만 무시: ${assessment.goalId} (${assessment.confidence})`);
+      return [];
     }
     if (assessment.confidence < MIN_GOAL_CONFIDENCE) return [];
     if (["SATISFIED", "DECLINED", "SKIPPED"].includes(goal.status)) return [];
@@ -367,10 +372,20 @@ export const evaluateGoalSatisfaction = (input: {
   });
 };
 
+export interface PersistGoalDecisionsResult {
+  succeeded: GoalDecision[];
+  failures: string[];
+}
+
+/**
+ * 일부 UPDATE만 실패해도 성공한 판정은 버리지 않는다 — 호출부(missionAdapter)가
+ * 전체를 throw로 받으면 이미 저장된 판정까지 반환값에서 사라져 cooldown 기록·
+ * promptGoal 선택이 실제 DB 상태와 어긋난다.
+ */
 export const persistGoalDecisions = async (
   db: SupabaseClient,
   decisions: GoalDecision[],
-): Promise<void> => {
+): Promise<PersistGoalDecisionsResult> => {
   const settled = await Promise.allSettled(
     decisions.map(async (decision) => {
       const { error } = await db
@@ -386,15 +401,17 @@ export const persistGoalDecisions = async (
         .eq("goal_id", decision.goalId)
         .in("status", ["PENDING", "PARTIAL"]);
       if (error) throw new Error(`${decision.goalId}: ${error.message}`);
+      return decision;
     }),
   );
 
-  const failures = settled.flatMap((result) =>
-    result.status === "rejected" ? [String(result.reason)] : [],
-  );
-  if (failures.length > 0) {
-    throw new Error(`Conversation Goal 판정 저장 실패: ${failures.join("; ")}`);
+  const succeeded: GoalDecision[] = [];
+  const failures: string[] = [];
+  for (const result of settled) {
+    if (result.status === "fulfilled") succeeded.push(result.value);
+    else failures.push(String(result.reason));
   }
+  return { succeeded, failures };
 };
 
 export const hasMissionGoalThreshold = (goals: ConversationGoal[]): boolean =>

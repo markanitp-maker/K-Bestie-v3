@@ -122,6 +122,15 @@ export const respondToMissionTurn = async (input: {
   appMode?: "auto" | "manual";
   goals: MissionPromptGoal[];
   assessments: GoalAssessment[];
+  /**
+   * goalId K actively prompted toward on the PREVIOUS turn (the caller persists
+   * the prior call's `promptedGoalId` and passes it back in). Required to tell
+   * "child answered what K just asked" apart from "child brought this up on
+   * their own" — the Goal that gets SATISFIED this call is always excluded
+   * from this call's own promptGoal selection, so comparing against the
+   * freshly-selected promptGoal can never match.
+   */
+  previousPromptedGoalId?: string | null;
   recentActions?: ConversationAction[];
   engine?: MissionAdapterEngine;
 }): Promise<MissionAdapterResult> => {
@@ -144,10 +153,13 @@ export const respondToMissionTurn = async (input: {
       assessedAt: input.assessedAt ?? new Date().toISOString(),
       assessments: input.assessments,
     });
-    await persistGoalDecisions(input.db, evaluatedDecisions);
-    goalDecisions = evaluatedDecisions;
+    const { succeeded, failures } = await persistGoalDecisions(input.db, evaluatedDecisions);
+    goalDecisions = succeeded;
+    if (failures.length > 0) {
+      console.error("[mission-v3/adapter] Goal decision persistence partially failed", failures);
+    }
   } catch (error) {
-    console.error("[mission-v3/adapter] Goal evaluation or persistence failed", error);
+    console.error("[mission-v3/adapter] Goal evaluation failed", error);
   }
 
   const currentGoals = applyDecisions(input.goals, goalDecisions);
@@ -177,22 +189,33 @@ export const respondToMissionTurn = async (input: {
 
   // EngineOutput only reports the response category/action; it cannot prove
   // that the model actually followed adapterInstruction. Record a cooldown
-  // only after the child's evidence advances that same Goal.
-  const advancedGoalIds = new Set(
+  // only once a Goal reaches SATISFIED — PARTIAL is still an open goal and
+  // would otherwise lock itself out of re-asking for cooldownDays.
+  const satisfiedGoalIds = new Set(
     goalDecisions
-      .filter((decision) => decision.status === "SATISFIED" || decision.status === "PARTIAL")
+      .filter((decision) => decision.status === "SATISFIED")
       .map((decision) => decision.goalId),
   );
   const cooldownResults = await Promise.allSettled(
     input.goals
-      .filter((goal) => advancedGoalIds.has(goal.goalId))
-      .map((goal) => engine.recordTopicUsage(
-        input.db,
-        input.childId,
-        goal.semanticGroup,
-        "mission",
-        goal.parentQuestionId ? "parent_question" : "k",
-      )),
+      .filter((goal) => satisfiedGoalIds.has(goal.goalId))
+      .map((goal) => {
+        // Only credit "k" (or its parent-question provenance) when K was the
+        // one prompting toward this Goal on the turn whose evidence just
+        // satisfied it. A Goal the child satisfied unprompted must be recorded
+        // as child-initiated per 071 §9 (never cooldown the child's own topics).
+        const wasPrompted = goal.goalId === input.previousPromptedGoalId;
+        const initiatedBy = wasPrompted
+          ? (goal.parentQuestionId ? "parent_question" : "k")
+          : "child";
+        return engine.recordTopicUsage(
+          input.db,
+          input.childId,
+          goal.semanticGroup,
+          "mission",
+          initiatedBy,
+        );
+      }),
   );
   for (const result of cooldownResults) {
     if (result.status === "rejected") {

@@ -171,7 +171,7 @@ test("증거 발화가 비었거나 confidence가 낮으면 Goal 충족으로 �
   }), []);
 });
 
-test("R-8: 허용되지 않은 Goal status는 DB 저장 전에 명확히 거절한다", () => {
+test("R-8/S-2: 허용되지 않은 Goal status는 그 판정만 무시하고 나머지는 정상 반영한다", () => {
   const invalidAssessment = {
     goalId: "goal-1",
     semanticGroup: "SCHOOL_DAY",
@@ -179,14 +179,26 @@ test("R-8: 허용되지 않은 Goal status는 DB 저장 전에 명확히 거절�
     confidence: 0.9,
     evidenceSource: "child_utterance",
   } as unknown as GoalAssessment;
+  const validAssessment: GoalAssessment = {
+    goalId: "goal-2",
+    semanticGroup: "PEER_RELATION",
+    status: "SATISFIED",
+    confidence: 0.9,
+    evidenceSource: "child_utterance",
+  };
 
-  assert.throws(() => evaluateGoalSatisfaction({
-    goals: [makeGoal()],
+  const decisions = evaluateGoalSatisfaction({
+    goals: [
+      makeGoal(),
+      makeGoal({ goalId: "goal-2", goalOrder: 2, semanticGroup: "PEER_RELATION", priority: "P2" }),
+    ],
     currentUtterance: "오늘 학교에서 재밌었어.",
     sourceTurnId: "turn-1",
     assessedAt: "2026-08-10T10:00:00.000Z",
-    assessments: [invalidAssessment],
-  }), /Goal status 값 오류: goal-1 \(COMPLETE\)/);
+    assessments: [invalidAssessment, validAssessment],
+  });
+
+  assert.deepEqual(decisions.map((decision) => decision.goalId), ["goal-2"]);
 });
 
 test("R-5: 부분 초기화의 두 UNIQUE 충돌은 pending 세트를 교체하고 23505 후 완성본을 재조회한다", async () => {
@@ -213,10 +225,12 @@ test("R-5: 부분 초기화의 두 UNIQUE 충돌은 pending 세트를 교체하�
             }),
           }),
           delete: () => ({
-            eq: async () => {
-              operations.push("delete-partial");
-              return { error: null };
-            },
+            eq: () => ({
+              eq: async () => {
+                operations.push("delete-partial");
+                return { error: null };
+              },
+            }),
           }),
           insert: async () => {
             operations.push("insert-drafts");
@@ -364,6 +378,162 @@ test("R-3: generated 응답만으로 미전환 Goal cooldown을 기록하지 않
 
   assert.equal(result.promptedGoalId, goal.goalId);
   assert.equal(cooldownRecords, 0);
+});
+
+test("C-1: PARTIAL 전이는 cooldown을 기록하지 않고 SATISFIED만 기록한다", async () => {
+  const db = {
+    from: () => ({
+      update: () => ({ eq: () => ({ in: async () => ({ error: null }) }) }),
+    }),
+  } as unknown as SupabaseClient;
+  const recordedInitiators: string[] = [];
+  const goal: MissionPromptGoal = {
+    ...makeGoal(),
+    promptInstruction: "학교 이야기를 자연스럽게 이어가.",
+  };
+
+  const result = await respondToMissionTurn({
+    db,
+    ai: null as never,
+    modelId: "test-model",
+    childId: "child-1",
+    sessionId: "session-1",
+    currentUtterance: "음... 그냥 그랬어.",
+    sourceTurnId: "turn-1",
+    goals: [goal],
+    assessments: [{
+      goalId: goal.goalId,
+      semanticGroup: goal.semanticGroup,
+      status: "PARTIAL",
+      confidence: 0.7,
+      evidenceSource: "child_utterance",
+    }],
+    engine: {
+      checkSafetyPreflight: async () => null,
+      respond: async () => ({
+        text: "그랬구나, 더 얘기해줄래?",
+        action: "FOLLOW_UP",
+        category: "generated",
+        tokenIn: 1,
+        tokenOut: 1,
+      }),
+      isTopicOnCooldownForK: async () => false,
+      recordTopicUsage: async (_db, _childId, _group, _mode, initiatedBy) => {
+        recordedInitiators.push(initiatedBy);
+      },
+    },
+  });
+
+  assert.equal(result.goalDecisions[0]?.status, "PARTIAL");
+  assert.deepEqual(recordedInitiators, []);
+});
+
+test("C-1: promptGoal이 아닌 Goal이 SATISFIED되면 child로 기록한다", async () => {
+  const db = {
+    from: () => ({
+      update: () => ({ eq: () => ({ in: async () => ({ error: null }) }) }),
+    }),
+  } as unknown as SupabaseClient;
+  const recordedInitiators: Array<{ group: string; initiatedBy: string }> = [];
+  // goal-1은 P0(항상 우선 선택되는 promptGoal), goal-2는 아이가 먼저 스스로 꺼내
+  // 같은 턴에 충족됐지만 K가 이번 턴에 그 방향으로 유도하지는 않았다.
+  const promptedGoal: MissionPromptGoal = {
+    ...makeGoal({ goalId: "goal-1", priority: "P0", parentQuestionId: "parent-1" }),
+    promptInstruction: "부모 질문 방향",
+  };
+  const spontaneousGoal: MissionPromptGoal = {
+    ...makeGoal({ goalId: "goal-2", goalOrder: 2, semanticGroup: "PEER_RELATION", priority: "P2" }),
+    promptInstruction: "친구 이야기",
+  };
+
+  await respondToMissionTurn({
+    db,
+    ai: null as never,
+    modelId: "test-model",
+    childId: "child-1",
+    sessionId: "session-1",
+    currentUtterance: "참, 민서랑 오늘 진짜 재밌었어!",
+    sourceTurnId: "turn-1",
+    // K가 직전 턴에 goal-1(P0, 부모 질문) 방향으로 물었고, 아이가 그 답과 함께
+    // 스스로 goal-2(친구 관계)도 같이 꺼낸 상황을 재현한다.
+    previousPromptedGoalId: "goal-1",
+    goals: [promptedGoal, spontaneousGoal],
+    assessments: [
+      {
+        goalId: "goal-1",
+        semanticGroup: promptedGoal.semanticGroup,
+        status: "SATISFIED",
+        confidence: 0.95,
+        evidenceSource: "child_utterance",
+      },
+      {
+        goalId: "goal-2",
+        semanticGroup: "PEER_RELATION",
+        status: "SATISFIED",
+        confidence: 0.95,
+        evidenceSource: "child_utterance",
+      },
+    ],
+    engine: {
+      checkSafetyPreflight: async () => null,
+      respond: async () => ({
+        text: "우와 정말 재밌었겠다!",
+        action: "CELEBRATION",
+        category: "generated",
+        tokenIn: 1,
+        tokenOut: 1,
+      }),
+      isTopicOnCooldownForK: async () => false,
+      recordTopicUsage: async (_db, _childId, group, _mode, initiatedBy) => {
+        recordedInitiators.push({ group, initiatedBy });
+      },
+    },
+  });
+
+  const byGroup = new Map(recordedInitiators.map((entry) => [entry.group, entry.initiatedBy]));
+  assert.equal(byGroup.get(promptedGoal.semanticGroup), "parent_question");
+  assert.equal(byGroup.get("PEER_RELATION"), "child");
+});
+
+test("S-1: 일부 Goal 저장 실패해도 성공한 판정은 유지된다", async () => {
+  const db = {
+    from: () => ({
+      update: () => ({
+        eq: (_column: string, goalId: string) => ({
+          in: async () => (goalId === "goal-1"
+            ? { error: { message: "forced failure for goal-1" } }
+            : { error: null }),
+        }),
+      }),
+    }),
+  } as unknown as SupabaseClient;
+  const goals: MissionPromptGoal[] = [
+    { ...makeGoal(), promptInstruction: "학교 이야기" },
+    { ...makeGoal({ goalId: "goal-2", goalOrder: 2, semanticGroup: "PEER_RELATION", priority: "P2" }), promptInstruction: "친구 이야기" },
+  ];
+
+  const result = await respondToMissionTurn({
+    db,
+    ai: null as never,
+    modelId: "test-model",
+    childId: "child-1",
+    sessionId: "session-1",
+    currentUtterance: "오늘 학교도 재밌었고 민서랑도 놀았어.",
+    sourceTurnId: "turn-1",
+    goals,
+    assessments: [
+      { goalId: "goal-1", semanticGroup: "SCHOOL_DAY", status: "SATISFIED", confidence: 0.9, evidenceSource: "child_utterance" },
+      { goalId: "goal-2", semanticGroup: "PEER_RELATION", status: "SATISFIED", confidence: 0.9, evidenceSource: "child_utterance" },
+    ],
+    engine: {
+      checkSafetyPreflight: async () => null,
+      respond: async () => ({ text: "좋았겠다!", action: "CELEBRATION", category: "generated", tokenIn: 1, tokenOut: 1 }),
+      isTopicOnCooldownForK: async () => false,
+      recordTopicUsage: async () => undefined,
+    },
+  });
+
+  assert.deepEqual(result.goalDecisions.map((decision) => decision.goalId), ["goal-2"]);
 });
 
 test("R-4: Goal 저장 실패에도 respond를 호출하고 빈 decision으로 fail-open한다", async () => {
