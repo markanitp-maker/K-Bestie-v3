@@ -83,24 +83,28 @@ export async function GET(req: NextRequest) {
     const visitRows = settledValue(settled[7], "방문 이벤트").filter((row) =>
       (row.actor_id && identity.parentIds.has(row.actor_id)) || (row.child_id && identity.childIds.has(row.child_id)));
     const measuredFrom = visitRows.length > 0 ? visitRows.map((row) => kstDateOfTimestamp(row.occurred_at)).sort()[0] : null;
-    const visitDates = new Map<string, Set<string>>();
+    const visitCoverageReady = measuredFrom !== null && measuredFrom <= filters.from && calendarDayDiff(filters.from, filters.to) >= 6;
+    const isWithinPeriod = (iso: string) =>
+      Date.parse(iso) >= Date.parse(filters.fromIso) && Date.parse(iso) < Date.parse(filters.toExclusiveIso);
+    // weeklyAverageVisits는 조회 기간 내 방문일만 세야 한다 — visitDates(전체 이력)를
+    // 그대로 쓰면 기간 밖 방문까지 분자에 섞여 기간 지표가 과대 계산된다.
+    const periodVisitDates = new Map<string, Set<string>>();
     for (const row of visitRows) {
+      if (!isWithinPeriod(row.occurred_at)) continue;
       const userUnit = row.child_id ? row.child_id : row.actor_id;
       if (userUnit) {
-        const dates = visitDates.get(userUnit) ?? new Set<string>();
+        const dates = periodVisitDates.get(userUnit) ?? new Set<string>();
         dates.add(kstDateOfTimestamp(row.occurred_at));
-        visitDates.set(userUnit, dates);
+        periodVisitDates.set(userUnit, dates);
       }
       const familyId = row.family_id ?? (row.child_id ? identity.childFamily.get(row.child_id) : undefined) ?? (row.actor_id ? identity.parentFamily.get(row.actor_id) : undefined);
       if (familyId) {
         const familyUnit = stableAnalyticsRef(familyId);
-        const dates = visitDates.get(familyUnit) ?? new Set<string>();
+        const dates = periodVisitDates.get(familyUnit) ?? new Set<string>();
         dates.add(kstDateOfTimestamp(row.occurred_at));
-        visitDates.set(familyUnit, dates);
+        periodVisitDates.set(familyUnit, dates);
       }
     }
-    const visitCoverageReady = measuredFrom !== null && measuredFrom <= filters.from && calendarDayDiff(filters.from, filters.to) >= 6;
-    const isWithinPeriod = (iso: string) => Date.parse(iso) >= Date.parse(filters.fromIso);
     const missionEvents = events.filter((row) => ["mission_start", "mission_complete"].includes(row.event_name) && row.child_id);
     const missionEventsPeriod = missionEvents.filter((row) => isWithinPeriod(row.occurred_at));
     const playEvents = events.filter((row) => row.event_name === "play_start" && row.child_id && row.play_type !== "quiz");
@@ -159,7 +163,7 @@ export async function GET(req: NextRequest) {
     const features = sources.map((source) => {
       const users = new Set(source.periodPoints.map((point) => point.unitId));
       const retention = buildActivityRetention(source.points, filters.to, source.cohortDates);
-      const totalVisitDays = [...users].reduce((sum, unit) => sum + (visitDates.get(unit)?.size ?? 0), 0);
+      const totalVisitDays = [...users].reduce((sum, unit) => sum + (periodVisitDates.get(unit)?.size ?? 0), 0);
       return {
         key: source.key,
         label: source.label,
