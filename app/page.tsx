@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import HomeHubClient from "@/components/landing/HomeHubClient";
+import { getPwaIcons } from "@/lib/pwaIcons";
 
 const HOME_URL = "https://app.k-bestie.com/";
 const HOME_TITLE = "내친구 케이 | 아이와 부모를 잇는 AI 소통 서비스";
 const HOME_DESCRIPTION =
   "내친구 케이는 초등학생 아이와 AI 친구 케이의 대화를 부모에게 필요한 요약과 오늘의 대화거리로 연결하는 가족 소통 서비스입니다.";
-const SOCIAL_IMAGE_URL = "https://app.k-bestie.com/icons/icon-512.png";
+const SOCIAL_IMAGE_URL = getPwaIcons().icon512;
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },

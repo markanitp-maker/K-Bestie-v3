@@ -1,11 +1,13 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { CONSENT_DOCUMENT_TEXT, CONSENT_DOCUMENT_VERSION } from "@/lib/plan/consentDocument";
+import { getPwaIcons } from "@/lib/pwaIcons";
 
 const PRIVACY_URL = "https://app.k-bestie.com/privacy";
 const PRIVACY_TITLE = "개인정보처리방침 | 내친구 케이";
 const PRIVACY_DESCRIPTION =
   "내친구 케이의 아동·보호자 개인정보 처리와 법정대리인 동의 내용을 확인하세요.";
+const SOCIAL_IMAGE_URL = getPwaIcons().icon512;
 
 export const metadata: Metadata = {
   title: { absolute: PRIVACY_TITLE },
@@ -21,7 +23,7 @@ export const metadata: Metadata = {
     type: "article",
     images: [
       {
-        url: "https://app.k-bestie.com/icons/icon-512.png",
+        url: SOCIAL_IMAGE_URL,
         width: 512,
         height: 512,
         alt: "내친구 케이",
@@ -32,7 +34,7 @@ export const metadata: Metadata = {
     card: "summary",
     title: PRIVACY_TITLE,
     description: PRIVACY_DESCRIPTION,
-    images: ["https://app.k-bestie.com/icons/icon-512.png"],
+    images: [SOCIAL_IMAGE_URL],
   },
 };
 

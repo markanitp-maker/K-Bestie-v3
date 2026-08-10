@@ -41,6 +41,25 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "내친구 케이",
   },
+  openGraph: {
+    title: "내친구 케이",
+    siteName: "내친구 케이",
+    locale: "ko_KR",
+    type: "website",
+    images: [
+      {
+        url: pwaIcons.icon512,
+        width: 512,
+        height: 512,
+        alt: "내친구 케이",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    title: "내친구 케이",
+    images: [pwaIcons.icon512],
+  },
 };
 
 export const viewport: Viewport = {

@@ -75,12 +75,10 @@
 - 정적 SEO validator: PASS. sitemap URL은 `/`, `/privacy` 2개, private URL 0개;
   search crawler allow와 GPTBot/ClaudeBot block; public canonical/index/OG/Twitter;
   root private-safe noindex; WebSite JSON-LD; visible FAQ/semantic HTML을 확인했다.
-- production build: FAIL. 캐시 분리 전·후 2회 모두 환경 분리 검사는 통과했으나
-  `Creating an optimized production build ...`에서 5분 이상 추가 출력 없이 정체되어
-  중단했다. 동일 문제 2회 반복 금지 규칙에 따라 더 시도하지 않았다.
-- HTTP raw/robots/sitemap/private route 및 Production smoke: 미검증. production build가
-  없어 local production server를 시작할 수 없고, 실행환경은 외부 DNS와 socket을
-  차단한다. 배포 또한 별도 지시가 없어 수행하지 않았다.
+- production build: PASS. 메인 Claude가 비-샌드박스 환경에서 재검증하여 exit 0을
+  확인했다(10분 45초, 커밋 `1006d9e` 참고).
+- HTTP raw/robots/sitemap/private route 및 Production smoke: Dev 배포 후 실측 검증
+  예정. 아직 완료 처리하지 않는다.
 - Core Web Vitals field regression: 미검증. Search Console CrUX 권한과 배포된 build가
   필요하다. 코드상 hero/logo image의 dimensions container와 responsive `sizes`를
   명시했고 새 third-party script/font는 추가하지 않았다.
