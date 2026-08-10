@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { X } from "lucide-react";
 import { useStore } from "@/hooks/useStore";
 import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { RealParentNav } from "@/components/RealParentNav";
@@ -15,6 +16,8 @@ import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementM
 import { ParentMissionEventStatus } from "@/components/events/ParentMissionEventStatus";
 import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
 import { ChildStartGuideModal } from "@/components/parent/ChildStartGuide";
+import { useInstallPrompt } from "@/hooks/useInstallPrompt";
+import { useKakaoInApp, KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 
 interface Report {
   id: string;
@@ -51,6 +54,10 @@ export default function ParentHomePage() {
   const [todaysQuote, setTodaysQuote] = useState<string | null>(null);
   const [showChildStartGuide, setShowChildStartGuide] = useState(false);
   const [showEventFromNotification, setShowEventFromNotification] = useState(false);
+  const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
+  const { isKakaoInApp } = useKakaoInApp();
+  const [showKakaoNotice, setShowKakaoNotice] = useState(false);
+  const [showPwaBanner, setShowPwaBanner] = useState(false);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("event") === "announcement") {
@@ -58,6 +65,32 @@ export default function ParentHomePage() {
       window.history.replaceState({}, "", "/parent/home");
     }
   }, []);
+
+  useEffect(() => {
+    const bannerHidden = sessionStorage.getItem("hide_pwa_banner");
+    setShowPwaBanner(!isStandalone && !bannerHidden);
+  }, [isStandalone]);
+
+  const handleDismissPwa = () => {
+    sessionStorage.setItem("hide_pwa_banner", "true");
+    setShowPwaBanner(false);
+  };
+
+  const onInstallClick = async () => {
+    if (isKakaoInApp) {
+      setShowKakaoNotice(true);
+      return;
+    }
+
+    if (installPrompt) {
+      await handleInstall();
+      setShowPwaBanner(false);
+    } else if (isIOS) {
+      alert("공유 버튼을 누른 뒤 '홈 화면에 추가'를 선택해 주세요.");
+    } else {
+      alert("현재 브라우저는 앱 설치를 지원하지 않습니다. Chrome 또는 Edge를 사용해 주세요.");
+    }
+  };
 
   const activeChild = children.find((c) => c.id === store.activeChildId) ?? children[0] ?? null;
 
@@ -205,6 +238,14 @@ export default function ParentHomePage() {
     );
   }
 
+  if (showKakaoNotice) {
+    return (
+      <DemoFrame>
+        <KakaoInAppBrowserNotice onClose={() => setShowKakaoNotice(false)} />
+      </DemoFrame>
+    );
+  }
+
   // 아이가 아예 등록되어 있지 않은 경우
   if (children.length === 0) {
     return (
@@ -303,6 +344,26 @@ export default function ParentHomePage() {
         </div>
 
         <RealParentNav active="홈" />
+        {showPwaBanner && (
+          <div className="sticky bottom-0 w-full bg-[#FFF9F2] border-t border-black/5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] p-4 flex items-center justify-between z-50 mt-auto pb-[env(safe-area-inset-bottom,16px)]">
+            <p className="text-sm font-semibold text-[var(--color-k-navy)] px-2">모바일 / 태블릿 / PC</p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onInstallClick}
+                className="h-[44px] px-5 rounded-full bg-[var(--color-k-orange)] text-white font-bold text-[15px] shadow-sm active:scale-95 transition-transform"
+              >
+                앱 설치하기
+              </button>
+              <button
+                onClick={handleDismissPwa}
+                className="w-[44px] h-[44px] flex items-center justify-center rounded-full bg-black/5 text-[var(--color-k-navy)] active:bg-black/10 transition-colors"
+                aria-label="닫기"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <ChildStartGuideModal
         open={showChildStartGuide}
