@@ -269,11 +269,16 @@ export class SttRouterController implements SttRouter {
   private browserTimedOut = false;
   private fallbackTriggered = false;
   private terminalDelivered = false;
-  // Keyed by SpeechRecognitionEvent.resultIndex (an absolute, stable position
-  // within the utterance per spec) rather than concatenated blindly — some
-  // engines (iOS Safari-class) redeliver the full cumulative results array
-  // from index 0 on every event rather than only new segments, and a plain
-  // string join would duplicate that redelivered text on every event.
+  // Keyed by SpeechRecognitionEvent.resultIndex — but that index is only
+  // stable *within one recognition session*, not across the whole turn. Some
+  // engines (Android Chrome) end recognition per-segment even with
+  // continuous=true, forcing a mid-turn restart (see startRecognition()); the
+  // restarted session's resultIndex starts back at 0. committedSegments holds
+  // everything confirmed by sessions that have already ended; finalSegments
+  // holds only the *current* session's segments (redelivery-idempotent within
+  // that session — iOS Safari-class engines resend the cumulative array from
+  // index 0 on every event, which is what index-keyed writes protect against).
+  private committedSegments: string[] = [];
   private finalSegments: string[] = [];
   private pendingBrowserTranscript = "";
   private pendingBrowserConfidence: number | undefined;
@@ -313,6 +318,7 @@ export class SttRouterController implements SttRouter {
     this.browserTimedOut = false;
     this.fallbackTriggered = false;
     this.terminalDelivered = false;
+    this.committedSegments = [];
     this.finalSegments = [];
     this.pendingBrowserTranscript = "";
     this.pendingBrowserConfidence = undefined;
@@ -332,8 +338,17 @@ export class SttRouterController implements SttRouter {
   // Shared by startTurn() and handleBrowserEnd()'s mid-turn restart — some
   // engines (Android Chrome) end recognition per-segment even with
   // continuous=true, so a fresh recognizer must be able to pick up where the
-  // last one left off without resetting finalSegments/pendingBrowserTranscript.
+  // last one left off without losing what the previous session already
+  // confirmed. Flushing finalSegments into committedSegments and releasing
+  // the old recognizer's handlers is a no-op on the very first call from
+  // startTurn() (both are already empty/null at that point), so this method
+  // needs no separate "is this a restart" branch.
   private startRecognition(turnId: number): void {
+    if (this.finalSegments.length > 0) {
+      this.committedSegments.push(...this.finalSegments.filter(Boolean));
+      this.finalSegments = [];
+    }
+    this.releaseRecognition(false);
     try {
       const recognition = this.createRecognition();
       if (!recognition) {
@@ -437,7 +452,8 @@ export class SttRouterController implements SttRouter {
     }
 
     if (sawNewFinalText) {
-      this.pendingBrowserTranscript = this.finalSegments.filter(Boolean).join(" ");
+      this.pendingBrowserTranscript = [...this.committedSegments, ...this.finalSegments.filter(Boolean)]
+        .join(" ");
       this.pendingBrowserConfidence = finalConfidence ?? this.pendingBrowserConfidence;
       this.options.onInterimTranscript?.(this.pendingBrowserTranscript);
       if (this.state === "BROWSER_PROCESSING") this.completeWithBrowser(turnId);
@@ -458,12 +474,21 @@ export class SttRouterController implements SttRouter {
   private handleBrowserEnd(turnId: number): void {
     if (turnId !== this.routerTurnId || this.terminalDelivered || this.state === "GCP_FALLBACK") return;
 
-    if (this.state === "LISTENING") {
+    if (this.state === "LISTENING" && !this.browserFailed) {
       // Some engines (Android Chrome) end recognition per-segment even with
       // continuous=true, well before the caller's endTurn() is invoked.
       // Restarting keeps capturing the rest of the utterance instead of
       // leaving a dead recognizer object until endTurn() forces a premature
       // "Browser success" off of whatever was captured so far.
+      //
+      // Gated on !browserFailed: once that flag is set, endTurn() always goes
+      // to GCP fallback regardless of any further restart (see endTurn()'s
+      // `!this.browserSupported || this.browserFailed` check), so a restart
+      // buys nothing. Conditions that fail immediately on start() (mic
+      // permission revoked, audio-capture) would otherwise error -> end ->
+      // restart -> error -> end ... with no turn-count cap, spinning the
+      // event loop for as long as LISTENING lasts (the whole button-hold in
+      // manual mode).
       this.startRecognition(turnId);
       return;
     }

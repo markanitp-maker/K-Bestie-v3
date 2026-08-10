@@ -321,12 +321,13 @@ test("recognizer가 발화 도중 조용히 끝나면(Android Chrome) 재시작�
   harness.recognition.emitEnd();
   assert.equal(harness.recognition.startCalls, 2, "clean mid-turn onend must restart the recognizer");
 
+  // 재시작된 recognizer는 새 SpeechRecognition 세션이다 — resultIndex는 발화
+  // 전체가 아니라 그 세션 내부의 상대 위치이므로, 이 세션의 첫 final도
+  // resultIndex: 0 + 새 results 배열로 도착한다(이전 세션과 이어지는 index/배열이
+  // 아니다). 이 모델링을 틀리면 committedSegments 분리 결함을 가린다.
   harness.recognition.onresult?.({
-    resultIndex: 1,
-    results: [
-      { isFinal: true, 0: { transcript: "첫 번째 세그먼트" } },
-      { isFinal: true, 0: { transcript: "두 번째 세그먼트" } },
-    ],
+    resultIndex: 0,
+    results: [{ isFinal: true, 0: { transcript: "두 번째 세그먼트" } }],
   });
   harness.controller.endTurn();
 
@@ -335,6 +336,50 @@ test("recognizer가 발화 도중 조용히 끝나면(Android Chrome) 재시작�
     harness.finals.map((entry) => entry.transcript),
     ["첫 번째 세그먼트 두 번째 세그먼트"],
   );
+});
+
+test("재시작 후 첫 세그먼트가 2개였어도 순서를 보존한다(committed 분리 검증)", () => {
+  const harness = createHarness();
+  startAndBuffer(harness.controller);
+  // 1세션이 두 세그먼트(index 0, 1)를 냈고 재시작 뒤 2세션이 index 0 하나만
+  // 낸다면, committed 분리 없이는 "C B"처럼 순서가 뒤집힌다.
+  harness.recognition.onresult?.({
+    resultIndex: 0,
+    results: [{ isFinal: true, 0: { transcript: "A" } }],
+  });
+  harness.recognition.onresult?.({
+    resultIndex: 1,
+    results: [
+      { isFinal: true, 0: { transcript: "A" } },
+      { isFinal: true, 0: { transcript: "B" } },
+    ],
+  });
+  harness.recognition.emitEnd();
+  assert.equal(harness.recognition.startCalls, 2);
+
+  harness.recognition.onresult?.({
+    resultIndex: 0,
+    results: [{ isFinal: true, 0: { transcript: "C" } }],
+  });
+  harness.controller.endTurn();
+
+  assert.deepEqual(harness.finals.map((entry) => entry.transcript), ["A B C"]);
+});
+
+test("재시작 게이트: 이미 browserFailed면 다시 재시작하지 않고 즉시 GCP로 간다(무한 스핀 방지)", async () => {
+  const harness = createHarness();
+  startAndBuffer(harness.controller);
+  harness.recognition.emitError("not-allowed");
+  assert.equal(harness.recognition.startCalls, 1);
+
+  // start 직후 즉시 재실패하는 조건(마이크 권한 회수 등)을 흉내낸다 — error 이후
+  // 곧바로 onend가 온다. browserFailed가 이미 섰으므로 재시작해선 안 된다.
+  harness.recognition.emitEnd();
+  assert.equal(harness.recognition.startCalls, 1, "browserFailed 상태에서는 재시작하지 않는다");
+
+  harness.controller.endTurn();
+  await flushAsync();
+  assert.equal(harness.getGcpCalls(), 1);
 });
 
 test("Browser와 GCP가 모두 실패하면 FAILED 후 새 turn을 시작할 수 있다", async () => {

@@ -14,6 +14,42 @@
 4. **신규 공용 훅 위치는 `hooks/useSttRouter.ts`.** `useVoiceChat`은 이 Router의 `onFinalTranscript` 콜백만 받고, 자신의 GCP 직접 호출·1.3초 interim polling 로직은 제거한다.
 5. **제거 대상**: `hooks/useVoiceChat.ts:297-312`의 기존 1.3초 GCP interim polling. Browser STT 성공 시 "GCP 호출 0회" 원칙과 정면 충돌하므로 Router 도입과 동시에 제거한다.
 
+### 0.1 (2026-08-11 계획 정정 — 게이트① 3연속 반려 후 CLAUDE.md §12-C에 따른 설계 보강)
+
+**놓친 전제**: 원안은 "한 발화 = 한 SpeechRecognition 세션"을 암묵적으로 가정했다.
+그러나 Android Chrome류 엔진은 `continuous=true`를 지키지 않고 세그먼트마다
+recognition을 종료하므로, 한 발화(턴) 안에서도 recognizer 객체가 **여러 번
+재시작**될 수 있다(§1 관찰 4, claude-review-stt-a1-phase1-r2 [복잡]A). 이 재시작
+경계를 명시적 설계 결정 없이 구현한 3라운드 전부가 같은 결함군(세그먼트 유실/
+순서 뒤바뀜)을 반복 재도입했다 — `SpeechRecognitionEvent.resultIndex`는 발화
+전체가 아니라 **현재 recognition 세션 내부**의 상대 위치이므로, 재시작된 새
+세션의 index는 항상 0부터 다시 시작한다.
+
+**확정 설계**: 턴 단위 상태를 두 계층으로 분리한다.
+- `committedSegments: string[]` — 재시작으로 폐기되기 **전** recognition
+  세션들이 이미 확정한 세그먼트. 재시작 시점에 그 세션의 `finalSegments`를
+  통째로 여기 append하고 폐기한다.
+- `finalSegments: string[]` — **현재** recognition 세션 내부에서만 유효한,
+  세션 로컬 resultIndex 기준 세그먼트.
+- 조립 시 항상 `[...committedSegments, ...finalSegments].filter(Boolean).join(" ")`.
+- `startTurn()`(새 턴)은 둘 다 초기화한다. `startRecognition()`의 **재시작
+  경로**만 committedSegments로 flush한다.
+
+부수 요구사항(같은 재시작 지점에서 함께 확정):
+- 재시작은 `state === "LISTENING" && !browserFailed`일 때만 유효하다.
+  이미 `browserFailed`가 선 턴은 `endTurn()`이 항상 GCP로 가므로 재시작이
+  득이 없고, 재시작을 허용하면 마이크 권한 회수처럼 즉시 재실패하는 조건에서
+  이벤트 루프 스핀이 발생한다(턴당 상한 없이 반복 재시작).
+- 재시작 직전 이전 recognition 객체는 `releaseRecognition(false)`로
+  핸들러를 반드시 해제한다(폐기된 세션의 지연 이벤트가 새 세션의 상태를
+  오염시키지 않도록).
+
+**테스트 순서 요구(재발 방지)**: 재시작을 검증하는 테스트는 반드시 2번째
+recognition 세션의 첫 final을 `resultIndex: 0` + **새 `results` 배열**로
+모델링해야 한다. 첫 세션의 이어지는 index(1, 누적 배열)로 모델링하면 재시작이
+"같은 세션의 연속"처럼 보여 실제 버그를 가린다 — 이 실수가 2·3라운드 모두에서
+반복됐다.
+
 ---
 
 ## 1. Phase 1 — 공용 STT Router (`hooks/useSttRouter.ts`)
