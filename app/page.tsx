@@ -1,260 +1,69 @@
-"use client";
+import type { Metadata } from "next";
+import HomeHubClient from "@/components/landing/HomeHubClient";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { isAuthRetryableFetchError } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/client";
-import { isStandaloneDisplay } from "@/lib/pwa/standalone";
-import BetaLandingPage from "@/components/landing/BetaLandingPage";
-import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
-import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
+const HOME_URL = "https://app.k-bestie.com/";
+const HOME_TITLE = "내친구 케이 | 아이와 부모를 잇는 AI 소통 서비스";
+const HOME_DESCRIPTION =
+  "내친구 케이는 초등학생 아이와 AI 친구 케이의 대화를 부모에게 필요한 요약과 오늘의 대화거리로 연결하는 가족 소통 서비스입니다.";
+const SOCIAL_IMAGE_URL = "https://app.k-bestie.com/icons/icon-512.png";
 
-const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
+export const metadata: Metadata = {
+  title: { absolute: HOME_TITLE },
+  description: HOME_DESCRIPTION,
+  alternates: { canonical: HOME_URL },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  openGraph: {
+    title: HOME_TITLE,
+    description: HOME_DESCRIPTION,
+    url: HOME_URL,
+    siteName: "내친구 케이",
+    locale: "ko_KR",
+    type: "website",
+    images: [
+      {
+        url: SOCIAL_IMAGE_URL,
+        width: 512,
+        height: 512,
+        alt: "내친구 케이",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    title: HOME_TITLE,
+    description: HOME_DESCRIPTION,
+    images: [SOCIAL_IMAGE_URL],
+  },
+};
 
-// 회원가입/필수 등록 완료(ACTIVE_PARENT/ACTIVE_CHILD) 사용자가 처음 홈에 도착할 때만
-// PWA 설치 안내(/onboarding)를 한 번 보여준다 — 요청서 §10 "PWA 설치 안내는 회원가입
-// 완료 및 로그인 이후에만 표시한다"에 대응. 이미 설치됐거나(standalone) 이미 본 적
-// 있으면 목적지로 바로 이동한다.
-async function routePastPwaGate(
-  destination: string,
-  router: ReturnType<typeof useRouter>
-) {
-  if (typeof window === "undefined") {
-    router.replace(destination);
-    return;
-  }
-  const alreadySeen = window.localStorage.getItem(PWA_INTRO_SEEN_KEY) === "1";
-  if (alreadySeen || isStandaloneDisplay(window)) {
-    router.replace(destination);
-    return;
-  }
-  router.replace(`/onboarding?next=${encodeURIComponent(destination)}`);
+const websiteStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "내친구 케이",
+  alternateName: "K-Bestie",
+  url: HOME_URL,
+};
+
+export default function HomePage() {
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(websiteStructuredData).replace(/</g, "\\u003c"),
+        }}
+      />
+      <HomeHubClient />
+    </>
+  );
 }
-
-export default function HubPage() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [statusError, setStatusError] = useState<"network" | "membership" | null>(null);
-  const [showGuestLanding, setShowGuestLanding] = useState(false);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const returnUrl = safePostAuthReturnUrl(
-      new URLSearchParams(window.location.search).get("returnUrl")
-    );
-
-    const routeVerifiedUser = async (fallback: "/parent/home" | "/child/home") => {
-      await routePastPwaGate(returnUrl === "/" ? fallback : returnUrl, router);
-    };
-
-    const routeActiveMembership = async (status: {
-      state?: string;
-      childId?: string;
-    }): Promise<boolean> => {
-      if (status.state === "ACTIVE_PARENT") {
-        void logAuthFlowEvent("existing_user_routed_to_login");
-        await routeVerifiedUser("/parent/home");
-        return true;
-      }
-      if (status.state === "ACTIVE_CHILD") {
-        void logAuthFlowEvent("existing_user_routed_to_login");
-        if (status.childId) localStorage.setItem("k_child_id", status.childId);
-        await routeVerifiedUser("/child/home");
-        return true;
-      }
-      return false;
-    };
-
-    // PWA의 manifest start_url이 "/"라서 앱을 재실행·백그라운드 복귀·재부팅할 때마다
-    // 이 페이지가 항상 가장 먼저 실행된다. 기존 코드는 getSession()(로컬 저장소만
-    // 읽는 조회, 서버 검증·리프레시 강제 없음)이 null을 반환하면 곧바로 로그인
-    // 화면으로 보냈는데, 실제로는 (1) 저장된 access token이 만료됐지만 refresh
-    // token은 아직 유효해서 서버 검증 시 정상 복구 가능한 경우, (2) 오프라인
-    // 복귀 직후처럼 일시적 네트워크 오류로 세션 조회 자체가 실패한 경우에도
-    // 똑같이 로그인 화면으로 튕겨나갔다. getUser()는 로컬 세션이 없거나 만료
-    // 상태여도 서버에 검증·리프레시를 강제하므로, 진짜 로그아웃 여부를 판정하기
-    // 전에 반드시 한 번 더 시도한다. 네트워크 오류(throw)는 최대 2회까지
-    // 짧은 대기 후 재시도하고, 그래도 실패하면(오프라인 등) 로그인 화면 대신
-    // 재시도 유도 화면을 보여준다 — 네트워크 문제로 로그아웃 취급하지 않는다.
-    const getAuthenticatedUser = async () => {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const { data, error } = await supabase.auth.getUser();
-        if (!error) return data.user;
-        // getUser()는 네트워크 실패도 throw가 아니라 error로 감싸 resolve한다
-        // (isAuthRetryableFetchError로만 구분 가능) — 진짜 인증 실패(무효/만료된
-        // refresh token 등)만 즉시 null로 판정하고, 네트워크성 오류는 재시도한다.
-        if (!isAuthRetryableFetchError(error)) return null;
-        if (attempt < 2) {
-          await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
-        }
-      }
-      return "network_error" as const;
-    };
-
-    getAuthenticatedUser().then(async (result) => {
-      if (result === "network_error") {
-        setStatusError("network");
-        setLoading(false);
-        return;
-      }
-
-      if (!result) {
-        // [라벨/선순위 가드] 세션이 없는 미인증 방문자/새 기기는 공개 랜딩페이지를 노출한다.
-        setShowGuestLanding(true);
-        setLoading(false);
-        return;
-      }
-
-
-      try {
-        // 1. 단일 공통 서버 판정 (membership-status) 최우선 실행!
-        // 라우팅 우선순위: 복구 가능 탈퇴 계정 -> 정지·영구 삭제 -> 활성 기존 계정 -> 가입 미완료 -> 신규 계정
-        const statusRes = await fetch("/api/auth/membership-status", { cache: "no-store" });
-        if (!statusRes.ok) {
-          throw new Error("membership-status check failed");
-        }
-        let status = await statusRes.json();
-
-        // 1순위 & 2순위: 탈퇴 / 정지 / 삭제 가드
-        if (status.state === "RESTOREABLE_WITHDRAWN") {
-          router.replace("/account/withdrawn");
-          return;
-        }
-        if (status.state === "SUSPENDED") {
-          router.replace("/account/suspended");
-          return;
-        }
-        if (status.state === "DELETED") {
-          await supabase.auth.signOut();
-          router.replace("/login");
-          return;
-        }
-
-        // 2. 비밀번호 설정 및 계정 역할 조회
-        const pwCheckRes = await fetch("/api/auth/change-password", {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-        });
-
-        if (!pwCheckRes.ok) {
-          throw new Error("Password change check failed");
-        }
-
-        const pwData = await pwCheckRes.json();
-
-        // 만약 비밀번호를 반드시 변경해야 하는 경우 (구성원 첫 로그인)
-        if (pwData.must_change_password) {
-          router.replace("/auth/setup-password");
-          return;
-        }
-
-        // 구성원 계정(아이 아이디+비번 로그인)
-        if (pwData.is_member_account) {
-          if (pwData.role === "child") {
-            const childMeRes = await fetch("/api/child/me");
-            if (childMeRes.ok) {
-              const childInfo = await childMeRes.json();
-              if (childInfo?.id) {
-                localStorage.setItem("k_child_id", childInfo.id);
-              }
-            }
-            await routeVerifiedUser("/child/home");
-          } else {
-            await routeVerifiedUser("/parent/home");
-          }
-          return;
-        }
-
-        // 3순위: 활성 기존 계정
-        if (await routeActiveMembership(status)) return;
-
-        // 4. 아직 가족이 전혀 없는 소셜 사용자만 초대/매칭(auto-join)을 시도한다.
-        // 가족만 만들고 아이 등록 전인 사용자는 이미 familyId가 있으므로 이 경로를
-        // 타면 안 된다. 기존 member라는 이유만으로 ACTIVE_PARENT처럼 라우팅하면
-        // 회원가입 child 단계를 잠깐 우회했다가 다시 돌아오는 오류가 생긴다.
-        if (!status.familyId) {
-          const joinRes = await fetch("/api/auth/auto-join", { method: "POST" });
-          if (joinRes.ok) {
-            const joinData = await joinRes.json();
-            if (joinData.joined) {
-              // join 응답의 role만 신뢰해 홈으로 보내지 않고, 변경된 DB 상태를 서버에서
-              // 다시 판정한다. 아이가 없는 초대 가족이면 여전히 회원가입 단계여야 한다.
-              const refreshedStatusRes = await fetch("/api/auth/membership-status", { cache: "no-store" });
-              if (!refreshedStatusRes.ok) throw new Error("membership-status refresh failed");
-              status = await refreshedStatusRes.json();
-
-              if (joinData.role === "child") {
-                if (joinData.child_profile_id) {
-                  localStorage.setItem("k_child_id", joinData.child_profile_id);
-                }
-              }
-
-              if (await routeActiveMembership(status)) return;
-            }
-            if (joinData.reason === "no_email") {
-              alert(joinData.message || "이메일 정보가 없어 로그인이 어렵습니다.");
-              await supabase.auth.signOut();
-              router.replace("/login");
-              return;
-            }
-          }
-        }
-
-        // 4순위: 가입 미완료 계정 (onboarding step)
-        const signupStep = status.onboardingStep ?? "consent";
-        void logAuthFlowEvent(
-          signupStep === "consent" ? "new_user_routed_to_signup" : "incomplete_user_resumed_signup"
-        );
-        const signupReturn = returnUrl === "/" ? "" : `&returnUrl=${encodeURIComponent(returnUrl)}`;
-        router.replace(`/signup?step=${signupStep}${signupReturn}`);
-        return;
-      } catch (err) {
-        console.error("Hub page initialization error:", err);
-        // 상태 판정 자체가 실패한 경우 회원가입 미완료로 오판해 기존 활성 회원을 회원가입
-        // 화면으로 튕겨내는 것보다는, 안전하게 재시도 유도 화면을 보여주는 편이 낫다
-        // (요청서 §13.3 기존 보호자 자동 로그인 보존 요구사항).
-        setStatusError("membership");
-      } finally {
-        setLoading(false);
-      }
-    });
-  }, [router]);
-
-  if (statusError) {
-    return (
-      <div className="min-h-dvh flex flex-col items-center justify-center bg-gray-50 gap-3 px-6 text-center">
-        <p className="text-sm text-gray-600">
-          {statusError === "network"
-            ? "네트워크 연결을 확인할 수 없어요."
-            : "회원 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요."}
-        </p>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 rounded-lg text-sm font-medium text-white"
-          style={{ background: "var(--color-k-navy)" }}
-        >
-          다시 시도
-        </button>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-dvh flex flex-col items-center justify-center bg-gray-50">
-        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
-        <p className="text-xs text-gray-500 mt-3">사용자 정보를 확인하는 중...</p>
-      </div>
-    );
-  }
-
-  if (showGuestLanding) {
-    return <BetaLandingPage />;
-  }
-
-  return null;
-}
-
-
-

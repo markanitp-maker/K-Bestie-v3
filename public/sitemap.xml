@@ -2,14 +2,10 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://app.k-bestie.com/</loc>
-    <lastmod>2026-08-06</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
+    <lastmod>2026-08-10</lastmod>
   </url>
   <url>
-    <loc>https://app.k-bestie.com/login</loc>
-    <lastmod>2026-08-06</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
+    <loc>https://app.k-bestie.com/privacy</loc>
+    <lastmod>2026-08-10</lastmod>
   </url>
 </urlset>

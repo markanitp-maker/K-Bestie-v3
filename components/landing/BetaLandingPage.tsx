@@ -25,6 +25,29 @@ const FLOW_STEPS = [
   { title: "아이가 케이와 대화 시작", desc: "아이 아이디로 로그인하면 케이와의 첫 대화가 시작돼요." },
 ];
 
+const FAQ_ITEMS = [
+  {
+    question: "내친구 케이는 어떤 서비스인가요?",
+    answer:
+      "내친구 케이는 초등학생 아이와 부모의 대화를 잇는 AI 소통 서비스입니다. 아이가 케이와 나눈 대화를 부모에게 필요한 요약과 오늘의 대화거리로 연결합니다.",
+  },
+  {
+    question: "아이는 내친구 케이에서 무엇을 하나요?",
+    answer:
+      "아이는 케이와 매일 미션 대화를 나누거나 하고 싶은 이야기를 자유롭게 나눌 수 있습니다. MBTI와 퀴즈마스터 같은 놀이 콘텐츠도 이용할 수 있습니다.",
+  },
+  {
+    question: "부모는 어떤 도움을 받을 수 있나요?",
+    answer:
+      "부모는 아이와 케이의 대화를 바탕으로 정리된 일일·주간·월간 리포트를 확인할 수 있습니다. 리포트는 아이와 대화를 이어갈 때 참고할 요약을 제공하며, 아이의 마음이나 심리 상태를 진단하지 않습니다.",
+  },
+  {
+    question: "누가 이용할 수 있나요?",
+    answer:
+      "현재 베타 서비스는 초등학교 1~6학년 자녀가 있는 가정을 대상으로 합니다. 보호자가 먼저 가입하고 가족 공간과 아이 계정을 준비한 뒤 아이가 이용을 시작합니다.",
+  },
+];
+
 const faqUrl = process.env.NEXT_PUBLIC_FAQ_URL;
 const isValidFaqUrl = typeof faqUrl === "string" && /^https?:\/\//.test(faqUrl);
 
@@ -37,7 +60,14 @@ export default function BetaLandingPage() {
         style={{ borderColor: "var(--color-k-border)" }}
       >
         <div className="relative h-8 w-28 md:h-10 md:w-36">
-          <Image src="/Images/logo/Logo.png" alt="내친구 케이" fill priority className="object-contain object-left" />
+          <Image
+            src="/Images/logo/Logo.png"
+            alt="내친구 케이"
+            fill
+            priority
+            sizes="(max-width: 767px) 112px, 144px"
+            className="object-contain object-left"
+          />
         </div>
         <nav className="shrink-0 flex items-center gap-2" aria-label="계정 메뉴">
           <Link
@@ -70,7 +100,7 @@ export default function BetaLandingPage() {
               >
                 아이의 하루를 이해하는
                 <br />
-                새로운 방법
+                새로운 방법, 내친구 케이
               </h1>
               <p
                 className="mt-4 text-sm md:text-lg max-w-md"
@@ -96,6 +126,7 @@ export default function BetaLandingPage() {
                 alt="내친구 케이 마스코트"
                 fill
                 priority
+                sizes="(max-width: 767px) 220px, 480px"
                 className="object-contain"
               />
             </div>
@@ -162,7 +193,7 @@ export default function BetaLandingPage() {
         </section>
 
         {/* 이용 흐름 */}
-        <section className="px-5 md:px-10 py-10 md:py-16">
+        <section id="how-it-works" className="px-5 md:px-10 py-10 md:py-16 scroll-mt-14 md:scroll-mt-[72px]">
           <div className="max-w-[1280px] mx-auto">
             <h2
               className="text-2xl md:text-4xl font-extrabold text-center"
@@ -208,6 +239,52 @@ export default function BetaLandingPage() {
             </div>
           </div>
         </section>
+
+        <section
+          id="faq"
+          className="px-5 md:px-10 py-10 md:py-16 scroll-mt-14 md:scroll-mt-[72px]"
+          style={{ background: "var(--color-k-surface)" }}
+          aria-labelledby="faq-title"
+        >
+          <div className="max-w-[880px] mx-auto">
+            <h2
+              id="faq-title"
+              className="text-2xl md:text-4xl font-extrabold text-center"
+              style={{ color: "var(--color-k-text-primary)" }}
+            >
+              자주 묻는 질문
+            </h2>
+            <div className="mt-8 md:mt-10 grid gap-3 md:gap-4">
+              {FAQ_ITEMS.map((item) => (
+                <article
+                  key={item.question}
+                  className="rounded-2xl bg-white p-5 md:p-6"
+                  style={{ boxShadow: "var(--shadow-k-card)" }}
+                >
+                  <h3
+                    className="text-base md:text-lg font-bold"
+                    style={{ color: "var(--color-k-text-primary)" }}
+                  >
+                    {item.question}
+                  </h3>
+                  <p
+                    className="mt-2 text-sm md:text-[15px] leading-relaxed"
+                    style={{ color: "var(--color-k-text-secondary)" }}
+                  >
+                    {item.answer}
+                  </p>
+                </article>
+              ))}
+            </div>
+            <p className="mt-5 text-center text-xs md:text-sm" style={{ color: "var(--color-k-text-secondary)" }}>
+              개인정보 처리와 법정대리인 동의에 관한 자세한 내용은{" "}
+              <Link href="/privacy" className="font-bold underline underline-offset-2">
+                개인정보처리방침
+              </Link>
+              에서 확인할 수 있습니다.
+            </p>
+          </div>
+        </section>
       </main>
 
       {/* 푸터 */}
@@ -217,6 +294,12 @@ export default function BetaLandingPage() {
       >
         <div className="max-w-[1280px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs md:text-sm" style={{ color: "var(--color-k-text-secondary)" }}>
+            <a href="#features" className="underline underline-offset-2">
+              서비스 소개
+            </a>
+            <a href="#faq" className="underline underline-offset-2">
+              자주 묻는 질문
+            </a>
             <Link href="/privacy" className="underline underline-offset-2">
               개인정보처리방침
             </Link>

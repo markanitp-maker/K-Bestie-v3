@@ -8,38 +8,24 @@ const pwaIcons = getPwaIcons();
 export const metadata: Metadata = {
   metadataBase: new URL("https://app.k-bestie.com"),
   title: "내친구 케이",
-  description: "아이의 마음을 듣는 AI 친구, 케이",
+  description: "아이와 부모를 잇는 AI 소통 서비스, 내친구 케이",
   manifest: "/manifest.json",
   verification: {
     other: {
       "naver-site-verification": "4763684a599d70ff5241478e30f86dab458d7e0b",
     },
   },
-  openGraph: {
-    title: "내친구 케이",
-    description: "아이의 마음을 듣는 AI 친구, 케이",
-    url: "https://app.k-bestie.com",
-    siteName: "내친구 케이",
-    locale: "ko_KR",
-    type: "website",
-    images: [
-      {
-        url: pwaIcons.icon512,
-        width: 512,
-        height: 512,
-        alt: "내친구 케이",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary",
-    title: "내친구 케이",
-    description: "아이의 마음을 듣는 AI 친구, 케이",
-    images: [pwaIcons.icon512],
-  },
+  // 모든 인증·개인화 route는 이 안전한 기본값을 상속한다. 검색 공개가 확인된
+  // `/`와 `/privacy`만 각 page metadata에서 index/follow를 명시적으로 덮어쓴다.
   robots: {
-    index: true,
-    follow: true,
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
   },
   icons: {
     icon: [
