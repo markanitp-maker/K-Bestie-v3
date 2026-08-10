@@ -461,7 +461,12 @@ async function reduceToWeeklyReport(model: GroupAModelResolved, weekRange: strin
   const prompt = WEEKLY_REPORT_PROMPT_TEMPLATE
     .replace("{{WEEK_RANGE}}", weekRange)
     .replace("{{TRANSCRIPT}}", transcriptText);
-  const text = await callReportModel(model, prompt, 2048);
+  // summary_text/detail_text/detail_dashboard_cards/highlights/parent_guide/
+  // weekend_activity_recommendation을 한 응답에 전부 담아야 하므로 2048로는
+  // 활동이 많은 주(예: 방학·여행 주간)에서 JSON이 중간에 잘려 파싱 실패로
+  // 이어졌다(2026-08-10 실측) — lib/batch/generateWeeklySummary.ts(로컬
+  // 개발용 사본)와 동일하게 8192로 맞춘다.
+  const text = await callReportModel(model, prompt, 8192);
   try {
     return sanitizeReportJson(extractJSON(text));
   } catch {
