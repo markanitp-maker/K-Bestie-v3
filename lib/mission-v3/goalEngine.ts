@@ -1,0 +1,374 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export const CONVERSATION_GOAL_COUNT = 4;
+export const MIN_GOAL_CONFIDENCE = 0.5;
+
+export type GoalPriority = "P0" | "P1" | "P2" | "P3";
+export type GoalStatus = "PENDING" | "SATISFIED" | "PARTIAL" | "DECLINED" | "SKIPPED";
+export type GoalEvidenceSource = "child_utterance" | "parent_question" | "memory" | "system";
+
+export interface ConversationGoal {
+  goalId: string;
+  missionSessionId: string;
+  childId: string;
+  goalOrder: number;
+  semanticGroup: string;
+  priority: GoalPriority;
+  status: GoalStatus;
+  evidenceSource: GoalEvidenceSource | null;
+  sourceTurnId: string | null;
+  confidence: number | null;
+  satisfiedAt: string | null;
+  parentQuestionId: string | null;
+}
+
+export interface GoalCandidate {
+  semanticGroup: string;
+  priority: Exclude<GoalPriority, "P0">;
+  promptInstruction: string;
+}
+
+export interface ParentQuestionCandidate {
+  id: string;
+  semanticGroup: string;
+  promptInstruction: string;
+}
+
+export interface ConversationGoalDraft {
+  missionSessionId: string;
+  childId: string;
+  goalOrder: number;
+  semanticGroup: string;
+  priority: GoalPriority;
+  status: "PENDING";
+  parentQuestionId: string | null;
+  promptInstruction: string;
+}
+
+export interface GoalAssessment {
+  goalId: string;
+  semanticGroup: string;
+  status: "SATISFIED" | "PARTIAL" | "DECLINED" | "SKIPPED";
+  confidence: number;
+  evidenceSource: GoalEvidenceSource;
+}
+
+export interface GoalDecision {
+  goalId: string;
+  status: GoalAssessment["status"];
+  evidenceSource: GoalEvidenceSource;
+  sourceTurnId: string;
+  confidence: number;
+  satisfiedAt: string | null;
+}
+
+interface ConversationGoalRow {
+  goal_id: string;
+  mission_session_id: string;
+  child_id: string;
+  goal_order: number;
+  semantic_group: string;
+  priority: GoalPriority;
+  status: GoalStatus;
+  evidence_source: GoalEvidenceSource | null;
+  source_turn_id: string | null;
+  confidence: number | string | null;
+  satisfied_at: string | null;
+  parent_question_id: string | null;
+}
+
+interface ParentQuestionRow {
+  id: string;
+  question_text: string;
+  confirmation_question_text: string | null;
+  router_area: string | null;
+  status: string;
+}
+
+const PRIORITY_ORDER: Record<GoalPriority, number> = {
+  P0: 0,
+  P1: 1,
+  P2: 2,
+  P3: 3,
+};
+
+const READY_PARENT_QUESTION_STATUSES = [
+  "reconfirm_pending",
+  "ai_generated",
+  "parent_edited",
+] as const;
+
+const normalizeSemanticGroup = (value: string): string => value.trim().toUpperCase();
+
+const toConversationGoal = (row: ConversationGoalRow): ConversationGoal => ({
+  goalId: row.goal_id,
+  missionSessionId: row.mission_session_id,
+  childId: row.child_id,
+  goalOrder: row.goal_order,
+  semanticGroup: row.semantic_group,
+  priority: row.priority,
+  status: row.status,
+  evidenceSource: row.evidence_source,
+  sourceTurnId: row.source_turn_id,
+  confidence: row.confidence === null ? null : Number(row.confidence),
+  satisfiedAt: row.satisfied_at,
+  parentQuestionId: row.parent_question_id,
+});
+
+const parentSemanticGroup = (row: ParentQuestionRow): string => {
+  const routerArea = row.router_area?.trim();
+  return routerArea
+    ? `PARENT_${normalizeSemanticGroup(routerArea)}`
+    : `PARENT_QUESTION_${row.id.toUpperCase()}`;
+};
+
+/**
+ * Selects the four hidden goals for a daily_single mission. The parent question,
+ * when present, always owns slot 1/P0. Remaining goals are stable-sorted by
+ * priority and input order so Phase 2 can replace the candidate source with
+ * question-bank metadata without changing this contract.
+ */
+export const selectConversationGoalDrafts = (input: {
+  missionSessionId: string;
+  childId: string;
+  parentQuestion?: ParentQuestionCandidate | null;
+  candidates: GoalCandidate[];
+}): ConversationGoalDraft[] => {
+  const selected: Array<Omit<ConversationGoalDraft, "goalOrder">> = [];
+  const usedSemanticGroups = new Set<string>();
+
+  if (input.parentQuestion) {
+    const semanticGroup = normalizeSemanticGroup(input.parentQuestion.semanticGroup);
+    if (!semanticGroup || !input.parentQuestion.promptInstruction.trim()) {
+      throw new Error("부모 질문 Goal의 semantic group과 대화 지시는 비어 있을 수 없습니다.");
+    }
+    selected.push({
+      missionSessionId: input.missionSessionId,
+      childId: input.childId,
+      semanticGroup,
+      priority: "P0",
+      status: "PENDING",
+      parentQuestionId: input.parentQuestion.id,
+      promptInstruction: input.parentQuestion.promptInstruction.trim(),
+    });
+    usedSemanticGroups.add(semanticGroup);
+  }
+
+  const orderedCandidates = input.candidates
+    .map((candidate, inputOrder) => ({ candidate, inputOrder }))
+    .sort((left, right) => {
+      const priorityDifference =
+        PRIORITY_ORDER[left.candidate.priority] - PRIORITY_ORDER[right.candidate.priority];
+      return priorityDifference || left.inputOrder - right.inputOrder;
+    });
+
+  for (const { candidate } of orderedCandidates) {
+    if (selected.length === CONVERSATION_GOAL_COUNT) break;
+    const semanticGroup = normalizeSemanticGroup(candidate.semanticGroup);
+    if (!semanticGroup || !candidate.promptInstruction.trim() || usedSemanticGroups.has(semanticGroup)) {
+      continue;
+    }
+    selected.push({
+      missionSessionId: input.missionSessionId,
+      childId: input.childId,
+      semanticGroup,
+      priority: candidate.priority,
+      status: "PENDING",
+      parentQuestionId: null,
+      promptInstruction: candidate.promptInstruction.trim(),
+    });
+    usedSemanticGroups.add(semanticGroup);
+  }
+
+  if (selected.length !== CONVERSATION_GOAL_COUNT) {
+    throw new Error(`Conversation Goal 후보가 부족합니다. 필요 ${CONVERSATION_GOAL_COUNT}개, 선택 ${selected.length}개`);
+  }
+
+  return selected.map((goal, index) => ({ ...goal, goalOrder: index + 1 }));
+};
+
+export const loadHighestPriorityParentQuestion = async (
+  db: SupabaseClient,
+  childId: string,
+): Promise<ParentQuestionCandidate | null> => {
+  const reconfirmResult = await db
+    .from("parent_questions")
+    .select("id, question_text, confirmation_question_text, router_area, status")
+    .eq("child_id", childId)
+    .eq("status", READY_PARENT_QUESTION_STATUSES[0])
+    .order("created_at", { ascending: true })
+    .limit(1);
+
+  if (reconfirmResult.error) {
+    throw new Error(`부모 재확인 질문 조회 실패: ${reconfirmResult.error.message}`);
+  }
+
+  let rows = (reconfirmResult.data ?? []) as ParentQuestionRow[];
+  if (rows.length === 0) {
+    const readyResult = await db
+      .from("parent_questions")
+      .select("id, question_text, confirmation_question_text, router_area, status")
+      .eq("child_id", childId)
+      .in("status", READY_PARENT_QUESTION_STATUSES.slice(1))
+      .order("created_at", { ascending: true })
+      .limit(1);
+    if (readyResult.error) {
+      throw new Error(`부모 질문 조회 실패: ${readyResult.error.message}`);
+    }
+    rows = (readyResult.data ?? []) as ParentQuestionRow[];
+  }
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const promptInstruction = row.confirmation_question_text || row.question_text;
+  return {
+    id: row.id,
+    semanticGroup: parentSemanticGroup(row),
+    promptInstruction,
+  };
+};
+
+const fetchSessionGoals = async (
+  db: SupabaseClient,
+  missionSessionId: string,
+): Promise<ConversationGoal[]> => {
+  const { data, error } = await db
+    .from("conversation_goals")
+    .select(
+      "goal_id, mission_session_id, child_id, goal_order, semantic_group, priority, status, evidence_source, source_turn_id, confidence, satisfied_at, parent_question_id",
+    )
+    .eq("mission_session_id", missionSessionId)
+    .order("goal_order", { ascending: true });
+  if (error) throw new Error(`Conversation Goal 조회 실패: ${error.message}`);
+  return ((data ?? []) as ConversationGoalRow[]).map(toConversationGoal);
+};
+
+/**
+ * Idempotent Phase 1 initializer for a daily_single session. Route wiring and
+ * the daily_single DB constraint arrive in later phases; callers must opt in
+ * explicitly with sessionKind so legacy round sessions cannot use this path by accident.
+ */
+export const initializeConversationGoals = async (input: {
+  db: SupabaseClient;
+  missionSessionId: string;
+  childId: string;
+  sessionKind: "daily_single";
+  candidates: GoalCandidate[];
+}): Promise<ConversationGoal[]> => {
+  if (input.sessionKind !== "daily_single") {
+    throw new Error("Mission v3 Goal은 daily_single 세션에서만 초기화할 수 있습니다.");
+  }
+  const existing = await fetchSessionGoals(input.db, input.missionSessionId);
+  if (existing.length === CONVERSATION_GOAL_COUNT) return existing;
+  if (existing.length > CONVERSATION_GOAL_COUNT) {
+    throw new Error("세션에 Conversation Goal이 4개보다 많이 존재합니다.");
+  }
+
+  const parentQuestion = await loadHighestPriorityParentQuestion(input.db, input.childId);
+  const drafts = selectConversationGoalDrafts({
+    missionSessionId: input.missionSessionId,
+    childId: input.childId,
+    parentQuestion,
+    candidates: input.candidates,
+  });
+
+  const { error } = await input.db.from("conversation_goals").upsert(
+    drafts.map((draft) => ({
+      mission_session_id: draft.missionSessionId,
+      child_id: draft.childId,
+      goal_order: draft.goalOrder,
+      semantic_group: draft.semanticGroup,
+      priority: draft.priority,
+      status: draft.status,
+      parent_question_id: draft.parentQuestionId,
+    })),
+    { onConflict: "mission_session_id,goal_order", ignoreDuplicates: true },
+  );
+  if (error) throw new Error(`Conversation Goal 생성 실패: ${error.message}`);
+
+  const initialized = await fetchSessionGoals(input.db, input.missionSessionId);
+  if (initialized.length !== CONVERSATION_GOAL_COUNT) {
+    throw new Error(`Conversation Goal 초기화가 불완전합니다. 생성 결과 ${initialized.length}개`);
+  }
+  return initialized;
+};
+
+/**
+ * Converts one structured utterance assessment into zero or more goal updates.
+ * Each assessment must carry evidence for the same source turn; therefore one
+ * utterance can satisfy multiple distinct goals without repeated questioning.
+ */
+export const evaluateGoalSatisfaction = (input: {
+  goals: ConversationGoal[];
+  currentUtterance: string;
+  sourceTurnId: string;
+  assessedAt: string;
+  assessments: GoalAssessment[];
+}): GoalDecision[] => {
+  if (!input.currentUtterance.trim() || !input.sourceTurnId.trim()) return [];
+
+  const goalById = new Map(input.goals.map((goal) => [goal.goalId, goal]));
+  const seenGoalIds = new Set<string>();
+
+  return input.assessments.flatMap((assessment) => {
+    if (seenGoalIds.has(assessment.goalId)) {
+      throw new Error(`중복 Goal 판정입니다: ${assessment.goalId}`);
+    }
+    seenGoalIds.add(assessment.goalId);
+
+    const goal = goalById.get(assessment.goalId);
+    if (!goal) throw new Error(`세션에 없는 Goal 판정입니다: ${assessment.goalId}`);
+    if (normalizeSemanticGroup(assessment.semanticGroup) !== normalizeSemanticGroup(goal.semanticGroup)) {
+      throw new Error(`Goal semantic group 불일치: ${assessment.goalId}`);
+    }
+    if (!Number.isFinite(assessment.confidence) || assessment.confidence < 0 || assessment.confidence > 1) {
+      throw new Error(`Goal confidence 범위 오류: ${assessment.goalId}`);
+    }
+    if (assessment.confidence < MIN_GOAL_CONFIDENCE) return [];
+    if (["SATISFIED", "DECLINED", "SKIPPED"].includes(goal.status)) return [];
+    if (goal.status === "PARTIAL" && assessment.status === "PARTIAL") return [];
+
+    return [{
+      goalId: assessment.goalId,
+      status: assessment.status,
+      evidenceSource: assessment.evidenceSource,
+      sourceTurnId: input.sourceTurnId,
+      confidence: assessment.confidence,
+      satisfiedAt: assessment.status === "SATISFIED" ? input.assessedAt : null,
+    }];
+  });
+};
+
+export const persistGoalDecisions = async (
+  db: SupabaseClient,
+  decisions: GoalDecision[],
+): Promise<void> => {
+  const settled = await Promise.allSettled(
+    decisions.map(async (decision) => {
+      const { error } = await db
+        .from("conversation_goals")
+        .update({
+          status: decision.status,
+          evidence_source: decision.evidenceSource,
+          source_turn_id: decision.sourceTurnId,
+          confidence: decision.confidence,
+          satisfied_at: decision.satisfiedAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("goal_id", decision.goalId)
+        .in("status", ["PENDING", "PARTIAL"]);
+      if (error) throw new Error(`${decision.goalId}: ${error.message}`);
+    }),
+  );
+
+  const failures = settled.flatMap((result) =>
+    result.status === "rejected" ? [String(result.reason)] : [],
+  );
+  if (failures.length > 0) {
+    throw new Error(`Conversation Goal 판정 저장 실패: ${failures.join("; ")}`);
+  }
+};
+
+export const hasMissionGoalThreshold = (goals: ConversationGoal[]): boolean =>
+  goals.filter((goal) => goal.status === "SATISFIED").length >= 3;
