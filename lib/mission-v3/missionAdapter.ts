@@ -191,6 +191,16 @@ export const respondToMissionTurn = async (input: {
   // that the model actually followed adapterInstruction. Record a cooldown
   // only once a Goal reaches SATISFIED — PARTIAL is still an open goal and
   // would otherwise lock itself out of re-asking for cooldownDays.
+  //
+  // KNOWN LIMITATION (codex-rv-073-phase1-r3, tracked for Phase 2): a Goal
+  // can be selected as promptGoal and returned as promptedGoalId even when
+  // the "only if natural" adapterInstruction caused K to not actually ask
+  // about it — 071's respond() has no contract to report whether a specific
+  // instruction was honored. If the child then spontaneously satisfies that
+  // same Goal next turn, wasPrompted below will incorrectly credit "k".
+  // Fixing this precisely requires either an additive 071 EngineOutput signal
+  // (out of Phase 1's "don't touch 071" boundary) or route-layer disambiguation
+  // in Phase 2. Zero live impact today — no route wires this adapter yet.
   const satisfiedGoalIds = new Set(
     goalDecisions
       .filter((decision) => decision.status === "SATISFIED")
