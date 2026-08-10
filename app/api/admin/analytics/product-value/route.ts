@@ -189,7 +189,7 @@ export async function GET(req: NextRequest) {
     const scopedFeatures = features.filter((feature) => filters.scope === "all" || filters.scope === "family"
       || (filters.scope === "child" && feature.unit === "child")
       || (filters.scope === "parent" && (feature.unit === "parent" || feature.unit === "family")));
-    return NextResponse.json({ filters, features: scopedFeatures, meta: { comparisonOnly: true, causalClaim: false, cohortBasis: "가입·생성 기준일(조회 기간과 무관, 리텐션 계산은 전체 이력 기준)", usageScope: "users/usageRate/averageDurationSeconds는 조회 기간 내 활동만 집계", visitSource: "behavior_events.app_session_start", generatedAt: new Date().toISOString() } });
+    return NextResponse.json({ filters, features: scopedFeatures, meta: { comparisonOnly: true, causalClaim: false, cohortBasis: "가입·생성 기준일(조회 기간과 무관, 리텐션 계산은 전체 이력 기준)", usageScope: "users/usageRate/averageDurationSeconds/weeklyAverageVisits는 조회 기간 내 활동만 집계하며, usageRate 분모는 조회 기간 종료 시점까지 가입한 사람 수(현재 전체 가입자 수 아님)", visitSource: "behavior_events.app_session_start", generatedAt: new Date().toISOString() } });
   } catch (error) {
     console.error("[admin/analytics/product-value] 집계 실패:", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "서비스 가치 집계에 실패했습니다." }, { status: 500 });
