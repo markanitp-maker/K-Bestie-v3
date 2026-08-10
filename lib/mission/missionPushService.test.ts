@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isRecentAdminTest, missionPushTemplate } from "./missionPushService";
+import { isRecentAdminTest, missionPushTemplate, shouldDeactivateMissionPushSubscription } from "./missionPushService";
 
 test("미션 1과 2는 정기 발송과 동일한 제목·round_type을 사용한다", () => {
   assert.deepEqual(missionPushTemplate(1), {
@@ -22,4 +22,10 @@ test("관리자 테스트는 30초 이내 동일 요청을 중복으로 판정�
   assert.equal(isRecentAdminTest("2026-08-08T11:59:45.000Z", now), true);
   assert.equal(isRecentAdminTest("2026-08-08T11:59:29.999Z", now), false);
   assert.equal(isRecentAdminTest("invalid", now), false);
+});
+
+test("403은 구독을 유지하고 404/410만 stale 구독으로 비활성화한다", () => {
+  assert.equal(shouldDeactivateMissionPushSubscription(403), false);
+  assert.equal(shouldDeactivateMissionPushSubscription(404), true);
+  assert.equal(shouldDeactivateMissionPushSubscription(410), true);
 });

@@ -1,5 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
-import { getPushErrorStatus, sendPushNotificationWithRetry } from "@/lib/notifications/push";
+import { getPushErrorCode, getPushErrorStatus, sendPushNotificationWithRetry } from "@/lib/notifications/push";
 import { childAuthUserId, createInboxNotification } from "@/lib/notifications/inbox";
 
 export type MissionPushType = 1 | 2;
@@ -27,6 +27,10 @@ export function missionPushTemplate(missionType: MissionPushType) {
 export function isRecentAdminTest(updatedAt: string, now = Date.now(), cooldownMs = 30_000) {
   const timestamp = new Date(updatedAt).getTime();
   return Number.isFinite(timestamp) && now - timestamp < cooldownMs;
+}
+
+export function shouldDeactivateMissionPushSubscription(status: number | null) {
+  return status === 404 || status === 410;
 }
 
 function kstBusinessDate() {
@@ -132,14 +136,10 @@ export async function sendMissionStartPushToChild({
     } catch (error) {
       failedSubscriptions += 1;
       const status = getPushErrorStatus(error);
-      lastErrorCode = status ? `PUSH_${status}` : "PUSH_FAILED";
-      // 404/410(구독 만료)뿐 아니라 403도 비활성화한다 — VAPID 키 교체 이후 브라우저가
-      // 예전 키로 만든 구독을 그대로 들고 있으면 발송이 계속 403(공개키 불일치)으로
-      // 실패하는데, 여기서 정리하지 않으면 같은 구독이 "활성"으로 남아 매번 같은
-      // 실패를 반복하고 클라이언트도 재구독이 필요하다는 신호를 받지 못한다.
-      // 401은 제외한다 — RFC 8292 기준 401은 VAPID 헤더 자체의 누락/형식 오류 같은
-      // 서버 전역 설정 문제일 수 있어, 401만으로 정상 구독을 대량 비활성화하면 안 된다.
-      if (status === 404 || status === 410 || status === 403) {
+      lastErrorCode = getPushErrorCode(error);
+      // 403은 VAPID 인증/권한 진단 대상이며 구독 자체의 만료를 뜻하지 않는다.
+      // 실제 stale/expired subscription으로 확인되는 404/410만 비활성화한다.
+      if (shouldDeactivateMissionPushSubscription(status)) {
         const { error: deactivateError } = await db
           .from("push_subscriptions")
           .update({ is_active: false, revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() })
