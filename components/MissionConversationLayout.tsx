@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
@@ -159,6 +159,52 @@ export function MissionConversationLayout({
 
   const { viewportHeight, isKeyboardOpen } = useKeyboardConversationViewport();
 
+  // The conversation viewport is intentionally measured after the current bubble.  Older
+  // messages are optional UI, while the active question must never be clipped or squeezed.
+  const conversationAreaRef = useRef<HTMLDivElement>(null);
+  const currentBubbleRef = useRef<HTMLDivElement>(null);
+  const previousMeasureRef = useRef<HTMLDivElement>(null);
+  const olderMeasureRef = useRef<HTMLDivElement>(null);
+  const [visibleHistoryCount, setVisibleHistoryCount] = useState(0);
+  const currentBottomPadding = 32;
+  const historyGap = 10;
+
+  const updateVisibleHistoryCount = useCallback(() => {
+    if (!conversationAreaRef.current || !currentBubbleRef.current || entryStatus !== "active") {
+      setVisibleHistoryCount(0);
+      return;
+    }
+
+    const availableHeight = conversationAreaRef.current.clientHeight - currentBottomPadding;
+    const currentHeight = currentBubbleRef.current.offsetHeight;
+    const previousHeight = previousMeasureRef.current?.offsetHeight ?? 0;
+    const olderHeight = olderMeasureRef.current?.offsetHeight ?? 0;
+    let nextCount = 0;
+    let usedHeight = currentHeight;
+
+    // Keep each optional bubble whole. A message that cannot fit is not rendered, so the
+    // previous layout's partially obscured bubbles cannot occur.
+    if (prevKText && usedHeight + historyGap + previousHeight <= availableHeight) {
+      nextCount = 1;
+      usedHeight += historyGap + previousHeight;
+    }
+    if (olderKText && nextCount === 1 && usedHeight + historyGap + olderHeight <= availableHeight) {
+      nextCount = 2;
+    }
+    setVisibleHistoryCount((count) => (count === nextCount ? count : nextCount));
+  }, [currentBottomPadding, entryStatus, olderKText, prevKText]);
+
+  useLayoutEffect(() => {
+    updateVisibleHistoryCount();
+
+    const resizeObserver = new ResizeObserver(updateVisibleHistoryCount);
+    [conversationAreaRef.current, currentBubbleRef.current, previousMeasureRef.current, olderMeasureRef.current]
+      .filter((element): element is HTMLDivElement => element !== null)
+      .forEach((element) => resizeObserver.observe(element));
+
+    return () => resizeObserver.disconnect();
+  }, [currentQuestionText, updateVisibleHistoryCount]);
+
   // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
   // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
   // 화면이 튀는 현상(jitter)이 발생할 수 있습니다.
@@ -209,7 +255,7 @@ export function MissionConversationLayout({
         {/* Grid Row 1: Top Area */}
         <div className="relative z-10 flex flex-col shrink-0 w-full min-w-0 max-w-full">
           {/* Star progress display: progress calculation remains owned by the mission page. */}
-          <div className="mt-[calc(54px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] min-w-0 h-[clamp(46px,6dvh,50px)] bg-white/90 rounded-full shadow-[0_3px_10px_rgba(75,85,99,0.10)] flex items-center px-[clamp(12px,3.5vw,16px)] relative z-10 shrink-0" aria-label={`미션 진행률 ${progressCurrent} / ${progressTotal}`}>
+          <div className="mt-[calc(61px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] min-w-0 h-[clamp(46px,6dvh,50px)] bg-white/90 rounded-full shadow-[0_3px_10px_rgba(75,85,99,0.10)] flex items-center px-[clamp(12px,3.5vw,16px)] relative z-10 shrink-0" aria-label={`미션 진행률 ${progressCurrent} / ${progressTotal}`}>
             <div className="flex w-full justify-center gap-[clamp(2px,1vw,6px)] h-full items-center">
               {Array.from({length: progressTotal}).map((_, i) => {
                 const isFilled = i < progressCurrent;
@@ -229,28 +275,21 @@ export function MissionConversationLayout({
           <div className="h-[clamp(12px,2dvh,20px)] w-full shrink-0" />
         </div>
 
-        {/* Grid Row 2: bottom-anchored conversation stack. The current bubble is pinned to the
-            bottom (fixed gap to the mascot below via pb-*), so older turns are the ones that
-            get visually clipped off the top edge when the stack is taller than the available
-            height — matching the spec's "전전 발화부터 잘림" priority without needing exact
-            flex-shrink ratios (codex-rv 재검증 지적: justify-start였을 때 짧은 히스토리에서
-            간격이 불안정했다). */}
-        <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(14px,4vw,22px)] pb-[clamp(56px,6.8dvh,62px)] ${isTextMode ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden'}`}>
-          {/* Top fade out for older text when cut off */}
-          <div className="absolute top-0 left-0 w-full h-[clamp(18px,3dvh,24px)] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
+        {/* Grid Row 2: current question first; history is added only when its measured whole
+            bubble fits. The 32px bottom padding minus the 12px tail keeps a 20px mascot gap. */}
+        <div ref={conversationAreaRef} className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(14px,4vw,22px)] pb-8 ${isTextMode ? 'overflow-y-auto overflow-x-hidden' : 'overflow-visible'}`}>
 
           <div className="flex flex-col items-center w-full min-h-0 max-h-full">
-            {/* History Container: clip the oldest turn before reducing the current bubble. */}
-            {(olderKText || prevKText) && (
-              <div className="flex flex-col justify-start items-center min-h-0 overflow-hidden w-full shrink mb-[clamp(8px,1.1dvh,11px)]">
-                {olderKText && (
+            {visibleHistoryCount > 0 && (
+              <div className="flex flex-col justify-start items-center w-full shrink-0 mb-[10px]">
+                {visibleHistoryCount === 2 && olderKText && (
                   <div className="relative min-h-0 mb-[clamp(7px,1dvh,9px)] text-[#798896]/65 text-[clamp(13px,3.5vw,15px)] leading-[1.42] text-center max-w-[76%] font-medium shrink-[2] line-clamp-1" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     <span className="absolute -left-[18px] top-1/2 -translate-y-1/2 text-[11px] text-white/85" aria-hidden="true">✦</span>
                     {olderKText}
                   </div>
                 )}
                 {prevKText && (
-                  <div className="relative min-h-0 bg-white/86 backdrop-blur-[2px] px-[clamp(16px,4.5vw,19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,3.8vw,16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left shrink line-clamp-2" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  <div className="relative min-h-0 bg-white/86 backdrop-blur-[2px] px-[clamp(16px,4.5vw,19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,3.8vw,16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     <span className="absolute -left-[27px] top-1/2 -translate-y-1/2 text-[21px] leading-none text-[#F6B33F]/65 -rotate-12" aria-hidden="true">☆</span>
                     {prevKText}
                   </div>
@@ -279,7 +318,7 @@ export function MissionConversationLayout({
                 <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
               </button>
             ) : (
-              <div data-ui="current-bubble" className="relative z-20 w-[86%] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2px] border-[#F58A34] shadow-[0_5px_15px_rgba(211,102,29,0.14)] px-[clamp(20px,5.5vw,23px)] py-[clamp(15px,2dvh,18px)] flex flex-col min-w-0">
+              <div ref={currentBubbleRef} data-ui="current-bubble" className="relative z-20 w-[86%] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2px] border-[#F58A34] shadow-[0_5px_15px_rgba(211,102,29,0.14)] px-[clamp(20px,5.5vw,23px)] py-[clamp(15px,2dvh,18px)] flex flex-col min-w-0">
                 <div className="w-full min-w-0">
                   <p className="text-center text-[#211D1B] text-[clamp(18px,5vw,21px)] font-[800] tracking-[-0.015em] leading-[1.4] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     {currentQuestionText}
@@ -290,6 +329,21 @@ export function MissionConversationLayout({
                 <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
               </div>
             )}
+            </div>
+
+            {/* Invisible, same-width measurement candidates. They never occupy layout space;
+                their heights decide whether React renders each older message above. */}
+            <div className="absolute invisible pointer-events-none w-full flex flex-col items-center" aria-hidden="true">
+              {prevKText && (
+                <div ref={previousMeasureRef} className="relative bg-white/86 px-[clamp(16px,4.5vw,19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,3.8vw,16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  {prevKText}
+                </div>
+              )}
+              {olderKText && (
+                <div ref={olderMeasureRef} className="relative mt-[10px] text-[#798896]/65 text-[clamp(13px,3.5vw,15px)] leading-[1.42] text-center max-w-[76%] font-medium" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  {olderKText}
+                </div>
+              )}
             </div>
           </div>
         </div>
