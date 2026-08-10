@@ -114,6 +114,33 @@ test("pendingProposal이 300자에 근접해도 수정 요청 전체는 잘리�
   assert.ok(result.proposal.length <= 300);
 });
 
+test("pendingProposal이 300자, 수정 요청도 291/292/300자로 길어도 닫는 괄호까지 보존된다", () => {
+  const longPending = "가".repeat(300);
+  for (const len of [291, 292, 300]) {
+    const currentRequest = "나".repeat(len);
+    const result = buildAskChildProposal(currentRequest, [], longPending, true);
+
+    assert.ok(result.proposal.endsWith(")"), `len=${len}: 닫는 괄호가 보존돼야 한다`);
+    assert.ok(
+      result.proposal.includes(currentRequest.slice(0, 288)),
+      `len=${len}: 수정 요청 원문이 라벨과 함께 온전히 담겨야 한다`,
+    );
+    assert.ok(result.proposal.length <= 300);
+  }
+});
+
+test("접두어 오탐이어도 현재 요청이 독립 주제면 참고 문구보다 우선 노출된다", () => {
+  const result = buildAskChildProposal(
+    "직접, 오늘 뭐 했는지 물어봐줘",
+    [{ role: "user", text: "케이랑 매일 대화할 것 같아?" }],
+    null,
+    false,
+  );
+
+  assert.match(result.proposal, /참고\(직전 주제, 확정 아님\): 케이랑 매일 대화할 것 같아\?/);
+  assert.match(result.proposal, /현재 요청\(우선\): 직접, 오늘 뭐 했는지 물어봐줘/);
+});
+
 test("명시적인 새 질문 요청은 이전 주제로 바꾸지 않는다", () => {
   const result = buildAskChildProposal(
     "이번 주말에 뭐 하고 싶은지 물어봐줘",

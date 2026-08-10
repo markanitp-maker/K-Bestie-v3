@@ -53,10 +53,18 @@ export function buildAskChildProposal(
   isPendingEdit: boolean,
 ): AskChildProposalContext {
   if (isPendingEdit && pendingProposal) {
-    const suffix = ` (수정 요청: ${currentRequest})`.slice(0, PROPOSAL_MAX_LENGTH);
+    // codex-rv r2 지적: 먼저 통짜 문자열을 만들고 나서 .slice()하면 pendingProposal이
+    // 이미 최대 길이에 근접했을 때 currentRequest 뒷부분(닫는 괄호 포함)이 통째로
+    // 잘려나갈 수 있다. 라벨의 고정 오버헤드(접두/접미 문구 길이)를 먼저 계산해
+    // currentRequest 몫을 그 안에서만 자르고, 라벨은 항상 완전한 형태로 조립한다.
+    const editPrefix = " (수정 요청: ";
+    const editSuffixChar = ")";
+    const editOverhead = editPrefix.length + editSuffixChar.length;
+    const requestBudget = Math.max(0, PROPOSAL_MAX_LENGTH - editOverhead);
+    const suffix = `${editPrefix}${currentRequest.slice(0, requestBudget)}${editSuffixChar}`;
     const pendingBudget = Math.max(0, PROPOSAL_MAX_LENGTH - suffix.length);
     return {
-      proposal: `${pendingProposal.slice(0, pendingBudget)}${suffix}`.slice(0, PROPOSAL_MAX_LENGTH),
+      proposal: `${pendingProposal.slice(0, pendingBudget)}${suffix}`,
       requestedTopic: pendingProposal.slice(0, REQUESTED_TOPIC_MAX_LENGTH),
     };
   }
@@ -66,11 +74,13 @@ export function buildAskChildProposal(
     .find((turn) => turn.role === "user" && turn.text.trim().length > 0);
   if (CONTEXTUAL_QUERY_REQUEST_PATTERN.test(currentRequest) && previousUserTurn) {
     const requestedTopic = previousUserTurn.text.trim().slice(0, REQUESTED_TOPIC_MAX_LENGTH);
-    const suffix = `\n현재 요청(우선): ${currentRequest}`.slice(0, PROPOSAL_MAX_LENGTH);
+    const currentPrefix = "\n현재 요청(우선): ";
+    const requestBudget = Math.max(0, PROPOSAL_MAX_LENGTH - currentPrefix.length);
+    const suffix = `${currentPrefix}${currentRequest.slice(0, requestBudget)}`;
     const prefixLabel = "참고(직전 주제, 확정 아님): ";
     const contextBudget = Math.max(0, PROPOSAL_MAX_LENGTH - suffix.length - prefixLabel.length);
     return {
-      proposal: `${prefixLabel}${requestedTopic.slice(0, contextBudget)}${suffix}`.slice(0, PROPOSAL_MAX_LENGTH),
+      proposal: `${prefixLabel}${requestedTopic.slice(0, contextBudget)}${suffix}`,
       requestedTopic,
     };
   }
