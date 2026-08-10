@@ -156,6 +156,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   });
   const {
     interimTranscript: interimChildText,
+    isTurnActive: isSttTurnActive,
     cancel: cancelSttTurn,
     endTurn: endSttTurn,
     startCapture: startSttCapture,
@@ -259,11 +260,15 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       return;
     }
     signal?.addEventListener("abort", cancelSttTurn, { once: true });
-    // endSttTurn() reports whether a captured turn actually existed to
-    // finalize — an empty press (mic opened, nothing was ever LISTENING)
-    // must not emit speech_end telemetry for a turn that never happened.
-    if (endSttTurn()) notifySpeechEnd();
-  }, [cancelSttTurn, endSttTurn]);
+    // isSttTurnActive() must be checked BEFORE endSttTurn() runs, not after —
+    // a Browser-success completion is synchronous and calls onFinalTranscript
+    // (which appendTurn()s and advances turnSeqRef) as part of endSttTurn()
+    // itself, so checking post-hoc would misattribute this turn's speech_end
+    // telemetry to the next turn. An empty press (mic opened, nothing was
+    // ever LISTENING) still must not emit it at all.
+    if (isSttTurnActive()) notifySpeechEnd();
+    endSttTurn();
+  }, [cancelSttTurn, endSttTurn, isSttTurnActive]);
 
   const cancelFinalize = useCallback(() => {
     cancelSttTurn();

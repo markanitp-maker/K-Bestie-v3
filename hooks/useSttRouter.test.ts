@@ -190,21 +190,28 @@ test("SpeechRecognition 미지원은 GCP fallback을 한 번 호출한다", asyn
   assert.equal(harness.finals[0]?.meta.browserSupported, false);
 });
 
-test("recognizer start 실패와 비정상 end는 각각 GCP fallback 조건이다", async () => {
+test("recognizer start 실패는 GCP fallback 조건이다", async () => {
   const startFailureRecognition = new FakeRecognition();
   startFailureRecognition.throwOnStart = true;
   const startFailure = createHarness({ recognition: startFailureRecognition });
   startAndBuffer(startFailure.controller);
   startFailure.controller.endTurn();
-
-  const abnormalEnd = createHarness();
-  startAndBuffer(abnormalEnd.controller);
-  abnormalEnd.recognition.emitEnd();
-  abnormalEnd.controller.endTurn();
   await flushAsync();
 
   assert.equal(startFailure.getGcpCalls(), 1);
-  assert.equal(abnormalEnd.getGcpCalls(), 1);
+});
+
+test("BROWSER_PROCESSING 진입 후 pending 없이 onend가 오면 GCP fallback 조건이다", async () => {
+  // LISTENING 중의 조용한 onend는(위 재시작 테스트 참고) 실패가 아니다 — endTurn()이
+  // 이미 호출돼 recognition.stop()을 요청한 뒤에도 아무 final도 못 받고 onend가
+  // 오는 경우만 진짜 실패로 취급해 GCP로 넘어가야 한다.
+  const harness = createHarness();
+  startAndBuffer(harness.controller);
+  harness.controller.endTurn();
+  harness.recognition.emitEnd();
+  await flushAsync();
+
+  assert.equal(harness.getGcpCalls(), 1);
 });
 
 test("Browser success 뒤 late error가 와도 GCP 호출은 0회다", () => {
@@ -279,6 +286,54 @@ test("한 발화 안에서 여러 final 세그먼트가 오면 앞부분을 잃�
   assert.deepEqual(
     harness.finals.map((entry) => entry.transcript),
     ["어제 민서랑 놀았는데 진짜 재밌었어"],
+  );
+});
+
+test("같은 index를 재전달하는 엔진에서 누적이 중복되지 않는다", () => {
+  const harness = createHarness();
+  startAndBuffer(harness.controller);
+  // iOS Safari 계열 엔진은 새 세그먼트만이 아니라 누적 결과 전체를 매번
+  // resultIndex 0부터 다시 보낸다 — 같은 index를 문자열로 이어붙이면 중복된다.
+  harness.recognition.onresult?.({
+    resultIndex: 0,
+    results: [{ isFinal: true, 0: { transcript: "안녕하세요" } }],
+  });
+  harness.recognition.onresult?.({
+    resultIndex: 0,
+    results: [{ isFinal: true, 0: { transcript: "안녕하세요" } }],
+  });
+  harness.controller.endTurn();
+
+  assert.deepEqual(harness.finals.map((entry) => entry.transcript), ["안녕하세요"]);
+});
+
+test("recognizer가 발화 도중 조용히 끝나면(Android Chrome) 재시작해 뒷부분을 잃지 않는다", () => {
+  const harness = createHarness();
+  startAndBuffer(harness.controller);
+  harness.recognition.onresult?.({
+    resultIndex: 0,
+    results: [{ isFinal: true, 0: { transcript: "첫 번째 세그먼트" } }],
+  });
+  assert.equal(harness.recognition.startCalls, 1);
+
+  // 에러 없이 onend만 발생 — 아직 endTurn()은 호출되지 않은 상태(state===LISTENING).
+  // 죽은 recognizer를 방치하지 않고 재시작해야 한다.
+  harness.recognition.emitEnd();
+  assert.equal(harness.recognition.startCalls, 2, "clean mid-turn onend must restart the recognizer");
+
+  harness.recognition.onresult?.({
+    resultIndex: 1,
+    results: [
+      { isFinal: true, 0: { transcript: "첫 번째 세그먼트" } },
+      { isFinal: true, 0: { transcript: "두 번째 세그먼트" } },
+    ],
+  });
+  harness.controller.endTurn();
+
+  assert.equal(harness.getGcpCalls(), 0);
+  assert.deepEqual(
+    harness.finals.map((entry) => entry.transcript),
+    ["첫 번째 세그먼트 두 번째 세그먼트"],
   );
 });
 

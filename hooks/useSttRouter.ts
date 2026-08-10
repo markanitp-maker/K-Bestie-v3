@@ -269,6 +269,12 @@ export class SttRouterController implements SttRouter {
   private browserTimedOut = false;
   private fallbackTriggered = false;
   private terminalDelivered = false;
+  // Keyed by SpeechRecognitionEvent.resultIndex (an absolute, stable position
+  // within the utterance per spec) rather than concatenated blindly — some
+  // engines (iOS Safari-class) redeliver the full cumulative results array
+  // from index 0 on every event rather than only new segments, and a plain
+  // string join would duplicate that redelivered text on every event.
+  private finalSegments: string[] = [];
   private pendingBrowserTranscript = "";
   private pendingBrowserConfidence: number | undefined;
   private pcmChunks: Uint8Array[] = [];
@@ -307,6 +313,7 @@ export class SttRouterController implements SttRouter {
     this.browserTimedOut = false;
     this.fallbackTriggered = false;
     this.terminalDelivered = false;
+    this.finalSegments = [];
     this.pendingBrowserTranscript = "";
     this.pendingBrowserConfidence = undefined;
     this.turnContext = this.options.getTurnContext?.() ?? defaultTurnContext(this.options);
@@ -319,7 +326,14 @@ export class SttRouterController implements SttRouter {
       return;
     }
 
-    const turnId = this.routerTurnId;
+    this.startRecognition(this.routerTurnId);
+  }
+
+  // Shared by startTurn() and handleBrowserEnd()'s mid-turn restart — some
+  // engines (Android Chrome) end recognition per-segment even with
+  // continuous=true, so a fresh recognizer must be able to pick up where the
+  // last one left off without resetting finalSegments/pendingBrowserTranscript.
+  private startRecognition(turnId: number): void {
     try {
       const recognition = this.createRecognition();
       if (!recognition) {
@@ -397,35 +411,40 @@ export class SttRouterController implements SttRouter {
     if (turnId !== this.routerTurnId || this.terminalDelivered || this.state === "GCP_FALLBACK") return;
 
     let interimTranscript = "";
-    let finalTranscript = "";
+    let sawNewFinalText = false;
+    let sawBlankFinal = false;
     let finalConfidence: number | undefined;
+    // event.resultIndex is an absolute position within the utterance per
+    // spec, so writing into finalSegments[index] is naturally idempotent —
+    // an engine that redelivers the same index (rather than only new
+    // segments) overwrites in place instead of duplicating via concatenation.
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
       const result = event.results[index];
       const alternative = result?.[0];
       const text = typeof alternative?.transcript === "string" ? alternative.transcript : "";
       if (result?.isFinal) {
-        finalTranscript += text;
-        if (typeof alternative?.confidence === "number") finalConfidence = alternative.confidence;
+        const trimmed = text.trim();
+        if (trimmed) {
+          if (this.finalSegments[index] !== trimmed) sawNewFinalText = true;
+          this.finalSegments[index] = trimmed;
+          if (typeof alternative?.confidence === "number") finalConfidence = alternative.confidence;
+        } else if (text.length > 0) {
+          sawBlankFinal = true;
+        }
       } else {
         interimTranscript += text;
       }
     }
 
-    const trimmedFinal = finalTranscript.trim();
-    if (trimmedFinal) {
-      // continuous=true means Chrome/Edge can emit multiple final results within
-      // one utterance (each covering only event.resultIndex onward) — accumulate
-      // rather than overwrite, or an earlier segment silently disappears.
-      this.pendingBrowserTranscript = [this.pendingBrowserTranscript, trimmedFinal]
-        .filter(Boolean)
-        .join(" ");
-      this.pendingBrowserConfidence = finalConfidence;
+    if (sawNewFinalText) {
+      this.pendingBrowserTranscript = this.finalSegments.filter(Boolean).join(" ");
+      this.pendingBrowserConfidence = finalConfidence ?? this.pendingBrowserConfidence;
       this.options.onInterimTranscript?.(this.pendingBrowserTranscript);
       if (this.state === "BROWSER_PROCESSING") this.completeWithBrowser(turnId);
       return;
     }
 
-    if (finalTranscript.length > 0) this.browserEmpty = true;
+    if (sawBlankFinal) this.browserEmpty = true;
     const trimmedInterim = interimTranscript.trim();
     if (trimmedInterim) this.options.onInterimTranscript?.(trimmedInterim);
   }
@@ -438,6 +457,17 @@ export class SttRouterController implements SttRouter {
 
   private handleBrowserEnd(turnId: number): void {
     if (turnId !== this.routerTurnId || this.terminalDelivered || this.state === "GCP_FALLBACK") return;
+
+    if (this.state === "LISTENING") {
+      // Some engines (Android Chrome) end recognition per-segment even with
+      // continuous=true, well before the caller's endTurn() is invoked.
+      // Restarting keeps capturing the rest of the utterance instead of
+      // leaving a dead recognizer object until endTurn() forces a premature
+      // "Browser success" off of whatever was captured so far.
+      this.startRecognition(turnId);
+      return;
+    }
+
     if (this.pendingBrowserTranscript) {
       if (this.state === "BROWSER_PROCESSING") this.completeWithBrowser(turnId);
       return;
@@ -637,10 +667,13 @@ interface UseSttRouterInternalOptions extends SttRouterOptions {
 }
 
 interface UseSttRouterResult extends SttRouter {
-  // Narrower than SttRouter.endTurn(): void — callers can tell a real,
-  // captured turn was finalized apart from a no-op (nothing was ever
-  // LISTENING, e.g. a manual "done" press before any speech arrived).
-  endTurn(): boolean;
+  // Read-only check for "is there a real captured turn to finalize" —
+  // callers that need to react to that (e.g. gating turn-end telemetry) must
+  // check this BEFORE calling endTurn(), not after: a Browser-success
+  // completion is synchronous and can advance caller-side turn counters as
+  // part of endTurn() itself, so checking post-hoc would already see the
+  // next turn's state.
+  isTurnActive(): boolean;
   interimTranscript: string;
   startCapture(): Promise<void>;
   stopCapture(): void;
@@ -701,15 +734,18 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
     resetVad();
   }, [resetVad]);
 
-  const endTurn = useCallback((): boolean => {
+  const isTurnActive = useCallback((): boolean => {
+    return controllerRef.current?.state === "LISTENING";
+  }, []);
+
+  const endTurn = useCallback(() => {
     const controller = controllerRef.current;
     if (!controller || controller.state !== "LISTENING") {
       optionsRef.current.onEmptyAudio?.();
-      return false;
+      return;
     }
     controller.endTurn();
     resetVad();
-    return true;
   }, [resetVad]);
 
   const cancel = useCallback(() => {
@@ -854,6 +890,7 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
 
   return {
     state,
+    isTurnActive,
     interimTranscript,
     startTurn,
     endTurn,
