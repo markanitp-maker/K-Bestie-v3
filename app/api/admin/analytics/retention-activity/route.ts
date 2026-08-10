@@ -28,8 +28,8 @@ interface ReportRow { id: string; child_id: string | null }
 interface ViewRow { report_id: string; viewed_at: string }
 interface QuestionRow { parent_id: string | null; child_id: string; created_at: string }
 
-function retention(points: ActivityPoint[], asOfDate: string) {
-  return buildActivityRetention(points, asOfDate);
+function retention(points: ActivityPoint[], asOfDate: string, cohortDateByUnit: ReadonlyMap<string, string>) {
+  return buildActivityRetention(points, asOfDate, cohortDateByUnit);
 }
 
 export async function GET(req: NextRequest) {
@@ -45,24 +45,20 @@ export async function GET(req: NextRequest) {
   try {
     const settled = await Promise.allSettled([
       loadAnalyticsIdentity(service, filters.internalTest, filters.channel),
-      fetchAllAnalyticsRows<BehaviorRow>((from, to) => service.from("behavior_events")
+      fetchAllAnalyticsRows<BehaviorRow>(() => service.from("behavior_events")
         .select("event_name,actor_id,child_id,family_id,feature,play_type,occurred_at")
-        .gte("occurred_at", filters.fromIso).lt("occurred_at", filters.toExclusiveIso)
-        .order("occurred_at").range(from, to)),
-      fetchAllAnalyticsRows<SessionRow>((from, to) => service.from("chat_sessions")
-        .select("child_id,session_type,started_at").gte("started_at", filters.fromIso)
-        .lt("started_at", filters.toExclusiveIso).is("deleted_at", null).order("started_at").range(from, to)),
-      fetchAllAnalyticsRows<QuizRow>((from, to) => service.from("quiz_attempts")
-        .select("child_id,started_at").gte("started_at", filters.fromIso)
-        .lt("started_at", filters.toExclusiveIso).order("started_at").range(from, to)),
-      fetchAllAnalyticsRows<ReportRow>((from, to) => service.from("daily_reports")
-        .select("id,child_id").is("deleted_at", null).order("id").range(from, to)),
-      fetchAllAnalyticsRows<ViewRow>((from, to) => service.from("report_views")
-        .select("report_id,viewed_at").gte("viewed_at", filters.fromIso)
-        .lt("viewed_at", filters.toExclusiveIso).order("viewed_at").range(from, to)),
-      fetchAllAnalyticsRows<QuestionRow>((from, to) => service.from("parent_questions")
-        .select("parent_id,child_id,created_at").gte("created_at", filters.fromIso)
-        .lt("created_at", filters.toExclusiveIso).order("created_at").range(from, to)),
+        .lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<SessionRow>(() => service.from("chat_sessions")
+        .select("child_id,session_type,started_at")
+        .lt("started_at", filters.toExclusiveIso).is("deleted_at", null), { column: "started_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<QuizRow>(() => service.from("quiz_attempts")
+        .select("child_id,started_at").lt("started_at", filters.toExclusiveIso), { column: "started_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<ReportRow>(() => service.from("daily_reports")
+        .select("id,child_id").is("deleted_at", null), { column: "id", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<ViewRow>(() => service.from("report_views")
+        .select("report_id,viewed_at").lt("viewed_at", filters.toExclusiveIso), { column: "viewed_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<QuestionRow>(() => service.from("parent_questions")
+        .select("parent_id,child_id,created_at").lt("created_at", filters.toExclusiveIso), { column: "created_at", uniqueColumn: "id" }),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const events = settledValue(settled[1], "행동 이벤트").filter((row) =>
@@ -93,26 +89,34 @@ export async function GET(req: NextRequest) {
       .map((row) => ({ unitId: row.actor_id as string, occurredAt: row.occurred_at }));
     const parentQuestion = questions.filter((row) => row.parent_id && identity.parentIds.has(row.parent_id))
       .map((row) => ({ unitId: row.parent_id as string, occurredAt: row.created_at }));
+    const familyCohortDates = new Map([...identity.familyCohortDates]
+      .filter(([familyId]) => identity.familyIds.has(familyId))
+      .map(([familyId, date]) => [stableAnalyticsRef(familyId), date]));
 
     return NextResponse.json({
       filters,
       child: filters.scope === "parent" ? null : {
-        mission: retention(mission, filters.to),
-        freechat: retention(freechat, filters.to),
-        quiz: retention(quiz, filters.to),
-        play: retention(play, filters.to),
+        mission: retention(mission, filters.to, identity.childCohortDates),
+        freechat: retention(freechat, filters.to, identity.childCohortDates),
+        quiz: retention(quiz, filters.to, identity.childCohortDates),
+        play: retention(play, filters.to, identity.childCohortDates),
       },
       parent: filters.scope === "child" ? null : {
         report_view: {
           unit: "family",
           reason: "report_views에 viewer_id가 없어 가족 단위로만 계산합니다.",
-          daily: retention(dailyReport, filters.to),
-          weekly: retention(weeklyReport, filters.to),
+          daily: retention(dailyReport, filters.to, familyCohortDates),
+          weekly: retention(weeklyReport, filters.to, identity.parentCohortDates),
         },
         parent_k: { status: "unavailable", reason: "부모-K 전용 행동 이벤트가 아직 없습니다.", metrics: null },
-        parent_question: retention(parentQuestion, filters.to),
+        parent_question: retention(parentQuestion, filters.to, identity.parentCohortDates),
       },
-      meta: { cohortBasis: "선택 기간 내 첫 핵심 활동", incompleteCohortsAreNull: true, generatedAt: new Date().toISOString() },
+      meta: {
+        cohortBasis: "child_profiles/family_members/families.created_at (조회 기간과 무관한 가입·생성 기준일)",
+        activityRange: `최초 기록부터 ${filters.to}까지`,
+        incompleteCohortsAreNull: true,
+        generatedAt: new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.error("[admin/analytics/retention-activity] 집계 실패:", error);

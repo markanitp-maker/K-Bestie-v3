@@ -62,7 +62,7 @@ function featureMetric(options: {
     usageRate: options.status === "unavailable" ? null : roundRate(new Set(options.unitIds).size, options.denominator),
     completionRate: options.completedCount == null || options.usageCount === 0
       ? null
-      : roundRate(options.completedCount, options.usageCount),
+      : Math.min(roundRate(options.completedCount, options.usageCount) ?? 0, 100),
     averageDurationSeconds: roundAverage(options.durations ?? []),
     status: options.status ?? "ready",
     ...(options.reason ? { reason: options.reason } : {}),
@@ -83,27 +83,23 @@ export async function GET(req: NextRequest) {
   try {
     const settled = await Promise.allSettled([
       loadAnalyticsIdentity(service, filters.internalTest, filters.channel),
-      fetchAllAnalyticsRows<BehaviorRow>((from, to) => service.from("behavior_events")
+      fetchAllAnalyticsRows<BehaviorRow>(() => service.from("behavior_events")
         .select("event_name,actor_id,child_id,family_id,feature,play_type,duration_seconds,occurred_at")
-        .gte("occurred_at", filters.fromIso).lt("occurred_at", filters.toExclusiveIso)
-        .order("occurred_at").range(from, to)),
-      fetchAllAnalyticsRows<ChatSessionRow>((from, to) => service.from("chat_sessions")
+        .gte("occurred_at", filters.fromIso).lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<ChatSessionRow>(() => service.from("chat_sessions")
         .select("id,child_id,session_type,started_at,ended_at")
         .gte("started_at", filters.fromIso).lt("started_at", filters.toExclusiveIso)
-        .is("deleted_at", null).order("started_at").range(from, to)),
-      fetchAllAnalyticsRows<QuizAttemptRow>((from, to) => service.from("quiz_attempts")
+        .is("deleted_at", null), { column: "started_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<QuizAttemptRow>(() => service.from("quiz_attempts")
         .select("id,child_id,status,started_at,accumulated_time_seconds")
-        .gte("started_at", filters.fromIso).lt("started_at", filters.toExclusiveIso)
-        .order("started_at").range(from, to)),
-      fetchAllAnalyticsRows<DailyReportRow>((from, to) => service.from("daily_reports")
-        .select("id,child_id").is("deleted_at", null).order("id").range(from, to)),
-      fetchAllAnalyticsRows<ReportViewRow>((from, to) => service.from("report_views")
-        .select("report_id,viewed_at").gte("viewed_at", filters.fromIso).lt("viewed_at", filters.toExclusiveIso)
-        .order("viewed_at").range(from, to)),
-      fetchAllAnalyticsRows<ParentQuestionRow>((from, to) => service.from("parent_questions")
+        .gte("started_at", filters.fromIso).lt("started_at", filters.toExclusiveIso), { column: "started_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<DailyReportRow>(() => service.from("daily_reports")
+        .select("id,child_id").is("deleted_at", null), { column: "id", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<ReportViewRow>(() => service.from("report_views")
+        .select("report_id,viewed_at").gte("viewed_at", filters.fromIso).lt("viewed_at", filters.toExclusiveIso), { column: "viewed_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<ParentQuestionRow>(() => service.from("parent_questions")
         .select("id,child_id,parent_id,created_at")
-        .gte("created_at", filters.fromIso).lt("created_at", filters.toExclusiveIso)
-        .order("created_at").range(from, to)),
+        .gte("created_at", filters.fromIso).lt("created_at", filters.toExclusiveIso), { column: "created_at", uniqueColumn: "id" }),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const events = settledValue(settled[1], "행동 이벤트").filter((row) => {

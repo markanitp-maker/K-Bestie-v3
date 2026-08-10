@@ -31,19 +31,26 @@ export interface AnalyticsIdentity {
   familyIds: Set<string>;
   childFamily: Map<string, string>;
   parentFamily: Map<string, string>;
+  childCohortDates: Map<string, string>;
+  parentCohortDates: Map<string, string>;
+  familyCohortDates: Map<string, string>;
   testFamilyIds: Set<string>;
 }
 
 interface ChildIdentityRow {
   id: string;
   family_id: string | null;
+  created_at: string;
 }
 
 interface ParentIdentityRow {
   user_id: string | null;
   family_id: string | null;
   role: string;
+  created_at: string;
 }
+
+interface FamilyIdentityRow { id: string; created_at: string }
 
 interface AcquisitionLinkRow { link_id: string }
 interface ParentAttributionRow {
@@ -86,14 +93,31 @@ type PageResult<T> = {
   error: { message: string } | null;
 };
 
+interface AnalyticsRowsQuery<T> extends PromiseLike<PageResult<T>> {
+  order(column: string, options?: { ascending?: boolean }): AnalyticsRowsQuery<T>;
+  range(from: number, to: number): AnalyticsRowsQuery<T>;
+}
+
+export interface AnalyticsRowOrder {
+  column: string;
+  uniqueColumn: string;
+  ascending?: boolean;
+}
+
 export async function fetchAllAnalyticsRows<T>(
-  queryPage: (from: number, to: number) => PromiseLike<PageResult<T>>,
+  queryFactory: () => unknown,
+  order: AnalyticsRowOrder,
   pageSize = 1000,
 ): Promise<T[]> {
   const rows: T[] = [];
   let offset = 0;
   while (true) {
-    const { data, error } = await queryPage(offset, offset + pageSize - 1);
+    const query = queryFactory() as AnalyticsRowsQuery<T>;
+    let orderedQuery = query.order(order.column, { ascending: order.ascending ?? true });
+    if (order.uniqueColumn !== order.column) {
+      orderedQuery = orderedQuery.order(order.uniqueColumn, { ascending: order.ascending ?? true });
+    }
+    const { data, error } = await orderedQuery.range(offset, offset + pageSize - 1);
     if (error) throw new Error(error.message);
     const page = data ?? [];
     rows.push(...page);
@@ -110,17 +134,18 @@ export async function loadAnalyticsIdentity(
 ): Promise<AnalyticsIdentity> {
   const settled = await Promise.allSettled([
     getTestFamilyIds(service),
-    fetchAllAnalyticsRows<ChildIdentityRow>((from, to) => service
+    fetchAllAnalyticsRows<FamilyIdentityRow>(() => service
+      .from("families")
+      .select("id,created_at")
+      .is("deleted_at", null), { column: "created_at", uniqueColumn: "id" }),
+    fetchAllAnalyticsRows<ChildIdentityRow>(() => service
       .from("child_profiles")
-      .select("id,family_id")
-      .order("id")
-      .range(from, to)),
-    fetchAllAnalyticsRows<ParentIdentityRow>((from, to) => service
+      .select("id,family_id,created_at"), { column: "created_at", uniqueColumn: "id" }),
+    fetchAllAnalyticsRows<ParentIdentityRow>(() => service
       .from("family_members")
-      .select("user_id,family_id,role")
+      .select("user_id,family_id,role,created_at")
       .in("role", ["owner_parent", "parent"])
-      .order("id")
-      .range(from, to)),
+      .is("deleted_at", null), { column: "created_at", uniqueColumn: "id" }),
   ]);
   const failures = settled.filter((result) => result.status === "rejected");
   if (failures.length > 0) {
@@ -129,17 +154,19 @@ export async function loadAnalyticsIdentity(
   }
 
   const testFamilyIds = settled[0].status === "fulfilled" ? settled[0].value : new Set<string>();
-  const children = settled[1].status === "fulfilled" ? settled[1].value : [];
-  const parents = settled[2].status === "fulfilled" ? settled[2].value : [];
+  const families = settled[1].status === "fulfilled" ? settled[1].value : [];
+  const children = settled[2].status === "fulfilled" ? settled[2].value : [];
+  const parents = settled[3].status === "fulfilled" ? settled[3].value : [];
+  const activeFamilyIds = new Set(families.map((family) => family.id));
   let channelFamilyIds: Set<string> | null = null;
   if (channel) {
     const channelSettled = await Promise.allSettled([
-      fetchAllAnalyticsRows<AcquisitionLinkRow>((from, to) => service.from("acquisition_links")
-        .select("link_id").eq("channel_name", channel).is("deleted_at", null)
-        .order("link_id").range(from, to)),
-      fetchAllAnalyticsRows<ParentAttributionRow>((from, to) => service.from("parent_attributions")
-        .select("parent_user_id,first_touch_link_id,signup_link_id")
-        .order("parent_user_id").range(from, to)),
+      fetchAllAnalyticsRows<AcquisitionLinkRow>(() => service.from("acquisition_links")
+        .select("link_id").eq("channel_name", channel).is("deleted_at", null),
+      { column: "link_id", uniqueColumn: "link_id" }),
+      fetchAllAnalyticsRows<ParentAttributionRow>(() => service.from("parent_attributions")
+        .select("parent_user_id,first_touch_link_id,signup_link_id"),
+      { column: "parent_user_id", uniqueColumn: "parent_user_id" }),
     ]);
     const linkIds = new Set(settledValue(channelSettled[0], "유입 채널 링크").map((row) => row.link_id));
     const attributedParents = new Set(settledValue(channelSettled[1], "부모 유입 귀속")
@@ -152,19 +179,26 @@ export async function loadAnalyticsIdentity(
   }
   const childFamily = new Map<string, string>();
   const parentFamily = new Map<string, string>();
+  const childCohortDates = new Map<string, string>();
+  const parentCohortDates = new Map<string, string>();
+  const familyCohortDates = new Map(families.map((family) => [family.id, kstDateOfTimestamp(family.created_at)]));
   for (const child of children) {
     if (child.family_id
+      && activeFamilyIds.has(child.family_id)
       && matchesInternalTestMode(child.family_id, testFamilyIds, internalTest)
       && (!channelFamilyIds || channelFamilyIds.has(child.family_id))) {
       childFamily.set(child.id, child.family_id);
+      childCohortDates.set(child.id, kstDateOfTimestamp(child.created_at));
     }
   }
   for (const parent of parents) {
     if (parent.user_id
       && parent.family_id
+      && activeFamilyIds.has(parent.family_id)
       && matchesInternalTestMode(parent.family_id, testFamilyIds, internalTest)
       && (!channelFamilyIds || channelFamilyIds.has(parent.family_id))) {
       parentFamily.set(parent.user_id, parent.family_id);
+      parentCohortDates.set(parent.user_id, kstDateOfTimestamp(parent.created_at));
     }
   }
   return {
@@ -173,6 +207,9 @@ export async function loadAnalyticsIdentity(
     familyIds: new Set([...childFamily.values(), ...parentFamily.values()]),
     childFamily,
     parentFamily,
+    childCohortDates,
+    parentCohortDates,
+    familyCohortDates,
     testFamilyIds,
   };
 }
@@ -223,6 +260,7 @@ export type RetentionWindowKey = keyof typeof RETENTION_WINDOWS;
 export function buildActivityRetention(
   points: ActivityPoint[],
   asOfDate: string,
+  cohortDateByUnit: ReadonlyMap<string, string> = new Map(),
 ): Record<RetentionWindowKey, RetentionMetric> {
   const datesByUnit = new Map<string, Set<string>>();
   for (const point of points) {
@@ -235,9 +273,12 @@ export function buildActivityRetention(
   for (const [key, window] of Object.entries(RETENTION_WINDOWS) as Array<[RetentionWindowKey, typeof RETENTION_WINDOWS[RetentionWindowKey]]>) {
     let denominator = 0;
     let numerator = 0;
-    for (const dates of datesByUnit.values()) {
+    const unitIds = cohortDateByUnit.size > 0 ? cohortDateByUnit.keys() : datesByUnit.keys();
+    for (const unitId of unitIds) {
+      const dates = datesByUnit.get(unitId) ?? new Set<string>();
       const sorted = [...dates].sort();
-      const cohortDate = sorted[0];
+      const cohortDate = cohortDateByUnit.get(unitId) ?? sorted[0];
+      if (!cohortDate) continue;
       if (calendarDayDiff(cohortDate, asOfDate) < window.to) continue;
       denominator += 1;
       const from = offsetCalendarDate(cohortDate, window.from);
@@ -249,6 +290,27 @@ export function buildActivityRetention(
       : { numerator, denominator, rate: roundRate(numerator, denominator), status: "ready", window: window.label };
   }
   return result;
+}
+
+export function groupAnalyticsRowsByFamily<T>(
+  rows: readonly T[],
+  resolveFamilyId: (row: T) => string | null | undefined,
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const familyId = resolveFamilyId(row);
+    if (!familyId) continue;
+    const familyRows = grouped.get(familyId) ?? [];
+    familyRows.push(row);
+    grouped.set(familyId, familyRows);
+  }
+  return grouped;
+}
+
+export function resolveAnalyticsResultLimit(params: URLSearchParams, defaultLimit = 500, maxLimit = 500): number {
+  const requested = Number(params.get("limit"));
+  if (!Number.isInteger(requested) || requested <= 0) return defaultLimit;
+  return Math.min(requested, maxLimit);
 }
 
 export function buildFeatureUsage(

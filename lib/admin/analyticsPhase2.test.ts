@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildActivityRetention,
   fetchAllAnalyticsRows,
+  groupAnalyticsRowsByFamily,
   matchesInternalTestMode,
   stableAnalyticsRef,
 } from "./analyticsPhase2";
@@ -30,14 +31,62 @@ test("미완성 리텐션 코호트는 0%가 아니라 accumulating/null이며 �
   assert.equal(mature.d7.rate, 0);
 });
 
-test("페이지 집계는 1000행 경계에서 다음 페이지를 이어 읽고 가족 UUID는 opaque ref로 바꾼다", async () => {
-  const pages = [[1, 2], [3]];
-  const rows = await fetchAllAnalyticsRows<number>((from) => Promise.resolve({ data: pages[from / 2] ?? [], error: null }), 2);
-  assert.deepEqual(rows, [1, 2, 3]);
+test("동일 타임스탬프가 1000행 경계에 걸려도 고유 키 보조 정렬로 누락·중복 없이 읽는다", async () => {
+  const source = Array.from({ length: 1_001 }, (_, index) => ({
+    id: 1_001 - index,
+    occurred_at: "2026-08-10T00:00:00.000Z",
+  }));
+  const orderCalls: string[][] = [];
+  const rows = await fetchAllAnalyticsRows<{ id: number; occurred_at: string }>(() => {
+    const columns: string[] = [];
+    const query = {
+      order(column: string) {
+        columns.push(column);
+        return query;
+      },
+      range(from: number, to: number) {
+        orderCalls.push([...columns]);
+        const ordered = [...source].sort((left, right) => left.occurred_at.localeCompare(right.occurred_at) || left.id - right.id);
+        return Promise.resolve({ data: ordered.slice(from, to + 1), error: null });
+      },
+    };
+    return query;
+  }, { column: "occurred_at", uniqueColumn: "id" });
+  assert.equal(rows.length, 1_001);
+  assert.deepEqual(rows.map((row) => row.id), Array.from({ length: 1_001 }, (_, index) => index + 1));
+  assert.deepEqual(orderCalls, [["occurred_at", "id"], ["occurred_at", "id"]]);
+
   const raw = "123e4567-e89b-12d3-a456-426614174000";
   const ref = stableAnalyticsRef(raw);
   assert.equal(ref.length, 16);
   assert.equal(ref.includes(raw), false);
+});
+
+test("가족 Map 그룹핑은 기존 가족별 filter 방식과 동일한 행을 반환한다", () => {
+  const rows = [
+    { id: "event-1", familyId: "family-a" },
+    { id: "event-2", familyId: "family-b" },
+    { id: "event-3", familyId: "family-a" },
+    { id: "event-orphan", familyId: null },
+  ];
+  const grouped = groupAnalyticsRowsByFamily(rows, (row) => row.familyId);
+  for (const familyId of ["family-a", "family-b", "family-c"]) {
+    assert.deepEqual(grouped.get(familyId) ?? [], rows.filter((row) => row.familyId === familyId));
+  }
+});
+
+test("가입일 코호트는 조회 시작일에 따라 첫 관측 활동이 달라져도 고정된다", () => {
+  const cohortDates = new Map([["child-a", "2026-08-01"]]);
+  const earlierRange = buildActivityRetention([
+    { unitId: "child-a", occurredAt: "2026-08-01T01:00:00Z" },
+    { unitId: "child-a", occurredAt: "2026-08-08T01:00:00Z" },
+  ], "2026-08-20", cohortDates);
+  const laterRange = buildActivityRetention([
+    { unitId: "child-a", occurredAt: "2026-08-05T01:00:00Z" },
+    { unitId: "child-a", occurredAt: "2026-08-08T01:00:00Z" },
+  ], "2026-08-20", cohortDates);
+  assert.equal(earlierRange.d7.rate, 100);
+  assert.equal(laterRange.d7.rate, 100);
 });
 
 test("신규 분석 코드는 deprecated daily_reports.viewed_at와 last_sign_in_at를 조회하지 않는다", async () => {

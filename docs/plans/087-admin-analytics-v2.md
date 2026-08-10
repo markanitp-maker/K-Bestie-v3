@@ -75,7 +75,7 @@ CSV/XLSX, 지시서 §43 sheet 구성 그대로. 신규 계측 전 빈 값은 0�
 ## 진행 상태
 
 - [x] Phase 1 완료 — 커밋 `05ee131`, Dev migration 적용·검증 완료, claude-review 진행 중 (2026-08-10)
-- [ ] Phase 2 — 구현 완료, 실행환경 검증 대기: tsc/tests 통과. build 무메시지 종료·Dev 실호출 포트/네트워크 차단(2026-08-10)
+- [ ] Phase 2 — claude-review 반려 수정 완료·재리뷰 대기: C-1~C-3 및 안전한 S-1~S-3, 회귀 테스트 완료. tsc 클린·기존 테스트 44/44 PASS(2026-08-10)
 - [ ] Phase 3
 - [ ] Phase 4
 - [ ] Phase 5

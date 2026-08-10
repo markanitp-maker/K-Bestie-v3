@@ -22,6 +22,7 @@ test("공통 필터는 지난달·직접기간·내부테스트 기본 제외를
   assert.equal(lastMonth.internalTest, "exclude");
   assert.equal(lastMonth.timezone, "Asia/Seoul");
   assert.throws(() => resolveAnalyticsKstFilters(new URLSearchParams("period=custom&from=2026-08-11&to=2026-08-10"), now));
-  assert.throws(() => resolveAnalyticsKstFilters(new URLSearchParams("period=custom&from=2025-01-01&to=2026-08-10"), now));
+  const longRange = resolveAnalyticsKstFilters(new URLSearchParams("period=custom&from=2025-01-01&to=2026-08-10"), now);
+  assert.equal(longRange.from, "2025-01-01");
+  assert.equal(longRange.to, "2026-08-10");
 });
-

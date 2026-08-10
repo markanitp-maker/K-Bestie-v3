@@ -42,10 +42,9 @@ export async function GET(req: NextRequest) {
   try {
     const settled = await Promise.allSettled([
       loadAnalyticsIdentity(service, filters.internalTest, filters.channel),
-      fetchAllAnalyticsRows<VisitRow>((from, to) => service.from("behavior_events")
+      fetchAllAnalyticsRows<VisitRow>(() => service.from("behavior_events")
         .select("actor_type,actor_id,child_id,family_id,occurred_at")
-        .eq("event_name", "app_session_start").eq("feature", "app_session")
-        .order("occurred_at").range(from, to)),
+        .eq("event_name", "app_session_start").eq("feature", "app_session"), { column: "occurred_at", uniqueColumn: "id" }),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const points: VisitPoint[] = settledValue(settled[1], "방문 이벤트").flatMap((row) => {
@@ -120,11 +119,21 @@ export async function GET(req: NextRequest) {
       dormant: [...new Set([...previousUnits, ...historicUnits])].filter((unit) => !currentUnits.has(unit)).length,
     } : { status: "accumulating", new: null, continuing: null, returning: null, dormant: null };
 
-    const trend = enumerateCalendarDates(filters.from, filters.to).map((date) => ({
-      date,
-      parent: covered(date) ? new Set(points.filter((point) => point.date === date && point.actor_type === "parent").map((point) => point.unitId)).size : null,
-      child: covered(date) ? new Set(points.filter((point) => point.date === date && point.actor_type === "child").map((point) => point.unitId)).size : null,
-    }));
+    const trendByDate = new Map<string, { parent: Set<string>; child: Set<string> }>();
+    for (const point of points) {
+      if (point.date < filters.from || point.date > filters.to) continue;
+      const day = trendByDate.get(point.date) ?? { parent: new Set<string>(), child: new Set<string>() };
+      day[point.actor_type].add(point.unitId);
+      trendByDate.set(point.date, day);
+    }
+    const trend = enumerateCalendarDates(filters.from, filters.to).map((date) => {
+      const day = trendByDate.get(date);
+      return {
+        date,
+        parent: covered(date) ? day?.parent.size ?? 0 : null,
+        child: covered(date) ? day?.child.size ?? 0 : null,
+      };
+    });
     const dau = countMetric(dauStart, filters.to, "오늘 방문 데이터가 아직 계측되지 않았습니다.");
     const wau = countMetric(wauStart, filters.to, "최근 7일 방문 데이터가 모두 쌓이지 않았습니다.");
     const mau = countMetric(mauStart, filters.to, "최근 30일 방문 데이터가 모두 쌓이지 않았습니다.");

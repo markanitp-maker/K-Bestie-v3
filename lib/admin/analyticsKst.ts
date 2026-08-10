@@ -20,7 +20,6 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PERIODS: AnalyticsPeriod[] = ["today", "7d", "14d", "30d", "month", "lastmonth", "custom"];
 const SCOPES: AnalyticsScope[] = ["all", "family", "parent", "child"];
 const INTERNAL_TEST_MODES: InternalTestMode[] = ["exclude", "include", "only"];
-const MAX_CUSTOM_DAYS = 366;
 
 export function isAnalyticsCalendarDate(value: string): boolean {
   if (!DATE_RE.test(value)) return false;
@@ -102,9 +101,6 @@ export function resolveAnalyticsKstFilters(
     if (!isAnalyticsCalendarDate(requestedFrom) || !isAnalyticsCalendarDate(requestedTo) || requestedFrom > requestedTo) {
       throw new Error("직접 기간의 시작일과 종료일을 확인해 주세요.");
     }
-    if (calendarDayDiff(requestedFrom, requestedTo) > MAX_CUSTOM_DAYS) {
-      throw new Error("직접 기간은 최대 366일까지 조회할 수 있습니다.");
-    }
     from = requestedFrom;
     to = requestedTo;
   }
@@ -121,4 +117,3 @@ export function resolveAnalyticsKstFilters(
     timezone: ANALYTICS_TIMEZONE,
   };
 }
-

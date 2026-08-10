@@ -31,11 +31,10 @@ export async function GET(req: NextRequest) {
   try {
     const settled = await Promise.allSettled([
       loadAnalyticsIdentity(service, filters.internalTest, filters.channel),
-      fetchAllAnalyticsRows<VisitRow>((from, to) => service.from("behavior_events")
+      fetchAllAnalyticsRows<VisitRow>(() => service.from("behavior_events")
         .select("actor_type,actor_id,child_id,occurred_at")
         .eq("event_name", "app_session_start").eq("feature", "app_session")
-        .gte("occurred_at", filters.fromIso).lt("occurred_at", filters.toExclusiveIso)
-        .order("occurred_at").range(from, to)),
+        .lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const rows = settledValue(settled[1], "방문 이벤트");
@@ -44,8 +43,8 @@ export async function GET(req: NextRequest) {
     const child = rows.filter((row) => row.actor_type === "child" && row.child_id && identity.childIds.has(row.child_id))
       .map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at }));
     const measuredFrom = rows.length > 0 ? rows.map((row) => row.occurred_at).sort()[0] : null;
-    const parentRetention = buildActivityRetention(parent, filters.to);
-    const childRetention = buildActivityRetention(child, filters.to);
+    const parentRetention = buildActivityRetention(parent, filters.to, identity.parentCohortDates);
+    const childRetention = buildActivityRetention(child, filters.to, identity.childCohortDates);
     const retentionValues = [...Object.values(parentRetention), ...Object.values(childRetention)];
     return NextResponse.json({
       filters,
@@ -55,6 +54,7 @@ export async function GET(req: NextRequest) {
       child: childRetention,
       meta: {
         source: "behavior_events.app_session_start",
+        cohortBasis: "child_profiles/family_members.created_at (조회 기간과 무관한 가입·생성 기준일)",
         message: "각 윈도우에 도달한 코호트가 생기기 전까지 rate를 0으로 변환하지 않습니다.",
         generatedAt: new Date().toISOString(),
       },

@@ -61,10 +61,9 @@ export async function GET(req: NextRequest) {
   try {
     const settled = await Promise.allSettled([
       loadAnalyticsIdentity(service, filters.internalTest, filters.channel),
-      fetchAllAnalyticsRows<PipelineJobRow>((from, to) => service.from("pipeline_jobs")
+      fetchAllAnalyticsRows<PipelineJobRow>(() => service.from("pipeline_jobs")
         .select("id,child_id,business_date,job_type,status,attempt_count,started_at,completed_at,last_error_code,updated_at")
-        .gte("business_date", filters.from).lte("business_date", filters.to)
-        .order("updated_at").range(from, to)),
+        .gte("business_date", filters.from).lte("business_date", filters.to), { column: "updated_at", uniqueColumn: "id" }),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const jobs = settledValue(settled[1], "Pipeline 작업").filter((row) => identity.childIds.has(row.child_id));

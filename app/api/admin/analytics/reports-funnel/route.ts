@@ -49,21 +49,20 @@ export async function GET(req: NextRequest) {
   try {
     const settled = await Promise.allSettled([
       loadAnalyticsIdentity(service, filters.internalTest, filters.channel),
-      fetchAllAnalyticsRows<DailyReportRow>((from, to) => service.from("daily_reports")
+      fetchAllAnalyticsRows<DailyReportRow>(() => service.from("daily_reports")
         .select("id,child_id,business_date,created_at")
         .gte("business_date", filters.from).lte("business_date", filters.to)
-        .is("deleted_at", null).order("created_at").range(from, to)),
-      fetchAllAnalyticsRows<ReportViewRow>((from, to) => service.from("report_views")
-        .select("report_id,viewed_at").lt("viewed_at", filters.toExclusiveIso)
-        .order("viewed_at").range(from, to)),
-      fetchAllAnalyticsRows<WeeklyReportRow>((from, to) => service.from("weekly_summaries")
+        .is("deleted_at", null), { column: "created_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<ReportViewRow>(() => service.from("report_views")
+        .select("report_id,viewed_at").lt("viewed_at", filters.toExclusiveIso), { column: "viewed_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<WeeklyReportRow>(() => service.from("weekly_summaries")
         .select("id,child_id,week_start,created_at")
         .gte("week_start", filters.from).lte("week_start", filters.to)
-        .is("deleted_at", null).order("created_at").range(from, to)),
-      fetchAllAnalyticsRows<WeeklyViewRow>((from, to) => service.from("behavior_events")
+        .is("deleted_at", null), { column: "created_at", uniqueColumn: "id" }),
+      fetchAllAnalyticsRows<WeeklyViewRow>(() => service.from("behavior_events")
         .select("child_id,occurred_at,feature,event_name")
         .eq("event_name", "parent_report_view").eq("feature", "weekly_report")
-        .lt("occurred_at", filters.toExclusiveIso).order("occurred_at").range(from, to)),
+        .lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const dailyReports = settledValue(settled[1], "일일 리포트").filter((row) => row.child_id && identity.childIds.has(row.child_id));
