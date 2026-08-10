@@ -9,6 +9,7 @@ import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementM
 import MissionOnboardingCard from "@/components/events/MissionOnboardingCard";
 import AttendanceRouletteLoginModal from "@/components/events/AttendanceRouletteLoginModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
+import { useKakaoInApp, KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 import { appendVocative } from "@/lib/utils/koreanParticle";
 import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
 import { useNotificationInbox } from "@/lib/notifications/useNotificationInbox";
@@ -59,6 +60,8 @@ export default function ChildHomePage() {
   
   // PWA install banner state
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
+  const { isKakaoInApp } = useKakaoInApp();
+  const [showKakaoNotice, setShowKakaoNotice] = useState(false);
   const [showPwaBanner, setShowPwaBanner] = useState(false);
   const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
@@ -174,6 +177,12 @@ export default function ChildHomePage() {
   };
 
   const onInstallClick = async () => {
+    // 카카오톡 인앱 브라우저에서는 설치가 불가능하므로(Safari/Chrome 전환 필요),
+    // 실제로 설치를 시도한 이 시점에만 외부 브라우저 안내 화면을 보여준다.
+    if (isKakaoInApp) {
+      setShowKakaoNotice(true);
+      return;
+    }
     if (installPrompt) {
       await handleInstall();
       setShowPwaBanner(false);
@@ -230,6 +239,14 @@ export default function ChildHomePage() {
             </button>
           </div>
         </div>
+      </DemoFrame>
+    );
+  }
+
+  if (showKakaoNotice) {
+    return (
+      <DemoFrame>
+        <KakaoInAppBrowserNotice />
       </DemoFrame>
     );
   }

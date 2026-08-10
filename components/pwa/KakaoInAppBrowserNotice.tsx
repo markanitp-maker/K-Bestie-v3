@@ -30,14 +30,14 @@ async function copyExternalBrowserAddress(): Promise<void> {
 }
 
 /**
- * 카카오톡 인앱 브라우저에서는 인증·초대 UI보다 먼저 외부 브라우저 안내만 보여준다.
- * 비공식 kakaotalk:// scheme은 사용하지 않는다. 복사한 원 URL은 기존 초대 토큰과
- * returnUrl/link_id를 변경 없이 보존하므로 별도 개인정보 토큰을 만들 필요가 없다.
+ * 카카오톡 인앱 브라우저 여부와 PWA standalone 실행 여부를 감지만 하는 훅이다.
+ * 어떤 화면도 가로막지 않는다 — 회원가입·로그인·가족초대 등 일반 화면은 카카오
+ * 인앱 브라우저에서도 항상 정상 렌더링되어야 하므로, 렌더링 차단 판단은 이 훅을
+ * 쓰는 호출부(예: 앱 설치 유도 화면)가 명시적 설치 의도(installIntent)와 함께
+ * 직접 결정한다.
  */
-export function KakaoInAppBrowserNotice({ children }: { children: React.ReactNode }) {
+export function useKakaoInApp(): { context: BrowserState; isKakaoInApp: boolean } {
   const [browser, setBrowser] = useState<BrowserState>("checking");
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
 
   useEffect(() => {
     const context = getBrowserContext(navigator.userAgent, isStandaloneDisplay(window));
@@ -46,7 +46,6 @@ export function KakaoInAppBrowserNotice({ children }: { children: React.ReactNod
     if (context === "KAKAO_IN_APP") {
       void logAuthFlowEvent("kakao_link_open");
       void logAuthFlowEvent("kakao_inapp_detected");
-      void logAuthFlowEvent("external_browser_cta_view");
       return;
     }
 
@@ -56,15 +55,57 @@ export function KakaoInAppBrowserNotice({ children }: { children: React.ReactNod
     }
   }, []);
 
-  if (browser !== "KAKAO_IN_APP") {
-    // UA를 읽기 전에는 가입·OAuth 버튼이 잠깐 노출되지 않도록 한다.
-    if (browser === "checking") {
-      return <div className="min-h-dvh bg-[var(--color-k-surface)]" aria-busy="true" />;
-    }
-    return <>{children}</>;
-  }
+  return { context: browser, isKakaoInApp: browser === "KAKAO_IN_APP" };
+}
 
-  const ios = isIOSDevice(navigator.userAgent, Boolean((window as unknown as { MSStream?: unknown }).MSStream));
+/**
+ * 카카오톡 인앱 브라우저에서 앱 설치를 시도할 때만(명시적 설치 의도, installIntent)
+ * 표시하는 외부 브라우저 안내 화면이다. 더 이상 전역 wrapper가 아니다 — 호출부가
+ * `isKakaoInApp && installIntent`를 직접 판정해 이 컴포넌트를 마운트할 때만 보여준다.
+ * 비공식 kakaotalk:// scheme은 사용하지 않는다. 복사한 원 URL은 기존 초대 토큰과
+ * returnUrl/link_id를 변경 없이 보존하므로 별도 개인정보 토큰을 만들 필요가 없다.
+ */
+export function KakaoInAppBrowserNotice() {
+  const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+
+  useEffect(() => {
+    void logAuthFlowEvent("external_browser_cta_view");
+  }, []);
+
+  const userAgent = navigator.userAgent;
+  const ios = isIOSDevice(userAgent, Boolean((window as unknown as { MSStream?: unknown }).MSStream));
+  const iPad = /iPad/i.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const android = /Android/i.test(userAgent);
+  const guide = iPad
+    ? {
+        title: "iPad에서 여는 방법",
+        steps: [
+          "카카오 브라우저의 주소/메뉴 영역을 눌러 주세요.",
+          "‘다른 브라우저로 열기’ 또는 ‘Safari에서 열기’를 선택해 주세요.",
+        ],
+        copiedMessage: "주소를 복사했어요.\n사파리 또는 크롬 주소창에 붙여 주세요.",
+      }
+    : ios
+      ? {
+          title: "iPhone에서 여는 방법",
+          steps: [
+            "카카오 브라우저의 주소/메뉴 영역을 눌러 주세요.",
+            "‘다른 브라우저로 열기’ 또는 ‘Safari에서 열기’를 선택해 주세요.",
+          ],
+          copiedMessage: "주소를 복사했어요.\n사파리 또는 크롬 주소창에 붙여 주세요.",
+        }
+      : android
+        ? {
+            title: "Android에서 여는 방법",
+            steps: ["카카오 브라우저의 메뉴 버튼을 눌러 주세요.", "‘다른 브라우저로 열기’를 선택해 주세요."],
+            copiedMessage: "주소를 복사했어요.\n크롬 또는 다른 브라우저 주소창에 붙여 주세요.",
+          }
+        : {
+            title: "외부 브라우저에서 여는 방법",
+            steps: ["카카오 브라우저의 메뉴 버튼을 눌러 주세요.", "‘다른 브라우저로 열기’를 선택해 주세요."],
+            copiedMessage: "주소를 복사했어요.\n외부 브라우저 주소창에 붙여 주세요.",
+          };
   const handleCopyAddress = async () => {
     try {
       await copyExternalBrowserAddress();
@@ -78,31 +119,21 @@ export function KakaoInAppBrowserNotice({ children }: { children: React.ReactNod
   };
 
   return (
-    <main className="min-h-dvh bg-[var(--color-k-surface)] px-5 py-8 flex items-center justify-center">
+    <main className="min-h-dvh bg-[var(--color-k-surface)] px-2 py-8 sm:px-5 flex items-center justify-center">
       <section
-        className="w-full max-w-md rounded-3xl bg-white border border-gray-100 shadow-sm p-6 text-center"
+        className="w-full max-w-md rounded-3xl bg-white border border-gray-100 shadow-sm p-4 text-center sm:p-6"
         role="complementary"
         aria-label="카카오톡 브라우저 안내"
       >
         <p className="text-4xl" aria-hidden>🌐</p>
-        <h1 className="mt-4 text-xl font-black text-gray-900">Safari 또는 Chrome에서 계속해 주세요</h1>
-        <p className="mt-3 text-sm leading-6 text-gray-600">
-          회원가입과 앱 설치를 안정적으로 진행하려면 외부 브라우저에서 열어 주세요.
+        <h1 className="mt-4 whitespace-pre-line text-xl font-black text-gray-900">{"사파리 또는 크롬에서\n계속 진행해 주세요."}</h1>
+        <p className="mt-3 whitespace-pre-line text-base leading-6 text-gray-600">
+          {"내친구 케이 앱을 안정적으로 설치하기\n위해서는 외부 브라우저를 열어 주세요."}
         </p>
-        <div className="mt-6 rounded-2xl bg-[var(--color-k-surface)] p-4 text-left">
-          <h2 className="text-sm font-bold text-gray-900">{ios ? "iPhone에서 여는 방법" : "Android에서 여는 방법"}</h2>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-gray-700">
-            {ios ? (
-              <>
-                <li>카카오 브라우저의 주소/메뉴 영역을 눌러 주세요.</li>
-                <li>‘다른 브라우저로 열기’ 또는 ‘Safari에서 열기’를 선택해 주세요.</li>
-              </>
-            ) : (
-              <>
-                <li>오른쪽 아래 메뉴(⋮)를 눌러 주세요.</li>
-                <li>‘다른 브라우저로 열기’를 선택해 주세요.</li>
-              </>
-            )}
+        <div className="mt-6 rounded-2xl bg-[var(--color-k-surface)] p-3 text-left sm:p-4">
+          <h2 className="text-base font-bold text-gray-900">{guide.title}</h2>
+          <ol className="mt-3 list-decimal space-y-2 pl-4 text-[clamp(0.6875rem,3.75vw,1rem)] leading-5 tracking-[-0.04em] text-gray-700 sm:pl-5 sm:leading-6 sm:tracking-normal">
+            {guide.steps.map((step) => <li key={step}>{step}</li>)}
           </ol>
         </div>
         <p className="mt-4 text-xs leading-5 text-gray-500">
@@ -115,12 +146,15 @@ export function KakaoInAppBrowserNotice({ children }: { children: React.ReactNod
         >
           주소 복사하기
         </button>
-        <p className="mt-3 text-xs leading-5 text-gray-500" aria-live="polite">
+        <p
+          className={`mt-3 min-h-10 whitespace-pre-line text-center text-[clamp(0.75rem,3.75vw,0.875rem)] font-semibold leading-5 tracking-[-0.03em] sm:tracking-normal ${copied || copyFailed ? "text-red-600" : ""}`}
+          aria-live="polite"
+        >
           {copied
-            ? "주소를 복사했어요. Safari 또는 Chrome 주소창에 붙여 넣어 주세요."
+            ? guide.copiedMessage
             : copyFailed
-              ? "주소를 복사하지 못했어요. 카카오톡 메뉴에서 다른 브라우저로 열어 주세요."
-              : "메뉴를 찾기 어렵다면 주소를 복사해 Safari 또는 Chrome 주소창에 붙여 넣어 주세요."}
+              ? "주소를 복사하지 못했어요.\n주소를 길게 눌러 직접 복사해 주세요."
+              : null}
         </p>
       </section>
     </main>

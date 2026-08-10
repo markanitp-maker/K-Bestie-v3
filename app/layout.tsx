@@ -66,7 +66,6 @@ export const viewport: Viewport = {
 };
 
 import { PwaServiceWorker } from "@/components/PwaServiceWorker";
-import { KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 import { NotificationBadgeSync } from "@/components/notifications/NotificationBadgeSync";
 
 export default function RootLayout({
@@ -77,9 +76,7 @@ export default function RootLayout({
   return (
     <html lang="ko" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <DemoViewProvider>
-          <KakaoInAppBrowserNotice>{children}</KakaoInAppBrowserNotice>
-        </DemoViewProvider>
+        <DemoViewProvider>{children}</DemoViewProvider>
         <PwaServiceWorker />
         <NotificationBadgeSync />
       </body>

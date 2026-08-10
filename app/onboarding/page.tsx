@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
+import { useKakaoInApp, KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 
 const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 
@@ -21,6 +22,8 @@ function OnboardingContent() {
   const next = requestedNext === "/" ? "/parent/home" : requestedNext;
   const isChild = next === "/child/home" || next.startsWith("/child/");
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
+  const { isKakaoInApp } = useKakaoInApp();
+  const [showKakaoNotice, setShowKakaoNotice] = useState(false);
 
   useEffect(() => {
     if (!isStandalone) void logAuthFlowEvent("pwa_install_offer_view");
@@ -48,11 +51,22 @@ function OnboardingContent() {
 
   const onInstallClick = async () => {
     void logAuthFlowEvent("pwa_install_click");
+    // 카카오톡 인앱 브라우저에서는 beforeinstallprompt가 뜨지 않고 실제 설치도
+    // 불가능하므로(Safari/Chrome 전환이 먼저 필요), 명시적으로 설치를 시도한
+    // 이 시점에만 외부 브라우저 안내 화면을 보여준다.
+    if (isKakaoInApp) {
+      setShowKakaoNotice(true);
+      return;
+    }
     const outcome = await handleInstall();
     if (outcome === "accepted") void logAuthFlowEvent("pwa_installed");
     // iOS와 미지원 브라우저는 아래 안내를 읽은 뒤에도 '나중에'로 서비스 이용이 가능하다.
     if (outcome) proceed();
   };
+
+  if (showKakaoNotice) {
+    return <KakaoInAppBrowserNotice />;
+  }
 
   return (
     <div
