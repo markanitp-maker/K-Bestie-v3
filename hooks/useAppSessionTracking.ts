@@ -23,8 +23,13 @@ export function useAppSessionTracking(): void {
   }, [pathname]);
 
   useEffect(() => {
-    const sessionId = crypto.randomUUID();
+    // claude-review r2 지적(R-1): sessionId를 effect 마운트 시 1회만 발급하면,
+    // 같은 탭에서 로그아웃 후 재로그인(SIGNED_OUT→SIGNED_IN, 리로드 없음) 시
+    // 이전과 동일한 session_id로 INSERT를 재시도해 PK 충돌(409)이 나고 두 번째
+    // 방문이 통째로 누락된다. start()가 실제로 새 세션을 열 때마다 재발급한다.
+    let sessionId = crypto.randomUUID();
     let active = false;
+    let starting = false;
     let disposed = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -85,7 +90,13 @@ export function useAppSessionTracking(): void {
     };
 
     const start = async () => {
-      if (active || disposed) return;
+      // claude-review r2 지적(R-2): supabase-js가 구독 즉시 INITIAL_SESSION을
+      // emit하므로 onAuthStateChange 리스너와 getSession().then()이 거의 동시에
+      // 둘 다 start()를 부를 수 있다. active는 await 이후에만 true가 되므로
+      // 그 자체로는 재진입을 막지 못해 별도 starting 가드가 필요하다.
+      if (active || starting || disposed) return;
+      starting = true;
+      sessionId = crypto.randomUUID();
       try {
         const started = await sendAction("start");
         if (!started || disposed) return;
@@ -95,6 +106,8 @@ export function useAppSessionTracking(): void {
         startHeartbeat();
       } catch {
         // 분석 계측 실패가 앱 이용을 방해하지 않도록 조용히 종료한다.
+      } finally {
+        starting = false;
       }
     };
 
