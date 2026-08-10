@@ -44,8 +44,14 @@ export function useKakaoInApp(): { context: BrowserState; isKakaoInApp: boolean 
     setBrowser(context);
 
     if (context === "KAKAO_IN_APP") {
-      void logAuthFlowEvent("kakao_link_open");
-      void logAuthFlowEvent("kakao_inapp_detected");
+      // 전역 wrapper 시절엔 페이지 로드당 1회였으나, 지금은 이 훅이 각 페이지
+      // 컴포넌트에서 직접 호출되어 재방문·라우트 재진입마다 다시 마운트된다 —
+      // pwa_first_launch와 동일한 세션당 1회 가드를 적용한다.
+      if (!window.sessionStorage.getItem("k_kakao_inapp_detected_logged")) {
+        window.sessionStorage.setItem("k_kakao_inapp_detected_logged", "1");
+        void logAuthFlowEvent("kakao_link_open");
+        void logAuthFlowEvent("kakao_inapp_detected");
+      }
       return;
     }
 
@@ -65,7 +71,7 @@ export function useKakaoInApp(): { context: BrowserState; isKakaoInApp: boolean 
  * 비공식 kakaotalk:// scheme은 사용하지 않는다. 복사한 원 URL은 기존 초대 토큰과
  * returnUrl/link_id를 변경 없이 보존하므로 별도 개인정보 토큰을 만들 필요가 없다.
  */
-export function KakaoInAppBrowserNotice() {
+export function KakaoInAppBrowserNotice({ onClose }: { onClose?: () => void }) {
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
 
@@ -125,6 +131,16 @@ export function KakaoInAppBrowserNotice() {
         role="complementary"
         aria-label="카카오톡 브라우저 안내"
       >
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫고 계속 이용하기"
+            className="mb-2 ml-auto block text-xs font-semibold text-gray-400 active:text-gray-600"
+          >
+            나중에 할게요 ✕
+          </button>
+        )}
         <p className="text-4xl" aria-hidden>🌐</p>
         <h1 className="mt-4 whitespace-pre-line text-xl font-black text-gray-900">{"사파리 또는 크롬에서\n계속 진행해 주세요."}</h1>
         <p className="mt-3 whitespace-pre-line text-base leading-6 text-gray-600">
@@ -147,7 +163,7 @@ export function KakaoInAppBrowserNotice() {
           주소 복사하기
         </button>
         <p
-          className={`mt-3 min-h-10 whitespace-pre-line text-center text-[clamp(0.75rem,3.75vw,0.875rem)] font-semibold leading-5 tracking-[-0.03em] sm:tracking-normal ${copied || copyFailed ? "text-red-600" : ""}`}
+          className={`mt-3 min-h-10 whitespace-pre-line text-center text-[clamp(0.75rem,3.75vw,0.875rem)] font-semibold leading-5 tracking-[-0.03em] sm:tracking-normal ${copied ? "text-red-600" : copyFailed ? "text-gray-500" : ""}`}
           aria-live="polite"
         >
           {copied

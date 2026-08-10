@@ -65,7 +65,7 @@ function OnboardingContent() {
   };
 
   if (showKakaoNotice) {
-    return <KakaoInAppBrowserNotice />;
+    return <KakaoInAppBrowserNotice onClose={() => setShowKakaoNotice(false)} />;
   }
 
   return (
@@ -95,7 +95,7 @@ function OnboardingContent() {
                   Safari의 공유 버튼을 누른 뒤 <strong>&quot;홈 화면에 추가&quot;</strong>를 선택해 주세요.
                 </p>
               </>
-            ) : installPrompt ? (
+            ) : (installPrompt || isKakaoInApp) ? (
               <button
                 type="button"
                 onClick={onInstallClick}

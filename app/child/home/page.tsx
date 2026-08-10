@@ -246,7 +246,7 @@ export default function ChildHomePage() {
   if (showKakaoNotice) {
     return (
       <DemoFrame>
-        <KakaoInAppBrowserNotice />
+        <KakaoInAppBrowserNotice onClose={() => setShowKakaoNotice(false)} />
       </DemoFrame>
     );
   }
