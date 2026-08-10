@@ -98,6 +98,13 @@ const READY_PARENT_QUESTION_STATUSES = [
   "parent_edited",
 ] as const;
 
+const GOAL_ASSESSMENT_STATUSES: readonly GoalAssessment["status"][] = [
+  "SATISFIED",
+  "PARTIAL",
+  "DECLINED",
+  "SKIPPED",
+];
+
 const normalizeSemanticGroup = (value: string): string => value.trim().toUpperCase();
 
 const toConversationGoal = (row: ConversationGoalRow): ConversationGoal => ({
@@ -264,6 +271,9 @@ export const initializeConversationGoals = async (input: {
   if (existing.length > CONVERSATION_GOAL_COUNT) {
     throw new Error("세션에 Conversation Goal이 4개보다 많이 존재합니다.");
   }
+  if (existing.some((goal) => goal.status !== "PENDING")) {
+    throw new Error("진행 상태가 있는 불완전 Conversation Goal 세션은 재초기화할 수 없습니다.");
+  }
 
   const parentQuestion = await loadHighestPriorityParentQuestion(input.db, input.childId);
   const drafts = selectConversationGoalDrafts({
@@ -273,7 +283,20 @@ export const initializeConversationGoals = async (input: {
     candidates: input.candidates,
   });
 
-  const { error } = await input.db.from("conversation_goals").upsert(
+  if (existing.length > 0) {
+    // A previous interrupted initialization can leave rows whose order and
+    // semantic_group collide with a newly composed draft through different
+    // UNIQUE constraints. Pending-only rows are safe to replace as one set.
+    const { error: resetError } = await input.db
+      .from("conversation_goals")
+      .delete()
+      .eq("mission_session_id", input.missionSessionId);
+    if (resetError) {
+      throw new Error(`불완전 Conversation Goal 초기화 정리 실패: ${resetError.message}`);
+    }
+  }
+
+  const { error } = await input.db.from("conversation_goals").insert(
     drafts.map((draft) => ({
       mission_session_id: draft.missionSessionId,
       child_id: draft.childId,
@@ -283,9 +306,10 @@ export const initializeConversationGoals = async (input: {
       status: draft.status,
       parent_question_id: draft.parentQuestionId,
     })),
-    { onConflict: "mission_session_id,goal_order", ignoreDuplicates: true },
   );
-  if (error) throw new Error(`Conversation Goal 생성 실패: ${error.message}`);
+  if (error && error.code !== "23505") {
+    throw new Error(`Conversation Goal 생성 실패: ${error.message}`);
+  }
 
   const initialized = await fetchSessionGoals(input.db, input.missionSessionId);
   if (initialized.length !== CONVERSATION_GOAL_COUNT) {
@@ -321,6 +345,9 @@ export const evaluateGoalSatisfaction = (input: {
     if (!goal) throw new Error(`세션에 없는 Goal 판정입니다: ${assessment.goalId}`);
     if (normalizeSemanticGroup(assessment.semanticGroup) !== normalizeSemanticGroup(goal.semanticGroup)) {
       throw new Error(`Goal semantic group 불일치: ${assessment.goalId}`);
+    }
+    if (!GOAL_ASSESSMENT_STATUSES.includes(assessment.status)) {
+      throw new Error(`Goal status 값 오류: ${assessment.goalId} (${String(assessment.status)})`);
     }
     if (!Number.isFinite(assessment.confidence) || assessment.confidence < 0 || assessment.confidence > 1) {
       throw new Error(`Goal confidence 범위 오류: ${assessment.goalId}`);

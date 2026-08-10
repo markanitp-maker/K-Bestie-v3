@@ -135,17 +135,28 @@ export const respondToMissionTurn = async (input: {
     return { engineOutput: safetyOutput, goalDecisions: [], promptedGoalId: null };
   }
 
-  const goalDecisions = evaluateGoalSatisfaction({
-    goals: input.goals,
-    currentUtterance: input.currentUtterance,
-    sourceTurnId: input.sourceTurnId,
-    assessedAt: input.assessedAt ?? new Date().toISOString(),
-    assessments: input.assessments,
-  });
-  await persistGoalDecisions(input.db, goalDecisions);
+  let goalDecisions: GoalDecision[] = [];
+  try {
+    const evaluatedDecisions = evaluateGoalSatisfaction({
+      goals: input.goals,
+      currentUtterance: input.currentUtterance,
+      sourceTurnId: input.sourceTurnId,
+      assessedAt: input.assessedAt ?? new Date().toISOString(),
+      assessments: input.assessments,
+    });
+    await persistGoalDecisions(input.db, evaluatedDecisions);
+    goalDecisions = evaluatedDecisions;
+  } catch (error) {
+    console.error("[mission-v3/adapter] Goal evaluation or persistence failed", error);
+  }
 
   const currentGoals = applyDecisions(input.goals, goalDecisions);
-  const promptGoal = await selectNextPromptGoal(input.db, input.childId, currentGoals, engine);
+  let promptGoal: MissionPromptGoal | null = null;
+  try {
+    promptGoal = await selectNextPromptGoal(input.db, input.childId, currentGoals, engine);
+  } catch (error) {
+    console.error("[mission-v3/adapter] Goal prompt selection failed", error);
+  }
   const engineOutput = await engine.respond(
     {
       childId: input.childId,
@@ -164,14 +175,29 @@ export const respondToMissionTurn = async (input: {
     },
   );
 
-  if (promptGoal && engineOutput.category === "generated") {
-    await engine.recordTopicUsage(
-      input.db,
-      input.childId,
-      promptGoal.semanticGroup,
-      "mission",
-      promptGoal.parentQuestionId ? "parent_question" : "k",
-    );
+  // EngineOutput only reports the response category/action; it cannot prove
+  // that the model actually followed adapterInstruction. Record a cooldown
+  // only after the child's evidence advances that same Goal.
+  const advancedGoalIds = new Set(
+    goalDecisions
+      .filter((decision) => decision.status === "SATISFIED" || decision.status === "PARTIAL")
+      .map((decision) => decision.goalId),
+  );
+  const cooldownResults = await Promise.allSettled(
+    input.goals
+      .filter((goal) => advancedGoalIds.has(goal.goalId))
+      .map((goal) => engine.recordTopicUsage(
+        input.db,
+        input.childId,
+        goal.semanticGroup,
+        "mission",
+        goal.parentQuestionId ? "parent_question" : "k",
+      )),
+  );
+  for (const result of cooldownResults) {
+    if (result.status === "rejected") {
+      console.error("[mission-v3/adapter] Goal cooldown recording failed", result.reason);
+    }
   }
 
   return {

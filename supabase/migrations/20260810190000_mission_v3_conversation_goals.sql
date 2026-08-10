@@ -1,7 +1,7 @@
 -- 073 Mission v3 Phase 1: additive Conversation Goal entity only.
 -- Existing mission_progress/chat_sessions/parent_questions rows and schemas are untouched.
 
-CREATE TABLE public.conversation_goals (
+CREATE TABLE IF NOT EXISTS public.conversation_goals (
   goal_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   mission_session_id uuid NOT NULL
     REFERENCES public.chat_sessions(id) ON DELETE CASCADE,
@@ -29,7 +29,6 @@ CREATE TABLE public.conversation_goals (
     status <> 'SATISFIED'
     OR (
       evidence_source IS NOT NULL
-      AND source_turn_id IS NOT NULL
       AND confidence IS NOT NULL
       AND satisfied_at IS NOT NULL
     )
@@ -39,34 +38,28 @@ CREATE TABLE public.conversation_goals (
   )
 );
 
-CREATE INDEX conversation_goals_child_status_idx
+CREATE INDEX IF NOT EXISTS conversation_goals_child_status_idx
   ON public.conversation_goals (child_id, status, created_at DESC);
 
-CREATE INDEX conversation_goals_parent_question_idx
+CREATE INDEX IF NOT EXISTS conversation_goals_parent_question_idx
   ON public.conversation_goals (parent_question_id)
   WHERE parent_question_id IS NOT NULL;
 
 ALTER TABLE public.conversation_goals ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS conversation_goals_family_select
+  ON public.conversation_goals;
+
+DROP POLICY IF EXISTS conversation_goals_service_all
+  ON public.conversation_goals;
+
+-- service_role bypasses RLS. Explicitly deny every RLS-bound role so hidden Goal
+-- metadata cannot be read directly with either a child or parent JWT.
 CREATE POLICY conversation_goals_service_all
   ON public.conversation_goals
   FOR ALL
-  USING (auth.role() = 'service_role')
-  WITH CHECK (auth.role() = 'service_role');
-
-CREATE POLICY conversation_goals_family_select
-  ON public.conversation_goals
-  FOR SELECT
-  USING (
-    auth.role() = 'authenticated'
-    AND EXISTS (
-      SELECT 1
-      FROM public.child_profiles cp
-      JOIN public.family_members fm ON fm.family_id = cp.family_id
-      WHERE cp.id = conversation_goals.child_id
-        AND fm.user_id = auth.uid()
-    )
-  );
+  USING (false)
+  WITH CHECK (false);
 
 GRANT ALL ON public.conversation_goals TO anon, authenticated;
 
