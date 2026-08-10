@@ -73,6 +73,7 @@ export const viewport: Viewport = {
 
 import { PwaServiceWorker } from "@/components/PwaServiceWorker";
 import { NotificationBadgeSync } from "@/components/notifications/NotificationBadgeSync";
+import { AppSessionTracking } from "@/hooks/useAppSessionTracking";
 
 export default function RootLayout({
   children,
@@ -85,6 +86,7 @@ export default function RootLayout({
         <DemoViewProvider>{children}</DemoViewProvider>
         <PwaServiceWorker />
         <NotificationBadgeSync />
+        <AppSessionTracking />
       </body>
     </html>
   );

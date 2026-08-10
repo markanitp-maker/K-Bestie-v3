@@ -11,7 +11,7 @@ export interface BehaviorEventInput {
   feature:
     | "auth" | "home" | "mission" | "freechat" | "play" | "daily_report"
     | "weekly_report" | "monthly_report" | "conversation_topic"
-    | "child_management" | "guardian_settings" | "subscription";
+    | "child_management" | "guardian_settings" | "subscription" | "app_session";
   route?: string | null;
   conversationMode?: "A" | "B" | "C" | "D" | "E" | "F" | null;
   playType?: "comic_book" | "quiz" | "hairstyle" | "mbti" | null;
