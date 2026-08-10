@@ -25,7 +25,7 @@ export function InsightGrid({ insights, view }: { insights?: InsightMap | null, 
   ];
 
   return (
-    <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
+    <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} mb-8 gap-3 sm:gap-4`}>
       {cards.map(c => {
         const data = getInsightData(c.field);
         const hasData = typeof data.value === "string" && data.value.trim() !== "";
@@ -35,14 +35,14 @@ export function InsightGrid({ insights, view }: { insights?: InsightMap | null, 
         return (
           <div 
             key={c.id} 
-            className="relative bg-white rounded-[18px] p-4 shadow-sm min-h-[100px] min-w-0"
+            className="relative min-w-0 min-h-[144px] rounded-[18px] border border-[#10315B]/20 bg-white p-4 shadow-sm sm:min-h-[156px] sm:p-5"
           >
             <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="text-base" aria-hidden="true">{c.icon}</span>
-                <span className="text-[11px] font-bold text-gray-500 break-keep">{c.title}</span>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-[26px] leading-none sm:text-[30px]" aria-hidden="true">{c.icon}</span>
+                <span className="break-keep text-[16px] font-bold leading-snug text-[#1F2937] sm:text-[17px]">{c.title}</span>
               </div>
-              <p className="text-[clamp(9px,2.4vw,13px)] font-bold text-gray-800 leading-snug whitespace-nowrap tracking-tight">
+              <p className="text-[13px] font-semibold leading-[1.45] text-gray-700 sm:text-sm">
                 {displayText}
               </p>
             </div>
