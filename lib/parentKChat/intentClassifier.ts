@@ -75,9 +75,12 @@ export function buildAskChildProposal(
   if (CONTEXTUAL_QUERY_REQUEST_PATTERN.test(currentRequest) && previousUserTurn) {
     const requestedTopic = previousUserTurn.text.trim().slice(0, REQUESTED_TOPIC_MAX_LENGTH);
     const currentPrefix = "\n현재 요청(우선): ";
-    const requestBudget = Math.max(0, PROPOSAL_MAX_LENGTH - currentPrefix.length);
-    const suffix = `${currentPrefix}${currentRequest.slice(0, requestBudget)}`;
     const prefixLabel = "참고(직전 주제, 확정 아님): ";
+    // codex-rv r3 지적: requestBudget이 currentPrefix 길이만 빼고 prefixLabel 길이를
+    // 빼지 않아, currentRequest가 길면(≥288자) 최종 조립 길이가 300자를 넘을 수 있었다
+    // (18+0+300=318). 두 라벨의 고정 길이를 먼저 모두 뺀 뒤에만 currentRequest 몫을 정한다.
+    const requestBudget = Math.max(0, PROPOSAL_MAX_LENGTH - currentPrefix.length - prefixLabel.length);
+    const suffix = `${currentPrefix}${currentRequest.slice(0, requestBudget)}`;
     const contextBudget = Math.max(0, PROPOSAL_MAX_LENGTH - suffix.length - prefixLabel.length);
     return {
       proposal: `${prefixLabel}${requestedTopic.slice(0, contextBudget)}${suffix}`,

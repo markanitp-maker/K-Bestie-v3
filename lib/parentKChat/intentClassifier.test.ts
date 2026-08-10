@@ -141,6 +141,24 @@ test("접두어 오탐이어도 현재 요청이 독립 주제면 참고 문구�
   assert.match(result.proposal, /현재 요청\(우선\): 직접, 오늘 뭐 했는지 물어봐줘/);
 });
 
+test("현재 요청이 288/289/300자로 길어도 참고+현재요청 조립 결과가 300자를 넘지 않는다", () => {
+  for (const len of [288, 289, 300]) {
+    const currentRequest = `직접, ${"나".repeat(len)}`;
+    const result = buildAskChildProposal(
+      currentRequest,
+      [{ role: "user", text: "케이랑 매일 대화할 것 같아?" }],
+      null,
+      false,
+    );
+
+    assert.ok(result.proposal.length <= 300, `len=${len}: 최종 길이는 300자를 넘으면 안 된다`);
+    assert.ok(
+      result.proposal.includes("현재 요청(우선): "),
+      `len=${len}: 현재 요청 라벨은 항상 보존돼야 한다`,
+    );
+  }
+});
+
 test("명시적인 새 질문 요청은 이전 주제로 바꾸지 않는다", () => {
   const result = buildAskChildProposal(
     "이번 주말에 뭐 하고 싶은지 물어봐줘",
