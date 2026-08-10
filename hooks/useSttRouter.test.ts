@@ -253,6 +253,35 @@ test("GCP success는 downstream을 한 번만 호출하고 duplicate end submit�
   assert.equal(harness.finals.length, 1);
 });
 
+test("한 발화 안에서 여러 final 세그먼트가 오면 앞부분을 잃지 않고 누적된다", () => {
+  const harness = createHarness();
+  startAndBuffer(harness.controller);
+  // continuous=true 하에서 Chrome/Edge는 한 발화 중 짧은 휴지마다 별도 final을
+  // 내보내고, resultIndex부터의 새 세그먼트만 담는다 — 두 번째 final이 첫 번째를
+  // 덮어쓰면 안 된다.
+  // results는 SpeechRecognition의 실제 계약대로 세션 누적 리스트다 — 두 번째
+  // 이벤트는 index 0(이미 처리됨)을 그대로 유지한 채 resultIndex=1에서
+  // 새 세그먼트만 가리킨다.
+  harness.recognition.onresult?.({
+    resultIndex: 0,
+    results: [{ isFinal: true, 0: { transcript: "어제 민서랑 놀았는데" } }],
+  });
+  harness.recognition.onresult?.({
+    resultIndex: 1,
+    results: [
+      { isFinal: true, 0: { transcript: "어제 민서랑 놀았는데" } },
+      { isFinal: true, 0: { transcript: "진짜 재밌었어" } },
+    ],
+  });
+  harness.controller.endTurn();
+
+  assert.equal(harness.getGcpCalls(), 0);
+  assert.deepEqual(
+    harness.finals.map((entry) => entry.transcript),
+    ["어제 민서랑 놀았는데 진짜 재밌었어"],
+  );
+});
+
 test("Browser와 GCP가 모두 실패하면 FAILED 후 새 turn을 시작할 수 있다", async () => {
   const harness = createHarness({ gcpResult: { text: "", failureReason: "network" } });
   startAndBuffer(harness.controller);

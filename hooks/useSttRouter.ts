@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Window after endTurn() (recognition.stop() requested) for Chrome/Edge to
+// deliver the final SpeechRecognition result before falling back to GCP.
+// 3000ms chosen from existing STT round-trip telemetry in this codebase
+// (GCP recognize calls typically settle within 1-2s; Browser's own stop->final
+// handoff is normally near-instant) — 3s gives real network jitter headroom
+// without stalling a turn noticeably longer than the pre-A1 GCP-only path.
 export const DEFAULT_BROWSER_STT_FINAL_TIMEOUT_MS = 3000;
 export const STT_SILENCE_MS_TO_FINALIZE = 900;
 export const STT_RMS_SILENCE_THRESHOLD = 0.012;
@@ -407,9 +413,14 @@ export class SttRouterController implements SttRouter {
 
     const trimmedFinal = finalTranscript.trim();
     if (trimmedFinal) {
-      this.pendingBrowserTranscript = trimmedFinal;
+      // continuous=true means Chrome/Edge can emit multiple final results within
+      // one utterance (each covering only event.resultIndex onward) — accumulate
+      // rather than overwrite, or an earlier segment silently disappears.
+      this.pendingBrowserTranscript = [this.pendingBrowserTranscript, trimmedFinal]
+        .filter(Boolean)
+        .join(" ");
       this.pendingBrowserConfidence = finalConfidence;
-      this.options.onInterimTranscript?.(trimmedFinal);
+      this.options.onInterimTranscript?.(this.pendingBrowserTranscript);
       if (this.state === "BROWSER_PROCESSING") this.completeWithBrowser(turnId);
       return;
     }
@@ -532,7 +543,10 @@ export class SttRouterController implements SttRouter {
   ): void {
     if (turnId !== this.routerTurnId || this.terminalDelivered) return;
     this.terminalDelivered = true;
-    const failureReason: SttFailureReason = this.browserSupported
+    // A turn where Browser primary was never attempted (flag off, i.e. the
+    // Production GCP-only path) is not a "browser failure" even if the
+    // browser happens to support SpeechRecognition — it was simply not used.
+    const failureReason: SttFailureReason = this.options.browserPrimaryEnabled && this.browserSupported
       ? "browser_and_gcp_failed"
       : "unsupported_and_gcp_failed";
     this.releaseTurnResources(true);
@@ -623,6 +637,10 @@ interface UseSttRouterInternalOptions extends SttRouterOptions {
 }
 
 interface UseSttRouterResult extends SttRouter {
+  // Narrower than SttRouter.endTurn(): void — callers can tell a real,
+  // captured turn was finalized apart from a no-op (nothing was ever
+  // LISTENING, e.g. a manual "done" press before any speech arrived).
+  endTurn(): boolean;
   interimTranscript: string;
   startCapture(): Promise<void>;
   stopCapture(): void;
@@ -683,14 +701,15 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
     resetVad();
   }, [resetVad]);
 
-  const endTurn = useCallback(() => {
+  const endTurn = useCallback((): boolean => {
     const controller = controllerRef.current;
     if (!controller || controller.state !== "LISTENING") {
       optionsRef.current.onEmptyAudio?.();
-      return;
+      return false;
     }
     controller.endTurn();
     resetVad();
+    return true;
   }, [resetVad]);
 
   const cancel = useCallback(() => {
@@ -748,12 +767,14 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
         const rms = Math.sqrt(sumSquares / float32.length);
         const hasVoice = rms >= STT_RMS_SILENCE_THRESHOLD;
 
-        if (inputModeRef.current === "manual" && controller.state !== "LISTENING") {
-          controller.startTurn();
-        }
+        // Both modes gate the Browser recognizer's start on actual RMS voice,
+        // not on mic-enabled alone. Starting it the instant the mic opens (the
+        // old manual-mode behavior) meant a child who paused a few seconds
+        // before answering would trigger Chrome's `no-speech` error and end
+        // the recognizer before they ever spoke, permanently forcing GCP
+        // fallback for the rest of that turn.
         if (
-          inputModeRef.current === "auto"
-          && hasVoice
+          hasVoice
           && controller.state !== "LISTENING"
         ) {
           controller.startTurn();

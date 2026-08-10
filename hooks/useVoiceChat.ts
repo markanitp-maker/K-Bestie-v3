@@ -259,8 +259,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       return;
     }
     signal?.addEventListener("abort", cancelSttTurn, { once: true });
-    notifySpeechEnd();
-    endSttTurn();
+    // endSttTurn() reports whether a captured turn actually existed to
+    // finalize — an empty press (mic opened, nothing was ever LISTENING)
+    // must not emit speech_end telemetry for a turn that never happened.
+    if (endSttTurn()) notifySpeechEnd();
   }, [cancelSttTurn, endSttTurn]);
 
   const cancelFinalize = useCallback(() => {
