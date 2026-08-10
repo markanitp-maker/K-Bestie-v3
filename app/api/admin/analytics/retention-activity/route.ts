@@ -13,6 +13,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+const RETENTION_HISTORY_ROW_CAP = 20000;
+
 interface BehaviorRow {
   event_name: string;
   actor_id: string | null;
@@ -47,18 +49,18 @@ export async function GET(req: NextRequest) {
       loadAnalyticsIdentity(service, filters.internalTest, filters.channel),
       fetchAllAnalyticsRows<BehaviorRow>(() => service.from("behavior_events")
         .select("event_name,actor_id,child_id,family_id,feature,play_type,occurred_at")
-        .lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }),
+        .lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }, 1000, RETENTION_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<SessionRow>(() => service.from("chat_sessions")
         .select("child_id,session_type,started_at")
-        .lt("started_at", filters.toExclusiveIso).is("deleted_at", null), { column: "started_at", uniqueColumn: "id" }),
+        .lt("started_at", filters.toExclusiveIso).is("deleted_at", null), { column: "started_at", uniqueColumn: "id" }, 1000, RETENTION_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<QuizRow>(() => service.from("quiz_attempts")
-        .select("child_id,started_at").lt("started_at", filters.toExclusiveIso), { column: "started_at", uniqueColumn: "id" }),
+        .select("child_id,started_at").lt("started_at", filters.toExclusiveIso), { column: "started_at", uniqueColumn: "id" }, 1000, RETENTION_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<ReportRow>(() => service.from("daily_reports")
-        .select("id,child_id").is("deleted_at", null), { column: "id", uniqueColumn: "id" }),
+        .select("id,child_id").is("deleted_at", null), { column: "id", uniqueColumn: "id" }, 1000, RETENTION_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<ViewRow>(() => service.from("report_views")
-        .select("report_id,viewed_at").lt("viewed_at", filters.toExclusiveIso), { column: "viewed_at", uniqueColumn: "id" }),
+        .select("report_id,viewed_at").lt("viewed_at", filters.toExclusiveIso), { column: "viewed_at", uniqueColumn: "id" }, 1000, RETENTION_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<QuestionRow>(() => service.from("parent_questions")
-        .select("parent_id,child_id,created_at").lt("created_at", filters.toExclusiveIso), { column: "created_at", uniqueColumn: "id" }),
+        .select("parent_id,child_id,created_at").lt("created_at", filters.toExclusiveIso), { column: "created_at", uniqueColumn: "id" }, 1000, RETENTION_HISTORY_ROW_CAP),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const events = settledValue(settled[1], "행동 이벤트").filter((row) =>

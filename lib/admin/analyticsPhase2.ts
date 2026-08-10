@@ -108,6 +108,7 @@ export async function fetchAllAnalyticsRows<T>(
   queryFactory: () => unknown,
   order: AnalyticsRowOrder,
   pageSize = 1000,
+  maxRows?: number,
 ): Promise<T[]> {
   const rows: T[] = [];
   let offset = 0;
@@ -121,6 +122,9 @@ export async function fetchAllAnalyticsRows<T>(
     if (error) throw new Error(error.message);
     const page = data ?? [];
     rows.push(...page);
+    if (maxRows !== undefined && rows.length > maxRows) {
+      throw new Error(`분석 대상 행이 안전 상한(${maxRows}건)을 초과했습니다 — 조회 기간을 좁혀주세요.`);
+    }
     if (page.length < pageSize) break;
     offset += pageSize;
   }

@@ -15,6 +15,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+const PRODUCT_VALUE_HISTORY_ROW_CAP = 20000;
+
 interface EventRow { event_name: string; actor_id: string | null; child_id: string | null; family_id: string | null; feature: string; play_type: string | null; duration_seconds: number | null; occurred_at: string }
 interface SessionRow { child_id: string; session_type: string; started_at: string; ended_at: string | null }
 interface QuizRow { child_id: string; status: string; started_at: string; accumulated_time_seconds: number | null }
@@ -26,7 +28,10 @@ interface FeatureSource {
   key: string;
   label: string;
   unit: "child" | "parent" | "family";
+  /** 전체 이력(가입일 고정 코호트 기준 리텐션 계산용) */
   points: ActivityPoint[];
+  /** 조회 기간 내 활동만(이용률·평균 소요시간 계산용) */
+  periodPoints: ActivityPoint[];
   cohortDates: ReadonlyMap<string, string>;
   denominator: number;
   durations: number[];
@@ -49,24 +54,22 @@ export async function GET(req: NextRequest) {
       loadAnalyticsIdentity(service, filters.internalTest, filters.channel),
       fetchAllAnalyticsRows<EventRow>(() => service.from("behavior_events")
         .select("event_name,actor_id,child_id,family_id,feature,play_type,duration_seconds,occurred_at")
-        .gte("occurred_at", filters.fromIso).lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }),
+        .lt("occurred_at", filters.toExclusiveIso), { column: "occurred_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<SessionRow>(() => service.from("chat_sessions")
-        .select("child_id,session_type,started_at,ended_at").gte("started_at", filters.fromIso)
-        .lt("started_at", filters.toExclusiveIso).is("deleted_at", null), { column: "started_at", uniqueColumn: "id" }),
+        .select("child_id,session_type,started_at,ended_at")
+        .lt("started_at", filters.toExclusiveIso).is("deleted_at", null), { column: "started_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<QuizRow>(() => service.from("quiz_attempts")
-        .select("child_id,status,started_at,accumulated_time_seconds").gte("started_at", filters.fromIso)
-        .lt("started_at", filters.toExclusiveIso), { column: "started_at", uniqueColumn: "id" }),
+        .select("child_id,status,started_at,accumulated_time_seconds")
+        .lt("started_at", filters.toExclusiveIso), { column: "started_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<ReportRow>(() => service.from("daily_reports")
-        .select("id,child_id").is("deleted_at", null), { column: "id", uniqueColumn: "id" }),
+        .select("id,child_id").is("deleted_at", null), { column: "id", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<ViewRow>(() => service.from("report_views")
-        .select("report_id,viewed_at").gte("viewed_at", filters.fromIso)
-        .lt("viewed_at", filters.toExclusiveIso), { column: "viewed_at", uniqueColumn: "id" }),
+        .select("report_id,viewed_at").lt("viewed_at", filters.toExclusiveIso), { column: "viewed_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<QuestionRow>(() => service.from("parent_questions")
-        .select("parent_id,child_id,created_at").gte("created_at", filters.fromIso)
-        .lt("created_at", filters.toExclusiveIso), { column: "created_at", uniqueColumn: "id" }),
+        .select("parent_id,child_id,created_at").lt("created_at", filters.toExclusiveIso), { column: "created_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
       fetchAllAnalyticsRows<EventRow>(() => service.from("behavior_events")
         .select("event_name,actor_id,child_id,family_id,feature,play_type,duration_seconds,occurred_at")
-        .eq("event_name", "app_session_start").eq("feature", "app_session"), { column: "occurred_at", uniqueColumn: "id" }),
+        .eq("event_name", "app_session_start").eq("feature", "app_session"), { column: "occurred_at", uniqueColumn: "id" }, 1000, PRODUCT_VALUE_HISTORY_ROW_CAP),
     ]);
     const identity = settledValue(settled[0], "분석 대상");
     const events = settledValue(settled[1], "행동 이벤트").filter((row) =>
@@ -97,31 +100,64 @@ export async function GET(req: NextRequest) {
       }
     }
     const visitCoverageReady = measuredFrom !== null && measuredFrom <= filters.from && calendarDayDiff(filters.from, filters.to) >= 6;
+    const isWithinPeriod = (iso: string) => Date.parse(iso) >= Date.parse(filters.fromIso);
     const missionEvents = events.filter((row) => ["mission_start", "mission_complete"].includes(row.event_name) && row.child_id);
+    const missionEventsPeriod = missionEvents.filter((row) => isWithinPeriod(row.occurred_at));
     const playEvents = events.filter((row) => row.event_name === "play_start" && row.child_id && row.play_type !== "quiz");
+    const playEventsPeriod = playEvents.filter((row) => isWithinPeriod(row.occurred_at));
     const weeklyEvents = events.filter((row) => row.event_name === "parent_report_view" && row.feature === "weekly_report" && row.actor_id);
+    const weeklyEventsPeriod = weeklyEvents.filter((row) => isWithinPeriod(row.occurred_at));
     const dailyPoints = views.map((row) => {
       const childId = reports.get(row.report_id) as string;
       const familyId = identity.childFamily.get(childId) as string;
       return { unitId: stableAnalyticsRef(familyId), occurredAt: row.viewed_at };
     });
+    const dailyPointsPeriod = dailyPoints.filter((point) => isWithinPeriod(point.occurredAt));
     const freechatSessions = sessions.filter((row) => row.session_type === "free" || row.session_type === "free_chat");
+    const freechatSessionsPeriod = freechatSessions.filter((row) => isWithinPeriod(row.started_at));
+    const quizzesPeriod = quizzes.filter((row) => isWithinPeriod(row.started_at));
+    const questionsPeriod = questions.filter((row) => isWithinPeriod(row.created_at));
     const familyCohortDates = new Map([...identity.familyCohortDates]
       .filter(([familyId]) => identity.familyIds.has(familyId))
       .map(([familyId, date]) => [stableAnalyticsRef(familyId), date]));
     const sources: FeatureSource[] = [
-      { key: "mission", label: "미션", unit: "child", denominator: identity.childIds.size, points: missionEvents.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })), cohortDates: identity.childCohortDates, durations: missionEvents.map((row) => row.duration_seconds).filter((value): value is number => typeof value === "number") },
-      { key: "freechat", label: "자유대화", unit: "child", denominator: identity.childIds.size, points: freechatSessions.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })), cohortDates: identity.childCohortDates, durations: freechatSessions.filter((row) => row.ended_at).map((row) => (Date.parse(row.ended_at as string) - Date.parse(row.started_at)) / 1000).filter((value) => value >= 0) },
-      { key: "quiz", label: "퀴즈", unit: "child", denominator: identity.childIds.size, points: quizzes.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })), cohortDates: identity.childCohortDates, durations: quizzes.map((row) => Number(row.accumulated_time_seconds)).filter((value) => Number.isFinite(value) && value >= 0) },
-      { key: "play", label: "놀이", unit: "child", denominator: identity.childIds.size, points: playEvents.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })), cohortDates: identity.childCohortDates, durations: playEvents.map((row) => row.duration_seconds).filter((value): value is number => typeof value === "number") },
-      { key: "daily_report", label: "일일 리포트", unit: "family", denominator: identity.familyIds.size, points: dailyPoints, cohortDates: familyCohortDates, durations: [] },
-      { key: "weekly_report", label: "주간 리포트", unit: "parent", denominator: identity.parentIds.size, points: weeklyEvents.map((row) => ({ unitId: row.actor_id as string, occurredAt: row.occurred_at })), cohortDates: identity.parentCohortDates, durations: [] },
-      { key: "parent_question", label: "아이에게 물어보기", unit: "parent", denominator: identity.parentIds.size, points: questions.map((row) => ({ unitId: row.parent_id as string, occurredAt: row.created_at })), cohortDates: identity.parentCohortDates, durations: [] },
-      { key: "parent_k", label: "부모-K 대화", unit: "parent", denominator: identity.parentIds.size, points: [], cohortDates: identity.parentCohortDates, durations: [], status: "unavailable", reason: "부모-K 전용 행동 이벤트가 아직 없습니다." },
+      { key: "mission", label: "미션", unit: "child", denominator: identity.childIds.size,
+        points: missionEvents.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })),
+        periodPoints: missionEventsPeriod.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })),
+        cohortDates: identity.childCohortDates,
+        durations: missionEventsPeriod.map((row) => row.duration_seconds).filter((value): value is number => typeof value === "number") },
+      { key: "freechat", label: "자유대화", unit: "child", denominator: identity.childIds.size,
+        points: freechatSessions.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })),
+        periodPoints: freechatSessionsPeriod.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })),
+        cohortDates: identity.childCohortDates,
+        durations: freechatSessionsPeriod.filter((row) => row.ended_at).map((row) => (Date.parse(row.ended_at as string) - Date.parse(row.started_at)) / 1000).filter((value) => value >= 0) },
+      { key: "quiz", label: "퀴즈", unit: "child", denominator: identity.childIds.size,
+        points: quizzes.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })),
+        periodPoints: quizzesPeriod.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })),
+        cohortDates: identity.childCohortDates,
+        durations: quizzesPeriod.map((row) => Number(row.accumulated_time_seconds)).filter((value) => Number.isFinite(value) && value >= 0) },
+      { key: "play", label: "놀이", unit: "child", denominator: identity.childIds.size,
+        points: playEvents.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })),
+        periodPoints: playEventsPeriod.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })),
+        cohortDates: identity.childCohortDates,
+        durations: playEventsPeriod.map((row) => row.duration_seconds).filter((value): value is number => typeof value === "number") },
+      { key: "daily_report", label: "일일 리포트", unit: "family", denominator: identity.familyIds.size,
+        points: dailyPoints, periodPoints: dailyPointsPeriod, cohortDates: familyCohortDates, durations: [] },
+      { key: "weekly_report", label: "주간 리포트", unit: "parent", denominator: identity.parentIds.size,
+        points: weeklyEvents.map((row) => ({ unitId: row.actor_id as string, occurredAt: row.occurred_at })),
+        periodPoints: weeklyEventsPeriod.map((row) => ({ unitId: row.actor_id as string, occurredAt: row.occurred_at })),
+        cohortDates: identity.parentCohortDates, durations: [] },
+      { key: "parent_question", label: "아이에게 물어보기", unit: "parent", denominator: identity.parentIds.size,
+        points: questions.map((row) => ({ unitId: row.parent_id as string, occurredAt: row.created_at })),
+        periodPoints: questionsPeriod.map((row) => ({ unitId: row.parent_id as string, occurredAt: row.created_at })),
+        cohortDates: identity.parentCohortDates, durations: [] },
+      { key: "parent_k", label: "부모-K 대화", unit: "parent", denominator: identity.parentIds.size,
+        points: [], periodPoints: [], cohortDates: identity.parentCohortDates, durations: [],
+        status: "unavailable", reason: "부모-K 전용 행동 이벤트가 아직 없습니다." },
     ];
     const weeks = Math.max(1, (calendarDayDiff(filters.from, filters.to) + 1) / 7);
     const features = sources.map((source) => {
-      const users = new Set(source.points.map((point) => point.unitId));
+      const users = new Set(source.periodPoints.map((point) => point.unitId));
       const retention = buildActivityRetention(source.points, filters.to, source.cohortDates);
       const totalVisitDays = [...users].reduce((sum, unit) => sum + (visitDates.get(unit)?.size ?? 0), 0);
       return {
@@ -142,7 +178,7 @@ export async function GET(req: NextRequest) {
     const scopedFeatures = features.filter((feature) => filters.scope === "all" || filters.scope === "family"
       || (filters.scope === "child" && feature.unit === "child")
       || (filters.scope === "parent" && (feature.unit === "parent" || feature.unit === "family")));
-    return NextResponse.json({ filters, features: scopedFeatures, meta: { comparisonOnly: true, causalClaim: false, cohortBasis: "가입·생성 기준일", visitSource: "behavior_events.app_session_start", generatedAt: new Date().toISOString() } });
+    return NextResponse.json({ filters, features: scopedFeatures, meta: { comparisonOnly: true, causalClaim: false, cohortBasis: "가입·생성 기준일(조회 기간과 무관, 리텐션 계산은 전체 이력 기준)", usageScope: "users/usageRate/averageDurationSeconds는 조회 기간 내 활동만 집계", visitSource: "behavior_events.app_session_start", generatedAt: new Date().toISOString() } });
   } catch (error) {
     console.error("[admin/analytics/product-value] 집계 실패:", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "서비스 가치 집계에 실패했습니다." }, { status: 500 });

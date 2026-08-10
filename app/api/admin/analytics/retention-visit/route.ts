@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolveAnalyticsKstFilters } from "@/lib/admin/analyticsKst";
+import { kstDateOfTimestamp, resolveAnalyticsKstFilters } from "@/lib/admin/analyticsKst";
 import {
   buildActivityRetention,
   fetchAllAnalyticsRows,
@@ -42,9 +42,20 @@ export async function GET(req: NextRequest) {
       .map((row) => ({ unitId: row.actor_id as string, occurredAt: row.occurred_at }));
     const child = rows.filter((row) => row.actor_type === "child" && row.child_id && identity.childIds.has(row.child_id))
       .map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at }));
-    const measuredFrom = rows.length > 0 ? rows.map((row) => row.occurred_at).sort()[0] : null;
-    const parentRetention = buildActivityRetention(parent, filters.to, identity.parentCohortDates);
-    const childRetention = buildActivityRetention(child, filters.to, identity.childCohortDates);
+    const measuredFrom = rows.length > 0
+      ? rows.map((row) => kstDateOfTimestamp(row.occurred_at)).sort()[0]
+      : null;
+    // 계측(app_session_start) 시작 이전에 가입한 코호트는 해당 리텐션 윈도우 동안
+    // 방문이 기록될 방법이 없었으므로 분모에서 제외한다 — 포함하면 "측정 불가"가
+    // 구조적 0%로 잘못 보고된다(대표님 지정 #6: 0 강제 변환 금지).
+    const eligibleParentCohorts = measuredFrom === null
+      ? new Map<string, string>()
+      : new Map([...identity.parentCohortDates].filter(([, date]) => date >= measuredFrom));
+    const eligibleChildCohorts = measuredFrom === null
+      ? new Map<string, string>()
+      : new Map([...identity.childCohortDates].filter(([, date]) => date >= measuredFrom));
+    const parentRetention = buildActivityRetention(parent, filters.to, eligibleParentCohorts);
+    const childRetention = buildActivityRetention(child, filters.to, eligibleChildCohorts);
     const retentionValues = [...Object.values(parentRetention), ...Object.values(childRetention)];
     return NextResponse.json({
       filters,
@@ -55,7 +66,7 @@ export async function GET(req: NextRequest) {
       meta: {
         source: "behavior_events.app_session_start",
         cohortBasis: "child_profiles/family_members.created_at (조회 기간과 무관한 가입·생성 기준일)",
-        message: "각 윈도우에 도달한 코호트가 생기기 전까지 rate를 0으로 변환하지 않습니다.",
+        message: "각 윈도우에 도달한 코호트가 생기기 전까지 rate를 0으로 변환하지 않습니다. app_session_start 계측 시작(measuredFrom) 이전 가입 코호트는 분모에서 제외됩니다.",
         generatedAt: new Date().toISOString(),
       },
     });
