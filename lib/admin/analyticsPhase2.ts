@@ -311,6 +311,19 @@ export function groupAnalyticsRowsByFamily<T>(
   return grouped;
 }
 
+export function isWithinIsoRange(iso: string, fromIso: string, toExclusiveIso: string): boolean {
+  const value = Date.parse(iso);
+  return value >= Date.parse(fromIso) && value < Date.parse(toExclusiveIso);
+}
+
+export function cohortCountAsOf(cohortDates: ReadonlyMap<string, string>, asOfDate: string): number {
+  let count = 0;
+  for (const date of cohortDates.values()) {
+    if (date <= asOfDate) count += 1;
+  }
+  return count;
+}
+
 export function resolveAnalyticsResultLimit(params: URLSearchParams, defaultLimit = 500, maxLimit = 500): number {
   const requested = Number(params.get("limit"));
   if (!Number.isInteger(requested) || requested <= 0) return defaultLimit;

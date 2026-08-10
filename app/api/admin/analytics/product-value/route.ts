@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { calendarDayDiff, kstDateOfTimestamp, resolveAnalyticsKstFilters } from "@/lib/admin/analyticsKst";
 import {
   buildActivityRetention,
+  cohortCountAsOf,
   fetchAllAnalyticsRows,
+  isWithinIsoRange,
   loadAnalyticsIdentity,
   roundAverage,
   roundRate,
@@ -84,8 +86,7 @@ export async function GET(req: NextRequest) {
       (row.actor_id && identity.parentIds.has(row.actor_id)) || (row.child_id && identity.childIds.has(row.child_id)));
     const measuredFrom = visitRows.length > 0 ? visitRows.map((row) => kstDateOfTimestamp(row.occurred_at)).sort()[0] : null;
     const visitCoverageReady = measuredFrom !== null && measuredFrom <= filters.from && calendarDayDiff(filters.from, filters.to) >= 6;
-    const isWithinPeriod = (iso: string) =>
-      Date.parse(iso) >= Date.parse(filters.fromIso) && Date.parse(iso) < Date.parse(filters.toExclusiveIso);
+    const isWithinPeriod = (iso: string) => isWithinIsoRange(iso, filters.fromIso, filters.toExclusiveIso);
     // weeklyAverageVisits는 조회 기간 내 방문일만 세야 한다 — visitDates(전체 이력)를
     // 그대로 쓰면 기간 밖 방문까지 분자에 섞여 기간 지표가 과대 계산된다.
     const periodVisitDates = new Map<string, Set<string>>();
@@ -124,38 +125,44 @@ export async function GET(req: NextRequest) {
     const familyCohortDates = new Map([...identity.familyCohortDates]
       .filter(([familyId]) => identity.familyIds.has(familyId))
       .map(([familyId, date]) => [stableAnalyticsRef(familyId), date]));
+    // usageRate 분모는 "지금 기준 전체 가입자 수"가 아니라 "조회 기간 종료 시점까지
+    // 가입한 사람 수"여야 한다 — 현재 전체 수를 쓰면 과거 기간을 조회할 때 그 기간
+    // 이후 가입한 사람까지 분모에 섞여 과거 이용률이 실제보다 낮게 나온다.
+    const childDenominator = cohortCountAsOf(identity.childCohortDates, filters.to);
+    const parentDenominator = cohortCountAsOf(identity.parentCohortDates, filters.to);
+    const familyDenominator = cohortCountAsOf(familyCohortDates, filters.to);
     const sources: FeatureSource[] = [
-      { key: "mission", label: "미션", unit: "child", denominator: identity.childIds.size,
+      { key: "mission", label: "미션", unit: "child", denominator: childDenominator,
         points: missionEvents.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })),
         periodPoints: missionEventsPeriod.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })),
         cohortDates: identity.childCohortDates,
         durations: missionEventsPeriod.map((row) => row.duration_seconds).filter((value): value is number => typeof value === "number") },
-      { key: "freechat", label: "자유대화", unit: "child", denominator: identity.childIds.size,
+      { key: "freechat", label: "자유대화", unit: "child", denominator: childDenominator,
         points: freechatSessions.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })),
         periodPoints: freechatSessionsPeriod.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })),
         cohortDates: identity.childCohortDates,
         durations: freechatSessionsPeriod.filter((row) => row.ended_at).map((row) => (Date.parse(row.ended_at as string) - Date.parse(row.started_at)) / 1000).filter((value) => value >= 0) },
-      { key: "quiz", label: "퀴즈", unit: "child", denominator: identity.childIds.size,
+      { key: "quiz", label: "퀴즈", unit: "child", denominator: childDenominator,
         points: quizzes.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })),
         periodPoints: quizzesPeriod.map((row) => ({ unitId: row.child_id, occurredAt: row.started_at })),
         cohortDates: identity.childCohortDates,
         durations: quizzesPeriod.map((row) => Number(row.accumulated_time_seconds)).filter((value) => Number.isFinite(value) && value >= 0) },
-      { key: "play", label: "놀이", unit: "child", denominator: identity.childIds.size,
+      { key: "play", label: "놀이", unit: "child", denominator: childDenominator,
         points: playEvents.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })),
         periodPoints: playEventsPeriod.map((row) => ({ unitId: row.child_id as string, occurredAt: row.occurred_at })),
         cohortDates: identity.childCohortDates,
         durations: playEventsPeriod.map((row) => row.duration_seconds).filter((value): value is number => typeof value === "number") },
-      { key: "daily_report", label: "일일 리포트", unit: "family", denominator: identity.familyIds.size,
+      { key: "daily_report", label: "일일 리포트", unit: "family", denominator: familyDenominator,
         points: dailyPoints, periodPoints: dailyPointsPeriod, cohortDates: familyCohortDates, durations: [] },
-      { key: "weekly_report", label: "주간 리포트", unit: "parent", denominator: identity.parentIds.size,
+      { key: "weekly_report", label: "주간 리포트", unit: "parent", denominator: parentDenominator,
         points: weeklyEvents.map((row) => ({ unitId: row.actor_id as string, occurredAt: row.occurred_at })),
         periodPoints: weeklyEventsPeriod.map((row) => ({ unitId: row.actor_id as string, occurredAt: row.occurred_at })),
         cohortDates: identity.parentCohortDates, durations: [] },
-      { key: "parent_question", label: "아이에게 물어보기", unit: "parent", denominator: identity.parentIds.size,
+      { key: "parent_question", label: "아이에게 물어보기", unit: "parent", denominator: parentDenominator,
         points: questions.map((row) => ({ unitId: row.parent_id as string, occurredAt: row.created_at })),
         periodPoints: questionsPeriod.map((row) => ({ unitId: row.parent_id as string, occurredAt: row.created_at })),
         cohortDates: identity.parentCohortDates, durations: [] },
-      { key: "parent_k", label: "부모-K 대화", unit: "parent", denominator: identity.parentIds.size,
+      { key: "parent_k", label: "부모-K 대화", unit: "parent", denominator: parentDenominator,
         points: [], periodPoints: [], cohortDates: identity.parentCohortDates, durations: [],
         status: "unavailable", reason: "부모-K 전용 행동 이벤트가 아직 없습니다." },
     ];

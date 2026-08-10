@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   buildActivityRetention,
+  cohortCountAsOf,
   fetchAllAnalyticsRows,
   groupAnalyticsRowsByFamily,
+  isWithinIsoRange,
   matchesInternalTestMode,
   stableAnalyticsRef,
 } from "./analyticsPhase2";
@@ -137,6 +139,27 @@ test("fetchAllAnalyticsRows는 maxRows 안전 상한을 초과하면 조용히 �
     /안전 상한/,
   );
   assert.equal(pagesRead, 2);
+});
+
+test("isWithinIsoRange는 fromIso를 포함하고 toExclusiveIso는 배제한다", () => {
+  const fromIso = "2026-08-01T00:00:00.000Z";
+  const toExclusiveIso = "2026-08-08T00:00:00.000Z";
+  assert.equal(isWithinIsoRange("2026-07-31T23:59:59.999Z", fromIso, toExclusiveIso), false);
+  assert.equal(isWithinIsoRange(fromIso, fromIso, toExclusiveIso), true);
+  assert.equal(isWithinIsoRange("2026-08-04T12:00:00.000Z", fromIso, toExclusiveIso), true);
+  assert.equal(isWithinIsoRange(toExclusiveIso, fromIso, toExclusiveIso), false);
+});
+
+test("cohortCountAsOf는 기준일 이후 가입한 코호트를 세지 않는다 (usageRate 분모 회귀)", () => {
+  const cohortDates = new Map([
+    ["child-early", "2026-07-01"],
+    ["child-mid", "2026-08-01"],
+    ["child-late", "2026-08-15"],
+  ]);
+  // "지난달(7월)" 조회 시 8월 이후 가입자는 그 달의 이용률 분모에 들어가면 안 된다.
+  assert.equal(cohortCountAsOf(cohortDates, "2026-07-31"), 1);
+  assert.equal(cohortCountAsOf(cohortDates, "2026-08-10"), 2);
+  assert.equal(cohortCountAsOf(cohortDates, "2026-08-15"), 3);
 });
 
 test("신규 분석 코드는 deprecated daily_reports.viewed_at와 last_sign_in_at를 조회하지 않는다", async () => {
