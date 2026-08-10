@@ -335,6 +335,18 @@ export default function ChatPage() {
       .catch((e) => setReportError(e.message));
   }, [status, sessionId, getTranscript]);
 
+  // 대화 종료 시 30일 이벤트 자유대화 보상 적격성 판정(089) — 실패해도 대화 종료
+  // 자체를 막지 않는다. 실제 적격성(발화 수/시간/spam 판정)은 서버가 재확인한다.
+  useEffect(() => {
+    if (status !== "ended" || !sessionId) return;
+    const childTurnCount = getTranscript().filter((t) => t.role === "child").length;
+    fetch("/api/chat/pause", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, turnCount: childTurnCount, ended: true }),
+    }).catch(() => {});
+  }, [status, sessionId, getTranscript]);
+
   useEffect(() => {
     voiceBubbleRef.current?.scrollTo({ top: voiceBubbleRef.current.scrollHeight, behavior: "smooth" });
   }, [transcript, interimChildText]);

@@ -73,7 +73,7 @@ BEGIN
 
   -- 60초 미달: 의미 발화가 3개여도 Gold Key와 이벤트 모두 증가하지 않는다.
   INSERT INTO public.chat_sessions(child_id, session_type, started_at)
-  VALUES (v_child_id, 'free', v_day1_at + interval '1 hour')
+  VALUES (v_child_id, 'free_chat', v_day1_at + interval '1 hour')
   RETURNING id INTO v_session_id;
   INSERT INTO public.chat_messages(session_id, role, content) VALUES
     (v_session_id, 'child', '오늘 축구를 했어'),
@@ -94,7 +94,7 @@ BEGIN
 
   -- 60초 이상이어도 반복 발화 3개는 farming으로 거절한다.
   INSERT INTO public.chat_sessions(child_id, session_type, started_at)
-  VALUES (v_child_id, 'free', v_day1_at + interval '2 hours')
+  VALUES (v_child_id, 'free_chat', v_day1_at + interval '2 hours')
   RETURNING id INTO v_session_id;
   INSERT INTO public.chat_messages(session_id, role, content) VALUES
     (v_session_id, 'child', '축구했어'),
@@ -128,7 +128,7 @@ BEGIN
 
   -- 첫 적격 자유대화는 한 RPC에서 Gold Key +1과 이벤트 +1을 함께 만든다.
   INSERT INTO public.chat_sessions(child_id, session_type, started_at)
-  VALUES (v_child_id, 'free', v_day1_at + interval '3 hours')
+  VALUES (v_child_id, 'free_chat', v_day1_at + interval '3 hours')
   RETURNING id INTO v_session_id;
   INSERT INTO public.chat_messages(session_id, role, content) VALUES
     (v_session_id, 'child', '오늘 미술 시간에 그림을 그렸어'),
@@ -158,7 +158,7 @@ BEGIN
 
   -- 같은 날 다른 적격 세션은 성공 응답이지만 추가 지급/집계하지 않는다.
   INSERT INTO public.chat_sessions(child_id, session_type, started_at)
-  VALUES (v_child_id, 'free', v_day1_at + interval '4 hours')
+  VALUES (v_child_id, 'free_chat', v_day1_at + interval '4 hours')
   RETURNING id INTO v_session_id;
   INSERT INTO public.chat_messages(session_id, role, content) VALUES
     (v_session_id, 'child', '저녁에는 가족과 산책할 거야'),
@@ -193,7 +193,7 @@ BEGIN
   END LOOP;
 
   INSERT INTO public.chat_sessions(child_id, session_type, started_at)
-  VALUES (v_child_id, 'free', v_day2_at + interval '1 hour')
+  VALUES (v_child_id, 'free_chat', v_day2_at + interval '1 hour')
   RETURNING id INTO v_session_id;
   INSERT INTO public.chat_messages(session_id, role, content) VALUES
     (v_session_id, 'child', '오늘은 과학 실험을 했어'),
@@ -239,7 +239,7 @@ BEGIN
   WHERE child_id = v_child_id AND environment = 'development';
 
   INSERT INTO public.chat_sessions(child_id, session_type, started_at)
-  VALUES (v_child_id, 'free', v_day2_at + interval '3 hours')
+  VALUES (v_child_id, 'free_chat', v_day2_at + interval '3 hours')
   RETURNING id INTO v_session_id;
   INSERT INTO public.chat_messages(session_id, role, content) VALUES
     (v_session_id, 'child', '내일은 운동장에서 달리기를 할 거야'),

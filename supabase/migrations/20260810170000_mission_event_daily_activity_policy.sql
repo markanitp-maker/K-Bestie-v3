@@ -12,7 +12,12 @@ ALTER TABLE public.child_mission_event_completions
 ALTER TABLE public.child_mission_event_completions
   ALTER COLUMN mission_session_id DROP NOT NULL;
 
+-- claude-review 지적: 레거시 (event_id, mission_session_id) UNIQUE가 신규
+-- (event_id, child_id, activity_type, business_date) UNIQUE와 별개로 남아 있으면
+-- ON CONFLICT가 지정한 제약이 아닌 레거시 제약에서 예기치 못한 unique_violation이
+-- 날 수 있다. 신규 제약이 의미를 완전히 대체하므로 제거한다.
 ALTER TABLE public.child_mission_event_completions
+  DROP CONSTRAINT IF EXISTS child_mission_event_completions_session_unique,
   DROP CONSTRAINT IF EXISTS child_mission_event_completions_activity_type_check,
   DROP CONSTRAINT IF EXISTS child_mission_event_completions_source_session_fk,
   DROP CONSTRAINT IF EXISTS child_mission_event_completions_daily_activity_unique;
@@ -119,7 +124,7 @@ BEGIN
   IF p_activity_type = 'mission_complete' AND v_source_session.session_type <> 'mission' THEN
     RAISE EXCEPTION 'mission activity requires a mission session';
   END IF;
-  IF p_activity_type = 'freechat_daily_engagement' AND v_source_session.session_type <> 'free' THEN
+  IF p_activity_type = 'freechat_daily_engagement' AND v_source_session.session_type <> 'free_chat' THEN
     RAISE EXCEPTION 'freechat activity requires a free_chat session';
   END IF;
 
@@ -264,24 +269,15 @@ BEGIN
       ELSE NULL
     END;
 
+    -- claude-review 지적: 기존 이벤트 행 기반 추측이나 'development' 기본값은
+    -- 실사용자(Production) 활동을 잘못된 환경에 fail-open으로 기록할 위험이 있다.
+    -- request host로 환경을 확정하지 못하면 이 트리거는 아무것도 하지 않는다 —
+    -- 정상 경로(app/api/mission/answer/route.ts)는 이미 getAppEventEnvironment()로
+    -- 확정된 환경을 명시해 같은 RPC를 직접 호출하므로(ON CONFLICT로 멱등), 이
+    -- 트리거는 그 경로를 타지 않는 예외적 completion에 대한 보조 안전망일 뿐이다.
     IF v_environment IS NULL THEN
-      SELECT environment INTO v_environment
-      FROM public.child_mission_onboarding_events
-      WHERE child_id = NEW.child_id
-      ORDER BY updated_at DESC
-      LIMIT 1;
+      RETURN NEW;
     END IF;
-
-    IF v_environment IS NULL THEN
-      SELECT environment INTO v_environment
-      FROM public.child_mission_onboarding_events
-      GROUP BY environment
-      ORDER BY max(updated_at) DESC
-      LIMIT 1;
-    END IF;
-
-    -- 새 Dev DB처럼 request context와 기존 이벤트가 모두 없는 경우에만 development.
-    v_environment := COALESCE(v_environment, 'development');
 
     PERFORM public.record_mission_event_completion(
       NEW.child_id,
@@ -343,7 +339,7 @@ BEGIN
   IF v_session.id IS NULL OR v_session.child_id <> p_child_id THEN
     RAISE EXCEPTION 'source session does not belong to child';
   END IF;
-  IF v_session.session_type <> 'free' THEN
+  IF v_session.session_type <> 'free_chat' THEN
     RAISE EXCEPTION 'freechat reward requires a free_chat session';
   END IF;
 
@@ -413,22 +409,13 @@ BEGIN
     RETURN;
   END IF;
 
-  -- 전역 활성 Gold Key 상한(22개)은 기존 정책을 그대로 지킨다.
-  SELECT count(*)::integer INTO v_active_balance
-  FROM public.gold_key_ledger
-  WHERE child_id = p_child_id
-    AND consumed = false
-    AND expires_at > p_completed_at;
-
-  IF v_active_balance >= 22 THEN
-    RETURN QUERY SELECT false, true, 'active_balance_limit', v_meaningful_count,
-      v_distinct_meaningful_count, v_duration_seconds, NULL::integer;
-    RETURN;
-  END IF;
-
   -- 이벤트 활동을 먼저 기록하고 실제 counted=true를 확인한다. 이 뒤 Gold Key insert가
-  -- 실패하면 같은 DB 트랜잭션이므로 이벤트 증가도 함께 rollback된다. 반대로 이벤트가
+  -- 실패하면 같은 DB 트랜잭션이므로 이벤트 증가도 함께 rollback된다. 반대로 이벤트이
   -- 기간 밖/60회 도달로 미집계되면 Gold Key를 만들지 않아 부분 반영이 없다.
+  -- claude-review 지적 반영: Gold Key 잔액 상한(22개)은 보상 지급 정책이지 30일
+  -- 이벤트 참여 집계와는 별개다. 잔액이 가득 차 있어도 활동 자체는 정상 인정되어
+  -- 이벤트 카운트가 올라가야 하므로, 잔액 검사를 이벤트 기록 "이후" Gold Key
+  -- 지급 직전으로 옮긴다.
   v_event := public.record_mission_event_completion(
     p_child_id,
     p_environment,
@@ -449,6 +436,20 @@ BEGIN
     RETURN QUERY SELECT false, true, 'event_not_counted', v_meaningful_count,
       v_distinct_meaningful_count, v_duration_seconds,
       CASE WHEN v_event.id IS NULL THEN NULL::integer ELSE v_event.mission_completed_count END;
+    RETURN;
+  END IF;
+
+  -- 전역 활성 Gold Key 상한(22개)은 기존 정책을 그대로 지킨다 — 단, 이벤트 카운트는
+  -- 위에서 이미 반영됐으므로 여기서는 Gold Key 지급만 건너뛴다(활동 인정은 유지).
+  SELECT count(*)::integer INTO v_active_balance
+  FROM public.gold_key_ledger
+  WHERE child_id = p_child_id
+    AND consumed = false
+    AND expires_at > p_completed_at;
+
+  IF v_active_balance >= 22 THEN
+    RETURN QUERY SELECT false, true, 'active_balance_limit', v_meaningful_count,
+      v_distinct_meaningful_count, v_duration_seconds, v_event.mission_completed_count;
     RETURN;
   END IF;
 
