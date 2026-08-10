@@ -83,6 +83,9 @@ export function KakaoInAppBrowserNotice({ onClose }: { onClose?: () => void }) {
   const ios = isIOSDevice(userAgent, Boolean((window as unknown as { MSStream?: unknown }).MSStream));
   const iPad = /iPad/i.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const android = /Android/i.test(userAgent);
+  const heading = android
+    ? "Chrome 또는 다른 브라우저에서\n계속 진행해 주세요."
+    : "Safari 또는 Chrome에서\n계속 진행해 주세요.";
   const guide = iPad
     ? {
         title: "iPad에서 여는 방법",
@@ -90,22 +93,22 @@ export function KakaoInAppBrowserNotice({ onClose }: { onClose?: () => void }) {
           "카카오 브라우저의 주소/메뉴 영역을 눌러 주세요.",
           "‘다른 브라우저로 열기’ 또는 ‘Safari에서 열기’를 선택해 주세요.",
         ],
-        copiedMessage: "주소를 복사했어요.\n사파리 또는 크롬 주소창에 붙여 주세요.",
+        copiedMessage: "주소를 복사했어요.\nSafari 또는 Chrome 주소창에 붙여 주세요.",
       }
     : ios
       ? {
           title: "iPhone에서 여는 방법",
           steps: [
-            "카카오 브라우저의 주소/메뉴 영역을 눌러 주세요.",
-            "‘다른 브라우저로 열기’ 또는 ‘Safari에서 열기’를 선택해 주세요.",
+            "화면 오른쪽 아래\n공유 버튼을 눌러 주세요.",
+            "Safari로 열기를\n선택해 주세요.",
           ],
-          copiedMessage: "주소를 복사했어요.\n사파리 또는 크롬 주소창에 붙여 주세요.",
+          copiedMessage: "주소를 복사했어요.\nSafari 또는 Chrome 주소창에 붙여 주세요.",
         }
       : android
         ? {
             title: "Android에서 여는 방법",
             steps: ["카카오 브라우저의 메뉴 버튼을 눌러 주세요.", "‘다른 브라우저로 열기’를 선택해 주세요."],
-            copiedMessage: "주소를 복사했어요.\n크롬 또는 다른 브라우저 주소창에 붙여 주세요.",
+            copiedMessage: "주소를 복사했어요.\nChrome 또는 다른 브라우저 주소창에 붙여 주세요.",
           }
         : {
             title: "외부 브라우저에서 여는 방법",
@@ -142,16 +145,26 @@ export function KakaoInAppBrowserNotice({ onClose }: { onClose?: () => void }) {
           </button>
         )}
         <p className="text-4xl" aria-hidden>🌐</p>
-        <h1 className="mt-4 whitespace-pre-line text-xl font-black text-gray-900">{"사파리 또는 크롬에서\n계속 진행해 주세요."}</h1>
+        <h1 className="mt-4 whitespace-pre-line text-xl font-black text-gray-900">{heading}</h1>
         <p className="mt-3 whitespace-pre-line text-base leading-6 text-gray-600">
           {"내친구 케이 앱을 안정적으로 설치하기\n위해서는 외부 브라우저를 열어 주세요."}
         </p>
         <div className="mt-6 rounded-2xl bg-[var(--color-k-surface)] p-3 text-left sm:p-4">
           <h2 className="text-base font-bold text-gray-900">{guide.title}</h2>
-          <ol className="mt-3 list-decimal space-y-2 pl-4 text-[clamp(0.6875rem,3.75vw,1rem)] leading-5 tracking-[-0.04em] text-gray-700 sm:pl-5 sm:leading-6 sm:tracking-normal">
-            {guide.steps.map((step) => <li key={step}>{step}</li>)}
+          <ol className={`mt-3 list-decimal pl-4 text-[clamp(0.6875rem,3.75vw,1rem)] leading-5 tracking-[-0.04em] text-gray-700 sm:pl-5 sm:leading-6 sm:tracking-normal ${ios ? "space-y-6" : "space-y-2"}`}>
+            {guide.steps.map((step) => <li key={step} className="whitespace-pre-line">{step}</li>)}
           </ol>
         </div>
+        {ios && (
+          <div className="mt-4 rounded-2xl bg-[var(--color-k-surface)] p-3 text-left sm:p-4">
+            <h2 className="text-base font-bold text-gray-900">앱 설치하는 방법</h2>
+            <ol className="mt-3 list-decimal space-y-2 pl-4 text-[clamp(0.6875rem,3.75vw,1rem)] leading-5 tracking-[-0.04em] text-gray-700 sm:pl-5 sm:leading-6 sm:tracking-normal">
+              <li className="whitespace-pre-line">{"Safari의 공유 버튼을\n눌러 주세요."}</li>
+              <li className="whitespace-pre-line">{"홈 화면에 추가를\n선택해 주세요."}</li>
+              <li className="whitespace-pre-line">{"웹 앱으로 열기를 켜고\n추가를 눌러 주세요."}</li>
+            </ol>
+          </div>
+        )}
         <p className="mt-4 text-xs leading-5 text-gray-500">
           카카오톡 버전에 따라 메뉴 위치와 이름이 다를 수 있어요.
         </p>
