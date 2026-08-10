@@ -88,7 +88,7 @@ export const RED_RULES: readonly RedRule[] = [
     id: "R-09",
     area: "fallback",
     pattern: null,
-    coachingText: "이 질문은 이 학년 허용 질문에 명확히 해당하지 않아 아이에게 전달하지 않아요. 추궁하지 않는 다른 질문으로 바꾸거나 리포트를 확인해 주세요.",
+    coachingText: "이 질문은 아이에게 부담을 줄 수 있어 그대로 전달하지 않아요. 추궁하지 않는 다른 질문으로 바꾸거나 리포트를 확인해 주세요.",
   },
 ];
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectRedPattern } from "./parentQueryRouterEngine";
+import { detectRedPattern, type RouterPolicyConfig } from "./parentQueryRouterEngine";
 import * as G1 from "./parentQueryRouterGrade1";
 import * as G2 from "./parentQueryRouterGrade2";
 import * as G3 from "./parentQueryRouterGrade3";
@@ -8,6 +8,8 @@ import * as G4 from "./parentQueryRouterGrade4";
 import * as G5 from "./parentQueryRouterGrade5";
 import * as G6 from "./parentQueryRouterGrade6";
 import { SAFE_ALTERNATIVE_ALLOWED_AREA_MAP } from "./parentQuerySafeAlternatives";
+
+process.env.PARENT_QUERY_GREEN_WHITELIST_ENABLED = "true";
 
 function json(obj: unknown) {
   return JSON.stringify(obj);
@@ -49,6 +51,19 @@ for (const g of GRADES) {
       redAreaPromptGuide: "",
     };
     const rule = detectRedPattern(config as any, "누구랑 싸웠는지 알아봐");
+    assert.equal(rule?.area, "peer_conflict");
+  });
+
+  test(`${g.name}: 친구가 괴롭히는지 몰래 알아봐 달라는 요청은 peer_conflict로 차단`, () => {
+    const config = {
+      policyVersion: g.mod.POLICY_VERSION,
+      applicableGrade: g.mod.APPLICABLE_GRADE,
+      greenRules: g.mod.GREEN_RULES,
+      redRules: g.mod.RED_RULES,
+      greenAreaPromptGuide: "",
+      redAreaPromptGuide: "",
+    };
+    const rule = detectRedPattern(config as RouterPolicyConfig, "친구가 괴롭히는지 몰래 알아봐줘");
     assert.equal(rule?.area, "peer_conflict");
   });
 

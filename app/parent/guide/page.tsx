@@ -13,6 +13,7 @@ import { RedCoachingModal } from "@/components/parent/RedCoachingModal";
 import { MultiQuestionSelectModal, type MultiQuestionCandidate } from "@/components/parent/MultiQuestionSelectModal";
 import { RegisteredQuestionsList, type Question } from "@/components/RegisteredQuestionsList";
 import { SAFE_ALTERNATIVE_ALLOWED_AREA_MAP } from "@/lib/plan/parentQuerySafeAlternatives";
+import { PARENT_QUERY_AREA_LABELS } from "@/lib/plan/parentQueryRouterEngine";
 
 type Message = {
   id: string;
@@ -350,7 +351,7 @@ export default function ParentGuidePage() {
 
   // requests/request-parent-question-draft-modal-fix.md §3/§6.1 — "아이에게 물어보기"
   // 클릭은 곧바로 등록하지 않고, 1단계(초안 생성, 등록/차감 없음)만 수행한 뒤 모달을 연다.
-  const handleAskChild = async (originalQuestion: string, msgId: string) => {
+  const handleAskChild = async (proposalText: string, originalQuestion: string, msgId: string) => {
     if (!childId) return;
     if (askChildInFlightRef.current.has(msgId)) return;
     askChildInFlightRef.current.add(msgId);
@@ -367,7 +368,7 @@ export default function ParentGuidePage() {
         body: JSON.stringify({ 
           action: "draft_child_question", 
           child_id: requestChildId, 
-          question: originalQuestion,
+          question: proposalText,
           requested_topic: msg?.requestedTopic,
           requested_area: msg?.requestedArea,
           parent_intent: msg?.parentIntent,
@@ -471,7 +472,9 @@ export default function ParentGuidePage() {
           isOpen: true,
           messageId: msgId,
           childId: requestChildId,
-          originalQuestion: data.originalQuestion ?? originalQuestion,
+          // 서버 재작성 입력에는 직전 대화 주제 메타가 포함될 수 있지만, DB 감사용 원문은
+          // 부모가 실제로 입력한 현재 문장만 보존한다.
+          originalQuestion,
           draftQuestion: data.draftQuestion,
           weeklyUsedCount: data.weeklyUsedCount ?? 0,
           weeklyLimit: data.weeklyLimit ?? 3,
@@ -584,7 +587,7 @@ export default function ParentGuidePage() {
       ruleId: candidate.ruleId,
       editable: false,
       idempotencyKey: `ask-child-${multiSelect.messageId}`,
-      requestedTopic: candidate.area,
+      requestedTopic: PARENT_QUERY_AREA_LABELS[candidate.area] ?? null,
       requestedArea: candidate.area,
     });
     setMultiSelect(null);
@@ -770,7 +773,7 @@ export default function ParentGuidePage() {
                 <div className="mt-2 ml-10 flex flex-col gap-2">
                   <div className="flex gap-2">
                     <button
-                      onClick={() => handleAskChild(msg.originalQuestion || "", msg.id)}
+                      onClick={() => handleAskChild(msg.askChildProposal || "", msg.originalQuestion || "", msg.id)}
                       disabled={msg.askChildIsLoading || msg.askChildStatus === "success"}
                       className="px-3 py-1.5 text-xs font-semibold rounded-full bg-blue-50 text-blue-600 border border-blue-200 disabled:opacity-50"
                     >
@@ -807,7 +810,7 @@ export default function ParentGuidePage() {
                       <p className="text-xs text-red-500">{msg.askChildErrorText}</p>
                       {msg.askChildRetryable && (
                         <button
-                          onClick={() => handleAskChild(msg.originalQuestion || "", msg.id)}
+                          onClick={() => handleAskChild(msg.askChildProposal || "", msg.originalQuestion || "", msg.id)}
                           className="text-xs text-blue-500 underline text-left w-fit"
                         >
                           다시 시도
@@ -922,7 +925,6 @@ export default function ParentGuidePage() {
           childName={childName || "아이"}
           draftQuestion={draftModal.draftQuestion}
           requestedTopic={draftModal.requestedTopic}
-          requestedArea={draftModal.requestedArea}
           rewriteApplied={draftModal.rewriteApplied}
           weeklyUsedCount={draftModal.weeklyUsedCount}
           weeklyLimit={draftModal.weeklyLimit}

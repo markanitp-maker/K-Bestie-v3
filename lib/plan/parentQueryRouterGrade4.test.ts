@@ -12,6 +12,8 @@ import {
   type GenAILikeClient,
 } from "./parentQueryRouterGrade4";
 
+process.env.PARENT_QUERY_GREEN_WHITELIST_ENABLED = "true";
+
 function json(obj: unknown) {
   return JSON.stringify(obj);
 }
@@ -280,4 +282,23 @@ test("parseParentQueryCandidateResponse — 유효하지 않은 area는 null로 
   );
   assert.ok(parsed);
   assert.equal(parsed!.candidateArea, null);
+});
+
+test("4학년 허용 목록 OFF: 미매칭 질문은 기존 기본 차단 대신 중립 재작성으로 넘긴다", async () => {
+  const ai = mockAi(json({
+    candidate_route: "UNCLEAR",
+    candidate_area: null,
+    detected_red_area: null,
+    confidence: 0.8,
+    matched_evidence: ["케이와 대화"],
+    detected_risks: [],
+    question_count: 1,
+  }));
+  const result = await routeParentQueryGrade4(
+    ai,
+    "fake-model",
+    "케이랑 이야기하는 게 좋은지 물어봐줘",
+    { greenWhitelistEnabled: false },
+  );
+  assert.equal(result.route, "NEUTRAL_REWRITE");
 });

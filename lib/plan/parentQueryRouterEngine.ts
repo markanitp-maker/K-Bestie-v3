@@ -2,7 +2,7 @@
 // (lib/plan/parentQueryRouterGrade4.ts, 이미 3라운드 정적리뷰+Dev/Prod 실측 검증을 거쳐
 // 배포됨)을 "기준 인터페이스로 유지하고 재설계하지 않는다"는 각 지시서의 명시적 지침에
 // 따라, 그 파일은 건드리지 않고 동일한 판정 로직을 학년별 정책 데이터로 매개변수화한
-// 공용 엔진만 새로 만든다. 판정 순서(CRISIS→RED→GREEN→DEFAULT_RED)·fail-closed 원칙·
+// 공용 엔진만 새로 만든다. Crisis/Red 우선 판정과 fail-closed 원칙·
 // LLM 역할 분리는 모든 학년 지시서가 동일하게 요구하므로 이 파일 하나로 공유한다.
 
 import {
@@ -12,6 +12,15 @@ import {
 } from "./parentQuerySafeAlternatives";
 
 export type ParentQueryRoute = "CRISIS" | "RED" | "GREEN";
+
+/**
+ * 임시 운영 플래그. 명시적으로 true인 경우에만 기존 허용 목록 게이트를 사용한다.
+ * 환경변수가 없거나 false면 Dev/Production 모두 동일하게 목록 미매칭을 차단 사유로
+ * 사용하지 않되, 이 파일의 Crisis/Red 판정은 그대로 실행한다.
+ */
+export function isParentQueryGreenWhitelistEnabled(): boolean {
+  return process.env.PARENT_QUERY_GREEN_WHITELIST_ENABLED === "true";
+}
 
 export interface GreenRule {
   id: string;
@@ -41,6 +50,17 @@ export const CRISIS_PATTERNS: readonly RegExp[] = [
 export function detectCrisis(text: string): boolean {
   return CRISIS_PATTERNS.some((p) => p.test(text));
 }
+
+/** 내부 area 코드를 부모 화면에 노출 가능한 한국어 라벨로 변환한다 — 서버/클라이언트
+ *  양쪽에서 area 코드를 그대로 렌더링하지 않도록 이 맵 하나만 사용한다. */
+export const PARENT_QUERY_AREA_LABELS: Readonly<Record<string, string>> = {
+  interest: "관심사", school_fun: "학교생활", subject_like: "좋아하는 과목",
+  food_pref: "음식 취향", pride: "자랑거리", content: "영상/게임",
+  weekend: "주말 계획", dream: "장래희망", peer_relationship: "친구 관계",
+  emotion_cause: "감정·사건", peer_conflict: "친구 관계", academic_pressure: "공부 고민",
+  secret: "비밀 확인", family_complaint: "가족 관계", appearance_body: "외모·몸·식사",
+  romance: "이성 관계", sns_control: "SNS·온라인 관계",
+};
 
 export interface RouterPolicyConfig {
   policyVersion: string;
@@ -183,6 +203,10 @@ export interface GenAILikeClient {
   };
 }
 
+export interface ParentQueryRouterOptions {
+  greenWhitelistEnabled?: boolean;
+}
+
 export async function classifyParentQueryCandidate(
   config: RouterPolicyConfig,
   ai: GenAILikeClient,
@@ -234,6 +258,10 @@ export type ParentQueryRouterResult =
       candidates: Array<{ ruleId: string; area: string; parentDraftText: string; childQuestionText: string }>;
       policyVersion: string;
     }
+  | {
+      route: "NEUTRAL_REWRITE";
+      policyVersion: string;
+    }
   | { route: "GENERATION_FAILED" };
 
 export function normalizeParentQueryText(text: string): string {
@@ -265,16 +293,16 @@ function greenRuleFromArea(config: RouterPolicyConfig, area: string | null): Gre
 }
 
 /**
- * 학년 공통 부모 질문 라우터 파이프라인. 판정 순서 고정: CRISIS → RED(결정론) → LLM 후보 →
- * RED(LLM 시맨틱/위험신호) → GREEN 화이트리스트 검증 → DEFAULT_RED. 애매하면 항상 RED다.
- * parentQueryRouterGrade4.ts의 라이브 검증을 거친 로직과 동일 — 4학년 파일 자체는
- * 건드리지 않고(이미 배포됨) 다른 학년이 이 공용 함수를 쓴다.
+ * 학년 공통 부모 질문 라우터 파이프라인. Crisis → Red(결정론) → LLM 위험 후보 순서는
+ * 항상 고정한다. 허용 목록 플래그가 꺼져 있으면 안전 검사를 통과한 원문을 별도 중립
+ * 재작성 단계로 넘기며, 켜져 있을 때만 기존 목록 검증과 미매칭 차단을 수행한다.
  */
 export async function routeParentQuery(
   config: RouterPolicyConfig,
   ai: GenAILikeClient,
   model: string,
   rawText: string,
+  options?: ParentQueryRouterOptions,
 ): Promise<ParentQueryRouterResult> {
   const text = normalizeParentQueryText(rawText);
   const redFallback = config.redRules.find((r) => r.area === "fallback");
@@ -313,6 +341,14 @@ export async function routeParentQuery(
       area: rule.area,
       coachingText: rule.coachingText,
       safeAlternative: safeAlternativeForRed(config, rule),
+      policyVersion: config.policyVersion,
+    };
+  }
+
+  const greenWhitelistEnabled = options?.greenWhitelistEnabled ?? isParentQueryGreenWhitelistEnabled();
+  if (!greenWhitelistEnabled) {
+    return {
+      route: "NEUTRAL_REWRITE",
       policyVersion: config.policyVersion,
     };
   }

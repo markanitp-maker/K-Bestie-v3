@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { getLlmModel } from "@/lib/llm/modelRouter";
 import { retrieveParentKContext, type ParentConversationTurn } from "@/lib/parentKChat/parentKnowledgeRetrieval";
-import { classifyParentKChatIntent } from "@/lib/parentKChat/intentClassifier";
+import { buildAskChildProposal, classifyParentKChatIntent } from "@/lib/parentKChat/intentClassifier";
 import { filterParentQuestion } from "@/lib/plan/parentQuestionFilter";
 import { checkAndDeductQuota, refundQuota, peekQuota, WEEKLY_QUESTION_LIMIT } from "@/lib/plan/parentQuestionQuota";
 import { classifyAndRewriteParentQuestion, DEFAULT_BLOCKED_MESSAGE, FORBIDDEN_PATTERNS, isHardPreFilterBlock } from "@/lib/plan/parentQuestionRewrite";
@@ -14,7 +14,7 @@ import { routeParentQueryGrade2, getGreenRuleById as getGreenRuleByIdGrade2, get
 import { routeParentQueryGrade3, getGreenRuleById as getGreenRuleByIdGrade3, getSafeAlternativeById as getSafeAlternativeByIdGrade3 } from "@/lib/plan/parentQueryRouterGrade3";
 import { routeParentQueryGrade5, getGreenRuleById as getGreenRuleByIdGrade5, getSafeAlternativeById as getSafeAlternativeByIdGrade5 } from "@/lib/plan/parentQueryRouterGrade5";
 import { routeParentQueryGrade6, getGreenRuleById as getGreenRuleByIdGrade6, getSafeAlternativeById as getSafeAlternativeByIdGrade6 } from "@/lib/plan/parentQueryRouterGrade6";
-import { classifyParentQueryCandidate } from "@/lib/plan/parentQueryRouterGrade4";
+import { isParentQueryGreenWhitelistEnabled, PARENT_QUERY_AREA_LABELS } from "@/lib/plan/parentQueryRouterEngine";
 import type { GreenRule, ParentQueryRouterResult, GenAILikeClient } from "@/lib/plan/parentQueryRouterEngine";
 import type { SafeAlternative } from "@/lib/plan/parentQuerySafeAlternatives";
 import { parseGrade } from "@/lib/mission/selectQuestions";
@@ -47,19 +47,13 @@ const GRADE_ROUTER_CONFIG: Record<number, GradeRouterEntry> = {
   6: { route: routeParentQueryGrade6, getGreenRuleById: getGreenRuleByIdGrade6, getSafeAlternativeById: getSafeAlternativeByIdGrade6, policyVersion: "PQR-G6-1.1", defaultProductionEnabled: false, productionEnabledEnvVar: "PARENT_QUERY_ROUTER_GRADE6_PRODUCTION_ENABLED" },
 };
 
-const PARENT_QUERY_AREA_LABELS: Readonly<Record<string, string>> = {
-  interest: "관심사", school_fun: "학교생활", subject_like: "좋아하는 과목",
-  food_pref: "음식 취향", pride: "자랑거리", content: "영상/게임",
-  weekend: "주말 계획", dream: "장래희망", peer_relationship: "친구 관계",
-  emotion_cause: "감정·사건", peer_conflict: "친구 관계", academic_pressure: "공부 고민",
-  secret: "비밀 확인", family_complaint: "가족 관계", appearance_body: "외모·몸·식사",
-  romance: "이성 관계", sns_control: "SNS·온라인 관계",
-};
-
 function resolveActiveGradeRouter(realGrade: number | null): GradeRouterEntry | null {
   if (realGrade === null) return null;
   const entry = GRADE_ROUTER_CONFIG[realGrade];
   if (!entry) return null;
+  // 허용 목록이 꺼져 있어도 전 학년 Crisis/Red 검사는 반드시 실행한다. 학년별 Production
+  // 활성화 설정은 기존 허용 목록 문구를 사용할 때만 적용한다.
+  if (!isParentQueryGreenWhitelistEnabled()) return entry;
   if (getSupabaseTarget() !== "prod") return entry; // Dev는 항상 전 학년 검증 가능
   const envOverride = process.env[entry.productionEnabledEnvVar];
   const productionEnabled = envOverride !== undefined ? envOverride === "true" : entry.defaultProductionEnabled;
@@ -70,7 +64,7 @@ function resolveActiveGradeRouter(realGrade: number | null): GradeRouterEntry | 
 // 항상 활성(아이 대화 편입은 절대 허용하지 않음), 다만 임상 검증된 안내 문구·UI는 전문가
 // 승인 전까지 Production에 노출하지 않는다. 승인 후 이 값을 true로 바꾸면 노출된다.
 const PQR_CRISIS_CLINICAL_APPROVED = process.env.PARENT_QUERY_ROUTER_CRISIS_CLINICAL_APPROVED === "true";
-const PQR_CRISIS_SAFE_FALLBACK_MESSAGE =
+const PQR_CRISIS_SAFE_MESSAGE =
   "이 질문은 케이가 대신 도와드리기 어려워요. 아이와 관련해 걱정되는 일이 있다면 담임 선생님, 학교 상담 선생님, 또는 가까운 상담·지원 기관에 상의해 보시는 것을 권해 드려요.";
 
 // 최소한의 Rate Limit 캐시 (메모리 방식)
@@ -247,11 +241,12 @@ export async function POST(request: Request) {
         // claude-review 지적: 이전 제안+새 입력을 합치면 draft_child_question 액션의
         // 300자 길이 검증(129~131행)을 넘어 "아이에게 물어보기" 클릭 시 400이 나고,
         // 같은 텍스트를 재시도해도 영구 실패하는 회귀가 생긴다 — 잘라서 방지한다.
-        const combinedProposal = (
-          isFollowUpToPendingDraft && trimmedPriorAskChildProposal
-            ? `${trimmedPriorAskChildProposal} (수정 요청: ${trimmedQuestion})`
-            : trimmedQuestion
-        ).slice(0, 300);
+        const proposalContext = buildAskChildProposal(
+          trimmedQuestion,
+          conversationContext,
+          trimmedPriorAskChildProposal,
+          Boolean(isFollowUpToPendingDraft),
+        );
 
         logTurn({
           retrievalAttempted: false,
@@ -268,9 +263,11 @@ export async function POST(request: Request) {
             : "그건 케이가 아이에게 직접 물어보는 게 더 정확할 것 같아요! 아래에서 물어볼 내용을 확인해 주세요.",
           suggestedParentQuestion: null,
           evidenceIds: [],
-          askChildProposal: combinedProposal,
+          askChildProposal: proposalContext.proposal,
           evidenceDateRange: null,
           intent,
+          requestedTopic: proposalContext.requestedTopic,
+          requestedArea: null,
         });
       }
 
@@ -364,25 +361,18 @@ export async function POST(request: Request) {
         });
       }
 
-      let requested_topic: string | null = null;
-      let requested_area: string | null = null;
+      // 일반 정보·경향 질문에는 Parent Query Router를 개입시키지 않는다. 현재 질문 자체를
+      // 후속 대화 주제로만 보존하고, 사실 답변은 아래 통합 Retrieval 근거로만 생성한다.
+      const requested_topic: string | null = trimmedQuestion.slice(0, 120);
+      const requested_area: string | null = null;
 
-      // 기록 조회 전에 부모의 원래 의도(주제)를 추출하여 유지한다.
-      const candidate = await classifyParentQueryCandidate(ai, getLlmModel("parentQuestionGeneration"), trimmedQuestion);
-      if (candidate) {
-        requested_area = candidate.candidateArea || candidate.detectedRedArea || null;
-        if (requested_area) {
-          requested_topic = PARENT_QUERY_AREA_LABELS[requested_area] || requested_area;
-        }
-      }
-
-      const fallbackResponse = {
+      const noDataResponse = {
         answerable: false,
         confidence: 0,
         answer: "제가 확인할 수 있는 리포트와 누적 기록에는 아직 관련 내용이 없어요. 필요하시면 아이에게 자연스럽게 물어볼 내용을 함께 준비해 드릴게요.",
         suggestedParentQuestion: null,
         evidenceIds: [],
-        askChildProposal: trimmedQuestion, // 하드코딩된 school_fun fallback 질문을 제거하고 원래 질문을 유지한다.
+        askChildProposal: trimmedQuestion,
         evidenceDateRange: null,
         intent,
         retrievalStatus: "NO_DATA",
@@ -392,7 +382,7 @@ export async function POST(request: Request) {
 
       if (retrievalResult.status === "no_data") {
         logTurn({ retrievalAttempted: true, retrievalSource: ["daily_report", "dashboard", "weekly_report", "detailed_report", "memory_fact"], retrievalResultCount: 0, responseMode: "NO_RESULT", fallbackReason: "NO_DATA" });
-        return NextResponse.json(fallbackResponse);
+        return NextResponse.json(noDataResponse);
       }
 
       const evidence = retrievalResult.evidence;
@@ -422,7 +412,8 @@ ${conversationContextText ? `[현재 부모-케이 대화 맥락]\n${conversatio
 8. 최근 리포트 근거와 누적 기억을 구분하세요. 최근 관찰만 있고 장기 근거가 없으면 예전부터 그랬다고 단정하지 마세요.
 9. source와 날짜를 참고해 "최근 리포트", "이번 주", "누적 기억"처럼 자연스럽게 근거 시점을 밝혀 주세요.
 10. 현재 대화 맥락은 후속 질문의 주제를 이해하는 데만 사용하고, 사실 근거는 검색된 근거에 한정하세요.
-11. 결과는 반드시 JSON 스키마를 준수하여 작성하세요.
+11. 미래 행동이나 경향을 묻는 질문은 관찰된 기록의 범위에서만 가능성을 설명하고, 매일 할지처럼 근거가 부족한 부분은 단정하지 마세요.
+12. 결과는 반드시 JSON 스키마를 준수하여 작성하세요.
 
 JSON 스키마:
 {
@@ -478,7 +469,7 @@ JSON 스키마:
       if (!parsed.answerable) {
         logTurn({ retrievalAttempted: true, retrievalSource: retrievalSources, retrievalResultCount: evidence.length, responseMode: "NO_RESULT", fallbackReason: "LLM_JUDGED_UNANSWERABLE" });
         return NextResponse.json({
-          ...fallbackResponse,
+          ...noDataResponse,
           answer: "관련된 기록은 일부 확인되지만 지금 질문에 답할 만큼 근거가 충분하지는 않아요. 확인된 범위를 더 구체적으로 말씀해 주시면 다시 살펴볼게요.",
           askChildProposal: null,
           retrievalStatus: "INSUFFICIENT_EVIDENCE",
@@ -556,21 +547,25 @@ JSON 스키마:
         // 아닌 RED/CRISIS/MULTI_QUESTION_SELECT/GENERATION_FAILED는 parent_questions에
         // 행이 전혀 생기지 않으므로, 이 이벤트가 유일한 관측 지점이다. 실패해도 본 요청
         // 흐름을 막지 않는다(best-effort).
-        serviceClient
-          .from("parent_query_router_events")
-          .insert({
-            child_id,
-            grade: realGrade,
-            route: routed.route,
-            area: "area" in routed ? routed.area : null,
-            rule_id: "ruleId" in routed ? routed.ruleId : null,
-            confidence: "confidence" in routed ? routed.confidence : null,
-            policy_version: activeGradeRouter.policyVersion,
-            question_count: "questionCount" in routed ? routed.questionCount : 1,
-          })
-          .then(({ error }) => {
-            if (error) console.error("parent_query_router_events insert 실패:", error);
-          });
+        // 기존 DB route 제약에는 중립 재작성 상태가 없으므로, 허용 목록을 다시 켰을 때의
+        // 기존 판정과 실제 차단(Crisis/Red)만 감사 이벤트로 남긴다.
+        if (routed.route !== "NEUTRAL_REWRITE") {
+          serviceClient
+            .from("parent_query_router_events")
+            .insert({
+              child_id,
+              grade: realGrade,
+              route: routed.route,
+              area: "area" in routed ? routed.area : null,
+              rule_id: "ruleId" in routed ? routed.ruleId : null,
+              confidence: "confidence" in routed ? routed.confidence : null,
+              policy_version: activeGradeRouter.policyVersion,
+              question_count: "questionCount" in routed ? routed.questionCount : 1,
+            })
+            .then(({ error }) => {
+              if (error) console.error("parent_query_router_events insert 실패:", error);
+            });
+        }
 
         if (routed.route === "GENERATION_FAILED") {
           return NextResponse.json({ error: "Failed to generate draft question" }, { status: 500 });
@@ -583,7 +578,7 @@ JSON 스키마:
           // 클라이언트가 분기할 수 있도록 남겨둔다.
           return NextResponse.json(
             {
-              error: PQR_CRISIS_SAFE_FALLBACK_MESSAGE,
+              error: PQR_CRISIS_SAFE_MESSAGE,
               classification: "CRISIS",
               clinicallyReviewed: PQR_CRISIS_CLINICAL_APPROVED,
             },
@@ -595,12 +590,12 @@ JSON 스키마:
           // 모달을 열 수 있도록 quota 정보도 함께 내려준다(등록/차감은 아직 없음).
           const quotaPeekForRed = await peekQuota(serviceClient, child_id);
           const resolvedRequestedArea = routed.area === "fallback"
-            ? (typeof requested_area === "string" && requested_area ? requested_area : routed.area)
+            ? (typeof requested_area === "string" && requested_area !== "fallback" ? requested_area : null)
             : routed.area;
           const resolvedRequestedTopic =
-            typeof requested_topic === "string" && requested_topic && requested_area === resolvedRequestedArea
+            typeof requested_topic === "string" && requested_topic
               ? requested_topic
-              : (PARENT_QUERY_AREA_LABELS[resolvedRequestedArea] || resolvedRequestedArea);
+              : (resolvedRequestedArea ? (PARENT_QUERY_AREA_LABELS[resolvedRequestedArea] || null) : null);
           const safeAlternative = routed.safeAlternative;
           return NextResponse.json(
             {
@@ -651,23 +646,25 @@ JSON 스키마:
             weeklyLimit: WEEKLY_QUESTION_LIMIT,
           });
         }
-        // GREEN
-        const quotaPeek = await peekQuota(serviceClient, child_id);
-        return NextResponse.json({
-          ok: true,
-          classification: "GREEN",
-          source: "PARENT_QUERY_ROUTER",
-          ruleId: routed.ruleId,
-          area: routed.area,
-          draftQuestion: routed.parentDraftText,
-          childQuestionText: routed.childQuestionText,
-          policyVersion: routed.policyVersion,
-          weeklyUsedCount: quotaPeek.weeklyUsedCount,
-          dailyUsedToday: quotaPeek.dailyUsedToday,
-          weeklyLimit: WEEKLY_QUESTION_LIMIT,
-          requestedTopic: requested_topic, // Pass back to frontend if needed
-          requestedArea: requested_area,
-        });
+        if (routed.route === "GREEN") {
+          const quotaPeek = await peekQuota(serviceClient, child_id);
+          return NextResponse.json({
+            ok: true,
+            classification: "GREEN",
+            source: "PARENT_QUERY_ROUTER",
+            ruleId: routed.ruleId,
+            area: routed.area,
+            draftQuestion: routed.parentDraftText,
+            childQuestionText: routed.childQuestionText,
+            policyVersion: routed.policyVersion,
+            weeklyUsedCount: quotaPeek.weeklyUsedCount,
+            dailyUsedToday: quotaPeek.dailyUsedToday,
+            weeklyLimit: WEEKLY_QUESTION_LIMIT,
+            requestedTopic: requested_topic,
+            requestedArea: requested_area,
+          });
+        }
+        // NEUTRAL_REWRITE: Crisis/Red 검사를 통과한 원문을 아래 공통 중립 재작성기로 넘긴다.
       }
 
       const preFilterResult = filterParentQuestion(trimmedQuestion);
@@ -729,6 +726,15 @@ JSON 스키마:
       // 고쳐 쓸 수 없도록, 일반 플로우의 regex 재검증 대신 "클라이언트가 보낸 최종 문구가
       // 화이트리스트 원문과 정확히 일치하는지"를 검증한다 — 다르면 즉시 거부한다.
       if (body.source === "PARENT_QUERY_ROUTER") {
+        // 허용 목록이 꺼져 있으면 draft_child_question 단계에서 GREEN이 절대 나오지
+        // 않으므로(parentQueryRouterEngine.ts의 greenWhitelistEnabled 분기) 정상
+        // 클라이언트는 routerRuleId를 가질 수 없다. 다만 이 등록 단계는 resolveActiveGradeRouter가
+        // non-null이기만 하면 통과해 플래그를 직접 확인하지 않았다 — 플래그가 꺼진 동안에는
+        // (아래 resolveActiveGradeRouter 판정과 무관하게) 이 경로를 완전히 차단해
+        // 직접 POST로 미승인 학년 GREEN 화이트리스트를 등록하는 경로를 막는다.
+        if (!isParentQueryGreenWhitelistEnabled()) {
+          return NextResponse.json({ error: "Grade policy mismatch" }, { status: 400 });
+        }
         const realGrade = parseGrade(childProfileForAuth?.grade);
         // resolveActiveGradeRouter가 null이면(학년 미해당, 또는 Production에서 아직
         // 비활성인 학년) 등록 자체를 거부한다 — 이 방어가 production_enabled=false인
@@ -830,6 +836,38 @@ JSON 스키마:
       // 등록(효율).
       const finalQuestion = trimmedQuestion;
       const originalQuestionRaw = typeof body.originalQuestion === "string" ? body.originalQuestion.trim().slice(0, 300) : finalQuestion;
+
+      // 부모가 중립 초안을 수정한 뒤에도 동일한 Crisis/Red 게이트를 다시 통과해야 한다.
+      // 이 검사를 생략하면 최초 초안은 안전해도 확인 모달에서 민감 질문으로 바꿔 등록할 수 있다.
+      if (!isParentQueryGreenWhitelistEnabled()) {
+        const realGrade = parseGrade(childProfileForAuth?.grade);
+        const safetyRouter = resolveActiveGradeRouter(realGrade);
+        if (safetyRouter) {
+          const safetyResult = await safetyRouter.route(
+            ai,
+            getLlmModel("parentQuestionGeneration"),
+            finalQuestion,
+          );
+          if (safetyResult.route === "GENERATION_FAILED") {
+            return NextResponse.json(
+              { error: "질문의 안전 여부를 확인하는 중 문제가 발생했어요. 잠시 후 다시 시도해 주세요." },
+              { status: 422 },
+            );
+          }
+          if (safetyResult.route === "CRISIS") {
+            return NextResponse.json(
+              { error: PQR_CRISIS_SAFE_MESSAGE, classification: "CRISIS" },
+              { status: 422 },
+            );
+          }
+          if (safetyResult.route === "RED") {
+            return NextResponse.json(
+              { error: safetyResult.coachingText, classification: "BLOCKED" },
+              { status: 422 },
+            );
+          }
+        }
+      }
 
       const preFilterResult = filterParentQuestion(finalQuestion);
       if (preFilterResult.verdict === "block" && isHardPreFilterBlock(preFilterResult.category)) {

@@ -1,5 +1,5 @@
 // requests/request-parent-query-router-grade4-v1.md
-// 초등학교 4학년 전용 부모 질문 라우터. 판정 순서는 고정: CRISIS → RED → GREEN → DEFAULT_RED.
+// 초등학교 4학년 전용 부모 질문 라우터. Crisis/Red 검사는 항상 우선한다.
 // LLM은 후보 판정만 하고, 최종 route 결정은 이 파일의 결정론적 게이트가 내린다(§2 규칙1,
 // §5.1 "LLM 단독 판정 금지"). 애매하거나 근거 부족이면 항상 RED로 fail-closed한다.
 
@@ -8,6 +8,10 @@ import {
   resolveApprovedSafeAlternative,
   type SafeAlternative,
 } from "./parentQuerySafeAlternatives";
+import {
+  isParentQueryGreenWhitelistEnabled,
+  type ParentQueryRouterOptions,
+} from "./parentQueryRouterEngine";
 
 export const POLICY_VERSION = "PQR-G4-1.1";
 export const APPLICABLE_GRADE = 4;
@@ -178,7 +182,7 @@ export const RED_RULES: readonly RedRule[] = [
     area: "fallback",
     pattern: null,
     coachingText:
-      "이 질문은 4학년 Green List에 명확히 해당하지 않아 아이에게 전달하지 않아요. 아이를 추궁하지 않는 관심사·학교의 즐거운 경험·먹고 싶은 것·주말 계획 같은 질문으로 바꿔 주세요.",
+      "이 질문은 아이에게 부담을 줄 수 있어 그대로 전달하지 않아요. 아이를 추궁하지 않는 편안한 질문으로 바꿔 주세요.",
   },
 ];
 
@@ -390,6 +394,10 @@ export type ParentQueryRouterResult =
       policyVersion: string;
     }
   | {
+      route: "NEUTRAL_REWRITE";
+      policyVersion: string;
+    }
+  | {
       route: "GENERATION_FAILED";
     };
 
@@ -416,13 +424,14 @@ export function getSafeAlternativeById(alternativeId: string): SafeAlternative |
 }
 
 /**
- * 4학년 전용 부모 질문 라우터. 판정 순서 고정: CRISIS → RED(결정론) → LLM 후보 → RED(LLM
- * 시맨틱/위험신호) → GREEN 화이트리스트 검증 → DEFAULT_RED. 애매하면 항상 RED다.
+ * 4학년 전용 부모 질문 라우터. Crisis/Red 판정은 항상 유지하고, 허용 목록 플래그가
+ * 꺼져 있으면 안전 검사를 통과한 원문을 동일 주제 중립 재작성 단계로 넘긴다.
  */
 export async function routeParentQueryGrade4(
   ai: GenAILikeClient,
   model: string,
   rawText: string,
+  options?: ParentQueryRouterOptions,
 ): Promise<ParentQueryRouterResult> {
   const text = normalizeParentQueryText(rawText);
 
@@ -464,6 +473,14 @@ export async function routeParentQueryGrade4(
       area: rule.area,
       coachingText: rule.coachingText,
       safeAlternative: safeAlternativeForRed(rule),
+      policyVersion: POLICY_VERSION,
+    };
+  }
+
+  const greenWhitelistEnabled = options?.greenWhitelistEnabled ?? isParentQueryGreenWhitelistEnabled();
+  if (!greenWhitelistEnabled) {
+    return {
+      route: "NEUTRAL_REWRITE",
       policyVersion: POLICY_VERSION,
     };
   }

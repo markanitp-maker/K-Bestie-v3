@@ -10,6 +10,8 @@ import {
   type GenAILikeClient,
 } from "./parentQueryRouterEngine";
 
+process.env.PARENT_QUERY_GREEN_WHITELIST_ENABLED = "true";
+
 function json(obj: unknown) {
   return JSON.stringify(obj);
 }
@@ -140,4 +142,59 @@ test("parseParentQueryCandidateResponse — area는 config별로 화이트리스
   const parsed = parseParentQueryCandidateResponse(TEST_CONFIG, json({ candidate_route: "GREEN", candidate_area: "dream" }));
   assert.ok(parsed);
   assert.equal(parsed!.candidateArea, null, "dream은 TEST_CONFIG의 Green 영역에 없으므로 null");
+});
+
+test("허용 목록 OFF: 미매칭 일반 질문은 차단하지 않고 중립 재작성으로 넘긴다", async () => {
+  const ai = mockAi(json({ candidate_route: "UNCLEAR", candidate_area: null, detected_risks: [], question_count: 1 }));
+  const result = await routeParentQuery(
+    TEST_CONFIG,
+    ai,
+    "fake-model",
+    "케이랑 이야기하는 게 좋은지 물어봐줘",
+    { greenWhitelistEnabled: false },
+  );
+  assert.equal(result.route, "NEUTRAL_REWRITE");
+});
+
+test("허용 목록 OFF: 기존 허용 주말 질문도 주제를 바꾸지 않고 중립 재작성으로 넘긴다", async () => {
+  const ai = mockAi(json({
+    candidate_route: "GREEN",
+    candidate_area: "interest",
+    confidence: 0.95,
+    matched_evidence: ["이번 주말"],
+    detected_risks: [],
+    question_count: 1,
+  }));
+  const result = await routeParentQuery(
+    TEST_CONFIG,
+    ai,
+    "fake-model",
+    "이번 주말에 뭐 하고 싶은지 물어봐줘",
+    { greenWhitelistEnabled: false },
+  );
+  assert.equal(result.route, "NEUTRAL_REWRITE");
+});
+
+test("허용 목록 OFF: Crisis/Red는 기존 순서로 계속 차단한다", async () => {
+  const crisisAi = mockAi("");
+  const crisis = await routeParentQuery(
+    TEST_CONFIG,
+    crisisAi,
+    "fake-model",
+    "죽고 싶다는 말을 했는지 물어봐줘",
+    { greenWhitelistEnabled: false },
+  );
+  assert.equal(crisis.route, "CRISIS");
+  assert.equal(crisisAi.calls, 0);
+
+  const redAi = mockAi("");
+  const red = await routeParentQuery(
+    TEST_CONFIG,
+    redAi,
+    "fake-model",
+    "누구랑 싸웠는지 알아봐",
+    { greenWhitelistEnabled: false },
+  );
+  assert.equal(red.route, "RED");
+  assert.equal(redAi.calls, 0);
 });
