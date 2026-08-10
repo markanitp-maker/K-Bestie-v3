@@ -21,7 +21,6 @@ export function RedCoachingModal({
   variant,
   coachingText,
   requestedTopic,
-  requestedArea,
   safeAlternativeText,
   onClose,
   onUseSafeAlternative,
@@ -47,7 +46,8 @@ export function RedCoachingModal({
     : safeAlternativeText
       ? "이 질문은 그대로 전달하기 어려워요"
       : "이 질문은 케이가 대신 묻기 어려워요";
-  const originalTopic = requestedTopic || requestedArea;
+  // requestedArea는 서버 검증용 내부 코드이므로 부모 화면에는 표시하지 않는다.
+  const originalTopic = requestedTopic;
 
   return (
     <div

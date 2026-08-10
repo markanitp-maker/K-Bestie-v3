@@ -10,7 +10,6 @@ export interface AskChildDraftModalProps {
   childName: string;
   draftQuestion: string;
   requestedTopic?: string;
-  requestedArea?: string;
   rewriteApplied?: boolean;
   weeklyUsedCount: number;
   weeklyLimit: number;
@@ -30,7 +29,6 @@ export function AskChildDraftModal({
   childName,
   draftQuestion,
   requestedTopic,
-  requestedArea,
   rewriteApplied = false,
   weeklyUsedCount,
   weeklyLimit,
@@ -104,20 +102,12 @@ export function AskChildDraftModal({
             <p className="text-sm font-bold text-gray-900">{childName}</p>
           </div>
 
-          {(requestedTopic || requestedArea) && (
+          {requestedTopic && (
             <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
-              {requestedTopic && (
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-gray-500">원래 궁금한 주제</span>
-                  <span className="text-sm font-semibold text-gray-800">{requestedTopic}</span>
-                </div>
-              )}
-              {requestedArea && (
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500">질문 영역</span>
-                  <span className="text-sm font-semibold text-gray-800">{requestedArea}</span>
-                </div>
-              )}
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-500">원래 궁금한 주제</span>
+                <span className="text-sm font-semibold text-gray-800">{requestedTopic}</span>
+              </div>
             </div>
           )}
 

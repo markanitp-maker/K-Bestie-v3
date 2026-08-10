@@ -726,15 +726,6 @@ JSON 스키마:
       // 고쳐 쓸 수 없도록, 일반 플로우의 regex 재검증 대신 "클라이언트가 보낸 최종 문구가
       // 화이트리스트 원문과 정확히 일치하는지"를 검증한다 — 다르면 즉시 거부한다.
       if (body.source === "PARENT_QUERY_ROUTER") {
-        // 허용 목록이 꺼져 있으면 draft_child_question 단계에서 GREEN이 절대 나오지
-        // 않으므로(parentQueryRouterEngine.ts의 greenWhitelistEnabled 분기) 정상
-        // 클라이언트는 routerRuleId를 가질 수 없다. 다만 이 등록 단계는 resolveActiveGradeRouter가
-        // non-null이기만 하면 통과해 플래그를 직접 확인하지 않았다 — 플래그가 꺼진 동안에는
-        // (아래 resolveActiveGradeRouter 판정과 무관하게) 이 경로를 완전히 차단해
-        // 직접 POST로 미승인 학년 GREEN 화이트리스트를 등록하는 경로를 막는다.
-        if (!isParentQueryGreenWhitelistEnabled()) {
-          return NextResponse.json({ error: "Grade policy mismatch" }, { status: 400 });
-        }
         const realGrade = parseGrade(childProfileForAuth?.grade);
         // resolveActiveGradeRouter가 null이면(학년 미해당, 또는 Production에서 아직
         // 비활성인 학년) 등록 자체를 거부한다 — 이 방어가 production_enabled=false인
@@ -746,6 +737,15 @@ JSON 스키마:
         const routerRuleId = typeof body.routerRuleId === "string" ? body.routerRuleId : null;
         const greenRule = routerRuleId ? activeGradeRouter.getGreenRuleById(routerRuleId) : null;
         const safeAlternative = routerRuleId ? activeGradeRouter.getSafeAlternativeById(routerRuleId) : null;
+        // 허용 목록이 꺼져 있으면 draft_child_question 단계에서 GREEN이 절대 나오지
+        // 않으므로(parentQueryRouterEngine.ts의 greenWhitelistEnabled 분기) 정상
+        // 클라이언트는 GREEN routerRuleId를 가질 수 없다 — 직접 POST로 미승인 학년
+        // GREEN 화이트리스트를 등록하려는 시도만 차단한다. safeAlternative는 학년별
+        // 사전 승인된 별개 안전장치라 플래그와 무관하게 항상 통과해야 한다(RED에
+        // 걸린 부모가 안전한 대안으로 탈출하는 유일한 경로).
+        if (greenRule && !isParentQueryGreenWhitelistEnabled()) {
+          return NextResponse.json({ error: "Grade policy mismatch" }, { status: 400 });
+        }
         const submittedRequestedArea = typeof body.requestedArea === "string" ? body.requestedArea : null;
         if (safeAlternative && submittedRequestedArea !== safeAlternative.requestedArea) {
           return NextResponse.json({ error: "Safe alternative does not match the requested topic" }, { status: 400 });

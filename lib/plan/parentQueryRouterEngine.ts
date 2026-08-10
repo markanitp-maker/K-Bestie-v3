@@ -60,6 +60,7 @@ export const PARENT_QUERY_AREA_LABELS: Readonly<Record<string, string>> = {
   emotion_cause: "감정·사건", peer_conflict: "친구 관계", academic_pressure: "공부 고민",
   secret: "비밀 확인", family_complaint: "가족 관계", appearance_body: "외모·몸·식사",
   romance: "이성 관계", sns_control: "SNS·온라인 관계",
+  play: "놀이", positive_activity: "즐거운 활동", admiration: "멋있다고 느낀 것",
 };
 
 export interface RouterPolicyConfig {
