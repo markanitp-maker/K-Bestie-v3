@@ -58,6 +58,7 @@ export default function AttendanceRouletteAdminTab({
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [localIncludeTestAccounts, setLocalIncludeTestAccounts] = useState(false);
   const includeTestAccounts = externalIncludeTestAccounts ?? localIncludeTestAccounts;
@@ -86,6 +87,12 @@ export default function AttendanceRouletteAdminTab({
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (!successMessage) return;
+    const timeoutId = window.setTimeout(() => setSuccessMessage(null), 3500);
+    return () => window.clearTimeout(timeoutId);
+  }, [successMessage]);
+
   const filtered = useMemo(() => {
     const query = [externalSearch, search].filter(Boolean).join(" ").trim().toLowerCase();
     if (!query) return data?.children ?? [];
@@ -108,6 +115,7 @@ export default function AttendanceRouletteAdminTab({
   }, [data?.history, historyAdmin, historyChild, historyDate, historyOverride, historyResult]);
 
   const saveOverride = async (child: ChildRow) => {
+    setSuccessMessage(null);
     setSavingChildId(child.childId);
     try {
       const response = await fetch("/api/admin/events/attendance-roulette", {
@@ -117,14 +125,16 @@ export default function AttendanceRouletteAdminTab({
       });
       if (!response.ok) throw new Error("save_failed");
       await load();
+      setSuccessMessage("예약되었습니다. 열쇠는 지금 지급되지 않으며 다음 룰렛에 1회 적용됩니다.");
     } catch {
-      setError("다음 룰렛 결과를 저장하지 못했습니다.");
+      setError("다음 룰렛 예약을 저장하지 못했습니다. 열쇠는 지급되지 않았습니다.");
     } finally {
       setSavingChildId(null);
     }
   };
 
   const cancelOverride = async (child: ChildRow) => {
+    setSuccessMessage(null);
     setSavingChildId(child.childId);
     try {
       const response = await fetch("/api/admin/events/attendance-roulette", {
@@ -134,8 +144,9 @@ export default function AttendanceRouletteAdminTab({
       });
       if (!response.ok) throw new Error("cancel_failed");
       await load();
+      setSuccessMessage("예약을 취소했습니다.");
     } catch {
-      setError("대기 중인 설정을 취소하지 못했습니다.");
+      setError("다음 룰렛 예약을 취소하지 못했습니다.");
     } finally {
       setSavingChildId(null);
     }
@@ -146,10 +157,14 @@ export default function AttendanceRouletteAdminTab({
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <div>
-        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>매일 출석 황금열쇠 룰렛</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>출석 룰렛 운영 · 현재 보유 열쇠와 다음 결과 예약</h2>
         <p style={{ color: "var(--admin-text-secondary)", fontSize: 13 }}>KST {data?.attendanceDate} · 기본 확률 +1 80% / 한번 더 20%</p>
+        <p style={{ marginTop: 6, paddingTop: 8, borderTop: "1px solid var(--admin-border)", color: "var(--admin-text-secondary)", fontSize: 13 }}>
+          다음 룰렛 결과를 1회 예약합니다. 저장해도 열쇠는 즉시 지급되지 않으며, 아이가 다음 룰렛을 실제로 돌릴 때 적용됩니다.
+        </p>
       </div>
       {error && <div role="alert" style={{ padding: 12, borderRadius: 10, background: "#fee2e2", color: "#991b1b" }}>{error} <button onClick={() => void load()} style={{ marginLeft: 8, fontWeight: 800, textDecoration: "underline" }}>다시 시도</button></div>}
+      {successMessage && <div role="status" style={{ padding: 12, borderRadius: 10, background: "#dcfce7", color: "#166534" }}>{successMessage}</div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
         {[
@@ -196,7 +211,7 @@ export default function AttendanceRouletteAdminTab({
         <div style={{ overflowX: "auto", border: "1px solid var(--admin-border)", borderRadius: 12 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1120, fontSize: 13 }}>
             <thead style={{ background: "var(--admin-focus)" }}><tr>
-              {["순위", "아이", "월 점수", "1등과 차이", "황금열쇠", "오늘 룰렛", "최근 결과", "다음 룰렛", "설정"].map((label) => <th key={label} style={{ padding: 10, textAlign: "left" }}>{label}</th>)}
+              {["순위", "아이", "월 점수", "1등과 차이", "현재 보유 열쇠(잔여)", "오늘 룰렛", "최근 실행 결과", "다음 룰렛 예약", "예약 설정"].map((label) => <th key={label} style={{ padding: 10, textAlign: "left" }}>{label}</th>)}
             </tr></thead>
             <tbody>
               {filtered.map((child) => (
@@ -211,22 +226,29 @@ export default function AttendanceRouletteAdminTab({
                   </td>
                   <td style={{ padding: 10 }}>{child.score}</td>
                   <td style={{ padding: 10 }}>{child.gapFromFirst}</td>
-                  <td style={{ padding: 10 }}>{child.balance}</td>
+                  <td style={{ padding: 10 }}>
+                    <strong>{child.balance}</strong>
+                    <br/><span style={{ color: "var(--admin-text-secondary)", fontSize: 11 }}>미소비 열쇠 잔여</span>
+                  </td>
                   <td style={{ padding: 10 }}>{statusLabel[child.todayStatus]}</td>
                   <td style={{ padding: 10 }}>
-                    {child.recentResult ? <>{ATTENDANCE_ROULETTE_LABELS[child.recentResult]}<br/><span style={{ color: "var(--admin-text-secondary)", fontSize: 11 }}>{child.recentResultAt ? new Date(child.recentResultAt).toLocaleString("ko-KR") : ""}</span></> : "-"}
+                    {child.recentResult ? <><strong>{ATTENDANCE_ROULETTE_LABELS[child.recentResult]}</strong><br/><span style={{ color: "var(--admin-text-secondary)", fontSize: 11 }}>실행 완료 · {child.recentResultAt ? new Date(child.recentResultAt).toLocaleString("ko-KR") : "시간 정보 없음"}</span></> : <span style={{ color: "var(--admin-text-secondary)" }}>실행 이력 없음</span>}
                   </td>
                   <td style={{ padding: 10 }}>
-                    {child.pendingOverride ? <>대기: {ATTENDANCE_ROULETTE_LABELS[child.pendingOverride.result_code]}<br/><span style={{ color: "var(--admin-text-secondary)", fontSize: 11 }}>{new Date(child.pendingOverride.updated_at).toLocaleString("ko-KR")} · {child.pendingOverride.created_by_email}</span></> : "기본 확률"}
+                    {child.pendingOverride ? <><strong>예약됨 · {ATTENDANCE_ROULETTE_LABELS[child.pendingOverride.result_code]}</strong><br/><span style={{ color: "var(--admin-text-secondary)", fontSize: 11 }}>다음 실제 룰렛 1회에 적용</span><br/><span style={{ color: "var(--admin-text-secondary)", fontSize: 11 }}>{new Date(child.pendingOverride.updated_at).toLocaleString("ko-KR")} · {child.pendingOverride.created_by_email}</span></> : <><strong>예약 없음</strong><br/><span style={{ color: "var(--admin-text-secondary)", fontSize: 11 }}>다음 룰렛은 기본 확률 적용</span></>}
                   </td>
                   <td style={{ padding: 10 }}>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                       <select value={selected[child.childId] ?? child.pendingOverride?.result_code ?? "KEY_1"} onChange={(event) => setSelected((current) => ({ ...current, [child.childId]: event.target.value as AttendanceRouletteResultCode }))} style={{ padding: 7, borderRadius: 7, border: "1px solid var(--admin-border)" }}>
                         {ATTENDANCE_ROULETTE_RESULTS.map((code) => <option key={code} value={code}>{ATTENDANCE_ROULETTE_LABELS[code]}</option>)}
                       </select>
-                      <button disabled={savingChildId === child.childId} onClick={() => void saveOverride(child)} style={{ padding: "7px 10px", borderRadius: 7, background: "var(--admin-primary)", color: "white", fontWeight: 700 }}>저장</button>
-                      {child.pendingOverride && <button disabled={savingChildId === child.childId} onClick={() => void cancelOverride(child)} style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid var(--admin-border)" }}>취소</button>}
+                      <button disabled={savingChildId === child.childId} onClick={() => void saveOverride(child)} style={{ padding: "7px 10px", borderRadius: 7, background: "var(--admin-primary)", color: "white", fontWeight: 700 }}>다음 결과 예약</button>
+                      {child.pendingOverride && <button disabled={savingChildId === child.childId} onClick={() => void cancelOverride(child)} style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid var(--admin-border)" }}>예약 취소</button>}
                     </div>
+                    <p style={{ marginTop: 6, color: "var(--admin-text-secondary)", fontSize: 11, lineHeight: 1.4 }}>
+                      저장 시 선택한 결과가 다음 실제 룰렛 스핀에 1회 강제 적용됩니다. 저장 직후에는 열쇠가 지급되지 않습니다.
+                      {child.todayStatus === "COMPLETED" && <><br/>오늘 룰렛은 이미 사용했습니다. 예약 결과는 다음 참여 가능한 룰렛에 적용됩니다.</>}
+                    </p>
                   </td>
                 </tr>
               ))}
