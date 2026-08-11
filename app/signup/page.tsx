@@ -393,6 +393,7 @@ function ChildStep({
   const { familyName, givenName, gender, username, password, passwordConfirm, grade, consent } = draft;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
   const submittingRef = useRef(false);
 
   const canSubmit =
@@ -410,6 +411,7 @@ function ChildStep({
     submittingRef.current = true;
     setLoading(true);
     setError(null);
+    setUsernameError(null);
     try {
       const res = await fetch(`/api/families/${familyId}/children`, {
         method: "POST",
@@ -426,7 +428,13 @@ function ChildStep({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || "아이 등록을 완료하지 못했습니다. 이미 사용 중인 아이디인지 확인해 주세요.");
+        // 아이디 중복은 상단 공통 에러 박스가 아니라 아이디 입력창 바로 아래 inline
+        // validation으로만 표시한다 — Supabase 원문은 어떤 경우에도 그대로 노출하지 않는다.
+        if (data.code === "CHILD_LOGIN_ID_ALREADY_EXISTS") {
+          setUsernameError("이미 사용 중인 아이디예요. 다른 아이디를 입력해 주세요.");
+          return;
+        }
+        throw new Error("아이 계정을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.");
       }
       if (data.autoApproved) {
         onChildApproved({
@@ -435,7 +443,7 @@ function ChildStep({
           grade,
         });
       } else {
-        throw new Error(data.error || "아이 계정 생성에 실패했습니다. 이미 존재하거나 다른 아이디로 시도해 주세요.");
+        throw new Error("아이 계정을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.");
       }
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "아이 등록을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
@@ -504,13 +512,21 @@ function ChildStep({
       >
         아이들이 접속할 계정을 부모님이 만들어요.
       </p>
-      <input
-        type="text"
-        placeholder="아이 로그인 아이디"
-        value={username}
-        onChange={(e) => onDraftChange({ ...draft, username: e.target.value })}
-        className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
-      />
+      <div>
+        <input
+          type="text"
+          placeholder="아이 로그인 아이디"
+          value={username}
+          onChange={(e) => {
+            onDraftChange({ ...draft, username: e.target.value });
+            if (usernameError) setUsernameError(null);
+          }}
+          className={`w-full rounded-xl px-4 py-3 text-sm border outline-none ${
+            usernameError ? "border-red-400" : "border-gray-200"
+          }`}
+        />
+        {usernameError && <p className="text-xs text-red-500 mt-1 px-1">{usernameError}</p>}
+      </div>
       <input
         type="password"
         placeholder="비밀번호 (6자 이상)"

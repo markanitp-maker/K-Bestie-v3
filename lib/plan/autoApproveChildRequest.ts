@@ -1,6 +1,10 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { getChildApprovalEncryptionKey } from "@/lib/plan/childApprovalEncryption";
-import { toAuthEmail } from "@/lib/plan/childAuthEmail";
+import {
+  createChildAuthAccountWithOrphanRecovery,
+  cleanupNewlyCreatedChildAuthAccount,
+  CHILD_ACCOUNT_CREATE_FAILED,
+} from "@/lib/plan/createChildAuthAccount";
 
 /**
  * 베타 기간 아이 승인 요청 자동 승인 — 요청서 §7.1.
@@ -18,6 +22,15 @@ import { toAuthEmail } from "@/lib/plan/childAuthEmail";
  * 아니라 "요청을 발생시킨 본인(보호자)"의 id/email을 그대로 넘긴다 — 베타 자동승인은 대표님이
  * 아니라 시스템이 본인 요청을 즉시 확정하는 것이므로, 감사 기록상 "누가 승인했는지"를 거짓으로
  * 꾸미지 않고 있는 그대로 남긴다.
+ *
+ * 2026-08-11: auth.admin.createUser 이후 단계(family_members/member_accounts/
+ * child_profiles/finalize/부모 ACTIVE 전환) 중 하나라도 실패하면, 이번 호출에서 새로
+ * 만든 Auth 계정(authUserNewlyCreated)에 한해 auth.admin.deleteUser로 반드시 되돌린다 —
+ * 그러지 않으면 아무 데이터에도 연결되지 않은 Auth 고아 계정이 남아 같은 아이디로 영구히
+ * 재등록할 수 없게 된다(Production hks@kbestie.local 인시던트로 실측 확인). 반환하는
+ * error는 이제 화면에 그대로 노출할 문구가 아니라 코드다 — 호출부(children/route.ts,
+ * approve/route.ts)가 CHILD_LOGIN_ID_ALREADY_EXISTS/CHILD_ACCOUNT_CREATE_FAILED 등을
+ * 사용자 문구로 매핑한다.
  */
 export async function autoApproveChildRequest(
   requestId: string,
@@ -65,23 +78,27 @@ export async function autoApproveChildRequest(
   const name = `${claim.family_name}${claim.given_name}`;
 
   let authUserId = claim.created_auth_user_id;
+  // 이번 호출에서 새로 만든 Auth 계정인지 여부 — true일 때만 이후 단계 실패 시 보상 삭제
+  // 대상이 된다(claim.created_auth_user_id로 이미 존재하던 계정은 재시도 재사용 대상이므로
+  // 여기서 실패했다고 삭제하지 않는다).
+  let authUserNewlyCreated = false;
   if (!authUserId) {
-    const { data: authData, error: authError } = await svc.auth.admin.createUser({
-      email: toAuthEmail(claim.username!),
+    const created = await createChildAuthAccountWithOrphanRecovery(svc, {
+      username: claim.username!,
       password: claim.decrypted_password!,
-      email_confirm: true,
-      user_metadata: { name, username: claim.username, is_member_account: true },
+      name,
     });
-    if (authError) {
+    if (!created.ok) {
       await svc.rpc("admin_finalize_child_approval_failure", {
         p_request_id: requestId,
         p_admin_user_id: requestedByUserId,
         p_admin_email: requestedByEmail,
-        p_reason: `계정 생성 실패: ${authError.message}`,
+        p_reason: created.internalReason,
       });
-      return { success: false, error: `계정 생성 실패: ${authError.message}` };
+      return { success: false, error: created.errorCode };
     }
-    authUserId = authData.user.id;
+    authUserId = created.authUserId;
+    authUserNewlyCreated = true;
     const { data: recordData, error: recordError } = await svc.rpc("admin_record_child_approval_auth_created", {
       p_request_id: requestId,
       p_auth_user_id: authUserId,
@@ -94,7 +111,7 @@ export async function autoApproveChildRequest(
         p_admin_email: requestedByEmail,
         p_reason: "생성된 계정 연결 정보를 저장하지 못했습니다.",
       });
-      return { success: false, error: "계정 연결 정보를 저장하지 못했습니다." };
+      return { success: false, error: CHILD_ACCOUNT_CREATE_FAILED };
     }
   }
 
@@ -104,13 +121,14 @@ export async function autoApproveChildRequest(
     .select("id")
     .single();
   if (fmError) {
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, requestId, authUserId);
     await svc.rpc("admin_finalize_child_approval_failure", {
       p_request_id: requestId,
       p_admin_user_id: requestedByUserId,
       p_admin_email: requestedByEmail,
       p_reason: `가족 등록 실패: ${fmError.message}`,
     });
-    return { success: false, error: `가족 등록 실패: ${fmError.message}` };
+    return { success: false, error: CHILD_ACCOUNT_CREATE_FAILED };
   }
 
   const { error: accError } = await svc.from("member_accounts").insert({
@@ -124,6 +142,7 @@ export async function autoApproveChildRequest(
     must_change_password: false,
   });
   if (accError) {
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, requestId, authUserId);
     await svc.from("family_members").delete().eq("id", familyMember.id);
     await svc.rpc("admin_finalize_child_approval_failure", {
       p_request_id: requestId,
@@ -131,7 +150,7 @@ export async function autoApproveChildRequest(
       p_admin_email: requestedByEmail,
       p_reason: `계정 정보 저장 실패: ${accError.message}`,
     });
-    return { success: false, error: `계정 정보 저장 실패: ${accError.message}` };
+    return { success: false, error: CHILD_ACCOUNT_CREATE_FAILED };
   }
 
   const { data: child, error: childErr } = await svc
@@ -154,6 +173,7 @@ export async function autoApproveChildRequest(
     .select("id")
     .single();
   if (childErr) {
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, requestId, authUserId);
     await svc.from("member_accounts").delete().eq("id", authUserId);
     await svc.from("family_members").delete().eq("id", familyMember.id);
     await svc.rpc("admin_finalize_child_approval_failure", {
@@ -162,7 +182,7 @@ export async function autoApproveChildRequest(
       p_admin_email: requestedByEmail,
       p_reason: `아이 프로필 생성 실패: ${childErr.message}`,
     });
-    return { success: false, error: `아이 프로필 생성 실패: ${childErr.message}` };
+    return { success: false, error: CHILD_ACCOUNT_CREATE_FAILED };
   }
 
   const { data: finalizeData, error: finalizeError } = await svc.rpc("admin_finalize_child_approval_success", {
@@ -175,6 +195,7 @@ export async function autoApproveChildRequest(
 
   if (finalizeError || !finalizeData?.[0]?.success) {
     console.error("[autoApproveChildRequest] finalize error:", finalizeError, finalizeData);
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, requestId, authUserId);
     await svc.from("child_profiles").delete().eq("id", child.id);
     await svc.from("member_accounts").delete().eq("id", authUserId);
     await svc.from("family_members").delete().eq("id", familyMember.id);
@@ -184,7 +205,7 @@ export async function autoApproveChildRequest(
       p_admin_email: requestedByEmail,
       p_reason: "승인 확정 처리에 실패했습니다.",
     });
-    return { success: false, error: "승인 확정 처리에 실패했습니다" };
+    return { success: false, error: CHILD_ACCOUNT_CREATE_FAILED };
   }
 
   // ── 온보딩 최종 단계 완료: 보호자 계정을 ACTIVE로 전환 ──────────────────────
@@ -202,6 +223,7 @@ export async function autoApproveChildRequest(
 
   if (activateError || !updatedParents || updatedParents.length === 0) {
     console.error("[autoApproveChildRequest] 부모 ACTIVE 전환 실패:", activateError, updatedParents);
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, requestId, authUserId);
     await svc.from("child_profiles").delete().eq("id", child.id);
     await svc.from("member_accounts").delete().eq("id", authUserId);
     await svc.from("family_members").delete().eq("id", familyMember.id);
@@ -211,7 +233,7 @@ export async function autoApproveChildRequest(
       p_admin_email: requestedByEmail,
       p_reason: "보호자 계정 활성화 처리에 실패했습니다.",
     });
-    return { success: false, error: "보호자 계정 활성화 처리에 실패했습니다" };
+    return { success: false, error: CHILD_ACCOUNT_CREATE_FAILED };
   }
 
   return { success: true, childId: child.id };

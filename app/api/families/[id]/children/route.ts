@@ -125,7 +125,7 @@ export async function POST(
 
   if (existingUsername || existingRequest) {
     return NextResponse.json(
-      { error: "이미 사용 중이거나 존재 중인 아이디입니다. 다른 아이디를 사용하세요" },
+      { error: "이미 사용 중인 아이디예요. 다른 아이디를 입력해 주세요.", code: "CHILD_LOGIN_ID_ALREADY_EXISTS" },
       { status: 409 }
     );
   }
@@ -175,7 +175,7 @@ export async function POST(
   if (!result?.success) {
     if (result?.reason === "username_taken") {
       return NextResponse.json(
-        { error: "이미 사용 중이거나 승인 대기 중인 아이디입니다. 다른 아이디를 사용하세요" },
+        { error: "이미 사용 중인 아이디예요. 다른 아이디를 입력해 주세요.", code: "CHILD_LOGIN_ID_ALREADY_EXISTS" },
         { status: 409 }
       );
     }
@@ -222,11 +222,20 @@ export async function POST(
         { status: 201 }
       );
     }
-    // 자동 승인이 실패했을 경우 클라이언트에 실패 사유를 명시적으로 반환
+    // 자동 승인이 실패했을 경우 클라이언트에 실패 사유를 명시적으로 반환.
+    // approval.error는 이제 사용자에게 그대로 보여줄 문구가 아니라 코드다(Supabase 원문 등
+    // 내부 사유는 서버 로그에만 남긴다) — CHILD_LOGIN_ID_ALREADY_EXISTS만 화면에 구분해
+    // 보여주고, 그 외 모든 코드는 동일한 일반 안내문으로 뭉뚱그린다.
     console.error("[api/families/:id/children] auto-approve failed:", approval.error);
+    if (approval.error === "CHILD_LOGIN_ID_ALREADY_EXISTS") {
+      return NextResponse.json(
+        { error: "이미 사용 중인 아이디예요. 다른 아이디를 입력해 주세요.", code: approval.error },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
-      { error: approval.error || "아이 계정 생성에 실패했습니다. 이미 존재하는 아이디일 수 있으니 다른 아이디로 시도해 주세요." },
-      { status: 400 }
+      { error: "아이 계정을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.", code: approval.error },
+      { status: 500 }
     );
   }
 

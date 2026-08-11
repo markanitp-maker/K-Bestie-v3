@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { getChildApprovalEncryptionKey } from "@/lib/plan/childApprovalEncryption";
-import { toAuthEmail } from "@/lib/plan/childAuthEmail";
+import {
+  createChildAuthAccountWithOrphanRecovery,
+  cleanupNewlyCreatedChildAuthAccount,
+  CHILD_LOGIN_ID_ALREADY_EXISTS,
+} from "@/lib/plan/createChildAuthAccount";
 
 export const runtime = "nodejs";
 
@@ -80,23 +84,34 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // 2. auth 계정 확보 (재시도 시 기존 계정 재사용, 신규면 생성 즉시 기록)
   let authUserId = claim.created_auth_user_id;
+  // 이번 호출에서 새로 만든 Auth 계정인지 — true일 때만 이후 단계 실패 시 보상 삭제 대상.
+  let authUserNewlyCreated = false;
   if (!authUserId) {
-    const { data: authData, error: authError } = await svc.auth.admin.createUser({
-      email: toAuthEmail(claim.username!),
+    const created = await createChildAuthAccountWithOrphanRecovery(svc, {
+      username: claim.username!,
       password: claim.decrypted_password!,
-      email_confirm: true,
-      user_metadata: { name, username: claim.username, is_member_account: true },
+      name,
     });
-    if (authError) {
+    if (!created.ok) {
       await svc.rpc("admin_finalize_child_approval_failure", {
         p_request_id: id,
         p_admin_user_id: adminUser.id,
         p_admin_email: adminUser.email!,
-        p_reason: `계정 생성 실패: ${authError.message}`,
+        p_reason: created.internalReason,
       });
-      return NextResponse.json({ error: `계정 생성 실패: ${authError.message}` }, { status: 500 });
+      if (created.errorCode === CHILD_LOGIN_ID_ALREADY_EXISTS) {
+        return NextResponse.json(
+          { error: "이미 사용 중인 아이디예요. 다른 아이디를 입력해 주세요.", code: created.errorCode },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json(
+        { error: "아이 계정을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.", code: created.errorCode },
+        { status: 500 }
+      );
     }
-    authUserId = authData.user.id;
+    authUserId = created.authUserId;
+    authUserNewlyCreated = true;
     const { data: recordData, error: recordError } = await svc.rpc("admin_record_child_approval_auth_created", {
       p_request_id: id,
       p_auth_user_id: authUserId,
@@ -109,7 +124,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         p_admin_email: adminUser.email!,
         p_reason: "생성된 계정 연결 정보를 저장하지 못했습니다.",
       });
-      return NextResponse.json({ error: "계정 연결 정보를 저장하지 못했습니다." }, { status: 500 });
+      return NextResponse.json({ error: "아이 계정을 만들지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
     }
   }
 
@@ -120,6 +135,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     .select("id")
     .single();
   if (fmError) {
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, id, authUserId);
     await svc.rpc("admin_finalize_child_approval_failure", {
       p_request_id: id,
       p_admin_user_id: adminUser.id,
@@ -140,6 +156,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     must_change_password: true,
   });
   if (accError) {
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, id, authUserId);
     await svc.from("family_members").delete().eq("id", familyMember.id);
     await svc.rpc("admin_finalize_child_approval_failure", {
       p_request_id: id,
@@ -170,6 +187,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     .select("id")
     .single();
   if (childErr) {
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, id, authUserId);
     await svc.from("member_accounts").delete().eq("id", authUserId);
     await svc.from("family_members").delete().eq("id", familyMember.id);
     await svc.rpc("admin_finalize_child_approval_failure", {
@@ -191,6 +209,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   if (finalizeError || !finalizeData?.[0]?.success) {
     console.error("[child-approval-requests/approve] finalize error:", finalizeError, finalizeData);
+    if (authUserNewlyCreated) await cleanupNewlyCreatedChildAuthAccount(svc, id, authUserId);
     await svc.from("child_profiles").delete().eq("id", child.id);
     await svc.from("member_accounts").delete().eq("id", authUserId);
     await svc.from("family_members").delete().eq("id", familyMember.id);

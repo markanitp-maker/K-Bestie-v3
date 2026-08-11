@@ -117,6 +117,7 @@ export default function ParentSettingsPage() {
   const [addChildGrade, setAddChildGrade] = useState("1학년");
   const [addChildConsent, setAddChildConsent] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [addUsernameError, setAddUsernameError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
   const [addSuccessMessage, setAddSuccessMessage] = useState<string | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -633,6 +634,7 @@ export default function ParentSettingsPage() {
   const handleAddChild = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
+    setAddUsernameError(null);
 
     if (!addFamilyName.trim()) { setAddError("성을 입력해주세요."); return; }
     if (!addGivenName.trim()) { setAddError("이름을 입력해주세요."); return; }
@@ -661,7 +663,13 @@ export default function ParentSettingsPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        setAddError(data.error || "승인 요청 접수에 실패했습니다.");
+        // 아이디 중복은 상단 공통 에러가 아니라 아이디 입력창 바로 아래 inline validation으로만
+        // 표시한다 — Supabase 원문은 어떤 경우에도 그대로 노출하지 않는다.
+        if (data.code === "CHILD_LOGIN_ID_ALREADY_EXISTS") {
+          setAddUsernameError("이미 사용 중인 아이디예요. 다른 아이디를 입력해 주세요.");
+          return;
+        }
+        setAddError("아이 계정을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.");
         return;
       }
 
@@ -871,9 +879,17 @@ export default function ParentSettingsPage() {
                       type="text"
                       placeholder="아이디 (로그인용)"
                       value={addUsername}
-                      onChange={(e) => setAddUsername(e.target.value)}
-                      className="px-3.5 py-2 text-xs border border-gray-200 rounded-xl outline-none bg-gray-50/50"
+                      onChange={(e) => {
+                        setAddUsername(e.target.value);
+                        if (addUsernameError) setAddUsernameError(null);
+                      }}
+                      className={`px-3.5 py-2 text-xs border rounded-xl outline-none bg-gray-50/50 ${
+                        addUsernameError ? "border-red-400" : "border-gray-200"
+                      }`}
                     />
+                    {addUsernameError && (
+                      <p className="text-xs text-red-500 px-1 -mt-1">{addUsernameError}</p>
+                    )}
                     <input
                       type="password"
                       placeholder="비밀번호 (6자 이상)"
