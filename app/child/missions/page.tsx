@@ -47,6 +47,21 @@ interface MissionQuestion {
 
 type QuestionState = "pending" | "answered" | "skipped" | "refused" | "clarification_required";
 
+type MissionRequestContext = {
+  generation: number;
+  signal: AbortSignal;
+  isActive: () => boolean;
+  markSettled: () => void;
+};
+
+const MISSION_LOADING_WATCHDOG_MS = 8_000;
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+}
+
 
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -107,6 +122,18 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   // 계산해 내려준 값을 그대로 저장해 "closed"/완료잠금 화면의 문구 분기에만 쓴다.
   const [scheduleEnforced, setScheduleEnforced] = useState(false);
   const [entryStatus, setEntryStatus] = useState<"checking" | "ready_to_start" | "ready_to_resume" | "starting" | "resuming" | "active" | "error">("checking");
+  const missionRequestGenerationRef = useRef(0);
+  const activeMissionRequestAbortRef = useRef<AbortController | null>(null);
+  // 073-P0 리뷰 지적: 마운트 effect의 요청은 그 effect의 cleanup(abortController.abort())으로
+  // 정리되지만, 버튼(시작/이어하기) 트리거 요청은 외부 signal 없이 runMissionRequest를 호출해
+  // 컴포넌트가 언마운트돼도 진행 중이던 요청과 watchdog이 정리되지 않았다 — unmount 시
+  // 마지막으로 활성화된 요청을 직접 abort해 8초 뒤 언마운트된 컴포넌트에 setState하는
+  // 상황과 watchdog 타이머 누수를 막는다.
+  useEffect(() => {
+    return () => {
+      activeMissionRequestAbortRef.current?.abort();
+    };
+  }, []);
   // 한 번만 소비되는 플래그(ref) — URL 쿼리에 남기면 이후 재진입 때도 계속 true로
   // 남아 두 번째부터는 확인 없이 넘어가 버리므로, 컴포넌트 상태로만 들고 있다가
   // 이 effect 시작 시 즉시 리셋한다. restartTrigger는 같은 effect를 다시 실행시키기
@@ -299,8 +326,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const sttTtsStopSpeakingRef = useRef<(() => void) | undefined>(undefined);
 
   const forcedExpiryHandledRef = useRef(false);
-  const handleForcedExpiry = useCallback(async () => {
-    if (forcedExpiryHandledRef.current) return;
+  const handleForcedExpiry = useCallback(async (isRequestActive: () => boolean = () => true) => {
+    if (forcedExpiryHandledRef.current) return "already_handled" as const;
+    if (!isRequestActive()) return "stale" as const;
 
     // 1. Stop live mic & STT
     try {
@@ -327,6 +355,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       }
     } catch {}
 
+    if (!isRequestActive()) return "stale" as const;
     resetToIdle(false);
 
     // 4. Call server endpoint to invoke atomic force-end RPC with bounded retry/keepalive strategy
@@ -342,7 +371,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
             body: JSON.stringify({ sessionId: sessionIdRef.current }),
             keepalive: true,
           });
+          if (!isRequestActive()) return "stale" as const;
           const data = await res.json().catch(() => ({}));
+          if (!isRequestActive()) return "stale" as const;
           
           if (data.status === "NOT_EXPIRED") {
             isNotExpired = true;
@@ -357,11 +388,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         }
         if (attempt < 2) {
           await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
+          if (!isRequestActive()) return "stale" as const;
         }
       }
     } else {
       isTerminal = false;
     }
+
+    if (!isRequestActive()) return "stale" as const;
 
     if (isNotExpired) {
       // Server returned NOT_EXPIRED: resume session
@@ -371,7 +405,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       }
       setErrorMsg("");
       setShowRetryButton(false);
-      return;
+      return "not_expired" as const;
     }
 
     if (!isTerminal) {
@@ -379,7 +413,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       try { liveRef.current?.unlockAudio?.(); } catch {}
       setErrorMsg("연결 문제로 미션 종료 확인에 실패했어요. 다시 시도해 주세요.");
       setShowRetryButton(true);
-      return;
+      return "retry" as const;
     }
 
     // 5. Durable forced expiry confirmed by server
@@ -388,6 +422,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     setErrorMsg("미션 시간이 끝났어요");
     setPhase("closed");
     setEntryStatus("error");
+    return "closed" as const;
   }, [resetToIdle]);
 
   useEffect(() => {
@@ -1850,36 +1885,109 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     if (storedVoiceInputMode === "manual") setIsAuto(false);
 
   }, [searchParams, router]);
-  const fetchSessionData = useCallback(async (cid: string, round: RoundType, confirmRestart: boolean, isCheckOnly: boolean, signal?: AbortSignal) => {
+  const runMissionRequest = useCallback(async (
+    operation: (request: MissionRequestContext) => Promise<void>,
+    externalSignal?: AbortSignal,
+  ) => {
+    activeMissionRequestAbortRef.current?.abort();
+
+    const generation = missionRequestGenerationRef.current + 1;
+    missionRequestGenerationRef.current = generation;
+    const controller = new AbortController();
+    activeMissionRequestAbortRef.current = controller;
+
+    const abortFromExternalSignal = () => controller.abort();
+    if (externalSignal?.aborted) {
+      controller.abort();
+    } else {
+      externalSignal?.addEventListener("abort", abortFromExternalSignal, { once: true });
+    }
+
+    const isActive = () => (
+      missionRequestGenerationRef.current === generation && !controller.signal.aborted
+    );
+    let settled = false;
+    const markSettled = () => {
+      settled = true;
+    };
+    const watchdogId = window.setTimeout(() => {
+      if (!isActive()) return;
+      setErrorMsg("미션을 불러오는 데 시간이 오래 걸리고 있어요. 다시 시도해 주세요.");
+      setPhase("error");
+      setEntryStatus("error");
+      controller.abort();
+    }, MISSION_LOADING_WATCHDOG_MS);
+
     try {
+      if (!isActive()) return;
+      await operation({ generation, signal: controller.signal, isActive, markSettled });
+      if (isActive() && !settled) {
+        setErrorMsg("미션 초기화가 완료되지 않았어요. 다시 시도해 주세요.");
+        setPhase("error");
+        setEntryStatus("error");
+      }
+    } catch (error: unknown) {
+      if (isAbortError(error) || !isActive()) return;
+      setErrorMsg(error instanceof Error ? error.message : "미션을 불러오지 못했어요");
+      setPhase("error");
+      setEntryStatus("error");
+    } finally {
+      window.clearTimeout(watchdogId);
+      externalSignal?.removeEventListener("abort", abortFromExternalSignal);
+      if (activeMissionRequestAbortRef.current === controller) {
+        activeMissionRequestAbortRef.current = null;
+      }
+    }
+  }, []);
+
+  const fetchSessionData = useCallback(async (
+    cid: string,
+    round: RoundType,
+    confirmRestart: boolean,
+    isCheckOnly: boolean,
+    request: MissionRequestContext,
+  ) => {
+      if (!request.isActive()) return;
       const res = await fetch("/api/mission/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ childId: cid, roundType: round, confirmRestart, checkOnly: isCheckOnly }),
-        signal
+        signal: request.signal,
       });
+      if (!request.isActive()) return;
       const data = await res.json();
+      if (!request.isActive()) return;
       logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
-      if (signal?.aborted) return;
 
       if (!res.ok) {
         if (res.status === 403 || data.code === "MISSION_EXPIRED" || data.scheduleClosed || data.expired || data.status === "FORCE_ENDED") {
-          handleForcedExpiry();
+          const expiryResult = await handleForcedExpiry(request.isActive);
+          if (!request.isActive()) return;
+          if (expiryResult !== "closed" && expiryResult !== "already_handled") {
+            setErrorMsg("미션 종료 상태를 확인하지 못했어요. 다시 시도해 주세요.");
+            setPhase("error");
+            setEntryStatus("error");
+          }
+          request.markSettled();
           return;
         }
+        if (!request.isActive()) return;
         setErrorMsg(data.error ?? "미션을 시작하지 못했어요");
         setPhase("error");
         setEntryStatus("error");
+        request.markSettled();
         return;
       }
 
       if (data.locked) {
         setPhase("locked_completed");
+        request.markSettled();
         return;
       }
 
       if (data.requiresConfirmation) {
         setPhase("confirm_restart_after_completion");
+        request.markSettled();
         return;
       }
 
@@ -1890,6 +1998,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         }
         setPhase("ready");
         setEntryStatus("ready_to_start");
+        request.markSettled();
         return;
       }
 
@@ -1899,24 +2008,38 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       // PWA/탭 종료 뒤 남은 단일 미확정 턴을 같은 clientTurnId로 복구한다. 서버의
       // answer_result가 이미 있으면 start는 재판정 없이 replay하고, 없으면 lease 만료 후
       // 동일 턴 처리를 재개한다. 복구 K 문구에는 원문을 다시 싣지 않는다.
-      const pendingTurn = await readPendingMissionTurn().catch(() => null);
+      if (!request.isActive()) return;
+      const pendingTurn = await readPendingMissionTurn().catch((error: unknown) => {
+        console.error("[Mission] IndexedDB pending turn 복원 실패. 서버 세션으로 계속 진행합니다:", error);
+        return null;
+      });
+      if (!request.isActive()) return;
       if (pendingTurn && pendingTurn.sessionId === data.sessionId) {
         const pending = pendingTurn;
         if (sessionStorage.getItem("mission-turn-recovery-paused") === pending.clientTurnId) {
+          if (!request.isActive()) return;
+          // 073-P0 리뷰 지적: 여기를 일반 error phase로 바꾸면 handleRetryAfterError가
+          // pause 키를 지우지 않고 같은 시도를 반복해 이 분기로 영구 재진입한다.
+          // turn_retry 전용 화면(자체 재시도 버튼이 pause 키를 지우고 reload)으로 되돌린다.
           setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
           setShowRetryButton(true);
           setPhase("turn_retry");
+          request.markSettled();
           return;
         }
+        if (!request.isActive()) return;
         const replayResponse = await postMissionTurnWithRetry({
           body: { action: "start", ...pending },
-          signal,
+          signal: request.signal,
         });
+        if (!request.isActive()) return;
         if (replayResponse.ok) {
           const replay = await replayResponse.json();
+          if (!request.isActive()) return;
           const recoveryText = replay.completionCandidate
             ? "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!"
             : "이야기해 줘서 고마워! 다음 이야기도 들려줄래?";
+          if (!request.isActive()) return;
           const finalizeResponse = await postMissionTurnWithRetry({
             body: {
               action: "finalize",
@@ -1926,17 +2049,24 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
               kContent: recoveryText,
               kDisplaySequence: pending.displaySequence + 1,
             },
-            signal,
+            signal: request.signal,
           });
+          if (!request.isActive()) return;
           if (finalizeResponse.ok) {
             sessionStorage.removeItem("mission-turn-recovery-paused");
             await clearPendingMissionTurn(pending.clientTurnId);
+            if (!request.isActive()) return;
+            request.markSettled();
             window.location.reload();
             return;
           }
         }
+        if (!request.isActive()) return;
         setShowRetryButton(true);
         setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+        setPhase("error");
+        setEntryStatus("error");
+        request.markSettled();
         return;
       }
 
@@ -2023,24 +2153,32 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       }
 
       try {
+        if (!request.isActive()) return;
         logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_start" });
-        const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`, { signal });
+        const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`, { signal: request.signal });
+        if (!request.isActive()) return;
         if (msgRes.ok) {
           const msgData = await msgRes.json();
+          if (!request.isActive()) return;
           logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_complete", extra: { messageCount: msgData.messages?.length ?? 0 } });
           const past: Turn[] = (msgData.messages ?? [])
             .filter((m: any) => m.content && m.content.trim() !== "" && (m.turn_status ? m.turn_status === "finalized" : true))
             .map((m: any) => ({ role: m.role, text: m.content, displaySequence: m.display_sequence }));
           pastMessagesRef.current = past;
         }
-      } catch {}
-      if (signal?.aborted) return;
+      } catch (error: unknown) {
+        if (isAbortError(error)) throw error;
+        console.error("[Mission] 대화 history 복원 실패. 핵심 세션으로 계속 진행합니다:", error);
+        pastMessagesRef.current = [];
+      }
+      if (!request.isActive()) return;
 
       // 037 §18/codex 지적: 조회된 기존 세션이 status="COMPLETED"로 명시 갱신되진 않았지만
       // (레거시 V1 등) valid_answer_count로는 이미 완료 조건을 만족하는 경우, "이어하기" 게이트를
       // 보여주면 안 된다 - 이미 검증된 "다시 할래요/미션 나가기" 확인 게이트로 동일하게 처리한다.
       if (isCheckOnly && data.resumed && data.completed) {
         setPhase("confirm_restart_after_completion");
+        request.markSettled();
         return;
       }
 
@@ -2050,15 +2188,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       } else {
         setEntryStatus("active");
       }
-    } catch (e: any) {
-      if (signal?.aborted || e.name === "AbortError") return;
-      setErrorMsg((e as Error).message);
-      setPhase("error");
-      setEntryStatus("error");
-    }
+      request.markSettled();
   }, [handleForcedExpiry]);
 
-  const isStartingRef = useRef(false);
   // 037 §21/§22: 조회·시작·이어하기 실패 후 "다시 시도"가 정확히 직전에 하려던
   // 동작(확인/시작/이어하기)을 그대로 재시도하도록, 실행 직전에 그 재시도 함수 자체를 담아둔다.
   // 초기값은 마운트 시점의 "확인" 단계 재시도용 - restartTrigger를 증가시켜 마운트 effect를 다시 돈다.
@@ -2067,28 +2199,31 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   // entryStatus를 보고 "시작 실패였는지/이어하기 실패였는지" 구분할 수 없었다 - 별도 ref로 보존한다.
   const attemptKindRef = useRef<"checking" | "starting" | "resuming">("checking");
 
+  // 073-P0 리뷰 지적: 예전에는 여기서 isStartingRef 불리언 락으로 중복 클릭을 막았는데,
+  // 그 락은 runMissionRequest의 내부 await가 (IndexedDB 읽기, signal 없는 force-end
+  // fetch 등) 끝까지 settle돼야만 finally에서 풀렸다. 그 작업이 진짜로 멈춰버리면
+  // watchdog이 8초 뒤 에러 화면으로 보내도 락은 계속 true로 남아, "다시 시도"를 눌러도
+  // handleStartMission/handleResumeMission이 즉시 return해 무한 스켈레톤이 재발했다.
+  // runMissionRequest 자체가 이미 이전 컨트롤러를 abort하고 generation을 올려 동시
+  // 요청을 안전하게 처리하므로, 이 수동 락은 더 필요 없고 오히려 위 회귀의 원인이었다.
   const handleStartMission = () => {
     if (!childIdRef.current || !roundType) return;
-    if (isStartingRef.current) return;
-    isStartingRef.current = true;
     setEntryStatus("starting");
     attemptKindRef.current = "starting";
     lastAttemptFnRef.current = handleStartMission;
-    void fetchSessionData(childIdRef.current, roundType, confirmRestartRef.current, false).finally(() => {
-      isStartingRef.current = false;
-    });
+    void runMissionRequest((request) => (
+      fetchSessionData(childIdRef.current!, roundType, confirmRestartRef.current, false, request)
+    ));
   };
 
   const handleResumeMission = () => {
     if (!childIdRef.current || !roundType) return;
-    if (isStartingRef.current) return;
-    isStartingRef.current = true;
     setEntryStatus("resuming");
     attemptKindRef.current = "resuming";
     lastAttemptFnRef.current = handleResumeMission;
-    void fetchSessionData(childIdRef.current, roundType, confirmRestartRef.current, false).finally(() => {
-      isStartingRef.current = false;
-    });
+    void runMissionRequest((request) => (
+      fetchSessionData(childIdRef.current!, roundType, confirmRestartRef.current, false, request)
+    ));
   };
 
   const handleRetryAfterError = () => {
@@ -2099,7 +2234,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   useEffect(() => {
     const abortController = new AbortController();
-    void (async () => {
+    void runMissionRequest(async (request) => {
       // 037 QA 실측 확인(agy-qa-037 + 메인 Claude 재현): 이 effect가 childIdRef.current에만
       // 의존하면, 최초 마운트 시 childId를 설정하는 위 effect(line ~1471)의 setChildId(cid)가
       // 아직 커밋되지 않은 상태에서(ref는 렌더 시점에만 갱신됨) 이 effect가 같은 커밋에서
@@ -2111,8 +2246,11 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         ?? searchParams?.get("childId")
         ?? (typeof window !== "undefined" ? localStorage.getItem("k_child_id") : null);
       if (!cid) {
+        if (!request.isActive()) return;
         setPhase("error");
+        setEntryStatus("error");
         setErrorMsg("childId is missing");
+        request.markSettled();
         return;
       }
       if (cid !== childIdRef.current) {
@@ -2127,15 +2265,20 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       let cfgActiveRound: RoundType | null = null;
       let cfgScheduleEnforced = false;
       try {
-        const cfgRes = await fetch("/api/config/child-time-restrictions", { signal: abortController.signal });
+        if (!request.isActive()) return;
+        const cfgRes = await fetch("/api/config/child-time-restrictions", { signal: request.signal });
+        if (!request.isActive()) return;
         if (cfgRes.ok) {
           const cfg = await cfgRes.json();
+          if (!request.isActive()) return;
           if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
           if (cfg.activeRound === "round1_day" || cfg.activeRound === "round2_night") cfgActiveRound = cfg.activeRound;
           if (typeof cfg.scheduleEnforced === "boolean") cfgScheduleEnforced = cfg.scheduleEnforced;
         }
-      } catch {}
-      if (abortController.signal.aborted) return;
+      } catch (error: unknown) {
+        if (isAbortError(error)) throw error;
+      }
+      if (!request.isActive()) return;
       setScheduleEnforced(cfgScheduleEnforced);
 
       // 031: MISSION_SCHEDULE_ENFORCED가 켜져 있으면(Production) 경계값이 다르므로 클라이언트가
@@ -2146,7 +2289,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         ? (qpRound ?? cfgActiveRound)
         : (qpRound ?? currentRound(hour) ?? (!timeRestrictionsEnabled ? "common" : null));
       if (!round) {
+        if (!request.isActive()) return;
         setPhase("closed");
+        request.markSettled();
         return;
       }
       setRoundType(round);
@@ -2157,13 +2302,13 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       if (confirmRestart) {
         confirmRestartRef.current = false;
         setEntryStatus("starting");
-        await fetchSessionData(cid, round, true, false, abortController.signal);
+        await fetchSessionData(cid, round, true, false, request);
       } else {
-        await fetchSessionData(cid, round, false, true, abortController.signal);
+        await fetchSessionData(cid, round, false, true, request);
       }
-    })();
+    }, abortController.signal);
     return () => abortController.abort();
-  }, [searchParams, router, restartTrigger, fetchSessionData]);
+  }, [searchParams, router, restartTrigger, fetchSessionData, runMissionRequest]);
 
   // Live 모드가 활성화될 때 interactionMode 설정 동기화 (STT/TTS는 setInputMode+setMicEnabled로 동일 개념 적용)
   useEffect(() => {
