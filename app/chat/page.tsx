@@ -828,7 +828,7 @@ export default function ChatPage() {
                    />
                    
                    {/* Mascot */}
-                   <div className="relative z-10 flex justify-center items-end pb-[var(--chat-mascot-bottom-padding)]">
+                   <div className="relative z-30 flex justify-center items-end pb-[var(--chat-mascot-bottom-padding)]">
                      <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={165} className="!w-[var(--chat-mascot-height)] !h-auto object-contain" />
                    </div>
                    
