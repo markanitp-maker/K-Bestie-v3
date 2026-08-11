@@ -113,6 +113,7 @@ export async function GET(req: NextRequest) {
     uniqueVisitors: Set<string>; 
     convertedVisitors: Set<string>;
     clicks: number; 
+    landingView: number;
     signupStarted: number;
     parentSignup: Set<string>;
     childAdded: number;
@@ -128,6 +129,7 @@ export async function GET(req: NextRequest) {
         uniqueVisitors: new Set(),
         convertedVisitors: new Set(),
         clicks: 0,
+        landingView: 0,
         signupStarted: 0,
         parentSignup: new Set(),
         childAdded: 0,
@@ -151,6 +153,7 @@ export async function GET(req: NextRequest) {
     cs.uniqueVisitors.add(v.visitor_id);
   }
 
+  let landingViewCount = 0;
   let signupStartedCount = 0;
   let childAddedCount = 0;
   const parentSignupSet = new Set<string>();
@@ -171,7 +174,13 @@ export async function GET(req: NextRequest) {
 
     const eventType = e.event_type;
     
-    if (eventType === "SIGNUP_PAGE_VIEW" || eventType === "SIGNUP_STARTED") {
+    if (eventType === "LANDING_PAGE_VIEW") {
+      if (validLinkIds.has(e.link_id)) {
+        landingViewCount++;
+        const channel = linkIdToChannel.get(e.link_id) || "알 수 없음";
+        getChannelStat(channel).landingView++;
+      }
+    } else if (eventType === "SIGNUP_PAGE_VIEW" || eventType === "SIGNUP_STARTED") {
       if (validLinkIds.has(e.link_id)) {
         signupStartedCount++;
         const channel = linkIdToChannel.get(e.link_id) || "알 수 없음";
@@ -233,6 +242,7 @@ export async function GET(req: NextRequest) {
   const kpi = {
     totalClicks,
     uniqueVisitors: uniqueVisitorsSet.size,
+    landingView: landingViewCount,
     signupStarted: signupStartedCount,
     parentSignup: parentSignupSet.size,
     conversionCompletedVisitors: convertedVisitorSet.size,
@@ -254,6 +264,7 @@ export async function GET(req: NextRequest) {
     channelTable.push({
       channel,
       uniqueVisitors: uvs,
+      landingView: stat.landingView,
       signupStarted: stat.signupStarted,
       parentSignup: parentSignupCount,
       childAdded: stat.childAdded,

@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
       utm_campaign,
       utm_content: utm_content || null,
       purpose,
-      destination_path: destination_path || "/signup",
+      destination_path: destination_path || "/",
       status: status || "ACTIVE",
       memo: memo || null,
       starts_at: starts_at || null,

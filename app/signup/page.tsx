@@ -774,7 +774,6 @@ function SignupContent() {
     }).catch(console.error);
   }, [searchParams]);
 
-
   if (authChecking) {
 
     return (

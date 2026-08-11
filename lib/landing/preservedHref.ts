@@ -6,7 +6,7 @@
 export const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const;
 
 export type PreservedLandingParams = Partial<
-  Record<(typeof UTM_KEYS)[number] | "returnUrl", string>
+  Record<(typeof UTM_KEYS)[number] | "returnUrl" | "link_id", string>
 >;
 
 export function buildPreservedHref(basePath: string, preservedParams: PreservedLandingParams): string {
@@ -16,5 +16,6 @@ export function buildPreservedHref(basePath: string, preservedParams: PreservedL
     if (value) destination.searchParams.set(key, value);
   }
   if (preservedParams.returnUrl) destination.searchParams.set("returnUrl", preservedParams.returnUrl);
+  if (preservedParams.link_id) destination.searchParams.set("link_id", preservedParams.link_id);
   return `${destination.pathname}${destination.search}`;
 }

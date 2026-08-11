@@ -16,7 +16,7 @@ export default function AcquisitionLinksTab({ channelFilter = "", onChannelFilte
   
   // Custom Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [formData, setFormData] = useState({ channel_name: "", utm_source: "", utm_medium: "", utm_campaign: "", purpose: "", utm_content: "", memo: "", destination_path: "/signup" });
+  const [formData, setFormData] = useState({ channel_name: "", utm_source: "", utm_medium: "", utm_campaign: "", purpose: "", utm_content: "", memo: "", destination_path: "/" });
   const [submitLoading, setSubmitLoading] = useState(false);
   const [resultToast, setResultToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -76,7 +76,7 @@ export default function AcquisitionLinksTab({ channelFilter = "", onChannelFilte
         const d = await res.json();
         setResultToast({ type: "success", text: `링크가 생성되었습니다: ${d.link.link_id}` });
         setIsCreateModalOpen(false);
-        setFormData({ channel_name: "", utm_source: "", utm_medium: "", utm_campaign: "", purpose: "", utm_content: "", memo: "", destination_path: "/signup" });
+        setFormData({ channel_name: "", utm_source: "", utm_medium: "", utm_campaign: "", purpose: "", utm_content: "", memo: "", destination_path: "/" });
         load();
       } else {
         const d = await res.json().catch(() => ({}));

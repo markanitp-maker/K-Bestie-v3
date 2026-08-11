@@ -3,7 +3,7 @@ import HomeHubClient from "@/components/landing/HomeHubClient";
 import { UTM_KEYS, type PreservedLandingParams } from "@/lib/landing/preservedHref";
 import { getPwaIcons } from "@/lib/pwaIcons";
 
-const PRESERVED_PARAM_KEYS = [...UTM_KEYS, "returnUrl"] as const;
+const PRESERVED_PARAM_KEYS = [...UTM_KEYS, "returnUrl", "link_id"] as const;
 
 const HOME_URL = "https://app.k-bestie.com/";
 const HOME_TITLE = "내친구 케이 | 아이의 하루를 이해하고 대화를 이어주는 AI 소통 서비스";

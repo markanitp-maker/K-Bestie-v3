@@ -93,6 +93,7 @@ export default function AcquisitionDashboardTab({ sharedState, onSharedStateChan
   const columns: AdminDataTableColumn<any>[] = [
     { key: "channel", header: "채널", render: (r) => onChannelDrillDown ? <button type="button" onClick={() => onChannelDrillDown(r.channel)} style={{ padding: 0, border: 0, background: "transparent", fontWeight: 700, color: "var(--admin-primary)", cursor: "pointer" }}>{r.channel}</button> : <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ fontWeight: 600, color: "var(--admin-primary)", textDecoration: "none" }}>{r.channel}</a> },
     { key: "uniqueVisitors", header: "고유 방문자", render: (r) => r.uniqueVisitors.toLocaleString() },
+    { key: "landingView", header: "랜딩 조회", render: (r) => r.landingView.toLocaleString() },
     { key: "signupStarted", header: "가입 시작", render: (r) => r.signupStarted.toLocaleString() },
     { key: "parentSignup", header: "부모 가입", render: (r) => <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ color: "var(--admin-primary)", textDecoration: "none" }}>{r.parentSignup.toLocaleString()}</a> },
     { key: "childAdded", header: "아이 등록", render: (r) => r.childAdded.toLocaleString() },
@@ -165,6 +166,7 @@ export default function AcquisitionDashboardTab({ sharedState, onSharedStateChan
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 24 }}>
             <AdminKpiCard title="총 클릭 수" value={kpi.totalClicks.toLocaleString()} />
             <AdminKpiCard title="고유 방문자 수" value={kpi.uniqueVisitors.toLocaleString()} />
+            <AdminKpiCard title="랜딩 조회 수" value={kpi.landingView.toLocaleString()} />
             <AdminKpiCard title="가입 시작 수" value={kpi.signupStarted.toLocaleString()} />
             <AdminKpiCard title="부모 가입 완료 수" value={kpi.parentSignup.toLocaleString()} />
             <AdminKpiCard title="가입 전환율" value={kpi.uniqueVisitors === 0 ? "-" : `${kpi.conversionRate.toFixed(1)}%`} />

@@ -14,6 +14,7 @@ import {
 import LandingDashboard from "@/components/landing/LandingDashboard";
 import LandingDailyReport from "@/components/landing/LandingDailyReport";
 import LandingWeeklyReport from "@/components/landing/LandingWeeklyReport";
+import { captureAttribution } from "@/lib/acquisition/captureAttribution";
 import {
   logAuthFlowEvent,
   type AuthFlowEvent,
@@ -142,6 +143,10 @@ export default function BetaLandingPage({
   const headerLoginHref = buildPreservedHref("/login?entry=header_login", preservedParams);
   const headerSignupHref = buildPreservedHref("/login?entry=header_signup", preservedParams);
   const viewedSections = useRef(new Set<string>());
+
+  useEffect(() => {
+    captureAttribution(preservedParams.link_id ?? null);
+  }, [preservedParams.link_id]);
 
   useEffect(() => {
     const attribution = readAttribution();
