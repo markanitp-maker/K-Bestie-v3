@@ -60,6 +60,13 @@ const TABS = [
   { id: 3, label: "추천 가이드" },
 ];
 
+const REPORT_MODAL_TITLE_CLASS = "min-w-0 pr-3 text-lg font-bold leading-[1.4] text-gray-800";
+const REPORT_TAB_LABEL_CLASS = "flex-1 px-3 py-2.5 rounded-xl text-sm font-bold text-center whitespace-nowrap transition-colors cursor-pointer";
+const REPORT_CARD_TITLE_CLASS = "text-lg font-bold leading-[1.4]";
+const REPORT_SECTION_TITLE_CLASS = "text-base font-bold leading-[1.4]";
+const REPORT_BODY_CLASS = "text-lg leading-[1.7]";
+const REPORT_META_CLASS = "text-sm";
+
 export function moodLabel(score: number): string {
   if (score <= 2) return "많이 힘들어 보여요";
   if (score <= 4) return "조금 힘들었던 것 같아요";
@@ -314,22 +321,22 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   const renderDailyTab1 = (report: DailyReport) => (
     <div className="flex flex-col gap-4">
       <div className="rounded-2xl px-5 py-5" style={{ background: "#fdf1ec" }}>
-        <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+        <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
           오늘의 한 줄
         </h3>
-        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
+        <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
           {report.summary_line || "대화 요약이 준비 중입니다."}
         </p>
-        <p className="text-[11px] mt-3" style={{ color: "var(--color-k-orange)" }}>
+        <p className={`${REPORT_META_CLASS} mt-3`} style={{ color: "var(--color-k-orange)" }}>
           AI Insight by 내친구 케이
         </p>
       </div>
 
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-        <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+        <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
           📊 1분 요약 리포트
         </h3>
-        <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
+        <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
           {report.parent_guide || "아이가 보낸 하루 대화에 대한 가이드 조언이 생성되지 않았습니다."}
         </p>
       </div>
@@ -341,22 +348,22 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
 
     return (
       <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-5">
-        <h3 className="font-bold text-base -mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+        <h3 className={`${REPORT_CARD_TITLE_CLASS} -mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
           📄 상세 리포트
         </h3>
         {sections.length > 0 ? (
           sections.map((section) => (
             <div key={section.key} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
-              <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
+              <h4 className={`${REPORT_SECTION_TITLE_CLASS} mb-1.5`} style={{ color: "var(--color-k-text-primary)" }}>
                 {section.title}
               </h4>
-              <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
+              <p className={REPORT_BODY_CLASS} style={{ color: "#4b5563" }}>
                 {section.body}
               </p>
             </div>
           ))
         ) : (
-          <p className="text-sm leading-relaxed text-gray-500">
+          <p className={`${REPORT_BODY_CLASS} text-gray-500`}>
             이번 리포트에서 제공할 상세 분석이 없어요.
           </p>
         )}
@@ -378,22 +385,22 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
     return (
       <div className="flex flex-col gap-4">
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
             💬 부모 대화 실마리
           </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
+          <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
             {clue || "이 항목은 확인할 대화가 충분하지 않아요."}
           </p>
         </div>
 
         {questions.length > 0 && (
           <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-            <h3 className="font-bold text-base mb-3" style={{ color: "var(--color-k-text-primary)" }}>
+            <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-3`} style={{ color: "var(--color-k-text-primary)" }}>
               ❓ 부모용 추천 질문
             </h3>
             <ul className="flex flex-col gap-2.5">
               {questions.map((q, i) => (
-                <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--color-k-text-primary)" }}>
+                <li key={i} className={`flex gap-2 ${REPORT_BODY_CLASS}`} style={{ color: "var(--color-k-text-primary)" }}>
                   <span style={{ color: "#22c55e" }}>✓</span>
                   <span>{q}</span>
                 </li>
@@ -403,19 +410,19 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
         )}
 
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "#3b82f6" }}>
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "#3b82f6" }}>
             👁️ 부모가 주의 깊게 볼 변화
           </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
+          <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
             {watchOut}
           </p>
         </div>
 
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
             ✨ 오늘의 케이 코멘트
           </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
+          <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
             {comment}
           </p>
         </div>
@@ -427,18 +434,18 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
     return (
       <div className="flex flex-col gap-4">
         <div className="rounded-2xl px-5 py-5" style={{ background: "#fdf1ec" }}>
-          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
             이번 주 요약
           </h3>
-          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
+          <p className={`${REPORT_BODY_CLASS} whitespace-pre-line`} style={{ color: "var(--color-k-text-primary)" }}>
             {report.summary_text || "이 항목은 확인할 대화가 충분하지 않아요."}
           </p>
         </div>
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
             주간 감정 상태
           </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
+          <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
             {report.mood_average ? moodLabel(report.mood_average) : "이 항목은 확인할 대화가 충분하지 않아요."}
           </p>
         </div>
@@ -455,10 +462,10 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
       <div className="flex flex-col gap-4">
         {detailText && (
           <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
-            <h3 className="font-bold text-base -mb-1" style={{ color: "var(--color-k-text-primary)" }}>
+            <h3 className={`${REPORT_CARD_TITLE_CLASS} -mb-1`} style={{ color: "var(--color-k-text-primary)" }}>
               📄 이번 주 상세 분석
             </h3>
-            <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
+            <p className={`${REPORT_BODY_CLASS} whitespace-pre-line`} style={{ color: "var(--color-k-text-primary)" }}>
               {detailText}
             </p>
           </div>
@@ -468,10 +475,10 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
           <div className="bg-white rounded-2xl px-5 py-5 shadow-sm flex flex-col gap-4">
             {sections.map((section) => (
               <div key={section.key} className="border-b border-gray-50 last:border-0 pb-3 last:pb-0">
-                <h4 className="font-bold text-sm mb-1.5" style={{ color: "var(--color-k-text-primary)" }}>
+                <h4 className={`${REPORT_SECTION_TITLE_CLASS} mb-1.5`} style={{ color: "var(--color-k-text-primary)" }}>
                   {section.title}
                 </h4>
-                <p className="text-xs leading-relaxed" style={{ color: "#4b5563" }}>
+                <p className={REPORT_BODY_CLASS} style={{ color: "#4b5563" }}>
                   {section.body}
                 </p>
               </div>
@@ -481,7 +488,7 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
 
         {!detailText && sections.length === 0 && (
           <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-            <p className="text-sm leading-relaxed text-gray-500">
+            <p className={`${REPORT_BODY_CLASS} text-gray-500`}>
               이번 리포트에서 제공할 상세 분석이 없어요.
             </p>
           </div>
@@ -499,22 +506,22 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
     return (
       <div className="flex flex-col gap-4">
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
             💬 부모 대화 실마리
           </h3>
-          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
+          <p className={`${REPORT_BODY_CLASS} whitespace-pre-line`} style={{ color: "var(--color-k-text-primary)" }}>
             {clue || "이 항목은 확인할 대화가 충분하지 않아요."}
           </p>
         </div>
 
         {questions.length > 0 && (
           <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-            <h3 className="font-bold text-base mb-3" style={{ color: "var(--color-k-text-primary)" }}>
+            <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-3`} style={{ color: "var(--color-k-text-primary)" }}>
               ❓ 부모용 추천 질문
             </h3>
             <ul className="flex flex-col gap-2.5">
               {questions.map((q, i) => (
-                <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--color-k-text-primary)" }}>
+                <li key={i} className={`flex gap-2 ${REPORT_BODY_CLASS}`} style={{ color: "var(--color-k-text-primary)" }}>
                   <span style={{ color: "#22c55e" }}>✓</span>
                   <span>{q}</span>
                 </li>
@@ -524,10 +531,10 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
         )}
 
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
             🎈 주말 활동 추천
           </h3>
-          <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "var(--color-k-text-primary)" }}>
+          <p className={`${REPORT_BODY_CLASS} whitespace-pre-line`} style={{ color: "var(--color-k-text-primary)" }}>
             {report.weekend_activity_recommendation || "이 항목은 확인할 대화가 충분하지 않아요."}
           </p>
         </div>
@@ -598,10 +605,10 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-4 bg-white border-b border-gray-100 shrink-0">
-          <h2 id="modal-title" className="text-base font-bold text-gray-800">{title}</h2>
+          <h2 id="modal-title" className={REPORT_MODAL_TITLE_CLASS}>{title}</h2>
           <button 
             onClick={requestClose}
-            className="p-2 -mr-2 text-gray-500 hover:bg-gray-100 rounded-full"
+            className="shrink-0 p-2 -mr-2 text-gray-500 hover:bg-gray-100 rounded-full"
             aria-label="닫기"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -613,13 +620,13 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
 
         {!error && (!loading || showSkeleton) && (
           <div
-            className="flex gap-2 px-4 py-3 overflow-x-auto shrink-0 bg-white border-b border-gray-100 sticky top-0 z-10"
+            className="flex gap-2 px-4 py-3 shrink-0 bg-white border-b border-gray-100 sticky top-0 z-10"
           >
             {TABS.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold text-left transition-colors cursor-pointer`}
+                className={REPORT_TAB_LABEL_CLASS}
                 style={{
                   background: activeTab === tab.id ? "var(--color-k-navy)" : "#ffffff",
                   color: activeTab === tab.id ? "#ffffff" : "var(--color-k-text-primary)",
