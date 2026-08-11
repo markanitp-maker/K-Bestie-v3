@@ -12,6 +12,29 @@ function generateRequestNumber() {
   return `REQ-${dateStr}-${randomStr}`;
 }
 
+// 위젯은 첨부 업로드(app/api/support/attachments)와 문의 제출에 같은 idempotency
+// 값을 upload_session_id/idempotency_key로 같이 보낸다. 제출 시점에 그 세션으로
+// 올라온 첨부들을 이번에 생성/확인된 support_requests 행에 연결해야, 관리자 쪽의
+// feedback_request_id 기준 조인에 첨부가 나타난다.
+async function linkAttachments(
+  serviceClient: ReturnType<typeof createServiceClient>,
+  uploadSessionId: string,
+  userId: string,
+  supportRequestId: string
+) {
+  const { error } = await serviceClient
+    .from("feedback_request_attachments")
+    .update({ feedback_request_id: supportRequestId })
+    .eq("upload_session_id", uploadSessionId)
+    .eq("user_id", userId)
+    .is("feedback_request_id", null)
+    .neq("upload_status", "deleted");
+
+  if (error) {
+    console.error("[api/support] attachment link error:", error);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -53,10 +76,11 @@ export async function POST(request: Request) {
     if (idempotencyKey) {
       const { data: existingByKey } = await serviceClient
         .from("support_requests")
-        .select("request_number")
+        .select("id, request_number")
         .eq("idempotency_key", idempotencyKey)
         .maybeSingle();
       if (existingByKey?.request_number) {
+        await linkAttachments(serviceClient, idempotencyKey, user.id, existingByKey.id);
         return NextResponse.json({ ok: true, request_number: existingByKey.request_number });
       }
     }
@@ -133,9 +157,11 @@ export async function POST(request: Request) {
       status: "open"
     };
 
-    const { error: insertErr } = await serviceClient
+    const { data: inserted, error: insertErr } = await serviceClient
       .from("support_requests")
-      .insert(insertPayload);
+      .insert(insertPayload)
+      .select("id")
+      .single();
 
     if (insertErr) {
       // 23505 = unique_violation. idempotency_key 유니크 제약에 걸린 경우 - 연타나
@@ -145,15 +171,20 @@ export async function POST(request: Request) {
       if (insertErr.code === "23505" && insertPayload.idempotency_key) {
         const { data: existing } = await serviceClient
           .from("support_requests")
-          .select("request_number")
+          .select("id, request_number")
           .eq("idempotency_key", insertPayload.idempotency_key)
           .maybeSingle();
         if (existing?.request_number) {
+          await linkAttachments(serviceClient, insertPayload.idempotency_key, user.id, existing.id);
           return NextResponse.json({ ok: true, request_number: existing.request_number });
         }
       }
       console.error("[api/support] insert error:", insertErr);
       return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    if (idempotencyKey) {
+      await linkAttachments(serviceClient, idempotencyKey, user.id, inserted.id);
     }
 
     return NextResponse.json({ ok: true, request_number });
