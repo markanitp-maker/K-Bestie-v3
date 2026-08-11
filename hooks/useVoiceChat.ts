@@ -98,6 +98,20 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     return `t${turnSeqRef.current}`;
   }
 
+  // STT 라우터에 넘기는 턴 식별자 전용 순번 — turnSeqRef(메시지 id)와는 완전히 별개다.
+  // getChildTurnId()는 SttRouterController.startTurn()이 매 턴 시작 시 정확히 1회
+  // 호출하므로(useSttRouter.ts의 getTurnContext), 그 시점에 즉시(eager) 새 id를 할당한다.
+  // 이전에는 `t${turnSeqRef.current + 1}`로 "다음에 완료될 턴"을 예측만 했는데, turnSeqRef는
+  // appendTurn 성공(완료) 시에만 전진하므로 GCP 폴백 왕복이 아직 끝나지 않은 상태에서 아이가
+  // 곧바로 다시 말하면 실제로는 서로 다른 두 턴이 같은 예측값을 재사용했다 — turn_timing_events/
+  // voice log가 서로 다른 두 턴을 같은 turn_id로 뒤섞어 기록하는 원인이었다(실제 대화 메시지
+  // 저장은 appendTurn의 nextTurnId()가 별도로 매번 고유하게 부여하므로 영향 없었음).
+  const sttTurnSeqRef = useRef(0);
+  function nextSttTurnId(): string {
+    sttTurnSeqRef.current += 1;
+    return `stt${sttTurnSeqRef.current}`;
+  }
+
   function updateStatus(s: SessionStatus) {
     statusRef.current = s;
     setStatus(s);
@@ -109,16 +123,15 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setTranscript([...transcriptRef.current]);
   }
 
-  function notifySpeechEnd() {
-    const predictedTurnId = `t${turnSeqRef.current + 1}`;
+  function notifySpeechEnd(turnId: string) {
     onSpeechEndRef.current?.();
-    logVoiceEvent({ ts: Date.now(), eventType: "finalizeChildTurn_start", childTurnId: predictedTurnId });
+    logVoiceEvent({ ts: Date.now(), eventType: "finalizeChildTurn_start", childTurnId: turnId });
     fetch("/api/mission/timing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionId: getSessionIdRef.current?.(),
-        turnId: predictedTurnId,
+        turnId,
         eventName: "speech_end",
       }),
     }).catch(() => {});
@@ -126,22 +139,22 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
   const sttRouter = useSttRouter({
     sessionId: options?.getSessionId?.() ?? "",
-    childTurnId: `t${turnSeqRef.current + 1}`,
+    childTurnId: "stt0",
     getSessionId: () => options?.getSessionId?.() ?? "",
-    getChildTurnId: () => `t${turnSeqRef.current + 1}`,
+    getChildTurnId: nextSttTurnId,
     getInputMode: () => inputModeRef.current,
     conversationMode: options?.conversationMode,
     onSpeechBegin: () => onSpeechBeginRef.current?.(),
     onSpeechEnd: notifySpeechEnd,
     onEmptyAudio: () => onEmptyAudioRef.current?.(),
     onFinalTranscript: (text, meta) => {
-      const predictedTurnId = `t${turnSeqRef.current + 1}`;
+      const turnId = meta.childTurnId;
       onSttResultRef.current?.(true, meta.totalLatencyMs);
       lastAsrConfidenceRef.current = meta.confidence;
       logVoiceEvent({
         ts: Date.now(),
         eventType: "stt_response",
-        childTurnId: predictedTurnId,
+        childTurnId: turnId,
         textPreview: maskText(text),
         extra: { provider: meta.provider, fallbackTriggered: meta.fallbackTriggered },
       });
@@ -164,6 +177,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setMicEnabled: setSttMicEnabled,
     setInputMode: setSttInputMode,
     setCaptureBlocked,
+    getCurrentChildTurnId,
   } = sttRouter;
 
   const startSession = useCallback(async () => {
@@ -174,6 +188,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     logVoiceEvent({ ts: Date.now(), eventType: "transcript_reset" });
     setTranscript([]);
     turnSeqRef.current = 0;
+    sttTurnSeqRef.current = 0;
     cancelSttTurn();
     setCaptureBlocked(true);
 
@@ -229,6 +244,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     transcriptRef.current = [];
     setTranscript([]);
     turnSeqRef.current = 0;
+    sttTurnSeqRef.current = 0;
     setError(null);
     updateStatus("idle");
   }, []);
@@ -266,9 +282,9 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     // itself, so checking post-hoc would misattribute this turn's speech_end
     // telemetry to the next turn. An empty press (mic opened, nothing was
     // ever LISTENING) still must not emit it at all.
-    if (isSttTurnActive()) notifySpeechEnd();
+    if (isSttTurnActive()) notifySpeechEnd(getCurrentChildTurnId());
     endSttTurn();
-  }, [cancelSttTurn, endSttTurn, isSttTurnActive]);
+  }, [cancelSttTurn, endSttTurn, isSttTurnActive, getCurrentChildTurnId]);
 
   const cancelFinalize = useCallback(() => {
     cancelSttTurn();

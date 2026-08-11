@@ -40,6 +40,9 @@ export interface SttRouterMeta {
   fallbackLatencyMs?: number;
   totalLatencyMs: number;
   confidence?: number;
+  // 이 턴이 실제로 startTurn() 시점에 할당받은 turnId — 호출부가 turnSeqRef류의
+  // 값을 별도로 "예측"하지 않고 이 값을 그대로 쓰도록 한다(중복 turnId 재사용 방지).
+  childTurnId: string;
 }
 
 export interface SttRouterOptions {
@@ -304,6 +307,14 @@ export class SttRouterController implements SttRouter {
     return this.pcmChunks.reduce((total, chunk) => total + chunk.byteLength, 0);
   }
 
+  // 현재(진행 중인) 턴이 startTurn()에서 할당받은 turnId. 다음 턴은 이 턴이
+  // LISTENING/BROWSER_PROCESSING/GCP_FALLBACK을 완전히 벗어나야만 startTurn()으로
+  // 새로 진입할 수 있으므로(§startTurn 가드), 이 getter는 호출 시점에 항상 "현재
+  // 진행 중인 바로 그 턴"의 turnId를 정확히 반환한다.
+  public get currentChildTurnId(): string {
+    return this.turnContext.childTurnId;
+  }
+
   public startTurn(): void {
     if (this.state === "LISTENING" || this.state === "BROWSER_PROCESSING" || this.state === "GCP_FALLBACK") {
       return;
@@ -520,6 +531,7 @@ export class SttRouterController implements SttRouter {
       browserLatencyMs,
       totalLatencyMs: browserLatencyMs,
       confidence,
+      childTurnId: this.turnContext.childTurnId,
     });
     this.emitTurnMetrics({
       browserSuccess: true,
@@ -579,6 +591,7 @@ export class SttRouterController implements SttRouter {
       fallbackLatencyMs,
       totalLatencyMs,
       confidence: result.confidence,
+      childTurnId: this.turnContext.childTurnId,
     });
     this.emitTurnMetrics({
       browserSuccess: false,
@@ -686,8 +699,8 @@ interface UseSttRouterInternalOptions extends SttRouterOptions {
   getChildTurnId?: () => string;
   getInputMode?: () => "auto" | "manual";
   conversationMode?: string;
-  onSpeechBegin?: () => void;
-  onSpeechEnd?: () => void;
+  onSpeechBegin?: (childTurnId: string) => void;
+  onSpeechEnd?: (childTurnId: string) => void;
   onEmptyAudio?: () => void;
 }
 
@@ -705,6 +718,9 @@ interface UseSttRouterResult extends SttRouter {
   setMicEnabled(enabled: boolean): void;
   setInputMode(mode: "auto" | "manual"): void;
   setCaptureBlocked(blocked: boolean): void;
+  // 현재 진행 중인 턴의 turnId를 동기적으로 조회한다 — manualFinalize처럼
+  // onSpeechEnd 콜백 밖에서 "지금 이 턴"의 id가 필요한 호출부용.
+  getCurrentChildTurnId(): string;
 }
 
 export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouterResult => {
@@ -779,6 +795,10 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
     resetVad();
   }, [resetVad]);
 
+  const getCurrentChildTurnId = useCallback((): string => {
+    return controllerRef.current?.currentChildTurnId ?? "";
+  }, []);
+
   const stopCapture = useCallback(() => {
     cancel();
     processorRef.current?.disconnect();
@@ -852,14 +872,14 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
           if (!speechDetectedRef.current) {
             speechDetectedRef.current = true;
             speechStartedAtRef.current = Date.now();
-            optionsRef.current.onSpeechBegin?.();
+            optionsRef.current.onSpeechBegin?.(controller.currentChildTurnId);
           }
           silenceMsRef.current = 0;
           if (
             inputModeRef.current === "auto"
             && Date.now() - speechStartedAtRef.current >= STT_MAX_UTTERANCE_MS
           ) {
-            optionsRef.current.onSpeechEnd?.();
+            optionsRef.current.onSpeechEnd?.(controller.currentChildTurnId);
             controller.endTurn();
             resetVad();
           }
@@ -872,7 +892,7 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
           && speechDetectedRef.current
           && silenceMsRef.current >= STT_SILENCE_MS_TO_FINALIZE
         ) {
-          optionsRef.current.onSpeechEnd?.();
+          optionsRef.current.onSpeechEnd?.(controller.currentChildTurnId);
           controller.endTurn();
           resetVad();
         }
@@ -925,5 +945,6 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
     setMicEnabled,
     setInputMode,
     setCaptureBlocked,
+    getCurrentChildTurnId,
   };
 };
