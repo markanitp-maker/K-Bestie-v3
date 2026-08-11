@@ -1,4 +1,4 @@
--- 073 Phase 4 Dev 전용 검증. 모든 fixture/결과는 마지막 ROLLBACK으로 제거한다.
+-- 073 Phase 4/5A Dev 전용 검증. 모든 fixture/결과는 마지막 ROLLBACK으로 제거한다.
 -- claude-review-073-phase4 게이트①의 R5 지적에 대응해 award_mission_v3_reward/
 -- finalize_mission_turn_v1을 mock이 아닌 실제 DB에서 실행한다.
 --
@@ -23,7 +23,6 @@ DECLARE
   v_family_id uuid;
   v_child_id uuid;
   v_session_id uuid;
-  v_child_message_id uuid;
   v_day date := (now() AT TIME ZONE 'Asia/Seoul')::date;
   v_day_at timestamptz;
   v_effective_at timestamptz := now() - interval '1 minute';
@@ -31,6 +30,10 @@ DECLARE
   v_status text;
   v_reward record;
   v_finalize record;
+  v_start record;
+  v_assessed record;
+  v_first_assessment jsonb := '[{"goalId":"goal-r2","status":"PARTIAL","confidence":0.5,"evidenceSource":"child_utterance"}]'::jsonb;
+  v_conflicting_assessment jsonb := '[{"goalId":"goal-r2","status":"SATISFIED","confidence":0.9,"evidenceSource":"child_utterance"}]'::jsonb;
 BEGIN
   v_day_at := (v_day::text || ' 09:00:00+09')::timestamptz;
 
@@ -186,8 +189,9 @@ BEGIN
     RAISE EXCEPTION 'boredom rejection must not mark mission_progress as COMPLETED, got %', v_status;
   END IF;
 
-  -- ── Fixture 3: R2 — 레거시 finalize_mission_turn_v1 경로가 v3 세션을
-  --    자동완료·보상하지 않는지 직접 검증 (별도 business_date v_day+2) ─────
+  -- ── Fixture 3: R2/Phase 5A gate fix — 실제 v3 start → assessed → shared
+  --    finalize 경로가 K 응답 저장에 도달하되 레거시 완료·보상은 하지 않는지
+  --    직접 검증한다 (별도 business_date v_day+2). ──────────────────────────
   INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
   VALUES (v_child_id, 'mission', v_day_at + interval '2 days', v_day + 2)
   RETURNING id INTO v_session_id;
@@ -202,12 +206,50 @@ BEGIN
     1, 1  -- valid_answer_count >= required_valid_count: 레거시 기준으로는 "완료"로 보인다
   );
 
-  INSERT INTO public.chat_messages(session_id, turn_id, role, content, mode, voice_mode, display_sequence, turn_status)
-  VALUES (v_session_id, 'r2-turn-1:child', 'child', '레거시 완료 판정 회귀 테스트', 'mission', 'stt_tts', 1, 'finalized')
-  RETURNING id INTO v_child_message_id;
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'r2-turn-1', '레거시 완료 판정 회귀 테스트', 'stt_tts', 1
+  );
+  IF v_start.turn_status <> 'CHILD_PERSISTED'
+    OR v_start.answer_result IS NOT NULL
+    OR v_start.already_processed
+  THEN
+    RAISE EXCEPTION 'v3 start must persist a fresh child turn: %', row_to_json(v_start);
+  END IF;
 
-  INSERT INTO public.mission_turns(session_id, client_turn_id, question_id, status, child_message_id, answer_result)
-  VALUES (v_session_id, 'r2-turn-1', 'q-r2-1', 'ANSWER_PROCESSED', v_child_message_id, '{"valid": true}'::jsonb);
+  SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
+    v_session_id, 'r2-turn-1', v_first_assessment
+  );
+  IF v_assessed.turn_status <> 'ANSWER_PROCESSED' OR v_assessed.already_assessed THEN
+    RAISE EXCEPTION 'v3 assessed transition must make the turn finalizable: %', row_to_json(v_assessed);
+  END IF;
+
+  -- C2 regression: a retry between assessment and finalize must receive the
+  -- first result so the caller can skip the Goal-assessor LLM.
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'r2-turn-1', '레거시 완료 판정 회귀 테스트', 'stt_tts', 1
+  );
+  IF v_start.turn_status <> 'ANSWER_PROCESSED'
+    OR v_start.answer_result IS DISTINCT FROM v_first_assessment
+    OR v_start.already_processed
+  THEN
+    RAISE EXCEPTION 'v3 start retry must return the stored pre-finalize assessment: %', row_to_json(v_start);
+  END IF;
+
+  -- A non-deterministic conflicting retry is also a no-op. First writer wins.
+  SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
+    v_session_id, 'r2-turn-1', v_conflicting_assessment
+  );
+  IF v_assessed.turn_status <> 'ANSWER_PROCESSED' OR NOT v_assessed.already_assessed THEN
+    RAISE EXCEPTION 'v3 conflicting assessed retry must preserve the first result: %', row_to_json(v_assessed);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.mission_turns
+    WHERE session_id = v_session_id AND client_turn_id = 'r2-turn-1'
+      AND status = 'ANSWER_PROCESSED' AND answer_result = v_first_assessment
+  ) THEN
+    RAISE EXCEPTION 'v3 assessed retry must leave the first answer_result unchanged before finalize';
+  END IF;
 
   SELECT * INTO v_finalize FROM public.finalize_mission_turn_v1(
     v_session_id, 'r2-turn-1', '레거시 완료 판정 회귀 테스트에 대한 케이 응답', 'r2-turn-1:k', 2, false
@@ -234,7 +276,25 @@ BEGIN
     RAISE EXCEPTION 'R2 regression: legacy mission_complete reward must never be granted for a v3_single_daily session';
   END IF;
 
-  RAISE NOTICE '073 Phase 4 reward idempotency verification: PASSED';
+  IF NOT EXISTS (
+    SELECT 1 FROM public.mission_turns
+    WHERE session_id = v_session_id AND client_turn_id = 'r2-turn-1'
+      AND status = 'FINALIZED' AND k_message_id IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'shared finalize must persist the K response after v3 assessed transition';
+  END IF;
+
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'r2-turn-1', '레거시 완료 판정 회귀 테스트', 'stt_tts', 1
+  );
+  IF v_start.turn_status <> 'FINALIZED'
+    OR v_start.answer_result IS DISTINCT FROM v_first_assessment
+    OR NOT v_start.already_processed
+  THEN
+    RAISE EXCEPTION 'v3 finalized retry must return the first assessment and processed flag: %', row_to_json(v_start);
+  END IF;
+
+  RAISE NOTICE '073 Phase 4/5A reward and C2 assessment retry verification: PASSED';
 END;
 $$;
 

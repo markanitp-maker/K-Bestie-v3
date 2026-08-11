@@ -18,6 +18,10 @@ const MIGRATION_PATH = resolve(
   process.cwd(),
   "supabase/migrations/20260810230000_mission_v3_reward_idempotency.sql",
 );
+const ASSESSMENT_RETRY_MIGRATION_PATH = resolve(
+  process.cwd(),
+  "supabase/migrations/20260811200000_mission_v3_assessment_retry_idempotency.sql",
+);
 
 const makeGoals = (satisfiedGoalCount: number): ConversationGoal[] =>
   Array.from({ length: 4 }, (_, index) => ({
@@ -195,6 +199,45 @@ test("R2: finalize_mission_turn_v1이 v3_single_daily 세션을 레거시 경로
     /v_completed := v_progress\.mission_policy_version IS DISTINCT FROM 'v3_single_daily'/,
   );
   assert.match(sql, /CREATE OR REPLACE FUNCTION public\.finalize_mission_turn_v1/i);
+});
+
+test("C2: v3 재시도는 최초 assessment를 반환·보존해 finalize를 계속할 수 있다", () => {
+  const sql = readFileSync(ASSESSMENT_RETRY_MIGRATION_PATH, "utf8");
+  const codeOnly = sql.replace(/--.*$/gm, "");
+
+  assert.match(
+    sql,
+    /DROP FUNCTION IF EXISTS public\.start_mission_turn_v3\(uuid,text,text,text,integer\)/i,
+  );
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.start_mission_turn_v3/i);
+  assert.match(
+    sql,
+    /RETURNS TABLE\s*\(\s*turn_status text,\s*answer_result jsonb,\s*already_processed boolean\s*\)/i,
+  );
+  assert.match(
+    sql,
+    /RETURN QUERY SELECT v_turn\.status, v_turn\.answer_result,\s*v_turn\.k_message_id IS NOT NULL/i,
+  );
+  assert.match(
+    sql,
+    /RETURN QUERY SELECT 'CHILD_PERSISTED'::text, NULL::jsonb, false/i,
+  );
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.mark_mission_turn_v3_assessed/i);
+  assert.match(sql, /jsonb_typeof\(p_goal_assessments\) <> 'array'/i);
+  assert.match(sql, /mission_policy_version IS DISTINCT FROM 'v3_single_daily'/i);
+  assert.match(sql, /v_turn\.question_id IS DISTINCT FROM 'v3_turn'/i);
+  assert.match(sql, /pg_advisory_xact_lock\(hashtextextended/i);
+  assert.match(sql, /IF v_turn\.answer_result IS NOT NULL THEN/i);
+  assert.match(sql, /answer_result = p_goal_assessments[\s\S]*status = 'ANSWER_PROCESSED'/i);
+  assert.doesNotMatch(codeOnly, /assessment_result_conflict/i);
+  assert.equal(codeOnly.match(/answer_result\s*=\s*p_goal_assessments/gi)?.length, 1);
+  assert.match(sql, /RETURN QUERY SELECT v_turn\.status, true/i);
+  assert.match(sql, /RETURN QUERY SELECT 'ANSWER_PROCESSED'::text, false/i);
+  assert.equal(sql.match(/GRANT EXECUTE[\s\S]*?TO service_role/gi)?.length, 2);
+  assert.doesNotMatch(
+    codeOnly,
+    /CREATE OR REPLACE FUNCTION public\.(?:mark_mission_turn_answered_v1|finalize_mission_turn_v1)/i,
+  );
 });
 
 test("R3: 신규 CHECK가 source_session_id를 요구하지 않아 계정 삭제 FK 캐스케이드와 충돌하지 않는다", () => {
