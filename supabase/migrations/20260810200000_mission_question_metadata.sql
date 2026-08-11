@@ -157,6 +157,16 @@ BEGIN
   END IF;
 END $$;
 
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_semantic_group_format_check;
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_cooldown_days_check;
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_weekday_affinity_check;
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_topic_not_blank_check;
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_conversation_style_check;
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_fun_type_check;
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_sensitivity_check;
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_answer_mode_check;
+ALTER TABLE public.mission_questions DROP CONSTRAINT IF EXISTS mission_questions_periodicity_check;
+
 ALTER TABLE public.mission_questions
   ALTER COLUMN semantic_group SET NOT NULL,
   ALTER COLUMN cooldown_days SET NOT NULL,
@@ -184,7 +194,7 @@ ALTER TABLE public.mission_questions
   ADD CONSTRAINT mission_questions_periodicity_check
     CHECK (periodicity IN ('onboarding_once', 'flexible', 'weekly', 'monthly', 'quarterly'));
 
-CREATE INDEX idx_mission_questions_semantic_group
+CREATE INDEX IF NOT EXISTS idx_mission_questions_semantic_group
   ON public.mission_questions (semantic_group)
   WHERE is_active = true;
 

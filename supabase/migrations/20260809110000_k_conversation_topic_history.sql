@@ -35,6 +35,7 @@ ALTER TABLE conversation_topics ENABLE ROW LEVEL SECURITY;
 -- 실제 행 접근은 RLS로 서비스 롤 전용으로 막는다.
 GRANT ALL ON conversation_topics TO anon, authenticated;
 
+DROP POLICY IF EXISTS "conversation_topics_service_only" ON conversation_topics;
 CREATE POLICY "conversation_topics_service_only"
   ON conversation_topics FOR ALL
   USING (false)

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS public.mission_notification_logs (
 
 ALTER TABLE public.mission_notification_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS mission_notification_logs_service_all ON public.mission_notification_logs;
 CREATE POLICY mission_notification_logs_service_all
     ON public.mission_notification_logs FOR ALL
     USING (auth.role() = 'service_role');

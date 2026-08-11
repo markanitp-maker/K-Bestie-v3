@@ -15,8 +15,15 @@ begin;
 alter table public.event_reward_fulfillments
   drop constraint if exists event_reward_fulfillments_ref_unique;
 
-alter table public.event_reward_fulfillments
-  add constraint event_reward_fulfillments_ref_child_unique
-  unique (event_type, event_reference_id, child_id);
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'event_reward_fulfillments_ref_child_unique'
+  ) then
+    alter table public.event_reward_fulfillments
+      add constraint event_reward_fulfillments_ref_child_unique
+      unique (event_type, event_reference_id, child_id);
+  end if;
+end $$;
 
 commit;

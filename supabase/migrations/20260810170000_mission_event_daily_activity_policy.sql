@@ -71,7 +71,7 @@ ALTER TABLE public.gold_key_ledger
   );
 
 DROP INDEX IF EXISTS public.gold_key_ledger_freechat_daily_reward_unique;
-CREATE UNIQUE INDEX gold_key_ledger_freechat_daily_reward_unique
+CREATE UNIQUE INDEX IF NOT EXISTS gold_key_ledger_freechat_daily_reward_unique
   ON public.gold_key_ledger (child_id, reward_type, business_date)
   WHERE reward_type = 'freechat_daily_engagement';
 

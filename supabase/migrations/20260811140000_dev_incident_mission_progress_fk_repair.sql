@@ -16,6 +16,9 @@
 
 BEGIN;
 
+ALTER TABLE public.mission_progress DROP CONSTRAINT IF EXISTS mission_progress_child_id_fkey;
+ALTER TABLE public.mission_progress DROP CONSTRAINT IF EXISTS mission_progress_session_id_fkey;
+
 ALTER TABLE public.mission_progress
   ADD CONSTRAINT mission_progress_child_id_fkey
   FOREIGN KEY (child_id) REFERENCES public.child_profiles(id) ON DELETE CASCADE

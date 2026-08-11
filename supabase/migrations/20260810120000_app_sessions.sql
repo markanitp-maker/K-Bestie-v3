@@ -15,7 +15,7 @@ ALTER TABLE public.behavior_events
     'child_management', 'guardian_settings', 'subscription', 'app_session'
   ));
 
-CREATE TABLE public.app_sessions (
+CREATE TABLE IF NOT EXISTS public.app_sessions (
   session_id uuid PRIMARY KEY,
   actor_type text NOT NULL CHECK (actor_type IN ('parent', 'child')),
   actor_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -39,11 +39,11 @@ CREATE TABLE public.app_sessions (
   CHECK (ended_at IS NULL OR ended_at >= started_at)
 );
 
-CREATE INDEX app_sessions_actor_started_at_idx
+CREATE INDEX IF NOT EXISTS app_sessions_actor_started_at_idx
   ON public.app_sessions (actor_type, actor_id, started_at DESC);
-CREATE INDEX app_sessions_family_started_at_idx
+CREATE INDEX IF NOT EXISTS app_sessions_family_started_at_idx
   ON public.app_sessions (family_id, started_at DESC);
-CREATE INDEX app_sessions_open_heartbeat_idx
+CREATE INDEX IF NOT EXISTS app_sessions_open_heartbeat_idx
   ON public.app_sessions (last_heartbeat_at)
   WHERE ended_at IS NULL;
 

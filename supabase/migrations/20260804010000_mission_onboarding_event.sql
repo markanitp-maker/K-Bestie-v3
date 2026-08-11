@@ -159,7 +159,7 @@ begin
 end;
 $$;
 
-comment on function public.record_mission_event_completion is
+comment on function public.record_mission_event_completion(uuid, text, uuid, timestamptz) is
   '미션 공식 완료 1건을 30일 온보딩 이벤트에 원자적으로 반영. 이벤트 최초 생성 + 완료 원장 멱등 삽입 + 기간내 카운트 증가(60 상한)를 한 트랜잭션에서 처리한다.';
 
 -- 종료 처리 — 지연평가(다음 조회 시점)와 정기 cron 양쪽에서 안전하게 호출 가능한 멱등 함수.

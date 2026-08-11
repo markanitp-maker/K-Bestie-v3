@@ -230,6 +230,7 @@ CREATE INDEX IF NOT EXISTS idx_play_start_guards_expiring
 
 ALTER TABLE play_start_guards ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "play_start_guards_service_only" ON play_start_guards;
 CREATE POLICY "play_start_guards_service_only"
   ON play_start_guards FOR ALL
   USING (auth.role() = 'service_role')

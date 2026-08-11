@@ -3,7 +3,7 @@
 -- 게임 상태는 서버 서비스 롤만 접근하며, 클라이언트는 서버 API를 경유한다.
 -- child당 종료되지 않은 게임 세션은 하나만 허용해 상태 충돌을 막는다.
 
-CREATE TABLE chosung_game_sessions (
+CREATE TABLE IF NOT EXISTS chosung_game_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   child_id UUID NOT NULL REFERENCES child_profiles(id) ON DELETE CASCADE,
   -- chat_session_id는 chat_sessions.id만 FK로 강제한다. chat_sessions(id, child_id) 복합
@@ -36,11 +36,11 @@ CREATE TABLE chosung_game_sessions (
 );
 
 -- 아이 1명당 종료되지 않은 초성게임 세션 1개만 유지해 동시 게임 상태 충돌을 막는다.
-CREATE UNIQUE INDEX uq_chosung_game_sessions_child_active
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chosung_game_sessions_child_active
   ON chosung_game_sessions(child_id)
   WHERE ended_at IS NULL;
 
-CREATE TABLE chosung_game_rounds (
+CREATE TABLE IF NOT EXISTS chosung_game_rounds (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID NOT NULL REFERENCES chosung_game_sessions(id) ON DELETE CASCADE,
   child_id UUID NOT NULL REFERENCES child_profiles(id) ON DELETE CASCADE,
@@ -55,7 +55,7 @@ CREATE TABLE chosung_game_rounds (
     ON DELETE CASCADE
 );
 
-CREATE INDEX idx_chosung_game_rounds_child_created_at
+CREATE INDEX IF NOT EXISTS idx_chosung_game_rounds_child_created_at
   ON chosung_game_rounds(child_id, created_at);
 
 ALTER TABLE chosung_game_sessions ENABLE ROW LEVEL SECURITY;
@@ -67,11 +67,13 @@ ALTER TABLE chosung_game_rounds ENABLE ROW LEVEL SECURITY;
 GRANT ALL ON chosung_game_sessions TO anon, authenticated;
 GRANT ALL ON chosung_game_rounds TO anon, authenticated;
 
+DROP POLICY IF EXISTS "chosung_game_sessions_service_only" ON chosung_game_sessions;
 CREATE POLICY "chosung_game_sessions_service_only"
   ON chosung_game_sessions FOR ALL
   USING (false)
   WITH CHECK (false);
 
+DROP POLICY IF EXISTS "chosung_game_rounds_service_only" ON chosung_game_rounds;
 CREATE POLICY "chosung_game_rounds_service_only"
   ON chosung_game_rounds FOR ALL
   USING (false)

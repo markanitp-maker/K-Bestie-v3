@@ -36,9 +36,17 @@ BEGIN
   END IF;
 END $$;
 
-DROP INDEX IF EXISTS uq_memory_facts_idempotency_key;
-ALTER TABLE public.memory_facts
-  ADD CONSTRAINT uq_memory_facts_idempotency_key UNIQUE (idempotency_key);
+-- Dev에서 이 이름이 이미 UNIQUE CONSTRAINT(단순 INDEX가 아님)로 out-of-band 전환돼
+-- 있는 경우 DROP INDEX가 2BP01로 실패하므로, 이미 제약으로 존재하면 건너뛴다.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'uq_memory_facts_idempotency_key'
+  ) THEN
+    EXECUTE 'DROP INDEX IF EXISTS uq_memory_facts_idempotency_key';
+    EXECUTE 'ALTER TABLE public.memory_facts ADD CONSTRAINT uq_memory_facts_idempotency_key UNIQUE (idempotency_key)';
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION create_memory_fact_with_evidence(
   p_idempotency_key TEXT,

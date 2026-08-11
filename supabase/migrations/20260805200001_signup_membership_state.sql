@@ -19,9 +19,12 @@
 --    family_members/child_profiles의 구조적 완결성(가족+아이 존재)만으로 판정하고,
 --    이 테이블은 신규 가입 마법사가 강제로 채우는 감사 기록 용도로만 쓴다.
 
+-- 원안은 AUTHENTICATED_INCOMPLETE/ONBOARDING(lib/auth/requireActiveAccount.ts,
+-- lib/auth/membershipState.ts가 실제 사용하는 회원가입 진행 중 상태)을 누락해
+-- Dev 실데이터(가입 진행 중 계정 6건)에서 CHECK 위반으로 실패했다 — 허용값에 추가.
 ALTER TABLE parents DROP CONSTRAINT IF EXISTS parents_account_status_check;
 ALTER TABLE parents ADD CONSTRAINT parents_account_status_check
-  CHECK (account_status IN ('ACTIVE','WITHDRAWN_PENDING','RESTORE_REQUESTED','RESTORED','PURGED','SUSPENDED'));
+  CHECK (account_status IN ('ACTIVE','WITHDRAWN_PENDING','RESTORE_REQUESTED','RESTORED','PURGED','SUSPENDED','AUTHENTICATED_INCOMPLETE','ONBOARDING'));
 
 ALTER TABLE parents
   ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ,

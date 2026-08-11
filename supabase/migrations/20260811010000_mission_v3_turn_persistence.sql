@@ -1,5 +1,7 @@
 -- 073 Mission v3 Phase 5A: persist dynamic daily_single child turns without
 -- requiring membership in the legacy mission_progress.question_ids array.
+DROP FUNCTION IF EXISTS public.start_mission_turn_v3(uuid, text, text, text, integer);
+
 CREATE OR REPLACE FUNCTION public.start_mission_turn_v3(
   p_session_id uuid,
   p_client_turn_id text,

@@ -36,6 +36,10 @@ ALTER TABLE public.parent_questions
 -- 기존 daily_used_at 컬럼은 삭제하지 않되(과거 데이터 보존) 이 함수는 더 이상 일일 제한을
 -- 걸지 않는다(§2.1 신규 정책에 일 제한이 없음 — 애플리케이션 lib/plan/parentQuestionQuota.ts의
 -- 기존 로직도 이 RPC로 교체한다).
+-- Dev에 out-of-band로 존재하던 구버전이 다른 반환형을 갖고 있어 CREATE OR REPLACE가
+-- 42P13(반환형 변경 불가)로 실패하므로, 재정의 전 명시적으로 제거한다.
+DROP FUNCTION IF EXISTS public.try_deduct_parent_question_quota(uuid);
+
 CREATE OR REPLACE FUNCTION public.try_deduct_parent_question_quota(p_child_id uuid)
 RETURNS TABLE(allowed boolean, weekly_used_count integer, weekly_reset_at timestamptz)
 LANGUAGE plpgsql

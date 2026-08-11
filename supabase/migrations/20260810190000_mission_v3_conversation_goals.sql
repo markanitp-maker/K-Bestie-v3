@@ -55,6 +55,7 @@ DROP POLICY IF EXISTS conversation_goals_service_all
 
 -- service_role bypasses RLS. Explicitly deny every RLS-bound role so hidden Goal
 -- metadata cannot be read directly with either a child or parent JWT.
+DROP POLICY IF EXISTS conversation_goals_service_all ON public.conversation_goals;
 CREATE POLICY conversation_goals_service_all
   ON public.conversation_goals
   FOR ALL
