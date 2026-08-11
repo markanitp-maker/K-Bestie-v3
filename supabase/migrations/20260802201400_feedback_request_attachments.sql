@@ -3,7 +3,7 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('feedback-attachments', 'feedback-attachments', false)
 ON CONFLICT (id) DO NOTHING;
 
-CREATE TABLE feedback_request_attachments (
+CREATE TABLE IF NOT EXISTS feedback_request_attachments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   feedback_request_id UUID REFERENCES support_requests(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -23,12 +23,13 @@ CREATE TABLE feedback_request_attachments (
   deleted_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_feedback_request_attachments_request_id ON feedback_request_attachments(feedback_request_id);
-CREATE INDEX idx_feedback_request_attachments_session_id ON feedback_request_attachments(upload_session_id);
-CREATE INDEX idx_feedback_request_attachments_user_id ON feedback_request_attachments(user_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_request_attachments_request_id ON feedback_request_attachments(feedback_request_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_request_attachments_session_id ON feedback_request_attachments(upload_session_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_request_attachments_user_id ON feedback_request_attachments(user_id);
 
 ALTER TABLE feedback_request_attachments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "feedback_request_attachments_select" ON feedback_request_attachments;
 CREATE POLICY "feedback_request_attachments_select"
   ON feedback_request_attachments FOR SELECT
   USING (
@@ -36,4 +37,5 @@ CREATE POLICY "feedback_request_attachments_select"
     OR user_id = auth.uid()
   );
 
+DROP POLICY IF EXISTS "feedback_request_attachments_write_service_only" ON feedback_request_attachments;
 CREATE POLICY "feedback_request_attachments_write_service_only" ON feedback_request_attachments FOR ALL USING (auth.role()='service_role') WITH CHECK (auth.role()='service_role');

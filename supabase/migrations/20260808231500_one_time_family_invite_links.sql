@@ -36,11 +36,16 @@ ALTER TABLE public.family_join_requests
       )
     );
 
+-- 20260809103000이 이 제약을 즉시 이어받아 'consumed'/'revoked'까지 넓힌다.
+-- 그 사이 실제 데이터에 이미 'consumed' 행이 있으면(운영 환경) 여기서 즉시 검증하면
+-- 실패하므로 NOT VALID로 추가한다 — 이 코드베이스의 다른 Production 마이그레이션
+-- (mission_progress FK 등)에서도 이미 쓰인 패턴이다.
 ALTER TABLE public.family_join_requests
   DROP CONSTRAINT IF EXISTS family_join_requests_status_check;
 ALTER TABLE public.family_join_requests
   ADD CONSTRAINT family_join_requests_status_check
-    CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired'));
+    CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired'))
+    NOT VALID;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_fjr_one_time_token_hash
   ON public.family_join_requests(token_hash)
