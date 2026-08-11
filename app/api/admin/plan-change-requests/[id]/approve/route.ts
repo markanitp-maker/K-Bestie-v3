@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
-import { stampRetention, restoreRetention } from "@/lib/plan/retentionStamp";
-import type { Tier } from "@/lib/plan/retention";
 
 export const runtime = "nodejs";
 
@@ -36,6 +34,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "Care Premium은 현재 준비 중입니다." }, { status: 403 });
   }
 
+  // 이 RPC가 DB 내부에서 apply_plan_tier_change를 호출하므로 요청 승인, tier 변경,
+  // retention 스탬프/복구, 감사 로그가 하나의 트랜잭션으로 처리된다.
   const { data, error } = await service.rpc("admin_approve_plan_change_request", {
     p_admin_user_id: adminUser.id,
     p_admin_email: adminUser.email!,
@@ -62,22 +62,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     if (result?.reason === "already_processed") {
       return NextResponse.json({ error: "이미 처리된 요청입니다." }, { status: 409 });
     }
+    if (result?.reason === "deleted") {
+      return NextResponse.json({ error: "삭제된 요청입니다." }, { status: 404 });
+    }
+    if (result?.reason === "premium_blocked") {
+      return NextResponse.json({ error: "Care Premium은 현재 준비 중입니다." }, { status: 403 });
+    }
     if (result?.reason === "tier_conflict") {
       return NextResponse.json({ error: "요청 이후 현재 요금제가 변경되어 자동 승인할 수 없습니다. 현재 상태를 확인해 주세요." }, { status: 409 });
     }
     return NextResponse.json({ error: "승인 처리에 실패했습니다." }, { status: 400 });
-  }
-
-  // PATCH /api/child/[id]와 동일한 보존기간 스탬프/복구 로직 — 요금제 변경 시 데이터
-  // 보존기간이 달라지므로 tier 실변경 직후 반드시 함께 처리한다.
-  if (result.child_id && result.old_tier !== null && result.new_tier !== null && result.old_tier !== result.new_tier) {
-    const oldTier = result.old_tier as Tier;
-    const newTier = result.new_tier as Tier;
-    if (newTier < oldTier) {
-      await stampRetention(result.child_id, newTier, 0);
-    } else if (newTier > oldTier) {
-      await restoreRetention(result.child_id, newTier, 0);
-    }
   }
 
   return NextResponse.json({ ok: true });

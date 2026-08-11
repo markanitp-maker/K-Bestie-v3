@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
-import { stampRetention, restoreRetention } from "@/lib/plan/retentionStamp";
-import type { Tier } from "@/lib/plan/retention";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 
 export const runtime = "nodejs";
@@ -45,40 +43,37 @@ export async function POST(
 
   const service = createServiceClient();
 
-  // 현재 요금제 조회
-  const { data: childProfile, error: profileErr } = await service
-    .from("child_profiles")
-    .select("tier")
-    .eq("id", id)
-    .maybeSingle();
+  // tier 변경과 retention 스탬프/복구는 DB의 단일 트랜잭션에서 처리한다.
+  const { data, error } = await service.rpc("apply_plan_tier_change", {
+    p_child_id: id,
+    p_new_tier: requestedTier,
+  });
 
-  if (profileErr || !childProfile) {
-    return NextResponse.json({ error: "아이 정보를 찾을 수 없습니다." }, { status: 404 });
-  }
-
-  const oldTier = childProfile.tier as Tier;
-  const newTier = requestedTier as Tier;
-
-  if (oldTier === newTier) {
-    return NextResponse.json({ ok: true });
-  }
-
-  // 업데이트
-  const { error: updateErr } = await service
-    .from("child_profiles")
-    .update({ tier: newTier })
-    .eq("id", id);
-
-  if (updateErr) {
-    console.error("[child/plan/POST] Update tier error:", updateErr);
+  if (error) {
+    console.error("[child/plan/POST] Apply plan tier change error:", error);
     return NextResponse.json({ error: "서버 오류" }, { status: 500 });
   }
 
-  // 보존 정책 갱신
-  if (newTier < oldTier) {
-    await stampRetention(id, newTier, 0);
-  } else if (newTier > oldTier) {
-    await restoreRetention(id, newTier, 0);
+  const result = data as {
+    success: boolean;
+    old_tier: number | null;
+    new_tier: number | null;
+  } | null;
+
+  if (!result?.success) {
+    return NextResponse.json({ error: "아이 정보를 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  if (result.old_tier === null || result.new_tier === null) {
+    console.error("[child/plan/POST] Invalid RPC result:", result);
+    return NextResponse.json({ error: "서버 오류" }, { status: 500 });
+  }
+
+  const oldTier = result.old_tier;
+  const newTier = result.new_tier;
+
+  if (oldTier === newTier) {
+    return NextResponse.json({ ok: true });
   }
 
   // 이력 기록
