@@ -735,7 +735,15 @@ export default function ChatPage() {
             </div>
           </div>
         )}
-        <div className="w-full max-w-[480px] min-w-0 box-border h-[100dvh] relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto]" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+        <div
+          className="w-full max-w-[480px] min-w-0 box-border h-[100dvh] relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto_auto_auto]"
+          style={{
+            background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)",
+            "--chat-bubble-bottom-padding": "clamp(20px, 2.6dvh, 24px)",
+            "--chat-mascot-bottom-padding": "clamp(37px, 4.8dvh, 43px)",
+            "--chat-mascot-height": "clamp(145px, 42vw, 172px)",
+          } as React.CSSProperties}
+        >
           
           {/* Decorations */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
@@ -759,8 +767,8 @@ export default function ChatPage() {
             }} />
           </div>
 
-          {/* Chat Area (Flexible & Vertically Centered, Top-clipped when long) */}
-          <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[clamp(4px,1dvh,10px)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
+          {/* The mascot-area height is derived from the shared dimensions below, preserving a 20px tail-to-head gap as viewport dimensions change. */}
+          <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[var(--chat-bubble-bottom-padding)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
             <div className="absolute top-[calc(58px+env(safe-area-inset-top))] left-0 w-full h-[clamp(18px,3dvh,24px)] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
             {(olderKText || prevKText) && (
               <div className="mt-auto flex flex-col justify-end items-center min-h-0 overflow-hidden w-full shrink mb-[clamp(10px,1.5dvh,14px)]">
@@ -790,7 +798,7 @@ export default function ChatPage() {
 
           {/* Mascot Area & Side Cards OR Text-Mode Closed-Keyboard CTA */}
           {!isKeyboardOpen && (
-          <div className="relative z-10 w-full shrink-0 h-[clamp(178px,23dvh,202px)] transition-all duration-300 flex items-center justify-center">
+          <div className="relative z-10 w-full shrink-0 h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)] transition-all duration-300 flex items-center justify-center">
             {mode === "text" ? (
               /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 시원하고 명확한 코랄 레드 #EF5350 '✕ 채팅창 닫기' pill CTA 노출 */
               <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
@@ -820,8 +828,8 @@ export default function ChatPage() {
                    />
                    
                    {/* Mascot */}
-                   <div className="relative z-10 flex justify-center items-end pb-[clamp(28px,3.7dvh,34px)]">
-                     <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={165} className="!w-[clamp(145px,42vw,172px)] !h-auto object-contain" />
+                   <div className="relative z-10 flex justify-center items-end pb-[var(--chat-mascot-bottom-padding)]">
+                     <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={165} className="!w-[var(--chat-mascot-height)] !h-auto object-contain" />
                    </div>
                    
                    {/* Raised cylinder platform: distinct top plane, shaded side wall, and grounded shadow */}
@@ -854,7 +862,7 @@ export default function ChatPage() {
 
           {/* Auto/Manual Mode Toggles */}
           {mode !== "text" && !isKeyboardOpen && (
-          <div className="relative z-20 flex justify-center -mt-[clamp(34px,4.5dvh,40px)] h-[clamp(38px,5dvh,42px)] shrink-0 pointer-events-none">
+          <div className="relative z-20 flex justify-center h-[clamp(38px,5dvh,42px)] shrink-0 pointer-events-none">
             <div className="flex w-[clamp(130px,36vw,145px)] h-full p-1 rounded-full bg-white/95 border border-[#E6B77F] shadow-[0_4px_8px_rgba(117,68,28,0.22)] pointer-events-auto">
              <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
