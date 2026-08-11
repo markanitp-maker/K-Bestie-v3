@@ -99,10 +99,13 @@ export async function GET(req: NextRequest) {
     }
 
     const { months } = getEffectiveRetention(tier, extensionYears, premiumYears);
-    const now = new Date();
-    const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000));
-    kstNow.setMonth(kstNow.getMonth() - months);
-    const oldestAllowedMonth = `${kstNow.getFullYear()}-${String(kstNow.getMonth() + 1).padStart(2, "0")}`;
+    let oldestAllowedMonth = "0001-01";
+    if (months !== null) {
+      const now = new Date();
+      const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000));
+      kstNow.setMonth(kstNow.getMonth() - months);
+      oldestAllowedMonth = `${kstNow.getFullYear()}-${String(kstNow.getMonth() + 1).padStart(2, "0")}`;
+    }
 
     return NextResponse.json({ reports, oldestAllowedMonth });
   }

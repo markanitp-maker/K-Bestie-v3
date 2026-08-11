@@ -18,13 +18,57 @@ test("Care Insight(tier 2) 확장팩 경계값 검증", () => {
   assert.deepEqual(getEffectiveRetention(2, 100), { months: 144 });
 });
 
-test("Care Premium(tier 3)은 1, 3, 5년 중 선택, 기본/폴백 5년", () => {
+test("Care Premium(tier 3)은 1, 3, 5년 중 선택하고 비정상 숫자는 5년으로 폴백", () => {
   assert.deepEqual(getEffectiveRetention(3, 0, 1), { months: 12 });
   assert.deepEqual(getEffectiveRetention(3, 0, 3), { months: 36 });
   assert.deepEqual(getEffectiveRetention(3, 0, 5), { months: 60 });
-  assert.deepEqual(getEffectiveRetention(3, 0, undefined), { months: 60 }); // 미입력 시 5년 (기본값)
   assert.deepEqual(getEffectiveRetention(3, 0, 10), { months: 60 }); // 폴백
   assert.deepEqual(getEffectiveRetention(3, 0, -1), { months: 60 }); // 폴백
+});
+
+test("Care Premium null/undefined는 무제한이며 어떤 앵커도 파기 대상으로 만들지 않음", () => {
+  const nullRetention = getEffectiveRetention(3, 0, null);
+  const undefinedRetention = getEffectiveRetention(3, 0, undefined);
+
+  assert.deepEqual(nullRetention, { months: null });
+  assert.deepEqual(undefinedRetention, { months: null });
+  assert.equal(
+    isPurgeCandidate(
+      { anchorTs: new Date("1900-01-01T00:00:00Z") },
+      new Date("2026-08-11T00:00:00Z"),
+      nullRetention
+    ),
+    false
+  );
+});
+
+test("Care Start 6개월 경계 전/정각/후", () => {
+  const retention = getEffectiveRetention(1, 0);
+  const anchorTs = new Date("2026-02-11T00:00:00Z");
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2026-08-10T23:59:59Z"), retention), false);
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2026-08-11T00:00:00Z"), retention), false);
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2026-08-11T00:00:01Z"), retention), true);
+});
+
+test("Insight 기본 3년과 2년 연장팩 경계를 각각 적용", () => {
+  const anchorTs = new Date("2021-08-11T00:00:00Z");
+  const base = getEffectiveRetention(2, 0);
+  const extended = getEffectiveRetention(2, 2);
+
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2024-08-11T00:00:00Z"), base), false);
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2024-08-11T00:00:01Z"), base), true);
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2026-08-11T00:00:00Z"), extended), false);
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2026-08-11T00:00:01Z"), extended), true);
+});
+
+test("Premium 5년 경계와 무제한에서 5년 변경 후 재계산", () => {
+  const anchorTs = new Date("2021-08-11T00:00:00Z");
+  const unlimited = getEffectiveRetention(3, 0, null);
+  const fiveYears = getEffectiveRetention(3, 0, 5);
+
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2100-01-01T00:00:00Z"), unlimited), false);
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2026-08-11T00:00:00Z"), fiveYears), false);
+  assert.equal(isPurgeCandidate({ anchorTs }, new Date("2026-08-11T00:00:01Z"), fiveYears), true);
 });
 
 test("isPurgeCandidate: 보존기간 이내는 파기 대상 아님", () => {

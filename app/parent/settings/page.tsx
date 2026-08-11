@@ -26,8 +26,9 @@ import { ChildStartGuideModal, type ChildStartGuideChild } from "@/components/pa
 import { FamilyInviteManager } from "@/components/family/FamilyInviteManager";
 
 function formatRetentionLabel(tier: Tier): string {
-  const retention = getEffectiveRetention(tier, 0);
+  const retention = getEffectiveRetention(tier, 0, 5);
   const months = retention.months;
+  if (months === null) return "무제한";
   return months % 12 === 0 ? `${months / 12}년` : `${months}개월`;
 }
 
@@ -39,6 +40,15 @@ const CARE_PLANS: { tier: number; label: string }[] = [
   { tier: 1, label: "케어 스타트" },
   { tier: 2, label: "케어 인사이트" },
   { tier: 3, label: "케어 프리미엄" },
+];
+
+type PremiumRetentionYears = 1 | 3 | 5 | null;
+
+const PREMIUM_RETENTION_OPTIONS: Array<{ value: PremiumRetentionYears; label: string }> = [
+  { value: 1, label: "1년" },
+  { value: 3, label: "3년" },
+  { value: 5, label: "5년" },
+  { value: null, label: "무제한" },
 ];
 
 interface Question {
@@ -183,6 +193,8 @@ export default function ParentSettingsPage() {
   const [finalDeletionDate, setFinalDeletionDate] = useState<Date | null>(null);
   const [showExtensionModal, setShowExtensionModal] = useState(false);
   const [isPurchasingExtension, setIsPurchasingExtension] = useState(false);
+  // Premium 출시 게이트가 열릴 때 사용할 선택값. DB/UI 기본값은 반드시 5년이다.
+  const [pendingPremiumRetentionYears, setPendingPremiumRetentionYears] = useState<PremiumRetentionYears>(5);
 
   // 법정대리인 동의 철회 상태 — 철회 확인 전에는 API를 호출하지 않는다(되돌릴 방법이 없는
   // 조작이라 확인 모달을 반드시 거치게 함). withdrawTarget에 아이 정보를 담아 모달에 표시.
@@ -530,7 +542,18 @@ export default function ParentSettingsPage() {
         setPlanRequestError(data.error || "요금제 변경에 실패했어요.");
         return;
       }
-      
+
+      if (tier === 3 && store.activeFamilyId) {
+        const retentionRes = await fetch(`/api/families/${store.activeFamilyId}/premium-retention`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ premiumRetentionYears: pendingPremiumRetentionYears }),
+        });
+        if (!retentionRes.ok) {
+          setPlanRequestError("Care Premium은 적용되었지만 보존기간 설정을 저장하지 못했어요. 기본 5년으로 적용됩니다.");
+        }
+      }
+
       // 즉시 UI 업데이트
       setEditOriginalTier(tier);
       setShowPlanAccepted({ requestedTier: tier, currentTier: editOriginalTier });
@@ -1150,6 +1173,7 @@ export default function ParentSettingsPage() {
                                     setPlanRequest(null);
                                     setPlanRequestError(null);
                                     setPendingPlanTier(null);
+                                    setPendingPremiumRetentionYears(5);
                                     refreshPlanRequest(m.childId);
                                   }}
                                   className={isMobileCard ? "block w-full text-[10px] bg-[#f3f4f6] text-gray-600 font-bold py-2 rounded-lg cursor-pointer text-center whitespace-nowrap" : "text-[10px] bg-[#f3f4f6] text-gray-600 font-bold px-2.5 py-1 rounded-lg cursor-pointer text-center whitespace-nowrap"}
@@ -1915,6 +1939,34 @@ export default function ParentSettingsPage() {
                   "변경 즉시 Care Premium 기능을 이용할 수 있습니다."
                 )}
               </p>
+              {pendingPlanTier === 3 && (
+                <fieldset className="mb-4">
+                  <legend className="mb-2 text-[11px] font-bold text-gray-700">데이터 보존기간</legend>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {PREMIUM_RETENTION_OPTIONS.map((option) => {
+                      const selected = pendingPremiumRetentionYears === option.value;
+                      return (
+                        <button
+                          key={option.label}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setPendingPremiumRetentionYears(option.value)}
+                          className={`rounded-lg border px-1 py-2 text-[10px] font-bold ${
+                            selected
+                              ? "border-[var(--color-k-navy)] bg-[var(--color-k-navy)] text-white"
+                              : "border-gray-200 bg-white text-gray-500"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-[9px] leading-relaxed text-gray-400">
+                    기본값은 5년이며, 무제한을 선택하면 플랜 보존기간 자동 파기 대상에서 제외됩니다.
+                  </p>
+                </fieldset>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={async () => {

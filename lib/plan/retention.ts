@@ -6,8 +6,8 @@
 export type Tier = 1 | 2 | 3;
 
 export interface RetentionResult {
-  /** 유효 보존기간(개월). */
-  months: number;
+  /** 유효 보존기간(개월). null은 무제한 보존. */
+  months: number | null;
 }
 
 const START_TIER_MONTHS = 6; // Care Start 고정
@@ -18,12 +18,12 @@ const INSIGHT_MAX_EXTENSIONS = 9; // 확장팩으로 최대 추가 9년 (총 12�
  * 보존기간 계산
  * - tier 1: 6개월 고정
  * - tier 2: 기본 3년 + 확장팩 구매년수 (최대 +9년)
- * - tier 3: 선택한 보존기간 (1/3/5년)
+ * - tier 3: 선택한 보존기간 (1/3/5년), null/undefined는 무제한
  */
 export function getEffectiveRetention(
   tier: Tier, 
   extensionYearsPurchased: number = 0,
-  premiumRetentionYears: number = 5
+  premiumRetentionYears?: number | null
 ): RetentionResult {
   if (tier === 1) {
     return { months: START_TIER_MONTHS };
@@ -34,7 +34,12 @@ export function getEffectiveRetention(
     return { months: (INSIGHT_BASE_YEARS + ext) * 12 };
   }
 
-  // tier === 3 (Care Premium): 1, 3, 5년 중 선택
+  // tier === 3 (Care Premium): NULL은 DB/정책상 무제한 보존을 뜻한다.
+  if (premiumRetentionYears == null) {
+    return { months: null };
+  }
+
+  // 숫자 입력은 1, 3, 5년 중 선택하며 비정상 값은 기존 기본값 5년으로 방어한다.
   const py = [1, 3, 5].includes(premiumRetentionYears) ? premiumRetentionYears : 5;
   return { months: py * 12 };
 }

@@ -27,6 +27,9 @@ export async function calculateFinalDeletionDate(familyId: string): Promise<Date
 
   // Care Insight는 Tier 2
   const retention = getEffectiveRetention(2, extensionYears);
+  if (retention.months === null) {
+    throw new Error('Care Insight retention must be finite');
+  }
 
   const finalDate = new Date();
   finalDate.setUTCMonth(finalDate.getUTCMonth() + retention.months);
