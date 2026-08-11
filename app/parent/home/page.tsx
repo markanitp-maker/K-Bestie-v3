@@ -346,7 +346,7 @@ export default function ParentHomePage() {
         <RealParentNav active="홈" />
         {showPwaBanner && (
           <div className="sticky bottom-0 w-full bg-[#FFF9F2] border-t border-black/5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] p-4 flex items-center justify-between z-50 mt-auto pb-[env(safe-area-inset-bottom,16px)]">
-            <p className="text-sm font-semibold text-[var(--color-k-navy)] px-2">모바일 / 태블릿 / PC</p>
+            <p className="text-sm font-semibold text-[var(--color-k-navy)] px-2">현재 브라우저에서 이용 중이에요. 앱 설치하기 후 더 편리한 앱 환경에서 이용해 보세요.</p>
             <div className="flex items-center gap-3">
               <button
                 onClick={onInstallClick}
