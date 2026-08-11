@@ -37,6 +37,10 @@ const nextConfig: NextConfig = {
     // useSttRouter가 Browser primary를 끄고 기존 GCP-only 경로를 유지한다.
     BROWSER_STT_PRIMARY_ENABLED: process.env.BROWSER_STT_PRIMARY_ENABLED || "",
     GCP_STT_FALLBACK_ENABLED: process.env.GCP_STT_FALLBACK_ENABLED || "",
+    // 자유대화 10분 세션+1분 휴식 및 20턴 하드리밋 — 현재 베타 확정 정책(Goal 없음·
+    // Completion 없음·횟수/시간/턴 제한 없음)에 따라 미설정 시 항상 OFF. 로직 자체는
+    // 삭제하지 않고 유지하며, 값을 "true"로 설정할 때만 활성화된다.
+    FREE_CHAT_HARD_LIMIT_ENABLED: process.env.FREE_CHAT_HARD_LIMIT_ENABLED || "",
   },
   rewrites,
 };

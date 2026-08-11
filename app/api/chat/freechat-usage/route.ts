@@ -4,6 +4,15 @@ import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 
 export const runtime = "nodejs";
 
+// 자유대화 10분 세션+1분 휴식 하드리밋 — 현재 베타 확정 정책(Goal 없음·Completion
+// 없음·횟수/시간/턴 제한 없음)에 따라 기본 OFF. 이 함수 하나로 GET/POST 양쪽을
+// 게이트해, 꺼져 있을 때는 freechat_usage_state RPC(DB 상태 전이)를 아예 건드리지
+// 않고 "항상 활성" 응답만 합성해서 돌려준다 — 로직 자체는 삭제하지 않고 "true"로
+// 켤 때만 그대로 동작한다.
+function isFreeChatHardLimitEnabled(): boolean {
+  return process.env.FREE_CHAT_HARD_LIMIT_ENABLED === "true";
+}
+
 interface UsageStateRow {
   status: "active" | "cooldown" | "ended";
   started_at: string | null;
@@ -41,6 +50,17 @@ export async function GET(req: NextRequest) {
   const authCheck = await requireChildAccess(authClient, user.id, childId);
   if (!authCheck.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  if (!isFreeChatHardLimitEnabled()) {
+    return NextResponse.json({
+      status: "active",
+      startedAt: null,
+      sessionEndsAt: null,
+      cooldownUntil: null,
+      remainingSessionSeconds: 0,
+      remainingCooldownSeconds: 0,
+    });
+  }
+
   const service = createServiceClient();
   const { data, error } = await service.rpc("get_freechat_usage_state", { p_child_id: childId }).single();
   if (error || !data) {
@@ -70,6 +90,21 @@ export async function POST(req: NextRequest) {
 
   const authCheck = await requireChildAccess(authClient, user.id, childId);
   if (!authCheck.allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  if (!isFreeChatHardLimitEnabled()) {
+    if (action === "start") {
+      return NextResponse.json({
+        allowed: true,
+        status: "active",
+        startedAt: null,
+        sessionEndsAt: null,
+        cooldownUntil: null,
+        remainingSessionSeconds: 0,
+        remainingCooldownSeconds: 0,
+      });
+    }
+    return NextResponse.json({ status: "active", cooldownUntil: null, remainingCooldownSeconds: 0 });
+  }
 
   const service = createServiceClient();
 

@@ -16,6 +16,11 @@ import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversation
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
 
+// 자유대화 10분 세션+1분 휴식 및 20턴 하드리밋 — 현재 베타 확정 정책(Goal 없음·
+// Completion 없음·횟수/시간/턴 제한 없음)에 따라 기본 OFF. 로직 자체는 삭제하지
+// 않고 "true"로 켤 때만(next.config.ts env 참고) 그대로 동작하게 유지한다.
+const isFreeChatHardLimitEnabled = () => process.env.FREE_CHAT_HARD_LIMIT_ENABLED === "true";
+
 const getCurrentKSTWindow = () => {
   const now = new Date();
   const kstOffset = 9 * 60 * 60 * 1000;
@@ -157,6 +162,7 @@ export default function ChatPage() {
   // 전혀 없었다). usagePhase가 "ready"가 된 시점의 남은 시간만큼만 타이머를 건다(새로고침
   // 복귀 시 남은 시간이 10분보다 짧을 수 있음).
   useEffect(() => {
+    if (!isFreeChatHardLimitEnabled()) return;
     if (usagePhase !== "ready" || usageSessionEndsAtMsRef.current === null) return;
     const delay = Math.max(0, usageSessionEndsAtMsRef.current - Date.now());
     timerRef.current = setTimeout(() => {
@@ -261,6 +267,7 @@ export default function ChatPage() {
 
   // 턴 수 제한 하드 리밋 감지
   useEffect(() => {
+    if (!isFreeChatHardLimitEnabled()) return;
     if (status === "live") {
       const childTurns = transcript.filter((t) => t.role === "child").length;
       if (childTurns >= MAX_SESSION_TURNS) {
@@ -431,7 +438,7 @@ export default function ChatPage() {
     // (2026-08-02 자유대화 무응답 재보고로 확인). live 연결 자체를 시도하지 않고
     // 바로 한도 안내 화면으로 전환한다.
     const restoredChildTurns = restoredTranscriptRef.current.filter((t) => t.role === "child").length;
-    if (restoredChildTurns >= MAX_SESSION_TURNS) {
+    if (isFreeChatHardLimitEnabled() && restoredChildTurns >= MAX_SESSION_TURNS) {
       seedTranscript(restoredTranscriptRef.current);
       setDailyLimitReached(true);
       setSessionActive(false);
