@@ -1,5 +1,16 @@
 export type AuthFlowEvent =
   | "landing_start_clicked"
+  | "landing_view"
+  | "hero_beta_cta_click"
+  | "hero_report_cta_click"
+  | "daily_report_view"
+  | "daily_beta_cta_click"
+  | "weekly_report_view"
+  | "trust_section_view"
+  | "beta_cta_click"
+  | "faq_open"
+  | "final_beta_cta_click"
+  | "signup_start"
   | "header_login_clicked"
   | "header_signup_clicked"
   | "social_auth_provider_selected"
@@ -22,14 +33,35 @@ export type AuthFlowEvent =
   | "notification_permission_granted"
   | "notification_permission_denied";
 
+export interface LandingAttribution {
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  item?: string;
+}
+
+type AuthFlowProperties = LandingAttribution & {
+  provider?: "google" | "kakao";
+};
+
 export function logAuthFlowEvent(
   eventName: AuthFlowEvent,
-  properties?: { provider?: "google" | "kakao" }
+  properties?: AuthFlowProperties
 ): Promise<void> {
+  const normalizedProperties = properties
+    ? Object.fromEntries(
+        Object.entries(properties)
+          .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+          .map(([key, value]) => [key, value.slice(0, 120)])
+      )
+    : undefined;
+
   return fetch("/api/analytics/auth-flow", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ eventName, properties }),
+    body: JSON.stringify({ eventName, properties: normalizedProperties }),
     keepalive: true,
   }).then(() => undefined).catch(() => undefined);
 }

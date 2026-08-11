@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 import { ChildStartGuide, type ChildStartGuideChild } from "@/components/parent/ChildStartGuide";
+import { LegalDocumentModal } from "@/components/legal/LegalDocumentModal";
+import { isLegalDetailAvailable } from "@/lib/legal/environment";
+import type { LegalDocumentKey } from "@/lib/legal/types";
 
 
 type Step = "consent" | "profile" | "family" | "child";
@@ -134,6 +137,7 @@ function ConsentStep({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openDocumentKey, setOpenDocumentKey] = useState<LegalDocumentKey | null>(null);
 
   useEffect(() => {
     try {
@@ -203,35 +207,64 @@ function ConsentStep({
       </button>
       <div className="flex flex-col gap-2.5">
         {REQUIRED_CONSENTS.map((c) => (
-          <label key={c.key} className="flex items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!agreements[c.key]}
-              onChange={(e) => onAgreementsChange({ ...agreements, [c.key]: e.target.checked })}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="font-bold" style={{ color: "var(--color-k-navy)" }}>
-                [필수]
+          <div key={c.key} className="flex items-start justify-between gap-2">
+            <label className="flex min-w-0 flex-1 items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!agreements[c.key]}
+                onChange={(e) => onAgreementsChange({ ...agreements, [c.key]: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="font-bold" style={{ color: "var(--color-k-navy)" }}>
+                  [필수]
+                </span>{" "}
+                {c.label}
               </span>{" "}
-              {c.label}
-            </span>
-          </label>
+            </label>
+            {isLegalDetailAvailable(c.key) && (
+              <button
+                type="button"
+                onClick={() => setOpenDocumentKey(c.key)}
+                className="shrink-0 text-[11px] font-bold text-[var(--color-k-navy)] underline underline-offset-2"
+              >
+                상세보기 &gt;
+              </button>
+            )}
+          </div>
         ))}
         <div className="h-px bg-gray-100 my-1" />
         {OPTIONAL_CONSENTS.map((c) => (
-          <label key={c.key} className="flex items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!agreements[c.key]}
-              onChange={(e) => onAgreementsChange({ ...agreements, [c.key]: e.target.checked })}
-              className="mt-0.5"
-            />
-            <span>{c.label}</span>
-          </label>
+          <div key={c.key} className="flex items-start justify-between gap-2">
+            <label className="flex min-w-0 flex-1 items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!agreements[c.key]}
+                onChange={(e) => onAgreementsChange({ ...agreements, [c.key]: e.target.checked })}
+                className="mt-0.5"
+              />
+              <span>{c.label}</span>
+            </label>
+            {isLegalDetailAvailable(c.key) && (
+              <button
+                type="button"
+                onClick={() => setOpenDocumentKey(c.key)}
+                className="shrink-0 text-[11px] font-bold text-[var(--color-k-navy)] underline underline-offset-2"
+              >
+                상세보기 &gt;
+              </button>
+            )}
+          </div>
         ))}
       </div>
       <StepFooterNav onBack={onBack} onNext={submit} nextLabel="다음 →" nextDisabled={!allRequired} nextLoading={loading} />
+      {openDocumentKey && (
+        <LegalDocumentModal
+          documentKey={openDocumentKey}
+          open
+          onClose={() => setOpenDocumentKey(null)}
+        />
+      )}
     </>
   );
 }
@@ -394,6 +427,7 @@ function ChildStep({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [showGuardianDocument, setShowGuardianDocument] = useState(false);
   const submittingRef = useRef(false);
 
   const canSubmit =
@@ -541,11 +575,27 @@ function ChildStep({
         onChange={(e) => onDraftChange({ ...draft, passwordConfirm: e.target.value })}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
       />
-      <label className="flex items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
-        <input type="checkbox" checked={consent} onChange={(e) => onDraftChange({ ...draft, consent: e.target.checked })} className="mt-0.5" />
-        <span>법정대리인으로서 위 아이의 정보 등록에 동의합니다.</span>
-      </label>
+      <div className="flex items-start justify-between gap-2">
+        <label className="flex min-w-0 flex-1 items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
+          <input type="checkbox" checked={consent} onChange={(e) => onDraftChange({ ...draft, consent: e.target.checked })} className="mt-0.5" />
+          <span>법정대리인으로서 위 아이의 정보 등록에 동의합니다.</span>
+        </label>
+        {isLegalDetailAvailable("guardian_u14") && (
+          <button
+            type="button"
+            onClick={() => setShowGuardianDocument(true)}
+            className="shrink-0 text-[11px] font-bold text-[var(--color-k-navy)] underline underline-offset-2"
+          >
+            상세보기 &gt;
+          </button>
+        )}
+      </div>
       <StepFooterNav onBack={onBack} onNext={submit} nextLabel="아이 등록하고 시작하기 →" nextDisabled={!canSubmit} nextLoading={loading} />
+      <LegalDocumentModal
+        documentKey="guardian_u14"
+        open={showGuardianDocument}
+        onClose={() => setShowGuardianDocument(false)}
+      />
     </>
   );
 }

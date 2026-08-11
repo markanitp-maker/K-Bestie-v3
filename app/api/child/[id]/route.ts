@@ -23,7 +23,7 @@ export async function GET(
   try {
     const { data, error } = await supabase
       .from("child_profiles")
-      .select("id, name, given_name, family_name, grade, interests, tier, live_voice_name")
+      .select("id, name, given_name, family_name, grade, tier, live_voice_name")
       .eq("id", id)
       .single();
 
@@ -55,7 +55,6 @@ export async function PATCH(
     familyName?: string;
     givenName?: string;
     grade?: string;
-    interests?: string[];
     liveVoiceName?: string;
     withdrawConsent?: boolean;
   };
@@ -78,16 +77,11 @@ export async function PATCH(
     updateData.family_name = body.familyName.trim();
     updateData.given_name = body.givenName.trim();
     updateData.name = (body.familyName.trim() + body.givenName.trim()).trim();
-
-    if (Array.isArray(body.interests) && body.interests.length === 0) {
-      return NextResponse.json({ error: "관심사를 한 개 이상 선택해 주세요." }, { status: 400 });
-    }
   } else if (body.name?.trim()) {
     updateData.name = body.name.trim();
   }
   
   if (body.grade) updateData.grade = body.grade;
-  if (Array.isArray(body.interests)) updateData.interests = body.interests;
   if (body.liveVoiceName) {
     if (!LIVE_VOICE_NAMES.includes(body.liveVoiceName)) {
       return NextResponse.json({ error: "지원하지 않는 목소리입니다" }, { status: 400 });
@@ -102,7 +96,7 @@ export async function PATCH(
   // child 역할(자녀 본인)은 자기 프로필에서 목소리(live_voice_name)만 바꿀 수 있다.
   // RLS(child_profiles_update)가 child 역할의 UPDATE를 조용히 0-row로 막으므로 아래 실제
   // 쓰기는 서비스 클라이언트로 수행한다 — 그만큼 여기서 필드를 명시적으로 제한해 자녀가
-  // tier/동의철회/이름/학년/관심사 등 부모 전용 필드를 바꾸지 못하게 한다(권한 상승 방지).
+  // tier/동의철회/이름/학년 등 부모 전용 필드를 바꾸지 못하게 한다(권한 상승 방지).
   if (authCheck.role === "child") {
     const disallowed = Object.keys(updateData).filter((k) => k !== "live_voice_name");
     if (disallowed.length > 0) {

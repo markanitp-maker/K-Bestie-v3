@@ -81,6 +81,9 @@ export interface UseGeminiLiveOptions {
    *  - k: Gemini turnComplete 이벤트 수신 시 (스트리밍 전체 텍스트)
    */
   onTurnComplete?: (turn: Turn) => void;
+  /** 화면별 턴 상태머신이 텍스트 child 턴을 지금 받을 수 있는지 제출 직전에 확인한다.
+   *  연결/VAD/STT 확정 상태는 훅이 자체 검사하고, 호출부는 미션 단계·처리 중 여부를 검사한다. */
+  canAcceptTypedInput?: () => boolean;
   /** child 발화 전사 소스.
    *  - "gemini"(기본): Gemini Live 자체 전사 + 브라우저 웹킷 폴백 (자유대화)
    *  - "gcp": child 턴 오디오를 /api/mission/stt(GCP Speech-to-Text)로 전사 (미션 전용)
@@ -234,6 +237,7 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 판정이 더 관대해 보통 통과하지만 Android/기기별로 훨씬 엄격하다). audioLocked가 true인
   // 동안 호출부(missions 페이지)가 "케이 목소리 켜기" 버튼을 노출해 명시적 재시도를 유도한다.
   const [audioLocked, setAudioLocked] = useState(false);
+  const [autoSpeechState, setAutoSpeechState] = useState<"idle" | "candidate" | "active">("idle");
 
   // 미션 모드에서 아이의 답변을 듣는 중일 때 모델이 마이크 소리에 자체적으로 반응하여
   // 의도치 않은 발화를 생성하는 것을 막기 위한 가드.
@@ -442,6 +446,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   // 콜백 ref — 렌더마다 최신 함수 유지
   const onTurnCompleteRef = useRef<((turn: Turn) => void) | undefined>(undefined);
   onTurnCompleteRef.current = options?.onTurnComplete;
+  const canAcceptTypedInputRef = useRef<(() => boolean) | undefined>(undefined);
+  canAcceptTypedInputRef.current = options?.canAcceptTypedInput;
   const onServerTurnCompleteRef = useRef<(() => void) | undefined>(undefined);
   onServerTurnCompleteRef.current = options?.onServerTurnComplete;
   const onAudioQueueDrainedRef = useRef<(() => void) | undefined>(undefined);
@@ -489,6 +495,16 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
   const speechStartTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastRmsRef = useRef<number>(0);
 
+  const setVadState = useCallback((next: "idle" | "candidate" | "active") => {
+    vadStateRef.current = next;
+    setAutoSpeechState(next);
+  }, []);
+
+  // React state 반영 전 같은 이벤트 루프에서 키보드를 탭해도 ref의 실제 상태로 차단한다.
+  const hasPendingAutoSpeech = useCallback((): boolean => {
+    return interactionModeRef.current === "auto" && vadStateRef.current !== "idle";
+  }, []);
+
   // 후보 버퍼 및 타이머 정리 유틸
   const appendToCandidateBuffer = useCallback((newSamples: Float32Array) => {
     const current = candidateBufferRef.current;
@@ -515,9 +531,9 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       speechStartTimerRef.current = null;
     }
     candidateBufferRef.current = new Float32Array(0);
-    vadStateRef.current = "idle";
+    setVadState("idle");
     isChildSpeakingRef.current = false;
-  }, []);
+  }, [setVadState]);
 
   // 미션 종료 플로우 전용 하드 락 — 상태 전이:
   //  - "none"(평상시)
@@ -1058,6 +1074,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
     childAudioChunksRef.current = [];
     const cid = activeChildTurnIdRef.current ?? nextTurnId();
     const seq = activeChildTurnDisplaySequenceRef.current ?? nextDisplaySequence();
+    // kbd5 리뷰 지적: teardown()/재연결 startSession()이 manualFinalizingRef를 즉시
+    // 해제해, disconnect 중이던 이 STT 확정이 재연결 이후에도 계속 진행되다가 새
+    // 연결의 child 턴으로 append/콜백돼 텍스트 답변과 중복·고아 transcript를 만들 수
+    // 있었다. 시작 시점의 connectionGenerationRef를 붙잡아, 실제 반영 직전에 그
+    // 사이 teardown/재연결로 세대가 바뀌었는지 재확인한다 — 바뀌었으면 이 STT
+    // 결과는 이미 끊긴 연결의 것이므로 폐기하고 flush 플래그도 건드리지 않는다
+    // (새 연결이 이미 자기 상태로 재초기화했을 것이기 때문).
+    const myConnectionGeneration = connectionGenerationRef.current;
 
     void (async () => {
       try {
@@ -1070,6 +1094,8 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         } else {
           finalText = validateFinalTranscript(fallbackText); // 오디오가 아예 없던 경우도 동일 검증 경로를 거친다
         }
+
+        if (myConnectionGeneration !== connectionGenerationRef.current) return;
 
         if (finalText) {
           setInterimChildText("");
@@ -1084,11 +1110,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
         }
       } catch (err) {
         console.error("[GCP STT] Error in flushChildTurn:", err);
+        if (myConnectionGeneration !== connectionGenerationRef.current) return;
         setInterimChildText("");
         childTurnFlushedRef.current = false;
         onTranscriptRejectedRef.current?.();
       } finally {
-        manualFinalizingRef.current = false;
+        if (myConnectionGeneration === connectionGenerationRef.current) {
+          manualFinalizingRef.current = false;
+        }
       }
     })();
     logVoiceEvent({ ts: Date.now(), eventType: "flushChildTurn_complete", childTurnId: activeChildTurnIdRef.current ?? undefined, textPreview: maskText(fallbackText) });
@@ -1096,6 +1125,13 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
 
   function teardown(reason: string = "unknown") {
     console.log(getLogPrefix(), "🧹 teardown called, reason:", reason);
+    // kbd r5 리뷰 지적: flushChildTurn의 세대 가드는 재연결 startSession()이 세대를
+    // 올려야만 stale STT 결과를 막는데, teardown() 자체는 세대를 올리지 않았다.
+    // handleClose가 flush→teardown 순서로 실행된 뒤 재연결 백오프(1~8초) 동안 STT가
+    // 끝나면 세대가 그대로라 append가 그대로 실행됐다. teardown은 이 연결의 모든
+    // 진행 중 작업을 무효로 만드는 지점이므로, 재연결 여부와 무관하게 여기서도
+    // 세대를 올려 그 사이 끝나는 STT 확정을 즉시 폐기 대상으로 만든다.
+    connectionGenerationRef.current += 1;
     clearVadTimersAndBuffers();
     // 세션이 끊기는 시점에 "마이크 입력 없음" 표시가 다음 세션까지 이어지지 않도록 정리한다.
     silenceEligibleSinceRef.current = null;
@@ -1289,9 +1325,14 @@ export function useGeminiLive(options?: UseGeminiLiveOptions) {
       // 저수준 진단 — mic stream은 잡혔는데 AudioContext의 onaudioprocess 콜백 자체가 한 번도
       // 안 불리면(캡처 파이프라인이 VAD 판정 이전 단계에서 이미 끊긴 것) 3초 뒤 1회만 기록한다.
       // rms 값과 무관하게 "콜백이 오는가" 자체만 본다 — VAD_CONFIG.RMS_THRESHOLD와 완전히 독립적.
-      const audioProcessWatchdogGeneration = connectionGenerationRef.current;
+      // kbd r6 리뷰 지적: 여기서 connectionGenerationRef.current를 다시 읽으면, 이
+      // getUserMedia await 도중 teardown이 먼저 일어나 세대가 이미 바뀐 뒤일 수 있다.
+      // 그러면 이미 폐기된 연결 시도가 그 바뀐 값을 자기 기준선으로 삼아 정상으로
+      // 오인되고, 3초 뒤 실제로는 무의미한 audioProcessNeverFired 로그를 남긴다.
+      // startSession 진입 시점에 캡처해둔 myGeneration(이 연결 시도 고유의 세대)을
+      // 그대로 써야 재확인이 실제로 의미가 있다.
       setTimeout(() => {
-        if (audioProcessWatchdogGeneration !== connectionGenerationRef.current) return;
+        if (myGeneration !== connectionGenerationRef.current) return;
         if (!audioProcessFiredRef.current) {
           logVoiceEvent({ ts: Date.now(), eventType: "audioProcessNeverFired" });
         }
@@ -1748,10 +1789,16 @@ const incomingGenerationId = currentKGenerationIdRef.current;
             console.warn(
               `${getLogPrefix()} ⛔ 자동 재연결 중단 — ${RAPID_RECONNECT_WINDOW_MS}ms 내 ${closeReconnectCountRef.current}회 반복 실패`
             );
-            updateStatus("ended");
+            setError("케이와 연결이 끊겼어요. 다시 이어서 해볼까요?");
+            updateStatus("error");
           } else {
             const backoffMs = Math.min(1000 * 2 ** (closeReconnectCountRef.current - 1), 8000);
-            const reconnectGeneration = myGeneration;
+            // teardown()이 위 handleClose 흐름에서 이미 세대를 1 올렸으므로(kbd r5 스테일
+            // STT 가드), 여기서는 그 teardown 직후의 현재 세대를 기준선으로 잡아야 한다.
+            // 예전 myGeneration(teardown 이전 값)을 그대로 쓰면 이 재연결 타이머 자체가
+            // teardown이 이미 세대를 바꿔놨다는 이유만으로 매번 조기 return돼 자동 재연결이
+            // 전혀 발동하지 않게 된다.
+            const reconnectGeneration = connectionGenerationRef.current;
             // teardown()이 stopSession/pauseSession/reset/unmount에서 이 타이머를 취소하므로,
             // 백오프 대기 중 사용자가 의도적으로 세션을 끝내면 재연결이 실행되지 않는다.
             closeReconnectTimerRef.current = setTimeout(() => {
@@ -1965,7 +2012,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
             if (vadStateRef.current === "idle") {
               if (isAboveThreshold) {
                 // idle -> candidate 상태 전환
-                vadStateRef.current = "candidate";
+                setVadState("candidate");
                 appendToCandidateBuffer(float32);
 
                 // 발화 확인 타이머 기동 (150ms)
@@ -2022,7 +2069,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
 
                     // 3. 후보 버퍼 비우기 및 active 상태 전환
                     candidateBufferRef.current = new Float32Array(0);
-                    vadStateRef.current = "active";
+                    setVadState("active");
                   }
                   speechStartTimerRef.current = null;
                 }, VAD_CONFIG.MIN_SPEECH_DURATION_MS);
@@ -2309,6 +2356,27 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     return true;
   }, []);
 
+  /** 별도 API가 K 응답을 결정하는 화면용 텍스트 입력. 자유대화의 sendTypedText와 같이
+   *  child 턴만 확정하고 Live 모델에는 보내지 않아 자동 응답 generation을 만들지 않는다. */
+  const canSendTypedText = useCallback((): boolean => {
+    if (!sessionRef.current || statusRef.current !== "live") return false;
+    // AUTO/수동 발화 또는 GCP STT 확정과 typed child 턴이 겹치면 둘 중 하나가 화면에만
+    // 남을 수 있으므로, 화면별 상태머신 gate까지 모두 통과한 뒤에만 append를 허용한다.
+    if (manualFinalizingRef.current || isChildSpeakingRef.current || vadStateRef.current !== "idle") return false;
+    return canAcceptTypedInputRef.current?.() ?? true;
+  }, []);
+
+  const sendTypedText = useCallback((text: string): boolean => {
+    if (!canSendTypedText()) return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    const cid = nextTurnId();
+    const cSeq = nextDisplaySequence();
+    appendTurn({ role: "child", text: trimmed, id: cid, displaySequence: cSeq });
+    onTurnCompleteRef.current?.({ role: "child", text: trimmed, id: cid, displaySequence: cSeq });
+    return true;
+  }, [canSendTypedText]);
+
   /** 케이가 특정 문장을 그대로 소리내어 말하게 함(미션 질문 등). sendText와 달리
    *  아이 발화로 취급하지 않는다 — 화면에는 케이(K) 말풍선으로 표시되고, onTurnComplete도
    *  role:"k"로 호출되어(child 판정/미션 답변 로직을 타지 않음) 대화 로그에는 남되 오답 처리되지 않는다. */
@@ -2405,9 +2473,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       speechStartTimerRef.current = null;
     }
     candidateBufferRef.current = new Float32Array(0);
-    vadStateRef.current = "idle";
+    setVadState("idle");
     isChildSpeakingRef.current = false;
-  }, [status]);
+  }, [setVadState, status]);
 
   const sendActivityStart = useCallback((): boolean => {
     // 실제 탭 이벤트 핸들러 안에서 동기적으로 호출되는 지점 — resume() 자체를 여기서
@@ -2424,6 +2492,9 @@ const incomingGenerationId = currentKGenerationIdRef.current;
       return false;
     }
     if (!sessionRef.current || statusRef.current !== "live") return false;
+    // reconnect/overlay 복귀 직후 canAcceptVoiceInput effect가 이전 렌더의 false로 닫은
+    // PCM 게이트가 남아 있어도, 수동 녹음 시작 성공 경로에서는 반드시 다시 연다.
+    micEnabledRef.current = true;
     console.error(`[Timing] (a) 마이크 활성화(activityStart) - ${Date.now()}`);
     console.log(`${getLogPrefix()} 📡 sendActivityStart (Manual)`);
     stopAllScheduledSources();
@@ -2522,7 +2593,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
           console.warn(`${getLogPrefix()} ⚠️ 장시간 백그라운드(${hiddenForMs}ms) 복귀 — 고착된 재생 큐/발화 상태 강제 정리`);
           stopAllScheduledSources();
           maybeUnlockCutChildTurn();
-          vadStateRef.current = "idle";
+          setVadState("idle");
           isChildSpeakingRef.current = false;
           candidateBufferRef.current = new Float32Array(0);
           if (silenceTimerRef.current) {
@@ -2538,7 +2609,7 @@ const incomingGenerationId = currentKGenerationIdRef.current;
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, []);
+  }, [setVadState]);
 
   // 호출부(missions 페이지)의 실제 탭 핸들러(미션 시작/모드 전환/마이크 버튼)에서 명시적으로
   // 불러주는 수동 언락 경로 — "케이 목소리 켜기" 버튼 전용으로도 쓰인다.
@@ -2553,14 +2624,14 @@ const incomingGenerationId = currentKGenerationIdRef.current;
   }, []);
 
   return {
-    status, error, transcript, interimChildText, audioLocked,
+    status, error, transcript, interimChildText, audioLocked, autoSpeechState,
     // AUTO 모드에서 마이크가 켜져 있는데 실제 오디오가 relay로 전송되지 않는 상태(요구사항 1) —
     // onNoAudioInput 콜백과 별개로 폴링 없이 직접 상태를 읽고 싶은 호출부를 위해 함께 노출한다.
     noAudioInput,
     startSession, stopSession, pauseSession, getTranscript, reset,
-    sendText, speakAsK, setAudioMuted, setMicEnabled, appendTurn, seedTranscript, setKSpeechAllowed,
+    sendText, canSendTypedText, sendTypedText, speakAsK, setAudioMuted, setMicEnabled, appendTurn, seedTranscript, setKSpeechAllowed,
     lockNow, speakClosingLine, unlockAudio,
-    setInteractionMode, sendActivityStart, sendActivityEnd,
+    setInteractionMode, sendActivityStart, sendActivityEnd, hasPendingAutoSpeech,
     cancelCurrentGeneration, logTelemetryEvent,
     // 실측 기반 연결 품질(0~5, 5가 가장 좋음) — WebSocket 상태·최근 재연결 횟수·최근 watchdog
     // (10초 무응답) 발동 횟수·최근 응답 지연시간 평균으로 계산. 가짜 신호 막대 아님.

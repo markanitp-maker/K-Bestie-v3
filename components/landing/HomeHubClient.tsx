@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { isStandaloneDisplay } from "@/lib/pwa/standalone";
-import BetaLandingPage from "@/components/landing/BetaLandingPage";
+import BetaLandingPage, { type PreservedLandingParams } from "@/components/landing/BetaLandingPage";
 import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 
@@ -31,7 +31,11 @@ async function routePastPwaGate(
   router.replace(`/onboarding?next=${encodeURIComponent(destination)}`);
 }
 
-export default function HubPage() {
+export default function HubPage({
+  preservedParams = {},
+}: {
+  preservedParams?: PreservedLandingParams;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [statusError, setStatusError] = useState<"network" | "membership" | null>(null);
@@ -241,11 +245,11 @@ export default function HubPage() {
   }
 
   if (loading) {
-    return <BetaLandingPage />;
+    return <BetaLandingPage preservedParams={preservedParams} />;
   }
 
   if (showGuestLanding) {
-    return <BetaLandingPage />;
+    return <BetaLandingPage preservedParams={preservedParams} />;
   }
 
   return null;

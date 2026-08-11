@@ -14,16 +14,16 @@ import {
   clearStore,
   updateChild,
   removeChild,
-  type StoreChild,
 } from "@/lib/store";
 import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
 import { calculateFinalDeletionDate, purchaseExtension } from "@/lib/plan/insightExtension";
-import { CONSENT_DOCUMENT_TEXT } from "@/lib/plan/consentDocument";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { revokeCurrentPushInstallation, usePushSubscription } from "@/lib/notifications/usePushSubscription";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { ChildStartGuideModal, type ChildStartGuideChild } from "@/components/parent/ChildStartGuide";
 import { FamilyInviteManager } from "@/components/family/FamilyInviteManager";
+import { LegalDocumentModal } from "@/components/legal/LegalDocumentModal";
+import { isLegalDetailAvailable } from "@/lib/legal/environment";
 
 function formatRetentionLabel(tier: Tier): string {
   const retention = getEffectiveRetention(tier, 0, 5);
@@ -33,7 +33,6 @@ function formatRetentionLabel(tier: Tier): string {
 }
 
 const GRADES = ["1학년", "2학년", "3학년", "4학년", "5학년", "6학년", "중학교 1학년"];
-const INTERESTS = ["공룡", "우주", "동물", "그림", "음악", "스포츠", "요리", "게임", "과학", "책"];
 // plans 테이블(tier 1/2/3) 기준 사용자용 이름 — 내부 tier 숫자는 화면에 노출하지 않는다.
 // TODO: 정식 오픈 시 결제 연동으로 전환 필요 — 자세한 건 FUTURE_TODO.md 참고.
 const CARE_PLANS: { tier: number; label: string }[] = [
@@ -126,6 +125,7 @@ export default function ParentSettingsPage() {
   const [addChildGender, setAddChildGender] = useState<string>("");
   const [addChildGrade, setAddChildGrade] = useState("1학년");
   const [addChildConsent, setAddChildConsent] = useState(false);
+  const [showAddChildLegalDocument, setShowAddChildLegalDocument] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [addUsernameError, setAddUsernameError] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
@@ -144,7 +144,7 @@ export default function ParentSettingsPage() {
   const [resetSuccess, setResetSuccess] = useState(false);
 
   // 수정 상태
-  const [editChild, setEditChild] = useState<StoreChild | null>(null);
+  const [editChild, setEditChild] = useState<{ id: string; tier?: number } | null>(null);
   const editChildIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -154,21 +154,19 @@ export default function ParentSettingsPage() {
   const [editFamilyName, setEditFamilyName] = useState("");
   const [editGivenName, setEditGivenName] = useState("");
   const [editGrade, setEditGrade] = useState("");
-  const [editInterests, setEditInterests] = useState<string[]>([]);
   const [editOriginalTier, setEditOriginalTier] = useState<number>(1);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // 027: 자녀 프로필 저장 검증/피드백 상태
-  const [saveFieldErrors, setSaveFieldErrors] = useState<{ familyName?: string; givenName?: string; grade?: string; interests?: string }>({});
+  const [saveFieldErrors, setSaveFieldErrors] = useState<{ familyName?: string; givenName?: string; grade?: string }>({});
   const [saveErrorSummary, setSaveErrorSummary] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "success" | "error">("idle");
   const [saveServerError, setSaveServerError] = useState<string | null>(null);
   const familyNameInputRef = useRef<HTMLInputElement | null>(null);
   const givenNameInputRef = useRef<HTMLInputElement | null>(null);
   const gradeSectionRef = useRef<HTMLDivElement | null>(null);
-  const interestsSectionRef = useRef<HTMLDivElement | null>(null);
   // 모달을 열 때의 원본 프로필 값 스냅샷 — 요금제 변경요청 직전 "수정 중인 값이 있는지" 판정용(§10)
-  const originalProfileRef = useRef<{ familyName: string; givenName: string; grade: string; interests: string[] } | null>(null);
+  const originalProfileRef = useRef<{ familyName: string; givenName: string; grade: string } | null>(null);
 
   // 027: 요금제 변경 요청(승인 대기) 상태 — 즉시 tier를 바꾸지 않고 요청만 생성한다.
   const [planRequest, setPlanRequest] = useState<{
@@ -387,7 +385,6 @@ export default function ParentSettingsPage() {
           familyName: childProf?.family_name || "",
           givenName: childProf?.given_name || "",
           grade: childProf?.grade || "",
-          interests: childProf?.interests || [],
           tier: childProf?.tier ?? 1,
           guardianConsentWithdrawnAt: childProf?.guardian_consent_withdrawn_at || null,
           parentEmail: m.parent_email || ""
@@ -422,31 +419,26 @@ export default function ParentSettingsPage() {
   }, [store.activeFamilyId]);
 
   const validateChildProfile = () => {
-    const errors: { familyName?: string; givenName?: string; grade?: string; interests?: string } = {};
+    const errors: { familyName?: string; givenName?: string; grade?: string } = {};
     if (!editFamilyName.trim()) errors.familyName = "성을 입력해 주세요.";
     if (!editGivenName.trim()) errors.givenName = "이름을 입력해 주세요.";
     if (!editGrade) errors.grade = "학년을 선택해 주세요.";
-    if (editInterests.length === 0) errors.interests = "관심사를 한 개 이상 선택해 주세요.";
     return errors;
   };
 
-  const focusFirstChildProfileError = (errors: { familyName?: string; givenName?: string; grade?: string; interests?: string }) => {
+  const focusFirstChildProfileError = (errors: { familyName?: string; givenName?: string; grade?: string }) => {
     if (errors.familyName) { familyNameInputRef.current?.focus(); return; }
     if (errors.givenName) { givenNameInputRef.current?.focus(); return; }
     if (errors.grade) { gradeSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
-    if (errors.interests) { interestsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
   };
 
   const isChildProfileDirty = () => {
     const orig = originalProfileRef.current;
     if (!orig) return false;
-    const sortedOrig = [...orig.interests].sort().join(",");
-    const sortedNow = [...editInterests].sort().join(",");
     return (
       orig.familyName !== editFamilyName.trim() ||
       orig.givenName !== editGivenName.trim() ||
-      orig.grade !== editGrade ||
-      sortedOrig !== sortedNow
+      orig.grade !== editGrade
     );
   };
 
@@ -475,7 +467,6 @@ export default function ParentSettingsPage() {
           familyName: editFamilyName.trim(),
           givenName: editGivenName.trim(),
           grade: editGrade,
-          interests: editInterests,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -493,13 +484,11 @@ export default function ParentSettingsPage() {
         familyName: editFamilyName.trim(),
         givenName: editGivenName.trim(),
         grade: editGrade,
-        interests: editInterests,
       } as any);
       originalProfileRef.current = {
         familyName: editFamilyName.trim(),
         givenName: editGivenName.trim(),
         grade: editGrade,
-        interests: [...editInterests],
       };
       setSaveState("success");
       await loadFamilyMembers();
@@ -818,16 +807,6 @@ export default function ParentSettingsPage() {
     }
   };
 
-  // 기존 아이 정보 관리(편집) 화면 전용 — 아이 추가 화면에는 관심사 선택이 없다.
-  const toggleInterest = (item: string) => {
-    setEditInterests((prev) =>
-      prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
-    );
-    if (saveFieldErrors.interests) {
-      setSaveFieldErrors((prev) => ({ ...prev, interests: undefined }));
-    }
-  };
-
   const otherActiveGuardians = useMemo(() => {
     return familyMembers.filter(m => (m.role === "parent" || m.role === "owner_parent") && !m.isMe);
   }, [familyMembers]);
@@ -956,10 +935,19 @@ export default function ParentSettingsPage() {
                       </div>
                     </div>
 
-                    <div
-                      className="max-h-28 overflow-y-auto md:max-h-none md:overflow-y-visible whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 p-2 text-[9px] leading-relaxed text-gray-500"
-                    >
-                      {CONSENT_DOCUMENT_TEXT}
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-[10px] leading-relaxed text-gray-600">
+                        아이 계정 생성과 서비스 이용에 필요한 개인정보 처리내용을 확인해 주세요.
+                      </p>
+                      {isLegalDetailAvailable("guardian_u14") && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAddChildLegalDocument(true)}
+                          className="shrink-0 text-[10px] font-extrabold text-[var(--color-k-navy)] underline underline-offset-2"
+                        >
+                          상세보기 &gt;
+                        </button>
+                      )}
                     </div>
                     <label className="flex items-center gap-2 px-1 mt-1 cursor-pointer">
                       <input
@@ -983,6 +971,11 @@ export default function ParentSettingsPage() {
                     <p className="text-[9px] text-gray-400 px-1 text-center leading-relaxed">
                       제출 후 관리자 승인이 완료되면 아이 계정이 만들어져요.
                     </p>
+                    <LegalDocumentModal
+                      documentKey="guardian_u14"
+                      open={showAddChildLegalDocument}
+                      onClose={() => setShowAddChildLegalDocument(false)}
+                    />
                   </form>
                 ) : (
                   <p className="text-[10px] text-gray-400 text-center py-2">가족 오너 권한이 있는 보호자만 아이를 등록할 수 있습니다.</p>
@@ -1093,7 +1086,7 @@ export default function ParentSettingsPage() {
               </div>
               <div className="flex-1">
                 <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>아이 정보 관리</p>
-                <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>이름, 학년, 관심사, 요금제를 관리해요</p>
+                <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>이름, 학년, 요금제를 관리해요</p>
               </div>
               <span className="w-11 h-11 flex items-center justify-center text-lg shrink-0" style={{ color: "#6b7280", transform: activeMenu === "edit_child" ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>→</span>
             </div>
@@ -1152,20 +1145,15 @@ export default function ParentSettingsPage() {
                                   onClick={() => {
                                     setEditChild({
                                       id: m.childId,
-                                      name: m.displayName,
-                                      grade: m.grade,
-                                      interests: m.interests
                                     });
                                     const familyName = m.familyName ?? "";
                                     const givenName = m.givenName ?? "";
                                     const grade = m.grade;
-                                    const interests = m.interests ?? [];
                                     setEditFamilyName(familyName);
                                     setEditGivenName(givenName);
                                     setEditGrade(grade);
-                                    setEditInterests(interests);
                                     setEditOriginalTier(m.tier ?? 1);
-                                    originalProfileRef.current = { familyName, givenName, grade, interests: [...interests] };
+                                    originalProfileRef.current = { familyName, givenName, grade };
                                     setSaveFieldErrors({});
                                     setSaveErrorSummary(null);
                                     setSaveServerError(null);
@@ -1586,29 +1574,6 @@ export default function ParentSettingsPage() {
                 </div>
                 {saveFieldErrors.grade && (
                   <p id="edit-grade-error" className="text-[9px] text-red-500 mt-1">{saveFieldErrors.grade}</p>
-                )}
-              </div>
-
-              <div ref={interestsSectionRef}>
-                <p className="text-[9px] text-gray-400 mb-1">관심사</p>
-                <div className="flex flex-wrap gap-1" aria-describedby={saveFieldErrors.interests ? "edit-interests-error" : undefined}>
-                  {INTERESTS.map((interest) => {
-                    const has = editInterests.includes(interest);
-                    return (
-                      <button
-                        key={interest}
-                        onClick={() => toggleInterest(interest)}
-                        className={`px-2.5 py-1 text-[9px] font-bold border rounded-full cursor-pointer ${
-                          has ? "bg-[var(--color-k-orange)] text-white border-transparent" : "bg-white border-gray-200 text-gray-500"
-                        } ${saveFieldErrors.interests ? "border-red-400" : ""}`}
-                      >
-                        {interest}
-                      </button>
-                    );
-                  })}
-                </div>
-                {saveFieldErrors.interests && (
-                  <p id="edit-interests-error" className="text-[9px] text-red-500 mt-1">{saveFieldErrors.interests}</p>
                 )}
               </div>
 

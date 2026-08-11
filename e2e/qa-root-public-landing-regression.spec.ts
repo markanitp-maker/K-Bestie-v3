@@ -24,7 +24,7 @@ test.describe("Step 5. Root Public Landing & Routing Regression Suite", () => {
     await page.goto(`${DEV_BASE_URL}/`);
 
     // Verify key landing page headline
-    const headline = page.locator("h1:has-text('아이의 하루를 이해하는')");
+    const headline = page.getByRole("heading", { level: 1, name: "아이의 오늘은 다시 오지 않습니다." });
     await expect(headline).toBeVisible();
   });
 
