@@ -26,19 +26,34 @@ test.describe.serial("landing auth membership routing", () => {
 
   test("guest landing keeps the hero layout and opens the shared social auth screen", async ({ page }) => {
     for (const viewport of [
-      { width: 320, height: 568 },
+      { width: 360, height: 800 },
       { width: 390, height: 844 },
+      { width: 393, height: 852 },
+      { width: 412, height: 915 },
+      { width: 430, height: 932 },
       { width: 768, height: 1024 },
       { width: 1440, height: 900 },
+      { width: 1920, height: 1080 },
     ]) {
       await page.setViewportSize(viewport);
       await page.goto(BASE);
       const hero = page.locator("main section").first();
-      await expect(hero.getByRole("link", { name: "시작하기" })).toHaveCount(1);
-      await expect(hero.getByRole("link", { name: "서비스 미리보기" })).toHaveCount(0);
+      await expect(hero.getByRole("link", { name: "베타 무료로 시작하기" })).toHaveCount(1);
+      await expect(hero.getByRole("link", { name: "리포트 먼저 보기" })).toHaveCount(1);
       await expect(page.getByRole("navigation", { name: "계정 메뉴" }).getByRole("link", { name: "로그인" })).toBeVisible();
       await expect(page.getByRole("navigation", { name: "계정 메뉴" }).getByRole("link", { name: "회원가입" })).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      const overflowingElements = await page.evaluate(() => {
+        const mainEl = document.querySelector("main");
+        if (!mainEl) return [];
+        const viewportWidth = document.documentElement.clientWidth;
+        return Array.from(mainEl.querySelectorAll<HTMLElement>("*")).flatMap((element) => {
+          if (element.getAttribute("aria-hidden") === "true" && element.classList.contains("blur-3xl")) return [];
+          return element.getBoundingClientRect().right > viewportWidth + 1
+            ? [`${element.tagName}.${element.className}`]
+            : [];
+        });
+      });
+      expect(overflowingElements).toEqual([]);
     }
 
     await page.goto(`${BASE}/parent/report?tab=week`);
@@ -46,9 +61,13 @@ test.describe.serial("landing auth membership routing", () => {
       url.pathname === "/login" && url.searchParams.get("returnUrl") === "/parent/report?tab=week"
     );
 
-    await page.goto(BASE);
-    await page.locator("main section").first().getByRole("link", { name: "시작하기" }).click();
+    await page.goto(`${BASE}/?utm_source=instagram&utm_medium=social&utm_campaign=landing_qa`);
+    await page.locator("main section").first().getByRole("link", { name: "베타 무료로 시작하기" }).click();
     await expect(page).toHaveURL(/\/login\?entry=landing_start/);
+    const landingLoginUrl = new URL(page.url());
+    expect(landingLoginUrl.searchParams.get("utm_source")).toBe("instagram");
+    expect(landingLoginUrl.searchParams.get("utm_medium")).toBe("social");
+    expect(landingLoginUrl.searchParams.get("utm_campaign")).toBe("landing_qa");
     await expect(page.getByRole("button", { name: "카카오로 계속하기" })).toBeVisible();
     await expect(page.getByRole("button", { name: "구글로 계속하기" })).toBeVisible();
     await expect(page.getByRole("link", { name: "뒤로 가기" })).toBeVisible();

@@ -1,324 +1,391 @@
 "use client";
 
-import Link from "next/link";
+import { useEffect, useRef } from "react";
 import Image from "next/image";
-import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
+import Link from "next/link";
+import {
+  ArrowDown,
+  ArrowRight,
+  HeartHandshake,
+  MessageCircleMore,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
+import LandingDashboard from "@/components/landing/LandingDashboard";
+import LandingDailyReport from "@/components/landing/LandingDailyReport";
+import LandingWeeklyReport from "@/components/landing/LandingWeeklyReport";
+import {
+  logAuthFlowEvent,
+  type AuthFlowEvent,
+  type LandingAttribution,
+} from "@/lib/analytics/authFlowClient";
+import { UTM_KEYS, buildPreservedHref, type PreservedLandingParams } from "@/lib/landing/preservedHref";
 
-const TARGETS = [
-  "초등학교 1~6학년 자녀가 있는 가정",
-  "아이와의 대화를 더 잘 이어가고 싶은 보호자",
-  "베타 기간 동안 꾸준히 서비스를 사용하고 의견을 줄 수 있는 가정",
-];
-
-const BENEFITS = [
-  { title: "베타 기간 무료 이용", desc: "베타 기간 동안 별도 비용 없이 서비스를 이용할 수 있어요." },
-  { title: "미션 대화 & 자유대화", desc: "케이와 매일 미션 대화를 나누고, 하고 싶은 이야기도 자유롭게 나눠요." },
-  { title: "일일 · 주간 리포트", desc: "아이와 케이의 대화를 바탕으로 부모님께 필요한 요약을 전해드려요." },
-  { title: "케이와 놀이", desc: "MBTI, 퀴즈마스터 등 케이와 함께하는 놀이 콘텐츠도 즐길 수 있어요." },
-];
-
-const FLOW_STEPS = [
-  { title: "보호자 회원가입", desc: "카카오 또는 구글로 간편하게 시작해요." },
-  { title: "가족 만들기", desc: "회원가입과 함께 우리 가족 공간이 자동으로 만들어져요." },
-  { title: "아이 추가", desc: "아이 이름, 학년, 관심사를 등록해 주세요." },
-  { title: "아이 등록 확인", desc: "아이 등록 내용을 확인한 뒤 바로 이용할 수 있어요." },
-  { title: "아이가 케이와 대화 시작", desc: "아이 아이디로 로그인하면 케이와의 첫 대화가 시작돼요." },
-];
+export type { PreservedLandingParams };
 
 const FAQ_ITEMS = [
   {
-    question: "내친구 케이는 어떤 서비스인가요?",
+    question: "아이가 케이와 나눈 대화를 부모가 모두 볼 수 있나요?",
     answer:
-      "내친구 케이는 초등학생 아이와 부모의 대화를 잇는 AI 소통 서비스입니다. 아이가 케이와 나눈 대화를 부모에게 필요한 요약과 오늘의 대화거리로 연결합니다.",
+      "아니요. 부모에게 아이와 케이의 대화 원문 전체를 그대로 보여주는 방식이 아닙니다. 아이의 하루를 이해하고 자연스럽게 대화를 시작하는 데 필요한 부모용 요약 인사이트를 제공합니다.",
   },
   {
-    question: "아이는 내친구 케이에서 무엇을 하나요?",
+    question: "케이는 어떤 서비스인가요?",
     answer:
-      "아이는 케이와 매일 미션 대화를 나누거나 하고 싶은 이야기를 자유롭게 나눌 수 있습니다. MBTI와 퀴즈마스터 같은 놀이 콘텐츠도 이용할 수 있습니다.",
+      "아이가 AI 친구 케이와 일상을 이야기하고, 부모가 아이의 하루와 대화 실마리를 이해할 수 있도록 연결해주는 AI 소통 서비스입니다.",
   },
   {
-    question: "부모는 어떤 도움을 받을 수 있나요?",
+    question: "부모는 무엇을 확인할 수 있나요?",
     answer:
-      "부모는 아이와 케이의 대화를 바탕으로 정리된 일일·주간 리포트를 확인할 수 있습니다. 리포트는 아이와 대화를 이어갈 때 참고할 요약을 제공하며, 아이의 마음이나 심리 상태를 진단하지 않습니다.",
+      "아이의 하루 요약, 학교·친구·관심사와 같은 이야기의 주요 흐름과 부모가 자연스럽게 대화를 시작할 수 있는 실마리를 확인할 수 있습니다.",
   },
   {
-    question: "누가 이용할 수 있나요?",
+    question: "어떤 아이가 사용할 수 있나요?",
     answer:
-      "현재 베타 서비스는 초등학교 1~6학년 자녀가 있는 가정을 대상으로 합니다. 보호자가 먼저 가입하고 가족 공간과 아이 계정을 준비한 뒤 아이가 이용을 시작합니다.",
+      "현재 베타 서비스는 초등학교 1~6학년 자녀가 있는 가정을 대상으로 합니다. 보호자가 먼저 가입한 뒤 아이 계정을 준비할 수 있습니다.",
+  },
+  {
+    question: "지금 무료인가요?",
+    answer: "네. 현재 베타 서비스 기간 동안 무료로 이용할 수 있습니다.",
+  },
+];
+
+const HOW_STEPS = [
+  {
+    number: "01",
+    title: "아이가 케이와 이야기합니다",
+    body: "AI 친구 케이와 자신의 하루와 관심사를 자연스럽게 이야기합니다.",
+  },
+  {
+    number: "02",
+    title: "부모에게 필요한 내용으로 정리합니다",
+    body: "아이의 하루를 이해하고 대화를 시작하는 데 필요한 내용을 정리합니다.",
+  },
+  {
+    number: "03",
+    title: "부모가 아이와 이야기를 이어갑니다",
+    body: "하루의 흐름과 대화 실마리를 확인하고 자연스럽게 다음 대화를 시작합니다.",
   },
 ];
 
 const faqUrl = process.env.NEXT_PUBLIC_FAQ_URL;
 const isValidFaqUrl = typeof faqUrl === "string" && /^https?:\/\//.test(faqUrl);
 
-export default function BetaLandingPage() {
+function readAttribution(): LandingAttribution {
+  if (typeof window === "undefined") return {};
+  const searchParams = new URLSearchParams(window.location.search);
+  return {
+    utmSource: searchParams.get("utm_source") ?? undefined,
+    utmMedium: searchParams.get("utm_medium") ?? undefined,
+    utmCampaign: searchParams.get("utm_campaign") ?? undefined,
+    utmContent: searchParams.get("utm_content") ?? undefined,
+    utmTerm: searchParams.get("utm_term") ?? undefined,
+  };
+}
+
+function LandingPrimaryCta({
+  entry,
+  eventName,
+  className = "",
+  preservedParams,
+}: {
+  entry: string;
+  eventName: AuthFlowEvent;
+  className?: string;
+  preservedParams: PreservedLandingParams;
+}) {
+  const href = buildPreservedHref(`/login?entry=${entry}`, preservedParams);
   return (
-    <div className="min-h-dvh w-full overflow-x-hidden" style={{ background: "var(--color-k-background)" }}>
-      {/* 헤더 */}
-      <header
-        className="sticky top-0 z-40 w-full flex items-center justify-between px-5 md:px-10 h-14 md:h-[72px] bg-white border-b"
-        style={{ borderColor: "var(--color-k-border)" }}
-      >
-        <div className="relative h-8 w-28 md:h-10 md:w-36">
-          <Image
-            src="/Images/logo/Logo.png"
-            alt="내친구 케이"
-            fill
-            priority
-            sizes="(max-width: 767px) 112px, 144px"
-            className="object-contain object-left"
-          />
+    <Link
+      href={href}
+      onClick={() => {
+        const attribution = readAttribution();
+        void logAuthFlowEvent("landing_start_clicked", attribution);
+        void logAuthFlowEvent(eventName, attribution);
+        void logAuthFlowEvent("signup_start", attribution);
+      }}
+      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[var(--color-k-orange)] px-7 py-3.5 text-center text-[15px] font-extrabold text-[var(--color-k-navy)] shadow-[0_10px_30px_rgba(226,91,18,0.24)] transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(226,91,18,0.30)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--color-k-navy)] active:translate-y-0 ${className}`}
+    >
+      베타 무료로 시작하기
+      <ArrowRight aria-hidden="true" className="h-4 w-4" />
+    </Link>
+  );
+}
+
+function SectionHeading({
+  eyebrow,
+  title,
+  children,
+  align = "left",
+}: {
+  eyebrow: string;
+  title: React.ReactNode;
+  children: React.ReactNode;
+  align?: "left" | "center";
+}) {
+  return (
+    <div className={align === "center" ? "mx-auto max-w-[760px] text-center" : "max-w-[560px]"}>
+      <p className="text-xs font-extrabold tracking-[0.18em] text-[var(--color-k-orange)]">{eyebrow}</p>
+      <h2 className="mt-3 text-[28px] font-extrabold leading-[1.28] tracking-[-0.03em] text-[var(--color-k-navy)] sm:text-[32px] lg:text-[42px]">
+        {title}
+      </h2>
+      <div className="mt-4 text-base leading-7 text-slate-600 sm:text-[17px]">{children}</div>
+    </div>
+  );
+}
+
+export default function BetaLandingPage({
+  preservedParams = {},
+}: {
+  preservedParams?: PreservedLandingParams;
+}) {
+  const headerLoginHref = buildPreservedHref("/login?entry=header_login", preservedParams);
+  const headerSignupHref = buildPreservedHref("/login?entry=header_signup", preservedParams);
+  const viewedSections = useRef(new Set<string>());
+
+  useEffect(() => {
+    const attribution = readAttribution();
+    void logAuthFlowEvent("landing_view", attribution);
+
+    const sectionEvents: Record<string, AuthFlowEvent> = {
+      "daily-report": "daily_report_view",
+      "weekly-report": "weekly_report_view",
+      trust: "trust_section_view",
+    };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting || viewedSections.current.has(entry.target.id)) continue;
+          viewedSections.current.add(entry.target.id);
+          const eventName = sectionEvents[entry.target.id];
+          if (eventName) void logAuthFlowEvent(eventName, attribution);
+        }
+      },
+      { threshold: 0.35 }
+    );
+
+    for (const id of Object.keys(sectionEvents)) {
+      const section = document.getElementById(id);
+      if (section) observer.observe(section);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="min-h-dvh w-full overflow-x-hidden bg-white text-[var(--color-k-navy)]">
+      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-5 sm:px-6 lg:h-[72px] lg:px-10">
+          <Link href="/" aria-label="내친구 케이 홈" className="relative h-8 w-[116px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500 sm:h-9 sm:w-[132px]">
+            <Image src="/Images/logo/Logo.png" alt="내친구 케이" fill priority sizes="132px" className="object-contain object-left" />
+          </Link>
+          <nav className="flex items-center gap-1 sm:gap-2" aria-label="계정 메뉴">
+            <Link
+              href={headerLoginHref}
+              onClick={() => {
+                void logAuthFlowEvent("header_login_clicked", readAttribution());
+              }}
+              className="flex min-h-11 items-center rounded-full px-3 text-sm font-bold text-[var(--color-k-navy)] focus-visible:outline-2 focus-visible:outline-sky-500 sm:px-4"
+            >
+              로그인
+            </Link>
+            <Link
+              href={headerSignupHref}
+              onClick={() => {
+                const attribution = readAttribution();
+                void logAuthFlowEvent("header_signup_clicked", attribution);
+                void logAuthFlowEvent("signup_start", attribution);
+              }}
+              className="flex min-h-11 items-center rounded-full border border-[var(--color-k-navy)] px-3 text-sm font-bold text-[var(--color-k-navy)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 sm:px-4"
+            >
+              회원가입
+            </Link>
+          </nav>
         </div>
-        <nav className="shrink-0 flex items-center gap-2" aria-label="계정 메뉴">
-          <Link
-            href="/login?entry=header_login"
-            onClick={() => void logAuthFlowEvent("header_login_clicked")}
-            className="px-3 py-2 md:px-4 md:py-2.5 rounded-full text-xs md:text-sm font-bold transition-colors"
-            style={{ color: "var(--color-k-navy)" }}
-          >
-            로그인
-          </Link>
-          <Link
-            href="/login?entry=header_signup"
-            onClick={() => void logAuthFlowEvent("header_signup_clicked")}
-            className="px-3 py-2 md:px-4 md:py-2.5 rounded-full text-xs md:text-sm font-bold border transition-colors"
-            style={{ borderColor: "var(--color-k-navy)", color: "var(--color-k-navy)" }}
-          >
-            회원가입
-          </Link>
-        </nav>
       </header>
 
-      <main className="w-full">
-        {/* 히어로 */}
-        <section className="px-5 md:px-10 py-10 md:py-16">
-          <div className="max-w-[1280px] mx-auto flex flex-col md:flex-row items-center gap-8 md:gap-12">
-            <div className="flex-1 flex flex-col items-center md:items-start text-center md:text-left order-2 md:order-1">
-              <h1
-                className="text-[30px] leading-tight md:text-[52px] font-extrabold"
-                style={{ color: "var(--color-k-text-primary)" }}
-              >
-                아이의 하루를 이해하는
-                <br />
-                새로운 방법, 내친구 케이
-              </h1>
-              <p
-                className="mt-4 text-sm md:text-lg max-w-md"
-                style={{ color: "var(--color-k-text-secondary)" }}
-              >
-                내친구 케이는 아이와 케이의 대화를 부모에게 필요한 요약과 오늘의
-                대화거리로 연결하는 AI 소통 서비스입니다.
+      <main>
+        <section className="relative overflow-hidden px-5 pb-16 pt-9 sm:px-6 sm:pt-12 lg:px-10 lg:pb-24 lg:pt-16">
+          <div aria-hidden="true" className="absolute -right-24 top-6 h-72 w-72 rounded-full bg-sky-100/70 blur-3xl lg:h-[430px] lg:w-[430px]" />
+          <div aria-hidden="true" className="absolute -left-32 top-80 h-64 w-64 rounded-full bg-orange-100/60 blur-3xl" />
+          <div className="relative mx-auto grid max-w-[1280px] items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-14">
+            <div className="mx-auto max-w-[620px] text-center lg:mx-0 lg:text-left">
+              <p className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3.5 py-2 text-xs font-extrabold text-sky-800">
+                <HeartHandshake aria-hidden="true" className="h-4 w-4" />
+                아이와 부모를 이어주는 AI 소통 서비스
               </p>
-              <div className="mt-7 flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                <Link
-                  href="/login?entry=landing_start"
-                  onClick={() => void logAuthFlowEvent("landing_start_clicked")}
-                  className="w-full sm:w-auto text-center px-7 py-3.5 rounded-full font-bold text-white text-sm md:text-base transition-opacity active:opacity-80"
-                  style={{ background: "var(--color-k-orange)" }}
+              <h1 className="mt-5 text-[35px] font-extrabold leading-[1.18] tracking-[-0.045em] text-[var(--color-k-navy)] sm:text-[44px] lg:text-[58px]">
+                아이의 오늘은<br />다시 오지 않습니다.
+              </h1>
+              <p className="mt-5 text-[19px] font-bold leading-[1.55] tracking-[-0.02em] text-slate-700 sm:text-[22px]">
+                아이와 매일 소통하며,<br />부모가 아이를 더 잘 이해하도록 돕습니다.
+              </p>
+              <p className="mx-auto mt-4 max-w-[550px] text-[15px] leading-7 text-slate-600 sm:text-base lg:mx-0">
+                아이는 AI 친구 케이와 이야기하고,<br className="sm:hidden" /> 부모는 다음 날 아이의 하루와<br className="sm:hidden" /> 오늘의 대화거리를 받아봅니다.
+              </p>
+              <div className="mt-7 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center lg:justify-start">
+                <LandingPrimaryCta entry="landing_start" eventName="hero_beta_cta_click" className="w-full sm:w-auto" preservedParams={preservedParams} />
+                <a
+                  href="#daily-report"
+                  onClick={() => void logAuthFlowEvent("hero_report_cta_click", readAttribution())}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-extrabold text-[var(--color-k-navy)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
                 >
-                  시작하기
-                </Link>
+                  리포트 먼저 보기 <ArrowDown aria-hidden="true" className="h-4 w-4" />
+                </a>
+              </div>
+              <p className="mt-3 text-xs font-semibold text-slate-500">초등 자녀 가정 · 베타 기간 무료</p>
+            </div>
+            <LandingDashboard />
+          </div>
+        </section>
+
+        <section className="bg-[#F8FAFC] px-5 py-16 sm:px-6 sm:py-20 lg:px-10 lg:py-24">
+          <div className="mx-auto max-w-[880px] text-center">
+            <p className="text-xs font-extrabold tracking-[0.18em] text-[var(--color-k-orange)]">WHY K</p>
+            <h2 className="mt-3 text-[29px] font-extrabold leading-[1.28] tracking-[-0.03em] text-[var(--color-k-navy)] sm:text-[38px]">
+              “오늘 어땠어?”가<br />“그냥”으로 끝난다면
+            </h2>
+            <div className="mx-auto mt-5 max-w-[720px] space-y-3 text-base leading-7 text-slate-600 sm:text-[17px]">
+              <p>아이에게 매일 있었던 일을 모두 설명해 달라고 하기는 어렵습니다.</p>
+              <p>학교에서 있었던 일, 친구 이야기, 요즘 관심 있는 것을 조금만 알고 있어도 부모와 아이의 대화는 달라질 수 있습니다.</p>
+            </div>
+            <p className="mt-6 text-lg font-extrabold text-[var(--color-k-navy)]">내친구 케이는 아이의 하루를 부모와의 다음 대화로 연결합니다.</p>
+          </div>
+        </section>
+
+        <section id="daily-report" className="scroll-mt-20 px-5 py-16 sm:px-6 sm:py-20 lg:px-10 lg:py-28">
+          <div className="mx-auto grid max-w-[1280px] items-center gap-9 lg:grid-cols-2 lg:gap-16">
+            <div className="lg:order-2">
+              <SectionHeading eyebrow="DAILY REPORT" title={<>오늘 아이에게 어떤 하루가 있었는지,<br />1분이면 알 수 있습니다.</>}>
+                <p>아이가 케이와 나눈 하루의 이야기에서 부모가 알아두면 좋은 내용과 자연스럽게 대화를 이어갈 실마리를 정리합니다.</p>
+              </SectionHeading>
+              <div className="mt-7 hidden lg:block">
+                <LandingPrimaryCta entry="landing_start" eventName="daily_beta_cta_click" preservedParams={preservedParams} />
               </div>
             </div>
-            <div className="relative h-[220px] w-[220px] md:h-[480px] md:w-[480px] shrink-0 order-1 md:order-2">
-              <Image
-                src="/Images/mascot/mascot-standing.png"
-                alt="내친구 케이 마스코트"
-                fill
-                priority
-                sizes="(max-width: 767px) 220px, 480px"
-                className="object-contain"
-              />
+            <div className="lg:order-1"><LandingDailyReport /></div>
+            <div className="lg:hidden">
+              <LandingPrimaryCta entry="landing_start" eventName="daily_beta_cta_click" className="w-full" preservedParams={preservedParams} />
             </div>
           </div>
         </section>
 
-        {/* 베타 안내 */}
-        <section
-          id="features"
-          className="px-5 md:px-10 py-10 md:py-16 scroll-mt-14 md:scroll-mt-[72px]"
-          style={{ background: "var(--color-k-surface)" }}
-        >
-          <div className="max-w-[1280px] mx-auto">
-            <h2
-              className="text-2xl md:text-4xl font-extrabold text-center"
-              style={{ color: "var(--color-k-text-primary)" }}
-            >
-              베타 서비스를 시작합니다.
-            </h2>
-
-            <div className="mt-8 md:mt-10">
-              <h3 className="text-sm md:text-base font-bold mb-3" style={{ color: "var(--color-k-text-primary)" }}>
-                이런 가정을 찾고 있어요
-              </h3>
-              <ul className="flex flex-col gap-2.5 md:grid md:grid-cols-3 md:gap-4">
-                {TARGETS.map((t) => (
-                  <li
-                    key={t}
-                    className="rounded-2xl bg-white px-4 py-3.5 text-sm md:text-[15px]"
-                    style={{ boxShadow: "var(--shadow-k-card)", color: "var(--color-k-text-primary)" }}
-                  >
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="mt-8 md:mt-10">
-              <h3 className="text-sm md:text-base font-bold mb-3" style={{ color: "var(--color-k-text-primary)" }}>
-                베타 서비스 기간에 제공되는 혜택
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                {BENEFITS.map((b) => (
-                  <div
-                    key={b.title}
-                    className="rounded-2xl bg-white p-4 md:p-5"
-                    style={{ boxShadow: "var(--shadow-k-card)" }}
-                  >
-                    <p className="text-sm md:text-[15px] font-bold" style={{ color: "var(--color-k-orange)" }}>
-                      {b.title}
-                    </p>
-                    <p className="mt-1.5 text-xs md:text-sm" style={{ color: "var(--color-k-text-secondary)" }}>
-                      {b.desc}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <p className="mt-6 text-center text-xs md:text-sm" style={{ color: "var(--color-k-text-secondary)" }}>
-              회원가입을 완료하시면 바로 베타를 시작하실 수 있어요.
-            </p>
+        <section id="weekly-report" className="scroll-mt-20 bg-[#F8FAFC] px-5 py-16 sm:px-6 sm:py-20 lg:px-10 lg:py-28">
+          <div className="mx-auto grid max-w-[1280px] items-center gap-9 lg:grid-cols-2 lg:gap-16">
+            <SectionHeading eyebrow="WEEKLY REPORT" title={<>하루하루 놓쳤던 이야기를<br />한 주의 흐름으로 볼 수 있습니다.</>}>
+              <p>매일의 대화를 바탕으로 이번 주 아이에게 어떤 일이 있었고 어떤 친구·활동·관심사를 자주 이야기했는지 정리합니다.</p>
+            </SectionHeading>
+            <LandingWeeklyReport />
           </div>
         </section>
 
-        {/* 이용 흐름 */}
-        <section id="how-it-works" className="px-5 md:px-10 py-10 md:py-16 scroll-mt-14 md:scroll-mt-[72px]">
-          <div className="max-w-[1280px] mx-auto">
-            <h2
-              className="text-2xl md:text-4xl font-extrabold text-center"
-              style={{ color: "var(--color-k-text-primary)" }}
-            >
-              이렇게 시작해요
-            </h2>
-            <ol className="mt-8 md:mt-10 flex flex-col gap-3 md:grid md:grid-cols-5 md:gap-4">
-              {FLOW_STEPS.map((step, i) => (
-                <li
-                  key={step.title}
-                  className="rounded-2xl px-4 py-4 md:py-5 flex md:flex-col gap-3 md:gap-2 items-start"
-                  style={{ background: "var(--color-k-navy-tint)" }}
-                >
-                  <span
-                    className="shrink-0 w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs md:text-sm font-bold text-white"
-                    style={{ background: "var(--color-k-navy)" }}
-                  >
-                    {i + 1}
-                  </span>
-                  <div>
-                    <p className="text-sm md:text-[15px] font-bold" style={{ color: "var(--color-k-text-primary)" }}>
-                      {step.title}
-                    </p>
-                    <p className="mt-0.5 text-xs md:text-sm" style={{ color: "var(--color-k-text-secondary)" }}>
-                      {step.desc}
-                    </p>
-                  </div>
+        <section className="px-5 py-16 sm:px-6 sm:py-20 lg:px-10 lg:py-28">
+          <div className="mx-auto max-w-[1180px]">
+            <SectionHeading eyebrow="HOW IT WORKS" title={<>아이는 케이와 이야기하고,<br />부모는 아이와 더 가까워집니다.</>} align="center">
+              <p>복잡한 과정 없이, 매일의 작은 이야기가 부모와 아이의 다음 대화로 이어집니다.</p>
+            </SectionHeading>
+            <ol className="mt-10 grid gap-3 md:grid-cols-3 md:gap-5">
+              {HOW_STEPS.map((step) => (
+                <li key={step.number} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_12px_35px_rgba(16,49,91,0.06)] sm:p-6">
+                  <span className="text-sm font-extrabold text-[var(--color-k-orange)]">STEP {step.number}</span>
+                  <h3 className="mt-3 text-lg font-extrabold text-[var(--color-k-navy)]">{step.title}</h3>
+                  <p className="mt-2 text-sm leading-7 text-slate-600">{step.body}</p>
                 </li>
               ))}
             </ol>
+          </div>
+        </section>
 
-            <div className="mt-9 flex justify-center">
-              <Link
-                href="/login?entry=landing_start"
-                onClick={() => void logAuthFlowEvent("landing_start_clicked")}
-                className="w-full sm:w-auto text-center px-8 py-3.5 rounded-full font-bold text-white text-sm md:text-base"
-                style={{ background: "var(--color-k-orange)" }}
-              >
-                시작하기
+        <section id="trust" className="scroll-mt-20 px-5 pb-16 sm:px-6 sm:pb-20 lg:px-10 lg:pb-28">
+          <div className="mx-auto grid max-w-[1120px] items-center gap-8 overflow-hidden rounded-[30px] bg-[var(--color-k-navy)] px-6 py-9 text-white sm:px-10 sm:py-12 lg:grid-cols-[0.7fr_1.3fr] lg:px-14 lg:py-14">
+            <div className="flex justify-center">
+              <div className="flex h-32 w-32 items-center justify-center rounded-full bg-white/10 sm:h-40 sm:w-40">
+                <ShieldCheck aria-hidden="true" className="h-16 w-16 text-sky-300 sm:h-20 sm:w-20" />
+              </div>
+            </div>
+            <div className="text-center lg:text-left">
+              <p className="text-xs font-extrabold tracking-[0.14em] text-sky-300">아이의 신뢰를 먼저 생각합니다</p>
+              <h2 className="mt-3 text-[28px] font-extrabold leading-tight tracking-[-0.03em] sm:text-[38px]">아이의 이야기는 아이의 것이니까요.</h2>
+              <div className="mt-5 space-y-3 text-base leading-7 text-slate-200">
+                <p>아이가 케이와 나눈 대화 원문 전체를 부모에게 그대로 보여주지 않습니다.</p>
+                <p>부모에게는 아이의 하루를 이해하고 자연스럽게 대화를 시작하는 데 필요한 요약 인사이트를 제공합니다.</p>
+              </div>
+              <Link href="/privacy" className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-white underline decoration-sky-300 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
+                개인정보처리방침 확인하기 <ArrowRight aria-hidden="true" className="h-4 w-4" />
               </Link>
-
             </div>
           </div>
         </section>
 
-        <section
-          id="faq"
-          className="px-5 md:px-10 py-10 md:py-16 scroll-mt-14 md:scroll-mt-[72px]"
-          style={{ background: "var(--color-k-surface)" }}
-          aria-labelledby="faq-title"
-        >
-          <div className="max-w-[880px] mx-auto">
-            <h2
-              id="faq-title"
-              className="text-2xl md:text-4xl font-extrabold text-center"
-              style={{ color: "var(--color-k-text-primary)" }}
-            >
-              자주 묻는 질문
-            </h2>
-            <div className="mt-8 md:mt-10 grid gap-3 md:gap-4">
-              {FAQ_ITEMS.map((item) => (
-                <article
+        <section className="bg-[#FFF8F2] px-5 py-16 text-center sm:px-6 sm:py-20 lg:px-10">
+          <div className="mx-auto max-w-[780px]">
+            <Sparkles aria-hidden="true" className="mx-auto h-7 w-7 text-[var(--color-k-orange)]" />
+            <h2 className="mt-4 text-[28px] font-extrabold leading-tight tracking-[-0.03em] text-[var(--color-k-navy)] sm:text-[38px]">지금 베타 기간 동안 무료로 시작할 수 있습니다.</h2>
+            <p className="mt-4 text-base leading-7 text-slate-600">아이와 케이의 작은 대화가 부모와 아이의 다음 대화를 만들어갑니다.</p>
+            <div className="mt-7">
+              <LandingPrimaryCta entry="landing_start" eventName="beta_cta_click" className="w-full sm:w-auto" preservedParams={preservedParams} />
+            </div>
+            <p className="mt-3 text-xs font-semibold text-slate-500">초등 자녀 가정 대상</p>
+          </div>
+        </section>
+
+        <section id="faq" className="px-5 py-16 sm:px-6 sm:py-20 lg:px-10 lg:py-24">
+          <div className="mx-auto max-w-[850px]">
+            <SectionHeading eyebrow="FAQ" title="자주 묻는 질문" align="center">
+              <p>내친구 케이를 시작하기 전에 궁금한 점을 확인해 보세요.</p>
+            </SectionHeading>
+            <div className="mt-8 divide-y divide-slate-200 border-y border-slate-200">
+              {FAQ_ITEMS.map((item, index) => (
+                <details
                   key={item.question}
-                  className="rounded-2xl bg-white p-5 md:p-6"
-                  style={{ boxShadow: "var(--shadow-k-card)" }}
+                  className="group py-1"
+                  onToggle={(event) => {
+                    if (event.currentTarget.open) {
+                      void logAuthFlowEvent("faq_open", { ...readAttribution(), item: String(index + 1) });
+                    }
+                  }}
                 >
-                  <h3
-                    className="text-base md:text-lg font-bold"
-                    style={{ color: "var(--color-k-text-primary)" }}
-                  >
+                  <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 py-4 text-left text-[15px] font-extrabold text-[var(--color-k-navy)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 sm:text-base [&::-webkit-details-marker]:hidden">
                     {item.question}
-                  </h3>
-                  <p
-                    className="mt-2 text-sm md:text-[15px] leading-relaxed"
-                    style={{ color: "var(--color-k-text-secondary)" }}
-                  >
-                    {item.answer}
-                  </p>
-                </article>
+                    <span aria-hidden="true" className="text-xl font-light text-slate-400 transition-transform group-open:rotate-45">＋</span>
+                  </summary>
+                  <p className="pb-5 pr-8 text-sm leading-7 text-slate-600 sm:text-[15px]">{item.answer}</p>
+                </details>
               ))}
             </div>
-            <p className="mt-5 text-center text-xs md:text-sm" style={{ color: "var(--color-k-text-secondary)" }}>
-              개인정보 처리와 법정대리인 동의에 관한 자세한 내용은{" "}
-              <Link href="/privacy" className="font-bold underline underline-offset-2">
-                개인정보처리방침
-              </Link>
-              에서 확인할 수 있습니다.
-            </p>
+          </div>
+        </section>
+
+        <section className="px-5 pb-16 sm:px-6 sm:pb-20 lg:px-10 lg:pb-24">
+          <div className="mx-auto max-w-[1050px] overflow-hidden rounded-[30px] bg-sky-50 px-6 py-12 text-center sm:px-10 lg:py-16">
+            <MessageCircleMore aria-hidden="true" className="mx-auto h-8 w-8 text-sky-600" />
+            <h2 className="mt-4 text-[30px] font-extrabold tracking-[-0.03em] text-[var(--color-k-navy)] sm:text-[42px]">아이의 오늘을 놓치지 마세요.</h2>
+            <p className="mt-4 text-base leading-7 text-slate-600">케이와 나눈 작은 대화가<br />부모와 아이의 다음 대화를 만들어갑니다.</p>
+            <div className="mt-7">
+              <LandingPrimaryCta entry="landing_start" eventName="final_beta_cta_click" className="w-full sm:w-auto" preservedParams={preservedParams} />
+            </div>
           </div>
         </section>
       </main>
 
-      {/* 푸터 */}
-      <footer
-        className="px-5 md:px-10 py-8 md:py-10 border-t"
-        style={{ borderColor: "var(--color-k-border)", background: "var(--color-k-surface)" }}
-      >
-        <div className="max-w-[1280px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs md:text-sm" style={{ color: "var(--color-k-text-secondary)" }}>
-            <a href="#features" className="underline underline-offset-2">
-              서비스 소개
-            </a>
-            <a href="#faq" className="underline underline-offset-2">
-              자주 묻는 질문
-            </a>
-            <Link href="/privacy" className="underline underline-offset-2">
-              개인정보처리방침
-            </Link>
-            <span aria-disabled="true" className="opacity-60 cursor-not-allowed">
-              이용약관 준비 중입니다
-            </span>
-            {isValidFaqUrl ? (
-              <a href={faqUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
-                문의하기 · FAQ
-              </a>
-            ) : (
-              <span aria-disabled="true" className="opacity-60 cursor-not-allowed">
-                문의하기 · FAQ 준비 중입니다
-              </span>
-            )}
+      <footer className="border-t border-slate-200 bg-[#F8FAFC] px-5 py-9 sm:px-6 lg:px-10">
+        <div className="mx-auto flex max-w-[1280px] flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="relative h-8 w-[116px]">
+              <Image src="/Images/logo/Logo.png" alt="내친구 케이" fill sizes="116px" className="object-contain object-left" />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">부모와 아이의 다음 대화를 이어주는 AI 소통 서비스</p>
           </div>
-          <p className="text-[11px] md:text-xs" style={{ color: "var(--color-k-disabled)" }}>
-            사업자 정보 준비 중입니다.
-          </p>
+          <nav className="flex flex-wrap gap-x-5 gap-y-3 text-xs font-semibold text-slate-600" aria-label="하단 메뉴">
+            <a href="#daily-report" className="min-h-11 py-3 underline-offset-4 hover:underline">일간 리포트</a>
+            <a href="#weekly-report" className="min-h-11 py-3 underline-offset-4 hover:underline">주간 리포트</a>
+            <a href="#faq" className="min-h-11 py-3 underline-offset-4 hover:underline">자주 묻는 질문</a>
+            <Link href="/privacy" className="min-h-11 py-3 underline-offset-4 hover:underline">개인정보처리방침</Link>
+            {isValidFaqUrl ? (
+              <a href={faqUrl} target="_blank" rel="noopener noreferrer" className="min-h-11 py-3 underline-offset-4 hover:underline">문의하기</a>
+            ) : (
+              <span aria-disabled="true" className="min-h-11 py-3 text-slate-400">문의하기 준비 중</span>
+            )}
+          </nav>
         </div>
       </footer>
     </div>
