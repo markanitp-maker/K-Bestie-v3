@@ -1,22 +1,12 @@
-// 법정대리인(부모) 개인정보 처리 동의 문구 — 만 14세 미만 아동 계정 등록 시 노출.
-// 문구를 바꿀 때는 반드시 CONSENT_DOCUMENT_VERSION도 함께 갱신할 것(날짜 기반 버전 문자열).
-// 이미 저장된 동의 기록(child_profiles.guardian_consent_version)은 그대로 두고, 새 등록/재동의
-// 건부터 새 버전이 적용된다 — 과거 동의 이력을 소급 변경하지 않기 위함.
+// 기존 import 경로를 쓰는 동의 저장 API의 비파괴 호환 레이어다. 저장 버전과 본문은
+// Legal Registry가 현재 환경에서 공개한 guardian 문서에서 함께 결정한다.
+import { getCurrentLegalDocument, legalDocumentToPlainText } from "@/lib/legal/legalDocuments";
 
-export const CONSENT_DOCUMENT_VERSION = "2026-07-16";
+const currentConsentDocument = getCurrentLegalDocument("guardian_u14");
 
-export const CONSENT_DOCUMENT_TEXT = `
-[법정대리인 개인정보 수집·이용 동의]
+if (!currentConsentDocument) {
+  throw new Error("현재 환경에 공개 가능한 법정대리인 동의 문서가 없습니다.");
+}
 
-1. 수집 항목: 아이의 이름, 학년, 관심사, AI 친구 '케이'와의 대화 내용(텍스트/음성), 대화 기반으로
-   생성되는 감정·활동 리포트.
-2. 수집 목적: 아이와 AI 친구 '케이'의 대화 서비스 제공, 부모님께 보여드리는 일일/주간 리포트 생성,
-   서비스 품질 개선.
-3. 보유 기간: 가입하신 요금제별 보존기간 동안 보관 후 자동 파기됩니다(요금제 하향 시에도 유예
-   기간을 두고 있습니다). 자세한 보존기간은 요금제 안내를 참고해 주세요.
-4. 만 14세 미만 아동의 개인정보는 법정대리인의 동의 없이 수집하지 않으며, 위 동의는 법정대리인이
-   자녀를 대신하여 제공하는 것입니다.
-5. 동의를 거부할 권리가 있으며, 거부 시 서비스 이용(아이 계정 등록)이 제한될 수 있습니다.
-6. 동의 후에도 아래 '동의 철회'를 통해 언제든지 동의를 철회할 수 있습니다. 철회 시 아이 계정을
-   통한 서비스 이용이 중단됩니다.
-`.trim();
+export const CONSENT_DOCUMENT_VERSION = currentConsentDocument.version;
+export const CONSENT_DOCUMENT_TEXT = legalDocumentToPlainText(currentConsentDocument);
