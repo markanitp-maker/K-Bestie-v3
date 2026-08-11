@@ -438,11 +438,11 @@ export default function ChildHomePage() {
         {/* PWA Install Banner */}
         {showPwaBanner && (
           <div className="sticky bottom-0 w-full bg-[#FFF9F2] border-t border-black/5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] p-4 flex items-center justify-between z-50 mt-auto pb-[env(safe-area-inset-bottom,16px)]">
-            <p className="text-sm font-semibold text-[var(--color-k-navy)] px-2">현재 브라우저에서 이용 중이에요. 앱 설치하기 후 더 편리한 앱 환경에서 이용해 보세요.</p>
+            <p className="text-sm font-semibold text-[var(--color-k-navy)] px-2">모바일 / 태블릿 / PC</p>
             <div className="flex items-center gap-3">
-              <button 
+              <button
                 onClick={onInstallClick}
-                className="h-[44px] px-5 rounded-full bg-[var(--color-k-orange)] text-white font-bold text-[15px] shadow-sm active:scale-95 transition-transform"
+                className="h-[44px] min-w-[112px] px-5 rounded-full bg-[var(--color-k-orange)] text-white font-bold text-[15px] whitespace-nowrap shadow-sm active:scale-95 transition-transform"
               >
                 앱 설치하기
               </button>

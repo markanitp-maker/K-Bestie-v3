@@ -350,7 +350,7 @@ export default function ParentHomePage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={onInstallClick}
-                className="h-[44px] px-5 rounded-full bg-[var(--color-k-orange)] text-white font-bold text-[15px] shadow-sm active:scale-95 transition-transform"
+                className="h-[44px] min-w-[112px] px-5 rounded-full bg-[var(--color-k-orange)] text-white font-bold text-[15px] whitespace-nowrap shadow-sm active:scale-95 transition-transform"
               >
                 앱 설치하기
               </button>
