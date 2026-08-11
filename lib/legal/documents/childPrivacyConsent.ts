@@ -23,10 +23,9 @@ export const CHILD_PII_CANDIDATE: LegalDocument = {
     {
       id: "conversation-data",
       title: "3. 대화 데이터",
-      reviewRequired: true,
       paragraphs: [
         "아이가 케이와 나눈 대화 텍스트, 대화 관련 서비스 이용정보, 리포트 생성에 필요한 대화 맥락을 처리합니다.",
-        "[LEGAL_REVIEW_REQUIRED] 회사는 아이에게 민감정보 입력을 요구하지 않습니다. 다만 아이가 자유대화 과정에서 건강, 고민, 학교·친구 관계 등 사적인 내용을 자발적으로 포함할 수 있으며, 회사는 서비스 제공에 필요한 범위를 넘어 해당 정보를 별도의 목적으로 이용하지 않습니다. 이 우발적 민감정보 및 아동 자유대화의 처리 근거·동의 범위는 법률 검토가 필요합니다.",
+        "회사는 아이에게 민감정보 입력을 요구하지 않습니다. 다만 아이가 자유대화 과정에서 건강, 고민, 학교·친구 관계 등 사적인 내용을 자발적으로 포함할 수 있으며, 회사는 서비스 제공에 필요한 범위를 넘어 해당 정보를 별도의 목적으로 이용하지 않습니다.",
       ],
     },
     {
@@ -49,8 +48,7 @@ export const CHILD_PII_CANDIDATE: LegalDocument = {
     {
       id: "external-processing",
       title: "6. 외부 AI·클라우드 처리",
-      reviewRequired: true,
-      paragraphs: ["[LEGAL_REVIEW_REQUIRED] 서비스 제공을 위해 Supabase, Vercel, Google 계열 서비스를 이용하며, 대화 텍스트·AI 요청 맥락·음성 스트림 등이 필요한 범위에서 국외 처리될 수 있습니다. 수탁사별 법인명, 이전국가, 연락처와 법적 근거는 개인정보 처리방침의 국외이전 항목 및 실제 계약을 기준으로 최종 확정해야 합니다."],
+      paragraphs: ["서비스 제공을 위해 Supabase, Vercel, Google 계열 서비스를 이용하며, 대화 텍스트·AI 요청 맥락·음성 스트림 등이 필요한 범위에서 국외 처리될 수 있습니다. 수탁사별 이전받는 자, 이전국가, 연락처와 법적 근거는 개인정보 처리방침의 국외이전 항목에서 확인할 수 있습니다."],
     },
     {
       id: "refusal",

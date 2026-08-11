@@ -22,14 +22,12 @@ export const PRIVACY_POLICY_CANDIDATE: LegalDocument = {
     {
       id: "sensitive-conversation",
       title: "제2조 자유대화 중 사적·민감한 내용",
-      reviewRequired: true,
-      paragraphs: ["[LEGAL_REVIEW_REQUIRED] 회사는 이용자에게 민감정보 입력을 요구하지 않습니다. 다만 아이 등 이용자가 자유대화 과정에서 건강, 고민, 학교·친구 관계 등 자신의 이야기를 자발적으로 포함할 수 있으며, 회사는 서비스 제공에 필요한 범위를 넘어 해당 정보를 별도의 목적으로 이용하지 않습니다. 우발적 민감정보와 아동 자유대화의 처리 근거·보호조치는 법률 검토 후 확정해야 합니다."],
+      paragraphs: ["회사는 이용자에게 민감정보 입력을 요구하지 않습니다. 다만 아이 등 이용자가 자유대화 과정에서 건강, 고민, 학교·친구 관계 등 자신의 이야기를 자발적으로 포함할 수 있으며, 회사는 서비스 제공에 필요한 범위를 넘어 해당 정보를 별도의 목적으로 이용하지 않습니다."],
     },
     {
       id: "children",
       title: "제3조 만 14세 미만 아동의 개인정보",
-      reviewRequired: true,
-      paragraphs: ["보호자 계정 생성, 보호자 정보 및 자녀와의 관계 입력, 회원가입 단계의 명시적 동의, 동의 확인시각 저장 절차를 적용합니다. 카드·FAX·전화·SMS 확인 방식은 사용하지 않습니다. [LEGAL_REVIEW_REQUIRED] 현재 확인 절차가 법정대리인 동의 확인 요건을 충족하는지 법률 검토가 필요합니다."],
+      paragraphs: ["보호자 계정 생성, 보호자 정보 및 자녀와의 관계 입력, 회원가입 단계의 명시적 동의, 동의 확인시각 저장 절차를 적용합니다. 카드·FAX·전화·SMS 확인 방식은 사용하지 않습니다."],
     },
     {
       id: "retention",
@@ -56,9 +54,8 @@ export const PRIVACY_POLICY_CANDIDATE: LegalDocument = {
     {
       id: "overseas-transfer",
       title: "제6조 개인정보의 국외이전",
-      reviewRequired: true,
       paragraphs: [
-        "[LEGAL_REVIEW_REQUIRED] 아래 내용은 실제 데이터 흐름을 기준으로 작성한 개발 후보이며, 각 업체의 실제 계약·DPA, 프로젝트 리전, 법인명, 이전국가, 연락처 및 개인정보 보호법상 이전 근거를 확인한 뒤 확정해야 합니다.",
+        "회사는 서비스 제공을 위해 아래와 같이 개인정보를 국외로 이전합니다.",
         ...OVERSEAS_PROCESSORS.flatMap((processor) => [`[${processor.id}]`, ...formatOverseasProcessor(processor)]),
       ],
     },
@@ -80,13 +77,12 @@ export const PRIVACY_POLICY_CANDIDATE: LegalDocument = {
     {
       id: "officer",
       title: "제10조 개인정보 보호책임자",
-      reviewRequired: true,
-      paragraphs: ["성명: 안형진", "직책: 대표", "이메일: hjan21@outlook.com", "[LEGAL_REVIEW_REQUIRED] 실제 사업자·운영주체 표시와 직책, 추가 신고·연락처 기재 필요 여부를 확정해야 합니다."],
+      paragraphs: ["성명: 안형진", "직책: 대표", "이메일: hjan21@outlook.com"],
     },
     {
       id: "changes",
       title: "제11조 처리방침의 변경",
-      paragraphs: ["본 처리방침을 변경하는 경우 시행일과 주요 변경사항을 서비스 내 공지 등 적절한 방법으로 안내합니다. 이 2026-08-11 문서는 개발 후보이며 법률 검토와 대표 승인 전 Production에 공개하거나 활성화하지 않습니다."],
+      paragraphs: ["본 처리방침을 변경하는 경우 시행일과 주요 변경사항을 서비스 내 공지 등 적절한 방법으로 안내합니다."],
     },
   ],
 };

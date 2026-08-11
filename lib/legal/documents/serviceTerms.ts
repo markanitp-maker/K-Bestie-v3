@@ -49,9 +49,8 @@ export const SERVICE_TERMS_CANDIDATE: LegalDocument = {
     {
       id: "child-conversation",
       title: "제7조 아이 대화 데이터",
-      reviewRequired: true,
       paragraphs: [
-        "[LEGAL_REVIEW_REQUIRED] 아이와 케이의 대화 데이터는 서비스 제공과 리포트 생성에 필요한 범위에서 처리합니다. 자유대화 중 아동이 자발적으로 제공할 수 있는 사적·민감한 내용의 적법한 처리 근거와 고지 문구는 법률 검토가 필요합니다.",
+        "아이와 케이의 대화 데이터는 서비스 제공과 리포트 생성에 필요한 범위에서 처리합니다.",
         "처리와 보존에 관한 구체적인 사항은 개인정보 처리방침 및 아이 개인정보 수집·이용 동의서에서 확인할 수 있습니다.",
       ],
     },

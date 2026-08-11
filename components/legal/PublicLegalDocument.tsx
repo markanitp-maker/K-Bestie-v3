@@ -23,7 +23,7 @@ export const PublicLegalDocument = ({ document, release, unavailableTitle }: Pub
             </p>
             {release === "development-candidate" && (
               <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-relaxed text-amber-800">
-                Development candidate · LEGAL_REVIEW_REQUIRED · Production 미공개
+                개발 환경 검토용 문서입니다 · 프로덕션에는 공개되지 않았습니다
               </p>
             )}
           </div>

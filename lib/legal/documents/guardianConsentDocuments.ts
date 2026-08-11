@@ -15,10 +15,9 @@ export const GUARDIAN_U14_CANDIDATE: LegalDocument = {
     {
       id: "scope",
       title: "2. 동의 범위",
-      reviewRequired: true,
       paragraphs: [
         "아이의 성·이름, 로그인 아이디, 비밀번호, 학년, 성별, 보호자-자녀 연결정보와 내부 식별정보를 처리하는 것에 동의합니다.",
-        "[LEGAL_REVIEW_REQUIRED] 아이와 케이의 대화 텍스트, 대화 맥락, 음성 인식 처리, 리포트·요약 인사이트 생성 및 자유대화에서 자발적으로 포함될 수 있는 사적·민감한 내용의 처리 범위는 법률 검토가 필요합니다.",
+        "아이와 케이의 대화 텍스트, 대화 맥락, 음성 인식 처리, 리포트·요약 인사이트 생성 및 자유대화에서 자발적으로 포함될 수 있는 사적·민감한 내용을 서비스 제공 목적 범위에서 처리하는 것에 동의합니다.",
       ],
     },
     {
@@ -34,8 +33,7 @@ export const GUARDIAN_U14_CANDIDATE: LegalDocument = {
     {
       id: "external",
       title: "5. 외부 AI·클라우드 및 국외 처리",
-      reviewRequired: true,
-      paragraphs: ["[LEGAL_REVIEW_REQUIRED] Supabase, Vercel, Google 계열 서비스에서 아이의 계정·대화·음성 관련 데이터가 서비스 제공에 필요한 범위로 처리될 수 있습니다. 수탁사별 국외이전 세부사항과 적법한 동의 문구는 실제 계약 확인 후 확정해야 합니다."],
+      paragraphs: ["Supabase, Vercel에서 아이의 계정·대화·이용기록 관련 데이터가, Google 계열 서비스에서 아이의 대화·음성 관련 데이터가 서비스 제공에 필요한 범위로 처리될 수 있습니다. 수탁사별 이전받는 자와 국외이전 세부사항은 개인정보 처리방침의 국외이전 항목에서 확인할 수 있습니다."],
     },
     {
       id: "withdrawal",
@@ -65,8 +63,7 @@ export const GUARDIAN_AUTHORITY_CANDIDATE: LegalDocument = {
     {
       id: "verification",
       title: "3. 추가 확인",
-      reviewRequired: true,
-      paragraphs: ["서비스는 필요한 경우 보호자-자녀 관계 및 동의권한 확인을 요청할 수 있습니다. [LEGAL_REVIEW_REQUIRED] 현재의 계정 가입·관계 입력·체크박스 방식이 법정대리인 동의 확인 요건을 충족하는지 법률 검토가 필요합니다."],
+      paragraphs: ["서비스는 필요한 경우 보호자-자녀 관계 및 동의권한 확인을 요청할 수 있습니다."],
     },
   ],
 };

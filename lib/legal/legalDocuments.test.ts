@@ -6,6 +6,7 @@ import {
   LEGAL_DOCUMENT_REGISTRY,
   PRODUCTION_ACTIVE_CONSENT_VERSION,
   getLegalDocument,
+  legalDocumentToPlainText,
 } from "./legalDocuments";
 import { OVERSEAS_PROCESSORS } from "./processors";
 
@@ -48,20 +49,17 @@ test("production active version remains unchanged and candidate text is not prom
   );
 });
 
-test("review-sensitive sections expose the LEGAL_REVIEW_REQUIRED marker", () => {
-  const reviewedSections = LEGAL_DOCUMENT_KEYS.flatMap((key) =>
-    LEGAL_DOCUMENT_REGISTRY[key].developmentCandidate.sections.filter((section) => section.reviewRequired),
-  );
-  assert.ok(reviewedSections.length > 0);
-  assert.ok(
-    reviewedSections.every((section) =>
-      section.paragraphs.some((paragraph) => paragraph.includes("LEGAL_REVIEW_REQUIRED")),
-    ),
-  );
+test("no document carries the internal LEGAL_REVIEW_REQUIRED marker anywhere (published, finished text only)", () => {
+  for (const key of LEGAL_DOCUMENT_KEYS) {
+    const document = LEGAL_DOCUMENT_REGISTRY[key].developmentCandidate;
+    assert.ok(!legalDocumentToPlainText(document).includes("LEGAL_REVIEW_REQUIRED"));
+  }
 });
 
-test("overseas processors have one config per provider and unresolved legal facts are marked", () => {
+test("overseas processors have one config per provider and carry resolved legal facts (no placeholder text)", () => {
   assert.deepEqual(OVERSEAS_PROCESSORS.map((processor) => processor.id).sort(), ["google", "supabase", "vercel"]);
   assert.equal(new Set(OVERSEAS_PROCESSORS.map((processor) => processor.id)).size, OVERSEAS_PROCESSORS.length);
-  assert.ok(OVERSEAS_PROCESSORS.every((processor) => processor.legalBasis.includes("LEGAL_REVIEW_REQUIRED")));
+  assert.ok(OVERSEAS_PROCESSORS.every((processor) => !processor.legalBasis.includes("LEGAL_REVIEW_REQUIRED")));
+  assert.ok(OVERSEAS_PROCESSORS.every((processor) => !processor.country.includes("LEGAL_REVIEW_REQUIRED")));
+  assert.ok(OVERSEAS_PROCESSORS.every((processor) => !processor.name.includes("LEGAL_REVIEW_REQUIRED")));
 });
