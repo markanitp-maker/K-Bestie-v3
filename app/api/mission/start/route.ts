@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 022 Phase 2A: 미션 시작 시 서버가 KST 유효 시간과 실제 미션 종류를 검증하여 mission_phase(1 또는 2)를 확정 저장한다.
-  const mission_phase = getMissionPhase(roundType);
+  const mission_phase = getMissionPhase(roundType, false, scheduleEnforced);
   if (mission_phase === null) {
     return NextResponse.json({ error: "현재 미션을 시작할 수 있는 시간이 아닙니다.", scheduleClosed: true }, { status: 403 });
   }

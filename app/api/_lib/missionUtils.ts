@@ -1,9 +1,23 @@
 import { toZonedTime } from "date-fns-tz";
+import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
 
 export function getMissionPhase(
   missionType: 'round1_day' | 'round2_night' | 'common',
-  isTestAccount: boolean = false
+  isTestAccount: boolean = false,
+  scheduleEnforced: boolean = true
 ): 1 | 2 | null {
+  if (!scheduleEnforced) {
+    // DEV(scheduleEnforced=false): 시간 게이트를 완전히 비활성화한다. missionType에만
+    // 의존하는 고정값을 반환해, 세션 생성 시점과 재개(resume) 시점 사이에 실제 시계가
+    // 바뀌어도 절대 값이 달라지지 않게 한다 — 그래야 아래 assertMissionSessionActive의
+    // currentPhase !== expectedPhase 판정이 DEV에서는 절대 force_end_mission_session을
+    // 트리거하지 않는다(시간 기반 휴리스틱을 쓰면 자정을 넘기는 세션 등에서 값이
+    // 바뀌어 오히려 강제종료를 유발할 수 있어 고정값을 쓴다).
+    if (missionType === 'round1_day') return 1;
+    if (missionType === 'round2_night') return 2;
+    return 1;
+  }
+
   const kstNow = toZonedTime(new Date(), "Asia/Seoul");
   const hour = kstNow.getHours();
   const min = kstNow.getMinutes();
@@ -110,7 +124,7 @@ export async function assertMissionSessionActive(
   }
 
   const roundType = (progress.round_type as 'round1_day' | 'round2_night' | 'common') ?? 'common';
-  const currentPhase = getMissionPhase(roundType, false);
+  const currentPhase = getMissionPhase(roundType, false, isMissionScheduleEnforced());
 
   const expectedPhase = session.mission_phase ?? (roundType === "round2_night" ? 2 : 1);
 
