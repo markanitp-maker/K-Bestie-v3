@@ -393,7 +393,7 @@ export default function KChatbotWidget({
           resolve(new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), { type: "image/jpeg" }));
         }, "image/jpeg", 0.85);
       };
-      img.onerror = () => reject(new Error("Image decode failed"));
+      img.onerror = () => resolve(file);
       img.src = URL.createObjectURL(file);
     });
   };
