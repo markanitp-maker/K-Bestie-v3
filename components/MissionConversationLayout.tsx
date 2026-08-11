@@ -484,14 +484,22 @@ export function MissionConversationLayout({
             ) : (
               <div className="w-full flex items-center justify-center h-[clamp(92px,24vw,100px)] relative">
                 {/* Keyboard Button */}
-                <button 
-                  onClick={onToggleTextMode}
-                  disabled={isClosing || entryStatus !== "active"}
-                  className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(46px,12vw,50px)] h-[clamp(46px,12vw,50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  aria-label="텍스트로 답하기"
-                >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
-                </button>
+                <div className="absolute left-[clamp(8px,2vw,16px)] flex w-[clamp(112px,29vw,128px)] flex-col items-center gap-1">
+                  <button
+                    onClick={onToggleTextMode}
+                    disabled={isClosing || entryStatus !== "active" || isRecording}
+                    className="w-[clamp(46px,12vw,50px)] h-[clamp(46px,12vw,50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="텍스트로 답하기"
+                    aria-describedby={isRecording ? "keyboard-recording-hint" : undefined}
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
+                  </button>
+                  {isRecording && (
+                    <span id="keyboard-recording-hint" className="text-center text-[11px] font-bold leading-tight text-[#B45309]">
+                      녹음을 먼저 끝내 주세요
+                    </span>
+                  )}
+                </div>
 
                 {/* Main Mic Button */}
                 <div className="relative flex items-center justify-center">

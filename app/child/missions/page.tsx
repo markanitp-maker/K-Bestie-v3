@@ -313,13 +313,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
     // 011 2차: 문구를 케이 말풍선(askQuestion 경유 speakAsK)이나 배너로 노출하지 않는다.
     // 복구 불가능한 경우에만 재시도 버튼을 띄운다 — 텍스트도, 채팅 기록 저장도 없다.
-    // 수동 텍스트 입력 모드(mode === "text") 중에는 음성/마이크 중단으로 인한 접속 끊김 팝업을 띄우지 않는다.
-    if (mode === "text") {
-      setShowRetryButton(false);
-    } else {
-      setShowRetryButton(!!showRetryButtonNow);
-    }
-  }, [setTurnPhase, mode]);
+    // 텍스트 overlay는 연결 상태와 무관한 presentation state이므로, 실제 연결 장애는
+    // overlay가 열려 있어도 기존 retry UX로 그대로 노출한다.
+    setShowRetryButton(!!showRetryButtonNow);
+  }, [setTurnPhase]);
 
   const roundTypeRef = useRef<RoundType | null>(null);
   roundTypeRef.current = roundType;
@@ -1341,6 +1338,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const pingRef = useRef<HTMLDivElement | null>(null);
 
+  // 음성·텍스트가 같은 child 턴 수락 조건을 공유한다. 연결 및 Live 내부 VAD/STT 확정
+  // 상태는 각 훅이 검사하고, 페이지는 미션 턴 상태와 API 처리 중 여부를 검사한다.
+  const canAcceptTypedInput = useCallback(() => {
+    return missionStateRef.current === "active"
+      && turnPhaseRef.current === "child_listening"
+      && !answerInFlightRef.current;
+  }, []);
+
   const sttTts = useVoiceChat({
     onTurnComplete: handleTurnComplete,
     getSessionId: () => sessionIdRef.current,
@@ -1401,6 +1406,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   sttTtsStopSpeakingRef.current = sttTts.stopSpeaking;
   const live = useGeminiLive({
     onTurnComplete: handleTurnComplete,
+    canAcceptTypedInput,
     voiceName: liveVoiceName,
     sttMode: "gcp",
     // Care Premium 미션 화면에만 무입력 감지(+RMS threshold 오버라이드)를 켠다 — 자유대화의
@@ -1591,7 +1597,8 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         startSession: live.startSession,
         stopSession: live.stopSession,
         setMicEnabled: live.setMicEnabled,
-        sendTypedText: live.sendText,
+        canSendTypedText: live.canSendTypedText,
+        sendTypedText: live.sendTypedText,
         getTranscript: live.getTranscript,
         seedTranscript: live.seedTranscript,
       }
@@ -1604,7 +1611,12 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         stopSession: sttTts.stopSession,
         setMicEnabled: sttTts.setMicEnabled,
         seedTranscript: sttTts.seedTranscript,
-        sendTypedText: sttTts.sendTypedText,
+        canSendTypedText: () => sttTts.status === "live" && canAcceptTypedInput(),
+        sendTypedText: (text: string) => {
+          if (sttTts.status !== "live" || !canAcceptTypedInput()) return false;
+          sttTts.sendTypedText(text);
+          return true;
+        },
         getTranscript: sttTts.getTranscript,
       };
 
@@ -1659,17 +1671,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       }
     };
 
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        handleLeave();
-      }
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", handleLeave);
-    
+
     return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", handleLeave);
       handleLeave();
     };
@@ -1746,72 +1750,54 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   const switchToText = useCallback(() => {
     if (missionStateRef.current !== "active") return;
-    
-    // 수동 텍스트 모드 전환 시 기존 음성/마이크 관련 워치독 타이머 및 팝업 해제
-    if (sttTimeoutRef.current) { clearTimeout(sttTimeoutRef.current); sttTimeoutRef.current = null; }
-    if (manualTimeoutRef.current) { clearTimeout(manualTimeoutRef.current); manualTimeoutRef.current = null; }
+    // 수동 녹음 중에는 이미 activityStart와 PCM이 전송되고 있다. 이 턴을 아이 답변으로
+    // 확정하지 않은 채 overlay로 전환할 수 없으므로, 먼저 마이크 버튼으로 녹음을 끝내게 한다.
+    if (isRecordingRef.current || (isLiveMode && live.hasPendingAutoSpeech())) return;
+
+    // 텍스트 채팅은 기존 미션/Live 세션 위에 뜨는 presentation overlay다. 입력 UI를 여는
+    // 것만으로 activityEnd(아이 턴 확정), interaction mode 변경, 세션 종료를 발생시키지 않는다.
+    // STT 확정/답변 처리 watchdog도 해당 비동기 작업이 끝날 때까지 그대로 유지한다.
     setShowRetryButton(false);
 
-    // 1. VAD/activity 및 마이크 중단 (모드 변경 전 무조건 실행)
+    // WebSocket/Live context는 유지하고 오디오 캡처만 멈춘다. useGeminiLive의 PCM 게이트는
+    // 다음 audio frame에서 VAD 임시 상태도 정리하므로 별도 activityEnd가 필요하지 않다.
     if (isLiveMode) {
-      live.sendActivityEnd();
-      live.setAudioMuted(false);
+      live.setMicEnabled(false);
     } else {
       sttTts.setMicEnabled(false);
     }
-    voice.setMicEnabled(false);
 
-    // 녹음 중이었을 때의 추가 정리 작업
-    if (isRecordingRef.current) {
-      try {
-        if (!isLiveMode) {
-          sttAbortControllerRef.current = new AbortController();
-          const capturedId = activeChildTurnIdRef.current;
-          sttTimeoutRef.current = setTimeout(() => {
-            if (activeChildTurnIdRef.current !== capturedId) return;
-            attemptSilentRecoveryOrShowRetry();
-          }, 10000);
-          sttTts.manualFinalize(sttAbortControllerRef.current.signal);
-        }
-      } finally {
-        setIsRecording(false);
-        isRecordingRef.current = false;
-      }
-    }
-    
-    // 2. 모드 수동 변경
-    if (isAutoRef.current) {
-      if (isLiveMode) {
-        live.setInteractionMode("manual");
-      } else {
-        sttTts.setInputMode("manual");
-      }
-      setIsAuto(false);
-      isAutoRef.current = false;
-      if (childIdRef.current) {
-        localStorage.setItem(`k_voice_input_mode:${childIdRef.current}`, "manual");
-      }
-    }
-    // 3. 텍스트 입력 UI 열기
     setMode("text");
-  }, [voice, live, isLiveMode, sttTts, attemptSilentRecoveryOrShowRetry]);
+  }, [live, isLiveMode, sttTts]);
 
   const switchToVoice = useCallback(() => {
     if (missionStateRef.current !== "active") return;
     setMode("voice");
-  }, []);
+    // overlay를 닫아도 새 세션/reconnect는 만들지 않는다. Live 수동 모드도 PCM 게이트는
+    // 다시 열어 두되 isChildSpeaking=false라 다음 마이크 탭의 activityStart 전에는 전송되지 않는다.
+    if (isLiveMode) {
+      live.setMicEnabled(true);
+    } else if (isAutoRef.current) {
+      sttTts.setMicEnabled(true);
+    }
+  }, [isLiveMode, live, sttTts]);
 
   const handleSendText = useCallback(() => {
-    if (missionStateRef.current !== "active") return; // 완료 상태 가드
-    if (answerInFlightRef.current) return; // 처리 중엔 새 제출을 아예 막는다
     const text = textInput.trim();
     if (!text) return;
-    setTextInput("");
+    if (!voice.canSendTypedText()) {
+      // 상태 경쟁으로 거절된 답변은 입력과 transcript 양쪽 모두 그대로 보존한다.
+      // 실제 연결 단절만 기존 이어하기 UI로 연결하고, 정상적인 턴 잠금은 조용히 재시도 가능하게 둔다.
+      if (voice.status !== "live") setAutoStartFailed(true);
+      return;
+    }
     if (voiceModeRef.current !== "live") {
       activeChildTurnIdRef.current = nextTurnId();
       activeChildTurnSeqRef.current = nextDisplaySequence();
     }
-    voice.sendTypedText(text);
+    const sent = voice.sendTypedText(text);
+    if (!sent) return;
+    setTextInput("");
   }, [textInput, voice, nextTurnId, nextDisplaySequence]);
 
   const handleClose = useCallback(() => {
@@ -2848,7 +2834,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
               }
               recoveryAttemptedRef.current = false;
               setShowRetryButton(false);
-              if (!isLiveMode && isAuto && missionStateRef.current === "active") {
+              if (isLiveMode) {
+                void live.startSession({ preserveHistory: true });
+              } else if (isAuto && missionStateRef.current === "active") {
                 sttSetMicEnabledRef.current?.(true);
               }
             }}
@@ -2906,18 +2894,22 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         </div>
       )}
       
-      {!isLiveMode && !isConnecting && !isDone && autoStartFailed && (
+      {!isConnecting && !isDone && autoStartFailed && (
         <div className="fixed top-[120px] left-1/2 -translate-x-1/2 z-[60] w-[90%] max-w-[320px]">
           <button
             onClick={() => {
               if (isLiveMode) void live.unlockAudio();
               setAutoStartFailed(false);
-              voice.startSession();
+              if (isLiveMode) {
+                void live.startSession({ preserveHistory: true });
+              } else {
+                voice.startSession();
+              }
             }}
             className="w-full py-3 rounded-2xl text-sm font-bold text-white cursor-pointer shadow-lg active:scale-95 transition-transform"
             style={{ background: "var(--color-k-orange)" }}
           >
-            ▶️ 미션 시작하기
+            ▶️ 미션 이어하기
           </button>
         </div>
       )}
