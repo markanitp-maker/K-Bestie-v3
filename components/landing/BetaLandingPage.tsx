@@ -220,7 +220,7 @@ export default function BetaLandingPage({
                 아이와 부모를 이어주는 AI 소통 서비스
               </p>
               <h1 className="mt-5 text-[35px] font-extrabold leading-[1.18] tracking-[-0.045em] text-[var(--color-k-navy)] sm:text-[44px] lg:text-[58px]">
-                아이의 오늘은<br />다시 오지 않습니다.
+                아이의 오늘은<br /><span className="k-hero-gradient-text">다시 오지 않습니다.</span>
               </h1>
               <p className="mt-5 text-[19px] font-bold leading-[1.55] tracking-[-0.02em] text-slate-700 sm:text-[22px]">
                 아이와 매일 소통하며,<br />부모가 아이를 더 잘 이해하도록 돕습니다.

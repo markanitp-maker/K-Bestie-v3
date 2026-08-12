@@ -156,6 +156,27 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* HERO 강조: background-clip 미지원 및 고대비 환경에서는 Navy 단색으로 유지한다. */
+.k-hero-gradient-text {
+  color: var(--color-k-navy);
+}
+
+@supports (background-clip: text) and (-webkit-background-clip: text) {
+  .k-hero-gradient-text {
+    background: linear-gradient(90deg, var(--color-k-navy) 0%, var(--color-k-orange-hover) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .k-hero-gradient-text {
+    background: none;
+    color: var(--color-k-navy);
+  }
+}
+
 /* ── 아이 화면 배경 ── */
 .child-screen {
   background-color: var(--color-child-bg);
@@ -373,4 +394,3 @@ button[style*="background: var(--color-k-navy)"]:not(:disabled):hover {
     padding: var(--admin-space-24) var(--admin-space-16);
   }
 }
-
