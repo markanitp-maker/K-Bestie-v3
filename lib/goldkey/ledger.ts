@@ -1,14 +1,14 @@
 import { createServiceClient } from "@/lib/supabase/server";
 
 // 황금열쇠 원장 (gold_key_ledger) 서버 전용 로직
-// 적립: 출석 1개/일 + 미션완료 최대 2개/일, 만료 = earned_at + 7일
+// 적립: 출석 1개/일 + 미션완료 최대 1개/일, 만료 = earned_at + 7일
 // 차감: FIFO(만료 임박 = expires_at 오름차순)
 // 하루 경계는 Asia/Seoul 자정 기준
 // V2 질문엔진 미션완료 보상은 record_v2_mission_answer SQL RPC가 직접 처리한다 — 이 함수는 V1 경로 및 출석/기타 용도로만 계속 쓰인다
 
 const KST_OFFSET = "+09:00";
 const EXPIRE_DAYS = 7;
-const MISSION_DAILY_LIMIT = 2;
+const MISSION_DAILY_LIMIT = 1;
 
 // 확정 정책(대표님 승인, 2026-07-18): 활성 골드키 보유 상한 22개.
 // V2 미션완료 보상은 SQL RPC(record_v2_mission_answer, supabase/migrations/20260717170000_question_engine_v2_atomic_rpc.sql)가
@@ -68,7 +68,7 @@ export async function earnAttendanceKey(childId: string): Promise<EarnResult> {
   return { earned: true };
 }
 
-/** 미션완료 적립 — 오늘 미션완료로 이미 2개 적립했으면 스킵 */
+/** 미션완료 적립 — 오늘 미션완료로 이미 1개 적립했으면 스킵 */
 export async function earnMissionCompleteKey(
   childId: string,
   missionId?: string,
