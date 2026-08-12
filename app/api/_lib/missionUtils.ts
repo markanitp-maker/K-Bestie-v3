@@ -26,30 +26,27 @@ export function getMissionPhase(
   const min = kstNow.getMinutes();
   const time = hour * 100 + min;
 
-  let currentPhase: 1 | 2 | null = null;
-  if (time >= 1000 && time < 1750) {
-    currentPhase = 1;
-  } else if (time >= 1800 && time < 2400) {
-    currentPhase = 2;
+  // Production 신규 생성은 09:00 inclusive ~ 23:50 exclusive 단일 창이다.
+  // canonical round2_night는 기존 클라이언트의 자정 마감 계약을 재사용한다. 이미 시작한
+  // 세션의 이어하기 가능 여부는 아래 assertMissionSessionActive가 business_date로 판정한다.
+  if (time < 900 || time >= 2350) {
+    return isTestAccount ? (missionType === 'round1_day' ? 1 : 2) : null;
   }
+  return missionType === 'round1_day' ? 1 : 2;
+}
 
-  if (missionType === 'common') {
-    // If not in operating hours, common only falls back if caller is an authorized test account.
-    // Normal user routes must fail closed when operating hours are closed.
-    if (currentPhase === null) {
-      return isTestAccount ? (hour >= 18 ? 2 : 1) : null;
-    }
-    return currentPhase;
-  }
+export function getKstBusinessDate(date: Date = new Date()): string {
+  const kstDate = toZonedTime(date, "Asia/Seoul");
+  const year = kstDate.getFullYear();
+  const month = String(kstDate.getMonth() + 1).padStart(2, "0");
+  const day = String(kstDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
-  // Reject if not in operating hours
-  if (currentPhase === null) return null;
-
-  // Reject if client request doesn't match server operating hours
-  if (missionType === 'round1_day' && currentPhase !== 1) return null;
-  if (missionType === 'round2_night' && currentPhase !== 2) return null;
-
-  return currentPhase;
+export function isSameKstBusinessDate(startedAt: string, now: Date = new Date()): boolean {
+  const startedAtDate = new Date(startedAt);
+  return Number.isFinite(startedAtDate.getTime())
+    && getKstBusinessDate(startedAtDate) === getKstBusinessDate(now);
 }
 
 export type MissionSessionCheckResult =
@@ -62,7 +59,7 @@ export async function assertMissionSessionActive(
 ): Promise<MissionSessionCheckResult> {
   const { data: session, error: sessErr } = await service
     .from("chat_sessions")
-    .select("id, session_type, mission_phase, demo_mode, child_id")
+    .select("id, session_type, mission_phase, demo_mode, child_id, started_at")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -127,9 +124,11 @@ export async function assertMissionSessionActive(
   }
 
   const roundType = (progress.round_type as 'round1_day' | 'round2_night' | 'common') ?? 'common';
-  const currentPhase = getMissionPhase(roundType, false, isMissionScheduleEnforced());
-
   const expectedPhase = session.mission_phase ?? (roundType === "round2_night" ? 2 : 1);
+  const scheduleEnforced = isMissionScheduleEnforced();
+  const currentPhase = scheduleEnforced
+    ? (isSameKstBusinessDate(session.started_at) ? expectedPhase : null)
+    : getMissionPhase(roundType, false, false);
 
   if (currentPhase === null || currentPhase !== expectedPhase) {
     const { data: rpcData, error: rpcErr } = await service.rpc("force_end_mission_session", {

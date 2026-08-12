@@ -3,6 +3,15 @@ import assert from "node:assert";
 import { currentRound } from "./missionTimeGate";
 
 describe("currentRound — Official KST Operating Hours", () => {
+  it("Production: 09:00 inclusive to 23:50 exclusive is one canonical compatibility round", () => {
+    assert.strictEqual(currentRound(8, true, 59), null);
+    assert.strictEqual(currentRound(9, true, 0), "round2_night");
+    assert.strictEqual(currentRound(17, true, 50), "round2_night");
+    assert.strictEqual(currentRound(18, true, 0), "round2_night");
+    assert.strictEqual(currentRound(23, true, 49), "round2_night");
+    assert.strictEqual(currentRound(23, true, 50), null);
+  });
+
   it("Mission I: 10:00 to 17:50 (exclusive) is round1_day", () => {
     assert.strictEqual(currentRound(9, false, 59), null);
     assert.strictEqual(currentRound(10, false, 0), "round1_day");

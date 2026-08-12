@@ -1,7 +1,9 @@
 import type { RoundType } from "@/lib/mission/selectQuestions";
 
-// Historical v2-only time policy. Production Mission v3의 단일 09:00~23:50
-// 게이트는 lib/mission-v3/timePolicy.ts가 유일한 기준이다.
+// v2 compatibility time policy. Production에서는 Mission v3 cutover 전에도
+// 09:00~23:50 단일 신규 시작 창을 사용하고, round2_night를 canonical round로 반환한다.
+// round2_night는 기존 클라이언트가 자정까지 이어하기 가능한 값으로 해석하므로 스키마와
+// 프론트 계약을 바꾸지 않고 하루 1미션 정책을 적용할 수 있다.
 
 export function getKstTime(date: Date = new Date()): { hour: number; minute: number; timeNum: number } {
   const utc = date.getTime() + date.getTimezoneOffset() * 60000;
@@ -38,18 +40,22 @@ export function isVacation(date: Date = new Date()): boolean {
 }
 
 export function currentRound(hour: number, scheduleEnforced: boolean = false, minute?: number): RoundType | null {
-  // Authoritative KST operating hours:
-  // Mission I: 10:00 <= KST < 17:50
-  // Mission II: 18:00 <= KST < 24:00
+  const { hour: curHour, minute: curMin } = getKstTime();
+  const resolvedMinute = minute ?? (hour === curHour ? curMin : 0);
+  const timeNum = hour * 100 + resolvedMinute;
+
+  if (scheduleEnforced) {
+    return timeNum >= 900 && timeNum < 2350 ? "round2_night" : null;
+  }
+
+  // scheduleEnforced=false의 레거시 표시 정책은 유지한다. 실제 Dev 신규 시작은
+  // start route에서 시간 검증을 생략하므로 24시간 가능하다.
   if (minute !== undefined) {
-    const timeNum = hour * 100 + minute;
     if (timeNum >= 1000 && timeNum < 1750) return "round1_day";
     if (timeNum >= 1800 && timeNum < 2400) return "round2_night";
     return null;
   }
-  const { hour: curHour, minute: curMin } = getKstTime();
   if (hour === curHour) {
-    const timeNum = curHour * 100 + curMin;
     if (timeNum >= 1000 && timeNum < 1750) return "round1_day";
     if (timeNum >= 1800 && timeNum < 2400) return "round2_night";
     return null;
