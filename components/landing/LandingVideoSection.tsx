@@ -14,7 +14,6 @@ interface LandingVideo {
 
 interface YouTubePlayer {
   destroy: () => void;
-  getIframe: () => HTMLIFrameElement;
   playVideo: () => void;
 }
 
@@ -140,7 +139,12 @@ function LandingVideoModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const playerHostRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const onCompleteRef = useRef(onComplete);
   const [playerStatus, setPlayerStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  onCloseRef.current = onClose;
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     const scrollY = window.scrollY;
@@ -164,7 +168,7 @@ function LandingVideoModal({
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab" || !dialogRef.current) return;
@@ -197,7 +201,7 @@ function LandingVideoModal({
       body.style.width = previousStyles.width;
       window.scrollTo({ top: scrollY, left: 0, behavior: "auto" });
     };
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -208,7 +212,23 @@ function LandingVideoModal({
     void loadYouTubeIframeApi()
       .then((api) => {
         if (cancelled || !playerHostRef.current) return;
-        player = new api.Player(playerHostRef.current, {
+        const iframe = document.createElement("iframe");
+        const playerUrl = new URL(`https://www.youtube-nocookie.com/embed/${video.id}`);
+
+        iframe.className = "absolute inset-0 h-full w-full";
+        iframe.title = `${video.title} 소개 영상`;
+        iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+        iframe.allowFullscreen = true;
+        iframe.referrerPolicy = "strict-origin-when-cross-origin";
+        playerUrl.searchParams.set("autoplay", "1");
+        playerUrl.searchParams.set("enablejsapi", "1");
+        playerUrl.searchParams.set("playsinline", "1");
+        playerUrl.searchParams.set("rel", "0");
+        playerUrl.searchParams.set("origin", window.location.origin);
+        iframe.src = playerUrl.toString();
+        playerHostRef.current.replaceChildren(iframe);
+
+        player = new api.Player(iframe, {
           width: "100%",
           height: "100%",
           videoId: video.id,
@@ -222,16 +242,13 @@ function LandingVideoModal({
           },
           events: {
             onReady: (event) => {
-              const iframe = event.target.getIframe();
-              iframe.title = `${video.title} 소개 영상`;
-              iframe.setAttribute("allow", "autoplay; encrypted-media; picture-in-picture");
               setPlayerStatus("ready");
               event.target.playVideo();
             },
             onStateChange: (event) => {
               if (event.data !== api.PlayerState.ENDED || hasTrackedCompletion) return;
               hasTrackedCompletion = true;
-              onComplete();
+              onCompleteRef.current();
             },
             onError: () => setPlayerStatus("error"),
           },
@@ -245,7 +262,7 @@ function LandingVideoModal({
       cancelled = true;
       player?.destroy();
     };
-  }, [onComplete, video]);
+  }, [video]);
 
   const keepFocusInside = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Tab" && event.target === event.currentTarget) {
@@ -291,20 +308,22 @@ function LandingVideoModal({
         </p>
         <div
           className="relative mx-auto max-w-full overflow-hidden rounded-2xl bg-slate-950"
-          style={{ height: "min(68dvh, 640px)", aspectRatio: "9 / 16" }}
+          style={{ width: "min(100%, calc(min(68dvh, 640px) * 9 / 16))", aspectRatio: "9 / 16" }}
         >
-          <div ref={playerHostRef} className="absolute inset-0 h-full w-full" />
-          {playerStatus === "loading" && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-white" aria-live="polite">
+          <div ref={playerHostRef} className="absolute inset-0" />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-white" aria-live="polite" aria-atomic="true">
+            {playerStatus === "loading" && (
+              <>
               <LoaderCircle aria-hidden="true" className="h-8 w-8 animate-spin motion-reduce:animate-none" />
               <span className="sr-only">영상을 불러오는 중입니다.</span>
-            </div>
-          )}
-          {playerStatus === "error" && (
-            <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm font-bold leading-6 text-white" role="status">
-              영상을 불러오지 못했습니다.<br />닫았다가 다시 시도해 주세요.
-            </p>
-          )}
+              </>
+            )}
+            {playerStatus === "error" && (
+              <p className="px-6 text-center text-sm font-bold leading-6 text-white">
+                영상을 불러오지 못했습니다.<br />닫았다가 다시 시도해 주세요.
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="px-1 pb-1 pt-3 text-center sm:px-3">

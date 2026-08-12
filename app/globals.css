@@ -161,7 +161,7 @@ body {
   color: var(--color-k-navy);
 }
 
-@supports (background-clip: text) and (-webkit-background-clip: text) {
+@supports (background-clip: text) or (-webkit-background-clip: text) {
   .k-hero-gradient-text {
     background: linear-gradient(90deg, var(--color-k-navy) 0%, var(--color-k-orange-hover) 100%);
     -webkit-background-clip: text;
