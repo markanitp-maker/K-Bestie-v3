@@ -5,6 +5,10 @@ import { childAuthUserId, createInboxNotification } from "@/lib/notifications/in
 export type MissionPushType = 1 | 2;
 export type MissionPushSource = "cron" | "admin_test";
 
+// Historical v2-only adapter. round1_day/round2_night와 missionType 1/2 계약은
+// 과거 알림 로그 조회 및 별도 cutover 전 관리자 회귀 테스트용으로만 보존한다.
+// Mission v3 daily_single 운영 알림에서 이 서비스를 재사용하지 않는다.
+
 export type MissionPushResult = {
   outcome: "sent" | "failed" | "no_subscription" | "duplicate" | "already_sent";
   childId: string;

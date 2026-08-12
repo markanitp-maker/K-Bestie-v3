@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
-import { resolveMissionPolicyVersion } from "@/lib/mission-v3/policyResolution";
+import { resolveMissionPolicyVersionForChild } from "@/lib/mission-v3/policyResolution";
 import { buildGoalProgress, fetchMissionGoals } from "@/lib/mission-v3/routeSupport";
 import { decideDailySingleOperation } from "@/lib/mission-v3/timePolicy";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -27,8 +27,14 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
-  const resolvedPolicy = resolveMissionPolicyVersion(now);
   const service = createServiceClient();
+  let resolvedPolicy: Awaited<ReturnType<typeof resolveMissionPolicyVersionForChild>>;
+  try {
+    resolvedPolicy = await resolveMissionPolicyVersionForChild({ db: service, childId, now });
+  } catch (error) {
+    console.error("[mission/v3/today-progress] same-day 정책 판정 실패", error);
+    return NextResponse.json({ error: "서버 오류" }, { status: 500 });
+  }
   let operation: Awaited<ReturnType<typeof decideDailySingleOperation>>;
   try {
     operation = await decideDailySingleOperation({

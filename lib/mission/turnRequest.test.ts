@@ -42,3 +42,29 @@ test("retries network errors", async () => {
   assert.equal(response.status, 200);
   assert.equal(calls, 3);
 });
+
+test("retries 409 responses until the in-progress turn succeeds", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    return new Response("{}", { status: calls < 4 ? 409 : 200 });
+  }) as typeof fetch;
+
+  const response = await postMissionTurnWithRetry({ body: {}, maxAttempts: 1, baseDelayMs: 0, fetchImpl });
+
+  assert.equal(response.status, 200);
+  assert.equal(calls, 4);
+});
+
+test("returns the final 409 response after the bounded polling window", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    return new Response("{}", { status: 409 });
+  }) as typeof fetch;
+
+  const response = await postMissionTurnWithRetry({ body: {}, maxAttempts: 1, baseDelayMs: 0, fetchImpl });
+
+  assert.equal(response.status, 409);
+  assert.equal(calls, 9);
+});

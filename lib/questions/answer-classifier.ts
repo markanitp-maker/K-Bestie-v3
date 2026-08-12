@@ -14,6 +14,10 @@ export type AnswerClassificationResult = {
   clarificationText?: string;
 };
 
+export type AnswerClassifierOptions = {
+  perAttemptTimeoutMs?: number;
+};
+
 function extractJSON(text: string) {
   try {
     const cleanText = text.replace(/```json\n?|```\n?/g, "").trim();
@@ -36,11 +40,10 @@ function extractJSON(text: string) {
   }
 }
 
-async function generateWithRetry(prompt: string): Promise<string> {
+async function generateWithRetry(prompt: string, perAttemptTimeoutMs: number): Promise<string> {
   const modelConfig = await getModelForGroup("B");
   const ai = createGenAIClient(modelConfig);
-  const delays = [0, 2000];
-  const PER_ATTEMPT_TIMEOUT_MS = 15000;
+  const delays = [0, 1000];
   let lastError: any;
 
   for (let attempt = 0; attempt < delays.length; attempt++) {
@@ -70,7 +73,7 @@ async function generateWithRetry(prompt: string): Promise<string> {
           },
         }),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`generateContent timeout after ${PER_ATTEMPT_TIMEOUT_MS}ms`)), PER_ATTEMPT_TIMEOUT_MS)
+          setTimeout(() => reject(new Error(`generateContent timeout after ${perAttemptTimeoutMs}ms`)), perAttemptTimeoutMs)
         ),
       ]);
       if (response.text) {
@@ -90,7 +93,8 @@ async function generateWithRetry(prompt: string): Promise<string> {
  */
 export async function classifyAnswer(
   questionText: string,
-  answerText: string
+  answerText: string,
+  { perAttemptTimeoutMs = 15_000 }: AnswerClassifierOptions = {},
 ): Promise<AnswerClassificationResult> {
   // 1. SAFETY_SIGNAL 검사 (기존 안전 감지 로직 재사용)
   const reaction = pickReaction(answerText);
@@ -172,7 +176,7 @@ clarification_text의 형식 예: "오늘 학교에서 있었던 일 중 제일 
 `;
 
   try {
-    const rawResult = await generateWithRetry(prompt);
+    const rawResult = await generateWithRetry(prompt, perAttemptTimeoutMs);
     const parsed = extractJSON(rawResult);
     if (parsed.classification === "VALID" || parsed.classification === "NO_RESPONSE" || parsed.classification === "CLARIFICATION_NEEDED") {
       // clarification_text가 responseSchema에서 required가 아니라 모델이 생략할 수 있다 —

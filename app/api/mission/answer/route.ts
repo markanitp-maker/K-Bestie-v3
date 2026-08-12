@@ -448,7 +448,7 @@ export async function POST(req: NextRequest) {
     } else if (/^(안해|싫어|응|아니|네|아니요|웅|응응)$/.test(cleanAns)) {
       classification = "VALID";
     } else {
-      const clsResult = await classifyAnswer(questionText, answerText);
+      const clsResult = await classifyAnswer(questionText, answerText, { perAttemptTimeoutMs: 5_000 });
       classification = clsResult.classification;
       clarificationText = clsResult.clarificationText;
     }
@@ -1050,7 +1050,7 @@ export async function POST(req: NextRequest) {
         .single();
       const questionTextV1 = qData?.question_text ?? "";
       
-      const bgClassResult = await classifyAnswer(questionTextV1, answerText);
+      const bgClassResult = await classifyAnswer(questionTextV1, answerText, { perAttemptTimeoutMs: 5_000 });
       clarificationTextV1 = bgClassResult.clarificationText;
 
       const resPayload = {

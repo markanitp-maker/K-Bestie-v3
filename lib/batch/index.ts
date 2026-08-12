@@ -18,7 +18,7 @@ export interface BatchResult {
  * 새벽 4시 배치 진입점 — 반드시 (1)→(2)→(3) 순서로 실행
  *
  * @param targetDate  "YYYY-MM-DD" (KST 기준 배치 실행일)
- * @param forceWeekly 일요일 아니어도 주간 요약 강제 실행
+ * @param forceWeekly 토요일이 아니어도 직전 완료 주간 요약 강제 실행
  */
 export async function runDailyBatch(
   targetDate: string,
@@ -34,7 +34,7 @@ export async function runDailyBatch(
   // Step 1이 완료된 뒤 targetDate에 ended_at 찍힌 세션 전체 대상
   const step2 = await generateDailyReports(targetDate);
 
-  // ── Step 3: 주간 요약 (일요일 또는 forceWeekly=true) ─────────
+  // ── Step 3: 직전 완료 주간 요약 (토요일 또는 forceWeekly=true) ─
   const step3 = await generateWeeklySummary(targetDate, forceWeekly);
 
   return {
