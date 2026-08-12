@@ -56,6 +56,40 @@ type MissionRequestContext = {
 
 const MISSION_LOADING_WATCHDOG_MS = 8_000;
 
+type MissionRuntimeTraceSnapshot = {
+  isAuto: boolean;
+  voiceInputModeHydrated: boolean;
+  isRecording: boolean;
+  mode: "voice" | "text";
+  turnPhase: "idle" | "child_listening" | "child_finalizing" | "waiting_k" | "k_speaking" | "recovering";
+};
+
+type MissionTypedGuardTraceSnapshot = {
+  missionState: MissionCompletionState;
+  turnPhase: MissionRuntimeTraceSnapshot["turnPhase"];
+  answerInFlight: boolean;
+  voiceMode: VoiceMode | null;
+  result: boolean;
+};
+
+type MissionRuntimeTrace = MissionRuntimeTraceSnapshot | MissionTypedGuardTraceSnapshot;
+
+function emitMissionRuntimeTrace(event: "render" | "hydrate:start" | "hydrate:queued", snapshot: MissionRuntimeTraceSnapshot) {
+  if (typeof window === "undefined") return;
+  const traceWindow = window as typeof window & {
+    __K_BESTIE_MISSION_RUNTIME_TRACE__?: (event: string, snapshot: MissionRuntimeTrace) => void;
+  };
+  traceWindow.__K_BESTIE_MISSION_RUNTIME_TRACE__?.(event, snapshot);
+}
+
+function emitMissionTypedGuardTrace(snapshot: MissionTypedGuardTraceSnapshot) {
+  if (typeof window === "undefined") return;
+  const traceWindow = window as typeof window & {
+    __K_BESTIE_MISSION_RUNTIME_TRACE__?: (event: string, snapshot: MissionRuntimeTrace) => void;
+  };
+  traceWindow.__K_BESTIE_MISSION_RUNTIME_TRACE__?.("typed-guard", snapshot);
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
     ? error.name === "AbortError"
@@ -1341,12 +1375,31 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const pingRef = useRef<HTMLDivElement | null>(null);
 
+  emitMissionRuntimeTrace("render", {
+    isAuto,
+    voiceInputModeHydrated,
+    isRecording,
+    mode,
+    turnPhase: turnPhaseRef.current,
+  });
+
   // 음성·텍스트가 같은 child 턴 수락 조건을 공유한다. 연결 및 Live 내부 VAD/STT 확정
   // 상태는 각 훅이 검사하고, 페이지는 미션 턴 상태와 API 처리 중 여부를 검사한다.
   const canAcceptTypedInput = useCallback(() => {
-    return missionStateRef.current === "active"
-      && turnPhaseRef.current === "child_listening"
+    const turnReady = voiceModeRef.current === "live"
+      ? turnPhaseRef.current === "child_listening"
+      : true;
+    const result = missionStateRef.current === "active"
+      && turnReady
       && !answerInFlightRef.current;
+    emitMissionTypedGuardTrace({
+      missionState: missionStateRef.current,
+      turnPhase: turnPhaseRef.current,
+      answerInFlight: answerInFlightRef.current,
+      voiceMode: voiceModeRef.current,
+      result,
+    });
+    return result;
   }, []);
 
   const sttTts = useVoiceChat({
@@ -1867,6 +1920,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     if (didHydrateRef.current) return;
     didHydrateRef.current = true;
 
+    emitMissionRuntimeTrace("hydrate:start", {
+      isAuto,
+      voiceInputModeHydrated,
+      isRecording,
+      mode,
+      turnPhase: turnPhaseRef.current,
+    });
+
     const qpChild = searchParams.get("childId");
     const stored = typeof window !== "undefined" ? localStorage.getItem("k_child_id") : null;
     const cid = qpChild || stored;
@@ -1894,7 +1955,15 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     sttSetMicEnabledRef.current?.(hydratedIsAuto);
     setVoiceInputModeHydrated(true);
 
-  }, [searchParams, router, setTurnPhase]);
+    emitMissionRuntimeTrace("hydrate:queued", {
+      isAuto: hydratedIsAuto,
+      voiceInputModeHydrated: true,
+      isRecording: false,
+      mode,
+      turnPhase: turnPhaseRef.current,
+    });
+
+  }, [searchParams, router, setTurnPhase, isAuto, voiceInputModeHydrated, isRecording, mode]);
   const runMissionRequest = useCallback(async (
     operation: (request: MissionRequestContext) => Promise<void>,
     externalSignal?: AbortSignal,
