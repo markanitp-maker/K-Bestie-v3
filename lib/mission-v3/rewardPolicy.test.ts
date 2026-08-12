@@ -22,6 +22,10 @@ const ASSESSMENT_RETRY_MIGRATION_PATH = resolve(
   process.cwd(),
   "supabase/migrations/20260811200000_mission_v3_assessment_retry_idempotency.sql",
 );
+const ALL_WRITERS_MIGRATION_PATH = resolve(
+  process.cwd(),
+  "supabase/migrations/20260812220000_mission_daily_reward_all_writers.sql",
+);
 
 const makeGoals = (satisfiedGoalCount: number): ConversationGoal[] =>
   Array.from({ length: 4 }, (_, index) => ({
@@ -255,4 +259,42 @@ test("R4: ON CONFLICT DO NOTHING 판정이 RETURNING이 아닌 FOUND를 직접 �
   assert.doesNotMatch(codeOnly, /RETURNING true INTO v_inserted/);
   assert.doesNotMatch(codeOnly, /IF NOT v_inserted THEN/);
   assert.match(codeOnly, /IF NOT FOUND THEN/);
+});
+
+// 089 게이트①(claude-review) S3 지적: 위 R1~R4 테스트는 전부 원본 마이그레이션
+// (20260810230000)을 읽는다 — award_mission_v3_reward의 최신 정의는 이후 마이그레이션이
+// CREATE OR REPLACE로 덮어쓰므로, 원본 파일만 검증하면 실제 런타임 동작(2컬럼 공유
+// 인덱스)에 대한 회귀 가드가 전혀 없다. 최신 정의를 담은 마이그레이션을 직접 검증한다.
+test("089: 최신 마이그레이션이 4개 writer 전부 공유 2컬럼(child_id,business_date) 인덱스를 arbiter로 쓴다", () => {
+  const sql = readFileSync(ALL_WRITERS_MIGRATION_PATH, "utf8");
+
+  assert.match(
+    sql,
+    /CREATE UNIQUE INDEX gold_key_ledger_mission_daily_reward_unique[\s\S]*ON public\.gold_key_ledger \(child_id, business_date\)[\s\S]*WHERE reward_type IN \('mission_complete', 'mission_v3_complete'\)/,
+  );
+
+  const onConflictBlocks = [
+    ...sql.matchAll(
+      /ON CONFLICT \(child_id, business_date\)\s*\n\s*WHERE reward_type IN \('mission_complete', 'mission_v3_complete'\)\s*\n\s*DO NOTHING/g,
+    ),
+  ];
+  assert.equal(
+    onConflictBlocks.length,
+    4,
+    "award_mission_v1_reward_key/finalize_mission_turn_v1/record_v2_mission_answer/award_mission_v3_reward 4곳 모두 동일한 arbiter를 써야 한다",
+  );
+
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.award_mission_v1_reward_key/i);
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.finalize_mission_turn_v1/i);
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.record_v2_mission_answer/i);
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.award_mission_v3_reward/i);
+
+  // finalize_mission_turn_v1에 22개 상한 체크 전 child-level advisory lock이 추가됐는지.
+  assert.match(
+    sql,
+    /this child lock separately[\s\S]*PERFORM pg_advisory_xact_lock\(hashtext\(v_session\.child_id::text\)\)/,
+  );
+
+  const codeOnly = sql.replace(/--.*$/gm, "");
+  assert.doesNotMatch(codeOnly, /\b(?:UPDATE|DELETE\s+FROM|TRUNCATE)\s+(?:public\.)?gold_key_ledger\b/i);
 });

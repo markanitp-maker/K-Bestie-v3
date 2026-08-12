@@ -41,7 +41,15 @@ export function getMissionRewardPresentation(
     };
   }
 
-  if (rewardStatus === "max_balance_reached") {
+  // 089 4개 writer 통합 후 22개 상한 사유 문자열이 writer마다 다르다
+  // (finalize_mission_turn_v1: balance_limit_reached, award_mission_v3_reward:
+  // active_balance_limit, record_v2_mission_answer: max_balance_reached) —
+  // 셋 다 같은 화면 문구로 매핑한다.
+  if (
+    rewardStatus === "max_balance_reached" ||
+    rewardStatus === "balance_limit_reached" ||
+    rewardStatus === "active_balance_limit"
+  ) {
     return {
       awarded: false,
       title: "황금열쇠를 가득 모았어요",

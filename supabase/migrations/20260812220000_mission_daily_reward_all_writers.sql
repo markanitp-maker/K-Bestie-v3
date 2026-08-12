@@ -7,6 +7,10 @@ BEGIN;
 
 DROP INDEX IF EXISTS public.gold_key_ledger_mission_daily_reward_unique;
 
+-- 게이트①(claude-review) S4 지적: 새 2컬럼 인덱스가 이 3컬럼 인덱스를 완전히
+-- 대체·포괄한다. 구 인덱스를 남겨두면 "제약의 단일 출처"가 둘로 갈라진다.
+DROP INDEX IF EXISTS public.gold_key_ledger_mission_v3_daily_reward_unique;
+
 CREATE UNIQUE INDEX gold_key_ledger_mission_daily_reward_unique
   ON public.gold_key_ledger (child_id, business_date)
   WHERE reward_type IN ('mission_complete', 'mission_v3_complete');
@@ -271,6 +275,14 @@ DECLARE
   v_business_date date := (now() AT TIME ZONE 'Asia/Seoul')::date;
   v_active_balance integer := 0;
 BEGIN
+  -- 게이트①(claude-review) S1 지적: 다른 3개 writer는 reward_type을 RAISE로
+  -- 강제하는데 이 함수만 파라미터를 검증 없이 그대로 INSERT했다 — 잘못된 값이
+  -- 들어오면 공유 부분 인덱스 대상에서 빠져 ON CONFLICT가 영영 발동하지 않는다.
+  IF p_reward_type <> 'mission_complete' THEN
+    RAISE EXCEPTION 'invalid record_v2_mission_answer reward_type: %', p_reward_type
+      USING ERRCODE = '22023';
+  END IF;
+
   SELECT
     mp.status,
     mp.mission_policy_version,

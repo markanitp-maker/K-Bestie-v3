@@ -1207,15 +1207,24 @@ export async function POST(req: NextRequest) {
   }
 
   // 게이지 5칸 최초 달성 시점에만 황금열쇠 적립 (재호출로 중복 적립 방지) — 기존 로직 그대로.
+  // rewardStatus는 게이트①(claude-review) C2 지적 대응: 지급 결과를 resPayload에 실어
+  // 보내지 않으면 클라이언트가 완료=지급성공으로 단정해(app/child/missions/page.tsx의
+  // isLegacyV1 기본값) 하루 1회 제한으로 실제로는 막힌 지급도 "받았어요"로 오표시된다.
+  let v1RewardStatus: string | undefined;
   if (completed && !wasCompleted && !isAtomicTurnRequest) {
     try {
       const goldKeyResult = await earnMissionCompleteKey(session.child_id, sessionId);
-      if (!goldKeyResult.earned && goldKeyResult.reason !== "already_earned") {
-        throw new Error(goldKeyResult.reason || "unknown_error");
+      if (goldKeyResult.earned) {
+        v1RewardStatus = "awarded";
+      } else if (goldKeyResult.reason) {
+        v1RewardStatus = goldKeyResult.reason;
+      } else {
+        throw new Error("unknown_error");
       }
     } catch (e) {
       console.error("[answer/route] V1 earnMissionCompleteKey error:", e);
-      // 적립 실패는 미션 완료 응답 자체를 막지 않음 (열쇠는 부가 보상)
+      // 실제 지급 여부를 알 수 없는 오류이므로 v1RewardStatus를 "awarded"로 단정하지
+      // 않는다 — 미정(undefined)으로 두면 클라이언트가 일반 완료 문구로 안전하게 폴백한다.
     }
   }
 
@@ -1231,6 +1240,7 @@ export async function POST(req: NextRequest) {
     completed,
     engine_version: "v1",
     questionStates: states,
+    rewardStatus: v1RewardStatus,
   };
 
   console.log("[mission/answer] done", { sessionId, classification: answerStatus, valid: resPayload.valid, validAnswerCount: resPayload.validAnswerCount, durationMs: Date.now() - startedAt });
