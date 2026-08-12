@@ -46,6 +46,7 @@ interface MissionQuestion {
 }
 
 type QuestionState = "pending" | "answered" | "skipped" | "refused" | "clarification_required";
+type SaveMessageResult = "saved" | "expired" | "failed";
 
 type MissionRequestContext = {
   generation: number;
@@ -55,6 +56,7 @@ type MissionRequestContext = {
 };
 
 const MISSION_LOADING_WATCHDOG_MS = 8_000;
+const SAVE_MESSAGE_RETRY_DELAYS_MS = [0, 300, 700] as const;
 
 type MissionRuntimeTraceSnapshot = {
   isAuto: boolean;
@@ -272,8 +274,8 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   // handleTurnComplete가 useGeminiLive(live) 생성보다 먼저 정의돼야 해서(훅에 콜백으로 넘김),
   // live.lockNow()/speakClosingLine()을 직접 참조할 수 없다 — ref로 우회.
   const liveRef = useRef<ReturnType<typeof useGeminiLive> | null>(null);
-  // 같은 이유로 useVoiceChat(sttTts)의 setMicEnabled도 ref로 우회 — 답변 처리 중(classifyAnswer
-  // 대기 등, 최대 10~32초)에는 자동 모드라도 마이크를 잠가 RMS 자동확정이 또 다른 child 턴을
+  // 같은 이유로 useVoiceChat(sttTts)의 setMicEnabled도 ref로 우회 — 답변 처리 중(동기
+  // classifyAnswer 대기 등, 최대 약 11초)에는 자동 모드라도 마이크를 잠가 RMS 자동확정이 또 다른 child 턴을
   // 만들어내지 못하게 한다(버그①②③의 자동 모드측 원인 — 수동 모드는 handleCentralButtonClick의
   // canStartRecording 가드가 동일 역할을 한다).
   const sttSetMicEnabledRef = useRef<((enabled: boolean) => void) | undefined>(undefined);
@@ -572,35 +574,55 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const kClarificationTurnRef = useRef<boolean>(false);
   const serverPersistedKTextsRef = useRef<string[]>([]);
 
-  const saveMessage = useCallback((role: "child" | "k", content: string, displaySequence?: number, turnId?: string, isClarification?: boolean): Promise<boolean> => {
+  const saveMessage = useCallback(async (role: "child" | "k", content: string, displaySequence?: number, turnId?: string, isClarification?: boolean): Promise<SaveMessageResult> => {
     const sid = sessionIdRef.current;
-    if (!sid || !content.trim()) return Promise.resolve(false);
+    if (!sid || !content.trim()) return "failed";
 
-    // 모드 전환(자동↔수동) 등 세션 재시작 시 대화 이력이 날아가는 것을 방지하기 위해,
-    // 완료된 모든 턴을 공통 소스(pastMessagesRef)에 누적 저장한다.
-    pastMessagesRef.current = [...pastMessagesRef.current, { role, text: content, id: turnId, displaySequence }];
+    for (let attempt = 0; attempt < SAVE_MESSAGE_RETRY_DELAYS_MS.length; attempt += 1) {
+      if (SAVE_MESSAGE_RETRY_DELAYS_MS[attempt] > 0) {
+        await new Promise((resolve) => setTimeout(resolve, SAVE_MESSAGE_RETRY_DELAYS_MS[attempt]));
+      }
 
-    return fetch("/api/chat/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current, displaySequence, turnId, isClarification }),
-    })
-      .then(async res => {
+      try {
+        const res = await fetch("/api/chat/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current, displaySequence, turnId, isClarification }),
+        });
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
+          const data = await res.json().catch(() => ({})) as {
+            code?: unknown;
+            expired?: unknown;
+            status?: unknown;
+          };
           if (res.status === 403 || data.code === "MISSION_EXPIRED" || data.expired || data.status === "FORCE_ENDED") {
             handleForcedExpiry();
-          } else {
-            console.error("[saveMessage] failed", { status: res.status, turnId, role });
+            return "expired";
           }
-          return false;
+
+          const canRetry = res.status >= 500 && attempt < SAVE_MESSAGE_RETRY_DELAYS_MS.length - 1;
+          console.error("[saveMessage] failed", { status: res.status, turnId, role, attempt: attempt + 1, canRetry });
+          if (canRetry) continue;
+          return "failed";
         }
-        return true;
-      })
-      .catch(err => {
-        console.error("[saveMessage] network error", { turnId, role, message: err.message });
-        return false;
-      });
+
+        // 모드 전환(자동↔수동) 시 유지할 로컬 스크롤백은 서버 저장 성공이 확정된 뒤에만 반영한다.
+        pastMessagesRef.current = [...pastMessagesRef.current, { role, text: content, id: turnId, displaySequence }];
+        return "saved";
+      } catch (error) {
+        const canRetry = attempt < SAVE_MESSAGE_RETRY_DELAYS_MS.length - 1;
+        console.error("[saveMessage] network error", {
+          turnId,
+          role,
+          attempt: attempt + 1,
+          canRetry,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        if (!canRetry) return "failed";
+      }
+    }
+
+    return "failed";
   }, [handleForcedExpiry]);
 
   const pickNextIndex = useCallback((states: Record<string, QuestionState>): number => {
@@ -851,6 +873,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           // 중립적 문구로 교체한다(아래 6곳 전부 동일).
           attemptSilentRecoveryOrShowRetry();
         }
+      // Live 경로는 별도 음성 상태머신·복구 정책을 사용하므로 8초 워치독 정합 조정은 이번 non-Live 긴급 수정 범위에서 제외한다.
       }, 8000);
     }
     void (async () => {
@@ -888,13 +911,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         let data: any = null;
 
         if (isGreetingTurn) {
-          const greetingSaved = await saveMessage(
+          const greetingSaveResult = await saveMessage(
             "child",
             enrichedTurn.text,
             enrichedTurn.displaySequence,
             enrichedTurn.id,
           );
-          if (!greetingSaved) {
+          if (greetingSaveResult === "expired") return;
+          if (greetingSaveResult === "failed") {
             const error = new Error("GREETING_TURN_PERSISTENCE_FAILED");
             error.name = "TurnPersistenceError";
             throw error;
@@ -2490,7 +2514,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     if (answerInFlightRef.current && !isRecording) return; // 이전 답변 처리 중엔 새 녹음 시작 차단(단, 이미 녹음 중이던 걸 끝내는 동작은 막지 않음)
     if (!isRecordingRef.current) {
       // 케이가 아직 말하는 중이거나(TTS 재생/Live 발화) 직전 답변이 아직 서버에서 처리
-      // 중이면(classifyAnswer 등, 최대 10~32초) 새 녹음을 시작할 수 없다 — 이 가드가 없으면
+      // 중이면(classifyAnswer 등, 최대 약 11초) 새 녹음을 시작할 수 없다 — 이 가드가 없으면
       // 아이가 녹음 버튼을 다시 눌러 케이 발화를 끊거나(Live: sendActivityStart가 재생 중인
       // 오디오를 강제 정지시킴), 아직 처리되지 않은 답변과 겹치는 새 child 턴을 만들어냈다
       // (버그①게이지 오증가·②말풍선 중복 쌓임·③케이가 답을 기다리지 않는 것처럼 보이는 문제의
