@@ -181,8 +181,14 @@ export default function BetaLandingPage({
     <div className="min-h-dvh w-full overflow-x-hidden bg-white text-[var(--color-k-navy)]">
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-5 sm:px-6 lg:h-[72px] lg:px-10">
-          <Link href="/" aria-label="내친구 케이 홈" className="relative h-8 w-[116px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500 sm:h-9 sm:w-[132px]">
-            <Image src="/Images/logo/Logo.png" alt="내친구 케이" fill priority sizes="132px" className="object-contain object-left" />
+          <Link href="/" aria-label="내친구 케이와 모두의 창업 홈" className="flex shrink-0 items-center gap-2.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-500 sm:gap-3">
+            <span className="relative h-4 w-[90px] sm:h-6 sm:w-[132px]">
+              <Image src="/Images/logo/Logo.png" alt="내친구 케이" fill priority sizes="(min-width: 640px) 132px, 90px" className="object-contain object-left" />
+            </span>
+            <span aria-hidden="true" className="h-4 w-px bg-slate-200 sm:h-5" />
+            <span className="relative h-3 w-9 sm:h-[18px] sm:w-[54px]">
+              <Image src="/Images/logo/modoo-logo.png" alt="모두의 창업" fill priority sizes="(min-width: 640px) 54px, 36px" className="object-contain object-left" />
+            </span>
           </Link>
           <nav className="flex items-center gap-1 sm:gap-2" aria-label="계정 메뉴">
             <Link
