@@ -18,6 +18,14 @@ const VALID_STATUSES: ReadonlySet<GoalAssessment["status"]> = new Set([
   "SKIPPED",
 ]);
 
+// AGENTS.md §7: the first call is immediate, followed by 3s and 5s retries.
+const RETRY_DELAYS_MS = [0, 3000, 5000] as const;
+
+const sleep = (delayMs: number): Promise<void> =>
+  delayMs > 0
+    ? new Promise((resolve) => setTimeout(resolve, delayMs))
+    : Promise.resolve();
+
 const buildAssessmentInstruction = (input: AssessGoalsInput): string => {
   const goals = input.goals
     .map((goal) => [
@@ -90,7 +98,9 @@ export const assessGoalsFromUtterance = async (
   const goalsById = new Map(input.goals.map((goal) => [goal.goalId, goal]));
   const contents = buildAssessmentInstruction(input);
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
+    await sleep(RETRY_DELAYS_MS[attempt]);
+
     let response: Awaited<ReturnType<GenerateContentFn>>;
     try {
       response = await input.ai.models.generateContent({
@@ -108,14 +118,20 @@ export const assessGoalsFromUtterance = async (
         },
       });
     } catch (error) {
-      console.error(`[mission-v3/goalAssessor] Goal 판정 생성 실패 (시도 ${attempt + 1}/2)`, error);
+      console.error(
+        `[mission-v3/goalAssessor] Goal 판정 생성 실패 (시도 ${attempt + 1}/${RETRY_DELAYS_MS.length})`,
+        error,
+      );
       continue;
     }
 
     try {
       return parseAssessments(extractJSON(response.text ?? ""), goalsById);
-    } catch {
-      return [];
+    } catch (error) {
+      console.error(
+        `[mission-v3/goalAssessor] Goal 판정 JSON 파싱 실패 (시도 ${attempt + 1}/${RETRY_DELAYS_MS.length})`,
+        error,
+      );
     }
   }
 

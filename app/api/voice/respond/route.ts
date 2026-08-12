@@ -141,7 +141,10 @@ export async function POST(req: NextRequest) {
 
   // Safety preflight — 이 아래의 모든 조기 반환 경로(방학 규칙/기억회상)보다 반드시 먼저
   // 실행한다. 걸리면 그 무엇보다 우선해 즉시 반환한다.
-  const safetyResult = await checkSafetyPreflight(service, sessionId, childText);
+  const safetyResult = await checkSafetyPreflight(service, sessionId, childText, {
+    childId: session.child_id,
+    mode: "FREE_CHAT",
+  });
   if (safetyResult) {
     return NextResponse.json({
       text: safetyResult.text,

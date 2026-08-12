@@ -73,7 +73,7 @@ const KST_CALENDAR_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   hourCycle: "h23",
 });
 
-const TERMINAL_MISSION_STATUSES = new Set(["COMPLETED", "SAFETY_PAUSED"]);
+const TERMINAL_MISSION_STATUSES = new Set(["COMPLETED", "SAFETY_PAUSED", "FORCE_ENDED"]);
 
 const getKstCalendarParts = (now: Date): {
   businessDate: string;
@@ -168,7 +168,7 @@ const findDailySingleProgress = async (
 /**
  * Resolves the only three valid Phase 3 outcomes before a route creates a session.
  * Existing non-terminal sessions are resumable even outside the start window.
- * Completed/safety-paused rows consume the day's single creation allowance.
+ * Completed/safety-paused/force-ended rows consume the day's single creation allowance.
  */
 export const decideDailySingleOperation = async (input: {
   db: SupabaseClient;

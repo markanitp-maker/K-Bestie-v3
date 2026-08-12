@@ -193,6 +193,27 @@ test("당일 완료된 daily_single이 있으면 두 번째 신규 생성을 차
   });
 });
 
+test("당일 FORCE_ENDED daily_single은 resume하지 않고 두 번째 신규 생성을 차단한다", async () => {
+  const decision = await decideDailySingleOperation({
+    db: makeDb({
+      session_id: "session-force-ended",
+      status: "FORCE_ENDED",
+      mission_policy_version: "v3_single_daily",
+      effective_at: activePolicy.effectiveAt,
+    }),
+    childId: "child-1",
+    now: kstDate(14, 0),
+    policy: activePolicy,
+  });
+
+  assert.deepEqual(decision, {
+    action: "blocked",
+    reason: "daily_limit_reached",
+    businessDate: "2026-08-10",
+    existingSessionId: "session-force-ended",
+  });
+});
+
 test("활성 policy·운영 시간·당일 미생성 조건이면 daily_single 생성 메타데이터를 반환한다", async () => {
   const decision = await decideDailySingleOperation({
     db: makeDb(),

@@ -11,7 +11,7 @@ export interface SessionTurn {
 const MAX_SESSION_TURNS = 6;
 const MAX_TEXT = 160;
 
-function cleanText(value: unknown, maxLength = MAX_TEXT): string {
+export function normalizeSameSessionText(value: unknown, maxLength = MAX_TEXT): string {
   if (typeof value !== "string") return "";
   return stripControlChars(value).replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
@@ -45,7 +45,10 @@ export async function fetchSameSessionTurns(
     return data
       .filter((row) => (row?.role === "child" || row?.role === "k") && typeof row?.content === "string")
       .reverse()
-      .map((row) => ({ role: row.role as "child" | "k", content: cleanText(row.content) }))
+      .map((row) => ({
+        role: row.role as "child" | "k",
+        content: normalizeSameSessionText(row.content),
+      }))
       .filter((row) => Boolean(row.content));
   } catch (error) {
     console.error("[k-conversation/memory/sameSession] lookup failed", (error as Error).message);

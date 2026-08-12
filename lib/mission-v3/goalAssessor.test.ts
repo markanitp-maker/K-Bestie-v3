@@ -116,15 +116,20 @@ test("evidenceSource는 모델 응답과 무관하게 child_utterance로 고정�
   assert.equal(result[0]?.evidenceSource, "child_utterance");
 });
 
-test("비JSON 응답은 빈 배열로 보류 처리한다", async () => {
-  const ai = makeAi((async () => responseFor("판정 결과를 알려드릴게요")) as GenerateContentFn);
+test("비JSON 응답은 3회 재시도 후 빈 배열로 보류 처리한다", async () => {
+  let calls = 0;
+  const ai = makeAi((async () => {
+    calls += 1;
+    return responseFor("판정 결과를 알려드릴게요");
+  }) as GenerateContentFn);
 
   const result = await assessGoalsFromUtterance({ ai, modelId: "test-model", currentUtterance: "말했어", goals: [makeGoal()] });
 
   assert.deepEqual(result, []);
+  assert.equal(calls, 3);
 });
 
-test("API가 두 번 모두 예외를 던지면 빈 배열을 반환한다", async () => {
+test("API가 세 번 모두 예외를 던지면 빈 배열을 반환한다", async () => {
   let calls = 0;
   const ai = makeAi((async () => {
     calls += 1;
@@ -134,5 +139,5 @@ test("API가 두 번 모두 예외를 던지면 빈 배열을 반환한다", asy
   const result = await assessGoalsFromUtterance({ ai, modelId: "test-model", currentUtterance: "말했어", goals: [makeGoal()] });
 
   assert.deepEqual(result, []);
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
 });

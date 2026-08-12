@@ -2,6 +2,8 @@
 // 단발 응답 하나로 트리거하지 않는다 — 최근 여러 턴의 패턴을 근거로 판단한다.
 // 신호: 몰라/없어/그냥/또 이거야?/재미없어/패스/질문 그만해/짧은 비협조 응답 반복/topic dodge 반복.
 
+import { normalizeSameSessionText } from "./memory/sameSession";
+
 export type BoredomLevel = "none" | "rising" | "high";
 
 export interface BoredomAssessment {
@@ -46,6 +48,29 @@ function isUncooperativeTurn(text: string): boolean {
 const RISING_THRESHOLD = 2; // 최근 WINDOW턴 중 2턴 이상 비협조 → rising
 const HIGH_THRESHOLD = 3; // 3턴 이상 → high
 const WINDOW = 5;
+
+/** same-session 조회에 현재 아이 발화가 이미 저장된 경우에도 한 번만 판정에 포함한다. */
+export function buildBoredomUtterances(
+  recentChildUtterances: string[],
+  currentUtterance: string,
+  currentUtteranceAlreadyInSession: boolean,
+): string[] {
+  const utterances = [...recentChildUtterances];
+  if (currentUtteranceAlreadyInSession
+    && normalizeSameSessionText(utterances.at(-1))
+      === normalizeSameSessionText(currentUtterance)) {
+    utterances.pop();
+  }
+  return [...utterances, normalizeSameSessionText(currentUtterance)];
+}
+
+/** 엔진이 판정한 값이 있으면 유지하고, 조기 반환 경로에서만 독립 판정을 사용한다. */
+export async function resolveBoredomAssessment(
+  engineBoredom: BoredomAssessment | undefined,
+  computeIndependently: () => Promise<BoredomAssessment>,
+): Promise<BoredomAssessment> {
+  return engineBoredom ?? computeIndependently();
+}
 
 /** 최근 아이 발화(최신순 아님 — 오래된→최신 순으로 전달)를 근거로 다중턴 Boredom을 판단한다.
  * recentChildUtterances는 same-session tier에서 가져온 아이 발화만 넘긴다(K 발화 제외). */

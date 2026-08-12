@@ -236,7 +236,7 @@ export const loadHighestPriorityParentQuestion = async (
   };
 };
 
-const fetchSessionGoals = async (
+export const fetchSessionGoals = async (
   db: SupabaseClient,
   missionSessionId: string,
 ): Promise<ConversationGoal[]> => {

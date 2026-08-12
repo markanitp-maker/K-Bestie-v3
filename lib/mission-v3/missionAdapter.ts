@@ -139,6 +139,10 @@ export const respondToMissionTurn = async (input: {
     input.db,
     input.sessionId,
     input.currentUtterance,
+    {
+      childId: input.childId,
+      mode: "MISSION",
+    },
   );
   if (safetyOutput) {
     return { engineOutput: safetyOutput, goalDecisions: [], promptedGoalId: null };
@@ -175,6 +179,7 @@ export const respondToMissionTurn = async (input: {
       sessionId: input.sessionId,
       mode: "MISSION",
       currentUtterance: input.currentUtterance,
+      currentUtteranceAlreadyInSession: true,
       asrConfidence: input.asrConfidence,
       appMode: input.appMode,
     },

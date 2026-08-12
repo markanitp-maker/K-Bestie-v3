@@ -9,7 +9,7 @@ import { pickReaction } from "./safety";
 import { loadCorePersonaContext, buildCorePersonaFragment, type CorePersonaContext } from "./corePersona";
 import { resolveGradePersona, buildGradePersonaFragment } from "./gradePersonas";
 import { loadRelationshipMemory, formatRelationshipMemory, type RelationshipMemorySnapshot } from "./memory";
-import { assessBoredom } from "./boredomDetection";
+import { assessBoredom, buildBoredomUtterances } from "./boredomDetection";
 import { selectAction } from "./actionSelector";
 import { extractUtteranceSignals, estimateSemanticGroup } from "./utteranceSignals";
 import { recordTopicUsage } from "./semanticTopicHistory";
@@ -29,6 +29,12 @@ export interface RespondDependencies {
   recentActions?: ConversationAction[];
 }
 
+export interface SafetyPreflightOptions {
+  persistEvent?: boolean;
+  childId?: string;
+  mode?: EngineInput["mode"];
+}
+
 /** Safety가 걸렸을 때 safety_events를 기록한다 — Mission/자유대화 모두 동일하게 필요한
  * 공통 관심사라 Adapter마다 중복하지 않고 Engine에서 한 번만 처리한다. */
 async function logSafetyEvent(
@@ -41,6 +47,10 @@ async function logSafetyEvent(
       session_id: input.sessionId,
       subcategory,
       child_text: input.currentUtterance,
+      child_id: input.childId || null,
+      // Legacy and v3 mission RPCs already classify engine-originated safety
+      // events as QUESTION_ENGINE; keep the shared engine on that taxonomy.
+      source: "QUESTION_ENGINE",
     });
     if (error) {
       console.error("[k-conversation/index] safety_events insert failed", error.message);
@@ -61,11 +71,17 @@ export async function checkSafetyPreflight(
   db: SupabaseClient,
   sessionId: string,
   currentUtterance: string,
+  options: SafetyPreflightOptions = {},
 ): Promise<EngineOutput | null> {
   const safety = pickReaction(currentUtterance);
   if (!safety.flaggedForParent && safety.category !== "safety") return null;
-  if (safety.flaggedForParent) {
-    await logSafetyEvent(db, { childId: "", sessionId, mode: "FREE_CHAT", currentUtterance }, safety.safetySubcategory);
+  if (safety.flaggedForParent && options.persistEvent !== false) {
+    await logSafetyEvent(db, {
+      childId: options.childId ?? "",
+      sessionId,
+      mode: options.mode ?? "FREE_CHAT",
+      currentUtterance,
+    }, safety.safetySubcategory);
   }
   return {
     text: safety.text,
@@ -169,7 +185,11 @@ export async function respond(
   const recentChildUtterances = memorySnapshot.sameSession
     .filter((turn) => turn.role === "child")
     .map((turn) => turn.content);
-  const boredom = assessBoredom([...recentChildUtterances, input.currentUtterance]);
+  const boredom = assessBoredom(buildBoredomUtterances(
+    recentChildUtterances,
+    input.currentUtterance,
+    input.currentUtteranceAlreadyInSession === true,
+  ));
 
   // 5) 발화 의미 신호 추출(071 대표 시나리오 구분용 — reactionEngine의 성긴 10-카테고리 대신
   // 사용) + semantic_group 추정.
@@ -234,6 +254,7 @@ export async function respond(
     text: generated.text,
     action,
     category: "generated",
+    boredom,
     memoryTiersUsed: memorySnapshot.tiersUsed,
     tokenIn: generated.tokenIn,
     tokenOut: generated.tokenOut,

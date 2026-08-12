@@ -26,6 +26,10 @@ export interface EngineInput {
   sessionId: string;
   mode: ConversationMode;
   currentUtterance: string;
+  /** true면 현재 발화가 Engine 호출 전에 same-session 저장소에 들어간 Adapter다.
+   * 조회 결과의 마지막 발화가 실제로 일치할 때만 중복을 제거하며, 조회 실패·순서 경합
+   * 때도 현재 발화 자체가 boredom 판정에서 빠지지 않도록 항상 다시 추가한다. */
+  currentUtteranceAlreadyInSession?: boolean;
   /** ASR 신뢰도가 낮으면 규칙 기반 unclear_audio 경로로 결정론적 처리(Gemini 미호출). */
   asrConfidence?: number;
   /** 자동/수동 입력 모드 — Mission/자유대화 공통 세션 UI 상태(비즈니스 목표 아님).
@@ -49,6 +53,8 @@ export interface EngineOutput {
   safetySubcategory?: string;
   /** 관측/QA용 — 어떤 memory tier가 실제로 프롬프트에 반영됐는지. */
   memoryTiersUsed?: Array<"same_session" | "same_day" | "recent_episode" | "long_term">;
+  /** Mission Adapter가 무보상 조기 종료를 결정할 수 있도록 공통 엔진의 다중턴 판정을 전달한다. */
+  boredom?: import("./boredomDetection").BoredomAssessment;
   /** Adapter가 usage_events 등 과금 로그를 남길 수 있도록 노출(Gemini 미호출 경로는 0). */
   tokenIn: number;
   tokenOut: number;
