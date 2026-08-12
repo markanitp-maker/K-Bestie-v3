@@ -111,9 +111,11 @@ export async function POST(req: NextRequest) {
     .select("id, started_at, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version, round_type)")
     .eq("child_id", childId)
     .eq("session_type", "mission")
+    .eq("mission_progress.business_date", businessDate)
     .gte("started_at", startOfDayKst)
     .lte("started_at", endOfDayKst)
-    .order("started_at", { ascending: false });
+    .order("started_at", { ascending: false })
+    .order("id", { ascending: false });
 
   if (todaySessionErr) {
     console.error("[start/route] todaySession query error:", todaySessionErr);
@@ -307,9 +309,35 @@ export async function POST(req: NextRequest) {
   // 롤백 헬퍼 함수
   const rollbackSession = async (sessId: string) => {
     try {
-      await service.from("chat_sessions").delete().eq("id", sessId);
+      const { error: progressDeleteErr } = await service
+        .from("mission_progress")
+        .delete()
+        .eq("session_id", sessId);
+
+      if (progressDeleteErr) {
+        console.error("[start/route] rollbackSession mission_progress delete failed; database consistency may be compromised:", {
+          sessionId: sessId,
+          error: progressDeleteErr,
+        });
+        return;
+      }
+
+      const { error: sessionDeleteErr } = await service
+        .from("chat_sessions")
+        .delete()
+        .eq("id", sessId);
+
+      if (sessionDeleteErr) {
+        console.error("[start/route] rollbackSession chat_sessions delete failed; database consistency may be compromised:", {
+          sessionId: sessId,
+          error: sessionDeleteErr,
+        });
+      }
     } catch (err) {
-      console.error("[start/route] rollbackSession failed:", err);
+      console.error("[start/route] rollbackSession threw; database consistency may be compromised:", {
+        sessionId: sessId,
+        error: err,
+      });
     }
   };
 
@@ -357,6 +385,7 @@ export async function POST(req: NextRequest) {
       .select("id, started_at, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version, round_type)")
       .eq("child_id", childId)
       .eq("session_type", "mission")
+      .eq("mission_progress.business_date", businessDate)
       .gte("started_at", startOfDayKst)
       .lte("started_at", endOfDayKst)
       .order("started_at", { ascending: true })
@@ -482,9 +511,11 @@ export async function POST(req: NextRequest) {
         .select("id, started_at, mission_progress!inner(status, valid_answer_count, question_ids, question_states, required_valid_count, engine_version, round_type)")
         .eq("child_id", childId)
         .eq("session_type", "mission")
+        .eq("mission_progress.business_date", businessDate)
         .gte("started_at", startOfDayKst)
         .lte("started_at", endOfDayKst)
-        .order("started_at", { ascending: false });
+        .order("started_at", { ascending: false })
+        .order("id", { ascending: false });
 
       if (retrySessionErr) {
         console.error("[start/route] duplicate retry query error:", retrySessionErr);
