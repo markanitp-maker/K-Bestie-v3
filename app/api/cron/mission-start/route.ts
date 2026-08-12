@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const childIds = [...new Set((subscriptions ?? []).map((row) => row.child_id as string))];
   if (!childIds.length) return NextResponse.json({ ok: true, sent: 0, targets: 0 });
   const [{ data: completed }, { data: notified }, { data: preferences }] = await Promise.all([
-    db.from("chat_sessions").select("child_id,mission_progress!inner(status,round_type)").in("child_id", childIds).eq("session_type", "mission").eq("mission_progress.round_type", roundType).eq("mission_progress.status", "COMPLETED").gte("started_at", start).lte("started_at", end),
+    db.from("chat_sessions").select("child_id,mission_progress!inner(status)").in("child_id", childIds).eq("session_type", "mission").eq("mission_progress.business_date", businessDate).eq("mission_progress.status", "COMPLETED").gte("started_at", start).lte("started_at", end),
     db.from("mission_notification_logs").select("child_id,status").in("child_id", childIds).eq("business_date", businessDate).eq("round_type", roundType).eq("source", "cron"),
     db.from("notification_preferences").select("child_id,mission_start_enabled").in("child_id", childIds).eq("role", "child"),
   ]);
