@@ -215,6 +215,15 @@
 
 `nohup`/`&` 금지. 반드시 tmux 세션. 모든 위임 명령 끝에 `; echo '__TASK_DONE__'`를 붙이고 출력을 `tee`로 로그에 남긴다(§14 전제조건).
 
+### 3-0. 위임 채널 전환 현황 (2026-08-12, `requests/002-multi.md` 대응 — 진행 중)
+
+대표님이 tmux send-keys 위임(완료·실패 반환 채널 없음)을 폐기하고 공식 위임 통로(Codex 플러그인 + agy-delegate 스킬)로 전환할 것을 지시했다. 현재 확인된 상태:
+
+- **Codex 플러그인** — 이 세션에서 설치·활성화 확인됨(`codex:setup`, `codex:rescue`, `codex:status` 등 Skill/Agent 목록에 실제로 존재). 리뷰·구조 작업(§3-A/§4-A의 codex-rv 역할)에 병행 사용 가능.
+- **agy-delegate 스킬** — 대표님 터미널에서 설치 로그(`./.claude/skills/agy-delegate`)를 확인했으나, **이 Claude Code 세션의 파일시스템 어디에도 실제로 존재하지 않는다**(`~/.claude/skills/`, `~/.agents/skills/`, 저장소 내 전수 검색 전부 미발견 — 별도 셸/환경에서 설치된 것으로 추정). 이 스킬이 이 세션에서 실제로 로드·호출 가능함이 확인되기 전까지 **AGY 위임은 기존 tmux `agy --dangerously-skip-permissions -p` 경로(§3-B, §4-D)를 그대로 유지한다.** 확인되는 즉시 이 섹션과 §3-B/§4-D/§11/§14를 agy-delegate 경로로 전면 교체한다.
+- **잠정 원칙**: 신규 Codex 리뷰·조사성 위임은 가능하면 `/codex:*` 명령을 우선 검토한다. Codex 구현 위임과 AGY 위임(구현·QA)은 agy-delegate 가용성이 실측 확인될 때까지 §3-A~§3-B의 기존 tmux 경로를 계속 사용한다 — 진행 중인 재화 로직(073/089) 게이트 사이클을 검증 안 된 새 통로로 갑자기 갈아타지 않는다.
+- 규칙 파일 전면 개편(§1-B 역할표 재정의 포함)은 agy-delegate 실사용 검증 후 별도로 진행한다.
+
 ### 3-A. Codex 구현 위임 (1차 코딩, 기본 경로)
 
 ```bash
