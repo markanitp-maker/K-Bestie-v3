@@ -116,3 +116,5 @@ dev_diff.sql
 .env*
 
 .vercel
+
+.vercel

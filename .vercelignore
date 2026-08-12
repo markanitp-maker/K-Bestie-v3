@@ -28,6 +28,9 @@ k-bestie3-*.json
 *sa-key*.json
 /scratch/
 .omc/
+worktrees/
+candidate-release/
+e2e-results/
 # Agent tooling state. .claude/worktrees/ holds six FULL copies of this repo —
 # uploading them bloats every deployment and drags in each copy's scratch files.
 .claude/
