@@ -5,8 +5,6 @@ import { test } from "node:test";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { VacationContext } from "@/lib/plan/vacationSchoolContext";
-
 import {
   decideDailySingleOperation,
   evaluateMissionTimeGate,
@@ -20,20 +18,6 @@ const MIGRATION_PATH = resolve(
 
 const kstDate = (hour: number, minute: number): Date =>
   new Date(Date.UTC(2026, 7, 10, hour - 9, minute));
-
-const vacationContext = (status: VacationContext["status"]): VacationContext => ({
-  id: "vacation-context-1",
-  child_id: "child-1",
-  context_type: "vacation_school",
-  status,
-  expected_school_start_date: "2026-08-20",
-  school_question_block_until: "2026-08-19",
-  confirmation_status: null,
-  last_asked_business_date: null,
-  created_at: "2026-08-01T00:00:00+09:00",
-  updated_at: "2026-08-01T00:00:00+09:00",
-  expired_at: null,
-});
 
 const makeDb = (existing: Record<string, unknown> | null = null): SupabaseClient => {
   const query = {
@@ -49,80 +33,61 @@ const activePolicy: MissionPolicySnapshot = {
   effectiveAt: "2026-08-09T13:00:00+09:00",
 };
 
-test("평시 시간 게이트는 12:59를 차단하고 13:00을 허용한다", async () => {
+test("Production 시간 게이트는 09:00 inclusive로 열린다", async () => {
   const db = makeDb();
-  const getActiveVacationContext = async () => vacationContext("SEMESTER");
 
   const beforeOpen = await evaluateMissionTimeGate({
     db,
     childId: "child-1",
-    now: kstDate(12, 59),
-    dependencies: { getActiveVacationContext },
+    now: kstDate(8, 59),
+    dependencies: { isMissionScheduleEnforced: () => true },
   });
   const open = await evaluateMissionTimeGate({
     db,
     childId: "child-1",
-    now: kstDate(13, 0),
-    dependencies: { getActiveVacationContext },
+    now: kstDate(9, 0),
+    dependencies: { isMissionScheduleEnforced: () => true },
   });
 
   assert.equal(beforeOpen.allowed, false);
   assert.equal(beforeOpen.reason, "before_open");
-  assert.equal(beforeOpen.opensAtMinute, 780);
+  assert.equal(beforeOpen.opensAtMinute, 540);
+  assert.equal(beforeOpen.scheduleEnforced, true);
   assert.equal(open.allowed, true);
   assert.equal(open.businessDate, "2026-08-10");
 });
 
-test("VACATION_CONFIRMED일 때만 9:59 차단에서 10:00 허용으로 앞당긴다", async () => {
-  const db = makeDb();
-  const confirmed = async () => vacationContext("VACATION_CONFIRMED");
-  const unconfirmed = async () => vacationContext("VACATION_UNCONFIRMED");
-
-  const beforeVacationOpen = await evaluateMissionTimeGate({
-    db,
+test("Production 시간 게이트는 23:50 exclusive로 닫힌다", async () => {
+  const allowed = await evaluateMissionTimeGate({
+    db: makeDb(),
     childId: "child-1",
-    now: kstDate(9, 59),
-    dependencies: { getActiveVacationContext: confirmed },
+    now: kstDate(23, 49),
+    dependencies: { isMissionScheduleEnforced: () => true },
   });
-  const vacationOpen = await evaluateMissionTimeGate({
-    db,
+  const closed = await evaluateMissionTimeGate({
+    db: makeDb(),
     childId: "child-1",
-    now: kstDate(10, 0),
-    dependencies: { getActiveVacationContext: confirmed },
-  });
-  const unconfirmedAtTen = await evaluateMissionTimeGate({
-    db,
-    childId: "child-1",
-    now: kstDate(10, 0),
-    dependencies: { getActiveVacationContext: unconfirmed },
+    now: kstDate(23, 50),
+    dependencies: { isMissionScheduleEnforced: () => true },
   });
 
-  assert.equal(beforeVacationOpen.allowed, false);
-  assert.equal(vacationOpen.allowed, true);
-  assert.equal(vacationOpen.opensAtMinute, 600);
-  assert.equal(unconfirmedAtTen.allowed, false);
-  assert.equal(unconfirmedAtTen.opensAtMinute, 780);
+  assert.equal(allowed.allowed, true);
+  assert.equal(allowed.closesAtMinute, 1430);
+  assert.equal(closed.allowed, false);
+  assert.equal(closed.reason, "closed");
 });
 
-test("평시와 방학 모두 22:59까지 허용하고 23:00부터 차단한다", async () => {
-  for (const status of ["SEMESTER", "VACATION_CONFIRMED"] as const) {
-    const getActiveVacationContext = async () => vacationContext(status);
-    const allowed = await evaluateMissionTimeGate({
+test("Dev scheduleEnforced=false는 24시간 신규 시작을 허용한다", async () => {
+  for (const [hour, minute] of [[0, 1], [8, 59], [23, 50], [23, 59]] as const) {
+    const result = await evaluateMissionTimeGate({
       db: makeDb(),
       childId: "child-1",
-      now: kstDate(22, 59),
-      dependencies: { getActiveVacationContext },
+      now: kstDate(hour, minute),
+      dependencies: { isMissionScheduleEnforced: () => false },
     });
-    const closed = await evaluateMissionTimeGate({
-      db: makeDb(),
-      childId: "child-1",
-      now: kstDate(23, 0),
-      dependencies: { getActiveVacationContext },
-    });
-
-    assert.equal(allowed.allowed, true);
-    assert.equal(closed.allowed, false);
-    assert.equal(closed.reason, "closed");
+    assert.equal(result.allowed, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.scheduleEnforced, false);
   }
 });
 
@@ -145,7 +110,7 @@ test("effective_at 이전에는 daily_single 신규 생성을 허용하지 않�
 });
 
 test("당일 진행 중 daily_single은 시간 게이트 밖에서도 신규 생성 대신 resume한다", async () => {
-  let vacationLookupCount = 0;
+  let scheduleLookupCount = 0;
   const decision = await decideDailySingleOperation({
     db: makeDb({
       session_id: "session-existing",
@@ -157,9 +122,9 @@ test("당일 진행 중 daily_single은 시간 게이트 밖에서도 신규 생
     now: kstDate(23, 30),
     policy: activePolicy,
     dependencies: {
-      getActiveVacationContext: async () => {
-        vacationLookupCount += 1;
-        return vacationContext("SEMESTER");
+      isMissionScheduleEnforced: () => {
+        scheduleLookupCount += 1;
+        return true;
       },
     },
   });
@@ -169,7 +134,7 @@ test("당일 진행 중 daily_single은 시간 게이트 밖에서도 신규 생
     sessionId: "session-existing",
     businessDate: "2026-08-10",
   });
-  assert.equal(vacationLookupCount, 0);
+  assert.equal(scheduleLookupCount, 0);
 });
 
 test("당일 완료된 daily_single이 있으면 두 번째 신규 생성을 차단한다", async () => {
@@ -221,7 +186,7 @@ test("활성 policy·운영 시간·당일 미생성 조건이면 daily_single �
     now: kstDate(13, 0),
     policy: activePolicy,
     dependencies: {
-      getActiveVacationContext: async () => vacationContext("SEMESTER"),
+      isMissionScheduleEnforced: () => true,
     },
   });
 

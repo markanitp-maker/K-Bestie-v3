@@ -153,6 +153,8 @@ async function processSingleCorrectionJob(
     throw new Error(`Failed to fetch raw messages: ${msgErr.message}`);
   }
 
+  // These are backward-compatible raw storage sections, not current mission rounds.
+  // daily_single messages are physically stored in mission_2 by the collection layer.
   const validSections = ["mission_1", "free_chat_1", "mission_2", "free_chat_2"];
   const filteredMessages = (rawMessages || []).filter((m: any) => validSections.includes(m.section));
 

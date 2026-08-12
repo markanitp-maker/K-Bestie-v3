@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { isRecentAdminTest, missionPushTemplate, shouldDeactivateMissionPushSubscription } from "./missionPushService";
 
-test("미션 1과 2는 정기 발송과 동일한 제목·round_type을 사용한다", () => {
+test("historical v2 미션 1과 2는 기존 제목·round_type을 보존한다", () => {
   assert.deepEqual(missionPushTemplate(1), {
     roundType: "round1_day",
     title: "미션 시작 시간이야!",

@@ -63,12 +63,22 @@ export interface StoreData {
 // ── 기본값 ────────────────────────────────────────────────────────────────────
 
 export const DEFAULT_MISSIONS: StoreMission[] = [
-  { id: 1, title: "케이와 하교 후 인사하기", desc: "마이크를 눌러 학교 얘기를 들려줘", completed: false, emoji: "👋" },
+  { id: 1, title: "케이와 오늘 인사하기", desc: "마이크를 눌러 오늘 얘기를 들려줘", completed: false, emoji: "👋" },
   { id: 2, title: "물 한 컵 마시고 5분 스트레칭", desc: "몸을 가볍게 풀어보자", completed: false, emoji: "💧" },
   { id: 3, title: "오늘 고마웠던 사람 떠올리기", desc: "마음 속으로만 생각해도 돼", completed: false, emoji: "💛" },
-  { id: 4, title: "잠들기 전 케이와 1분 대화", desc: "짧아도 괜찮아, 오늘 하루 어땠는지 말해봐", completed: false, emoji: "🌙" },
+  { id: 4, title: "케이와 오늘 1분 대화", desc: "짧아도 괜찮아, 오늘 하루 어땠는지 말해봐", completed: false, emoji: "💬" },
   { id: 5, title: "오늘 기분 별점 남기기", desc: "오늘 기분을 별점으로 표현해봐", completed: false, emoji: "⭐", isMoodRating: true },
 ];
+
+const normalizeMissionPolicyText = (mission: StoreMission): StoreMission => {
+  if (mission.title === "케이와 하교 후 인사하기") {
+    return { ...mission, title: "케이와 오늘 인사하기", desc: "마이크를 눌러 오늘 얘기를 들려줘" };
+  }
+  if (mission.title === "잠들기 전 케이와 1분 대화") {
+    return { ...mission, title: "케이와 오늘 1분 대화", emoji: "💬" };
+  }
+  return mission;
+};
 
 const DEFAULT_STORE: StoreData = {
   activeFamilyId: null,
@@ -93,7 +103,9 @@ export function getStore(): StoreData {
     return {
       ...DEFAULT_STORE,
       ...parsed,
-      missions: parsed.missions?.length ? parsed.missions : DEFAULT_MISSIONS,
+      missions: parsed.missions?.length
+        ? parsed.missions.map(normalizeMissionPolicyText)
+        : DEFAULT_MISSIONS,
       notifications: parsed.notifications ?? [],
       notifSettings: { ...DEFAULT_STORE.notifSettings, ...(parsed.notifSettings ?? {}) },
     };

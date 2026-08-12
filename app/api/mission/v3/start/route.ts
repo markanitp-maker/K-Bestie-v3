@@ -7,7 +7,7 @@ import {
   initializeConversationGoals,
   type ConversationGoal,
 } from "@/lib/mission-v3/goalEngine";
-import { resolveMissionPolicyVersion } from "@/lib/mission-v3/policyResolution";
+import { resolveMissionPolicyVersionForChild } from "@/lib/mission-v3/policyResolution";
 import { loadMissionQuestionGoalCandidates } from "@/lib/mission-v3/questionBank";
 import {
   buildGoalProgress,
@@ -132,7 +132,13 @@ export async function POST(req: NextRequest) {
   }
   const contentGrade = getEffectiveContentGrade(realGrade);
   const now = new Date();
-  const resolvedPolicy = resolveMissionPolicyVersion(now);
+  let resolvedPolicy: Awaited<ReturnType<typeof resolveMissionPolicyVersionForChild>>;
+  try {
+    resolvedPolicy = await resolveMissionPolicyVersionForChild({ db: service, childId, now });
+  } catch (error) {
+    console.error("[mission/v3/start] same-day 정책 판정 실패", error);
+    return NextResponse.json({ error: "서버 오류" }, { status: 500 });
+  }
   const policy = {
     missionPolicyVersion: resolvedPolicy.version,
     effectiveAt: resolvedPolicy.effectiveAt,

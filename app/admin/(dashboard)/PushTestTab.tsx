@@ -103,7 +103,7 @@ export default function PushTestTab() {
 
   return (
     <div>
-      <AdminPageHeader title="미션 푸시 발송 테스트" description="특정 아이에게 미션 1/2 시작 푸시 알림을 즉시 발송합니다." />
+      <AdminPageHeader title="레거시 미션 푸시 테스트" description="historical v2 미션 1/2 알림만 테스트합니다. daily_single 운영 알림이 아닙니다." />
       
       <div style={{ background: "var(--admin-surface)", padding: 24, borderRadius: 12, border: "1px solid var(--admin-border)", maxWidth: 600 }}>
         <div style={{ marginBottom: 16 }}>
@@ -143,7 +143,7 @@ export default function PushTestTab() {
               opacity: (loading !== null || !childId || !hasActiveSubscription) ? 0.7 : 1
             }}
           >
-            {loading === 1 ? "발송 중..." : "미션 1 즉시 발송"}
+            {loading === 1 ? "발송 중..." : "레거시 미션 1 발송"}
           </button>
           <button 
             onClick={() => handleTest(2)}
@@ -160,7 +160,7 @@ export default function PushTestTab() {
               opacity: (loading !== null || !childId || !hasActiveSubscription) ? 0.7 : 1
             }}
           >
-            {loading === 2 ? "발송 중..." : "미션 2 즉시 발송"}
+            {loading === 2 ? "발송 중..." : "레거시 미션 2 발송"}
           </button>
         </div>
 
