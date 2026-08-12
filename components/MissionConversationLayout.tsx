@@ -93,10 +93,16 @@ export function MissionConversationLayout({
     currentQuestionText = "불러오는 중...";
   }
 
+  // Text mode disables microphone input. Do not present a stale Live AUTO state as
+  // active listening while the child is typing and no recording is in progress.
+  const displayVoiceState = isTextMode && !isRecording && (voiceState === "listening" || voiceState === "no_input")
+    ? "idle"
+    : voiceState;
+
   // Map state
   let stateText = "";
   let StateIcon = null;
-  switch (voiceState) {
+  switch (displayVoiceState) {
     case "listening":
     case "no_input":
       stateText = "듣고 있어";
@@ -353,12 +359,24 @@ export function MissionConversationLayout({
           </div>
         </div>
 
-        {/* Grid Row 3: Mascot Area & Side Cards OR Text-Mode Closed-Keyboard CTA */}
-        {!isKeyboardOpen && (
+        {/* Grid Row 3: Mascot Area & Side Cards OR Text-Mode CTA.
+            Text mode keeps K's state visible even while the software keyboard is open. */}
         <div className="relative w-full shrink-0 h-[clamp(204px,25.5dvh,228px)] transition-all duration-300 flex items-center justify-center">
            {isTextMode ? (
-             /* isTextMode & 키보드 CLOSED: 미션 케이 위치 중앙에 시원하고 명확한 코랄 레드 #EF5350 '✕ 채팅창 닫기' pill CTA 노출 */
-             <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
+             /* Text overlay retains K's latest state above the close CTA. */
+             <div className="relative z-30 flex flex-col items-center justify-center gap-4 my-auto pointer-events-auto animate-in fade-in duration-300">
+               <div
+                 data-ui="text-mode-voice-state"
+                 data-keyboard-open={isKeyboardOpen}
+                 className="flex items-center gap-2 rounded-full border border-white/80 bg-white/85 px-4 py-2 text-[#5F7181] shadow-[0_3px_10px_rgba(75,85,99,0.10)] backdrop-blur-md"
+                 aria-live="polite"
+                 aria-busy={entryStatus === "checking" || entryStatus === "starting" || entryStatus === "resuming"}
+               >
+                 <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,10.5vw,46px)] w-[clamp(40px,10.5vw,46px)] items-center justify-center">
+                   {StateIcon}
+                 </div>
+                 <span className="text-[14px] font-bold leading-none">{stateText}</span>
+               </div>
                <button
                  onClick={onToggleTextMode}
                  disabled={isClosing}
@@ -418,7 +436,6 @@ export function MissionConversationLayout({
              </div>
            )}
         </div>
-        )}
 
         {/* Grid Row 4: Bottom Area */}
         <div className="relative z-20 row-start-4 flex flex-col shrink-0 w-full min-w-0 max-w-full">
