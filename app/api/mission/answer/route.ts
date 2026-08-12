@@ -1209,7 +1209,7 @@ export async function POST(req: NextRequest) {
   // 게이지 5칸 최초 달성 시점에만 황금열쇠 적립 (재호출로 중복 적립 방지) — 기존 로직 그대로.
   if (completed && !wasCompleted && !isAtomicTurnRequest) {
     try {
-      const goldKeyResult = await earnMissionCompleteKey(session.child_id);
+      const goldKeyResult = await earnMissionCompleteKey(session.child_id, sessionId);
       if (!goldKeyResult.earned && goldKeyResult.reason !== "already_earned") {
         throw new Error(goldKeyResult.reason || "unknown_error");
       }
