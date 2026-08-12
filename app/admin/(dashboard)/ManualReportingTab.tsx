@@ -291,17 +291,17 @@ export default function ManualReportingTab() {
       <input type="radio" checked={selectedChildId === c.childId} readOnly style={{ cursor: "pointer" }} />
     )},
     { key: "name", header: "이름", render: (c) => c.name },
-    { key: "mission1Progress", header: "미션1 진행", render: (c) => formatMissionProgress(c.mission1) },
-    { key: "mission1Saved", header: "미션1 저장", render: (c) => formatMessageCount(c.mission1?.savedMessageCount) },
-    { key: "mission1Collected", header: "1차 수집", render: (c) => (
+    { key: "mission1Progress", header: "레거시 미션1", render: (c) => formatMissionProgress(c.mission1) },
+    { key: "mission1Saved", header: "레거시1 저장", render: (c) => formatMessageCount(c.mission1?.savedMessageCount) },
+    { key: "mission1Collected", header: "레거시 중간 수집", render: (c) => (
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <span>{formatMessageCount(c.mission1?.collectedMessageCount)}</span>
         {getStatusUI(c.jobs?.collection_1, c.mission1?.collectedMessageCount ?? 0, false)}
       </div>
     ) },
-    { key: "mission2Progress", header: "미션2 진행", render: (c) => formatMissionProgress(c.mission2) },
-    { key: "mission2Saved", header: "미션2 저장", render: (c) => formatMessageCount(c.mission2?.savedMessageCount) },
-    { key: "mission2Collected", header: "2차 수집", render: (c) => (
+    { key: "mission2Progress", header: "하루 미션(마감 슬롯)", render: (c) => formatMissionProgress(c.mission2) },
+    { key: "mission2Saved", header: "마감 슬롯 저장", render: (c) => formatMessageCount(c.mission2?.savedMessageCount) },
+    { key: "mission2Collected", header: "하루 마감 수집", render: (c) => (
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <span>{formatMessageCount(c.mission2?.collectedMessageCount)}</span>
         {getStatusUI(c.jobs?.collection_2, c.mission2?.collectedMessageCount ?? 0, false)}
@@ -452,14 +452,14 @@ export default function ManualReportingTab() {
               onClick={() => handleRun("collect_first")}
               style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
             >
-              1차 수집 실행
+              레거시 중간 수집 실행
             </button>
             <button
               disabled={!selectedChildId || running}
               onClick={() => handleRun("collect_second")}
               style={{ padding: "var(--admin-space-8) var(--admin-space-16)", borderRadius: 8, background: "var(--admin-bg)", border: "1px solid var(--admin-primary)", color: "var(--admin-primary)", fontWeight: 600, cursor: (!selectedChildId || running) ? "not-allowed" : "pointer", opacity: (!selectedChildId || running) ? 0.5 : 1 }}
             >
-              2차 수집 실행
+              하루 마감 수집 실행
             </button>
             <button
               disabled={!selectedChildId || running}

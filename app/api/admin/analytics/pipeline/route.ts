@@ -26,8 +26,8 @@ interface PipelineJobRow {
 }
 
 const STAGES = [
-  { key: "collection_1", label: "1차 수집" },
-  { key: "collection_2", label: "2차 수집" },
+  { key: "collection_1", label: "레거시 중간 수집" },
+  { key: "collection_2", label: "하루 마감 수집" },
   { key: "context_correction", label: "Context Correction" },
   { key: "memory_batch", label: "Memory Batch" },
   { key: "daily_report", label: "Daily Report" },

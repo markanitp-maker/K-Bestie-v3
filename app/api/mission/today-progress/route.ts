@@ -6,6 +6,9 @@ import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
 
 export const runtime = "nodejs";
 
+// Historical v2 round progress endpoint. Mission v3 clients use
+// /api/mission/v3/today-progress.
+
 export async function GET(req: NextRequest) {
   const authClient = await createClient();
   const { data: { user } } = await authClient.auth.getUser();

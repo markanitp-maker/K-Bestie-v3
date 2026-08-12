@@ -3,6 +3,10 @@ import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { getLlmModel } from "@/lib/llm/modelRouter";
 import { extractJSON } from "@/app/api/_lib/utils";
 
+// Historical v2 raw_daily_conversations pipeline only. Mission v3 daily_single
+// uses contextCorrectionV3.ts; the mission_1/mission_2 fields below remain for
+// immutable legacy report replay and must not drive current policy decisions.
+
 export async function runContextCorrectionPipeline(targetDate: string, specificSessionIds?: string[]) {
   const db = createServiceClient();
   const result = { processed_children: 0, success: 0, failed: 0, errors: [] as any[] };

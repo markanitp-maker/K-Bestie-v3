@@ -1,4 +1,4 @@
--- 073 Phase 4/5A Dev 전용 검증. 모든 fixture/결과는 마지막 ROLLBACK으로 제거한다.
+-- 073 Phase 4/5A/5C Dev 전용 검증. 모든 fixture/결과는 마지막 ROLLBACK으로 제거한다.
 -- claude-review-073-phase4 게이트①의 R5 지적에 대응해 award_mission_v3_reward/
 -- finalize_mission_turn_v1을 mock이 아닌 실제 DB에서 실행한다.
 --
@@ -32,6 +32,9 @@ DECLARE
   v_finalize record;
   v_start record;
   v_assessed record;
+  v_output record;
+  v_goal_id uuid;
+  v_other_goal_id uuid;
   v_first_assessment jsonb := '[{"goalId":"goal-r2","status":"PARTIAL","confidence":0.5,"evidenceSource":"child_utterance"}]'::jsonb;
   v_conflicting_assessment jsonb := '[{"goalId":"goal-r2","status":"SATISFIED","confidence":0.9,"evidenceSource":"child_utterance"}]'::jsonb;
 BEGIN
@@ -83,14 +86,17 @@ BEGIN
   SELECT * INTO v_reward FROM public.award_mission_v3_reward(
     v_child_id, v_day, 'mission_v3_complete', v_session_id
   );
-  IF NOT v_reward.rewarded OR v_reward.reason <> 'rewarded' OR v_reward.satisfied_goal_count <> 3 THEN
+  IF v_reward.rewarded IS DISTINCT FROM true
+    OR v_reward.reason IS DISTINCT FROM 'rewarded'
+    OR v_reward.satisfied_goal_count IS DISTINCT FROM 3
+  THEN
     RAISE EXCEPTION 'expected first award to succeed: %', row_to_json(v_reward);
   END IF;
 
   SELECT count(*)::integer INTO v_count
   FROM public.gold_key_ledger
   WHERE child_id = v_child_id AND reward_type = 'mission_v3_complete' AND business_date = v_day;
-  IF v_count <> 1 THEN
+  IF v_count IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'expected exactly 1 ledger row after first award, got %', v_count;
   END IF;
 
@@ -106,7 +112,7 @@ BEGIN
   SELECT count(*)::integer INTO v_count
   FROM public.child_mission_event_completions
   WHERE source_session_id = v_session_id AND activity_type = 'mission_complete';
-  IF v_count <> 1 THEN
+  IF v_count IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'F1 regression: completion trigger must record exactly 1 mission_complete event row, got %', v_count;
   END IF;
 
@@ -116,7 +122,9 @@ BEGIN
     SELECT * INTO v_reward FROM public.award_mission_v3_reward(
       v_child_id, v_day, 'mission_v3_complete', v_session_id
     );
-    IF v_reward.rewarded OR v_reward.reason <> 'already_rewarded' THEN
+    IF v_reward.rewarded IS DISTINCT FROM false
+      OR v_reward.reason IS DISTINCT FROM 'already_rewarded'
+    THEN
       RAISE EXCEPTION 'retry %/20 must be a no-op: %', i, row_to_json(v_reward);
     END IF;
   END LOOP;
@@ -124,7 +132,7 @@ BEGIN
   SELECT count(*)::integer INTO v_count
   FROM public.gold_key_ledger
   WHERE child_id = v_child_id AND reward_type = 'mission_v3_complete' AND business_date = v_day;
-  IF v_count <> 1 THEN
+  IF v_count IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'idempotency key must cap the ledger at 1 row, got %', v_count;
   END IF;
 
@@ -138,7 +146,7 @@ BEGIN
   FROM public.gold_key_ledger
   WHERE child_id = v_child_id AND reward_type = 'mission_v3_complete'
     AND business_date = v_day AND source_session_id IS NULL;
-  IF v_count <> 1 THEN
+  IF v_count IS DISTINCT FROM 1 THEN
     RAISE EXCEPTION 'source_session_id SET NULL must not violate the mission_v3 CHECK: %', v_count;
   END IF;
 
@@ -172,20 +180,23 @@ BEGIN
   SELECT * INTO v_reward FROM public.award_mission_v3_reward(
     v_child_id, v_day + 1, 'mission_v3_complete', v_session_id
   );
-  IF v_reward.rewarded OR v_reward.reason <> 'goal_threshold_not_met' OR v_reward.satisfied_goal_count <> 2 THEN
+  IF v_reward.rewarded IS DISTINCT FROM false
+    OR v_reward.reason IS DISTINCT FROM 'goal_threshold_not_met'
+    OR v_reward.satisfied_goal_count IS DISTINCT FROM 2
+  THEN
     RAISE EXCEPTION 'boredom (Goal 2/4) must be rejected with goal_threshold_not_met: %', row_to_json(v_reward);
   END IF;
 
   SELECT count(*)::integer INTO v_count
   FROM public.gold_key_ledger
   WHERE child_id = v_child_id AND reward_type = 'mission_v3_complete' AND business_date = v_day + 1;
-  IF v_count <> 0 THEN
+  IF v_count IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'boredom rejection must not create any ledger row, got %', v_count;
   END IF;
 
   -- Boredom 거부는 완료가 아니므로 status도 그대로 미완료 상태여야 한다.
   SELECT status INTO v_status FROM public.mission_progress WHERE session_id = v_session_id;
-  IF v_status = 'COMPLETED' THEN
+  IF v_status IS NOT DISTINCT FROM 'COMPLETED' THEN
     RAISE EXCEPTION 'boredom rejection must not mark mission_progress as COMPLETED, got %', v_status;
   END IF;
 
@@ -199,19 +210,19 @@ BEGIN
   INSERT INTO public.mission_progress(
     session_id, child_id, business_date, round_type,
     mission_policy_version, effective_at,
-    required_valid_count, valid_answer_count
+    required_valid_count, valid_answer_count, status
   ) VALUES (
     v_session_id, v_child_id, (v_day + 2)::text, 'daily_single',
     'v3_single_daily', v_effective_at,
-    1, 1  -- valid_answer_count >= required_valid_count: 레거시 기준으로는 "완료"로 보인다
+    1, 1, 'IN_PROGRESS'  -- valid_answer_count >= required_valid_count: 레거시 기준으로는 "완료"로 보인다
   );
 
   SELECT * INTO v_start FROM public.start_mission_turn_v3(
     v_session_id, 'r2-turn-1', '레거시 완료 판정 회귀 테스트', 'stt_tts', 1
   );
-  IF v_start.turn_status <> 'CHILD_PERSISTED'
+  IF v_start.turn_status IS DISTINCT FROM 'CHILD_PERSISTED'
     OR v_start.answer_result IS NOT NULL
-    OR v_start.already_processed
+    OR v_start.already_processed IS DISTINCT FROM false
   THEN
     RAISE EXCEPTION 'v3 start must persist a fresh child turn: %', row_to_json(v_start);
   END IF;
@@ -219,27 +230,31 @@ BEGIN
   SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
     v_session_id, 'r2-turn-1', v_first_assessment
   );
-  IF v_assessed.turn_status <> 'ANSWER_PROCESSED' OR v_assessed.already_assessed THEN
+  IF v_assessed.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_assessed.already_assessed IS DISTINCT FROM false
+  THEN
     RAISE EXCEPTION 'v3 assessed transition must make the turn finalizable: %', row_to_json(v_assessed);
   END IF;
 
-  -- C2 regression: a retry between assessment and finalize must receive the
-  -- first result so the caller can skip the Goal-assessor LLM.
+  -- C2 regression: a retry between assessment and finalize receives the first
+  -- result, but the fresh 30-second output-processing lease blocks duplicate work.
   SELECT * INTO v_start FROM public.start_mission_turn_v3(
     v_session_id, 'r2-turn-1', '레거시 완료 판정 회귀 테스트', 'stt_tts', 1
   );
-  IF v_start.turn_status <> 'ANSWER_PROCESSED'
+  IF v_start.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
     OR v_start.answer_result IS DISTINCT FROM v_first_assessment
-    OR v_start.already_processed
+    OR v_start.already_processed IS DISTINCT FROM true
   THEN
-    RAISE EXCEPTION 'v3 start retry must return the stored pre-finalize assessment: %', row_to_json(v_start);
+    RAISE EXCEPTION 'v3 start retry must return the stored assessment under an active processing lease: %', row_to_json(v_start);
   END IF;
 
   -- A non-deterministic conflicting retry is also a no-op. First writer wins.
   SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
     v_session_id, 'r2-turn-1', v_conflicting_assessment
   );
-  IF v_assessed.turn_status <> 'ANSWER_PROCESSED' OR NOT v_assessed.already_assessed THEN
+  IF v_assessed.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_assessed.already_assessed IS DISTINCT FROM true
+  THEN
     RAISE EXCEPTION 'v3 conflicting assessed retry must preserve the first result: %', row_to_json(v_assessed);
   END IF;
 
@@ -255,10 +270,10 @@ BEGIN
     v_session_id, 'r2-turn-1', '레거시 완료 판정 회귀 테스트에 대한 케이 응답', 'r2-turn-1:k', 2, false
   );
 
-  IF v_finalize.completed THEN
+  IF v_finalize.completed IS DISTINCT FROM false THEN
     RAISE EXCEPTION 'R2 regression: finalize_mission_turn_v1 must never auto-complete a v3_single_daily session, got completed=true';
   END IF;
-  IF v_finalize.reward_status <> 'none' THEN
+  IF v_finalize.reward_status IS DISTINCT FROM 'none' THEN
     RAISE EXCEPTION 'R2 regression: finalize_mission_turn_v1 must not touch the legacy reward path for v3_single_daily, got %', v_finalize.reward_status;
   END IF;
 
@@ -287,14 +302,728 @@ BEGIN
   SELECT * INTO v_start FROM public.start_mission_turn_v3(
     v_session_id, 'r2-turn-1', '레거시 완료 판정 회귀 테스트', 'stt_tts', 1
   );
-  IF v_start.turn_status <> 'FINALIZED'
+  IF v_start.turn_status IS DISTINCT FROM 'FINALIZED'
     OR v_start.answer_result IS DISTINCT FROM v_first_assessment
-    OR NOT v_start.already_processed
+    OR v_start.already_processed IS DISTINCT FROM true
   THEN
     RAISE EXCEPTION 'v3 finalized retry must return the first assessment and processed flag: %', row_to_json(v_start);
   END IF;
 
-  RAISE NOTICE '073 Phase 4/5A reward and C2 assessment retry verification: PASSED';
+  -- ── Fixture 4: 정상 output first-writer → finalize → terminal retry ───────
+  INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
+  VALUES (v_child_id, 'mission', v_day_at + interval '3 days', v_day + 3)
+  RETURNING id INTO v_session_id;
+
+  INSERT INTO public.mission_progress(
+    session_id, child_id, business_date, round_type,
+    mission_policy_version, effective_at,
+    required_valid_count, valid_answer_count, status
+  ) VALUES (
+    v_session_id, v_child_id, (v_day + 3)::text, 'daily_single',
+    'v3_single_daily', v_effective_at,
+    1, 0, 'IN_PROGRESS'
+  );
+
+  INSERT INTO public.conversation_goals(
+    mission_session_id, child_id, goal_order, semantic_group, priority, status
+  )
+  SELECT v_session_id, v_child_id, ord, 'OUTPUT_GROUP_' || ord, 'P2', 'PENDING'
+  FROM generate_series(1, 4) AS ord;
+
+  SELECT goal_id INTO v_goal_id
+  FROM public.conversation_goals
+  WHERE mission_session_id = v_session_id AND goal_order = 1;
+
+  SELECT goal_id INTO v_other_goal_id
+  FROM public.conversation_goals
+  WHERE mission_session_id = v_session_id AND goal_order = 2;
+
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'output-turn-1', '오늘은 과학 시간이 재미있었어', 'stt_tts', 1
+  );
+  IF v_start.turn_status IS DISTINCT FROM 'CHILD_PERSISTED'
+    OR v_start.answer_result IS NOT NULL
+    OR v_start.k_response_draft IS NOT NULL
+    OR v_start.previous_prompted_goal_id IS NOT NULL
+    OR v_start.prompted_goal_id IS NOT NULL
+    OR v_start.engine_category IS NOT NULL
+    OR v_start.safety_subcategory IS NOT NULL
+    OR v_start.boredom_early_finish IS DISTINCT FROM false
+    OR v_start.already_processed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'fresh v3 output fixture must start with an empty output boundary: %', row_to_json(v_start);
+  END IF;
+
+  SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
+    v_session_id, 'output-turn-1', v_first_assessment
+  );
+  IF v_assessed.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_assessed.already_assessed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'normal output fixture assessment failed: %', row_to_json(v_assessed);
+  END IF;
+
+  -- 1) 최초 output의 여섯 반환 필드와 실제 mission_turns 저장값을 모두 확인한다.
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'output-turn-1',
+    '첫 번째 K 응답',
+    v_goal_id,
+    'generated',
+    NULL,
+    false
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '첫 번째 K 응답'
+    OR v_output.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_output.engine_category IS DISTINCT FROM 'generated'
+    OR v_output.safety_subcategory IS NOT NULL
+    OR v_output.boredom_early_finish IS DISTINCT FROM false
+    OR v_output.already_stored IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'first output store must return the exact first-writer values: %', row_to_json(v_output);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.mission_turns
+    WHERE session_id = v_session_id
+      AND client_turn_id = 'output-turn-1'
+      AND k_response_draft IS NOT DISTINCT FROM '첫 번째 K 응답'
+      AND prompted_goal_id IS NOT DISTINCT FROM v_goal_id
+      AND engine_category IS NOT DISTINCT FROM 'generated'
+      AND safety_subcategory IS NULL
+      AND boredom_early_finish IS NOT DISTINCT FROM false
+  ) THEN
+    RAISE EXCEPTION 'first output store must persist every first-writer field unchanged';
+  END IF;
+
+  -- 2) 모든 필드가 충돌하는 후발 output은 무시되고 최초 값이 그대로 반환된다.
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'output-turn-1',
+    '충돌하는 후발 K 응답',
+    v_other_goal_id,
+    'deterministic',
+    'violence',
+    true
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '첫 번째 K 응답'
+    OR v_output.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_output.engine_category IS DISTINCT FROM 'generated'
+    OR v_output.safety_subcategory IS NOT NULL
+    OR v_output.boredom_early_finish IS DISTINCT FROM false
+    OR v_output.already_stored IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'conflicting output retry must return every first-writer value: %', row_to_json(v_output);
+  END IF;
+
+  -- 3) 정상 finalize는 후발 인자가 아니라 저장된 최초 output으로 K 메시지를 만든다.
+  SELECT * INTO v_finalize FROM public.finalize_mission_turn_v3(
+    v_session_id, 'output-turn-1', 2
+  );
+  IF v_finalize.progress_status IS DISTINCT FROM 'IN_PROGRESS'
+    OR v_finalize.k_response IS DISTINCT FROM '첫 번째 K 응답'
+    OR v_finalize.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_finalize.safety_paused IS DISTINCT FROM false
+    OR v_finalize.early_ended IS DISTINCT FROM false
+    OR v_finalize.already_finalized IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'normal v3 finalize must use the persisted first output: %', row_to_json(v_finalize);
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.chat_messages
+  WHERE session_id = v_session_id AND turn_id = 'output-turn-1:k' AND role = 'k';
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'normal finalize must persist exactly one K response, got %', v_count;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.chat_messages
+    WHERE session_id = v_session_id
+      AND turn_id = 'output-turn-1:k'
+      AND role = 'k'
+      AND content IS NOT DISTINCT FROM '첫 번째 K 응답'
+      AND display_sequence IS NOT DISTINCT FROM 2
+  ) THEN
+    RAISE EXCEPTION 'normal finalize must persist the first output and first display sequence';
+  END IF;
+
+  -- 4) FINALIZED 뒤 output/finalize 재시도도 최초 terminal 결과만 반환한다.
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'output-turn-1',
+    'FINALIZED 뒤 재계산된 응답',
+    v_other_goal_id,
+    'safety',
+    'self_harm',
+    true
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '첫 번째 K 응답'
+    OR v_output.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_output.engine_category IS DISTINCT FROM 'generated'
+    OR v_output.safety_subcategory IS NOT NULL
+    OR v_output.boredom_early_finish IS DISTINCT FROM false
+    OR v_output.already_stored IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'post-finalize output retry must not replace any first-writer field: %', row_to_json(v_output);
+  END IF;
+
+  SELECT * INTO v_finalize FROM public.finalize_mission_turn_v3(
+    v_session_id, 'output-turn-1', 99
+  );
+  IF v_finalize.progress_status IS DISTINCT FROM 'IN_PROGRESS'
+    OR v_finalize.k_response IS DISTINCT FROM '첫 번째 K 응답'
+    OR v_finalize.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_finalize.safety_paused IS DISTINCT FROM false
+    OR v_finalize.early_ended IS DISTINCT FROM false
+    OR v_finalize.already_finalized IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'post-finalize retry must return the first terminal result: %', row_to_json(v_finalize);
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.chat_messages
+  WHERE session_id = v_session_id AND turn_id = 'output-turn-1:k' AND role = 'k';
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'post-finalize retries must leave exactly one K response, got %', v_count;
+  END IF;
+
+  -- ── Fixture 5: safety → SAFETY_PAUSED, K/event exactly once ──────────────
+  INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
+  VALUES (v_child_id, 'mission', v_day_at + interval '4 days', v_day + 4)
+  RETURNING id INTO v_session_id;
+
+  INSERT INTO public.mission_progress(
+    session_id, child_id, business_date, round_type,
+    mission_policy_version, effective_at,
+    required_valid_count, valid_answer_count, status
+  ) VALUES (
+    v_session_id, v_child_id, (v_day + 4)::text, 'daily_single',
+    'v3_single_daily', v_effective_at,
+    1, 0, 'IN_PROGRESS'
+  );
+
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'safety-turn-1', '친구한테 맞았어', 'stt_tts', 1
+  );
+  IF v_start.turn_status IS DISTINCT FROM 'CHILD_PERSISTED'
+    OR v_start.already_processed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'safety fixture start failed: %', row_to_json(v_start);
+  END IF;
+
+  SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
+    v_session_id, 'safety-turn-1', '[]'::jsonb
+  );
+  IF v_assessed.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_assessed.already_assessed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'safety fixture assessment failed: %', row_to_json(v_assessed);
+  END IF;
+
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'safety-turn-1',
+    '그랬구나. 네 잘못이 아니야. 지금 안전한 어른에게 바로 알리자.',
+    NULL,
+    'safety',
+    'violence',
+    false
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '그랬구나. 네 잘못이 아니야. 지금 안전한 어른에게 바로 알리자.'
+    OR v_output.prompted_goal_id IS NOT NULL
+    OR v_output.engine_category IS DISTINCT FROM 'safety'
+    OR v_output.safety_subcategory IS DISTINCT FROM 'violence'
+    OR v_output.boredom_early_finish IS DISTINCT FROM false
+    OR v_output.already_stored IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'safety output store must preserve the exact safety payload: %', row_to_json(v_output);
+  END IF;
+
+  SELECT * INTO v_finalize FROM public.finalize_mission_turn_v3(
+    v_session_id, 'safety-turn-1', 2
+  );
+  IF v_finalize.progress_status IS DISTINCT FROM 'SAFETY_PAUSED'
+    OR v_finalize.k_response IS DISTINCT FROM '그랬구나. 네 잘못이 아니야. 지금 안전한 어른에게 바로 알리자.'
+    OR v_finalize.prompted_goal_id IS NOT NULL
+    OR v_finalize.safety_paused IS DISTINCT FROM true
+    OR v_finalize.early_ended IS DISTINCT FROM false
+    OR v_finalize.already_finalized IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'safety finalize must pause the mission with the first K response: %', row_to_json(v_finalize);
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.chat_messages
+  WHERE session_id = v_session_id AND turn_id = 'safety-turn-1:k' AND role = 'k';
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'safety finalize must persist exactly one K response, got %', v_count;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.chat_messages
+    WHERE session_id = v_session_id
+      AND turn_id = 'safety-turn-1:k'
+      AND role = 'k'
+      AND content IS NOT DISTINCT FROM '그랬구나. 네 잘못이 아니야. 지금 안전한 어른에게 바로 알리자.'
+  ) THEN
+    RAISE EXCEPTION 'safety finalize must persist the exact first K response';
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.safety_events
+  WHERE session_id = v_session_id
+    AND child_id = v_child_id
+    AND subcategory = 'violence'
+    AND child_text = '친구한테 맞았어'
+    AND source = 'QUESTION_ENGINE'
+    AND event_stage = 'mission_turn'
+    AND policy_version = 'v3_single_daily';
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'safety finalize must create exactly one matching safety event, got %', v_count;
+  END IF;
+
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'safety-turn-1',
+    '재시도에서 생성된 다른 응답',
+    NULL,
+    'generated',
+    NULL,
+    true
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '그랬구나. 네 잘못이 아니야. 지금 안전한 어른에게 바로 알리자.'
+    OR v_output.prompted_goal_id IS NOT NULL
+    OR v_output.engine_category IS DISTINCT FROM 'safety'
+    OR v_output.safety_subcategory IS DISTINCT FROM 'violence'
+    OR v_output.boredom_early_finish IS DISTINCT FROM false
+    OR v_output.already_stored IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'safety output retry must return the first safety payload: %', row_to_json(v_output);
+  END IF;
+
+  SELECT * INTO v_finalize FROM public.finalize_mission_turn_v3(
+    v_session_id, 'safety-turn-1', 77
+  );
+  IF v_finalize.progress_status IS DISTINCT FROM 'SAFETY_PAUSED'
+    OR v_finalize.k_response IS DISTINCT FROM '그랬구나. 네 잘못이 아니야. 지금 안전한 어른에게 바로 알리자.'
+    OR v_finalize.prompted_goal_id IS NOT NULL
+    OR v_finalize.safety_paused IS DISTINCT FROM true
+    OR v_finalize.early_ended IS DISTINCT FROM false
+    OR v_finalize.already_finalized IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'safety finalize retry must return the same terminal result: %', row_to_json(v_finalize);
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.safety_events
+  WHERE session_id = v_session_id;
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'safety retries must leave exactly one safety event, got %', v_count;
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.chat_messages
+  WHERE session_id = v_session_id AND turn_id = 'safety-turn-1:k' AND role = 'k';
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'safety retries must leave exactly one K response, got %', v_count;
+  END IF;
+
+  -- ── Fixture 6: boredom Goal 2/4 → FORCE_ENDED, no reward, retry-safe ─────
+  INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
+  VALUES (v_child_id, 'mission', v_day_at + interval '5 days', v_day + 5)
+  RETURNING id INTO v_session_id;
+
+  INSERT INTO public.mission_progress(
+    session_id, child_id, business_date, round_type,
+    mission_policy_version, effective_at,
+    required_valid_count, valid_answer_count, status
+  ) VALUES (
+    v_session_id, v_child_id, (v_day + 5)::text, 'daily_single',
+    'v3_single_daily', v_effective_at,
+    1, 0, 'IN_PROGRESS'
+  );
+
+  INSERT INTO public.conversation_goals(
+    mission_session_id, child_id, goal_order, semantic_group, priority, status,
+    evidence_source, confidence, satisfied_at
+  )
+  SELECT v_session_id, v_child_id, ord, 'TERMINAL_BOREDOM_' || ord, 'P2',
+    CASE WHEN ord <= 2 THEN 'SATISFIED' ELSE 'PENDING' END,
+    CASE WHEN ord <= 2 THEN 'child_utterance' ELSE NULL END,
+    CASE WHEN ord <= 2 THEN 0.9 ELSE NULL END,
+    CASE WHEN ord <= 2 THEN v_day_at + interval '5 days' ELSE NULL END
+  FROM generate_series(1, 4) AS ord;
+
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'boredom-turn-1', '이제 그만하고 싶어', 'stt_tts', 1
+  );
+  IF v_start.turn_status IS DISTINCT FROM 'CHILD_PERSISTED'
+    OR v_start.already_processed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'boredom fixture start failed: %', row_to_json(v_start);
+  END IF;
+
+  SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
+    v_session_id, 'boredom-turn-1', '[]'::jsonb
+  );
+  IF v_assessed.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_assessed.already_assessed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'boredom fixture assessment failed: %', row_to_json(v_assessed);
+  END IF;
+
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'boredom-turn-1',
+    '알겠어. 오늘 이야기는 여기까지 하자.',
+    NULL,
+    'deterministic',
+    NULL,
+    true
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '알겠어. 오늘 이야기는 여기까지 하자.'
+    OR v_output.prompted_goal_id IS NOT NULL
+    OR v_output.engine_category IS DISTINCT FROM 'deterministic'
+    OR v_output.safety_subcategory IS NOT NULL
+    OR v_output.boredom_early_finish IS DISTINCT FROM true
+    OR v_output.already_stored IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'boredom output store failed: %', row_to_json(v_output);
+  END IF;
+
+  SELECT * INTO v_finalize FROM public.finalize_mission_turn_v3(
+    v_session_id, 'boredom-turn-1', 2
+  );
+  IF v_finalize.progress_status IS DISTINCT FROM 'FORCE_ENDED'
+    OR v_finalize.k_response IS DISTINCT FROM '알겠어. 오늘 이야기는 여기까지 하자.'
+    OR v_finalize.prompted_goal_id IS NOT NULL
+    OR v_finalize.safety_paused IS DISTINCT FROM false
+    OR v_finalize.early_ended IS DISTINCT FROM true
+    OR v_finalize.already_finalized IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'Goal 2/4 boredom finalize must force-end without safety pause: %', row_to_json(v_finalize);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.chat_sessions
+    WHERE id = v_session_id
+      AND ended_at IS NOT NULL
+      AND ended_reason IS NOT DISTINCT FROM 'BOREDOM_EARLY_FINISH'
+  ) THEN
+    RAISE EXCEPTION 'boredom finalize must persist the terminal session reason';
+  END IF;
+
+  SELECT * INTO v_reward FROM public.award_mission_v3_reward(
+    v_child_id, v_day + 5, 'mission_v3_complete', v_session_id
+  );
+  IF v_reward.rewarded IS DISTINCT FROM false
+    OR v_reward.eligible IS DISTINCT FROM false
+    OR v_reward.reason IS DISTINCT FROM 'goal_threshold_not_met'
+    OR v_reward.satisfied_goal_count IS DISTINCT FROM 2
+  THEN
+    RAISE EXCEPTION 'Goal 2/4 boredom path must remain ineligible for reward: %', row_to_json(v_reward);
+  END IF;
+
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'boredom-turn-1',
+    '재시도의 다른 종료 응답',
+    NULL,
+    'generated',
+    NULL,
+    false
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '알겠어. 오늘 이야기는 여기까지 하자.'
+    OR v_output.prompted_goal_id IS NOT NULL
+    OR v_output.engine_category IS DISTINCT FROM 'deterministic'
+    OR v_output.safety_subcategory IS NOT NULL
+    OR v_output.boredom_early_finish IS DISTINCT FROM true
+    OR v_output.already_stored IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'boredom output retry must preserve the first terminal payload: %', row_to_json(v_output);
+  END IF;
+
+  SELECT * INTO v_finalize FROM public.finalize_mission_turn_v3(
+    v_session_id, 'boredom-turn-1', 88
+  );
+  IF v_finalize.progress_status IS DISTINCT FROM 'FORCE_ENDED'
+    OR v_finalize.k_response IS DISTINCT FROM '알겠어. 오늘 이야기는 여기까지 하자.'
+    OR v_finalize.prompted_goal_id IS NOT NULL
+    OR v_finalize.safety_paused IS DISTINCT FROM false
+    OR v_finalize.early_ended IS DISTINCT FROM true
+    OR v_finalize.already_finalized IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'boredom finalize retry must return the first terminal result: %', row_to_json(v_finalize);
+  END IF;
+
+  SELECT * INTO v_reward FROM public.award_mission_v3_reward(
+    v_child_id, v_day + 5, 'mission_v3_complete', v_session_id
+  );
+  IF v_reward.rewarded IS DISTINCT FROM false
+    OR v_reward.eligible IS DISTINCT FROM false
+    OR v_reward.reason IS DISTINCT FROM 'goal_threshold_not_met'
+    OR v_reward.satisfied_goal_count IS DISTINCT FROM 2
+  THEN
+    RAISE EXCEPTION 'boredom reward retry must remain the same no-op result: %', row_to_json(v_reward);
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.gold_key_ledger
+  WHERE child_id = v_child_id
+    AND reward_type = 'mission_v3_complete'
+    AND business_date = v_day + 5;
+  IF v_count IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'Goal 2/4 boredom retries must create zero reward rows, got %', v_count;
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.chat_messages
+  WHERE session_id = v_session_id AND turn_id = 'boredom-turn-1:k' AND role = 'k';
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'boredom retries must leave exactly one K response, got %', v_count;
+  END IF;
+
+  -- ── Fixture 7: Goal 3/4 finalize → COMPLETED + exactly-once reward ────────
+  INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
+  VALUES (v_child_id, 'mission', v_day_at + interval '6 days', v_day + 6)
+  RETURNING id INTO v_session_id;
+
+  INSERT INTO public.mission_progress(
+    session_id, child_id, business_date, round_type,
+    mission_policy_version, effective_at,
+    required_valid_count, valid_answer_count, status
+  ) VALUES (
+    v_session_id, v_child_id, (v_day + 6)::text, 'daily_single',
+    'v3_single_daily', v_effective_at,
+    1, 0, 'IN_PROGRESS'
+  );
+
+  INSERT INTO public.conversation_goals(
+    mission_session_id, child_id, goal_order, semantic_group, priority, status,
+    evidence_source, confidence, satisfied_at
+  )
+  SELECT v_session_id, v_child_id, ord, 'TERMINAL_COMPLETE_' || ord, 'P2',
+    CASE WHEN ord <= 2 THEN 'SATISFIED' ELSE 'PENDING' END,
+    CASE WHEN ord <= 2 THEN 'child_utterance' ELSE NULL END,
+    CASE WHEN ord <= 2 THEN 0.9 ELSE NULL END,
+    CASE WHEN ord <= 2 THEN v_day_at + interval '6 days' ELSE NULL END
+  FROM generate_series(1, 4) AS ord;
+
+  SELECT goal_id INTO v_goal_id
+  FROM public.conversation_goals
+  WHERE mission_session_id = v_session_id AND goal_order = 4;
+
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'complete-turn-1', '오늘 이야기 즐거웠어', 'stt_tts', 1
+  );
+  IF v_start.turn_status IS DISTINCT FROM 'CHILD_PERSISTED'
+    OR v_start.already_processed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'completion fixture start failed: %', row_to_json(v_start);
+  END IF;
+
+  SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
+    v_session_id, 'complete-turn-1', '[]'::jsonb
+  );
+  IF v_assessed.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_assessed.already_assessed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'completion fixture assessment failed: %', row_to_json(v_assessed);
+  END IF;
+
+  -- start 시점에는 2/4였고, 이번 assessment가 세 번째 Goal을 충족시킨 상황이다.
+  UPDATE public.conversation_goals
+  SET status = 'SATISFIED',
+      evidence_source = 'child_utterance',
+      confidence = 0.9,
+      satisfied_at = v_day_at + interval '6 days',
+      updated_at = now()
+  WHERE mission_session_id = v_session_id AND goal_order = 3;
+
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'complete-turn-1',
+    '나도 즐거웠어. 오늘 미션을 완료했어!',
+    v_goal_id,
+    'generated',
+    NULL,
+    false
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '나도 즐거웠어. 오늘 미션을 완료했어!'
+    OR v_output.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_output.engine_category IS DISTINCT FROM 'generated'
+    OR v_output.safety_subcategory IS NOT NULL
+    OR v_output.boredom_early_finish IS DISTINCT FROM false
+    OR v_output.already_stored IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'completion output store failed: %', row_to_json(v_output);
+  END IF;
+
+  SELECT * INTO v_finalize FROM public.finalize_mission_turn_v3(
+    v_session_id, 'complete-turn-1', 2
+  );
+  IF v_finalize.progress_status IS DISTINCT FROM 'IN_PROGRESS'
+    OR v_finalize.k_response IS DISTINCT FROM '나도 즐거웠어. 오늘 미션을 완료했어!'
+    OR v_finalize.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_finalize.safety_paused IS DISTINCT FROM false
+    OR v_finalize.early_ended IS DISTINCT FROM false
+    OR v_finalize.already_finalized IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'Goal 3/4 terminal finalize must persist the first K output before reward: %', row_to_json(v_finalize);
+  END IF;
+
+  SELECT * INTO v_reward FROM public.award_mission_v3_reward(
+    v_child_id, v_day + 6, 'mission_v3_complete', v_session_id
+  );
+  IF v_reward.rewarded IS DISTINCT FROM true
+    OR v_reward.eligible IS DISTINCT FROM true
+    OR v_reward.reason IS DISTINCT FROM 'rewarded'
+    OR v_reward.satisfied_goal_count IS DISTINCT FROM 3
+  THEN
+    RAISE EXCEPTION 'Goal 3/4 completion must award exactly once: %', row_to_json(v_reward);
+  END IF;
+
+  SELECT status INTO v_status
+  FROM public.mission_progress
+  WHERE session_id = v_session_id;
+  IF v_status IS DISTINCT FROM 'COMPLETED' THEN
+    RAISE EXCEPTION 'Goal 3/4 reward path must transition progress to COMPLETED, got %', v_status;
+  END IF;
+
+  SELECT * INTO v_output FROM public.store_mission_turn_v3_output(
+    v_session_id,
+    'complete-turn-1',
+    '완료 뒤 재계산된 응답',
+    NULL,
+    'deterministic',
+    'threat',
+    true
+  );
+  IF v_output.k_response_draft IS DISTINCT FROM '나도 즐거웠어. 오늘 미션을 완료했어!'
+    OR v_output.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_output.engine_category IS DISTINCT FROM 'generated'
+    OR v_output.safety_subcategory IS NOT NULL
+    OR v_output.boredom_early_finish IS DISTINCT FROM false
+    OR v_output.already_stored IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'completed output retry must return the first output without recalculation: %', row_to_json(v_output);
+  END IF;
+
+  SELECT * INTO v_finalize FROM public.finalize_mission_turn_v3(
+    v_session_id, 'complete-turn-1', 66
+  );
+  IF v_finalize.progress_status IS DISTINCT FROM 'COMPLETED'
+    OR v_finalize.k_response IS DISTINCT FROM '나도 즐거웠어. 오늘 미션을 완료했어!'
+    OR v_finalize.prompted_goal_id IS DISTINCT FROM v_goal_id
+    OR v_finalize.safety_paused IS DISTINCT FROM false
+    OR v_finalize.early_ended IS DISTINCT FROM false
+    OR v_finalize.already_finalized IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'completed finalize retry must return the first terminal result: %', row_to_json(v_finalize);
+  END IF;
+
+  SELECT * INTO v_reward FROM public.award_mission_v3_reward(
+    v_child_id, v_day + 6, 'mission_v3_complete', v_session_id
+  );
+  IF v_reward.rewarded IS DISTINCT FROM false
+    OR v_reward.eligible IS DISTINCT FROM true
+    OR v_reward.reason IS DISTINCT FROM 'already_rewarded'
+    OR v_reward.satisfied_goal_count IS DISTINCT FROM 3
+  THEN
+    RAISE EXCEPTION 'Goal 3/4 reward retry must report already_rewarded: %', row_to_json(v_reward);
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.gold_key_ledger
+  WHERE child_id = v_child_id
+    AND reward_type = 'mission_v3_complete'
+    AND business_date = v_day + 6;
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'Goal 3/4 retries must leave exactly one reward row, got %', v_count;
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.chat_messages
+  WHERE session_id = v_session_id AND turn_id = 'complete-turn-1:k' AND role = 'k';
+  IF v_count IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'Goal 3/4 retries must leave exactly one K response, got %', v_count;
+  END IF;
+
+  -- ── Fixture 8: 30초 output-processing lease와 assessment 재사용 ─────────
+  INSERT INTO public.chat_sessions(child_id, session_type, started_at, business_date)
+  VALUES (v_child_id, 'mission', v_day_at + interval '7 days', v_day + 7)
+  RETURNING id INTO v_session_id;
+
+  INSERT INTO public.mission_progress(
+    session_id, child_id, business_date, round_type,
+    mission_policy_version, effective_at,
+    required_valid_count, valid_answer_count, status
+  ) VALUES (
+    v_session_id, v_child_id, (v_day + 7)::text, 'daily_single',
+    'v3_single_daily', v_effective_at,
+    1, 0, 'IN_PROGRESS'
+  );
+
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'lease-turn-1', '처리 임대 검증 발화', 'stt_tts', 1
+  );
+  IF v_start.turn_status IS DISTINCT FROM 'CHILD_PERSISTED'
+    OR v_start.answer_result IS NOT NULL
+    OR v_start.already_processed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'lease fixture start failed: %', row_to_json(v_start);
+  END IF;
+
+  SELECT * INTO v_assessed FROM public.mark_mission_turn_v3_assessed(
+    v_session_id, 'lease-turn-1', v_first_assessment
+  );
+  IF v_assessed.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_assessed.already_assessed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'lease fixture assessment failed: %', row_to_json(v_assessed);
+  END IF;
+
+  -- lease 안의 즉시 재호출: 저장된 assessment는 돌려주되 duplicate work는 막는다.
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'lease-turn-1', '처리 임대 검증 발화', 'stt_tts', 1
+  );
+  IF v_start.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_start.answer_result IS DISTINCT FROM v_first_assessment
+    OR v_start.k_response_draft IS NOT NULL
+    OR v_start.already_processed IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'retry inside the 30-second lease must be blocked with the stored assessment: %', row_to_json(v_start);
+  END IF;
+
+  -- 외부 LLM 작업 중 worker가 사라진 상황을 fixture에서 31초 경과로 재현한다.
+  UPDATE public.mission_turns
+  SET updated_at = now() - interval '31 seconds'
+  WHERE session_id = v_session_id AND client_turn_id = 'lease-turn-1';
+
+  -- lease 만료 뒤 재호출: 같은 assessment를 재사용하면서 output 생성을 재개할 수 있다.
+  SELECT * INTO v_start FROM public.start_mission_turn_v3(
+    v_session_id, 'lease-turn-1', '처리 임대 검증 발화', 'stt_tts', 1
+  );
+  IF v_start.turn_status IS DISTINCT FROM 'ANSWER_PROCESSED'
+    OR v_start.answer_result IS DISTINCT FROM v_first_assessment
+    OR v_start.k_response_draft IS NOT NULL
+    OR v_start.already_processed IS DISTINCT FROM false
+  THEN
+    RAISE EXCEPTION 'retry after lease expiry must resume from the stored assessment: %', row_to_json(v_start);
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.mission_turns
+    WHERE session_id = v_session_id
+      AND client_turn_id = 'lease-turn-1'
+      AND status IS NOT DISTINCT FROM 'ANSWER_PROCESSED'
+      AND answer_result IS NOT DISTINCT FROM v_first_assessment
+      AND attempt_count IS NOT DISTINCT FROM 3
+  ) THEN
+    RAISE EXCEPTION 'lease retries must preserve the assessment and increment attempt_count to 3';
+  END IF;
+
+  RAISE NOTICE '073 Phase 4/5A/5C reward, terminal contract, and lease verification: PASSED';
 END;
 $$;
 

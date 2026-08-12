@@ -1,9 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import {
-  getActiveVacationContext,
-  type VacationContext,
-} from "@/lib/plan/vacationSchoolContext";
+import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
 
 export type MissionPolicyVersion = "v2_dual" | "v3_single_daily";
 export type DailySingleBlockReason =
@@ -21,9 +18,9 @@ export interface MissionTimeGateResult {
   allowed: boolean;
   businessDate: string;
   currentMinute: number;
-  opensAtMinute: 600 | 780;
-  closesAtMinute: 1380;
-  vacationStatus: VacationContext["status"] | null;
+  opensAtMinute: 540;
+  closesAtMinute: 1430;
+  scheduleEnforced: boolean;
   reason: "before_open" | "closed" | null;
 }
 
@@ -56,11 +53,11 @@ export type DailySingleOperationDecision =
     };
 
 interface MissionTimePolicyDependencies {
-  getActiveVacationContext: typeof getActiveVacationContext;
+  isMissionScheduleEnforced: typeof isMissionScheduleEnforced;
 }
 
 const DEFAULT_DEPENDENCIES: MissionTimePolicyDependencies = {
-  getActiveVacationContext,
+  isMissionScheduleEnforced,
 };
 
 const KST_CALENDAR_FORMATTER = new Intl.DateTimeFormat("en-CA", {
@@ -125,20 +122,22 @@ export const evaluateMissionTimeGate = async (input: {
   const now = input.now ?? new Date();
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...input.dependencies };
   const { businessDate, currentMinute } = getKstCalendarParts(now);
-  const vacationContext = await dependencies.getActiveVacationContext(input.db, input.childId);
-  const isConfirmedVacation = vacationContext?.status === "VACATION_CONFIRMED";
-  const opensAtMinute = isConfirmedVacation ? 600 : 780;
-  const closesAtMinute = 1380;
+  const scheduleEnforced = dependencies.isMissionScheduleEnforced();
+  const opensAtMinute = 540 as const;
+  const closesAtMinute = 1430 as const;
+  const allowed = !scheduleEnforced
+    || (currentMinute >= opensAtMinute && currentMinute < closesAtMinute);
 
   return {
-    allowed: currentMinute >= opensAtMinute && currentMinute < closesAtMinute,
+    allowed,
     businessDate,
     currentMinute,
     opensAtMinute,
     closesAtMinute,
-    vacationStatus: vacationContext?.status ?? null,
-    reason:
-      currentMinute < opensAtMinute
+    scheduleEnforced,
+    reason: !scheduleEnforced
+      ? null
+      : currentMinute < opensAtMinute
         ? "before_open"
         : currentMinute >= closesAtMinute
           ? "closed"

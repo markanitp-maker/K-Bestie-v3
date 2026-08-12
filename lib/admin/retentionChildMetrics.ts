@@ -9,9 +9,9 @@ import { isDateInRange } from "@/lib/admin/retentionPeriod";
 //
 // - 활성 일수 = 미션(mission_progress)·자유대화(freechat_start)·놀이(play_start) 중
 //   하나라도 발생한 Asia/Seoul 기준 고유 날짜 수(로그인 이벤트는 "활동"이 아니므로 제외).
-// - 미션 수 = mission_progress를 child_id + business_date + round_type 기준으로
-//   dedupe한 고유 슬롯 수. round_type은 round1_day(MISSION_I)/round2_night(MISSION_II)
-//   두 값만 존재하므로 하루 최대 2, 활성 일수 대비 최대 2배를 구조적으로 보장한다.
+// - 미션 수 = mission_progress를 child_id + business_date + logical slot 기준으로
+//   dedupe한 고유 슬롯 수. historical v2의 round1_day/round2_night는 최대 두 슬롯,
+//   Mission v3의 daily_single은 primary 슬롯 하나로 집계한다.
 //   mission_progress.session_id가 PK라 재시도·재입장으로 세션이 여러 번 생겨도(같은
 //   child_id+business_date+round_type) Set으로 자동 dedupe된다 — behavior_events의
 //   raw mission_start 이벤트를 그대로 세던 기존 방식은 이 dedupe가 전혀 없었다.
@@ -33,6 +33,7 @@ export interface ChildActivityMetrics {
 }
 
 const ROUND_TYPE_TO_SLOT: Record<string, "mission1" | "mission2"> = {
+  daily_single: "mission1",
   round1_day: "mission1",
   round2_night: "mission2",
 };

@@ -52,9 +52,43 @@
 - Dev Gate 전부 PASS 확인 후에만 Production `MISSION_V3_EFFECTIVE_AT=2026-08-13T00:00:00+09:00` 설정.
 - 배포 후 실사용 모니터링(첫 daily_single 생성, Cron 1회 실행, 리포트 정상 생성) 확인.
 
+## Phase A 구현 보고 (2026-08-12)
+
+- A1: `MISSION_SCHEDULE_ENFORCED=true`인 Production은 KST 09:00 inclusive ~ 23:50
+  exclusive 단일 window로 통일했다. false인 Dev는 24시간 허용한다. 방학 여부에 따른
+  10:00/13:00 분기는 v3에서 제거했고, v2 historical gate에만 남겼다.
+- A2: 기존 migration의 `mission_progress_daily_single_child_date_key` 부분 unique index가
+  `(child_id, business_date) WHERE round_type='daily_single'`을 보장하고, start route가
+  `23505` 경합 시 생성 세션을 롤백한 뒤 기존 세션으로 resume함을 확인했다. 추가 DDL은
+  불필요하며 과거 round row는 수정하지 않았다.
+- A3: Vercel collection Cron을 23:55 KST 단일 `/api/batch/v3/collection/enqueue`로
+  교체했다. DB 내부 `collection_2` 명칭은 historical raw/report 스키마 호환용 마감 슬롯으로
+  유지한다. 00:00~03:50 KST 통합 worker를 10분 간격으로 등록했다. 최신 RPC는 자정 cutoff,
+  advisory lock/idempotency key, completed job reset, failed job 재대기, reconcile downstream 복구를
+  제공한다. 단, 자동 reconcile은 기존 completed `collection_2` job이 있는 child를 후보에서
+  제외하므로 자정 수집과 경합해 늦게 commit된 전일 timestamp 메시지의 자동 재수집 연결은
+  확인되지 않았다. 이 late-write race는 `[미검증]`으로 남기며 DB 함수는 변경하지 않았다.
+- A4 조사: `/api/cron/mission-start`는 미션을 생성하지 않고 child push 구독자에게 v2 라운드
+  시작 알림을 보낸다. 방학 10:00/학기 13:00의 missionType=1, 18:00의 missionType=2를
+  검증하고, 해당 round 완료·당일 cron 발송 성공·알림 비활성 child를 제외한 뒤 발송 로그를
+  남긴다. daily_single에서 유지하면 같은 날 중복/오정책 알림이므로 Production 활성화 전
+  별도 승인 작업에서 세 legacy schedule을 제거하고 09:00 단일 daily 알림 계약으로 교체할
+  것을 권고한다. 이번 Phase A에서는 지시대로 route와 세 legacy Cron을 변경하지 않았다.
+- A5: effective-at 이후에도 해당 child/business_date에 `v2_dual` progress가 하나라도 있으면
+  child-aware policy resolver가 그날은 `v2_dual`을 유지한다. 조회 실패도 fail-closed로 처리해
+  v3 생성을 허용하지 않는다.
+- A6: onboarding card는 `/60` event activity로 policy-neutral임을 명시했다. demo store의
+  하교 후/잠들기 전 문구를 제거했고, push/v2 route/time gate/old correction을 historical-only로
+  표시했다. 관리자 reporting은 `daily_single`을 하루 마감 슬롯으로 집계하며 retention KPI는
+  daily_single을 하루 1개 logical slot으로 센다. collection analytics/UI의 1차/2차 운영 문구는
+  `레거시 중간 수집`/`하루 마감 수집`으로 바꿨다.
+
+과거 `round1_day`/`round2_night` row, migration, raw snapshot 및 historical 조회 로직에는
+UPDATE/DELETE나 의미 변경을 가하지 않았다.
+
 ## 진행 상태
 
-- [ ] Phase A (진행 예정 — Codex Sol 위임)
+- [ ] Phase A (검증종료 — A1/A2/A4/A5/A6·tsc·test·build 통과, A3 late-write race 미검증, commit은 Git metadata read-only로 실패)
 - [ ] Phase B (P0 병합 대기)
 - [ ] Phase C
 - [ ] Phase D
