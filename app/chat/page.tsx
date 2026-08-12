@@ -12,6 +12,7 @@ import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
 import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversationViewport";
+import { getFreeChatConversationState } from "@/lib/freechat/conversationState";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -605,13 +606,13 @@ export default function ChatPage() {
   const isLive = status === "live";
   const isEnded = status === "ended";
 
-  let computedVoiceState: "listening" | "thinking" | "speaking" | "connecting" | "error" | "idle" = "idle";
-  if (status === "error") computedVoiceState = "error";
-  else if (isConnecting) computedVoiceState = "connecting";
-  else if (isSpeaking) computedVoiceState = "speaking";
-  else if (isResponding) computedVoiceState = "thinking";
-  else if (isRecording) computedVoiceState = "listening";
-  else if (isLive) computedVoiceState = "listening";
+  const computedVoiceState = getFreeChatConversationState({
+    mode,
+    status,
+    isRecording,
+    isResponding,
+    isSpeaking,
+  });
 
   let stateText = "";
   let StateIcon = null;
@@ -796,12 +797,24 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Mascot Area & Side Cards OR Text-Mode Closed-Keyboard CTA */}
-          {!isKeyboardOpen && (
+          {/* Mascot Area & Side Cards OR Text-Mode CTA.
+              Text mode keeps K's state visible even while the software keyboard is open. */}
+          {(mode === "text" || !isKeyboardOpen) && (
           <div className="relative z-10 w-full shrink-0 h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)] transition-all duration-300 flex items-center justify-center">
             {mode === "text" ? (
-              /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 시원하고 명확한 코랄 레드 #EF5350 '✕ 채팅창 닫기' pill CTA 노출 */
-              <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
+              /* Text overlay retains K's latest state above the close CTA. */
+              <div className="relative z-30 flex flex-col items-center justify-center gap-4 my-auto pointer-events-auto animate-in fade-in duration-300">
+                <div
+                  data-ui="text-mode-voice-state"
+                  data-keyboard-open={isKeyboardOpen}
+                  className="flex items-center gap-2 rounded-full border border-white/80 bg-white/85 px-4 py-2 text-[#5F7181] shadow-[0_3px_10px_rgba(75,85,99,0.10)] backdrop-blur-md"
+                  aria-live="polite"
+                >
+                  <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,10.5vw,46px)] w-[clamp(40px,10.5vw,46px)] items-center justify-center">
+                    {StateIcon}
+                  </div>
+                  <span className="text-[14px] font-bold leading-none">{stateText}</span>
+                </div>
                 <button
                   onClick={switchToVoice}
                   style={{ backgroundColor: "#EF5350" }}
