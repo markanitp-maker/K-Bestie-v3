@@ -2,8 +2,9 @@
 -- child/business-date uniqueness policy. Historical ledger rows are untouched.
 -- Apply only after checking existing mission_complete/mission_v3_complete rows
 -- for duplicate (child_id, business_date) pairs.
-
-BEGIN;
+-- Note: no explicit BEGIN/COMMIT here — scripts/apply-migration.js rejects
+-- top-level transaction control and provides its own implicit-transaction
+-- atomicity via a single simple-query HTTP call (see migrationSafety.js).
 
 DROP INDEX IF EXISTS public.gold_key_ledger_mission_daily_reward_unique;
 
@@ -614,5 +615,3 @@ REVOKE EXECUTE ON FUNCTION public.award_mission_v3_reward(
 GRANT EXECUTE ON FUNCTION public.award_mission_v3_reward(
   uuid, date, text, uuid
 ) TO service_role;
-
-COMMIT;
