@@ -117,4 +117,35 @@ dev_diff.sql
 
 .vercel
 
+# 2026-08-13: agy 전수조사로 저장소 루트에 실제 토큰/비밀번호/개인정보가
+# 하드코딩된 1회성 디버그 스크립트·덤프가 다수 발견돼 추가. 앵커(/)로
+# 루트 레벨만 잡는다 — scripts/ 등 정식 스크립트 디렉터리는 무관.
+/scratch_*.mjs
+/scratch_*.ts
+/scratch_*.log
+/query-db*.js
+/query-dev-db*.js
+/query-schema*.js
+/query-rpc.js
+/query-check.js
+/query_stats.sql
+/fix-db*.js
+/patch_*.js
+/run-test*.js
+/*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.test.json
+!vercel.json
+!requests/**/*.json
+/tmux-*.log
+
+# 2026-08-13: 5,424개 파일짜리 레거시 프로젝트 스냅샷 백업(2026-08-03) —
+# 별도 .git까지 포함된 통째 복사본이라 추적 대상이 아니다.
+/candidate-release/
+/worktrees/
+/e2e-results/
+/.vscode/
+
 .vercel
