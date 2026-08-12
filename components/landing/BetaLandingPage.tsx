@@ -245,13 +245,12 @@ export default function BetaLandingPage({
 
         <section className="bg-[#F8FAFC] px-5 py-16 sm:px-6 sm:py-20 lg:px-10 lg:py-24">
           <div className="mx-auto max-w-[880px] text-center">
-            <p className="text-xs font-extrabold tracking-[0.18em] text-[var(--color-k-orange)]">WHY K</p>
+            <p className="text-xs font-extrabold tracking-[0.18em] text-[var(--color-k-orange)]">WHY 케이</p>
             <h2 className="mt-3 text-[29px] font-extrabold leading-[1.28] tracking-[-0.03em] text-[var(--color-k-navy)] sm:text-[38px]">
               “오늘 어땠어?”가<br />“그냥”으로 끝난다면
             </h2>
             <div className="mx-auto mt-5 max-w-[720px] space-y-3 text-base leading-7 text-slate-600 sm:text-[17px]">
-              <p>아이에게 매일 있었던 일을 모두 설명해 달라고 하기는 어렵습니다.</p>
-              <p>학교에서 있었던 일, 친구 이야기, 요즘 관심 있는 것을 조금만 알고 있어도 부모와 아이의 대화는 달라질 수 있습니다.</p>
+              <p>아이에게 매일 있었던 일을 모두 설명해 달라고 하기는 어렵습니다. 학교에서 있었던 일, 친구 이야기, 요즘 관심 있는 것을 조금만 알고 있어도 부모와 아이의 대화는 달라질 수 있습니다.</p>
             </div>
             <p className="mt-6 text-lg font-extrabold text-[var(--color-k-navy)]">내친구 케이는 아이의 하루를 부모와의 다음 대화로 연결합니다.</p>
           </div>
@@ -260,7 +259,7 @@ export default function BetaLandingPage({
         <section id="daily-report" className="scroll-mt-20 px-5 py-16 sm:px-6 sm:py-20 lg:px-10 lg:py-28">
           <div className="mx-auto grid max-w-[1280px] items-center gap-9 lg:grid-cols-2 lg:gap-16">
             <div className="lg:order-2">
-              <SectionHeading eyebrow="DAILY REPORT" title={<>오늘 아이에게 어떤 하루가 있었는지,<br />1분이면 알 수 있습니다.</>}>
+              <SectionHeading eyebrow="DAILY REPORT" title="오늘 아이에게 어떤 하루가 있었는지, 1분이면 알 수 있습니다.">
                 <p>아이가 케이와 나눈 하루의 이야기에서 부모가 알아두면 좋은 내용과 자연스럽게 대화를 이어갈 실마리를 정리합니다.</p>
               </SectionHeading>
               <div className="mt-7 hidden lg:block">
