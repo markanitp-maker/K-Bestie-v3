@@ -43,19 +43,21 @@ test("canStartRecording: Live — idle 상태면 허용", () => {
   );
 });
 
-test("canStartRecording: Live — k_speaking 상태에서는 차단 (barge-in 금지)", () => {
+test("canStartRecording: Live — child_listening 상태면 허용", () => {
   assert.equal(
-    canStartRecording({ isLiveMode: true, answerInFlight: false, kaySpeaking: false, turnPhase: "k_speaking" }),
-    false
+    canStartRecording({ isLiveMode: true, answerInFlight: false, kaySpeaking: false, turnPhase: "child_listening" }),
+    true
   );
 });
 
-test("canStartRecording: Live — waiting_k 상태면 차단", () => {
-  assert.equal(
-    canStartRecording({ isLiveMode: true, answerInFlight: false, kaySpeaking: false, turnPhase: "waiting_k" }),
-    false
-  );
-});
+for (const blockedPhase of ["child_finalizing", "waiting_k", "k_speaking", "recovering"] satisfies TurnPhase[]) {
+  test(`canStartRecording: Live — ${blockedPhase} 상태면 차단`, () => {
+    assert.equal(
+      canStartRecording({ isLiveMode: true, answerInFlight: false, kaySpeaking: false, turnPhase: blockedPhase }),
+      false
+    );
+  });
+}
 
 // ── shouldAcceptChildTurn ─────────────────────────────────────────────────
 test("shouldAcceptChildTurn: 미션이 active 상태가 아니면 항상 통과(기존 동작 유지)", () => {

@@ -243,6 +243,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   // 만들어내지 못하게 한다(버그①②③의 자동 모드측 원인 — 수동 모드는 handleCentralButtonClick의
   // canStartRecording 가드가 동일 역할을 한다).
   const sttSetMicEnabledRef = useRef<((enabled: boolean) => void) | undefined>(undefined);
+  const sttSetInputModeRef = useRef<((mode: "auto" | "manual") => void) | undefined>(undefined);
   const sttCancelFinalizeRef = useRef<(() => void) | undefined>(undefined);
   // isAuto state는 handleTurnComplete보다 뒤에서 선언되므로(훅 규칙상 useRef 자체는 미리 선언
   // 가능) 같은 이유로 ref 우회 — 답변 처리가 끝난 뒤 마이크를 다시 켜도 되는지(자동 모드일
@@ -1323,6 +1324,8 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   // 자동·수동 발화 상태 및 DOM 조작을 위한 Ref 선언
   const [isAuto, setIsAuto] = useState(true);
+  const [voiceInputModeHydrated, setVoiceInputModeHydrated] = useState(false);
+  const didHydrateRef = useRef(false);
   isAutoRef.current = isAuto;
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
@@ -1402,6 +1405,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     }
   });
   sttSetMicEnabledRef.current = sttTts.setMicEnabled;
+  sttSetInputModeRef.current = sttTts.setInputMode;
   sttCancelFinalizeRef.current = sttTts.cancelFinalize;
   sttTtsStopSpeakingRef.current = sttTts.stopSpeaking;
   const live = useGeminiLive({
@@ -1710,6 +1714,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     if (
       phase === "ready" &&
       entryStatus === "active" &&
+      voiceInputModeHydrated &&
       mode === "voice" &&
       voice.status !== "live" &&
       voice.status !== "connecting" &&
@@ -1718,7 +1723,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       hasAutoStartedRef.current = true;
       void voice.startSession();
     }
-  }, [phase, entryStatus, mode, voice.status, voice]);
+  }, [phase, entryStatus, voiceInputModeHydrated, mode, voice.status, voice]);
 
   // 세션 상태 감시 및 자동 시작 실패 감지
   useEffect(() => {
@@ -1773,10 +1778,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const switchToVoice = useCallback(() => {
     if (missionStateRef.current !== "active") return;
     setMode("voice");
-    // overlay를 닫아도 새 세션/reconnect는 만들지 않는다. Live 수동 모드도 PCM 게이트는
-    // 다시 열어 두되 isChildSpeaking=false라 다음 마이크 탭의 activityStart 전에는 전송되지 않는다.
+    // overlay를 닫아도 새 세션/reconnect는 만들지 않는다. AUTO만 PCM gate를 다시 열고,
+    // 수동 모드는 다음 마이크 탭(sendActivityStart)이 gate를 여는 시점까지 비활성으로 둔다.
     if (isLiveMode) {
-      live.setMicEnabled(true);
+      live.setMicEnabled(isAutoRef.current);
     } else if (isAutoRef.current) {
       sttTts.setMicEnabled(true);
     }
@@ -1859,6 +1864,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   }, [missionState, completed, rewardStatus, hasClosedRewardModal]);
 
   useEffect(() => {
+    if (didHydrateRef.current) return;
+    didHydrateRef.current = true;
+
     const qpChild = searchParams.get("childId");
     const stored = typeof window !== "undefined" ? localStorage.getItem("k_child_id") : null;
     const cid = qpChild || stored;
@@ -1868,9 +1876,25 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     }
     setChildId(cid);
     const storedVoiceInputMode = localStorage.getItem(`k_voice_input_mode:${cid}`);
-    if (storedVoiceInputMode === "manual") setIsAuto(false);
+    const hydratedMode = storedVoiceInputMode === "manual" ? "manual" : "auto";
+    const hydratedIsAuto = hydratedMode === "auto";
 
-  }, [searchParams, router]);
+    // localStorage preference가 확정되기 전에는 훅 내부 기본값(auto/mic=true)으로 세션이
+    // 시작되지 않게, 페이지 state/ref와 두 음성 파이프라인의 입력 gate를 한 번에 맞춘다.
+    // 신규/이어하기 모두 이 effect를 먼저 거치고, 실제 세션 시작 effect는 hydrated 이후에만 돈다.
+    isAutoRef.current = hydratedIsAuto;
+    setIsAuto(hydratedIsAuto);
+    setIsRecording(false);
+    isRecordingRef.current = false;
+    setIsAutoListening(false);
+    setTurnPhase("idle");
+    liveRef.current?.setInteractionMode(hydratedMode);
+    liveRef.current?.setMicEnabled(hydratedIsAuto);
+    sttSetInputModeRef.current?.(hydratedMode);
+    sttSetMicEnabledRef.current?.(hydratedIsAuto);
+    setVoiceInputModeHydrated(true);
+
+  }, [searchParams, router, setTurnPhase]);
   const runMissionRequest = useCallback(async (
     operation: (request: MissionRequestContext) => Promise<void>,
     externalSignal?: AbortSignal,
@@ -2298,14 +2322,24 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   // Live 모드가 활성화될 때 interactionMode 설정 동기화 (STT/TTS는 setInputMode+setMicEnabled로 동일 개념 적용)
   useEffect(() => {
-    if (voice.status !== "live") return;
+    if (!voiceInputModeHydrated || voice.status !== "live") return;
     if (isLiveMode) {
       live.setInteractionMode(isAuto ? "auto" : "manual");
+      if (!isAuto) live.setMicEnabled(false);
+      if (!isAuto) {
+        live.setAudioMuted(false);
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
     } else {
       sttTts.setInputMode(isAuto ? "auto" : "manual");
-      sttTts.setMicEnabled(isAuto);
+      if (!isAuto) sttTts.setMicEnabled(false);
+      if (!isAuto) {
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
     }
-  }, [voice.status, isAuto, isLiveMode, live.setInteractionMode, sttTts.setInputMode, sttTts.setMicEnabled]);
+  }, [voice.status, voiceInputModeHydrated, isAuto, isLiveMode, live.setInteractionMode, live.setMicEnabled, live.setAudioMuted, sttTts.setInputMode, sttTts.setMicEnabled]);
 
   const handleModeChange = useCallback((newMode: "auto" | "manual") => {
     if (missionStateRef.current !== "active") return; // 완료 시 모드 변경 차단
@@ -2314,21 +2348,21 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     if (isLiveMode) void live.unlockAudio();
     if (newMode === "auto") {
       // 수동 발화(녹음) 중이었다면 안전하게 먼저 종료 처리
-      if (isRecordingRef.current) {
+      if (isRecordingRef.current || isRecording) {
         try {
-          if (isLiveMode) {
+          if (isRecordingRef.current && isLiveMode) {
             live.sendActivityEnd();
-          live.setAudioMuted(false);
-          // child_listening 유지 (turnComplete에서 대기)
-          } else {
+            live.setAudioMuted(false);
+            // child_listening 유지 (turnComplete에서 대기)
+          } else if (isRecordingRef.current) {
             sttAbortControllerRef.current = new AbortController();
-          const capturedId = activeChildTurnIdRef.current;
-          sttTimeoutRef.current = setTimeout(() => {
-            if (activeChildTurnIdRef.current !== capturedId) return;
-            attemptSilentRecoveryOrShowRetry();
-          }, 10000);
-          // child_listening 유지 (turnComplete에서 대기)
-          sttTts.manualFinalize(sttAbortControllerRef.current.signal);
+            const capturedId = activeChildTurnIdRef.current;
+            sttTimeoutRef.current = setTimeout(() => {
+              if (activeChildTurnIdRef.current !== capturedId) return;
+              attemptSilentRecoveryOrShowRetry();
+            }, 10000);
+            // child_listening 유지 (turnComplete에서 대기)
+            sttTts.manualFinalize(sttAbortControllerRef.current.signal);
             sttTts.setMicEnabled(false);
           }
         } finally {
@@ -2341,14 +2375,18 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       } else {
         sttTts.setInputMode("auto");
       }
+      isAutoRef.current = true;
       setIsAuto(true);
     } else {
       if (isLiveMode) {
         live.setInteractionMode("manual");
+        live.setMicEnabled(false);
+        live.setAudioMuted(false);
       } else {
         sttTts.setInputMode("manual");
         sttTts.setMicEnabled(false);
       }
+      isAutoRef.current = false;
       setIsAuto(false);
       setIsRecording(false);
       isRecordingRef.current = false;
@@ -2356,7 +2394,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     if (childIdRef.current) {
       localStorage.setItem(`k_voice_input_mode:${childIdRef.current}`, newMode);
     }
-  }, [live, sttTts, isLiveMode, setTurnPhase, resetToIdle]);
+  }, [live, sttTts, isLiveMode, isRecording, setTurnPhase, resetToIdle]);
 
   const handleCentralButtonClick = useCallback(() => {
     if (answerInFlightRef.current && !isRecording) return; // 이전 답변 처리 중엔 새 녹음 시작 차단(단, 이미 녹음 중이던 걸 끝내는 동작은 막지 않음)
@@ -2462,6 +2500,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     if (currentQ && lastK && lastK.text && lastK.text.includes(currentQ.question_text)) {
       // 재접속 전에 이미 물어본 질문 — 다시 발화하지 않고 아이 답변을 기다린다.
       askedIndexRef.current = currentIndexRef.current;
+      setTurnPhase("child_listening");
       return;
     }
 
@@ -2523,8 +2562,8 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     // 세션/WebSocket은 전혀 건드리지 않으며, 다시 소리가 감지되면 자동으로 꺼진다.
     if (live.noAudioInput) {
       voiceState = "no_input";
-    } else if (turnPhaseUi === "child_listening" || turnPhaseUi === "child_finalizing") {
-      voiceState = "listening";
+    } else if (turnPhaseUi === "child_listening") {
+      voiceState = isAuto || isRecording ? "listening" : (isProcessingAnswer ? "thinking" : "idle");
     } else if (turnPhaseUi === "waiting_k") {
       voiceState = "thinking";
     } else if (turnPhaseUi === "k_speaking") {
@@ -2584,14 +2623,29 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   // closed/error일 때는 이 useEffect 호출 자체가 건너뛰어져 렌더마다 훅 호출 개수가 달라져
   // 화면 전체가 크래시했다 — 위쪽 wakeLockWarning 훅과 동일한 이유로 조기 return보다 앞에 둔다.
   useEffect(() => {
+    if (!voiceInputModeHydrated) {
+      if (isRecordingRef.current || isRecording) {
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
+      if (isLiveMode) {
+        live.setMicEnabled(false);
+      } else {
+        sttSetMicEnabledRef.current?.(false);
+      }
+      return;
+    }
+
     if (!canAcceptVoiceInput) {
-      if (isRecordingRef.current) {
-         if (isLiveMode) {
-           live.sendActivityEnd();
-           live.setAudioMuted(false);
-         } else {
-           sttCancelFinalizeRef.current?.();
-           sttSetMicEnabledRef.current?.(false);
+      if (isRecordingRef.current || isRecording) {
+         if (isRecordingRef.current) {
+           if (isLiveMode) {
+             live.sendActivityEnd();
+             live.setAudioMuted(false);
+           } else {
+             sttCancelFinalizeRef.current?.();
+             sttSetMicEnabledRef.current?.(false);
+           }
          }
          setIsRecording(false);
          isRecordingRef.current = false;
@@ -2602,7 +2656,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
            sttSetMicEnabledRef.current?.(false);
          }
     } else {
-      if (isAutoRef.current) {
+      if (isAuto) {
          if (isLiveMode) {
            live.setMicEnabled(true);
          } else {
@@ -2610,7 +2664,16 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
          }
       }
     }
-  }, [canAcceptVoiceInput, isLiveMode, live]);
+  }, [
+    canAcceptVoiceInput,
+    voiceInputModeHydrated,
+    isRecording,
+    isAuto,
+    isLiveMode,
+    live.sendActivityEnd,
+    live.setAudioMuted,
+    live.setMicEnabled,
+  ]);
 
   if (phase === "loading") {
     return (
