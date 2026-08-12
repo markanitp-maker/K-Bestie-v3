@@ -94,8 +94,8 @@ export function MissionConversationLayout({
   }
 
   // Text mode disables microphone input. Do not present a stale Live AUTO state as
-  // active listening while the child is typing and no recording is in progress.
-  const displayVoiceState = isTextMode && !isRecording && (voiceState === "listening" || voiceState === "no_input")
+  // active listening while the child is typing, including before the parent clears recording.
+  const displayVoiceState = isTextMode && (voiceState === "listening" || voiceState === "no_input")
     ? "idle"
     : voiceState;
 

@@ -46,7 +46,7 @@ before(() => {
 
 after(() => dom.window.close());
 
-test("실제 키보드가 열린 텍스트 모드에서도 K 상태 뱃지를 렌더한다", async () => {
+test("녹음 상태가 남아 있어도 텍스트 모드에서는 K 상태 뱃지를 대기 중으로 렌더한다", async () => {
   const container = document.getElementById("root");
   assert.ok(container);
   const root = createRoot(container);
@@ -64,7 +64,7 @@ test("실제 키보드가 열린 텍스트 모드에서도 K 상태 뱃지를 �
         onToggleMute={() => {}}
         isAuto
         onChangeMode={() => {}}
-        isRecording={false}
+        isRecording
         isMicDisabled
         onMicClick={() => {}}
         textInput=""
