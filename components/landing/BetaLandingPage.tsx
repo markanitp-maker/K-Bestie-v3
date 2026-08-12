@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import LandingDashboard from "@/components/landing/LandingDashboard";
 import LandingDailyReport from "@/components/landing/LandingDailyReport";
+import LandingVideoSection from "@/components/landing/LandingVideoSection";
 import LandingWeeklyReport from "@/components/landing/LandingWeeklyReport";
 import { captureAttribution } from "@/lib/acquisition/captureAttribution";
 import {
@@ -20,7 +21,7 @@ import {
   type AuthFlowEvent,
   type LandingAttribution,
 } from "@/lib/analytics/authFlowClient";
-import { UTM_KEYS, buildPreservedHref, type PreservedLandingParams } from "@/lib/landing/preservedHref";
+import { buildPreservedHref, type PreservedLandingParams } from "@/lib/landing/preservedHref";
 
 export type { PreservedLandingParams };
 
@@ -242,6 +243,19 @@ export default function BetaLandingPage({
             <LandingDashboard />
           </div>
         </section>
+
+        <LandingVideoSection
+          onPlay={(eventName) => void logAuthFlowEvent(eventName, readAttribution())}
+          onComplete={() => void logAuthFlowEvent("landing_video_complete", readAttribution())}
+          signupCta={
+            <LandingPrimaryCta
+              entry="landing_start"
+              eventName="landing_video_signup_click"
+              className="w-full motion-reduce:transform-none motion-reduce:transition-none"
+              preservedParams={preservedParams}
+            />
+          }
+        />
 
         <section className="bg-[#F8FAFC] px-5 py-16 sm:px-6 sm:py-20 lg:px-10 lg:py-24">
           <div className="mx-auto max-w-[880px] text-center">
