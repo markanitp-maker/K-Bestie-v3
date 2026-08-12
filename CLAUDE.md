@@ -350,6 +350,16 @@ tmux new-session -d -s agy-qa-<target> "timeout <600~1800> agy --dangerously-ski
 - **증거 필수**: 실패 시 스크린샷/로그를 `/tmp/agy-qa-<target>/`에 남겨 §15 보고 근거로 쓴다. 증거 없는 "정상 동작 확인" 보고는 통과로 인정하지 않는다.
 - Playwright 미설치 시 `docs/ops/playwright-setup.md`의 절차를 수행한 뒤 진행한다(§16).
 
+### 4-E. 워커 완료/실패 감지 (002-important.md, 2026-08-12 도입)
+
+**배경**: `tmux send-keys`는 fire-and-forget이라 워커(codex/agy)의 완료·실패·행(hang)·사망을 구분할 수 없다. pane 화면을 읽고 "완료된 것 같다"고 추측하는 방식은 여러 차례 실측 실패했다(모니터 알림 미수신, 실제로는 끝난 세션을 진행 중으로 오판).
+
+- 모든 워커 실행은 `~/bin/agent-run.sh <task_id> <명령...>` 을 경유한다(직접 `codex exec .../agy ...`를 그대로 넘기지 않는다). 어떤 경로로 종료되든(정상/실패/강제종료) `~/.local/state/agent-runs/<task_id>.result`에 결과가 남는다.
+- 상태 확인은 `~/bin/agent-status.sh <task_id> [pane]`로 한다 — 출력은 `DONE`/`FAILED exit=N`/`RUNNING`/`STALLED over=600s`/`DEAD ...` 중 하나다. **pane 화면 텍스트를 읽어 완료 여부를 추측하지 않는다.**
+- 게이트 진입 조건: `agent-status.sh` 결과가 `DONE`일 것. `RUNNING`/`STALLED` 상태에서는 게이트①·②를 진행하지 않는다.
+- STALLED(10분 무활동) 감지 시 자동 재시작 금지 — 대표님께 보고만 한다.
+- **알려진 한계(002-important.md 검증 결과)**: 강제 종료(kill) 경로에서 `agent-run.sh`의 trap이 종료 코드를 `exit=0`(정상 종료로 오판)으로 기록하는 사례가 확인됐다. 즉 `DONE` 판정이라도 프로세스가 실제로는 강제 종료됐을 가능성을 완전히 배제하지 못한다 — 의심되면 로그 파일(`~/.local/state/agent-runs/<task_id>.log`) 내용이 실제로 완결된 산출물인지 함께 확인한다.
+
 ---
 
 ## 5. 검증 체크리스트 (정적 게이트 공통 — 요약)
