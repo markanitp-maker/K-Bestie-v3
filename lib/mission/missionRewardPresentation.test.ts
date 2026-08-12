@@ -61,6 +61,19 @@ test("보유 상한이어도 완료 안내와 사유를 표시한다", () => {
   });
 });
 
+// 089 게이트①r2(claude-review) F2 지적: finalize_mission_turn_v1은
+// balance_limit_reached, award_mission_v3_reward는 active_balance_limit을
+// 반환하지만 이 문구 매핑에 대한 테스트 가드가 없었다.
+test("writer마다 다른 22개 상한 사유 문자열도 동일한 보유 상한 안내를 표시한다", () => {
+  for (const status of ["balance_limit_reached", "active_balance_limit"]) {
+    assert.deepEqual(getMissionRewardPresentation(status), {
+      awarded: false,
+      title: "황금열쇠를 가득 모았어요",
+      description: "열쇠를 사용하면 다음 미션에서 다시 받을 수 있어요",
+    });
+  }
+});
+
 test("알 수 없는 보상 상태에서도 미션 완료 안내는 숨기지 않는다", () => {
   assert.deepEqual(getMissionRewardPresentation("none"), {
     awarded: false,

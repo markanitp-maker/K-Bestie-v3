@@ -1223,8 +1223,8 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {
       console.error("[answer/route] V1 earnMissionCompleteKey error:", e);
-      // 실제 지급 여부를 알 수 없는 오류이므로 v1RewardStatus를 "awarded"로 단정하지
-      // 않는다 — 미정(undefined)으로 두면 클라이언트가 일반 완료 문구로 안전하게 폴백한다.
+      // 실제 지급 여부를 알 수 없는 오류이므로 v1RewardStatus를 "awarded"로
+      // 단정하지 않는다 — 아래 resPayload 구성부의 `?? "unknown"` 폴백이 처리한다.
     }
   }
 
@@ -1240,7 +1240,12 @@ export async function POST(req: NextRequest) {
     completed,
     engine_version: "v1",
     questionStates: states,
-    rewardStatus: v1RewardStatus,
+    // 게이트①r2(claude-review) F1 지적: v1RewardStatus가 undefined면
+    // JSON.stringify가 키 자체를 응답에서 제거해, 클라이언트의
+    // `data.rewardStatus ?? (isLegacyV1 ? "awarded" : "none")` 폴백이
+    // "awarded"로 오표시한다. "unknown"은 AWARDED_STATUSES에 없어
+    // missionRewardPresentation.ts의 안전한 기본 분기로 떨어진다.
+    rewardStatus: v1RewardStatus ?? "unknown",
   };
 
   console.log("[mission/answer] done", { sessionId, classification: answerStatus, valid: resPayload.valid, validAnswerCount: resPayload.validAnswerCount, durationMs: Date.now() - startedAt });
