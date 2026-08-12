@@ -74,6 +74,9 @@ type ChildRow = {
 };
 
 const phaseForRoundType = (roundType: string): MissionPhase | null => {
+  // Phase 1/2는 raw/report의 historical physical slot이다. 신규 daily_single은
+  // 하루 마감 슬롯(2)에 저장하되 정책상 두 번째 미션이라는 뜻은 아니다.
+  if (roundType === "daily_single") return 2;
   if (roundType === "round1_day") return 1;
   if (roundType === "round2_night") return 2;
   return null;

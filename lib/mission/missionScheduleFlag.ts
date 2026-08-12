@@ -1,4 +1,6 @@
-// requests/031-mission-lock.md — Production 전용 미션 시간제·완료잠금 스위치.
+// requests/031-mission-lock.md — v2 레거시 라운드와 Mission v3 단일 시간 게이트가
+// 공유하는 서버 전용 Production 강제 스위치. 아래 라운드별 경계 설명은 v2 전용이며,
+// Mission v3 경계는 lib/mission-v3/timePolicy.ts에서 해석한다.
 // 기존 MISSION_TIME_GATE_ENABLED(베타 오픈 전까지 전 환경 기본 비활성화, 시간 게이트
 // 자체의 on/off)와는 별개의 플래그다. 이 플래그가 켜지면(Production에서만 설정 예정)
 // 시간 게이트가 강제로 켜지고, 경계값도 미션-I 12~17시/미션-II 19~23시(미만)로

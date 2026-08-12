@@ -1,5 +1,8 @@
 import type { RoundType } from "@/lib/mission/selectQuestions";
 
+// Historical v2-only time policy. Production Mission v3의 단일 09:00~23:50
+// 게이트는 lib/mission-v3/timePolicy.ts가 유일한 기준이다.
+
 export function getKstTime(date: Date = new Date()): { hour: number; minute: number; timeNum: number } {
   const utc = date.getTime() + date.getTimezoneOffset() * 60000;
   const kst = new Date(utc + 9 * 3600000);
@@ -55,4 +58,3 @@ export function currentRound(hour: number, scheduleEnforced: boolean = false, mi
   if (hour >= 18 && hour < 24) return "round2_night";
   return null;
 }
-

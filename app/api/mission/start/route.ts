@@ -19,6 +19,8 @@ import { getMissionPhase, assertMissionSessionActive } from "@/app/api/_lib/miss
 
 export const runtime = "nodejs";
 
+// Historical v2 round start endpoint. Mission v3 clients use /api/mission/v3/start.
+
 const VALID_ROUNDS: RoundType[] = ["round1_day", "round2_night", "common"];
 
 export async function POST(req: NextRequest) {

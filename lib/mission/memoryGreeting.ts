@@ -2,7 +2,7 @@
 // 대화 종료 후 이미 생성되는 요약 기억(child_memory, supabase/functions/_shared/batch.ts의
 // generateMemorySummaries)을 다음 대화(미션 세션 시작 인사말)의 context에 주입한다.
 //
-// 새 요약 생성 파이프라인을 만들지 않는다 — child_memory는 이미 memory-batch(18:00/23:59 KST)가
+// 새 요약 생성 파이프라인을 만들지 않는다 — child_memory는 하루 마감 수집 뒤 memory-batch가
 // 채우고 있으므로, 여기서는 "주입" 부분만 구현한다: 세션 시작 시 최근 기억을 조회해 연결성이
 // 높을 때만 짧게 개인화된 인사말을 생성하고, 그렇지 않으면 null을 반환해 기존 템플릿 인사말로
 // 자연스럽게 폴백시킨다.

@@ -73,6 +73,7 @@ export const FREQUENCY_TO_CYCLE_TYPE: Record<string, string> = {
 };
 
 export const MISSION_SLOT_TO_ROUND_TYPE: Record<string, string> = {
+  // Historical v2 question-slot metadata. daily_single Goal Engine은 이 매핑을 사용하지 않는다.
   MISSION_I: "round1_day",
   MISSION_II: "round2_night",
 };

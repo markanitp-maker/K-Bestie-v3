@@ -1,6 +1,9 @@
 import { toZonedTime } from "date-fns-tz";
 import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
 
+// Historical v2 mission route helper. daily_single routes must use
+// lib/mission-v3/timePolicy.ts and must not infer round1/round2 from the clock.
+
 export function getMissionPhase(
   missionType: 'round1_day' | 'round2_night' | 'common',
   isTestAccount: boolean = false,
@@ -187,4 +190,3 @@ export async function assertMissionSessionActive(
 
   return { allowed: true };
 }
-
