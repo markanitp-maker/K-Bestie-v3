@@ -39,8 +39,8 @@ function extractJSON(text: string) {
 async function generateWithRetry(prompt: string): Promise<string> {
   const modelConfig = await getModelForGroup("B");
   const ai = createGenAIClient(modelConfig);
-  const delays = [0, 2000];
-  const PER_ATTEMPT_TIMEOUT_MS = 15000;
+  const delays = [0, 1000];
+  const PER_ATTEMPT_TIMEOUT_MS = 5000;
   let lastError: any;
 
   for (let attempt = 0; attempt < delays.length; attempt++) {

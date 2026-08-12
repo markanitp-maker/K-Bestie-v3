@@ -572,15 +572,15 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const kClarificationTurnRef = useRef<boolean>(false);
   const serverPersistedKTextsRef = useRef<string[]>([]);
 
-  const saveMessage = useCallback((role: "child" | "k", content: string, displaySequence?: number, turnId?: string, isClarification?: boolean) => {
+  const saveMessage = useCallback((role: "child" | "k", content: string, displaySequence?: number, turnId?: string, isClarification?: boolean): Promise<boolean> => {
     const sid = sessionIdRef.current;
-    if (!sid || !content.trim()) return;
+    if (!sid || !content.trim()) return Promise.resolve(false);
 
     // 모드 전환(자동↔수동) 등 세션 재시작 시 대화 이력이 날아가는 것을 방지하기 위해,
     // 완료된 모든 턴을 공통 소스(pastMessagesRef)에 누적 저장한다.
     pastMessagesRef.current = [...pastMessagesRef.current, { role, text: content, id: turnId, displaySequence }];
 
-    fetch("/api/chat/messages", {
+    return fetch("/api/chat/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId: sid, role, content, voiceMode: voiceModeRef.current, displaySequence, turnId, isClarification }),
@@ -593,9 +593,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           } else {
             console.error("[saveMessage] failed", { status: res.status, turnId, role });
           }
+          return false;
         }
+        return true;
       })
-      .catch(err => console.error("[saveMessage] network error", { turnId, role, message: err.message }));
+      .catch(err => {
+        console.error("[saveMessage] network error", { turnId, role, message: err.message });
+        return false;
+      });
   }, [handleForcedExpiry]);
 
   const pickNextIndex = useCallback((states: Record<string, QuestionState>): number => {
@@ -716,20 +721,22 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     
     const wasServerPersistedK = enrichedTurn.role === "k"
       && serverPersistedKTextsRef.current[0] === enrichedTurn.text;
+    const isGreetingChildTurn = isChildTurnDuringActiveMission
+      && questionsRef.current[currentIndexRef.current]?.id === "greeting_turn_0";
     if (wasServerPersistedK) {
       serverPersistedKTextsRef.current.shift();
       pastMessagesRef.current = [
         ...pastMessagesRef.current,
         { role: enrichedTurn.role, text: enrichedTurn.text, id: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence },
       ];
-    } else if (isChildTurnDuringActiveMission) {
+    } else if (isChildTurnDuringActiveMission && !isGreetingChildTurn) {
       // 활성 child 턴은 아래 Turn API가 서버 저장을 책임진다. 다만 모드 전환 시
       // 화면 대화가 사라지지 않도록 로컬 스크롤백에는 즉시 한 번만 누적한다.
       pastMessagesRef.current = [
         ...pastMessagesRef.current,
         { role: enrichedTurn.role, text: enrichedTurn.text, id: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence },
       ];
-    } else {
+    } else if (!isGreetingChildTurn) {
       saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id, isClarification);
     }
 
@@ -806,7 +813,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     recoveryAttemptedRef.current = false;
     console.error(`[Timing] (b) 서버 전송 (answer API 호출) - ${Date.now()}`);
     // 답변 처리 시작 — STT/TTS 자동 모드는 마이크가 계속 켜져 있으므로(케이 TTS 재생 중에만
-    // speakingRef가 막아줌), classifyAnswer 대기 중(최대 10~32초) 아이가 다시 말하면 RMS
+    // speakingRef가 막아줌), classifyAnswer 대기 중(최대 약 11초) 아이가 다시 말하면 RMS
     // 자동확정이 또 다른 child 턴을 만들어낼 수 있었다 — 처리가 끝날 때까지 마이크를 잠근다.
     const currentEpoch = ++answerEpochRef.current;
     if (!isLive) {
@@ -816,7 +823,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       apiTimeoutRef.current = setTimeout(() => {
         if (answerEpochRef.current !== currentEpoch) return;
         attemptSilentRecoveryOrShowRetry();
-      }, 15000);
+      }, 20000);
     } else {
       manualAbortControllerRef.current = new AbortController();
       if (manualTimeoutRef.current) clearTimeout(manualTimeoutRef.current);
@@ -879,6 +886,20 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         // 아래 진행률 갱신/완료판정은 data가 있을 때만(실제 질문 답변일 때만) 실행하고,
         // 다음 질문 선택(pickNextIndex 이후)은 인사 턴이든 실제 답변이든 공통으로 실행된다.
         let data: any = null;
+
+        if (isGreetingTurn) {
+          const greetingSaved = await saveMessage(
+            "child",
+            enrichedTurn.text,
+            enrichedTurn.displaySequence,
+            enrichedTurn.id,
+          );
+          if (!greetingSaved) {
+            const error = new Error("GREETING_TURN_PERSISTENCE_FAILED");
+            error.name = "TurnPersistenceError";
+            throw error;
+          }
+        }
 
         const finalizeServerTurn = async (kText: string, isClarification: boolean = false) => {
           const kTurnId = `${childTurnId}:k`;
@@ -1149,7 +1170,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           apiTimeoutRef.current = setTimeout(() => {
             if (answerEpochRef.current !== currentEpoch) return;
             attemptSilentRecoveryOrShowRetry();
-          }, 15000);
+          }, 20000);
         }
 
         // 다음 질문 유도 멘트 동적 생성 및 폴백 — askQuestionRef는 정확히 1회만 호출한다.

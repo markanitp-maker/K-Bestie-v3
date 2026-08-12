@@ -1,4 +1,4 @@
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS = new Set([409, 429, 500, 502, 503, 504]);
 
 export type MissionTurnRequestOptions = {
   body: Record<string, unknown>;
@@ -15,8 +15,8 @@ function wait(ms: number): Promise<void> {
 export async function postMissionTurnWithRetry({
   body,
   signal,
-  maxAttempts = 3,
-  baseDelayMs = 250,
+  maxAttempts = 4,
+  baseDelayMs = 500,
   fetchImpl = fetch,
 }: MissionTurnRequestOptions): Promise<Response> {
   let lastError: unknown;
