@@ -25,6 +25,7 @@ const CATEGORIES: Array<{ value: "" | CustomerRequestCategory; label: string }> 
 const nextStatus = (status: CustomerRequestStatus) => CUSTOMER_REQUEST_STATUSES[CUSTOMER_REQUEST_STATUSES.indexOf(status) + 1] ?? null;
 const formatDate = (value?: string | null) => value ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "-";
 const statusVariant = (status: string): "success" | "warning" | "danger" | "neutral" => status === "resolved" ? "success" : status === "in_progress" ? "warning" : status === "closed" ? "neutral" : "danger";
+const sourceLabel = (row: Row) => row.source === "landing" ? "랜딩페이지" : row.app_surface === "child" ? "아이 앱" : row.app_surface === "parent" ? "부모 앱" : "앱 내부";
 const kstDate = (offsetDays = 0) => {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const today = `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
@@ -37,6 +38,7 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
   const [category, setCategory] = useState<CustomerRequestCategory>(row.category);
   const [busy, setBusy] = useState(false);
   const allowedNext = nextStatus(row.status);
+  const isLandingInquiry = row.source === "landing";
 
   const save = async () => {
     if (row.category === "voc" && category !== "voc" && !window.confirm(`이 접수 건을 '${CATEGORY_LABELS[category]}'로 분류하시겠습니까?\n기존 접수번호와 상태는 유지됩니다.`)) return;
@@ -66,7 +68,9 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
       <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-gray-500">{row.request_number}</p><h2 className="mt-1 text-xl font-black text-gray-900">{row.subject}</h2></div><button onClick={onClose} className="rounded-lg border px-3 py-2 text-sm font-bold">닫기</button></div>
       <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-3 rounded-xl border bg-gray-50 p-4 text-sm">
         <dt className="text-gray-500">유형</dt><dd className="font-bold">{CATEGORY_LABELS[row.category as CustomerRequestCategory] ?? row.category}</dd>
-        <dt className="text-gray-500">제출자</dt><dd><button onClick={() => onNavigateUser(row.submitter_role === "child" ? "children" : "parents", row.submitter_login || row.submitter_name || "")} className="font-bold text-blue-700 underline">{row.submitter_name || "이름 미등록"}</button><span className="ml-2 text-gray-500">{row.submitter_login || "로그인 정보 없음"} · {row.submitter_role === "child" ? "아이" : "부모"}</span></dd>
+        <dt className="text-gray-500">출처</dt><dd>{sourceLabel(row)}</dd>
+        <dt className="text-gray-500">이메일</dt><dd>{row.contact_email || row.submitter_login || "-"}</dd>
+        <dt className="text-gray-500">제출자</dt><dd>{isLandingInquiry ? "랜딩페이지 방문자" : <><button onClick={() => onNavigateUser(row.submitter_role === "child" ? "children" : "parents", row.submitter_login || row.submitter_name || "")} className="font-bold text-blue-700 underline">{row.submitter_name || "이름 미등록"}</button><span className="ml-2 text-gray-500">{row.submitter_login || "로그인 정보 없음"} · {row.submitter_role === "child" ? "아이" : "부모"}</span></>}</dd>
         <dt className="text-gray-500">가족</dt><dd>{row.family_name ? <button onClick={() => onNavigateUser("families", row.family_name)} className="font-bold text-blue-700 underline">{row.family_name}</button> : "가족 정보 없음"}</dd>
         <dt className="text-gray-500">접수일</dt><dd>{formatDate(row.created_at)}</dd>
         <dt className="text-gray-500">화면</dt><dd>{row.current_route || "-"} · {row.app_surface || "-"} · {row.app_version || "버전 미수집"}</dd>
@@ -136,6 +140,8 @@ export default function CustomerRequestsPage() {
     { key: "select", header: <input type="checkbox" aria-label="현재 페이지 전체 선택" checked={allChecked} onChange={toggleAll} />, render: (row: Row) => <input type="checkbox" aria-label={`${row.request_number} 선택`} checked={selected.has(row.id)} onClick={(event) => event.stopPropagation()} onChange={() => setSelected((before) => { const next = new Set(before); next.has(row.id) ? next.delete(row.id) : next.add(row.id); return next; })} /> },
     { key: "number", header: "접수번호", render: (row: Row) => <><b>{row.request_number}</b><span className="block text-xs text-gray-500">{formatDate(row.created_at)}</span></> },
     { key: "category", header: "유형", render: (row: Row) => CATEGORY_LABELS[row.category as CustomerRequestCategory] ?? row.category },
+    { key: "source", header: "출처", render: (row: Row) => sourceLabel(row) },
+    { key: "contact_email", header: "문의 이메일", render: (row: Row) => row.contact_email || row.submitter_login || "-" },
     { key: "subject", header: "제목·내용", render: (row: Row) => <div className="max-w-[360px]"><b className="block truncate">{row.subject}</b><span className="block truncate text-xs text-gray-500">{row.body}</span></div> },
     { key: "submitter", header: "제출자", render: (row: Row) => <>{row.submitter_name || "이름 미등록"}<span className="block text-xs text-gray-500">{row.submitter_login || (row.submitter_role === "child" ? "아이" : "부모")}</span></> },
     { key: "status", header: "상태", render: (row: Row) => <AdminStatusBadge text={STATUS_LABELS[row.status as CustomerRequestStatus] ?? row.status} variant={statusVariant(row.status)} /> },
