@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { PwaInstallGuideModal } from "@/components/pwa/PwaInstallGuideModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
-import { useKakaoInApp, KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 
 const PWA_INTRO_SEEN_KEY = "k_pwa_intro_seen";
 
@@ -21,13 +21,20 @@ function OnboardingContent() {
   const requestedNext = safePostAuthReturnUrl(searchParams.get("next"));
   const next = requestedNext === "/" ? "/parent/home" : requestedNext;
   const isChild = next === "/child/home" || next.startsWith("/child/");
-  const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
-  const { isKakaoInApp } = useKakaoInApp();
-  const [showKakaoNotice, setShowKakaoNotice] = useState(false);
+  const {
+    context,
+    isReady,
+    canShowInstallEntry,
+    activeGuide,
+    guideContext,
+    requestInstall,
+    closeGuide,
+  } = useInstallPrompt();
+  const isStandalone = context.kind === "standalone";
 
   useEffect(() => {
-    if (!isStandalone) void logAuthFlowEvent("pwa_install_offer_view");
-  }, [isStandalone]);
+    if (isReady && canShowInstallEntry) void logAuthFlowEvent("pwa_install_offer_view");
+  }, [canShowInstallEntry, isReady]);
 
   useEffect(() => {
     fetch("/api/auth/membership-status", { cache: "no-store" })
@@ -51,22 +58,10 @@ function OnboardingContent() {
 
   const onInstallClick = async () => {
     void logAuthFlowEvent("pwa_install_click");
-    // 카카오톡 인앱 브라우저에서는 beforeinstallprompt가 뜨지 않고 실제 설치도
-    // 불가능하므로(Safari/Chrome 전환이 먼저 필요), 명시적으로 설치를 시도한
-    // 이 시점에만 외부 브라우저 안내 화면을 보여준다.
-    if (isKakaoInApp) {
-      setShowKakaoNotice(true);
-      return;
-    }
-    const outcome = await handleInstall();
+    const outcome = await requestInstall();
     if (outcome === "accepted") void logAuthFlowEvent("pwa_installed");
-    // iOS와 미지원 브라우저는 아래 안내를 읽은 뒤에도 '나중에'로 서비스 이용이 가능하다.
-    if (outcome) proceed();
+    if (outcome === "accepted" || outcome === "dismissed") proceed();
   };
-
-  if (showKakaoNotice) {
-    return <KakaoInAppBrowserNotice onClose={() => setShowKakaoNotice(false)} />;
-  }
 
   return (
     <div
@@ -86,29 +81,16 @@ function OnboardingContent() {
           </p>
         </div>
 
-        {!isStandalone && (
+        {isReady && canShowInstallEntry && (
           <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: "var(--color-k-surface)", border: "1px solid var(--color-k-border)" }}>
-            {isIOS ? (
-              <>
-                <button type="button" onClick={onInstallClick} className="w-full py-3 rounded-xl text-white text-sm font-bold active:scale-95 transition-transform" style={{ background: "var(--color-k-navy)" }}>앱 설치하기</button>
-                <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-text-secondary)" }}>
-                  Safari의 공유 버튼을 누른 뒤 <strong>&quot;홈 화면에 추가&quot;</strong>를 선택해 주세요.
-                </p>
-              </>
-            ) : (installPrompt || isKakaoInApp) ? (
-              <button
-                type="button"
-                onClick={onInstallClick}
-                className="w-full py-3 rounded-xl text-white text-sm font-bold active:scale-95 transition-transform"
-                style={{ background: "var(--color-k-navy)" }}
-              >
-                앱 설치하기
-              </button>
-            ) : (
-              <p className="text-xs leading-relaxed" style={{ color: "var(--color-k-text-secondary)" }}>
-                브라우저 메뉴에서 &quot;홈 화면에 추가&quot; 또는 &quot;앱 설치&quot;를 선택하면 더 편하게 이용할 수 있어요.
-              </p>
-            )}
+            <button
+              type="button"
+              onClick={onInstallClick}
+              className="w-full py-3 rounded-xl text-white text-sm font-bold active:scale-95 transition-transform"
+              style={{ background: "var(--color-k-navy)" }}
+            >
+              앱 설치하기
+            </button>
           </div>
         )}
 
@@ -125,6 +107,11 @@ function OnboardingContent() {
           {isStandalone ? "시작하기 →" : "나중에 할게요 →"}
         </button>
       </div>
+      <PwaInstallGuideModal
+        isOpen={activeGuide !== null}
+        context={guideContext ?? context}
+        onClose={closeGuide}
+      />
     </div>
   );
 }

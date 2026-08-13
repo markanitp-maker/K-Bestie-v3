@@ -17,6 +17,7 @@ import {
 } from "@/lib/store";
 import { getEffectiveRetention, type Tier } from "@/lib/plan/retention";
 import { calculateFinalDeletionDate, purchaseExtension } from "@/lib/plan/insightExtension";
+import { PwaInstallGuideModal } from "@/components/pwa/PwaInstallGuideModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { revokeCurrentPushInstallation, usePushSubscription } from "@/lib/notifications/usePushSubscription";
 import KChatbotWidget from "@/components/KChatbotWidget";
@@ -62,7 +63,16 @@ export default function ParentSettingsPage() {
   const store = useStore();
   const { reportAlert, weeklySummary } = store.notifSettings;
   const { view: demoView } = useDemoView();
-  const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
+  const {
+    context,
+    isReady,
+    canShowInstallEntry,
+    activeGuide,
+    guideContext,
+    requestInstall,
+    closeGuide,
+    isStandalone,
+  } = useInstallPrompt();
   const { requestAndSubscribe, setEnabled } = usePushSubscription();
   const [pushSaving, setPushSaving] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
@@ -1466,7 +1476,7 @@ export default function ParentSettingsPage() {
               <div className="w-11 h-11 rounded-full flex items-center justify-center text-[26px] sm:text-[30px] leading-none shrink-0" style={{ background: "#f3f4f6" }}>
                 📱
               </div>
-              {isStandalone ? (
+              {isReady && isStandalone ? (
                 <div className="flex-1">
                   <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>설치됨</p>
                   <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>이미 앱으로 이용 중이에요</p>
@@ -1476,12 +1486,12 @@ export default function ParentSettingsPage() {
                   <div className="flex-1">
                     <p className="text-[16px] font-bold leading-snug" style={{ color: "var(--color-k-text-primary)" }}>앱 설치하기</p>
                     <p className="text-[13px] font-medium leading-[1.45]" style={{ color: "#6b7280" }}>
-                      {isIOS ? "공유 버튼 → '홈 화면에 추가'를 눌러주세요" : "홈 화면에 추가하여 더 편리하게 이용하세요"}
+                      홈 화면에 추가하여 더 편리하게 이용하세요
                     </p>
                   </div>
-                  {!isIOS && installPrompt && (
+                  {isReady && canShowInstallEntry && (
                     <button
-                      onClick={handleInstall}
+                      onClick={() => void requestInstall()}
                       className="px-3 py-1.5 bg-[var(--color-k-navy)] text-white text-xs font-bold rounded-lg shrink-0 active:scale-95 transition-transform"
                     >
                       설치
@@ -2098,6 +2108,11 @@ export default function ParentSettingsPage() {
           onClose={() => setLoginGuideChild(null)}
           children={loginGuideChild ? [loginGuideChild] : []}
           initialChildId={loginGuideChild?.id ?? null}
+        />
+        <PwaInstallGuideModal
+          isOpen={activeGuide !== null}
+          context={guideContext ?? context}
+          onClose={closeGuide}
         />
       </div>
     

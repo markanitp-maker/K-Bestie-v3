@@ -8,8 +8,8 @@ import KChatbotWidget from "@/components/KChatbotWidget";
 import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementModal";
 import MissionOnboardingCard from "@/components/events/MissionOnboardingCard";
 import AttendanceRouletteLoginModal from "@/components/events/AttendanceRouletteLoginModal";
+import { PwaInstallGuideModal } from "@/components/pwa/PwaInstallGuideModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
-import { useKakaoInApp, KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 import { appendVocative } from "@/lib/utils/koreanParticle";
 import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
 import { useNotificationInbox } from "@/lib/notifications/useNotificationInbox";
@@ -64,9 +64,15 @@ export default function ChildHomePage() {
   const [missionSnapshot, setMissionSnapshot] = useState<MissionEntrySnapshot | null>(null);
   
   // PWA install banner state
-  const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
-  const { isKakaoInApp } = useKakaoInApp();
-  const [showKakaoNotice, setShowKakaoNotice] = useState(false);
+  const {
+    context,
+    isReady,
+    canShowInstallEntry,
+    activeGuide,
+    guideContext,
+    requestInstall,
+    closeGuide,
+  } = useInstallPrompt();
   const [showPwaBanner, setShowPwaBanner] = useState(false);
   const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
@@ -160,12 +166,11 @@ export default function ChildHomePage() {
   }, [child?.id]);
 
   useEffect(() => {
-    // installPrompt/isIOS로만 게이트하면 미지원 브라우저(예: 데스크톱 Firefox)에서 배너 자체가
-    // 나오지 않아 onInstallClick의 "미지원 안내" 분기가 영원히 도달 불가능해진다 — standalone이
-    // 아니고 닫지 않았으면 항상 노출하고, 지원 여부 판단은 클릭 시점에 한다.
+    if (!isReady) return;
+
     const bannerHidden = sessionStorage.getItem("hide_pwa_banner");
-    setShowPwaBanner(!isStandalone && !bannerHidden);
-  }, [isStandalone]);
+    setShowPwaBanner(canShowInstallEntry && !bannerHidden);
+  }, [canShowInstallEntry, isReady]);
 
   const handleDismissPwa = () => {
     sessionStorage.setItem("hide_pwa_banner", "true");
@@ -173,19 +178,9 @@ export default function ChildHomePage() {
   };
 
   const onInstallClick = async () => {
-    // 카카오톡 인앱 브라우저에서는 설치가 불가능하므로(Safari/Chrome 전환 필요),
-    // 실제로 설치를 시도한 이 시점에만 외부 브라우저 안내 화면을 보여준다.
-    if (isKakaoInApp) {
-      setShowKakaoNotice(true);
-      return;
-    }
-    if (installPrompt) {
-      await handleInstall();
+    const outcome = await requestInstall();
+    if (outcome === "accepted") {
       setShowPwaBanner(false);
-    } else if (isIOS) {
-      alert("공유 버튼을 누른 뒤 ‘홈 화면에 추가’를 선택해 주세요.");
-    } else {
-      alert("현재 브라우저는 앱 설치를 지원하지 않습니다. Chrome 또는 Edge를 사용해 주세요.");
     }
   };
 
@@ -235,14 +230,6 @@ export default function ChildHomePage() {
             </button>
           </div>
         </div>
-      </DemoFrame>
-    );
-  }
-
-  if (showKakaoNotice) {
-    return (
-      <DemoFrame>
-        <KakaoInAppBrowserNotice onClose={() => setShowKakaoNotice(false)} />
       </DemoFrame>
     );
   }
@@ -481,6 +468,11 @@ export default function ChildHomePage() {
       </div>
 
       <KChatbotWidget appSurface="child" containerMaxWidthPx={430} />
+      <PwaInstallGuideModal
+        isOpen={activeGuide !== null}
+        context={guideContext ?? context}
+        onClose={closeGuide}
+      />
     </DemoFrame>
   );
 }

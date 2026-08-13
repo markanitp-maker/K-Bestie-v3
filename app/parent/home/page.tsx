@@ -16,8 +16,8 @@ import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementM
 import { ParentMissionEventStatus } from "@/components/events/ParentMissionEventStatus";
 import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
 import { ChildStartGuideModal } from "@/components/parent/ChildStartGuide";
+import { PwaInstallGuideModal } from "@/components/pwa/PwaInstallGuideModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
-import { useKakaoInApp, KakaoInAppBrowserNotice } from "@/components/pwa/KakaoInAppBrowserNotice";
 
 interface Report {
   id: string;
@@ -54,9 +54,15 @@ export default function ParentHomePage() {
   const [todaysQuote, setTodaysQuote] = useState<string | null>(null);
   const [showChildStartGuide, setShowChildStartGuide] = useState(false);
   const [showEventFromNotification, setShowEventFromNotification] = useState(false);
-  const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
-  const { isKakaoInApp } = useKakaoInApp();
-  const [showKakaoNotice, setShowKakaoNotice] = useState(false);
+  const {
+    context,
+    isReady,
+    canShowInstallEntry,
+    activeGuide,
+    guideContext,
+    requestInstall,
+    closeGuide,
+  } = useInstallPrompt();
   const [showPwaBanner, setShowPwaBanner] = useState(false);
 
   useEffect(() => {
@@ -68,8 +74,8 @@ export default function ParentHomePage() {
 
   useEffect(() => {
     const bannerHidden = sessionStorage.getItem("hide_pwa_banner");
-    setShowPwaBanner(!isStandalone && !bannerHidden);
-  }, [isStandalone]);
+    setShowPwaBanner(isReady && canShowInstallEntry && !bannerHidden);
+  }, [canShowInstallEntry, isReady]);
 
   const handleDismissPwa = () => {
     sessionStorage.setItem("hide_pwa_banner", "true");
@@ -77,18 +83,9 @@ export default function ParentHomePage() {
   };
 
   const onInstallClick = async () => {
-    if (isKakaoInApp) {
-      setShowKakaoNotice(true);
-      return;
-    }
-
-    if (installPrompt) {
-      await handleInstall();
+    const outcome = await requestInstall();
+    if (outcome === "accepted") {
       setShowPwaBanner(false);
-    } else if (isIOS) {
-      alert("공유 버튼을 누른 뒤 '홈 화면에 추가'를 선택해 주세요.");
-    } else {
-      alert("현재 브라우저는 앱 설치를 지원하지 않습니다. Chrome 또는 Edge를 사용해 주세요.");
     }
   };
 
@@ -238,14 +235,6 @@ export default function ParentHomePage() {
     );
   }
 
-  if (showKakaoNotice) {
-    return (
-      <DemoFrame>
-        <KakaoInAppBrowserNotice onClose={() => setShowKakaoNotice(false)} />
-      </DemoFrame>
-    );
-  }
-
   // 아이가 아예 등록되어 있지 않은 경우
   if (children.length === 0) {
     return (
@@ -344,7 +333,7 @@ export default function ParentHomePage() {
         </div>
 
         <RealParentNav active="홈" />
-        {showPwaBanner && (
+        {showPwaBanner && isReady && canShowInstallEntry && (
           <div className="sticky bottom-0 w-full bg-[#FFF9F2] border-t border-black/5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] p-4 flex items-center justify-between z-50 mt-auto pb-[env(safe-area-inset-bottom,16px)]">
             <p className="text-sm font-semibold text-[var(--color-k-navy)] px-2">모바일 / 태블릿 / PC</p>
             <div className="flex items-center gap-3">
@@ -369,6 +358,11 @@ export default function ParentHomePage() {
         open={showChildStartGuide}
         onClose={() => setShowChildStartGuide(false)}
         children={children}
+      />
+      <PwaInstallGuideModal
+        isOpen={activeGuide !== null}
+        context={guideContext ?? context}
+        onClose={closeGuide}
       />
     
         <KChatbotWidget appSurface="parent" />

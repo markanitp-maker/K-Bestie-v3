@@ -55,7 +55,7 @@ export function NotificationOnboarding({ role }: { role: "parent" | "child" }) {
       {showRecovery && (
         <div className="mx-4 mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-[#172A46]">
           <div className="flex items-center justify-between gap-3">
-            <p>{unsupported ? "현재 브라우저에서 이용중이에요. \"앱 설치하기\" 후 더 편리한 앱 환경에서 이용해 보세요." : denied ? "알림이 차단되어 있어요." : role === "parent" ? "아침 리포트 알림이 꺼져 있어요. 아이의 리포트가 준비되면 알려드릴까요?" : "미션 알림이 꺼져 있어요. 시작 시간을 놓치지 않도록 알림을 켜주세요."}</p>
+            <p>{unsupported ? "현재 브라우저에서는 알림 기능을 지원하지 않아요." : denied ? "알림이 차단되어 있어요." : role === "parent" ? "아침 리포트 알림이 꺼져 있어요. 아이의 리포트가 준비되면 알려드릴까요?" : "미션 알림이 꺼져 있어요. 시작 시간을 놓치지 않도록 알림을 켜주세요."}</p>
             {!denied && !unsupported && <button onClick={enable} disabled={busy} className="shrink-0 rounded-xl bg-[#FF7A59] px-3 py-2 font-bold text-white">알림 켜기</button>}
           </div>
           {denied && <><p className="mt-1 text-xs text-gray-600">주소창의 사이트 설정 → 알림 → 허용으로 변경한 뒤 앱으로 돌아와 주세요.</p><button onClick={() => window.location.reload()} className="mt-2 text-xs font-bold text-[#C2410C] underline">권한 다시 확인</button></>}
