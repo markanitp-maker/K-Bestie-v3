@@ -148,6 +148,7 @@ interface PwaInstallController {
 - `k_pwa_intro_seen`을 읽고 쓰는 조건과 `proceed()`의 인증/가족 경로는 변경하지 않는다.
 - native prompt 결과를 처리하는 기존 진행 정책도 변경하지 않는다.
 - iOS/In-App/fallback 안내는 새 Modal을 사용하되 Modal을 닫는 것만으로 intro seen을 기록하지 않는다.
+- KakaoTalk In-App으로 처음 진입하면 설치 CTA 클릭을 요구하지 않고 In-App 안내 Modal을 진입당 한 번 자동으로 연다. 닫은 뒤에는 자동으로 다시 열지 않으며, native prompt나 외부 앱 이동은 자동 실행하지 않는다.
 - `나중에` 동작은 기존대로 유지한다.
 
 #### `/parent/settings`
@@ -325,4 +326,3 @@ Dev 배포와 QA는 Claude의 단일 배포 주체 지정 뒤 수행한다. Prod
 
 - 실제 KakaoTalk/NAVER/Instagram/Facebook 최신 iOS·Android 기기 또는 테스트 장비 확보 여부.
 - Android 특정 In-App에서 검증된 외부 Chrome Intent 버튼을 이번 101에 포함할지, URL 복사 fallback만으로 출시할지 대표 결정.
-

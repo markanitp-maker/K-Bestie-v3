@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PwaInstallGuideModal } from "@/components/pwa/PwaInstallGuideModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
@@ -31,6 +31,21 @@ function OnboardingContent() {
     closeGuide,
   } = useInstallPrompt();
   const isStandalone = context.kind === "standalone";
+  const hasAutoOpenedKakaoGuideRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      !isReady ||
+      context.kind !== "in-app-browser" ||
+      context.app !== "kakao" ||
+      hasAutoOpenedKakaoGuideRef.current
+    ) {
+      return;
+    }
+
+    hasAutoOpenedKakaoGuideRef.current = true;
+    void requestInstall();
+  }, [context, isReady, requestInstall]);
 
   useEffect(() => {
     if (isReady && canShowInstallEntry) void logAuthFlowEvent("pwa_install_offer_view");
