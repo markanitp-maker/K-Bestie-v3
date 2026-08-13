@@ -25,6 +25,7 @@ import {
   loadMissionPromptGoals,
   parseStoredGoalAssessments,
 } from "@/lib/mission-v3/routeSupport";
+import { isMissionSafetyLockEnabled } from "@/lib/mission/missionSafetyLockFlag";
 import { getEffectiveContentGrade, parseGrade } from "@/lib/mission/selectQuestions";
 import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 import { checkConsentForSession } from "@/lib/plan/consentGuard";
@@ -272,8 +273,9 @@ export async function POST(req: NextRequest) {
   if (!started.k_response_draft && started.turn_status !== "FINALIZED") {
     // Safety must run before the Goal assessor or any generative model. The
     // v3 finalizer records the event and SAFETY_PAUSED transition atomically.
+    const safetyLockEnabled = isMissionSafetyLockEnabled();
     const safetyOutput = await checkSafetyPreflight(service, sessionId, answerText, {
-      persistEvent: false,
+      persistEvent: !safetyLockEnabled,
       childId: session.child_id,
       mode: "MISSION",
     });
@@ -413,12 +415,15 @@ export async function POST(req: NextRequest) {
         engineOutput.boredom,
         () => computeBoredomIndependently(service, session.child_id, sessionId),
       )).suggestedAdjustment?.allowEarlyFinish === true;
+    const storedEngineCategory = (!safetyLockEnabled && engineOutput.category === "safety")
+      ? "deterministic"
+      : engineOutput.category;
     const { data: storeData, error: storeError } = await service.rpc("store_mission_turn_v3_output", {
       p_session_id: sessionId,
       p_client_turn_id: clientTurnId,
       p_k_response_draft: generatedKMessage,
       p_prompted_goal_id: promptedGoalId,
-      p_engine_category: engineOutput.category,
+      p_engine_category: storedEngineCategory,
       p_safety_subcategory: engineOutput.safetySubcategory ?? null,
       p_boredom_early_finish: boredomEarlyFinish,
     });
