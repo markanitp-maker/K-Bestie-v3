@@ -8,6 +8,7 @@ export type MissionTurnRequestOptions = {
   body: Record<string, unknown>;
   signal?: AbortSignal;
   maxAttempts?: number;
+  maxConflictAttempts?: number;
   baseDelayMs?: number;
   fetchImpl?: typeof fetch;
 };
@@ -20,6 +21,7 @@ export async function postMissionTurnWithRetry({
   body,
   signal,
   maxAttempts = 4,
+  maxConflictAttempts = CONFLICT_MAX_ATTEMPTS,
   baseDelayMs = 500,
   fetchImpl = fetch,
 }: MissionTurnRequestOptions): Promise<Response> {
@@ -46,7 +48,7 @@ export async function postMissionTurnWithRetry({
 
       if (response.status === 409) {
         conflictAttempt += 1;
-        if (conflictAttempt >= CONFLICT_MAX_ATTEMPTS) {
+        if (conflictAttempt >= maxConflictAttempts) {
           return response;
         }
         await wait(baseDelayMs * CONFLICT_DELAY_MULTIPLIERS[conflictAttempt - 1]);

@@ -3,6 +3,13 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 import { POST as processMissionAnswer } from "@/app/api/mission/answer/route";
+import {
+  classifyServerTurnSnapshot,
+  extractMissionTurnRecoveryState,
+  type MissionMessageRecord,
+  type MissionProgressRecord,
+  type MissionTurnRecord,
+} from "@/lib/mission/serverTurnReconciliation";
 
 export const runtime = "nodejs";
 
@@ -71,6 +78,86 @@ async function authorize(req: NextRequest, sessionId: string) {
   return { service, childId: session.child_id };
 }
 
+export async function GET(req: NextRequest) {
+  const sessionId = req.nextUrl.searchParams.get("sessionId")?.trim() ?? "";
+  const clientTurnId = req.nextUrl.searchParams.get("clientTurnId")?.trim() ?? "";
+  const questionId = req.nextUrl.searchParams.get("questionId")?.trim() ?? "";
+  if (!sessionId || !clientTurnId || !questionId || clientTurnId.length > 200) {
+    return NextResponse.json({ error: "sessionId, clientTurnId, questionId required" }, { status: 400 });
+  }
+
+  const auth = await authorize(req, sessionId);
+  if ("response" in auth) return auth.response;
+  const { service, childId } = auth;
+
+  const results = await Promise.allSettled([
+    service
+      .from("mission_turns")
+      .select("status, question_id, child_message_id, k_message_id, answer_result")
+      .eq("session_id", sessionId)
+      .eq("client_turn_id", clientTurnId)
+      .maybeSingle(),
+    service
+      .from("mission_progress")
+      .select("question_states")
+      .eq("session_id", sessionId)
+      .maybeSingle(),
+    service
+      .from("chat_messages")
+      .select("id, turn_id, role")
+      .eq("session_id", sessionId)
+      .in("turn_id", [clientTurnId, `${clientTurnId}:k`]),
+  ]);
+
+  if (results.some((result) => result.status === "rejected")) {
+    telemetry("TURN_RECONCILIATION_FAILED", {
+      sessionId,
+      clientTurnId,
+      maskedChildId: childId.slice(0, 8),
+      status: "query_rejected",
+    });
+    return NextResponse.json({ status: "unknown" }, { status: 503 });
+  }
+
+  const turnResult = results[0].status === "fulfilled" ? results[0].value : null;
+  const progressResult = results[1].status === "fulfilled" ? results[1].value : null;
+  const messagesResult = results[2].status === "fulfilled" ? results[2].value : null;
+  if (!turnResult || !progressResult || !messagesResult || turnResult.error || progressResult.error || messagesResult.error) {
+    telemetry("TURN_RECONCILIATION_FAILED", {
+      sessionId,
+      clientTurnId,
+      maskedChildId: childId.slice(0, 8),
+      status: "query_failed",
+    });
+    return NextResponse.json({ status: "unknown" }, { status: 503 });
+  }
+
+  const turn = turnResult.data as MissionTurnRecord | null;
+  const progress = progressResult.data as MissionProgressRecord | null;
+  const messages = (messagesResult.data ?? []) as MissionMessageRecord[];
+  const reconciliation = classifyServerTurnSnapshot({
+    clientTurnId,
+    questionId,
+    turn,
+    progress,
+    messages,
+  });
+
+  telemetry("TURN_RECONCILED", {
+    sessionId,
+    clientTurnId,
+    maskedChildId: childId.slice(0, 8),
+    ...reconciliation,
+  });
+
+  return NextResponse.json({
+    status: reconciliation.status,
+    recoveryState: reconciliation.status === "committed"
+      ? extractMissionTurnRecoveryState(turn?.answer_result ?? null)
+      : null,
+  });
+}
+
 export async function POST(req: NextRequest) {
   let body: TurnBody;
   try {
@@ -118,6 +205,30 @@ export async function POST(req: NextRequest) {
       maskedChildId,
       status: "received",
     });
+
+    // A stale/re-entered client can submit a new transcript with an already committed
+    // clientTurnId. Reconcile the durable turn before invoking the strict RPC, whose
+    // payload-conflict guard correctly rejects that mismatch with SQLSTATE 22023.
+    const { data: existingTurn, error: existingTurnError } = await service
+      .from("mission_turns")
+      .select("status, question_id, answer_result")
+      .eq("session_id", body.sessionId)
+      .eq("client_turn_id", body.clientTurnId)
+      .maybeSingle();
+    if (!existingTurnError && existingTurn?.question_id === body.questionId && existingTurn.answer_result) {
+      telemetry("TURN_REPLAY_RECONCILED", {
+        sessionId: body.sessionId,
+        clientTurnId: body.clientTurnId,
+        maskedChildId,
+        status: existingTurn.status,
+      });
+      return NextResponse.json({
+        ok: true,
+        replayed: true,
+        serverReconciled: true,
+        ...pendingCompletionResult(existingTurn.answer_result as Record<string, unknown>),
+      });
+    }
 
     const { data: startData, error: startError } = await service.rpc("start_mission_turn_v1", {
       p_session_id: body.sessionId,

@@ -11,7 +11,14 @@ export type PendingMissionTurn = {
 const DATABASE_NAME = "k-bestie-mission-recovery";
 const STORE_NAME = "pending-turns";
 const KEY = "current";
-export const PENDING_TURN_TTL_MS = 15 * 60 * 1000;
+export const PENDING_TURN_TTL_MS = 5 * 60 * 1000;
+
+export function isPendingMissionTurnExpired(
+  turn: PendingMissionTurn,
+  now: number = Date.now(),
+): boolean {
+  return now - turn.createdAt > PENDING_TURN_TTL_MS;
+}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -50,12 +57,7 @@ export async function savePendingMissionTurn(turn: PendingMissionTurn): Promise<
 
 export async function readPendingMissionTurn(): Promise<PendingMissionTurn | null> {
   const turn = await transaction<PendingMissionTurn | undefined>("readonly", (store) => store.get(KEY));
-  if (!turn) return null;
-  if (Date.now() - turn.createdAt > PENDING_TURN_TTL_MS) {
-    await clearPendingMissionTurn(turn.clientTurnId);
-    return null;
-  }
-  return turn;
+  return turn ?? null;
 }
 
 export async function clearPendingMissionTurn(clientTurnId: string): Promise<void> {
