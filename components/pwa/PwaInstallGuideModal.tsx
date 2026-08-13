@@ -75,16 +75,12 @@ const IOS_STEPS: InstallStep[] = [
 
 const KAKAO_IOS_STEPS: InstallStep[] = [
   {
-    title: "주소 복사",
-    description: "‘주소 복사하기’ 버튼을 클릭하세요.",
-  },
-  {
     title: "공유 버튼",
-    description: "하단 오른쪽의 공유 버튼을 클릭하세요.",
+    description: "Safari 우측 하단의 공유 버튼을 클릭하세요.",
   },
   {
     title: "Safari로 열기",
-    description: "‘Safari로 열기’를 클릭하세요.",
+    description: "Safari 버튼을 클릭하세요.",
   },
 ];
 
@@ -170,44 +166,8 @@ const IOSStepPreview = ({ step }: { step: number }) => {
   );
 };
 
-const KakaoIOSStepPreview = ({
-  step,
-  copyStatus,
-  onCopy,
-}: {
-  step: number;
-  copyStatus: CopyStatus;
-  onCopy: () => void;
-}) => {
+const KakaoIOSStepPreview = ({ step }: { step: number }) => {
   if (step === 0) {
-    return (
-      <div className="w-[148px] rounded-xl border border-gray-200 bg-white p-2 shadow-sm sm:w-[174px]">
-        <div className="flex items-start gap-1.5">
-          <Globe className="mt-0.5 h-4 w-4 shrink-0 text-orange-600" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="text-[8px] font-black text-gray-900">일반 브라우저에서 다시 열기</p>
-            <p className="mt-0.5 text-[6px] leading-[9px] text-gray-500">
-              주소를 복사해 Safari 주소창에 붙여 넣어 주세요.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onCopy}
-          className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-white text-[10px] font-black text-gray-900 ring-2 ring-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
-        >
-          {copyStatus === "success" ? (
-            <Check className="h-3.5 w-3.5 text-green-600" aria-hidden="true" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-          )}
-          {copyStatus === "success" ? "복사했어요" : "주소 복사하기"}
-        </button>
-      </div>
-    );
-  }
-
-  if (step === 1) {
     return (
       <div className="w-[148px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm sm:w-[174px]" aria-hidden="true">
         <div className="h-2.5 bg-gray-500" />
@@ -454,7 +414,7 @@ export function PwaInstallGuideModal({
             <>
               <ol className="space-y-2.5">
                 {KAKAO_IOS_STEPS.map((step, index) => (
-                  <li key={step.title} className="grid min-h-[98px] grid-cols-[minmax(0,1fr)_148px] items-center gap-2.5 rounded-2xl border border-gray-200 bg-white px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_174px]">
+                  <li key={step.title} className="grid min-h-[140px] grid-cols-[minmax(0,1fr)_148px] items-center gap-2.5 rounded-2xl border border-gray-200 bg-white px-3 py-3 sm:grid-cols-[minmax(0,1fr)_174px]">
                     <div className="flex min-w-0 items-start gap-2">
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#071b3e] text-sm font-black text-white">
                         {index + 1}
@@ -464,11 +424,7 @@ export function PwaInstallGuideModal({
                         <p className="mt-2 text-[11px] leading-[18px] text-gray-600">{step.description}</p>
                       </div>
                     </div>
-                    <KakaoIOSStepPreview
-                      step={index}
-                      copyStatus={copyStatus}
-                      onCopy={() => void handleCopy()}
-                    />
+                    <KakaoIOSStepPreview step={index} />
                   </li>
                 ))}
               </ol>
@@ -552,9 +508,7 @@ export function PwaInstallGuideModal({
           <div className="mt-3 min-h-6 text-center text-sm font-semibold" aria-live="polite" aria-atomic="true">
             {copyStatus === "success" && (
               <p className="text-green-700">
-                {isKakaoIOSGuide
-                  ? "복사했어요. 아래 공유 버튼을 눌러 Safari로 열어 주세요."
-                  : "주소를 복사했어요. Safari 또는 Chrome 주소창에 붙여넣어 주세요."}
+                주소를 복사했어요. Safari 또는 Chrome 주소창에 붙여넣어 주세요.
               </p>
             )}
             {copyStatus === "failure" && (
