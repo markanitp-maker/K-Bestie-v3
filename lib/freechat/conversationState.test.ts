@@ -24,14 +24,14 @@ test("텍스트 응답 생성 중에는 live 세션이어도 thinking으로 표�
   }), "thinking");
 });
 
-test("텍스트 모드는 음성 전용 상태보다 responding 여부만 반영한다", () => {
+test("텍스트 모드는 error와 connecting을 음성 전용 플래그보다 우선한다", () => {
   assert.equal(getFreeChatConversationState({
     mode: "text",
     status: "error",
     isRecording: true,
     isResponding: false,
     isSpeaking: true,
-  }), "idle");
+  }), "error");
 
   assert.equal(getFreeChatConversationState({
     mode: "text",
@@ -39,7 +39,17 @@ test("텍스트 모드는 음성 전용 상태보다 responding 여부만 반영
     isRecording: true,
     isResponding: true,
     isSpeaking: true,
-  }), "thinking");
+  }), "connecting");
+});
+
+test("텍스트 모드는 listening과 speaking 플래그를 idle로 차단한다", () => {
+  assert.equal(getFreeChatConversationState({
+    mode: "text",
+    status: "live",
+    isRecording: true,
+    isResponding: false,
+    isSpeaking: true,
+  }), "idle");
 });
 
 test("음성 모드의 live 세션은 녹음 중이 아니어도 listening으로 표시한다", () => {
@@ -128,5 +138,15 @@ test("텍스트 모드 JSX는 키보드가 열려도 상태 뱃지를 렌더링�
     pageSource.slice(textBranchStart, voiceBranchStart),
     /data-ui="text-mode-voice-state"[\s\S]*?\{StateIcon\}[\s\S]*?\{stateText\}/,
     "텍스트 모드 분기 안에서 상태 아이콘과 문구를 렌더링해야 한다",
+  );
+  assert.match(
+    pageSource.slice(textBranchStart, voiceBranchStart),
+    /\{!isKeyboardOpen && \([\s\S]*?aria-label="채팅창 닫기"/,
+    "키보드가 열리면 닫기 CTA를 렌더링하지 않아야 한다",
+  );
+  assert.match(
+    pageSource,
+    /mode === "text" && isKeyboardOpen \? "h-\[clamp\(68px,10dvh,84px\)\]"/,
+    "키보드가 열린 텍스트 모드의 상태 영역은 축소되어야 한다",
   );
 });

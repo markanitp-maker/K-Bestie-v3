@@ -23,9 +23,13 @@ export const getFreeChatConversationState = ({
   isResponding,
   isSpeaking,
 }: FreeChatConversationStateInput): FreeChatConversationState => {
-  // 텍스트 입력에서는 음성 세션의 연결/녹음/재생 플래그를 화면 상태로 노출하지
-  // 않는다. 아이가 전송한 뒤 K의 응답을 만드는 동안만 thinking, 그 외에는 idle이다.
-  if (mode === "text") return isResponding ? "thinking" : "idle";
+  // 텍스트 입력에서는 음성 전용 녹음/재생 플래그를 노출하지 않되, 연결 상태와
+  // 실제 응답 생성 상태는 아이에게 유의미하므로 그대로 유지한다.
+  if (mode === "text") {
+    if (status === "error") return "error";
+    if (status === "connecting") return "connecting";
+    return isResponding ? "thinking" : "idle";
+  }
 
   if (status === "error") return "error";
   if (status === "connecting") return "connecting";

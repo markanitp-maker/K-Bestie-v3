@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import React from "react";
+import { renderToString } from "react-dom/server";
 
 import {
   SttRouterController,
+  stopMediaStreamTracks,
   type SpeechRecognitionErrorEventLike,
   type SpeechRecognitionEventLike,
   type SpeechRecognitionLike,
@@ -10,6 +13,7 @@ import {
   type SttRouterMetrics,
   type SttRouterMeta,
   type SttRouterState,
+  useSttRouter,
 } from "./useSttRouter.js";
 
 const PCM_CHUNK = new Uint8Array([1, 2, 3, 4]);
@@ -436,4 +440,98 @@ test("unmount cleanup에 해당하는 dispose는 PCM을 폐기하고 late event�
   assert.equal(harness.controller.state, "CANCELLED");
   assert.equal(harness.controller.bufferedByteLength, 0);
   assert.equal(harness.finals.length, 0);
+});
+
+test("마이크 비활성화는 MediaStream 트랙을 멈추고 재활성화는 스트림을 다시 획득한다", async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const originalAudioContext = Object.getOwnPropertyDescriptor(globalThis, "AudioContext");
+  const tracks: Array<{ stopCalls: number; stop(): void }> = [];
+  let getUserMediaCalls = 0;
+
+  class FakeAudioContext {
+    public destination = {};
+
+    createMediaStreamSource() {
+      return { connect() {}, disconnect() {} };
+    }
+
+    createScriptProcessor() {
+      return { connect() {}, disconnect() {}, onaudioprocess: null };
+    }
+
+    close(): Promise<void> {
+      return Promise.resolve();
+    }
+  }
+
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: async () => {
+          getUserMediaCalls += 1;
+          const track = {
+            stopCalls: 0,
+            stop() { this.stopCalls += 1; },
+          };
+          tracks.push(track);
+          return {
+            getTracks: () => [track],
+          } as unknown as MediaStream;
+        },
+      },
+    },
+  });
+  Object.defineProperty(globalThis, "AudioContext", {
+    configurable: true,
+    value: FakeAudioContext,
+  });
+
+  let router: ReturnType<typeof useSttRouter> | null = null;
+  const Harness = () => {
+    router = useSttRouter({
+      sessionId: "session-1",
+      childTurnId: "turn-1",
+      onFinalTranscript: () => {},
+      onFailure: () => {},
+    });
+    return null;
+  };
+
+  try {
+    renderToString(React.createElement(Harness));
+    assert.ok(router);
+    const activeRouter = router as ReturnType<typeof useSttRouter>;
+    await activeRouter.startCapture();
+    assert.equal(getUserMediaCalls, 1);
+    assert.equal(tracks[0]?.stopCalls, 0);
+
+    activeRouter.setMicEnabled(false);
+    assert.equal(tracks[0]?.stopCalls, 1, "텍스트 모드 전환 시 기존 트랙이 정지해야 한다");
+
+    activeRouter.setMicEnabled(true);
+    await flushAsync();
+    assert.equal(getUserMediaCalls, 2, "음성 모드 복귀 시 getUserMedia를 다시 호출해야 한다");
+    assert.equal(tracks[1]?.stopCalls, 0);
+
+    activeRouter.stopCapture();
+    assert.equal(tracks[1]?.stopCalls, 1);
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+    if (originalAudioContext) Object.defineProperty(globalThis, "AudioContext", originalAudioContext);
+    else delete (globalThis as { AudioContext?: unknown }).AudioContext;
+  }
+});
+
+test("stopMediaStreamTracks는 스트림의 모든 트랙을 정지한다", () => {
+  const stopped: string[] = [];
+  stopMediaStreamTracks({
+    getTracks: () => [
+      { stop: () => stopped.push("audio") },
+      { stop: () => stopped.push("video") },
+    ] as MediaStreamTrack[],
+  });
+
+  assert.deepEqual(stopped, ["audio", "video"]);
 });

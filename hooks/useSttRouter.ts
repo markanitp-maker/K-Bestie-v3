@@ -723,6 +723,10 @@ interface UseSttRouterResult extends SttRouter {
   getCurrentChildTurnId(): string;
 }
 
+export const stopMediaStreamTracks = (stream: Pick<MediaStream, "getTracks"> | null): void => {
+  stream?.getTracks().forEach((track) => track.stop());
+};
+
 export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouterResult => {
   const [state, setState] = useState<SttRouterState>("IDLE");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -738,6 +742,9 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
   const inputContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const captureGenerationRef = useRef(0);
+  const captureRequestedRef = useRef(true);
+  const capturePromiseRef = useRef<Promise<void> | null>(null);
 
   const controllerRef = useRef<SttRouterController | null>(null);
   if (!controllerRef.current) {
@@ -799,45 +806,59 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
     return controllerRef.current?.currentChildTurnId ?? "";
   }, []);
 
-  const stopCapture = useCallback(() => {
-    cancel();
+  const releaseCaptureResources = useCallback(() => {
     processorRef.current?.disconnect();
     processorRef.current = null;
     sourceRef.current?.disconnect();
     sourceRef.current = null;
     inputContextRef.current?.close().catch(() => {});
     inputContextRef.current = null;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    stopMediaStreamTracks(streamRef.current);
     streamRef.current = null;
-  }, [cancel]);
+  }, []);
 
-  const startCapture = useCallback(async () => {
-    if (streamRef.current) return;
+  const stopCapture = useCallback(() => {
+    captureRequestedRef.current = false;
+    captureGenerationRef.current += 1;
+    cancel();
+    releaseCaptureResources();
+  }, [cancel, releaseCaptureResources]);
+
+  const startCapture = useCallback((): Promise<void> => {
+    captureRequestedRef.current = true;
+    if (streamRef.current) return Promise.resolve();
+    if (capturePromiseRef.current) return capturePromiseRef.current;
     if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error("마이크를 사용하려면 HTTPS로 접속하세요.");
+      return Promise.reject(new Error("마이크를 사용하려면 HTTPS로 접속하세요."));
     }
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: STT_SAMPLE_RATE,
-        channelCount: STT_CHANNEL_COUNT,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
-    streamRef.current = stream;
-    try {
-      const inputContext = new AudioContext({ sampleRate: STT_SAMPLE_RATE });
-      inputContextRef.current = inputContext;
-      const source = inputContext.createMediaStreamSource(stream);
-      const processor = inputContext.createScriptProcessor(
-        STT_PROCESSOR_BUFFER_SIZE,
-        STT_CHANNEL_COUNT,
-        STT_CHANNEL_COUNT,
-      );
-      sourceRef.current = source;
-      processorRef.current = processor;
+    const captureGeneration = captureGenerationRef.current;
+    const capturePromise = (async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: STT_SAMPLE_RATE,
+          channelCount: STT_CHANNEL_COUNT,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      if (!captureRequestedRef.current || captureGeneration !== captureGenerationRef.current) {
+        stopMediaStreamTracks(stream);
+        return;
+      }
+      streamRef.current = stream;
+      try {
+        const inputContext = new AudioContext({ sampleRate: STT_SAMPLE_RATE });
+        inputContextRef.current = inputContext;
+        const source = inputContext.createMediaStreamSource(stream);
+        const processor = inputContext.createScriptProcessor(
+          STT_PROCESSOR_BUFFER_SIZE,
+          STT_CHANNEL_COUNT,
+          STT_CHANNEL_COUNT,
+        );
+        sourceRef.current = source;
+        processorRef.current = processor;
 
-      processor.onaudioprocess = (event) => {
+        processor.onaudioprocess = (event) => {
         const controller = controllerRef.current;
         if (!controller || !micEnabledRef.current || captureBlockedRef.current) return;
         const float32 = event.inputBuffer.getChannelData(0);
@@ -896,26 +917,41 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
           controller.endTurn();
           resetVad();
         }
-      };
-      source.connect(processor);
-      processor.connect(inputContext.destination);
-    } catch (error) {
-      processorRef.current?.disconnect();
-      processorRef.current = null;
-      sourceRef.current?.disconnect();
-      sourceRef.current = null;
-      inputContextRef.current?.close().catch(() => {});
-      inputContextRef.current = null;
-      stream.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      throw error;
-    }
-  }, [resetVad]);
+        };
+        source.connect(processor);
+        processor.connect(inputContext.destination);
+      } catch (error) {
+        releaseCaptureResources();
+        throw error;
+      }
+    })();
+    const trackedPromise = capturePromise.finally(() => {
+      if (capturePromiseRef.current === trackedPromise) capturePromiseRef.current = null;
+    });
+    capturePromiseRef.current = trackedPromise;
+    return trackedPromise;
+  }, [releaseCaptureResources, resetVad]);
 
   const setMicEnabled = useCallback((enabled: boolean) => {
     micEnabledRef.current = enabled;
-    if (!enabled && controllerRef.current?.state === "LISTENING") cancel();
-  }, [cancel]);
+    if (!enabled) {
+      captureRequestedRef.current = false;
+      captureGenerationRef.current += 1;
+      if (controllerRef.current?.state === "LISTENING") cancel();
+      releaseCaptureResources();
+      return;
+    }
+
+    const reacquireCapture = async () => {
+      await startCapture();
+      // false→true가 기존 getUserMedia 요청 도중 일어난 경우, 이전 세대의 스트림은
+      // 의도대로 폐기한 뒤 현재 세대에서 한 번 더 획득한다.
+      if (micEnabledRef.current && !streamRef.current) await startCapture();
+    };
+    void reacquireCapture().catch((error: unknown) => {
+      console.error("[useSttRouter] 마이크 스트림 재획득 실패:", error);
+    });
+  }, [cancel, releaseCaptureResources, startCapture]);
 
   const setInputMode = useCallback((mode: "auto" | "manual") => {
     inputModeRef.current = mode;
@@ -927,11 +963,10 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
 
   useEffect(() => () => {
     controllerRef.current?.dispose();
-    processorRef.current?.disconnect();
-    sourceRef.current?.disconnect();
-    inputContextRef.current?.close().catch(() => {});
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-  }, []);
+    captureRequestedRef.current = false;
+    captureGenerationRef.current += 1;
+    releaseCaptureResources();
+  }, [releaseCaptureResources]);
 
   return {
     state,

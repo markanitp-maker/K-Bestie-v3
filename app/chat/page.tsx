@@ -800,10 +800,13 @@ export default function ChatPage() {
           {/* Mascot Area & Side Cards OR Text-Mode CTA.
               Text mode keeps K's state visible even while the software keyboard is open. */}
           {(mode === "text" || !isKeyboardOpen) && (
-          <div className="relative z-10 w-full shrink-0 h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)] transition-all duration-300 flex items-center justify-center">
+          <div
+            data-ui="conversation-status-panel"
+            className={`relative z-10 w-full shrink-0 transition-all duration-300 flex items-center justify-center ${mode === "text" && isKeyboardOpen ? "h-[clamp(68px,10dvh,84px)]" : "h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)]"}`}
+          >
             {mode === "text" ? (
               /* Text overlay retains K's latest state above the close CTA. */
-              <div className="relative z-30 flex flex-col items-center justify-center gap-4 my-auto pointer-events-auto animate-in fade-in duration-300">
+              <div className={`relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300 ${isKeyboardOpen ? "gap-0" : "gap-4"}`}>
                 <div
                   data-ui="text-mode-voice-state"
                   data-keyboard-open={isKeyboardOpen}
@@ -815,15 +818,17 @@ export default function ChatPage() {
                   </div>
                   <span className="text-[14px] font-bold leading-none">{stateText}</span>
                 </div>
-                <button
-                  onClick={switchToVoice}
-                  style={{ backgroundColor: "#EF5350" }}
-                  className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30"
-                  aria-label="채팅창 닫기"
-                >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  <span>채팅창 닫기</span>
-                </button>
+                {!isKeyboardOpen && (
+                  <button
+                    onClick={switchToVoice}
+                    style={{ backgroundColor: "#EF5350" }}
+                    className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30"
+                    aria-label="채팅창 닫기"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    <span>채팅창 닫기</span>
+                  </button>
+                )}
               </div>
             ) : (
               /* mode !== "text": 케이 캐릭터 & Platform & 상태 카드 정상 노출 */

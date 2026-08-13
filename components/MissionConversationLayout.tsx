@@ -95,7 +95,11 @@ export function MissionConversationLayout({
 
   // Text mode disables microphone input. Do not present a stale Live AUTO state as
   // active listening while the child is typing, including before the parent clears recording.
-  const displayVoiceState = isTextMode && (voiceState === "listening" || voiceState === "no_input")
+  const displayVoiceState = isTextMode && (
+    voiceState === "listening"
+    || voiceState === "no_input"
+    || voiceState === "speaking"
+  )
     ? "idle"
     : voiceState;
 
@@ -361,10 +365,13 @@ export function MissionConversationLayout({
 
         {/* Grid Row 3: Mascot Area & Side Cards OR Text-Mode CTA.
             Text mode keeps K's state visible even while the software keyboard is open. */}
-        <div className="relative w-full shrink-0 h-[clamp(204px,25.5dvh,228px)] transition-all duration-300 flex items-center justify-center">
+        <div
+          data-ui="conversation-status-panel"
+          className={`relative w-full shrink-0 transition-all duration-300 flex items-center justify-center ${isTextMode && isKeyboardOpen ? "h-[clamp(68px,10dvh,84px)]" : "h-[clamp(204px,25.5dvh,228px)]"}`}
+        >
            {isTextMode ? (
              /* Text overlay retains K's latest state above the close CTA. */
-             <div className="relative z-30 flex flex-col items-center justify-center gap-4 my-auto pointer-events-auto animate-in fade-in duration-300">
+             <div className={`relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300 ${isKeyboardOpen ? "gap-0" : "gap-4"}`}>
                <div
                  data-ui="text-mode-voice-state"
                  data-keyboard-open={isKeyboardOpen}
@@ -377,16 +384,18 @@ export function MissionConversationLayout({
                  </div>
                  <span className="text-[14px] font-bold leading-none">{stateText}</span>
                </div>
-               <button
-                 onClick={onToggleTextMode}
-                 disabled={isClosing}
-                 style={{ backgroundColor: "#EF5350" }}
-                 className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30 disabled:opacity-50"
-                 aria-label="채팅창 닫기"
-               >
-                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                 <span>채팅창 닫기</span>
-               </button>
+               {!isKeyboardOpen && (
+                 <button
+                   onClick={onToggleTextMode}
+                   disabled={isClosing}
+                   style={{ backgroundColor: "#EF5350" }}
+                   className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30 disabled:opacity-50"
+                   aria-label="채팅창 닫기"
+                 >
+                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                   <span>채팅창 닫기</span>
+                 </button>
+               )}
              </div>
            ) : (
              /* isTextMode === false: 케이 마스코트 & Platform & lightweight states */
