@@ -68,26 +68,26 @@ for (const { label, hour, minute } of KST_CLOCK_CASES) {
   });
 }
 
-test("getMissionPhase: Production 08:59는 신규 시작 차단", () => {
-  withMockedKstClock(8, 59, () => {
+test("getMissionPhase: Production 09:59는 신규 시작 차단", () => {
+  withMockedKstClock(9, 59, () => {
     assert.equal(getMissionPhase("round1_day", false, true), null);
     assert.equal(getMissionPhase("round2_night", false, true), null);
   });
 });
 
-test("getMissionPhase: Production 09:00부터 legacy round를 단일 창 안에서 허용", () => {
-  withMockedKstClock(9, 0, () => {
+test("getMissionPhase: Production 10:00부터 legacy round를 단일 창 안에서 허용", () => {
+  withMockedKstClock(10, 0, () => {
     assert.equal(getMissionPhase("round1_day", false, true), 1);
     assert.equal(getMissionPhase("round2_night", false, true), 2);
     assert.equal(getMissionPhase("common", false, true), 2);
   });
 });
 
-test("getMissionPhase: Production 23:49 허용, 23:50 신규 시작 차단", () => {
-  withMockedKstClock(23, 49, () => {
+test("getMissionPhase: Production 23:54 허용, 23:55 신규 시작 차단", () => {
+  withMockedKstClock(23, 54, () => {
     assert.equal(getMissionPhase("round2_night", false, true), 2);
   });
-  withMockedKstClock(23, 50, () => {
+  withMockedKstClock(23, 55, () => {
     assert.equal(getMissionPhase("round1_day", false, true), null);
     assert.equal(getMissionPhase("round2_night", false, true), null);
   });

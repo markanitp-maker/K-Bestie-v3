@@ -215,7 +215,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 신규 세션이 필요한 경우에만 Production 단일 운영창(09:00 inclusive ~ 23:50
+  // 신규 세션이 필요한 경우에만 Production 단일 운영창(10:00 inclusive ~ 23:55
   // exclusive)과 canonical compatibility round를 검증한다. Dev에서는 24시간 허용한다.
   let missionRoundType = roundType;
   if (scheduleEnforced) {

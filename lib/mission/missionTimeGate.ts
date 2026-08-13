@@ -1,7 +1,7 @@
 import type { RoundType } from "@/lib/mission/selectQuestions";
 
 // v2 compatibility time policy. Production에서는 Mission v3 cutover 전에도
-// 09:00~23:50 단일 신규 시작 창을 사용하고, round2_night를 canonical round로 반환한다.
+// 10:00~23:55 단일 신규 시작 창을 사용하고, round2_night를 canonical round로 반환한다.
 // round2_night는 기존 클라이언트가 자정까지 이어하기 가능한 값으로 해석하므로 스키마와
 // 프론트 계약을 바꾸지 않고 하루 1미션 정책을 적용할 수 있다.
 
@@ -45,7 +45,7 @@ export function currentRound(hour: number, scheduleEnforced: boolean = false, mi
   const timeNum = hour * 100 + resolvedMinute;
 
   if (scheduleEnforced) {
-    return timeNum >= 900 && timeNum < 2350 ? "round2_night" : null;
+    return timeNum >= 1000 && timeNum < 2355 ? "round2_night" : null;
   }
 
   // scheduleEnforced=false의 레거시 표시 정책은 유지한다. 실제 Dev 신규 시작은

@@ -26,10 +26,10 @@ export function getMissionPhase(
   const min = kstNow.getMinutes();
   const time = hour * 100 + min;
 
-  // Production 신규 생성은 09:00 inclusive ~ 23:50 exclusive 단일 창이다.
+  // Production 신규 생성은 10:00 inclusive ~ 23:55 exclusive 단일 창이다.
   // canonical round2_night는 기존 클라이언트의 자정 마감 계약을 재사용한다. 이미 시작한
   // 세션의 이어하기 가능 여부는 아래 assertMissionSessionActive가 business_date로 판정한다.
-  if (time < 900 || time >= 2350) {
+  if (time < 1000 || time >= 2355) {
     return isTestAccount ? (missionType === 'round1_day' ? 1 : 2) : null;
   }
   return missionType === 'round1_day' ? 1 : 2;
