@@ -57,6 +57,8 @@ const createScenarioRuntime = (kind: ScenarioKind, voiceMode: VoiceMode) => {
 
   scenario.stt = {
     setMicEnabled: spy("stt.setMicEnabled"),
+    releaseMicrophone: spy("stt.releaseMicrophone"),
+    reacquireMicrophone: spy("stt.reacquireMicrophone", async () => {}),
     setInputMode: spy("stt.setInputMode"),
     startSession: spy("stt.startSession", async () => {
       scenario.sttStatusSetter?.("live");

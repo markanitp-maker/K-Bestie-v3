@@ -1868,6 +1868,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       live.setMicEnabled(false);
     } else {
       sttTts.setMicEnabled(false);
+      // setMicEnabled는 매 턴 게이트일 뿐 실제 스트림은 안 끈다 — 텍스트 모드에서
+      // OS 마이크 사용 표시를 끄려면 스트림 자체를 정지해야 한다(Live 엔진은 별도
+      // 오디오 파이프라인을 쓰므로 이 대상이 아니다).
+      sttTts.releaseMicrophone();
     }
 
     setMode("text");
@@ -1880,8 +1884,12 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     // 수동 모드는 다음 마이크 탭(sendActivityStart)이 gate를 여는 시점까지 비활성으로 둔다.
     if (isLiveMode) {
       live.setMicEnabled(isAutoRef.current);
-    } else if (isAutoRef.current) {
-      sttTts.setMicEnabled(true);
+    } else {
+      // 텍스트 모드에서 정지해둔 마이크 스트림을 미리 재획득한다(AUTO/수동 공통 —
+      // 수동 모드도 다음 마이크 탭 시 지연 없이 녹음이 시작되어야 한다). 실패하면
+      // sttTts.status가 "error"로 전환되어 화면에 노출된다.
+      void sttTts.reacquireMicrophone();
+      if (isAutoRef.current) sttTts.setMicEnabled(true);
     }
   }, [isLiveMode, live, sttTts]);
 

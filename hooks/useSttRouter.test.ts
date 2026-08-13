@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import React from "react";
+import { renderToString } from "react-dom/server";
 
 import {
   SttRouterController,
+  stopMediaStreamTracks,
   type SpeechRecognitionErrorEventLike,
   type SpeechRecognitionEventLike,
   type SpeechRecognitionLike,
@@ -10,6 +13,7 @@ import {
   type SttRouterMetrics,
   type SttRouterMeta,
   type SttRouterState,
+  useSttRouter,
 } from "./useSttRouter.js";
 
 const PCM_CHUNK = new Uint8Array([1, 2, 3, 4]);
@@ -436,4 +440,191 @@ test("unmount cleanup에 해당하는 dispose는 PCM을 폐기하고 late event�
   assert.equal(harness.controller.state, "CANCELLED");
   assert.equal(harness.controller.bufferedByteLength, 0);
   assert.equal(harness.finals.length, 0);
+});
+
+test("마이크 비활성화는 MediaStream 트랙을 멈추고 재활성화는 스트림을 다시 획득한다", async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const originalAudioContext = Object.getOwnPropertyDescriptor(globalThis, "AudioContext");
+  const tracks: Array<{ stopCalls: number; stop(): void }> = [];
+  let getUserMediaCalls = 0;
+
+  class FakeAudioContext {
+    public destination = {};
+
+    createMediaStreamSource() {
+      return { connect() {}, disconnect() {} };
+    }
+
+    createScriptProcessor() {
+      return { connect() {}, disconnect() {}, onaudioprocess: null };
+    }
+
+    close(): Promise<void> {
+      return Promise.resolve();
+    }
+  }
+
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: async () => {
+          getUserMediaCalls += 1;
+          const track = {
+            stopCalls: 0,
+            stop() { this.stopCalls += 1; },
+          };
+          tracks.push(track);
+          return {
+            getTracks: () => [track],
+          } as unknown as MediaStream;
+        },
+      },
+    },
+  });
+  Object.defineProperty(globalThis, "AudioContext", {
+    configurable: true,
+    value: FakeAudioContext,
+  });
+
+  let router: ReturnType<typeof useSttRouter> | null = null;
+  const Harness = () => {
+    router = useSttRouter({
+      sessionId: "session-1",
+      childTurnId: "turn-1",
+      onFinalTranscript: () => {},
+      onFailure: () => {},
+    });
+    return null;
+  };
+
+  try {
+    renderToString(React.createElement(Harness));
+    assert.ok(router);
+    const activeRouter = router as ReturnType<typeof useSttRouter>;
+    await activeRouter.startCapture();
+    assert.equal(getUserMediaCalls, 1);
+    assert.equal(tracks[0]?.stopCalls, 0);
+
+    // setMicEnabled는 매 PTT 턴마다 불리는 경량 게이트일 뿐 스트림을 건드리지 않는다 —
+    // 텍스트 모드 전환은 stopCapture/startCapture를 직접 호출하는 쪽의 책임이다.
+    activeRouter.setMicEnabled(false);
+    assert.equal(tracks[0]?.stopCalls, 0, "setMicEnabled(false)는 스트림을 정지하지 않아야 한다(수동 PTT 회귀 방지)");
+    activeRouter.setMicEnabled(true);
+    assert.equal(getUserMediaCalls, 1, "setMicEnabled(true)는 스트림을 재획득하지 않아야 한다");
+
+    activeRouter.stopCapture();
+    assert.equal(tracks[0]?.stopCalls, 1, "텍스트 모드 전환(stopCapture) 시 기존 트랙이 정지해야 한다");
+
+    await activeRouter.startCapture();
+    assert.equal(getUserMediaCalls, 2, "음성 모드 복귀(startCapture) 시 getUserMedia를 다시 호출해야 한다");
+    assert.equal(tracks[1]?.stopCalls, 0);
+
+    activeRouter.stopCapture();
+    assert.equal(tracks[1]?.stopCalls, 1);
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+    if (originalAudioContext) Object.defineProperty(globalThis, "AudioContext", originalAudioContext);
+    else delete (globalThis as { AudioContext?: unknown }).AudioContext;
+  }
+});
+
+test("getUserMedia 진행 중 stopCapture가 불려도 이후 startCapture는 새 스트림을 획득한다(경합 방지)", async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const originalAudioContext = Object.getOwnPropertyDescriptor(globalThis, "AudioContext");
+  // call 번호로 태그해 추적한다 — 지연된 첫 호출이 배열에 나중에 push되므로
+  // (아래 참고) 배열 인덱스만으로는 어느 트랙이 어느 startCapture 호출의
+  // 결과인지 알 수 없다.
+  const tracksByCall = new Map<number, { stopCalls: number; stop(): void }>();
+  let getUserMediaCalls = 0;
+  let resolveFirstCall: (() => void) | null = null;
+
+  class FakeAudioContext {
+    public destination = {};
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createScriptProcessor() { return { connect() {}, disconnect() {}, onaudioprocess: null }; }
+    close(): Promise<void> { return Promise.resolve(); }
+  }
+
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: async () => {
+          getUserMediaCalls += 1;
+          const callNumber = getUserMediaCalls;
+          const isFirstCall = callNumber === 1;
+          if (isFirstCall) {
+            // 첫 번째 획득은 stopCapture(뒤이어 두 번째 startCapture)가 먼저 도착할
+            // 때까지 인위적으로 지연시켜 "진행 중에 세대가 바뀌는" 경합을 재현한다.
+            // 이 지연 때문에 두 번째 호출의 트랙이 먼저 생성/push된다 — 배열
+            // 순서가 아니라 tracksByCall(call 번호)로 트랙을 식별해야 한다.
+            await new Promise<void>((resolve) => { resolveFirstCall = resolve; });
+          }
+          const track = { stopCalls: 0, stop() { this.stopCalls += 1; } };
+          tracksByCall.set(callNumber, track);
+          return { getTracks: () => [track] } as unknown as MediaStream;
+        },
+      },
+    },
+  });
+  Object.defineProperty(globalThis, "AudioContext", { configurable: true, value: FakeAudioContext });
+
+  let router: ReturnType<typeof useSttRouter> | null = null;
+  const Harness = () => {
+    router = useSttRouter({
+      sessionId: "session-1",
+      childTurnId: "turn-1",
+      onFinalTranscript: () => {},
+      onFailure: () => {},
+    });
+    return null;
+  };
+
+  try {
+    renderToString(React.createElement(Harness));
+    assert.ok(router);
+    const activeRouter = router as ReturnType<typeof useSttRouter>;
+
+    const firstCapture = activeRouter.startCapture();
+    // 아직 getUserMedia가 resolve되지 않은 상태에서 stopCapture를 호출한다(세대 증가).
+    activeRouter.stopCapture();
+    // 첫 요청이 여전히 pending인 상태에서 두 번째 startCapture를 호출한다 — 이 fix
+    // 이전 코드는 capturePromiseRef가 아직 비워지지 않아 이 호출이 곧 폐기될 첫
+    // promise를 그대로 반환했고("성공했지만 스트림 없음" 결함), getUserMedia는
+    // 두 번째로 호출되지 않았다.
+    const secondCapture = activeRouter.startCapture();
+    resolveFirstCall?.();
+    await firstCapture;
+    await secondCapture;
+
+    // 경합 중 호출된 두 번째 startCapture는 죽은 promise를 재사용하지 않고 반드시
+    // 새 getUserMedia로 새 스트림을 획득해야 한다.
+    assert.equal(getUserMediaCalls, 2, "경합 중 두 번째 startCapture는 새 getUserMedia를 호출해야 한다");
+    // 세대가 바뀐 뒤(1번 호출) 뒤늦게 도착한 첫 스트림은 즉시 폐기되어야 한다.
+    assert.equal(tracksByCall.get(1)?.stopCalls, 1, "폐기된 세대(1번 호출)의 스트림은 트랙이 정지돼야 한다");
+    // 현재 세대에서 획득한 두 번째 스트림은 살아남아 실제 캡처에 쓰여야 한다.
+    assert.equal(tracksByCall.get(2)?.stopCalls, 0, "현재 세대(2번 호출)의 스트림은 살아있어야 한다");
+
+    activeRouter.stopCapture();
+    assert.equal(tracksByCall.get(2)?.stopCalls, 1);
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+    if (originalAudioContext) Object.defineProperty(globalThis, "AudioContext", originalAudioContext);
+    else delete (globalThis as { AudioContext?: unknown }).AudioContext;
+  }
+});
+
+test("stopMediaStreamTracks는 스트림의 모든 트랙을 정지한다", () => {
+  const stopped: string[] = [];
+  stopMediaStreamTracks({
+    getTracks: () => [
+      { stop: () => stopped.push("audio") },
+      { stop: () => stopped.push("video") },
+    ] as MediaStreamTrack[],
+  });
+
+  assert.deepEqual(stopped, ["audio", "video"]);
 });

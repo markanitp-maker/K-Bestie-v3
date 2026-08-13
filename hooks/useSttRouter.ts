@@ -723,6 +723,10 @@ interface UseSttRouterResult extends SttRouter {
   getCurrentChildTurnId(): string;
 }
 
+export const stopMediaStreamTracks = (stream: Pick<MediaStream, "getTracks"> | null): void => {
+  stream?.getTracks().forEach((track) => track.stop());
+};
+
 export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouterResult => {
   const [state, setState] = useState<SttRouterState>("IDLE");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -738,6 +742,9 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
   const inputContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const captureGenerationRef = useRef(0);
+  const captureRequestedRef = useRef(true);
+  const capturePromiseRef = useRef<Promise<void> | null>(null);
 
   const controllerRef = useRef<SttRouterController | null>(null);
   if (!controllerRef.current) {
@@ -799,45 +806,64 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
     return controllerRef.current?.currentChildTurnId ?? "";
   }, []);
 
-  const stopCapture = useCallback(() => {
-    cancel();
+  const releaseCaptureResources = useCallback(() => {
     processorRef.current?.disconnect();
     processorRef.current = null;
     sourceRef.current?.disconnect();
     sourceRef.current = null;
     inputContextRef.current?.close().catch(() => {});
     inputContextRef.current = null;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    stopMediaStreamTracks(streamRef.current);
     streamRef.current = null;
-  }, [cancel]);
+  }, []);
 
-  const startCapture = useCallback(async () => {
-    if (streamRef.current) return;
+  const stopCapture = useCallback(() => {
+    captureRequestedRef.current = false;
+    captureGenerationRef.current += 1;
+    // 진행 중인 getUserMedia promise가 있다면 즉시 참조를 비운다 — 그 promise는
+    // resolve 시 stream을 버리고 조용히 끝나므로(위 startCapture의 세대 검사),
+    // .finally()가 나중에 비우는 걸 기다리면 그 사이 도착한 startCapture() 호출이
+    // 이 죽은 promise를 그대로 재사용해 "성공했지만 스트림 없음" 상태에 빠진다.
+    capturePromiseRef.current = null;
+    cancel();
+    releaseCaptureResources();
+  }, [cancel, releaseCaptureResources]);
+
+  const startCapture = useCallback((): Promise<void> => {
+    captureRequestedRef.current = true;
+    if (streamRef.current) return Promise.resolve();
+    if (capturePromiseRef.current) return capturePromiseRef.current;
     if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error("마이크를 사용하려면 HTTPS로 접속하세요.");
+      return Promise.reject(new Error("마이크를 사용하려면 HTTPS로 접속하세요."));
     }
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: STT_SAMPLE_RATE,
-        channelCount: STT_CHANNEL_COUNT,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
-    streamRef.current = stream;
-    try {
-      const inputContext = new AudioContext({ sampleRate: STT_SAMPLE_RATE });
-      inputContextRef.current = inputContext;
-      const source = inputContext.createMediaStreamSource(stream);
-      const processor = inputContext.createScriptProcessor(
-        STT_PROCESSOR_BUFFER_SIZE,
-        STT_CHANNEL_COUNT,
-        STT_CHANNEL_COUNT,
-      );
-      sourceRef.current = source;
-      processorRef.current = processor;
+    const captureGeneration = captureGenerationRef.current;
+    const capturePromise = (async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: STT_SAMPLE_RATE,
+          channelCount: STT_CHANNEL_COUNT,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      if (!captureRequestedRef.current || captureGeneration !== captureGenerationRef.current) {
+        stopMediaStreamTracks(stream);
+        return;
+      }
+      streamRef.current = stream;
+      try {
+        const inputContext = new AudioContext({ sampleRate: STT_SAMPLE_RATE });
+        inputContextRef.current = inputContext;
+        const source = inputContext.createMediaStreamSource(stream);
+        const processor = inputContext.createScriptProcessor(
+          STT_PROCESSOR_BUFFER_SIZE,
+          STT_CHANNEL_COUNT,
+          STT_CHANNEL_COUNT,
+        );
+        sourceRef.current = source;
+        processorRef.current = processor;
 
-      processor.onaudioprocess = (event) => {
+        processor.onaudioprocess = (event) => {
         const controller = controllerRef.current;
         if (!controller || !micEnabledRef.current || captureBlockedRef.current) return;
         const float32 = event.inputBuffer.getChannelData(0);
@@ -896,22 +922,27 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
           controller.endTurn();
           resetVad();
         }
-      };
-      source.connect(processor);
-      processor.connect(inputContext.destination);
-    } catch (error) {
-      processorRef.current?.disconnect();
-      processorRef.current = null;
-      sourceRef.current?.disconnect();
-      sourceRef.current = null;
-      inputContextRef.current?.close().catch(() => {});
-      inputContextRef.current = null;
-      stream.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      throw error;
-    }
-  }, [resetVad]);
+        };
+        source.connect(processor);
+        processor.connect(inputContext.destination);
+      } catch (error) {
+        releaseCaptureResources();
+        throw error;
+      }
+    })();
+    const trackedPromise = capturePromise.finally(() => {
+      if (capturePromiseRef.current === trackedPromise) capturePromiseRef.current = null;
+    });
+    capturePromiseRef.current = trackedPromise;
+    return trackedPromise;
+  }, [releaseCaptureResources, resetVad]);
 
+  // setMicEnabled는 매 수동 모드 PTT(push-to-talk) 턴마다 호출되는 경량 게이트다.
+  // MediaStream/AudioContext는 여기서 건드리지 않는다 — 세션 시작(startCapture, 이
+  // useVoiceChat.startSession에서 1회 호출)에서 획득해 세션 종료(stopCapture)까지
+  // 재사용하는 것이 원래 설계다. 텍스트 모드 전환처럼 실제로 마이크 스트림을 끊어
+  // OS 마이크 표시를 꺼야 하는 경우는 startCapture/stopCapture를 직접 호출해야 한다
+  // (useVoiceChat이 이를 별도로 노출한다) — setMicEnabled를 오버로드하면 안 된다.
   const setMicEnabled = useCallback((enabled: boolean) => {
     micEnabledRef.current = enabled;
     if (!enabled && controllerRef.current?.state === "LISTENING") cancel();
@@ -927,11 +958,10 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
 
   useEffect(() => () => {
     controllerRef.current?.dispose();
-    processorRef.current?.disconnect();
-    sourceRef.current?.disconnect();
-    inputContextRef.current?.close().catch(() => {});
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-  }, []);
+    captureRequestedRef.current = false;
+    captureGenerationRef.current += 1;
+    releaseCaptureResources();
+  }, [releaseCaptureResources]);
 
   return {
     state,

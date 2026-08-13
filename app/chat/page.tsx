@@ -12,6 +12,7 @@ import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
 import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversationViewport";
+import { getFreeChatConversationState } from "@/lib/freechat/conversationState";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -114,6 +115,8 @@ export default function ChatPage() {
     sayText,
     sendTypedText,
     setMicEnabled,
+    releaseMicrophone,
+    reacquireMicrophone,
     getLastAsrConfidence,
     setInputMode,
     manualFinalize,
@@ -553,9 +556,12 @@ export default function ChatPage() {
     setInputMode("manual");
     setIsAuto(false);
     setMicEnabled(false);
+    // setMicEnabled는 처리 게이트일 뿐 실제 마이크 스트림은 안 끈다 — 텍스트 모드에서
+    // OS/브라우저 마이크 사용 표시를 끄려면 스트림 자체를 정지해야 한다.
+    releaseMicrophone();
     setMode("text");
     if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, "manual");
-  }, [setMicEnabled, setInputMode, manualFinalize, childId]);
+  }, [setMicEnabled, releaseMicrophone, setInputMode, manualFinalize, childId]);
 
   const switchToVoice = useCallback(() => {
     // 키보드 종료 후에는 항상 수동 음성 모드로 복귀한다 — 자동 VAD를 다시 켜지 않고,
@@ -563,7 +569,11 @@ export default function ChatPage() {
     setInputMode("manual");
     setIsAuto(false);
     setMode("voice");
-  }, [setInputMode]);
+    // 텍스트 모드에서 정지해둔 마이크 스트림을 미리 재획득해, 사용자가 마이크
+    // 버튼을 눌렀을 때 곧바로 녹음이 시작되도록 한다(실패 시 상태가 "연결 오류"로
+    // 전환되어 화면에 노출된다).
+    void reacquireMicrophone();
+  }, [setInputMode, reacquireMicrophone]);
 
   const handleSendText = useCallback(async () => {
     const text = textInput.trim();
@@ -605,13 +615,13 @@ export default function ChatPage() {
   const isLive = status === "live";
   const isEnded = status === "ended";
 
-  let computedVoiceState: "listening" | "thinking" | "speaking" | "connecting" | "error" | "idle" = "idle";
-  if (status === "error") computedVoiceState = "error";
-  else if (isConnecting) computedVoiceState = "connecting";
-  else if (isSpeaking) computedVoiceState = "speaking";
-  else if (isResponding) computedVoiceState = "thinking";
-  else if (isRecording) computedVoiceState = "listening";
-  else if (isLive) computedVoiceState = "listening";
+  const computedVoiceState = getFreeChatConversationState({
+    mode,
+    status,
+    isRecording,
+    isResponding,
+    isSpeaking,
+  });
 
   let stateText = "";
   let StateIcon = null;
@@ -796,21 +806,38 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Mascot Area & Side Cards OR Text-Mode Closed-Keyboard CTA */}
-          {!isKeyboardOpen && (
-          <div className="relative z-10 w-full shrink-0 h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)] transition-all duration-300 flex items-center justify-center">
+          {/* Mascot Area & Side Cards OR Text-Mode CTA.
+              Text mode keeps K's state visible even while the software keyboard is open. */}
+          {(mode === "text" || !isKeyboardOpen) && (
+          <div
+            data-ui="conversation-status-panel"
+            className={`relative z-10 w-full shrink-0 transition-all duration-300 flex items-center justify-center ${mode === "text" && isKeyboardOpen ? "h-[clamp(68px,10dvh,84px)]" : "h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)]"}`}
+          >
             {mode === "text" ? (
-              /* mode === "text" & 키보드 CLOSED: 케이 위치 중앙에 시원하고 명확한 코랄 레드 #EF5350 '✕ 채팅창 닫기' pill CTA 노출 */
-              <div className="relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300">
-                <button
-                  onClick={switchToVoice}
-                  style={{ backgroundColor: "#EF5350" }}
-                  className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30"
-                  aria-label="채팅창 닫기"
+              /* Text overlay retains K's latest state above the close CTA. */
+              <div className={`relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300 ${isKeyboardOpen ? "gap-0" : "gap-4"}`}>
+                <div
+                  data-ui="text-mode-voice-state"
+                  data-keyboard-open={isKeyboardOpen}
+                  className="flex items-center gap-2 rounded-full border border-white/80 bg-white/85 px-4 py-2 text-[#5F7181] shadow-[0_3px_10px_rgba(75,85,99,0.10)] backdrop-blur-md"
+                  aria-live="polite"
                 >
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  <span>채팅창 닫기</span>
-                </button>
+                  <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,10.5vw,46px)] w-[clamp(40px,10.5vw,46px)] items-center justify-center">
+                    {StateIcon}
+                  </div>
+                  <span className="text-[14px] font-bold leading-none">{stateText}</span>
+                </div>
+                {!isKeyboardOpen && (
+                  <button
+                    onClick={switchToVoice}
+                    style={{ backgroundColor: "#EF5350" }}
+                    className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30"
+                    aria-label="채팅창 닫기"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    <span>채팅창 닫기</span>
+                  </button>
+                )}
               </div>
             ) : (
               /* mode !== "text": 케이 캐릭터 & Platform & 상태 카드 정상 노출 */
