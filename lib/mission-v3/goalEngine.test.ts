@@ -676,3 +676,161 @@ test("Mission Adapter는 071 공용 진입점만 사용하고 금지된 내부 �
   assert.match(adapterSource, /semanticTopicHistory/);
   assert.doesNotMatch(adapterSource, /k-conversation\/(?:actionSelector|boredomDetection|corePersona|memory|responseGenerator)/);
 });
+
+test("SKIPPED 상태의 Goal이 다음 턴에 SATISFIED로 전이될 수 있다", () => {
+  const skippedGoal = makeGoal({
+    goalId: "goal-1",
+    semanticGroup: "SCHOOL_DAY",
+    status: "SKIPPED",
+  });
+
+  const decisions = evaluateGoalSatisfaction({
+    goals: [skippedGoal],
+    currentUtterance: "오늘 학교에서 체육 시간이 정말 재미있었어.",
+    sourceTurnId: "turn-2",
+    assessedAt: "2026-08-13T10:00:00.000Z",
+    assessments: [
+      {
+        goalId: "goal-1",
+        semanticGroup: "SCHOOL_DAY",
+        status: "SATISFIED",
+        confidence: 0.95,
+        evidenceSource: "child_utterance",
+      },
+    ],
+  });
+
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].goalId, "goal-1");
+  assert.equal(decisions[0].status, "SATISFIED");
+  assert.equal(decisions[0].satisfiedAt, "2026-08-13T10:00:00.000Z");
+});
+
+test("SATISFIED 상태의 Goal은 이후 판정이 무시된다 (기존 동작 유지)", () => {
+  const satisfiedGoal = makeGoal({
+    goalId: "goal-1",
+    semanticGroup: "SCHOOL_DAY",
+    status: "SATISFIED",
+    satisfiedAt: "2026-08-13T09:00:00.000Z",
+  });
+
+  const decisions = evaluateGoalSatisfaction({
+    goals: [satisfiedGoal],
+    currentUtterance: "오늘 학교 얘기 또 해줄게.",
+    sourceTurnId: "turn-3",
+    assessedAt: "2026-08-13T10:00:00.000Z",
+    assessments: [
+      {
+        goalId: "goal-1",
+        semanticGroup: "SCHOOL_DAY",
+        status: "SATISFIED",
+        confidence: 0.99,
+        evidenceSource: "child_utterance",
+      },
+    ],
+  });
+
+  assert.deepEqual(decisions, []);
+});
+
+test("DECLINED 상태의 Goal은 이후 판정이 무시된다 (기존 동작 유지)", () => {
+  const declinedGoal = makeGoal({
+    goalId: "goal-1",
+    semanticGroup: "SCHOOL_DAY",
+    status: "DECLINED",
+  });
+
+  const decisions = evaluateGoalSatisfaction({
+    goals: [declinedGoal],
+    currentUtterance: "오늘 학교 이야기 재미있었어.",
+    sourceTurnId: "turn-3",
+    assessedAt: "2026-08-13T10:00:00.000Z",
+    assessments: [
+      {
+        goalId: "goal-1",
+        semanticGroup: "SCHOOL_DAY",
+        status: "SATISFIED",
+        confidence: 0.95,
+        evidenceSource: "child_utterance",
+      },
+    ],
+  });
+
+  assert.deepEqual(decisions, []);
+});
+
+test("첫 턴에 4개 전부 SKIPPED가 되어도, 다음 턴에 관련 발화가 오면 해당 Goal이 SATISFIED가 된다 (이번 사건의 재현 시나리오)", () => {
+  const goals: ConversationGoal[] = [
+    makeGoal({ goalId: "goal-1", goalOrder: 1, semanticGroup: "SCHOOL_DAY", priority: "P0" }),
+    makeGoal({ goalId: "goal-2", goalOrder: 2, semanticGroup: "PEER_RELATION", priority: "P1" }),
+    makeGoal({ goalId: "goal-3", goalOrder: 3, semanticGroup: "MOOD", priority: "P2" }),
+    makeGoal({ goalId: "goal-4", goalOrder: 4, semanticGroup: "FUN", priority: "P3" }),
+  ];
+
+  // Turn 1: 아이의 첫 발화 "내가 말하는 거 잘 들리니" (4개 모두 SKIPPED)
+  const turn1Decisions = evaluateGoalSatisfaction({
+    goals,
+    currentUtterance: "내가 말하는 거 잘 들리니",
+    sourceTurnId: "turn-1",
+    assessedAt: "2026-08-13T10:00:00.000Z",
+    assessments: [
+      { goalId: "goal-1", semanticGroup: "SCHOOL_DAY", status: "SKIPPED", confidence: 1.0, evidenceSource: "child_utterance" },
+      { goalId: "goal-2", semanticGroup: "PEER_RELATION", status: "SKIPPED", confidence: 1.0, evidenceSource: "child_utterance" },
+      { goalId: "goal-3", semanticGroup: "MOOD", status: "SKIPPED", confidence: 1.0, evidenceSource: "child_utterance" },
+      { goalId: "goal-4", semanticGroup: "FUN", status: "SKIPPED", confidence: 1.0, evidenceSource: "child_utterance" },
+    ],
+  });
+
+  assert.equal(turn1Decisions.length, 4);
+  assert.ok(turn1Decisions.every((d) => d.status === "SKIPPED"));
+
+  const goalsAfterTurn1 = goals.map((goal) => {
+    const decision = turn1Decisions.find((d) => d.goalId === goal.goalId);
+    return decision ? { ...goal, status: decision.status } : goal;
+  });
+
+  // Turn 2: 아이의 관련 발화 "오늘 민서랑 학교에서 피구해서 이겼어" (SCHOOL_DAY, PEER_RELATION)
+  const turn2Decisions = evaluateGoalSatisfaction({
+    goals: goalsAfterTurn1,
+    currentUtterance: "오늘 민서랑 학교에서 피구해서 이겼어",
+    sourceTurnId: "turn-2",
+    assessedAt: "2026-08-13T10:01:00.000Z",
+    assessments: [
+      { goalId: "goal-1", semanticGroup: "SCHOOL_DAY", status: "SATISFIED", confidence: 0.95, evidenceSource: "child_utterance" },
+      { goalId: "goal-2", semanticGroup: "PEER_RELATION", status: "SATISFIED", confidence: 0.92, evidenceSource: "child_utterance" },
+      { goalId: "goal-3", semanticGroup: "MOOD", status: "SKIPPED", confidence: 1.0, evidenceSource: "child_utterance" },
+      { goalId: "goal-4", semanticGroup: "FUN", status: "SKIPPED", confidence: 1.0, evidenceSource: "child_utterance" },
+    ],
+  });
+
+  assert.equal(turn2Decisions.length, 2);
+  assert.deepEqual(turn2Decisions.map((d) => d.goalId), ["goal-1", "goal-2"]);
+  assert.ok(turn2Decisions.every((d) => d.status === "SATISFIED"));
+});
+
+test("SKIPPED 상태의 Goal에 다시 SKIPPED 판정이 오면 무의미하게 재기록하지 않는다", () => {
+  const skippedGoal = makeGoal({
+    goalId: "goal-1",
+    semanticGroup: "SCHOOL_DAY",
+    status: "SKIPPED",
+  });
+
+  const decisions = evaluateGoalSatisfaction({
+    goals: [skippedGoal],
+    currentUtterance: "응 안녕",
+    sourceTurnId: "turn-2",
+    assessedAt: "2026-08-13T10:00:00.000Z",
+    assessments: [
+      {
+        goalId: "goal-1",
+        semanticGroup: "SCHOOL_DAY",
+        status: "SKIPPED",
+        confidence: 1.0,
+        evidenceSource: "child_utterance",
+      },
+    ],
+  });
+
+  assert.deepEqual(decisions, []);
+});
+

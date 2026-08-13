@@ -358,8 +358,10 @@ export const evaluateGoalSatisfaction = (input: {
       return [];
     }
     if (assessment.confidence < MIN_GOAL_CONFIDENCE) return [];
-    if (["SATISFIED", "DECLINED", "SKIPPED"].includes(goal.status)) return [];
+    if (["SATISFIED", "DECLINED"].includes(goal.status)) return [];
     if (goal.status === "PARTIAL" && assessment.status === "PARTIAL") return [];
+    if (goal.status === "SKIPPED" && assessment.status === "SKIPPED") return [];
+    if (goal.status === "PARTIAL" && assessment.status === "SKIPPED") return [];
 
     return [{
       goalId: assessment.goalId,
@@ -399,7 +401,7 @@ export const persistGoalDecisions = async (
           updated_at: new Date().toISOString(),
         })
         .eq("goal_id", decision.goalId)
-        .in("status", ["PENDING", "PARTIAL"]);
+        .in("status", ["PENDING", "PARTIAL", "SKIPPED"]);
       if (error) throw new Error(`${decision.goalId}: ${error.message}`);
       return decision;
     }),
