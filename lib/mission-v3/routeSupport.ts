@@ -21,6 +21,8 @@ interface HistoryRow {
   role: string;
   content: string;
   turn_id: string | null;
+  created_at?: string;
+  display_sequence?: number | null;
 }
 
 const GOAL_ASSESSMENT_STATUSES: ReadonlySet<GoalAssessment["status"]> = new Set([
@@ -167,17 +169,34 @@ export const fetchRecentMissionHistory = async (input: {
 }): Promise<Array<{ role: "child" | "k"; text: string }>> => {
   const { data, error } = await input.db
     .from("chat_messages")
-    .select("role, content, turn_id")
+    .select("role, content, turn_id, created_at, display_sequence")
     .eq("session_id", input.sessionId)
+    .order("created_at", { ascending: false, nullsFirst: false })
     .order("display_sequence", { ascending: false, nullsFirst: false })
-    .limit(9);
+    .limit(20);
   if (error) {
     console.error("[mission/v3] 최근 대화 조회 실패", error.message);
     return [];
   }
 
-  return ((data ?? []) as HistoryRow[])
-    .filter((row) => row.turn_id !== input.currentTurnId)
+  const rows = (data ?? []) as HistoryRow[];
+  const seenTurnIds = new Set<string>();
+  const dedupedRows: HistoryRow[] = [];
+
+  for (const row of rows) {
+    if (row.turn_id === input.currentTurnId) {
+      continue;
+    }
+    if (row.turn_id !== null && row.turn_id !== undefined) {
+      if (seenTurnIds.has(row.turn_id)) {
+        continue;
+      }
+      seenTurnIds.add(row.turn_id);
+    }
+    dedupedRows.push(row);
+  }
+
+  return dedupedRows
     .filter((row): row is HistoryRow & { role: "child" | "k" } => (
       (row.role === "child" || row.role === "k") && Boolean(row.content.trim())
     ))
