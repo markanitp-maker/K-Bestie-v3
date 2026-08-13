@@ -31,12 +31,61 @@ import { usePipelineConnectionQuality } from "@/hooks/usePipelineConnectionQuali
 import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndicator";
 import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 import KChatbotWidget from "@/components/KChatbotWidget";
-import { clearPendingMissionTurn, readPendingMissionTurn, savePendingMissionTurn } from "@/lib/mission/pendingTurnStore";
+import {
+  clearPendingMissionTurn,
+  isPendingMissionTurnExpired,
+  readPendingMissionTurn,
+  savePendingMissionTurn,
+} from "@/lib/mission/pendingTurnStore";
+import { reconcilePendingMissionTurn } from "@/lib/mission/pendingTurnReconciliation";
+import { mergeMissionStartWithTurnRecovery } from "@/lib/mission/serverTurnReconciliation";
 import { postMissionTurnWithRetry } from "@/lib/mission/turnRequest";
 import { parseMissionEntrySnapshot, resolveMissionDestination } from "@/lib/mission-v3/clientEntry";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
+type MissionPolicyVersion = "v2_dual" | "v3_single_daily";
+
+interface MissionV3GoalProgress {
+  total: number;
+  satisfied: number;
+  partial: number;
+  pending: number;
+  declined: number;
+  skipped: number;
+  completionThreshold: number;
+}
+
+interface MissionV3StartData {
+  resumed: boolean;
+  sessionId: string;
+  policyVersion: "v3_single_daily";
+  status: "IN_PROGRESS" | "COMPLETED" | "SAFETY_PAUSED" | "FORCE_ENDED" | string;
+  completed: boolean;
+  goalProgress: MissionV3GoalProgress | null;
+  voiceMode: VoiceMode;
+  liveVoiceName: string | null;
+  givenName: string | null;
+  childContext: ChildConversationContext;
+}
+
+interface MissionV3TurnData {
+  kMessage?: string;
+  status?: "IN_PROGRESS" | "COMPLETED" | "SAFETY_PAUSED" | "FORCE_ENDED" | string;
+  completed?: boolean;
+  safetyPaused?: boolean;
+  earlyEnded?: boolean;
+  rewardStatus?: string;
+  goalProgress?: MissionV3GoalProgress;
+  replayed?: boolean;
+}
+
+interface MissionV3TurnErrorData {
+  code?: string;
+  status?: "COMPLETED" | "SAFETY_PAUSED" | "FORCE_ENDED" | string;
+  error?: string;
+  reason?: string;
+}
 
 interface MissionQuestion {
   id: string;
@@ -58,6 +107,7 @@ type MissionRequestContext = {
 
 const MISSION_LOADING_WATCHDOG_MS = 8_000;
 const SAVE_MESSAGE_RETRY_DELAYS_MS = [0, 300, 700] as const;
+const MISSION_V3_TURN_RETRY_DELAYS_MS = [1500, 2500, 3500] as const;
 const MISSION_COMPLETION_CLOSING_LINE = "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!";
 
 type MissionRuntimeTraceSnapshot = {
@@ -211,6 +261,15 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const sessionIdRef = useRef<string | null>(null);
   const childIdRef = useRef<string | null>(null);
   childIdRef.current = childId;
+  const missionPolicyRef = useRef<MissionPolicyVersion>("v2_dual");
+  const v3RewardAwardedRef = useRef(false);
+  const v3OpeningMessageRef = useRef<string>("");
+  const activeV3TurnRef = useRef<{
+    clientTurnId: string;
+    answerText: string;
+    displaySequence: number;
+  } | null>(null);
+  const retryV3TurnRef = useRef<(() => void) | null>(null);
   const voiceModeRef = useRef<VoiceMode | null>(null);
   voiceModeRef.current = voiceMode;
   const questionsRef = useRef<MissionQuestion[]>([]);
@@ -661,20 +720,23 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       }
     }
     const isLive = voiceModeRef.current === "live";
+    const isV3Mission = missionPolicyRef.current === "v3_single_daily";
 
     let finalTurnId = turn.id;
     let finalDisplaySequence = turn.displaySequence;
 
-    if (!isLive) {
-      if (turn.role === "child") {
-        finalTurnId = finalTurnId ?? activeChildTurnIdRef.current ?? nextTurnId();
+    if (turn.role === "child") {
+      // Hook-local ids (t1, t2, ...) reset on re-entry and are not durable idempotency
+      // keys. The page owns the persisted child turn id and always uses a UUID.
+      finalTurnId = activeChildTurnIdRef.current ?? nextTurnId();
+      if (!isLive) {
         finalDisplaySequence = finalDisplaySequence ?? activeChildTurnSeqRef.current ?? nextDisplaySequence();
-        activeChildTurnIdRef.current = null;
-        activeChildTurnSeqRef.current = null;
-      } else if (turn.role === "k") {
-        finalTurnId = finalTurnId ?? nextTurnId();
-        finalDisplaySequence = finalDisplaySequence ?? nextDisplaySequence();
       }
+      activeChildTurnIdRef.current = null;
+      activeChildTurnSeqRef.current = null;
+    } else if (!isLive && turn.role === "k") {
+      finalTurnId = finalTurnId ?? nextTurnId();
+      finalDisplaySequence = finalDisplaySequence ?? nextDisplaySequence();
     }
 
     const enrichedTurn = { ...turn, id: finalTurnId, displaySequence: finalDisplaySequence };
@@ -738,7 +800,8 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     
     const wasServerPersistedK = enrichedTurn.role === "k"
       && serverPersistedKTextsRef.current[0] === enrichedTurn.text;
-    const isGreetingChildTurn = isChildTurnDuringActiveMission
+    const isGreetingChildTurn = !isV3Mission
+      && isChildTurnDuringActiveMission
       && questionsRef.current[currentIndexRef.current]?.id === "greeting_turn_0";
     if (wasServerPersistedK) {
       serverPersistedKTextsRef.current.shift();
@@ -770,6 +833,224 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           sttSetMicEnabledRef.current?.(true);
         }
       }
+      return;
+    }
+
+    if (isV3Mission) {
+      const sid = sessionIdRef.current;
+      const answerText = enrichedTurn.text.trim();
+      if (!sid || !answerText) {
+        if (isLive) {
+          setTurnPhase("child_listening");
+          liveRef.current?.setKSpeechAllowed?.(false);
+        }
+        return;
+      }
+
+      const pendingTurn = activeV3TurnRef.current ?? {
+        clientTurnId: enrichedTurn.id ?? nextTurnId(),
+        answerText,
+        displaySequence: enrichedTurn.displaySequence ?? nextDisplaySequence(),
+      };
+      activeV3TurnRef.current = pendingTurn;
+
+      const submitV3Turn = async () => {
+        if (answerInFlightRef.current) return;
+        answerInFlightRef.current = true;
+        setIsProcessingAnswer(true);
+        setIsAutoListening(false);
+        setShowRetryButton(false);
+        setErrorMsg("");
+        recoveryAttemptedRef.current = false;
+
+        const currentEpoch = ++answerEpochRef.current;
+        const controller = new AbortController();
+        if (isLive) {
+          manualAbortControllerRef.current?.abort();
+          manualAbortControllerRef.current = controller;
+        } else {
+          sttSetMicEnabledRef.current?.(false);
+          apiAbortControllerRef.current?.abort();
+          apiAbortControllerRef.current = controller;
+        }
+
+        const showRetry = (message: string) => {
+          if (currentEpoch !== answerEpochRef.current) return;
+          setErrorMsg(message);
+          resetToIdle(true);
+        };
+
+        try {
+          for (let attempt = 0; attempt <= MISSION_V3_TURN_RETRY_DELAYS_MS.length; attempt += 1) {
+            const res = await fetch("/api/mission/v3/turn", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+              body: JSON.stringify({
+                sessionId: sid,
+                clientTurnId: pendingTurn.clientTurnId,
+                answerText: pendingTurn.answerText,
+                voiceMode: voiceModeRef.current ?? "stt_tts",
+                displaySequence: pendingTurn.displaySequence,
+              }),
+              signal: controller.signal,
+            });
+            if (currentEpoch !== answerEpochRef.current) return;
+
+            if (res.status === 409) {
+              const errorData = await res.json().catch(() => ({})) as MissionV3TurnErrorData;
+              if (currentEpoch !== answerEpochRef.current) return;
+              if (errorData.code === "TURN_IN_PROGRESS" && attempt < MISSION_V3_TURN_RETRY_DELAYS_MS.length) {
+                await new Promise((resolve) => setTimeout(resolve, MISSION_V3_TURN_RETRY_DELAYS_MS[attempt]));
+                if (currentEpoch !== answerEpochRef.current || controller.signal.aborted) return;
+                continue;
+              }
+              showRetry("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+              return;
+            }
+
+            if (res.status === 423) {
+              const errorData = await res.json().catch(() => ({})) as MissionV3TurnErrorData;
+              if (currentEpoch !== answerEpochRef.current) return;
+              setCompleted(errorData.status === "COMPLETED");
+              setIsRewardModalOpen(false);
+              voice.stopSession();
+              if (errorData.status === "COMPLETED") {
+                setRewardStatus("already_rewarded");
+                missionStateRef.current = "completed";
+                setMissionState("completed");
+                setPhase("locked_completed");
+              } else if (errorData.status === "SAFETY_PAUSED") {
+                setRewardStatus("none");
+                setPhase("safety_paused");
+              } else if (errorData.status === "FORCE_ENDED") {
+                setRewardStatus("none");
+                setPhase("force_ended");
+              } else {
+                setPhase("closed");
+              }
+              return;
+            }
+
+            if (res.status === 403 || res.status === 404) {
+              setPhase("loading");
+              setEntryStatus("checking");
+              setRetryTrigger((value) => value + 1);
+              return;
+            }
+
+            if (!res.ok) {
+              showRetry("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+              return;
+            }
+
+            const data = await res.json() as MissionV3TurnData;
+            if (currentEpoch !== answerEpochRef.current) return;
+
+            // v3 멱등 키는 서버가 200 OK를 확정한 뒤에만 다음 턴을 위해 비운다.
+            activeV3TurnRef.current = null;
+            retryV3TurnRef.current = null;
+
+            if (data.goalProgress) {
+              const threshold = data.goalProgress.completionThreshold;
+              setGauge(data.goalProgress.satisfied);
+              setRequiredCount(threshold);
+              setProgressPercent(threshold > 0
+                ? Math.min(100, Math.round((data.goalProgress.satisfied / threshold) * 100))
+                : 0);
+            }
+
+            const terminalStatus = data.status;
+            const isSafetyPaused = data.safetyPaused || terminalStatus === "SAFETY_PAUSED";
+            const isForceEnded = data.earlyEnded || terminalStatus === "FORCE_ENDED";
+            const isCompleted = data.completed || terminalStatus === "COMPLETED";
+            if (data.completed && terminalStatus !== "COMPLETED") {
+              setCompleted(false);
+              setIsRewardModalOpen(false);
+              setPhase("error");
+              setErrorMsg("미션 상태를 확인하지 못했어요. 잠시 후 다시 해 주세요.");
+              return;
+            }
+
+            if (!data.replayed && data.kMessage) {
+              serverPersistedKTextsRef.current.push(data.kMessage);
+            }
+
+            if (isSafetyPaused || isForceEnded) {
+              if (!data.replayed && data.kMessage) {
+                if (isLive) liveRef.current?.appendTurn({ role: "k", text: data.kMessage });
+                else sttTts.sayText(data.kMessage);
+              }
+              setCompleted(false);
+              setRewardStatus("none");
+              setIsRewardModalOpen(false);
+              voice.stopSession();
+              setPhase(isSafetyPaused ? "safety_paused" : "force_ended");
+              return;
+            }
+
+            if (isCompleted) {
+              const closingText = data.kMessage || "오늘의 미션을 모두 완료했어요. 이야기해 줘서 고마워!";
+              const nextRewardStatus = data.rewardStatus ?? "none";
+              v3RewardAwardedRef.current = nextRewardStatus === "awarded";
+              setRewardStatus(nextRewardStatus);
+              missionClosingLineRef.current = closingText;
+
+              if (data.replayed) {
+                missionStateRef.current = "completed";
+                setMissionState("completed");
+                setCompleted(true);
+                setPhase("locked_completed");
+                return;
+              }
+
+              missionStateRef.current = "completing";
+              setMissionState("completing");
+              if (isLive) {
+                setTurnPhase("k_speaking");
+                liveRef.current?.lockNow();
+                const success = liveRef.current?.speakClosingLine(closingText);
+                missionControllerRef.current?.start({ immediateTtsFallback: !success });
+              } else {
+                sttSetMicEnabledRef.current?.(false);
+                if (kVoiceEnabledRef.current) await sttTts.speak(closingText);
+                else sttTts.sayText(closingText);
+                if (currentEpoch !== answerEpochRef.current) return;
+                missionStateRef.current = "completed";
+                setMissionState("completed");
+                setCompleted(true);
+                if (!v3RewardAwardedRef.current) setPhase("locked_completed");
+              }
+              return;
+            }
+
+            if (!data.replayed && data.kMessage) {
+              if (isLive) setTurnPhase("k_speaking");
+              askQuestionRef.current?.(-1, data.kMessage);
+            } else if (isLive) {
+              setTurnPhase("child_listening");
+              liveRef.current?.setKSpeechAllowed?.(false);
+            }
+            return;
+          }
+        } catch (error: unknown) {
+          if (isAbortError(error) || currentEpoch !== answerEpochRef.current) return;
+          console.error("[mission/v3/turn] 턴 통신 실패", error);
+          showRetry("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
+        } finally {
+          if (currentEpoch === answerEpochRef.current) {
+            answerInFlightRef.current = false;
+            setIsProcessingAnswer(false);
+            if (!isLive && isAutoRef.current && missionStateRef.current === "active") {
+              sttSetMicEnabledRef.current?.(true);
+            }
+          }
+        }
+      };
+
+      retryV3TurnRef.current = () => {
+        void submitV3Turn();
+      };
+      void submitV3Turn();
       return;
     }
 
@@ -1626,7 +1907,12 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         // completing 진입 즉시 마이크·추가 입력 차단(방어적 이중 조치 — UI도 isDone 기준으로
         // 버튼을 감춘다). 종료 발화는 이미 진행 중인 세션을 통해 계속 재생된다.
         if (s === "completing") liveRef.current?.setMicEnabled(false);
-        if (s === "completed") setCompleted(true);
+        if (s === "completed") {
+          setCompleted(true);
+          if (missionPolicyRef.current === "v3_single_daily" && !v3RewardAwardedRef.current) {
+            setPhase("locked_completed");
+          }
+        }
       },
       // fallback/외부 종료 경로 전용 — 정상 경로는 케이 본인의 발화가 이미 화면에 떠 있다.
       onShowCompletionText: () => {
@@ -1652,7 +1938,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           const kId = nextTurnId();
           const fallbackSeq = nextDisplaySequence();
           liveRef.current?.appendTurn({ role: "k", text, id: kId, displaySequence: fallbackSeq });
-          saveMessage("k", text, fallbackSeq, kId);
+          if (missionPolicyRef.current !== "v3_single_daily") {
+            saveMessage("k", text, fallbackSeq, kId);
+          }
         }
         await playClosingLineViaTts(text, sessionIdRef.current);
       },
@@ -1818,10 +2106,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   }, [voice.status]);
 
   const askQuestion = useCallback((idx: number, customText?: string) => {
-    const q = questionsRef.current[idx];
-    if (!q) return;
-    askedIndexRef.current = idx;
-    const textToSpeak = customText || q.question_text;
+    const textToSpeak = customText || questionsRef.current[idx]?.question_text;
+    if (!textToSpeak) return;
+    if (idx >= 0) askedIndexRef.current = idx;
     // 마지막(5번째) 질문에도 종료 지시를 텍스트에 심지 않는다 — 종료 발화는 답변 확정 후
     // 별도의 speakClosingLine() 전용 턴으로 처리한다(handleTurnComplete의 completed 분기).
     if (isLiveMode) {
@@ -1927,12 +2214,21 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     setSessionActive(false);
     if (liveRef.current) liveRef.current.lockNow();
 
+    if (missionPolicyRef.current === "v3_single_daily") {
+      setPhase("locked_completed");
+      return;
+    }
+
     // 아이 홈 이동 후 최신 갱신
     router.replace("/child/home");
     router.refresh();
   }, [hasClosedRewardModal, voice, router]);
 
   useEffect(() => {
+    if (missionPolicyRef.current === "v3_single_daily" && rewardStatus !== "awarded") {
+      setIsRewardModalOpen(false);
+      return;
+    }
     if (
       shouldShowMissionCompletionModal({
         missionState,
@@ -2064,18 +2360,57 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     request: MissionRequestContext,
   ) => {
       if (!request.isActive()) return;
-      const res = await fetch("/api/mission/start", {
+      const isV3Mission = missionPolicyRef.current === "v3_single_daily";
+      const res = await fetch(isV3Mission ? "/api/mission/v3/start" : "/api/mission/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ childId: cid, roundType: round, checkOnly: isCheckOnly }),
+        body: JSON.stringify(isV3Mission
+          ? { childId: cid }
+          : { childId: cid, roundType: round, checkOnly: isCheckOnly }),
         signal: request.signal,
       });
       if (!request.isActive()) return;
-      const data = await res.json();
+      let data = await res.json();
       if (!request.isActive()) return;
       logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
 
       if (!res.ok) {
+        if (isV3Mission && res.status === 409) {
+          if (data.status === "COMPLETED") {
+            setCompleted(true);
+            setRewardStatus("already_rewarded");
+            setPhase("locked_completed");
+          } else if (data.status === "SAFETY_PAUSED") {
+            setCompleted(false);
+            setRewardStatus("none");
+            setPhase("safety_paused");
+          } else if (data.status === "FORCE_ENDED") {
+            setCompleted(false);
+            setRewardStatus("none");
+            setPhase("force_ended");
+          } else {
+            setErrorMsg("미션 상태를 확인하지 못했어요. 잠시 후 다시 해 주세요.");
+            setPhase("error");
+            setEntryStatus("error");
+          }
+          request.markSettled();
+          return;
+        }
+        if (isV3Mission && res.status === 403 && (data.reason === "before_open" || data.reason === "closed")) {
+          setErrorMsg(data.reason === "before_open"
+            ? "아직 미션 시간이 아니에요. 오전 9시에 다시 만나요!"
+            : "오늘 미션 시간이 끝났어요. 내일 다시 만나요!");
+          setPhase("closed");
+          request.markSettled();
+          return;
+        }
+        if (isV3Mission && res.status === 403 && data.reason === "policy_not_effective") {
+          setPhase("loading");
+          setEntryStatus("checking");
+          setRetryTrigger((value) => value + 1);
+          request.markSettled();
+          return;
+        }
         if (res.status === 403 && data.code === "MISSION_POLICY_CHANGED") {
           try {
             const progressRes = await fetch(`/api/mission/v3/today-progress?childId=${cid}`, {
@@ -2091,7 +2426,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
             const destination = resolveMissionDestination(snapshot);
             if (destination.kind === "v3") {
-              router.replace(`/child/missions/v3?childId=${cid}`);
+              missionPolicyRef.current = "v3_single_daily";
+              setGauge(snapshot.progress?.current ?? 0);
+              setRequiredCount(snapshot.progress?.target ?? 3);
+              setProgressPercent(snapshot.progress
+                ? Math.min(100, Math.round((snapshot.progress.current / snapshot.progress.target) * 100))
+                : 0);
+              setPhase("ready");
+              setEntryStatus(snapshot.entryState === "resume" ? "ready_to_resume" : "ready_to_start");
               request.markSettled();
               return;
             }
@@ -2124,13 +2466,54 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         return;
       }
 
+      if (isV3Mission) {
+        const v3Data = data as MissionV3StartData;
+        if (v3Data.completed && v3Data.status !== "COMPLETED") {
+          setCompleted(false);
+          setErrorMsg("미션 상태를 확인하지 못했어요. 잠시 후 다시 해 주세요.");
+          setPhase("error");
+          setEntryStatus("error");
+          request.markSettled();
+          return;
+        }
+        if (v3Data.status === "COMPLETED") {
+          setCompleted(true);
+          setRewardStatus("already_rewarded");
+          setPhase("locked_completed");
+          request.markSettled();
+          return;
+        }
+        if (v3Data.status === "SAFETY_PAUSED") {
+          setCompleted(false);
+          setRewardStatus("none");
+          setPhase("safety_paused");
+          request.markSettled();
+          return;
+        }
+        if (v3Data.status === "FORCE_ENDED") {
+          setCompleted(false);
+          setRewardStatus("none");
+          setPhase("force_ended");
+          request.markSettled();
+          return;
+        }
+        if (v3Data.status !== "IN_PROGRESS") {
+          setCompleted(false);
+          setErrorMsg("미션 상태를 확인하지 못했어요. 잠시 후 다시 해 주세요.");
+          setPhase("error");
+          setEntryStatus("error");
+          request.markSettled();
+          return;
+        }
+      }
+
       if (data.locked) {
         setPhase("locked_completed");
         request.markSettled();
         return;
       }
 
-      if (isCheckOnly && !data.resumed) {
+      if (!isV3Mission && isCheckOnly && !data.resumed) {
         setVoiceMode((data.voiceMode as VoiceMode) ?? "stt_tts");
         if (typeof data.liveVoiceName === "string" && data.liveVoiceName) {
           setLiveVoiceName(data.liveVoiceName);
@@ -2144,69 +2527,55 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       setSessionId(data.sessionId);
       sessionIdRef.current = data.sessionId;
 
-      // PWA/탭 종료 뒤 남은 단일 미확정 턴을 같은 clientTurnId로 복구한다. 서버의
-      // answer_result가 이미 있으면 start는 재판정 없이 replay하고, 없으면 lease 만료 후
-      // 동일 턴 처리를 재개한다. 복구 K 문구에는 원문을 다시 싣지 않는다.
-      if (!request.isActive()) return;
-      const pendingTurn = await readPendingMissionTurn().catch((error: unknown) => {
-        console.error("[Mission] IndexedDB pending turn 복원 실패. 서버 세션으로 계속 진행합니다:", error);
-        return null;
-      });
-      if (!request.isActive()) return;
-      if (pendingTurn && pendingTurn.sessionId === data.sessionId) {
-        const pending = pendingTurn;
-        if (sessionStorage.getItem("mission-turn-recovery-paused") === pending.clientTurnId) {
-          if (!request.isActive()) return;
-          // 073-P0 리뷰 지적: 여기를 일반 error phase로 바꾸면 handleRetryAfterError가
-          // pause 키를 지우지 않고 같은 시도를 반복해 이 분기로 영구 재진입한다.
-          // turn_retry 전용 화면(자체 재시도 버튼이 pause 키를 지우고 reload)으로 되돌린다.
-          setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
-          setShowRetryButton(true);
-          setPhase("turn_retry");
-          request.markSettled();
-          return;
-        }
+      // Local pending은 TTL이나 pause 표식만으로 삭제하지 않는다. mission_turns,
+      // chat_messages, mission_progress.question_states를 먼저 대조하고, 불명확할 때만
+      // 같은 clientTurnId로 한 번 replay한 뒤 재조회한다. 어느 결론이든 DB SSOT를
+      // 다시 hydrate하므로 복구 실패가 error 화면을 영구 점유하지 않는다.
+      if (!isV3Mission) {
         if (!request.isActive()) return;
-        const replayResponse = await postMissionTurnWithRetry({
-          body: { action: "start", ...pending },
+        const pendingTurn = await readPendingMissionTurn().catch((error: unknown) => {
+          console.error("[Mission] IndexedDB pending turn 복원 실패. 서버 세션으로 계속 진행합니다:", error);
+          return null;
+        });
+        if (!request.isActive()) return;
+        if (pendingTurn) {
+        const pending = pendingTurn;
+        const ttlExceeded = isPendingMissionTurnExpired(pending);
+        const reconciliation = await reconcilePendingMissionTurn({
+          pending,
           signal: request.signal,
         });
         if (!request.isActive()) return;
-        if (replayResponse.ok) {
-          const replay = await replayResponse.json();
-          if (!request.isActive()) return;
-          const recoveryText = replay.completionCandidate
-            ? "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!"
-            : "이야기해 줘서 고마워! 다음 이야기도 들려줄래?";
-          if (!request.isActive()) return;
-          const finalizeResponse = await postMissionTurnWithRetry({
-            body: {
-              action: "finalize",
-              sessionId: pending.sessionId,
-              clientTurnId: pending.clientTurnId,
-              kTurnId: `${pending.clientTurnId}:k`,
-              kContent: recoveryText,
-              kDisplaySequence: pending.displaySequence + 1,
-            },
-            signal: request.signal,
-          });
-          if (!request.isActive()) return;
-          if (finalizeResponse.ok) {
-            sessionStorage.removeItem("mission-turn-recovery-paused");
-            await clearPendingMissionTurn(pending.clientTurnId);
-            if (!request.isActive()) return;
-            request.markSettled();
-            window.location.reload();
-            return;
-          }
+        console.info("[Mission] pending turn server reconciliation", {
+          clientTurnId: pending.clientTurnId,
+          status: reconciliation.status,
+          replayAttempted: reconciliation.replayAttempted,
+          ttlExceeded,
+        });
+
+        sessionStorage.removeItem("mission-turn-recovery-paused");
+        if (reconciliation.status === "unknown") {
+          console.warn("[Mission] pending turn remains ambiguous after one replay; continuing from DB SSOT");
         }
+        const localPendingCleared = reconciliation.status === "unknown"
+          ? false
+          : await clearPendingMissionTurn(pending.clientTurnId)
+              .then(() => true)
+              .catch((error: unknown) => {
+                console.error("[Mission] reconciled pending turn local cleanup failed", error);
+                return false;
+              });
         if (!request.isActive()) return;
-        setShowRetryButton(true);
-        setErrorMsg("대화를 저장하는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요.");
-        setPhase("error");
-        setEntryStatus("error");
-        request.markSettled();
-        return;
+        if (localPendingCleared) {
+          if (reconciliation.status === "committed") {
+            data = mergeMissionStartWithTurnRecovery(data, reconciliation.recoveryState);
+          }
+          console.info("[Mission] pending turn local cleanup complete; hydrating from reconciled DB snapshot", {
+            status: reconciliation.status,
+            recoveredQuestionState: Boolean(reconciliation.recoveryState?.questionStates),
+          });
+        }
+        }
       }
 
       if (navigator.serviceWorker?.controller) {
@@ -2236,7 +2605,65 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           }),
         }).catch(() => {});
       }
-      
+
+      if (isV3Mission) {
+        const v3Data = data as MissionV3StartData;
+        const goalProgress = v3Data.goalProgress;
+        const threshold = goalProgress?.completionThreshold ?? 3;
+        const satisfied = goalProgress?.satisfied ?? 0;
+        setGauge(satisfied);
+        setRequiredCount(threshold);
+        setProgressPercent(threshold > 0
+          ? Math.min(100, Math.round((satisfied / threshold) * 100))
+          : 0);
+        setCompleted(false);
+        setEngineVersion("v3");
+        setQuestions([]);
+        questionsRef.current = [];
+        questionStatesRef.current = {};
+        currentIndexRef.current = 0;
+        childContextRef.current = v3Data.childContext ?? null;
+        v3OpeningMessageRef.current = v3Data.givenName
+          ? `${v3Data.givenName}아, 오늘 하루는 어땠어? 이야기 들려줘!`
+          : "오늘 하루는 어땠어? 이야기 들려줘!";
+        setVoiceMode(v3Data.voiceMode ?? "stt_tts");
+        if (v3Data.liveVoiceName) setLiveVoiceName(v3Data.liveVoiceName);
+
+        try {
+          if (!request.isActive()) return;
+          logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_start" });
+          const msgRes = await fetch(`/api/chat/messages?sessionId=${v3Data.sessionId}`, { signal: request.signal });
+          if (!request.isActive()) return;
+          if (msgRes.ok) {
+            const msgData = await msgRes.json();
+            if (!request.isActive()) return;
+            logVoiceEvent({ ts: Date.now(), eventType: "restore_fetch_complete", extra: { messageCount: msgData.messages?.length ?? 0 } });
+            const past: Turn[] = (msgData.messages ?? [])
+              .filter((message: { content?: unknown; turn_status?: unknown }) => (
+                typeof message.content === "string"
+                && message.content.trim() !== ""
+                && (message.turn_status ? message.turn_status === "finalized" : true)
+              ))
+              .map((message: { role: "child" | "k"; content: string; display_sequence?: number }) => ({
+                role: message.role,
+                text: message.content,
+                displaySequence: message.display_sequence,
+              }));
+            pastMessagesRef.current = past;
+          }
+        } catch (error: unknown) {
+          if (isAbortError(error)) throw error;
+          console.error("[Mission] 대화 history 복원 실패. 핵심 세션으로 계속 진행합니다:", error);
+          pastMessagesRef.current = [];
+        }
+        if (!request.isActive()) return;
+
+        setPhase("ready");
+        setEntryStatus("active");
+        request.markSettled();
+        return;
+      }
+
       const qs: MissionQuestion[] = data.questions ?? [];
       childContextRef.current = data.childContext ?? null;
 
@@ -2419,6 +2846,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       if (!request.isActive()) return;
 
       if (!snapshot) {
+        missionPolicyRef.current = "v2_dual";
         let timeRestrictionsEnabled = false;
         let cfgActiveRound: RoundType | null = null;
         let cfgScheduleEnforced = false;
@@ -2453,9 +2881,19 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       }
 
       setScheduleEnforced(snapshot.timeGate.scheduleEnforced);
+      missionPolicyRef.current = snapshot.policyVersion;
       const destination = resolveMissionDestination(snapshot);
       if (destination.kind === "v3") {
-        router.replace(`/child/missions/v3?childId=${cid}`);
+        const current = snapshot.progress?.current ?? 0;
+        const target = snapshot.progress?.target ?? 3;
+        setGauge(current);
+        setRequiredCount(target);
+        setProgressPercent(target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0);
+        setCompleted(false);
+        setEngineVersion("v3");
+        setRoundType("common");
+        setPhase("ready");
+        setEntryStatus(snapshot.entryState === "resume" ? "ready_to_resume" : "ready_to_start");
         request.markSettled();
         return;
       }
@@ -2665,9 +3103,26 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     if (voice.status !== "live" || missionState !== "active") return;
     if (askedIndexRef.current !== -1) return;
 
-    const currentQ = questionsRef.current[currentIndexRef.current];
     const past = pastMessagesRef.current;
     const lastK = [...past].reverse().find((m) => m.role === "k");
+
+    if (missionPolicyRef.current === "v3_single_daily") {
+      askedIndexRef.current = 0;
+      if (lastK) {
+        setTurnPhase("child_listening");
+        return;
+      }
+      const openingMessage = v3OpeningMessageRef.current;
+      if (!openingMessage) {
+        setTurnPhase("child_listening");
+        return;
+      }
+      if (isLiveModeRef.current) setTurnPhase("k_speaking");
+      askQuestion(-1, openingMessage);
+      return;
+    }
+
+    const currentQ = questionsRef.current[currentIndexRef.current];
 
     if (currentQ && lastK && lastK.text && lastK.text.includes(currentQ.question_text)) {
       // 재접속 전에 이미 물어본 질문 — 다시 발화하지 않고 아이 답변을 기다린다.
@@ -3076,6 +3531,11 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
             onClick={async () => {
               if (errorMsg === "연결 문제로 미션 종료 확인에 실패했어요. 다시 시도해 주세요.") {
                 handleForcedExpiry();
+                return;
+              }
+              if (missionPolicyRef.current === "v3_single_daily" && retryV3TurnRef.current) {
+                setShowRetryButton(false);
+                retryV3TurnRef.current();
                 return;
               }
               const pending = await readPendingMissionTurn().catch(() => null);

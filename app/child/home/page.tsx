@@ -273,18 +273,19 @@ export default function ChildHomePage() {
     progressText = display.badge || "";
 
     if (isV3Policy) {
+      // v3 전용 화면은 폐기됐다. 기존 미션 화면이 정책에 따라 v3 계약을 처리한다.
       if (destination.kind === "blocked") {
         const reason = destination.reason;
         if (reason === "before_open" || reason === "closed" || reason === "unavailable") {
           missionUrl = "#";
           isClickBlocked = true;
         } else {
-          // completed, safety_paused, force_ended -> v3 완료/종료 화면으로 이동
-          missionUrl = "/child/missions/v3";
+          // completed, safety_paused, force_ended -> 종료 화면 확인을 위해 진입 허용
+          missionUrl = "/child/missions";
           isClickBlocked = false;
         }
       } else {
-        missionUrl = "/child/missions/v3";
+        missionUrl = "/child/missions";
         isClickBlocked = false;
       }
     }

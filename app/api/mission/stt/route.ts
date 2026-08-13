@@ -87,13 +87,50 @@ export async function POST(req: NextRequest) {
   // 처리한다(useVoiceChat 훅이 공용). 미션 전용 활성 상태 검사는 실제 미션 세션에만 적용한다
   // — 자유대화 세션에 적용하면 session_type 불일치로 매번 거부되어 자유대화 STT가 전면 막힌다.
   if (session.session_type === "mission") {
-    const sessionCheck = await assertMissionSessionActive(authService, body.sessionId);
-    if (!sessionCheck.allowed) {
-      console.error("[mission/stt] Session not active or expired", { sessionId: body.sessionId, childTurnId: body.childTurnId });
-      return NextResponse.json(
-        { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired },
-        { status: sessionCheck.expired ? 403 : 423 }
-      );
+    const { data: progress } = await authService
+      .from("mission_progress")
+      .select("status, round_type, mission_policy_version")
+      .eq("session_id", body.sessionId)
+      .maybeSingle();
+
+    const isV3Session =
+      progress?.mission_policy_version === "v3_single_daily" ||
+      progress?.round_type === "daily_single";
+
+    if (isV3Session) {
+      if (!progress) {
+        return NextResponse.json(
+          { error: "미션 진행 정보를 찾을 수 없습니다.", code: "MISSION_NOT_READY", status: "PROGRESS_NOT_FOUND", expired: false },
+          { status: 423 }
+        );
+      }
+
+      if (progress.status === "FORCE_ENDED") {
+        return NextResponse.json(
+          { error: "미션 시간이 끝났어요", code: "MISSION_EXPIRED", status: "FORCE_ENDED", expired: true },
+          { status: 403 }
+        );
+      }
+
+      if (progress.status === "COMPLETED" || progress.status === "SAFETY_PAUSED") {
+        return NextResponse.json(
+          { error: `Mission is ${progress.status}`, code: progress.status, status: progress.status, expired: false },
+          { status: 423 }
+        );
+      }
+
+      // v3 진행 중 세션 (COMPLETED/SAFETY_PAUSED/FORCE_ENDED가 아닌 상태):
+      // 이미 시작된 세션은 시간창 밖이어도 resume/계속 진행 허용 (v3 계약).
+      // force_end_mission_session RPC를 절대 호출하지 않는다.
+    } else {
+      const sessionCheck = await assertMissionSessionActive(authService, body.sessionId);
+      if (!sessionCheck.allowed) {
+        console.error("[mission/stt] Session not active or expired", { sessionId: body.sessionId, childTurnId: body.childTurnId });
+        return NextResponse.json(
+          { error: sessionCheck.error, code: sessionCheck.code, status: sessionCheck.status, expired: sessionCheck.expired },
+          { status: sessionCheck.expired ? 403 : 423 }
+        );
+      }
     }
   }
 

@@ -85,7 +85,7 @@ export async function assertMissionSessionActive(
 
   const { data: progress, error: progErr } = await service
     .from("mission_progress")
-    .select("status, round_type")
+    .select("status, round_type, mission_policy_version")
     .eq("session_id", sessionId)
     .maybeSingle();
 
@@ -120,6 +120,13 @@ export async function assertMissionSessionActive(
   }
 
   if (session.demo_mode === true) {
+    return { allowed: true };
+  }
+
+  const isV3Session =
+    progress.mission_policy_version === "v3_single_daily" ||
+    progress.round_type === "daily_single";
+  if (isV3Session) {
     return { allowed: true };
   }
 
