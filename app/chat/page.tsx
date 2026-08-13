@@ -77,6 +77,8 @@ export default function ChatPage() {
   const currentWindowRef = useRef<string | null>(null);
   const childIdRef = useRef<string | null>(null);
   const rewardRequestSessionsRef = useRef(new Set<string>());
+  const rewardFinalizedSessionsRef = useRef(new Set<string>());
+  const exitAfterRewardRef = useRef(false);
   
   useEffect(() => {
     childIdRef.current = childId;
@@ -313,6 +315,17 @@ export default function ChatPage() {
     return supabaseRef.current;
   }, []);
 
+  const finishPendingExit = useCallback(() => {
+    if (!exitAfterRewardRef.current) return;
+    exitAfterRewardRef.current = false;
+    router.replace("/child/home");
+  }, [router]);
+
+  const handleCloseDailyReward = useCallback(() => {
+    setDailyReward(null);
+    finishPendingExit();
+  }, [finishPendingExit]);
+
   useEffect(() => {
     reset();
     setReportDone(false);
@@ -381,15 +394,33 @@ export default function ChatPage() {
 
     const finalizeDailyReward = async () => {
       while (pendingMessageWritesRef.current.size > 0) {
-        await Promise.allSettled(Array.from(pendingMessageWritesRef.current));
+        const pendingWrites = Array.from(pendingMessageWritesRef.current);
+        let waitTimeoutId: number | null = null;
+        const waitResult = await Promise.race([
+          Promise.allSettled(pendingWrites).then(() => "settled" as const),
+          new Promise<"timeout">((resolve) => {
+            waitTimeoutId = window.setTimeout(() => resolve("timeout"), 8000);
+          }),
+        ]);
+        if (waitTimeoutId !== null) window.clearTimeout(waitTimeoutId);
+        if (waitResult === "timeout") {
+          console.error("[freechat-reward] pending message writes timed out", {
+            sessionId,
+            pendingCount: pendingMessageWritesRef.current.size,
+          });
+          break;
+        }
       }
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const abortController = new AbortController();
+        const timeoutId = window.setTimeout(() => abortController.abort(), 8000);
         try {
           const response = await fetch("/api/chat/pause", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sessionId, turnCount: childTurnCount, ended: true }),
+            signal: abortController.signal,
           });
 
           if (!response.ok) {
@@ -406,6 +437,8 @@ export default function ChatPage() {
               eventType: "freechat_reward_request_failed",
               extra: { status: response.status, attempt },
             });
+            rewardFinalizedSessionsRef.current.add(sessionId);
+            finishPendingExit();
             return;
           }
 
@@ -419,11 +452,16 @@ export default function ChatPage() {
               eventType: "freechat_reward_response_invalid",
               extra: { attempt },
             });
+            rewardFinalizedSessionsRef.current.add(sessionId);
+            finishPendingExit();
             return;
           }
 
+          rewardFinalizedSessionsRef.current.add(sessionId);
           if (getFreechatRewardModalContent(parsed.reward)) {
             setDailyReward(parsed.reward);
+          } else {
+            finishPendingExit();
           }
           return;
         } catch (error) {
@@ -440,12 +478,16 @@ export default function ChatPage() {
             eventType: "freechat_reward_request_failed",
             extra: { attempt, reason: "network_or_parse_error" },
           });
+          rewardFinalizedSessionsRef.current.add(sessionId);
+          finishPendingExit();
+        } finally {
+          window.clearTimeout(timeoutId);
         }
       }
     };
 
     void finalizeDailyReward();
-  }, [status, sessionId, getTranscript]);
+  }, [status, sessionId, getTranscript, finishPendingExit]);
 
   useEffect(() => {
     voiceBubbleRef.current?.scrollTo({ top: voiceBubbleRef.current.scrollHeight, behavior: "smooth" });
@@ -767,12 +809,27 @@ export default function ChatPage() {
     }
   }
 
+  const dailyRewardPresentation = dailyReward
+    ? getFreechatRewardModalContent(dailyReward)
+    : null;
+  const dailyRewardModal = (
+    <GoldKeyRewardModal
+      open={dailyRewardPresentation !== null}
+      title={dailyRewardPresentation?.title ?? ""}
+      description={dailyRewardPresentation?.description ?? ""}
+      awarded={dailyRewardPresentation?.awarded ?? false}
+      onClose={handleCloseDailyReward}
+      idPrefix="freechat-daily-reward"
+    />
+  );
+
   if (!mounted || usagePhase === "checking") {
     return (
       <DemoFrame>
         <div className="h-full flex items-center justify-center" style={{ background: "var(--color-k-surface)" }}>
           <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
         </div>
+        {dailyRewardModal}
       </DemoFrame>
     );
   }
@@ -796,6 +853,7 @@ export default function ChatPage() {
             </button>
           </div>
         </div>
+        {dailyRewardModal}
       </DemoFrame>
     );
   }
@@ -821,13 +879,10 @@ export default function ChatPage() {
             </button>
           </div>
         </div>
+        {dailyRewardModal}
       </DemoFrame>
     );
   }
-
-  const dailyRewardPresentation = dailyReward
-    ? getFreechatRewardModalContent(dailyReward)
-    : null;
 
   return (
     <DemoFrame>
@@ -865,8 +920,26 @@ export default function ChatPage() {
           {/* 공통 헤더 */}
           <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
             <AppTopHeader title="대화" onBack={() => {
-                  if (isLive) stopSession();
-                  setSessionActive(false);
+                  if (isLive) {
+                    if (!sessionId) {
+                      stopSession();
+                      setSessionActive(false);
+                      router.replace("/child/home");
+                      return;
+                    }
+                    exitAfterRewardRef.current = true;
+                    stopSession();
+                    setSessionActive(false);
+                    return;
+                  }
+                  if (
+                    status === "ended"
+                    && sessionId
+                    && !rewardFinalizedSessionsRef.current.has(sessionId)
+                  ) {
+                    exitAfterRewardRef.current = true;
+                    return;
+                  }
                   router.replace("/child/home");
             }} />
           </div>
@@ -1123,14 +1196,7 @@ export default function ChatPage() {
             정확히 같은 자리에 겹쳐 X가 완전히 가려졌다 - 미션 화면과 달리 진행률 바가
             없어 X 버튼 아래로 충분히 내려야 한다(X 버튼 높이 44px + 상단 패딩 고려). */}
         {mode !== "text" && <KChatbotWidget appSurface="child" topOffsetPx={64} />}
-        <GoldKeyRewardModal
-          open={dailyRewardPresentation !== null}
-          title={dailyRewardPresentation?.title ?? ""}
-          description={dailyRewardPresentation?.description ?? ""}
-          awarded={dailyRewardPresentation?.awarded ?? false}
-          onClose={() => setDailyReward(null)}
-          idPrefix="freechat-daily-reward"
-        />
+        {dailyRewardModal}
       </div>
     </DemoFrame>
   );
