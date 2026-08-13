@@ -265,6 +265,26 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setSttMicEnabled(enabled);
   }, [setSttMicEnabled]);
 
+  /** 텍스트 모드 전환 시 실제 마이크 MediaStream을 정지해 OS/브라우저 마이크 사용
+   *  표시를 끈다. setMicEnabled(false)는 매 PTT 턴마다 불리는 경량 게이트라
+   *  스트림을 건드리지 않으므로, 이 별도 함수로만 스트림을 해제해야 한다. */
+  const releaseMicrophone = useCallback(() => {
+    stopSttCapture();
+  }, [stopSttCapture]);
+
+  /** 음성 모드로 복귀할 때 마이크 스트림을 미리 재획득한다. 실패하면(권한 거부 등)
+   *  기존 status/error 상태로 전환해 화면에 "연결 오류"로 노출되게 한다 — 조용히
+   *  실패해 "듣고 있어"인데 실제로는 녹음되지 않는 상황을 막는다. */
+  const reacquireMicrophone = useCallback(async () => {
+    try {
+      await startSttCapture();
+    } catch (err) {
+      console.error("[VoiceChat] reacquireMicrophone error:", err);
+      setError((err as Error).message);
+      updateStatus("error");
+    }
+  }, [startSttCapture, updateStatus]);
+
   const setInputMode = useCallback((mode: "auto" | "manual") => {
     inputModeRef.current = mode;
     setSttInputMode(mode);
@@ -482,5 +502,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     status, error, transcript, interimChildText, isSpeaking, isResponding,
     startSession, stopSession, reset, getTranscript, getLastAsrConfidence, seedTranscript,
     speak, respondText, sendTypedText, sayText, stopSpeaking, setMicEnabled, setInputMode, manualFinalize, cancelFinalize,
+    releaseMicrophone, reacquireMicrophone,
   };
 }

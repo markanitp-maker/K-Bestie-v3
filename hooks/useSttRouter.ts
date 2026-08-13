@@ -820,6 +820,11 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
   const stopCapture = useCallback(() => {
     captureRequestedRef.current = false;
     captureGenerationRef.current += 1;
+    // 진행 중인 getUserMedia promise가 있다면 즉시 참조를 비운다 — 그 promise는
+    // resolve 시 stream을 버리고 조용히 끝나므로(위 startCapture의 세대 검사),
+    // .finally()가 나중에 비우는 걸 기다리면 그 사이 도착한 startCapture() 호출이
+    // 이 죽은 promise를 그대로 재사용해 "성공했지만 스트림 없음" 상태에 빠진다.
+    capturePromiseRef.current = null;
     cancel();
     releaseCaptureResources();
   }, [cancel, releaseCaptureResources]);
@@ -932,26 +937,16 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
     return trackedPromise;
   }, [releaseCaptureResources, resetVad]);
 
+  // setMicEnabled는 매 수동 모드 PTT(push-to-talk) 턴마다 호출되는 경량 게이트다.
+  // MediaStream/AudioContext는 여기서 건드리지 않는다 — 세션 시작(startCapture, 이
+  // useVoiceChat.startSession에서 1회 호출)에서 획득해 세션 종료(stopCapture)까지
+  // 재사용하는 것이 원래 설계다. 텍스트 모드 전환처럼 실제로 마이크 스트림을 끊어
+  // OS 마이크 표시를 꺼야 하는 경우는 startCapture/stopCapture를 직접 호출해야 한다
+  // (useVoiceChat이 이를 별도로 노출한다) — setMicEnabled를 오버로드하면 안 된다.
   const setMicEnabled = useCallback((enabled: boolean) => {
     micEnabledRef.current = enabled;
-    if (!enabled) {
-      captureRequestedRef.current = false;
-      captureGenerationRef.current += 1;
-      if (controllerRef.current?.state === "LISTENING") cancel();
-      releaseCaptureResources();
-      return;
-    }
-
-    const reacquireCapture = async () => {
-      await startCapture();
-      // false→true가 기존 getUserMedia 요청 도중 일어난 경우, 이전 세대의 스트림은
-      // 의도대로 폐기한 뒤 현재 세대에서 한 번 더 획득한다.
-      if (micEnabledRef.current && !streamRef.current) await startCapture();
-    };
-    void reacquireCapture().catch((error: unknown) => {
-      console.error("[useSttRouter] 마이크 스트림 재획득 실패:", error);
-    });
-  }, [cancel, releaseCaptureResources, startCapture]);
+    if (!enabled && controllerRef.current?.state === "LISTENING") cancel();
+  }, [cancel]);
 
   const setInputMode = useCallback((mode: "auto" | "manual") => {
     inputModeRef.current = mode;

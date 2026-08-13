@@ -115,6 +115,8 @@ export default function ChatPage() {
     sayText,
     sendTypedText,
     setMicEnabled,
+    releaseMicrophone,
+    reacquireMicrophone,
     getLastAsrConfidence,
     setInputMode,
     manualFinalize,
@@ -554,9 +556,12 @@ export default function ChatPage() {
     setInputMode("manual");
     setIsAuto(false);
     setMicEnabled(false);
+    // setMicEnabled는 처리 게이트일 뿐 실제 마이크 스트림은 안 끈다 — 텍스트 모드에서
+    // OS/브라우저 마이크 사용 표시를 끄려면 스트림 자체를 정지해야 한다.
+    releaseMicrophone();
     setMode("text");
     if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, "manual");
-  }, [setMicEnabled, setInputMode, manualFinalize, childId]);
+  }, [setMicEnabled, releaseMicrophone, setInputMode, manualFinalize, childId]);
 
   const switchToVoice = useCallback(() => {
     // 키보드 종료 후에는 항상 수동 음성 모드로 복귀한다 — 자동 VAD를 다시 켜지 않고,
@@ -564,7 +569,11 @@ export default function ChatPage() {
     setInputMode("manual");
     setIsAuto(false);
     setMode("voice");
-  }, [setInputMode]);
+    // 텍스트 모드에서 정지해둔 마이크 스트림을 미리 재획득해, 사용자가 마이크
+    // 버튼을 눌렀을 때 곧바로 녹음이 시작되도록 한다(실패 시 상태가 "연결 오류"로
+    // 전환되어 화면에 노출된다).
+    void reacquireMicrophone();
+  }, [setInputMode, reacquireMicrophone]);
 
   const handleSendText = useCallback(async () => {
     const text = textInput.trim();

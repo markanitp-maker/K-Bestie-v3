@@ -506,13 +506,97 @@ test("마이크 비활성화는 MediaStream 트랙을 멈추고 재활성화는 
     assert.equal(getUserMediaCalls, 1);
     assert.equal(tracks[0]?.stopCalls, 0);
 
+    // setMicEnabled는 매 PTT 턴마다 불리는 경량 게이트일 뿐 스트림을 건드리지 않는다 —
+    // 텍스트 모드 전환은 stopCapture/startCapture를 직접 호출하는 쪽의 책임이다.
     activeRouter.setMicEnabled(false);
-    assert.equal(tracks[0]?.stopCalls, 1, "텍스트 모드 전환 시 기존 트랙이 정지해야 한다");
-
+    assert.equal(tracks[0]?.stopCalls, 0, "setMicEnabled(false)는 스트림을 정지하지 않아야 한다(수동 PTT 회귀 방지)");
     activeRouter.setMicEnabled(true);
-    await flushAsync();
-    assert.equal(getUserMediaCalls, 2, "음성 모드 복귀 시 getUserMedia를 다시 호출해야 한다");
+    assert.equal(getUserMediaCalls, 1, "setMicEnabled(true)는 스트림을 재획득하지 않아야 한다");
+
+    activeRouter.stopCapture();
+    assert.equal(tracks[0]?.stopCalls, 1, "텍스트 모드 전환(stopCapture) 시 기존 트랙이 정지해야 한다");
+
+    await activeRouter.startCapture();
+    assert.equal(getUserMediaCalls, 2, "음성 모드 복귀(startCapture) 시 getUserMedia를 다시 호출해야 한다");
     assert.equal(tracks[1]?.stopCalls, 0);
+
+    activeRouter.stopCapture();
+    assert.equal(tracks[1]?.stopCalls, 1);
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, "navigator", originalNavigator);
+    else delete (globalThis as { navigator?: unknown }).navigator;
+    if (originalAudioContext) Object.defineProperty(globalThis, "AudioContext", originalAudioContext);
+    else delete (globalThis as { AudioContext?: unknown }).AudioContext;
+  }
+});
+
+test("getUserMedia 진행 중 stopCapture가 불려도 이후 startCapture는 새 스트림을 획득한다(경합 방지)", async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const originalAudioContext = Object.getOwnPropertyDescriptor(globalThis, "AudioContext");
+  const tracks: Array<{ stopCalls: number; stop(): void }> = [];
+  let getUserMediaCalls = 0;
+  let resolveFirstCall: (() => void) | null = null;
+
+  class FakeAudioContext {
+    public destination = {};
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createScriptProcessor() { return { connect() {}, disconnect() {}, onaudioprocess: null }; }
+    close(): Promise<void> { return Promise.resolve(); }
+  }
+
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: async () => {
+          getUserMediaCalls += 1;
+          const isFirstCall = getUserMediaCalls === 1;
+          if (isFirstCall) {
+            // 첫 번째 획득은 stopCapture가 먼저 도착할 때까지 인위적으로 지연시켜
+            // "진행 중에 세대가 바뀌는" 경합을 재현한다.
+            await new Promise<void>((resolve) => { resolveFirstCall = resolve; });
+          }
+          const track = { stopCalls: 0, stop() { this.stopCalls += 1; } };
+          tracks.push(track);
+          return { getTracks: () => [track] } as unknown as MediaStream;
+        },
+      },
+    },
+  });
+  Object.defineProperty(globalThis, "AudioContext", { configurable: true, value: FakeAudioContext });
+
+  let router: ReturnType<typeof useSttRouter> | null = null;
+  const Harness = () => {
+    router = useSttRouter({
+      sessionId: "session-1",
+      childTurnId: "turn-1",
+      onFinalTranscript: () => {},
+      onFailure: () => {},
+    });
+    return null;
+  };
+
+  try {
+    renderToString(React.createElement(Harness));
+    assert.ok(router);
+    const activeRouter = router as ReturnType<typeof useSttRouter>;
+
+    const firstCapture = activeRouter.startCapture();
+    // 아직 getUserMedia가 resolve되지 않은 상태에서 stopCapture를 호출한다.
+    activeRouter.stopCapture();
+    resolveFirstCall?.();
+    await firstCapture;
+
+    // 세대가 바뀐 뒤 도착한 스트림은 즉시 폐기되어야 하고(트랙 정지), streamRef에
+    // 남아있으면 안 된다.
+    assert.equal(tracks[0]?.stopCalls, 1, "폐기된 세대의 스트림은 트랙이 정지돼야 한다");
+
+    // 이 시점에서 다시 startCapture를 호출하면, 죽은 promise를 재사용하지 않고
+    // 반드시 새 getUserMedia 호출로 새 스트림을 획득해야 한다("성공했지만 스트림
+    // 없음"으로 조용히 끝나는 결함의 회귀 테스트).
+    await activeRouter.startCapture();
+    assert.equal(getUserMediaCalls, 2, "경합 이후 startCapture는 새 getUserMedia를 호출해야 한다");
+    assert.equal(tracks[1]?.stopCalls, 0, "새로 획득한 스트림은 살아있어야 한다");
 
     activeRouter.stopCapture();
     assert.equal(tracks[1]?.stopCalls, 1);
