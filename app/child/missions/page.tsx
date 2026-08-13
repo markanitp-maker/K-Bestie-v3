@@ -1038,7 +1038,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
             const closingText = MISSION_COMPLETION_CLOSING_LINE;
             const finalized = await finalizeServerTurn(closingText);
             if (!finalized.completed) throw new Error("MISSION_COMPLETION_NOT_CONFIRMED");
-            const rwStatus = finalized.rewardStatus ?? "none";
+            const rwStatus = finalized.rewardStatus ?? "unknown";
             setRewardStatus(rwStatus);
             // DB에 먼저 확정한 K 문구와 실제 재생/폴백 문구를 동일하게 유지한다.
             // 황금열쇠 지급 여부는 서버 응답 기반 보상 모달에서 별도로 안내한다.
@@ -2823,7 +2823,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
             data-testid="locked-completed-chat"
             onClick={() => {
               setSessionActive(false);
-              router.push("/chat");
+              router.replace("/chat");
             }}
             className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
             style={{ background: "var(--color-k-orange)" }}

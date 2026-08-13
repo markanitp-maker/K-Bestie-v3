@@ -413,6 +413,6 @@ test("오늘 완료한 미션에 재진입하면 재시작 없이 잠금 화면�
   assert.equal(Object.hasOwn(startRequest.request as object, "confirmRestart"), false);
 
   await click("locked-completed-chat");
-  const chatNavigation = runtime.timeline.find((item) => item.event === "router.push");
+  const chatNavigation = runtime.timeline.find((item) => item.event === "router.replace" && Array.isArray(item.args) && item.args[0] === "/chat");
   assert.deepEqual(chatNavigation?.args, ["/chat"]);
 });
