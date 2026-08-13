@@ -16,6 +16,7 @@ import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 import { getKstHour, currentRound } from "@/lib/mission/missionTimeGate";
 import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
 import { getMissionPhase, assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
+import { resolveMissionPolicyVersionForChild } from "@/lib/mission-v3/policyResolution";
 
 export const runtime = "nodejs";
 
@@ -92,6 +93,31 @@ export async function POST(req: NextRequest) {
   const businessDate = `${yyyy}-${mm}-${dd}`;
   const startOfDayKst = new Date(`${businessDate}T00:00:00+09:00`).toISOString();
   const endOfDayKst = new Date(`${businessDate}T23:59:59.999+09:00`).toISOString();
+
+  // ── Mission v3 cutover guard:
+  // 정책이 v3_single_daily이거나 혼합(isMixed) 상태이면 신규 v2 세션 생성을 차단한다.
+  // 당일 v2 세션이 이미 있는 아동은 resolveMissionPolicyVersionForChild가 sticky하게 v2_dual을 반환하므로 통과하여 resume된다.
+  let resolvedPolicy: Awaited<ReturnType<typeof resolveMissionPolicyVersionForChild>>;
+  try {
+    resolvedPolicy = await resolveMissionPolicyVersionForChild({ db: service, childId, now });
+  } catch (err) {
+    console.error("[start/route] resolveMissionPolicyVersionForChild error:", err);
+    return NextResponse.json({ error: "Database error" }, { status: 500 });
+  }
+
+  if (resolvedPolicy.version === "v3_single_daily" || resolvedPolicy.isMixed) {
+    return NextResponse.json(
+      {
+        error: resolvedPolicy.isMixed
+          ? "미션 정책 설정이 올바르지 않습니다."
+          : "새로운 미션 정책이 적용되었습니다.",
+        code: "MISSION_POLICY_CHANGED",
+        policyVersion: resolvedPolicy.version,
+        effectiveAt: resolvedPolicy.effectiveAt,
+      },
+      { status: 403 }
+    );
+  }
 
   // ── 하루 1미션 compatibility guard: KST 기준 오늘(business_date) 생성된 미션을
   // round_type과 무관하게 모두 조회한다. quota의 기준은 child_id + business_date이며,

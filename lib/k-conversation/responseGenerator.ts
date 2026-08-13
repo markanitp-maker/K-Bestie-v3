@@ -52,6 +52,8 @@ const ACTION_DIRECTIVES: Record<ConversationAction, string> = {
   FOLLOW_UP: "아이가 한 말에서 자연스럽게 이어지는 반응을 해줘(캐묻지는 마).",
   TOPIC_SHIFT: "지금 주제를 억지로 이어가지 말고 아이가 편해할 다른 이야기로 자연스럽게 넘어가.",
   JUST_LISTEN: "굳이 되묻거나 파고들지 말고 짧게 들어주는 반응만 해.",
+  PLAYFUL_GAME_CHOSUNG:
+    "아이와 함께 신나게 초성게임을 해. 문제를 내거나 아이 답을 듣고 맞으면 칭찬, 틀리면 격려와 힌트로 반응해줘(정답을 먼저 말해버리지 마).",
 };
 
 function buildSystemInstruction(input: ResponseGeneratorInput): string {

@@ -19,7 +19,8 @@ export type ConversationAction =
   | "COMFORT"
   | "FOLLOW_UP"
   | "TOPIC_SHIFT"
-  | "JUST_LISTEN";
+  | "JUST_LISTEN"
+  | "PLAYFUL_GAME_CHOSUNG";
 
 export interface EngineInput {
   childId: string;

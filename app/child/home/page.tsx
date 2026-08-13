@@ -14,6 +14,12 @@ import { appendVocative } from "@/lib/utils/koreanParticle";
 import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
 import { useNotificationInbox } from "@/lib/notifications/useNotificationInbox";
 import { revokeCurrentPushInstallation } from "@/lib/notifications/usePushSubscription";
+import {
+  parseMissionEntrySnapshot,
+  resolveMissionDestination,
+  resolveMissionDisplay,
+} from "@/lib/mission-v3/clientEntry";
+import type { MissionEntrySnapshot } from "@/lib/mission-v3/entryContract";
 
 // 이 프로젝트는 아이콘 라이브러리(lucide-react/heroicons)를 설치하지 않고 인라인
 // SVG·이모지만 사용하는 관례라(package.json에 둘 다 없음), 로그아웃/닫기 아이콘 2개만
@@ -54,9 +60,8 @@ export default function ChildHomePage() {
   const [noChild, setNoChild] = useState(false);
   const [loading, setLoading] = useState(true);
   
-  // Mission state
-  const [missionStatus, setMissionStatus] = useState<any>(null);
-  const [missionClosed, setMissionClosed] = useState(false);
+  // Mission snapshot state
+  const [missionSnapshot, setMissionSnapshot] = useState<MissionEntrySnapshot | null>(null);
   
   // PWA install banner state
   const { installPrompt, isIOS, isStandalone, handleInstall } = useInstallPrompt();
@@ -125,10 +130,9 @@ export default function ChildHomePage() {
 
     const fetchAll = async () => {
       try {
-        const [gkRes, timeCfgRes, progressRes] = await Promise.allSettled([
+        const [gkRes, progressRes] = await Promise.allSettled([
           fetch(`/api/goldkey/balance?childId=${child.id}`),
-          fetch("/api/config/child-time-restrictions"),
-          fetch(`/api/mission/today-progress?childId=${child.id}`)
+          fetch(`/api/mission/v3/today-progress?childId=${child.id}`)
         ]);
 
         if (gkRes.status === "fulfilled" && gkRes.value.ok) {
@@ -136,25 +140,17 @@ export default function ChildHomePage() {
           setGoldKeyBalance(gkData.balance);
         }
 
-        let timeRestrictionsEnabled = false;
-        if (timeCfgRes.status === "fulfilled" && timeCfgRes.value.ok) {
-          const cfg = await timeCfgRes.value.json();
-          if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
-        }
-
-        // 운영시간 게이트는 이 화면에서 다시 계산하지 않고 /api/mission/today-progress가
-        // 돌려주는 currentRound(lib/mission/missionTimeGate.ts와 동일 정본 로직)를 그대로
-        // 신뢰한다 — 예전에 이 화면이 자체적으로 13~19시/19~23시로 다시 계산했다가 실제
-        // 미션 화면의 13~17시/19~23시 정책과 어긋난 적이 있어(리뷰에서 발견) 소스를 하나로 통일.
+        // mission snapshot 조회 및 검증
         if (progressRes.status === "fulfilled" && progressRes.value.ok) {
-          const progData = await progressRes.value.json();
-          setMissionStatus(progData);
-          if (!progData.activeRound && timeRestrictionsEnabled) {
-            setMissionClosed(true);
-          }
+          const raw = await progressRes.value.json();
+          const snapshot = parseMissionEntrySnapshot(raw);
+          setMissionSnapshot(snapshot);
+        } else {
+          setMissionSnapshot(null);
         }
       } catch (err) {
         console.error("Error fetching home data:", err);
+        setMissionSnapshot(null);
       } finally {
         setLoading(false);
       }
@@ -255,27 +251,50 @@ export default function ChildHomePage() {
   const greetingName = childName ? appendVocative(childName) : "안녕";
   const greetingTitle = childName ? `안녕, ${greetingName}!` : "안녕!";
 
+  const isV3Policy = missionSnapshot?.policyVersion === "v3_single_daily";
+
   let missionTitle = "미션 진행";
   let missionDesc = "오늘의 미션을 시작해요";
   let missionBubble = "오늘의 미션을 시작해 볼까?";
-  let missionUrl = "/child/missions";
   let progressText = "";
-  
-  if (missionClosed) {
-    missionBubble = "지금은 미션을 할 수 없는 시간이야.";
-  } else if (missionStatus?.hasMission) {
-    if (missionStatus.status === "COMPLETED" || missionStatus.validAnswerCount >= missionStatus.requiredCount) {
-      missionTitle = "미션 완료";
-      missionDesc = "오늘의 미션을 모두 완료했어요";
-      missionBubble = "오늘의 미션을 모두 완료했어!";
-      progressText = "완료";
-    } else if (missionStatus.status === "IN_PROGRESS" || missionStatus.validAnswerCount > 0) {
-      missionTitle = "미션 계속하기";
-      missionDesc = "진행 중인 미션을 이어서 해요";
-      missionBubble = "미션이 진행되고 있어요. 같이 할까?";
-      progressText = `${missionStatus.validAnswerCount}/${missionStatus.requiredCount}`;
+
+  let missionUrl = "/child/missions";
+  let isClickBlocked = false;
+
+  if (missionSnapshot) {
+    const display = resolveMissionDisplay(missionSnapshot);
+    const destination = resolveMissionDestination(missionSnapshot);
+
+    missionTitle = display.title;
+    missionDesc = display.description;
+    missionBubble = missionSnapshot.entryState === "resume"
+      ? "미션이 진행되고 있어요. 같이 할까?"
+      : display.bubble || "오늘의 미션을 시작해 볼까?";
+    progressText = display.badge || "";
+
+    if (isV3Policy) {
+      if (destination.kind === "blocked") {
+        const reason = destination.reason;
+        if (reason === "before_open" || reason === "closed" || reason === "unavailable") {
+          missionUrl = "#";
+          isClickBlocked = true;
+        } else {
+          // completed, safety_paused, force_ended -> v3 완료/종료 화면으로 이동
+          missionUrl = "/child/missions/v3";
+          isClickBlocked = false;
+        }
+      } else {
+        missionUrl = "/child/missions/v3";
+        isClickBlocked = false;
+      }
     }
   }
+
+  const handleMissionClick = (e: React.MouseEvent) => {
+    if (isClickBlocked) {
+      e.preventDefault();
+    }
+  };
 
   return (
     <DemoFrame>
@@ -370,6 +389,7 @@ export default function ChildHomePage() {
             {/* Mission Card (Primary) */}
             <Link 
               href={missionUrl}
+              onClick={handleMissionClick}
               data-testid="mission-primary-card"
               className="flex min-h-[74px] w-full items-center gap-3 rounded-[22px] px-4 py-3 shadow-[0_6px_14px_rgba(197,77,9,0.20)] transition-transform active:scale-[0.98]"
               style={{ background: "var(--color-k-orange)" }}

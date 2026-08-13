@@ -33,6 +33,7 @@ import { VoiceConversationStateBadge, type VoiceConversationState } from "@/comp
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { clearPendingMissionTurn, readPendingMissionTurn, savePendingMissionTurn } from "@/lib/mission/pendingTurnStore";
 import { postMissionTurnWithRetry } from "@/lib/mission/turnRequest";
+import { parseMissionEntrySnapshot, resolveMissionDestination } from "@/lib/mission-v3/clientEntry";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -151,7 +152,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const searchParams = rawSearchParams ?? new URLSearchParams();
   const { quality: connectionQuality, recordStageResult, recordNormalTurn } = usePipelineConnectionQuality();
 
-  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "turn_retry" | "locked_completed">("loading");
+  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "turn_retry" | "locked_completed" | "safety_paused" | "force_ended">("loading");
   // 031: MISSION_SCHEDULE_ENFORCED(Production 전용) 여부 — 서버(/api/config/child-time-restrictions)가
   // 계산해 내려준 값을 그대로 저장해 "closed"/완료잠금 화면의 문구 분기에만 쓴다.
   const [scheduleEnforced, setScheduleEnforced] = useState(false);
@@ -1714,7 +1715,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   useEffect(() => {
     if (phase === "ready" && missionState !== "completed") {
       setSessionActive(true);
-    } else if (missionState === "completed" || phase === "closed" || phase === "error" || phase === "locked_completed") {
+    } else if (missionState === "completed" || phase === "closed" || phase === "error" || phase === "locked_completed" || phase === "safety_paused" || phase === "force_ended") {
       setSessionActive(false);
     }
   }, [phase, missionState]);
@@ -2075,6 +2076,35 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
 
       if (!res.ok) {
+        if (res.status === 403 && data.code === "MISSION_POLICY_CHANGED") {
+          try {
+            const progressRes = await fetch(`/api/mission/v3/today-progress?childId=${cid}`, {
+              signal: request.signal,
+            });
+            if (!request.isActive()) return;
+            if (!progressRes.ok) throw new Error("Mission policy snapshot refresh failed");
+
+            const progress = await progressRes.json();
+            if (!request.isActive()) return;
+            const snapshot = parseMissionEntrySnapshot(progress);
+            if (!snapshot) throw new Error("Mission policy snapshot is invalid");
+
+            const destination = resolveMissionDestination(snapshot);
+            if (destination.kind === "v3") {
+              router.replace(`/child/missions/v3?childId=${cid}`);
+              request.markSettled();
+              return;
+            }
+          } catch (error: unknown) {
+            if (isAbortError(error)) throw error;
+          }
+          if (!request.isActive()) return;
+          setErrorMsg("미션 상태를 확인하지 못했어요. 잠시 후 다시 해 주세요.");
+          setPhase("error");
+          setEntryStatus("error");
+          request.markSettled();
+          return;
+        }
         if (res.status === 403 || data.code === "MISSION_EXPIRED" || data.scheduleClosed || data.expired || data.status === "FORCE_ENDED") {
           const expiryResult = await handleForcedExpiry(request.isActive);
           if (!request.isActive()) return;
@@ -2297,7 +2327,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         setEntryStatus("active");
       }
       request.markSettled();
-  }, [handleForcedExpiry]);
+  }, [handleForcedExpiry, router]);
 
   // 037 §21/§22: 조회·시작·이어하기 실패 후 "다시 시도"가 정확히 직전에 하려던
   // 동작(확인/시작/이어하기)을 그대로 재시도하도록, 실행 직전에 그 재시도 함수 자체를 담아둔다.
@@ -2369,39 +2399,92 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       const hour = getKstHour();
       const qpRound = searchParams?.get("roundType") as RoundType | null;
 
-      let timeRestrictionsEnabled = false;
-      let cfgActiveRound: RoundType | null = null;
-      let cfgScheduleEnforced = false;
+      let snapshot = null;
+      let rawProgress: Record<string, unknown> | null = null;
       try {
         if (!request.isActive()) return;
-        const cfgRes = await fetch("/api/config/child-time-restrictions", { signal: request.signal });
+        const progressRes = await fetch(`/api/mission/v3/today-progress?childId=${cid}`, { signal: request.signal });
         if (!request.isActive()) return;
-        if (cfgRes.ok) {
-          const cfg = await cfgRes.json();
-          if (!request.isActive()) return;
-          if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
-          if (cfg.activeRound === "round1_day" || cfg.activeRound === "round2_night") cfgActiveRound = cfg.activeRound;
-          if (typeof cfg.scheduleEnforced === "boolean") cfgScheduleEnforced = cfg.scheduleEnforced;
-        }
+        // fetch는 4xx/5xx에 throw하지 않는다. .ok를 확인하지 않으면 오류 응답의 본문이
+        // 우연히 유효한 snapshot 형태일 때 v3 분기·시간/terminal 차단이 적용된다.
+        // non-ok는 snapshot 실패로 보고 v2 fail-open 경로로 보낸다.
+        if (!progressRes.ok) throw new Error(`today-progress ${progressRes.status}`);
+        const progress = await progressRes.json();
+        if (!request.isActive()) return;
+        rawProgress = progress;
+        snapshot = parseMissionEntrySnapshot(progress);
       } catch (error: unknown) {
         if (isAbortError(error)) throw error;
       }
       if (!request.isActive()) return;
-      setScheduleEnforced(cfgScheduleEnforced);
 
-      // 031: MISSION_SCHEDULE_ENFORCED가 켜져 있으면(Production) 경계값이 다르므로 클라이언트가
-      // 직접 계산한 currentRound(hour)를 쓰지 않고 서버가 내려준 activeRound를 그대로 쓴다
-      // (process.env.MISSION_SCHEDULE_ENFORCED는 이 클라이언트 번들에서는 항상 undefined로
-      // 치환되어 currentRound(hour) 호출만으로는 Production 실제 경계를 재현할 수 없다).
-      const round: RoundType | null = cfgScheduleEnforced
-        ? (qpRound ?? cfgActiveRound)
-        : (qpRound ?? currentRound(hour) ?? (!timeRestrictionsEnabled ? "common" : null));
-      if (!round) {
+      if (!snapshot) {
+        let timeRestrictionsEnabled = false;
+        let cfgActiveRound: RoundType | null = null;
+        let cfgScheduleEnforced = false;
+        try {
+          const cfgRes = await fetch("/api/config/child-time-restrictions", { signal: request.signal });
+          if (!request.isActive()) return;
+          if (cfgRes.ok) {
+            const cfg = await cfgRes.json();
+            if (!request.isActive()) return;
+            if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
+            if (cfg.activeRound === "round1_day" || cfg.activeRound === "round2_night") cfgActiveRound = cfg.activeRound;
+            if (typeof cfg.scheduleEnforced === "boolean") cfgScheduleEnforced = cfg.scheduleEnforced;
+          }
+        } catch (error: unknown) {
+          if (isAbortError(error)) throw error;
+        }
         if (!request.isActive()) return;
-        setPhase("closed");
+        setScheduleEnforced(cfgScheduleEnforced);
+
+        const legacyRound: RoundType | null = cfgScheduleEnforced
+          ? (qpRound ?? cfgActiveRound)
+          : (qpRound ?? currentRound(hour) ?? (!timeRestrictionsEnabled ? "common" : null));
+        if (!legacyRound) {
+          setPhase("closed");
+          request.markSettled();
+          return;
+        }
+
+        setRoundType(legacyRound);
+        await fetchSessionData(cid, legacyRound, true, request);
+        return;
+      }
+
+      setScheduleEnforced(snapshot.timeGate.scheduleEnforced);
+      const destination = resolveMissionDestination(snapshot);
+      if (destination.kind === "v3") {
+        router.replace(`/child/missions/v3?childId=${cid}`);
         request.markSettled();
         return;
       }
+
+      if (destination.kind === "blocked") {
+        if (snapshot.entryState === "before_open") {
+          setErrorMsg("아직 미션 시간이 아니에요. 오전 9시에 다시 만나요!");
+          setPhase("closed");
+        } else if (snapshot.entryState === "closed") {
+          setErrorMsg("오늘 미션 시간이 끝났어요. 내일 다시 만나요!");
+          setPhase("closed");
+        } else if (snapshot.entryState === "completed") {
+          setPhase("locked_completed");
+        } else if (snapshot.entryState === "safety_paused") {
+          setPhase("safety_paused");
+        } else if (snapshot.entryState === "force_ended") {
+          setPhase("force_ended");
+        } else {
+          setPhase("error");
+          setErrorMsg("미션 상태를 확인하지 못했어요. 잠시 후 다시 해 주세요.");
+        }
+        request.markSettled();
+        return;
+      }
+
+      const serverRound = (rawProgress?.roundType === "round1_day" || rawProgress?.roundType === "round2_night" || rawProgress?.roundType === "common")
+        ? (rawProgress.roundType as RoundType)
+        : null;
+      const round: RoundType = qpRound ?? serverRound ?? currentRound(hour, snapshot.timeGate.scheduleEnforced) ?? "common";
       setRoundType(round);
 
       await fetchSessionData(cid, round, true, request);
@@ -2817,7 +2900,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
         <p className="text-5xl">🔒</p>
-        <p className="text-base font-bold text-gray-800">미션을 이미 완료하였습니다. 다음 미션을 기다리세요.</p>
+        <p className="text-base font-bold text-gray-800">오늘의 미션을 모두 완료했어요. 이야기해 줘서 고마워!</p>
         <div className="flex w-full max-w-xs flex-col gap-2">
           <button
             data-testid="locked-completed-chat"
@@ -2840,6 +2923,44 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
             홈으로 돌아가기
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (phase === "safety_paused") {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
+        <p className="text-5xl">🛡️</p>
+        <p className="text-base font-bold text-gray-800">안전을 위해 오늘 미션을 잠시 쉬고 있어요. 보호자 확인 후 다시 만나요.</p>
+        <button
+          onClick={() => {
+            setSessionActive(false);
+            router.replace("/child/home");
+          }}
+          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          style={{ background: "var(--color-k-orange)" }}
+        >
+          홈으로 돌아가기
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === "force_ended") {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
+        <p className="text-5xl">🌙</p>
+        <p className="text-base font-bold text-gray-800">오늘 미션이 종료되었어요. 내일 다시 만나요.</p>
+        <button
+          onClick={() => {
+            setSessionActive(false);
+            router.replace("/child/home");
+          }}
+          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+          style={{ background: "var(--color-k-orange)" }}
+        >
+          홈으로 돌아가기
+        </button>
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { currentRound } from "@/lib/mission/missionTimeGate";
 import { isMissionScheduleEnforced } from "@/lib/mission/missionScheduleFlag";
 
 export type MissionPolicyVersion = "v2_dual" | "v3_single_daily";
@@ -8,6 +9,12 @@ export type DailySingleBlockReason =
   | "before_open"
   | "closed"
   | "daily_limit_reached";
+
+export type MissionTimeGateDisplayKey =
+  | "before_open"
+  | "between_rounds"
+  | "closed"
+  | null;
 
 export interface MissionPolicySnapshot {
   missionPolicyVersion: MissionPolicyVersion;
@@ -18,10 +25,12 @@ export interface MissionTimeGateResult {
   allowed: boolean;
   businessDate: string;
   currentMinute: number;
-  opensAtMinute: 540;
-  closesAtMinute: 1430;
+  opensAtMinute: number;
+  closesAtMinute: number;
   scheduleEnforced: boolean;
+  timeGateEnabled: boolean;
   reason: "before_open" | "closed" | null;
+  displayKey: MissionTimeGateDisplayKey;
 }
 
 interface DailySingleProgressRow {
@@ -52,12 +61,18 @@ export type DailySingleOperationDecision =
       gate?: MissionTimeGateResult;
     };
 
-interface MissionTimePolicyDependencies {
+export function isMissionTimeGateEnabled(): boolean {
+  return process.env.MISSION_TIME_GATE_ENABLED === "true";
+}
+
+export interface MissionTimePolicyDependencies {
   isMissionScheduleEnforced: typeof isMissionScheduleEnforced;
+  isMissionTimeGateEnabled: typeof isMissionTimeGateEnabled;
 }
 
 const DEFAULT_DEPENDENCIES: MissionTimePolicyDependencies = {
   isMissionScheduleEnforced,
+  isMissionTimeGateEnabled,
 };
 
 const KST_CALENDAR_FORMATTER = new Intl.DateTimeFormat("en-CA", {
@@ -123,25 +138,100 @@ export const evaluateMissionTimeGate = async (input: {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...input.dependencies };
   const { businessDate, currentMinute } = getKstCalendarParts(now);
   const scheduleEnforced = dependencies.isMissionScheduleEnforced();
-  const opensAtMinute = 540 as const;
-  const closesAtMinute = 1430 as const;
-  const allowed = !scheduleEnforced
-    || (currentMinute >= opensAtMinute && currentMinute < closesAtMinute);
+  const timeGateEnabled = dependencies.isMissionTimeGateEnabled?.()
+    ?? (process.env.MISSION_TIME_GATE_ENABLED === "true");
 
+  // 1. MISSION_SCHEDULE_ENFORCED=true: 09:00 inclusive ~ 23:50 exclusive
+  if (scheduleEnforced) {
+    const opensAtMinute = 540;
+    const closesAtMinute = 1430;
+    const allowed = currentMinute >= opensAtMinute && currentMinute < closesAtMinute;
+
+    return {
+      allowed,
+      businessDate,
+      currentMinute,
+      opensAtMinute,
+      closesAtMinute,
+      scheduleEnforced: true,
+      timeGateEnabled,
+      reason: allowed
+        ? null
+        : currentMinute < opensAtMinute
+          ? "before_open"
+          : "closed",
+      displayKey: allowed
+        ? null
+        : currentMinute < opensAtMinute
+          ? "before_open"
+          : "closed",
+    };
+  }
+
+  // 2. MISSION_SCHEDULE_ENFORCED=false && MISSION_TIME_GATE_ENABLED=true: legacy currentRound windows
+  //    Window 1 (round1_day): 10:00 (600) ~ 17:50 (1070)
+  //    Window 2 (round2_night): 18:00 (1080) ~ 24:00 (1440)
+  if (timeGateEnabled) {
+    const hour = Math.floor(currentMinute / 60);
+    const minute = currentMinute % 60;
+    const round = currentRound(hour, false, minute);
+
+    if (round === "round1_day") {
+      return {
+        allowed: true,
+        businessDate,
+        currentMinute,
+        opensAtMinute: 600,
+        closesAtMinute: 1070,
+        scheduleEnforced: false,
+        timeGateEnabled: true,
+        reason: null,
+        displayKey: null,
+      };
+    }
+
+    if (round === "round2_night") {
+      return {
+        allowed: true,
+        businessDate,
+        currentMinute,
+        opensAtMinute: 1080,
+        closesAtMinute: 1440,
+        scheduleEnforced: false,
+        timeGateEnabled: true,
+        reason: null,
+        displayKey: null,
+      };
+    }
+
+    // round === null (outside legacy windows)
+    const isBeforeRound1 = currentMinute < 600;
+    const isBetweenRounds = currentMinute >= 1070 && currentMinute < 1080;
+
+    return {
+      allowed: false,
+      businessDate,
+      currentMinute,
+      opensAtMinute: isBeforeRound1 ? 600 : 1080,
+      closesAtMinute: isBeforeRound1 ? 1070 : 1440,
+      scheduleEnforced: false,
+      timeGateEnabled: true,
+      reason: "before_open",
+      displayKey: isBetweenRounds ? "between_rounds" : isBeforeRound1 ? "before_open" : "closed",
+    };
+  }
+
+  // 3. 둘 다 false: 24시간 신규 시작 허용
   return {
-    allowed,
+    allowed: true,
     businessDate,
     currentMinute,
-    opensAtMinute,
-    closesAtMinute,
-    scheduleEnforced,
-    reason: !scheduleEnforced
-      ? null
-      : currentMinute < opensAtMinute
-        ? "before_open"
-        : currentMinute >= closesAtMinute
-          ? "closed"
-          : null,
+    opensAtMinute: 540,
+    closesAtMinute: 1430,
+    scheduleEnforced: false,
+    timeGateEnabled: false,
+    reason: null,
+    displayKey: null,
   };
 };
 

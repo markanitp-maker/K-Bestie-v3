@@ -56,7 +56,7 @@ function pickPrimaryOrRotate(
 }
 
 /** 신호 조합으로 후보 Action 목록을 만든다. 우선순위: 갈등 > 부정감정 > 신체상태 >
- * 성취/긍정감정 > 장난/상상 > 기억회상 질의 > 일반지식 질문 > 중립.
+ * 초성게임 시작 > 성취/긍정감정 > 장난/상상 > 기억회상 질의 > 일반지식 질문 > 중립.
  * hasDeterministicPrimary=true인 신호는 candidates[0]을 강하게 지켜야 하는 필수 방향으로
  * 다룬다(pickPrimaryOrRotate 사용) — 그 외는 다양성을 우선한다(pickAvoidingRecent 사용). */
 function candidatesFromSignals(
@@ -66,6 +66,7 @@ function candidatesFromSignals(
   if (signals.hasConflict) return { candidates: ["EMPATHY", "COMFORT", "FOLLOW_UP"], deterministic: true };
   if (signals.hasNegativeEmotion) return { candidates: ["EMPATHY", "COMFORT", "FOLLOW_UP"], deterministic: true };
   if (signals.hasPhysicalNeed) return { candidates: ["EMPATHY", "COMFORT"], deterministic: true };
+  if (signals.hasChosungGameStart) return { candidates: ["PLAYFUL_GAME_CHOSUNG"], deterministic: true };
   if (signals.hasAchievement) return { candidates: ["CELEBRATION", "CURIOSITY", "PLAYFUL_TEASING"], deterministic: true };
   if (signals.hasPositiveEmotion) return { candidates: ["CELEBRATION", "CURIOSITY", "FOLLOW_UP"], deterministic: false };
   if (signals.hasPlayfulSilly) return { candidates: ["JOKE", "PLAYFUL_TEASING", "IMAGINATION"], deterministic: false };
