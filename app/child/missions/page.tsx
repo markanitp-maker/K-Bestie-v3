@@ -2822,7 +2822,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         <p className="text-xs text-gray-500 leading-relaxed">
           미션은 하루에 딱 한 번만 할 수 있어요.
           <br />
-          오전 9시~밤 11시 50분 사이에 만나요!
+          오전 9시~밤 11시 50분 전까지 만나요!
         </p>
         <button
           onClick={() => {
