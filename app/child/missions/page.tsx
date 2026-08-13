@@ -2818,11 +2818,11 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
         <p className="text-5xl">⏰</p>
-        <p className="text-base font-bold text-gray-800">{errorMsg || "미션 시간이 끝났어요"}</p>
+        <p className="text-base font-bold text-gray-800">{errorMsg || "미션 시간이 아니에요"}</p>
         <p className="text-xs text-gray-500 leading-relaxed">
-          1차 미션은 오전 10시~오후 5시 50분,
+          미션은 하루에 딱 한 번만 할 수 있어요.
           <br />
-          2차 미션은 오후 6시~밤 12시에 만나요!
+          오전 9시~밤 11시 50분 사이에 만나요!
         </p>
         <button
           onClick={() => {
