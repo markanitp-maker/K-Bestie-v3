@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 import { getAppEventEnvironment } from "@/lib/events/environment";
+import { FREECHAT_DAILY_REWARD_TYPE } from "@/lib/freechat/dailyEngagementReward";
+import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
 
 export const runtime = "nodejs";
 
@@ -35,12 +37,15 @@ export async function POST(req: NextRequest) {
   // service-role RPC도 이 검증을 통과한 세션 id에만 호출한다.
   const { data: accessibleSession, error: sessionError } = await supabase
     .from("chat_sessions")
-    .select("child_id")
+    .select("child_id, ended_at, session_type")
     .eq("id", sessionId)
     .maybeSingle();
 
   if (sessionError) return NextResponse.json({ error: sessionError.message }, { status: 500 });
   if (!accessibleSession) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  if (accessibleSession.session_type !== "free_chat") {
+    return NextResponse.json({ error: "Invalid session type" }, { status: 400 });
+  }
 
   const service = createServiceClient();
   const { data: child } = await service
@@ -69,7 +74,45 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const completedAt = new Date();
+  let persistedEndedAt = accessibleSession.ended_at;
+  if (!persistedEndedAt) {
+    const requestedEndedAt = new Date().toISOString();
+    const { data: endedSession, error: endSessionError } = await service
+      .from("chat_sessions")
+      .update({ ended_at: requestedEndedAt })
+      .eq("id", sessionId)
+      .is("ended_at", null)
+      .select("ended_at")
+      .maybeSingle();
+
+    if (endSessionError) {
+      console.error("[chat/pause] failed to persist completion timestamp", {
+        sessionId,
+        message: endSessionError.message,
+      });
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    persistedEndedAt = endedSession?.ended_at ?? null;
+    if (!persistedEndedAt) {
+      const { data: concurrentSession, error: concurrentSessionError } = await service
+        .from("chat_sessions")
+        .select("ended_at")
+        .eq("id", sessionId)
+        .single();
+
+      if (concurrentSessionError || !concurrentSession?.ended_at) {
+        console.error("[chat/pause] failed to reconcile completion timestamp", {
+          sessionId,
+          message: concurrentSessionError?.message ?? "missing ended_at",
+        });
+        return NextResponse.json({ error: "Database error" }, { status: 500 });
+      }
+      persistedEndedAt = concurrentSession.ended_at;
+    }
+  }
+
+  const completedAt = new Date(persistedEndedAt);
   const { data: rewardData, error: rewardError } = await service
     .rpc("complete_freechat_daily_engagement", {
       p_child_id: accessibleSession.child_id,
@@ -89,6 +132,19 @@ export async function POST(req: NextRequest) {
   }
 
   const rewardResult = rewardData as FreechatEngagementResult;
+  const { count: activeBalance, error: balanceError } = await service
+    .from("gold_key_ledger")
+    .select("id", { count: "exact", head: true })
+    .eq("child_id", accessibleSession.child_id)
+    .eq("consumed", false)
+    .gt("expires_at", new Date().toISOString());
+
+  if (balanceError) {
+    console.error("[chat/pause] active Gold Key balance lookup failed", {
+      sessionId,
+      message: balanceError.message,
+    });
+  }
 
   const { data: childData } = await service
     .from("child_profiles")
@@ -119,6 +175,10 @@ export async function POST(req: NextRequest) {
       earned: rewardResult.rewarded,
       eligible: rewardResult.eligible,
       reason: rewardResult.reason,
+      amount: rewardResult.rewarded ? 1 : 0,
+      balance: balanceError ? null : (activeBalance ?? 0),
+      rewardType: FREECHAT_DAILY_REWARD_TYPE,
+      businessDate: getKstBusinessDate(completedAt),
       eventCount: rewardResult.event_count,
     },
   });

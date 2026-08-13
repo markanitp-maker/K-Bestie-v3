@@ -12,6 +12,8 @@ DECLARE
   v_day2_at timestamptz;
   v_count integer;
   v_reward record;
+  v_mission_reward record;
+  v_mission_session_id uuid;
   v_constraint_columns text[];
 BEGIN
   v_day1_at := (v_day1::text || ' 09:00:00+09')::timestamptz;
@@ -92,6 +94,27 @@ BEGIN
     RAISE EXCEPTION 'short freechat should not reward: %', row_to_json(v_reward);
   END IF;
 
+  -- 60초 이상이어도 meaningful child turn이 2개뿐이면 지급하지 않는다.
+  INSERT INTO public.chat_sessions(child_id, session_type, started_at)
+  VALUES (v_child_id, 'free_chat', v_day1_at + interval '1 hour 10 minutes')
+  RETURNING id INTO v_session_id;
+  INSERT INTO public.chat_messages(session_id, role, content) VALUES
+    (v_session_id, 'child', 'I drew a blue whale today'),
+    (v_session_id, 'child', 'My friend liked the drawing');
+
+  SELECT * INTO v_reward
+  FROM public.complete_freechat_daily_engagement(
+    v_child_id,
+    'development',
+    v_session_id,
+    99,
+    v_day1_at + interval '1 hour 12 minutes'
+  );
+  IF v_reward.rewarded OR v_reward.reason <> 'insufficient_meaningful_turns'
+    OR v_reward.meaningful_turn_count <> 2 THEN
+    RAISE EXCEPTION 'two meaningful turns should not reward: %', row_to_json(v_reward);
+  END IF;
+
   -- 60초 이상이어도 반복 발화 3개는 farming으로 거절한다.
   INSERT INTO public.chat_sessions(child_id, session_type, started_at)
   VALUES (v_child_id, 'free_chat', v_day1_at + interval '2 hours')
@@ -154,6 +177,30 @@ BEGIN
     AND business_date = v_day1;
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'day1 freechat Gold Key expected 1, got %', v_count;
+  END IF;
+
+  -- 같은 KST 날짜의 Mission 보상과 Free Chat 보상은 각각 한 개씩 공존해야 한다.
+  INSERT INTO public.chat_sessions(child_id, session_type, started_at)
+  VALUES (v_child_id, 'mission', v_day1_at + interval '3 hours 10 minutes')
+  RETURNING id INTO v_mission_session_id;
+
+  SELECT * INTO v_mission_reward
+  FROM public.award_mission_v1_reward_key(
+    v_child_id,
+    v_mission_session_id,
+    'mission_complete'
+  );
+  IF NOT v_mission_reward.awarded THEN
+    RAISE EXCEPTION 'same-day Mission reward should coexist: %', row_to_json(v_mission_reward);
+  END IF;
+
+  SELECT count(*)::integer INTO v_count
+  FROM public.gold_key_ledger
+  WHERE child_id = v_child_id
+    AND business_date = v_day1
+    AND reward_type IN ('mission_complete', 'freechat_daily_engagement');
+  IF v_count <> 2 THEN
+    RAISE EXCEPTION 'same-day Mission + Free Chat Gold Keys expected 2, got %', v_count;
   END IF;
 
   -- 같은 날 다른 적격 세션은 성공 응답이지만 추가 지급/집계하지 않는다.

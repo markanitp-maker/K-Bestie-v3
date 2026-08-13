@@ -13,6 +13,12 @@ import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
 import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversationViewport";
 import { getFreeChatConversationState } from "@/lib/freechat/conversationState";
+import { GoldKeyRewardModal } from "@/components/rewards/GoldKeyRewardModal";
+import {
+  getFreechatRewardModalContent,
+  parseFreechatPauseSuccess,
+  type FreechatDailyReward,
+} from "@/lib/freechat/dailyEngagementReward";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -38,6 +44,7 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [reportDone, setReportDone] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
+  const [dailyReward, setDailyReward] = useState<FreechatDailyReward | null>(null);
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
   const restoredTranscriptRef = useRef<Turn[]>([]);
@@ -49,6 +56,7 @@ export default function ChatPage() {
   const [isAuto, setIsAuto] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
+  const pendingMessageWritesRef = useRef(new Set<Promise<void>>());
 
   const [micPermission, setMicPermission] = useState<PermissionState | "checking" | "not_needed">("checking");
   const autoStartAttempted = useRef(false);
@@ -68,6 +76,7 @@ export default function ChatPage() {
   const statusRef = useRef<string>("idle");
   const currentWindowRef = useRef<string | null>(null);
   const childIdRef = useRef<string | null>(null);
+  const rewardRequestSessionsRef = useRef(new Set<string>());
   
   useEffect(() => {
     childIdRef.current = childId;
@@ -85,7 +94,8 @@ export default function ChatPage() {
       const turnId = turn.id || crypto.randomUUID();
       const displaySequence = (turn as any).displaySequence ?? nextDisplaySequence();
       
-      fetch("/api/chat/messages", {
+      let pendingWrite: Promise<void>;
+      pendingWrite = fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -96,7 +106,23 @@ export default function ChatPage() {
           turnId,
           displaySequence
         }),
-      }).catch(() => {});
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`message save failed (${response.status})`);
+          }
+        })
+        .catch((error) => {
+          console.error("[freechat-message] save failed", {
+            sessionId: sid,
+            turnId,
+            message: error instanceof Error ? error.message : "unknown error",
+          });
+        })
+        .finally(() => {
+          pendingMessageWritesRef.current.delete(pendingWrite);
+        });
+      pendingMessageWritesRef.current.add(pendingWrite);
     }
     if (turn.role === "child") {
       void respondTextRef.current?.();
@@ -348,13 +374,77 @@ export default function ChatPage() {
   // 대화 종료 시 30일 이벤트 자유대화 보상 적격성 판정(089) — 실패해도 대화 종료
   // 자체를 막지 않는다. 실제 적격성(발화 수/시간/spam 판정)은 서버가 재확인한다.
   useEffect(() => {
-    if (status !== "ended" || !sessionId) return;
-    const childTurnCount = getTranscript().filter((t) => t.role === "child").length;
-    fetch("/api/chat/pause", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, turnCount: childTurnCount, ended: true }),
-    }).catch(() => {});
+    if (status !== "ended" || !sessionId || rewardRequestSessionsRef.current.has(sessionId)) return;
+
+    rewardRequestSessionsRef.current.add(sessionId);
+    const childTurnCount = getTranscript().filter((turn) => turn.role === "child").length;
+
+    const finalizeDailyReward = async () => {
+      while (pendingMessageWritesRef.current.size > 0) {
+        await Promise.allSettled(Array.from(pendingMessageWritesRef.current));
+      }
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const response = await fetch("/api/chat/pause", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId, turnCount: childTurnCount, ended: true }),
+          });
+
+          if (!response.ok) {
+            console.error("[freechat-reward] pause request failed", {
+              sessionId,
+              status: response.status,
+              attempt,
+            });
+            if (attempt < 2) continue;
+            logVoiceEvent({
+              ts: Date.now(),
+              sessionId,
+              mode: "free",
+              eventType: "freechat_reward_request_failed",
+              extra: { status: response.status, attempt },
+            });
+            return;
+          }
+
+          const parsed = parseFreechatPauseSuccess(await response.json());
+          if (!parsed) {
+            console.error("[freechat-reward] invalid pause response", { sessionId, attempt });
+            logVoiceEvent({
+              ts: Date.now(),
+              sessionId,
+              mode: "free",
+              eventType: "freechat_reward_response_invalid",
+              extra: { attempt },
+            });
+            return;
+          }
+
+          if (getFreechatRewardModalContent(parsed.reward)) {
+            setDailyReward(parsed.reward);
+          }
+          return;
+        } catch (error) {
+          console.error("[freechat-reward] pause request error", {
+            sessionId,
+            attempt,
+            message: error instanceof Error ? error.message : "unknown error",
+          });
+          if (attempt < 2) continue;
+          logVoiceEvent({
+            ts: Date.now(),
+            sessionId,
+            mode: "free",
+            eventType: "freechat_reward_request_failed",
+            extra: { attempt, reason: "network_or_parse_error" },
+          });
+        }
+      }
+    };
+
+    void finalizeDailyReward();
   }, [status, sessionId, getTranscript]);
 
   useEffect(() => {
@@ -735,6 +825,10 @@ export default function ChatPage() {
     );
   }
 
+  const dailyRewardPresentation = dailyReward
+    ? getFreechatRewardModalContent(dailyReward)
+    : null;
+
   return (
     <DemoFrame>
       <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "hidden" }}>
@@ -1029,6 +1123,14 @@ export default function ChatPage() {
             정확히 같은 자리에 겹쳐 X가 완전히 가려졌다 - 미션 화면과 달리 진행률 바가
             없어 X 버튼 아래로 충분히 내려야 한다(X 버튼 높이 44px + 상단 패딩 고려). */}
         {mode !== "text" && <KChatbotWidget appSurface="child" topOffsetPx={64} />}
+        <GoldKeyRewardModal
+          open={dailyRewardPresentation !== null}
+          title={dailyRewardPresentation?.title ?? ""}
+          description={dailyRewardPresentation?.description ?? ""}
+          awarded={dailyRewardPresentation?.awarded ?? false}
+          onClose={() => setDailyReward(null)}
+          idPrefix="freechat-daily-reward"
+        />
       </div>
     </DemoFrame>
   );

@@ -31,6 +31,7 @@ import { usePipelineConnectionQuality } from "@/hooks/usePipelineConnectionQuali
 import { ConnectionQualityIndicator } from "@/components/ConnectionQualityIndicator";
 import { VoiceConversationStateBadge, type VoiceConversationState } from "@/components/VoiceConversationStateBadge";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import { GoldKeyRewardModal } from "@/components/rewards/GoldKeyRewardModal";
 import {
   clearPendingMissionTurn,
   isPendingMissionTurnExpired,
@@ -245,8 +246,6 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const [rewardStatus, setRewardStatus] = useState<string>("none");
   const [isRewardModalOpen, setIsRewardModalOpen] = useState(false);
   const [hasClosedRewardModal, setHasClosedRewardModal] = useState(false);
-  const rewardCloseXBtnRef = useRef<HTMLButtonElement | null>(null);
-  const rewardCloseBottomBtnRef = useRef<HTMLButtonElement | null>(null);
   const [mode, setMode] = useState<"voice" | "text">("voice");
   useEffect(() => {
     onTextModeChange?.(mode === "text");
@@ -3665,93 +3664,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         onExitBeforeStart={handleClose}
       />
 
-      {/* 황금열쇠 보상 모달 */}
-      {isRewardModalOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center pointer-events-auto"
-          style={{ backgroundColor: "rgba(0, 0, 0, 0.45)" }}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="reward-modal-title"
-          aria-describedby="reward-modal-desc"
-          onKeyDown={(e) => {
-            // 035 codex 리뷰 지적: Focus Trap 부재 - X버튼(먼저)↔하단 닫기버튼(나중) 두
-            // 개만 포커스 가능한 요소이므로 Tab/Shift+Tab을 여기서 직접 순환시킨다.
-            // claude-review 재지적: shiftKey만으로 타겟을 고정하면 이미 타겟 위에 포커스가
-            // 있을 때 자기 자신으로 재포커스되어 순환이 멈춘다 - 현재 포커스를 확인해 반대
-            // 버튼으로 토글해야 실제로 두 버튼 사이를 순환한다.
-            if (e.key !== "Tab") return;
-            e.preventDefault();
-            const onX = document.activeElement === rewardCloseXBtnRef.current;
-            const target = onX ? rewardCloseBottomBtnRef.current : rewardCloseXBtnRef.current;
-            target?.focus();
-          }}
-        >
-          <div className="w-[90%] max-w-[340px] bg-white rounded-[24px] shadow-lg p-6 flex flex-col items-center relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <button
-              ref={rewardCloseXBtnRef}
-              onClick={handleCloseRewardCompletion}
-              aria-label="보상 화면 닫기"
-              className="absolute top-4 right-4 w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-gray-100 active:scale-95 text-gray-500 cursor-pointer"
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-
-            {/* 이 프로젝트에 공식 황금열쇠 PNG/SVG 자산이 없다(전수 확인 - public/ 검색 0건).
-                app/child/play·home 등 앱 전체가 황금열쇠를 이미 🔑 이모지로 일관 표시하므로
-                (035 codex 리뷰가 지적한) 임의 커스텀 SVG 대신 그 기존 관례를 그대로 따른다. */}
-            <div className="w-[90px] h-[90px] mt-2 mb-4 bg-yellow-50 rounded-full flex items-center justify-center text-[48px]" style={{ animation: "rewardScaleIn 0.35s ease-out forwards" }} aria-hidden="true">
-              🔑
-            </div>
-
-            <h2 id="reward-modal-title" className="text-[24px] font-extrabold text-[var(--color-k-navy)] mb-1 text-center" style={{ animation: "rewardSlideUp 0.35s ease-out forwards" }}>
-              {rewardPresentation.title}
-              {rewardPresentation.awarded && (
-                <>
-                  <span className="sr-only"> 황금열쇠 1개 획득.</span>
-                  <span
-                    aria-hidden="true"
-                    className="ml-1"
-                    style={{ color: "var(--color-k-orange)" }}
-                  >
-                    +1
-                  </span>
-                </>
-              )}
-            </h2>
-
-            <p id="reward-modal-desc" className="text-gray-500 font-medium text-[15px] mb-8 text-center" style={{ animation: "rewardSlideUp 0.4s ease-out forwards" }}>
-              {rewardPresentation.description}
-            </p>
-
-            <button
-              ref={rewardCloseBottomBtnRef}
-              autoFocus
-              onClick={handleCloseRewardCompletion}
-              className="w-full max-w-[140px] h-[48px] rounded-full text-white font-bold text-[16px] shadow-sm active:scale-95 transition-transform cursor-pointer"
-              style={{ backgroundColor: "var(--color-k-navy)" }}
-            >
-              닫기
-            </button>
-          </div>
-          <style dangerouslySetInnerHTML={{__html: `
-            @keyframes rewardScaleIn {
-              from { transform: scale(0.85); opacity: 0; }
-              to { transform: scale(1); opacity: 1; }
-            }
-            @keyframes rewardSlideUp {
-              from { transform: translateY(10px); opacity: 0; }
-              to { transform: translateY(0); opacity: 1; }
-            }
-            @media (prefers-reduced-motion: reduce) {
-              .w-[90px], h2, p { animation: none !important; }
-            }
-          `}} />
-        </div>
-      )}
+      <GoldKeyRewardModal
+        open={isRewardModalOpen}
+        title={rewardPresentation.title}
+        description={rewardPresentation.description}
+        awarded={rewardPresentation.awarded}
+        onClose={handleCloseRewardCompletion}
+        idPrefix="mission-reward"
+      />
     </>
   );
 }
