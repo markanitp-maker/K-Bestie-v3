@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { childId?: string; roundType?: RoundType; confirmRestart?: boolean; checkOnly?: boolean };
+  let body: { childId?: string; roundType?: RoundType; checkOnly?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -127,8 +127,8 @@ export async function POST(req: NextRequest) {
     return progress?.status === "COMPLETED";
   });
   if (completedSessionRow) {
-    // 하루 1미션 정책에서는 Dev/Production과 confirmRestart 값에 관계없이 완료가 quota를
-    // 소비한다. 응답 roundType은 레거시 프론트 계약을 위해 요청값을 유지한다.
+    // 하루 1미션 정책에서는 완료가 child_id + business_date quota를 소비한다.
+    // 응답 roundType은 레거시 프론트 계약을 위해 요청값을 유지한다.
     return NextResponse.json({
       locked: true,
       alreadyCompletedToday: true,

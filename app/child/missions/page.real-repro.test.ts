@@ -15,7 +15,7 @@ const { JSDOM } = (() => {
   }
 })();
 
-type ScenarioKind = "new" | "resumed";
+type ScenarioKind = "new" | "resumed" | "locked";
 type VoiceMode = "stt_tts" | "live";
 
 type ScenarioRuntime = ReturnType<typeof createScenarioRuntime>;
@@ -126,6 +126,10 @@ const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) =
   }
   if (url === "/api/mission/start") {
     const request = JSON.parse(String(init?.body ?? "{}"));
+    runtime.push("mission.start.request", { request });
+    if (request.checkOnly && runtime.kind === "locked") {
+      return createResponse({ locked: true, alreadyCompletedToday: true, roundType: "common" });
+    }
     if (request.checkOnly && runtime.kind === "new") {
       return createResponse({ resumed: false, voiceMode: runtime.voiceMode, requiredCount: 5 });
     }
@@ -291,7 +295,7 @@ const typeText = async (value: string) => {
   await flushReact();
 };
 
-const mountScenario = async (kind: ScenarioKind, voiceMode: VoiceMode) => {
+const mountScenario = async (kind: Exclude<ScenarioKind, "locked">, voiceMode: VoiceMode) => {
   runtime = createScenarioRuntime(kind, voiceMode);
   localStorage.clear();
   sessionStorage.clear();
@@ -388,4 +392,27 @@ test("manual 이어하기 STT/TTS도 mic true 없이 시작하며 keyboard 입�
   assert.equal(typedGuard?.turnPhase, "idle");
   assert.equal(typedGuard?.result, true);
   assert.equal(runtime.stt.sendTypedText.mock.callCount(), 1);
+});
+
+test("오늘 완료한 미션에 재진입하면 재시작 없이 잠금 화면에서 자유대화로 이동한다", async () => {
+  runtime = createScenarioRuntime("locked", "stt_tts");
+  localStorage.clear();
+  sessionStorage.clear();
+  localStorage.setItem("k_child_id", "child-1");
+  localStorage.setItem("k_voice_input_mode:child-1", "manual");
+  root = createRoot(document.getElementById("root")!);
+
+  await act(async () => root?.render(React.createElement(ChildMissionsPage)));
+  await flushReact();
+
+  assert.match(document.body.textContent ?? "", /미션을 이미 완료하였습니다/);
+  assert.doesNotMatch(document.body.textContent ?? "", /다시 할래요/);
+
+  const startRequest = runtime.timeline.find((item) => item.event === "mission.start.request");
+  assert.ok(startRequest);
+  assert.equal(Object.hasOwn(startRequest.request as object, "confirmRestart"), false);
+
+  await click("locked-completed-chat");
+  const chatNavigation = runtime.timeline.find((item) => item.event === "router.push");
+  assert.deepEqual(chatNavigation?.args, ["/chat"]);
 });

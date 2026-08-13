@@ -57,6 +57,7 @@ type MissionRequestContext = {
 
 const MISSION_LOADING_WATCHDOG_MS = 8_000;
 const SAVE_MESSAGE_RETRY_DELAYS_MS = [0, 300, 700] as const;
+const MISSION_COMPLETION_CLOSING_LINE = "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!";
 
 type MissionRuntimeTraceSnapshot = {
   isAuto: boolean;
@@ -150,10 +151,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const searchParams = rawSearchParams ?? new URLSearchParams();
   const { quality: connectionQuality, recordStageResult, recordNormalTurn } = usePipelineConnectionQuality();
 
-  // confirm_restart_after_completion(022): 오늘 이미 완료한 라운드에 재진입 시 "다시 할까요?"
-  // 확인 없이 조용히 새 세션이 만들어지던 문제 수정 — 서버가 requiresConfirmation을 반환하면
-  // 이 phase로 멈추고 확인 UI를 보여준다(진행 중/미완료 세션에는 영향 없음).
-  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "turn_retry" | "confirm_restart_after_completion" | "locked_completed">("loading");
+  const [phase, setPhase] = useState<"loading" | "closed" | "ready" | "error" | "turn_retry" | "locked_completed">("loading");
   // 031: MISSION_SCHEDULE_ENFORCED(Production 전용) 여부 — 서버(/api/config/child-time-restrictions)가
   // 계산해 내려준 값을 그대로 저장해 "closed"/완료잠금 화면의 문구 분기에만 쓴다.
   const [scheduleEnforced, setScheduleEnforced] = useState(false);
@@ -170,12 +168,8 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       activeMissionRequestAbortRef.current?.abort();
     };
   }, []);
-  // 한 번만 소비되는 플래그(ref) — URL 쿼리에 남기면 이후 재진입 때도 계속 true로
-  // 남아 두 번째부터는 확인 없이 넘어가 버리므로, 컴포넌트 상태로만 들고 있다가
-  // 이 effect 시작 시 즉시 리셋한다. restartTrigger는 같은 effect를 다시 실행시키기
-  // 위한 카운터일 뿐 값 자체는 쓰지 않는다.
-  const confirmRestartRef = useRef(false);
-  const [restartTrigger, setRestartTrigger] = useState(0);
+  // 초기 조회 실패 후 같은 조회 effect를 다시 실행하기 위한 카운터이다.
+  const [retryTrigger, setRetryTrigger] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [childId, setChildId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -225,7 +219,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const questionStatesRef = useRef<Record<string, QuestionState>>({});
   const askedIndexRef = useRef<number>(-1);
   const missionStateRef = useRef<MissionCompletionState>("active");
-  const missionClosingLineRef = useRef<string>("오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!");
+  const missionClosingLineRef = useRef<string>(MISSION_COMPLETION_CLOSING_LINE);
   // Live 모드 전용 미션 턴 상태머신 — awaiting_child(아이 답변 대기) → processing_answer(답변
   // 판정/다음 질문 생성 중) → speaking_k(케이가 말하는 중) → awaiting_child. handleTurnComplete의
   // 재진입 가드와 onAudioQueueDrained의 복귀 신호가 이 상태를 관리한다(STT/TTS 모드는 기존
@@ -1041,7 +1035,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           setEngineVersion(data.engine_version ?? "v1");
 
           if (data.completionCandidate) {
-            const closingText = "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!";
+            const closingText = MISSION_COMPLETION_CLOSING_LINE;
             const finalized = await finalizeServerTurn(closingText);
             if (!finalized.completed) throw new Error("MISSION_COMPLETION_NOT_CONFIRMED");
             const rwStatus = finalized.rewardStatus ?? "none";
@@ -1072,19 +1066,11 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
           // setCompleted는 발화 완료 후 상태 전이 시에 호출되도록 위임
           if (data.completed) {
-            // 035 codex 리뷰 지적: V2 질문엔진에서만 서버가 rewardStatus 필드를 내려준다 -
-            // V1(레거시) 세션은 이 필드 자체가 응답에 없어 항상 "none"으로 떨어져 보상
-            // 모달이 절대 뜨지 않았다. V1 완료 경로는 서버 지급 로직을 이번 범위에서
-            // 건드리지 않고(035 §20 기존 로직 미변경), 완료=지급 성공으로 간주하는
-            // 클라이언트 판정만 보강한다(V1은 애초에 완료·지급이 원자적으로 처리되던 구조).
-            const isLegacyV1 = (data.engine_version ?? "v1") !== "v2";
-            const rwStatus = data.rewardStatus ?? (isLegacyV1 ? "awarded" : "none");
+            // 서버가 내려준 지급 결과는 보상 모달에만 반영한다. 엔진 버전을 보고
+            // 지급 성공을 추정하지 않고, 케이의 마감 멘트는 모든 완료에서 하나로 통일한다.
+            const rwStatus = data.rewardStatus ?? "unknown";
             setRewardStatus(rwStatus);
-            if (rwStatus === "awarded" || rwStatus === "already_earned" || rwStatus === "granted") {
-              missionClosingLineRef.current = "오늘 미션을 모두 완료했어! 황금열쇠를 받았어. 다음에 또 보자!";
-            } else {
-              missionClosingLineRef.current = "오늘 미션을 모두 완료했어! 이야기해 줘서 고마워. 다음에 또 보자!";
-            }
+            missionClosingLineRef.current = MISSION_COMPLETION_CLOSING_LINE;
             missionStateRef.current = "completing";
             setMissionState("completing");
           // 5번째 유효 답변 확정 — 여기서 곧바로 세션을 끊지 않는다(케이가 아직 종료 발화를
@@ -1728,9 +1714,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   useEffect(() => {
     if (phase === "ready" && missionState !== "completed") {
       setSessionActive(true);
-    } else if (missionState === "completed" || phase === "closed" || phase === "error" || phase === "confirm_restart_after_completion") {
-      // codex 지적: confirm_restart_after_completion 진입 시에도 이전 세션이 활성 상태로
-      // 남아있으면(예: restartTrigger 재실행 경합) 마이크/음성 세션이 꺼지지 않을 수 있다.
+    } else if (missionState === "completed" || phase === "closed" || phase === "error" || phase === "locked_completed") {
       setSessionActive(false);
     }
   }, [phase, missionState]);
@@ -2075,7 +2059,6 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const fetchSessionData = useCallback(async (
     cid: string,
     round: RoundType,
-    confirmRestart: boolean,
     isCheckOnly: boolean,
     request: MissionRequestContext,
   ) => {
@@ -2083,7 +2066,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       const res = await fetch("/api/mission/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ childId: cid, roundType: round, confirmRestart, checkOnly: isCheckOnly }),
+        body: JSON.stringify({ childId: cid, roundType: round, checkOnly: isCheckOnly }),
         signal: request.signal,
       });
       if (!request.isActive()) return;
@@ -2113,12 +2096,6 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
       if (data.locked) {
         setPhase("locked_completed");
-        request.markSettled();
-        return;
-      }
-
-      if (data.requiresConfirmation) {
-        setPhase("confirm_restart_after_completion");
         request.markSettled();
         return;
       }
@@ -2305,11 +2282,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       }
       if (!request.isActive()) return;
 
-      // 037 §18/codex 지적: 조회된 기존 세션이 status="COMPLETED"로 명시 갱신되진 않았지만
-      // (레거시 V1 등) valid_answer_count로는 이미 완료 조건을 만족하는 경우, "이어하기" 게이트를
-      // 보여주면 안 된다 - 이미 검증된 "다시 할래요/미션 나가기" 확인 게이트로 동일하게 처리한다.
+      // status가 아직 COMPLETED로 정규화되지 않은 레거시 V1 세션이라도
+      // valid_answer_count가 완료 기준을 만족하면 오늘 quota는 종료된 것으로 처리한다.
       if (isCheckOnly && data.resumed && data.completed) {
-        setPhase("confirm_restart_after_completion");
+        setPhase("locked_completed");
         request.markSettled();
         return;
       }
@@ -2325,8 +2301,8 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   // 037 §21/§22: 조회·시작·이어하기 실패 후 "다시 시도"가 정확히 직전에 하려던
   // 동작(확인/시작/이어하기)을 그대로 재시도하도록, 실행 직전에 그 재시도 함수 자체를 담아둔다.
-  // 초기값은 마운트 시점의 "확인" 단계 재시도용 - restartTrigger를 증가시켜 마운트 effect를 다시 돈다.
-  const lastAttemptFnRef = useRef<() => void>(() => setRestartTrigger((t) => t + 1));
+  // 초기값은 마운트 시점의 "확인" 단계 재시도용 - retryTrigger를 증가시켜 마운트 effect를 다시 돈다.
+  const lastAttemptFnRef = useRef<() => void>(() => setRetryTrigger((t) => t + 1));
   // codex 037 리뷰 지적: 실패 시 entryStatus 자체가 "error"로 덮어써져서, 실패 화면에서
   // entryStatus를 보고 "시작 실패였는지/이어하기 실패였는지" 구분할 수 없었다 - 별도 ref로 보존한다.
   const attemptKindRef = useRef<"checking" | "starting" | "resuming">("checking");
@@ -2344,7 +2320,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     attemptKindRef.current = "starting";
     lastAttemptFnRef.current = handleStartMission;
     void runMissionRequest((request) => (
-      fetchSessionData(childIdRef.current!, roundType, confirmRestartRef.current, false, request)
+      fetchSessionData(childIdRef.current!, roundType, false, request)
     ));
   };
 
@@ -2354,7 +2330,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     attemptKindRef.current = "resuming";
     lastAttemptFnRef.current = handleResumeMission;
     void runMissionRequest((request) => (
-      fetchSessionData(childIdRef.current!, roundType, confirmRestartRef.current, false, request)
+      fetchSessionData(childIdRef.current!, roundType, false, request)
     ));
   };
 
@@ -2428,19 +2404,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       }
       setRoundType(round);
 
-      const confirmRestart = confirmRestartRef.current;
-      // We only consume confirmRestartRef when we actually start the mission (checkOnly = false),
-      // BUT if we are coming back from confirm_restart_after_completion, we want to START it directly.
-      if (confirmRestart) {
-        confirmRestartRef.current = false;
-        setEntryStatus("starting");
-        await fetchSessionData(cid, round, true, false, request);
-      } else {
-        await fetchSessionData(cid, round, false, true, request);
-      }
+      await fetchSessionData(cid, round, true, request);
     }, abortController.signal);
     return () => abortController.abort();
-  }, [searchParams, router, restartTrigger, fetchSessionData, runMissionRequest]);
+  }, [searchParams, router, retryTrigger, fetchSessionData, runMissionRequest]);
 
   // Live 모드가 활성화될 때 interactionMode 설정 동기화 (STT/TTS는 setInputMode+setMicEnabled로 동일 개념 적용)
   useEffect(() => {
@@ -2846,55 +2813,33 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     );
   }
 
-  if (phase === "confirm_restart_after_completion") {
+  if (phase === "locked_completed") {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
-        <p className="text-5xl">🎉</p>
-        <p className="text-base font-bold text-gray-800">오늘 미션은 이미 완료했어요!</p>
-        <p className="text-xs text-gray-500 leading-relaxed">
-          한 번 더 하고 싶으면 새로 시작할 수 있어요.
-        </p>
-        <div className="flex gap-2 w-full max-w-xs">
+        <p className="text-5xl">🔒</p>
+        <p className="text-base font-bold text-gray-800">미션을 이미 완료하였습니다. 다음 미션을 기다리세요.</p>
+        <div className="flex w-full max-w-xs flex-col gap-2">
           <button
+            data-testid="locked-completed-chat"
             onClick={() => {
-              confirmRestartRef.current = true;
-              setPhase("loading");
-              setRestartTrigger((n) => n + 1);
+              setSessionActive(false);
+              router.push("/chat");
             }}
-            className="flex-1 py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
+            className="w-full py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
             style={{ background: "var(--color-k-orange)" }}
           >
-            다시 할래요
+            자유대화 하러 가기
           </button>
           <button
             onClick={() => {
               setSessionActive(false);
               router.replace("/child/home");
             }}
-            className="flex-1 py-3.5 rounded-2xl font-bold text-gray-600 bg-gray-100 text-sm active:scale-[0.98] transition-transform cursor-pointer"
+            className="w-full py-3.5 rounded-2xl font-bold text-gray-600 bg-gray-100 text-sm active:scale-[0.98] transition-transform cursor-pointer"
           >
-            미션 나가기
+            홈으로 돌아가기
           </button>
         </div>
-      </div>
-    );
-  }
-
-  if (phase === "locked_completed") {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-5 p-6 text-center" style={{ background: "var(--color-k-surface)" }}>
-        <p className="text-5xl">🔒</p>
-        <p className="text-base font-bold text-gray-800">미션을 이미 완료하였습니다. 다음 미션을 기다리세요.</p>
-        <button
-          onClick={() => {
-            setSessionActive(false);
-            router.replace("/child/home");
-          }}
-          className="w-full max-w-xs py-3.5 rounded-2xl font-bold text-white text-sm active:scale-[0.98] transition-transform cursor-pointer"
-          style={{ background: "var(--color-k-orange)" }}
-        >
-          홈으로 돌아가기
-        </button>
       </div>
     );
   }
