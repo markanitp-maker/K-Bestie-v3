@@ -14,6 +14,7 @@ import { selectAction } from "./actionSelector";
 import { extractUtteranceSignals, estimateSemanticGroup } from "./utteranceSignals";
 import { recordTopicUsage } from "./semanticTopicHistory";
 import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn } from "./responseGenerator";
+import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 
 export type { EngineInput, EngineOutput, ConversationAction, ConversationMode } from "./types";
@@ -92,6 +93,30 @@ export async function checkSafetyPreflight(
     tokenIn: 0,
     tokenOut: 0,
   };
+}
+
+/** MISSION 모드 등에서 input.currentUtteranceAlreadyInSession === true인 경우,
+ * memorySnapshot.sameSession의 마지막 턴이 child이고 그 텍스트가 currentUtterance와 일치할 때만
+ * 1건을 제외하여 LLM 프롬프트에 발화가 두 번 들어가는 버그를 방지한다. */
+export function filterRecentHistory(
+  sameSession: SessionTurn[],
+  currentUtterance: string,
+  currentUtteranceAlreadyInSession?: boolean,
+): ResponseGeneratorHistoryTurn[] {
+  let turns = sameSession;
+  if (currentUtteranceAlreadyInSession === true && turns.length > 0) {
+    const lastTurn = turns[turns.length - 1];
+    if (
+      lastTurn.role === "child" &&
+      normalizeSameSessionText(lastTurn.content) === normalizeSameSessionText(currentUtterance)
+    ) {
+      turns = turns.slice(0, -1);
+    }
+  }
+  return turns.map((turn) => ({
+    role: turn.role,
+    text: turn.content,
+  }));
 }
 
 /** K Conversation Engine의 단일 진입점. 순서: Safety(최우선) → 저신뢰 ASR/앱모드 질문
@@ -214,10 +239,11 @@ export async function respond(
   });
 
   // 7) 응답 생성 — Gemini 자연생성, 30자/물음표 hard guard 없음.
-  const recentHistory: ResponseGeneratorHistoryTurn[] = memorySnapshot.sameSession.map((turn) => ({
-    role: turn.role,
-    text: turn.content,
-  }));
+  const recentHistory = filterRecentHistory(
+    memorySnapshot.sameSession,
+    input.currentUtterance,
+    input.currentUtteranceAlreadyInSession,
+  );
   const generated = await generateResponse({
     ai: deps.ai,
     modelId: deps.modelId,
