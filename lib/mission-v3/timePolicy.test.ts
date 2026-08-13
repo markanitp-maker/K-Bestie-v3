@@ -33,46 +33,46 @@ const activePolicy: MissionPolicySnapshot = {
   effectiveAt: "2026-08-09T13:00:00+09:00",
 };
 
-test("Production 시간 게이트는 09:00 inclusive로 열린다", async () => {
+test("Production 시간 게이트는 10:00 inclusive로 열린다", async () => {
   const db = makeDb();
 
   const beforeOpen = await evaluateMissionTimeGate({
     db,
     childId: "child-1",
-    now: kstDate(8, 59),
+    now: kstDate(9, 59),
     dependencies: { isMissionScheduleEnforced: () => true },
   });
   const open = await evaluateMissionTimeGate({
     db,
     childId: "child-1",
-    now: kstDate(9, 0),
+    now: kstDate(10, 0),
     dependencies: { isMissionScheduleEnforced: () => true },
   });
 
   assert.equal(beforeOpen.allowed, false);
   assert.equal(beforeOpen.reason, "before_open");
-  assert.equal(beforeOpen.opensAtMinute, 540);
+  assert.equal(beforeOpen.opensAtMinute, 600);
   assert.equal(beforeOpen.scheduleEnforced, true);
   assert.equal(open.allowed, true);
   assert.equal(open.businessDate, "2026-08-10");
 });
 
-test("Production 시간 게이트는 23:50 exclusive로 닫힌다", async () => {
+test("Production 시간 게이트는 23:55 exclusive로 닫힌다", async () => {
   const allowed = await evaluateMissionTimeGate({
     db: makeDb(),
     childId: "child-1",
-    now: kstDate(23, 49),
+    now: kstDate(23, 54),
     dependencies: { isMissionScheduleEnforced: () => true },
   });
   const closed = await evaluateMissionTimeGate({
     db: makeDb(),
     childId: "child-1",
-    now: kstDate(23, 50),
+    now: kstDate(23, 55),
     dependencies: { isMissionScheduleEnforced: () => true },
   });
 
   assert.equal(allowed.allowed, true);
-  assert.equal(allowed.closesAtMinute, 1430);
+  assert.equal(allowed.closesAtMinute, 1435);
   assert.equal(closed.allowed, false);
   assert.equal(closed.reason, "closed");
 });

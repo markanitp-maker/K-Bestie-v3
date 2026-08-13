@@ -18,8 +18,8 @@ export interface MissionTimeGateResult {
   allowed: boolean;
   businessDate: string;
   currentMinute: number;
-  opensAtMinute: 540;
-  closesAtMinute: 1430;
+  opensAtMinute: 600;
+  closesAtMinute: 1435;
   scheduleEnforced: boolean;
   reason: "before_open" | "closed" | null;
 }
@@ -123,8 +123,8 @@ export const evaluateMissionTimeGate = async (input: {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...input.dependencies };
   const { businessDate, currentMinute } = getKstCalendarParts(now);
   const scheduleEnforced = dependencies.isMissionScheduleEnforced();
-  const opensAtMinute = 540 as const;
-  const closesAtMinute = 1430 as const;
+  const opensAtMinute = 600 as const;
+  const closesAtMinute = 1435 as const;
   const allowed = !scheduleEnforced
     || (currentMinute >= opensAtMinute && currentMinute < closesAtMinute);
 
