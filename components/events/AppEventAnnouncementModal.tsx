@@ -151,7 +151,7 @@ function ChildAnnouncementBody() {
         </div>
 
         <div className="text-sm leading-relaxed space-y-1" style={{ color: "var(--color-k-navy, #1A2B4C)" }}>
-          <p>미션을 하면서 30일 동안 케이와 더 친해져요.</p>
+          <p>미션과 자유대화를 케이랑 꾸준히 진행하면 30일 동안 케이와 더 친해져요.</p>
           <p>많이 참여할수록 더 좋은 상품을 받을 수 있어요.</p>
         </div>
       </div>
@@ -219,7 +219,7 @@ function ParentAnnouncementBody() {
           이벤트에 참여하고 목표를 달성하면 다양한 상품도 받을 수 있습니다.
         </p>
         <p className="font-bold mt-3">1. 케이와 친해지는 30일</p>
-        <p>30일 동안 케이와 미션을 꾸준히 완료하며 목표에 도전해요. 미션 달성 정도에 따라 상품을 받을 수 있습니다.</p>
+        <p>미션과 자유대화를 케이랑 꾸준히 진행하면 30일 동안 목표에 도전할 수 있어요. 참여 정도에 따라 상품을 받을 수 있습니다.</p>
         <p className="font-bold mt-3">2. 월별 퀴즈 리더보드</p>
         <p>매달 퀴즈 점수를 모아 친구들과 순위에 도전해요. 상위 순위를 달성한 아이에게 상품을 제공합니다.</p>
         <p className="font-bold mt-3">3. 매일 출석 황금열쇠 룰렛</p>

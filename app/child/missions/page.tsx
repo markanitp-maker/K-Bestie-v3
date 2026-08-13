@@ -2246,9 +2246,22 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         setHasClosedRewardModal(true);
         return;
       }
-      setIsRewardModalOpen(true);
+
+      const openRewardModal = () => setIsRewardModalOpen(true);
+      const isClosingSpeechActive = isLiveMode
+        ? turnPhaseUi === "k_speaking"
+        : sttTts.isSpeaking;
+      const openDelay = !kVoiceEnabled || !isClosingSpeechActive
+        ? window.setTimeout(openRewardModal, 300)
+        : null;
+      const safetyTimeout = window.setTimeout(openRewardModal, 8000);
+
+      return () => {
+        if (openDelay !== null) window.clearTimeout(openDelay);
+        window.clearTimeout(safetyTimeout);
+      };
     }
-  }, [missionState, completed, rewardStatus, hasClosedRewardModal]);
+  }, [missionState, completed, rewardStatus, hasClosedRewardModal, sessionId, isLiveMode, turnPhaseUi, sttTts.isSpeaking, kVoiceEnabled]);
 
   useEffect(() => {
     if (didHydrateRef.current) return;

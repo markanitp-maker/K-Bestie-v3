@@ -28,7 +28,7 @@ const ALL_WRITERS_MIGRATION_PATH = resolve(
 );
 
 const makeGoals = (satisfiedGoalCount: number): ConversationGoal[] =>
-  Array.from({ length: 4 }, (_, index) => ({
+  Array.from({ length: 10 }, (_, index) => ({
     goalId: `goal-${index + 1}`,
     missionSessionId: SESSION_ID,
     childId: CHILD_ID,
@@ -91,8 +91,8 @@ const award = (db: SupabaseClient, satisfiedGoalCount: number) => awardMissionV3
 test("같은 idempotency key를 두 번 연속 호출하면 두 번째 지급은 no-op이다", async () => {
   const mock = createAtomicRewardMock();
 
-  const first = await award(mock.db, 3);
-  const second = await award(mock.db, 3);
+  const first = await award(mock.db, 5);
+  const second = await award(mock.db, 5);
 
   assert.equal(first.rewarded, true);
   assert.equal(second.rewarded, false);
@@ -103,7 +103,7 @@ test("같은 idempotency key를 두 번 연속 호출하면 두 번째 지급은
 test("동시 재시도는 child+business_date+reward_type당 원장 행을 하나만 만든다 (RPC 래퍼 레벨)", async () => {
   const mock = createAtomicRewardMock();
   const settled = await Promise.allSettled(
-    Array.from({ length: 20 }, () => award(mock.db, 3)),
+    Array.from({ length: 20 }, () => award(mock.db, 5)),
   );
 
   assert.ok(settled.every((result) => result.status === "fulfilled"));
@@ -119,8 +119,8 @@ test("동시 재시도는 child+business_date+reward_type당 원장 행을 하�
 test("reopen/재완료로 재호출해도 하루 보상은 한 행을 넘지 않는다", async () => {
   const mock = createAtomicRewardMock();
 
-  await award(mock.db, 3);
-  const reopened = await award(mock.db, 3);
+  await award(mock.db, 5);
+  const reopened = await award(mock.db, 5);
 
   assert.equal(reopened.rewarded, false);
   assert.equal(mock.ledgerKeys.size, 1);
@@ -142,18 +142,18 @@ test("Boredom 조기종료로 Goal 2개 이하면 complete는 미지급이고 RP
   assert.equal(mock.ledgerKeys.size, 0);
 });
 
-test("Goal 3개 이상이면 complete 지급 대상이다", () => {
+test("Goal 5개 이상이면 complete 지급 대상이다", () => {
   assert.deepEqual(evaluateMissionV3RewardEligibility({
-    goals: makeGoals(3),
+    goals: makeGoals(5),
   }), {
     eligible: true,
     reason: "eligible",
-    satisfiedGoalCount: 3,
+    satisfiedGoalCount: 5,
   });
 });
 
 test("TS 사전판정과 RPC 반환 reason 문자열이 정확히 일치한다 (boredom 전용 문구 없음)", () => {
-  const eligibility = evaluateMissionV3RewardEligibility({ goals: makeGoals(2) });
+  const eligibility = evaluateMissionV3RewardEligibility({ goals: makeGoals(4) });
   assert.equal(eligibility.reason, "goal_threshold_not_met");
 
   const sql = readFileSync(MIGRATION_PATH, "utf8");

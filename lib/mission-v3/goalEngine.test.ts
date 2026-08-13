@@ -7,6 +7,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   evaluateGoalSatisfaction,
+  getCompletionThreshold,
+  hasMissionGoalThreshold,
   initializeConversationGoals,
   selectConversationGoalDrafts,
   type ConversationGoal,
@@ -78,17 +80,57 @@ test("Goal 생성은 부모 질문 P0을 첫 슬롯에 두고 나머지를 우�
   assert.equal(goals[0].semanticGroup, "FRIEND_RELATION");
 });
 
-test("Goal 후보가 4개 미만이면 불완전 세션을 만들지 않고 실패한다", () => {
+test("Goal 후보가 0개이면 실패한다", () => {
   assert.throws(
     () => selectConversationGoalDrafts({
       missionSessionId: "session-1",
       childId: "child-1",
-      candidates: [
-        { semanticGroup: "ONLY_ONE", priority: "P1", promptInstruction: "한 가지" },
-      ],
+      candidates: [],
     }),
-    /후보가 부족합니다/,
+    /후보가 없습니다/,
   );
+});
+
+test("Goal 후보가 10개 미만이어도 가능한 개수만큼 생성한다", () => {
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "session-1",
+    childId: "child-1",
+    candidates: [
+      { semanticGroup: "G1", priority: "P1", promptInstruction: "지시 1" },
+      { semanticGroup: "G2", priority: "P2", promptInstruction: "지시 2" },
+      { semanticGroup: "G3", priority: "P3", promptInstruction: "지시 3" },
+      { semanticGroup: "G4", priority: "P3", promptInstruction: "지시 4" },
+      { semanticGroup: "G5", priority: "P3", promptInstruction: "지시 5" },
+      { semanticGroup: "G6", priority: "P3", promptInstruction: "지시 6" },
+    ],
+  });
+  assert.equal(goals.length, 6);
+});
+
+test("목표 6개 중 5개 SATISFIED이면 완료(hasMissionGoalThreshold = true)된다", () => {
+  const goals = [
+    makeGoal({ goalId: "g1", status: "SATISFIED" }),
+    makeGoal({ goalId: "g2", status: "SATISFIED" }),
+    makeGoal({ goalId: "g3", status: "SATISFIED" }),
+    makeGoal({ goalId: "g4", status: "SATISFIED" }),
+    makeGoal({ goalId: "g5", status: "SATISFIED" }),
+    makeGoal({ goalId: "g6", status: "PENDING" }),
+  ];
+  assert.equal(getCompletionThreshold(goals), 5);
+  assert.equal(hasMissionGoalThreshold(goals), true);
+});
+
+test("목표 6개 중 4개 SATISFIED이면 미완료(hasMissionGoalThreshold = false)이다", () => {
+  const goals = [
+    makeGoal({ goalId: "g1", status: "SATISFIED" }),
+    makeGoal({ goalId: "g2", status: "SATISFIED" }),
+    makeGoal({ goalId: "g3", status: "SATISFIED" }),
+    makeGoal({ goalId: "g4", status: "SATISFIED" }),
+    makeGoal({ goalId: "g5", status: "PENDING" }),
+    makeGoal({ goalId: "g6", status: "PENDING" }),
+  ];
+  assert.equal(getCompletionThreshold(goals), 5);
+  assert.equal(hasMissionGoalThreshold(goals), false);
 });
 
 test("한 아이 발화의 source turn 하나가 여러 Goal을 동시에 충족한다", () => {

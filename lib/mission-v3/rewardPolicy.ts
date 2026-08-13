@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
-  CONVERSATION_GOAL_COUNT,
   countSatisfiedGoals,
+  getCompletionThreshold,
   type ConversationGoal,
 } from "@/lib/mission-v3/goalEngine";
 
@@ -64,11 +64,14 @@ export const evaluateMissionV3RewardEligibility = (input: {
 }): MissionV3RewardEligibility => {
   const satisfiedGoalCount = countSatisfiedGoals(input.goals);
 
-  if (input.goals.length !== CONVERSATION_GOAL_COUNT) {
+  // 후보 부족(쿨다운 등)으로 Goal이 CONVERSATION_GOAL_COUNT보다 적게 생성될 수 있다.
+  // 정확히 일치를 요구하면 그런 세션은 완료해도 보상이 안 나간다 — 최소 1개만 확인한다.
+  if (input.goals.length === 0) {
     return { eligible: false, reason: "goals_not_initialized", satisfiedGoalCount };
   }
 
-  if (satisfiedGoalCount < 3) {
+  // 완료 기준은 goalEngine이 실제 생성된 Goal 수를 반영해 보정한 값을 쓴다.
+  if (satisfiedGoalCount < getCompletionThreshold(input.goals)) {
     return { eligible: false, reason: "goal_threshold_not_met", satisfiedGoalCount };
   }
 

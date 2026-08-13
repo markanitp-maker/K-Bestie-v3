@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   fetchSessionGoals,
+  getCompletionThreshold,
   type ConversationGoal,
   type GoalAssessment,
 } from "@/lib/mission-v3/goalEngine";
@@ -44,6 +45,36 @@ const MISSION_WEEKDAYS: ReadonlySet<MissionWeekday> = new Set([
 
 const normalizeSemanticGroup = (value: string): string => value.trim().toUpperCase();
 
+export const DEFAULT_MISSION_COMPLETION_MESSAGE = "오늘 미션을 모두 완료했어. 소중한 이야기 들려줘서 고마워!";
+
+export const buildCompletionKMessage = (rawKResponse: string): string => {
+  const trimmed = rawKResponse.trim();
+  if (!trimmed) return DEFAULT_MISSION_COMPLETION_MESSAGE;
+
+  const qIndex = trimmed.indexOf("?");
+  let reactionPart = "";
+  if (qIndex !== -1) {
+    const beforeQ = trimmed.slice(0, qIndex);
+    const lastSentenceEnd = Math.max(beforeQ.lastIndexOf("!"), beforeQ.lastIndexOf("."));
+    if (lastSentenceEnd !== -1) {
+      reactionPart = beforeQ.slice(0, lastSentenceEnd + 1).trim();
+    } else {
+      reactionPart = "";
+    }
+  } else {
+    reactionPart = trimmed;
+  }
+
+  if (reactionPart && reactionPart.length >= 3) {
+    const combined = `${reactionPart} ${DEFAULT_MISSION_COMPLETION_MESSAGE}`;
+    if (combined.length <= 80) {
+      return combined;
+    }
+  }
+
+  return DEFAULT_MISSION_COMPLETION_MESSAGE;
+};
+
 export const getMissionWeekday = (now: Date = new Date()): MissionWeekday => {
   const weekday = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Seoul",
@@ -64,7 +95,7 @@ export const buildGoalProgress = (goals: ConversationGoal[]) => ({
   pending: goals.filter((goal) => goal.status === "PENDING").length,
   declined: goals.filter((goal) => goal.status === "DECLINED").length,
   skipped: goals.filter((goal) => goal.status === "SKIPPED").length,
-  completionThreshold: 3,
+  completionThreshold: getCompletionThreshold(goals),
 });
 
 export const loadMissionPromptGoals = async (input: {

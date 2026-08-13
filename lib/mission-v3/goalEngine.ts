@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const CONVERSATION_GOAL_COUNT = 4;
+export const CONVERSATION_GOAL_COUNT = 10;
+export const TARGET_COMPLETION_COUNT = 5;
 export const MIN_GOAL_CONFIDENCE = 0.5;
 
 export type GoalPriority = "P0" | "P1" | "P2" | "P3";
@@ -187,8 +188,8 @@ export const selectConversationGoalDrafts = (input: {
     usedSemanticGroups.add(semanticGroup);
   }
 
-  if (selected.length !== CONVERSATION_GOAL_COUNT) {
-    throw new Error(`Conversation Goal 후보가 부족합니다. 필요 ${CONVERSATION_GOAL_COUNT}개, 선택 ${selected.length}개`);
+  if (selected.length === 0) {
+    throw new Error("Conversation Goal 후보가 없습니다.");
   }
 
   return selected.map((goal, index) => ({ ...goal, goalOrder: index + 1 }));
@@ -269,10 +270,10 @@ export const initializeConversationGoals = async (input: {
   const existing = await fetchSessionGoals(input.db, input.missionSessionId);
   if (existing.length === CONVERSATION_GOAL_COUNT) return existing;
   if (existing.length > CONVERSATION_GOAL_COUNT) {
-    throw new Error("세션에 Conversation Goal이 4개보다 많이 존재합니다.");
+    throw new Error(`세션에 Conversation Goal이 ${CONVERSATION_GOAL_COUNT}개보다 많이 존재합니다.`);
   }
   if (existing.some((goal) => goal.status !== "PENDING")) {
-    throw new Error("진행 상태가 있는 불완전 Conversation Goal 세션은 재초기화할 수 없습니다.");
+    return existing;
   }
 
   const parentQuestion = await loadHighestPriorityParentQuestion(input.db, input.childId);
@@ -313,7 +314,7 @@ export const initializeConversationGoals = async (input: {
   }
 
   const initialized = await fetchSessionGoals(input.db, input.missionSessionId);
-  if (initialized.length !== CONVERSATION_GOAL_COUNT) {
+  if (initialized.length !== drafts.length) {
     throw new Error(`Conversation Goal 초기화가 불완전합니다. 생성 결과 ${initialized.length}개`);
   }
   return initialized;
@@ -419,5 +420,8 @@ export const persistGoalDecisions = async (
 export const countSatisfiedGoals = (goals: ConversationGoal[]): number =>
   goals.filter((goal) => goal.status === "SATISFIED").length;
 
+export const getCompletionThreshold = (goals: ConversationGoal[]): number =>
+  goals.length === 0 ? TARGET_COMPLETION_COUNT : Math.min(TARGET_COMPLETION_COUNT, goals.length);
+
 export const hasMissionGoalThreshold = (goals: ConversationGoal[]): boolean =>
-  countSatisfiedGoals(goals) >= 3;
+  goals.length > 0 && countSatisfiedGoals(goals) >= getCompletionThreshold(goals);

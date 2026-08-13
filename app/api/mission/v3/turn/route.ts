@@ -19,6 +19,7 @@ import { hasMissionGoalThreshold, type GoalAssessment } from "@/lib/mission-v3/g
 import { respondToMissionTurn } from "@/lib/mission-v3/missionAdapter";
 import { awardMissionV3Reward } from "@/lib/mission-v3/rewardPolicy";
 import {
+  buildCompletionKMessage,
   buildGoalProgress,
   fetchMissionGoals,
   fetchRecentMissionHistory,
@@ -497,8 +498,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "최종 미션 상태를 확인하지 못했어요." }, { status: 500 });
   }
 
+  let finalKMessage = finalized.k_response;
+  if (finalProgress.status === "COMPLETED") {
+    finalKMessage = buildCompletionKMessage(finalized.k_response);
+    try {
+      await service
+        .from("chat_messages")
+        .update({ content: finalKMessage })
+        .eq("session_id", sessionId)
+        .eq("turn_id", `${clientTurnId}:k`)
+        .eq("role", "k");
+      await service
+        .from("mission_turns")
+        .update({ k_response_draft: finalKMessage })
+        .eq("session_id", sessionId)
+        .eq("client_turn_id", clientTurnId);
+    } catch (e) {
+      console.error("[mission/v3/turn] 마무리 멘트 DB 업데이트 실패", e);
+    }
+  }
+
   return NextResponse.json({
-    kMessage: finalized.k_response,
+    kMessage: finalKMessage,
     status: finalProgress.status,
     completed: finalProgress.status === "COMPLETED",
     safetyPaused: finalProgress.status === "SAFETY_PAUSED",
