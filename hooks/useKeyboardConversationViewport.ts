@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 
 export function useKeyboardConversationViewport() {
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [viewportOffsetTop, setViewportOffsetTop] = useState(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -18,6 +19,7 @@ export function useKeyboardConversationViewport() {
 
       const currentHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
       setViewportHeight(currentHeight);
+      setViewportOffsetTop(window.visualViewport ? window.visualViewport.offsetTop : 0);
 
       // baseHeight 보정 (가장 큰 창 높이 기록)
       if (!baseHeight || currentHeight > baseHeight) {
@@ -64,9 +66,29 @@ export function useKeyboardConversationViewport() {
     ? `${viewportHeight}px`
     : "100dvh";
 
+  // iOS는 키보드가 열리면 높이만 줄이는 게 아니라 페이지 자체를 위로 밀어 올린다
+  // (visualViewport.offsetTop > 0). 높이만 맞추면 컨테이너 윗부분이 보이는 영역
+  // 위로 빠져나가 상단이 잘리거나 화면 밖으로 사라진다(2026-08-14 실기기 확인).
+  // 키보드가 열린 동안에는 컨테이너를 visual viewport에 직접 고정한다.
+  const conversationContainerStyle: CSSProperties = isKeyboardOpen && viewportHeight
+    ? {
+        position: "fixed",
+        top: `${viewportOffsetTop}px`,
+        left: 0,
+        right: 0,
+        height: `${viewportHeight}px`,
+      }
+    : { height: "100dvh" };
+
   // 키보드가 홈 인디케이터를 덮고 있는 동안 safe-area 하단 여백은 죽은 공간이다.
   // 그대로 두면 위 공백에 그만큼이 더해진다.
   const bottomSafeAreaInset = isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom)";
 
-  return { viewportHeight, isKeyboardOpen, conversationHeight, bottomSafeAreaInset };
+  return {
+    viewportHeight,
+    isKeyboardOpen,
+    conversationHeight,
+    conversationContainerStyle,
+    bottomSafeAreaInset,
+  };
 }

@@ -734,7 +734,7 @@ export default function ChatPage() {
     }
   }, [childId, usagePhase, isAuto, micPermission, status, handleStart]);
 
-  const { isKeyboardOpen, conversationHeight, bottomSafeAreaInset } = useKeyboardConversationViewport();
+  const { isKeyboardOpen, conversationHeight, conversationContainerStyle, bottomSafeAreaInset } = useKeyboardConversationViewport();
 
   // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
   // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
@@ -886,7 +886,7 @@ export default function ChatPage() {
 
   return (
     <DemoFrame>
-      <div className="w-full flex justify-center bg-[#D5ECFF]" style={{ height: conversationHeight, overflowX: "hidden", overflowY: "hidden" }}>
+      <div className="w-full flex justify-center bg-[#D5ECFF]" style={{ ...conversationContainerStyle, overflowX: "hidden", overflowY: "hidden" }}>
         {wakeLockWarning && (
           <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
