@@ -19,6 +19,7 @@ import { hasMissionGoalThreshold, isOpenGoal, type GoalAssessment } from "@/lib/
 import { respondToMissionTurn } from "@/lib/mission-v3/missionAdapter";
 import { awardMissionV3Reward } from "@/lib/mission-v3/rewardPolicy";
 import {
+  DEFAULT_MISSION_COMPLETION_MESSAGE,
   buildCompletionKMessage,
   buildGoalProgress,
   fetchMissionGoals,
@@ -230,9 +231,45 @@ export async function POST(req: NextRequest) {
     if (startError.code === "55000") {
       const { data: latest } = await service
         .from("mission_progress")
-        .select("status")
+        .select("status, business_date")
         .eq("session_id", sessionId)
         .maybeSingle();
+
+      // 완료 임계에 도달하면 DB가 새 턴을 막는다(mission_completion_pending).
+      // 완료·보상은 턴 처리 뒷부분에서만 실행되므로, 임계를 넘긴 턴이 그 지점까지
+      // 도달하지 못하면(네트워크 중단·타임아웃 등) 미션이 IN_PROGRESS로 영구히
+      // 갇히고 이후 모든 턴이 여기서 막힌다(2026-08-14 Production 실측: Goal 5개
+      // 달성 후 보상·완료 멘트 없이 종료). 여기서 완료 경로를 이어받아 복구한다.
+      if (startError.message?.includes("mission_completion_pending") && latest?.status === "IN_PROGRESS") {
+        try {
+          const goals = await fetchMissionGoals(service, sessionId);
+          const reward = await awardMissionV3Reward({
+            db: service,
+            childId: session.child_id,
+            sourceSessionId: sessionId,
+            businessDate: latest.business_date,
+            goals,
+          });
+          const { data: settled } = await service
+            .from("mission_progress")
+            .select("status")
+            .eq("session_id", sessionId)
+            .maybeSingle();
+          return NextResponse.json({
+            kMessage: DEFAULT_MISSION_COMPLETION_MESSAGE,
+            status: settled?.status ?? "COMPLETED",
+            completed: (settled?.status ?? "COMPLETED") === "COMPLETED",
+            safetyPaused: false,
+            earlyEnded: false,
+            rewardStatus: reward.rewarded ? "awarded" : reward.reason,
+            goalProgress: buildGoalProgress(goals),
+            replayed: true,
+          });
+        } catch (error) {
+          console.error("[mission/v3/turn] 완료 대기 상태 복구 실패", error);
+        }
+      }
+
       return NextResponse.json({
         error: "다른 턴을 처리 중이거나 미션이 종료되었어요.",
         code: "MISSION_TURN_BLOCKED",
