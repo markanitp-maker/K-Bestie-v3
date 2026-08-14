@@ -84,6 +84,12 @@ export async function GET(req: NextRequest) {
 
   const businessDate = timeGate.businessDate;
   const enabled = (process.env.MISSION_TIME_GATE_ENABLED === "true") || timeGate.scheduleEnforced;
+  const clientContext = {
+    actorUserId: user.id,
+    familyId: String(access.child?.family_id ?? ""),
+    childId,
+    businessDate,
+  };
 
   const timeGateResponse = {
     enabled,
@@ -112,6 +118,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ...snapshot,
+      clientContext,
       timeGate: timeGateResponse,
       hasMission: false,
       roundType: "common",
@@ -183,6 +190,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ...snapshot,
+      clientContext,
       timeGate: timeGateResponse,
       hasMission: Boolean(v3Progress),
       roundType: v3Progress?.round_type ?? "daily_single",
@@ -254,6 +262,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ...snapshot,
+    clientContext,
     timeGate: timeGateResponse,
     hasMission: Boolean(sessionRow),
     roundType: progress?.round_type ?? roundNow,
@@ -267,4 +276,3 @@ export async function GET(req: NextRequest) {
     goalProgress: null,
   });
 }
-

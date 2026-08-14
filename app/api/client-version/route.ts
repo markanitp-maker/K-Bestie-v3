@@ -1,6 +1,26 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
+
+function currentBuildId(): string {
+  return process.env.VERCEL_GIT_COMMIT_SHA
+    || process.env.NEXT_PUBLIC_DEPLOYMENT_SHA
+    || process.env.VERCEL_DEPLOYMENT_ID
+    || "local";
+}
+
+export async function GET() {
+  return NextResponse.json(
+    { buildId: currentBuildId() },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    },
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
@@ -12,7 +32,7 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const { sessionId, childId, clientSha, swVersion } = body;
-    const deploymentId = process.env.VERCEL_DEPLOYMENT_ID || "local";
+    const deploymentId = process.env.VERCEL_DEPLOYMENT_ID || currentBuildId();
 
     const service = await createServiceClient();
     const { error } = await service.from("client_version_events").insert({

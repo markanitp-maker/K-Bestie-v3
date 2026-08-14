@@ -42,6 +42,12 @@ import { reconcilePendingMissionTurn } from "@/lib/mission/pendingTurnReconcilia
 import { mergeMissionStartWithTurnRecovery } from "@/lib/mission/serverTurnReconciliation";
 import { postMissionTurnWithRetry } from "@/lib/mission/turnRequest";
 import { parseMissionEntrySnapshot, resolveMissionDestination } from "@/lib/mission-v3/clientEntry";
+import {
+  fetchAuthenticatedChildId,
+  parseMissionClientScope,
+  reconcileMissionClientScope,
+} from "@/lib/mission/clientScope";
+import { ensureMissionClientVersion } from "@/lib/pwa/clientVersionGate";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -259,6 +265,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   const sessionIdRef = useRef<string | null>(null);
   const childIdRef = useRef<string | null>(null);
+  const missionScopeKeyRef = useRef<string | null>(null);
   childIdRef.current = childId;
   const missionPolicyRef = useRef<MissionPolicyVersion>("v2_dual");
   const v3RewardAwardedRef = useRef(false);
@@ -1230,7 +1237,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           }
           const finalized = await finalizeRes.json();
           serverPersistedKTextsRef.current.push(kText);
-          await clearPendingMissionTurn(childTurnId);
+          await clearPendingMissionTurn(childTurnId, missionScopeKeyRef.current ?? undefined);
           return finalized;
         };
 
@@ -1243,6 +1250,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
             voiceMode: voiceModeRef.current ?? "stt_tts",
             displaySequence: enrichedTurn.displaySequence ?? 0,
             createdAt: Date.now(),
+            scopeKey: missionScopeKeyRef.current ?? undefined,
           });
           sessionStorage.setItem("mission-turn-recovery-paused", childTurnId);
           const res = await postMissionTurnWithRetry({
@@ -2379,7 +2387,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       const isV3Mission = missionPolicyRef.current === "v3_single_daily";
       const res = await fetch(isV3Mission ? "/api/mission/v3/start" : "/api/mission/start", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-k-bestie-client-build": process.env.NEXT_PUBLIC_DEPLOYMENT_SHA || "local",
+        },
         body: JSON.stringify(isV3Mission
           ? { childId: cid }
           : { childId: cid, roundType: round, checkOnly: isCheckOnly }),
@@ -2549,7 +2560,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       // 다시 hydrate하므로 복구 실패가 error 화면을 영구 점유하지 않는다.
       if (!isV3Mission) {
         if (!request.isActive()) return;
-        const pendingTurn = await readPendingMissionTurn().catch((error: unknown) => {
+        const pendingTurn = await readPendingMissionTurn(
+          missionScopeKeyRef.current ?? undefined,
+          data.sessionId,
+        ).catch((error: unknown) => {
           console.error("[Mission] IndexedDB pending turn 복원 실패. 서버 세션으로 계속 진행합니다:", error);
           return null;
         });
@@ -2575,7 +2589,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         }
         const localPendingCleared = reconciliation.status === "unknown"
           ? false
-          : await clearPendingMissionTurn(pending.clientTurnId)
+          : await clearPendingMissionTurn(pending.clientTurnId, missionScopeKeyRef.current ?? undefined)
               .then(() => true)
               .catch((error: unknown) => {
                 console.error("[Mission] reconciled pending turn local cleanup failed", error);
@@ -2810,7 +2824,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const handleRetryAfterError = () => {
     setPhase("loading");
     setEntryStatus("checking");
-    lastAttemptFnRef.current();
+    attemptKindRef.current = "checking";
+    lastAttemptFnRef.current = () => setRetryTrigger((value) => value + 1);
+    setRetryTrigger((value) => value + 1);
   };
 
   useEffect(() => {
@@ -2839,6 +2855,44 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         childIdRef.current = cid;
       }
 
+      const versionGate = await ensureMissionClientVersion();
+      if (!request.isActive()) return;
+      if (versionGate.status === "reload_started") {
+        request.markSettled();
+        return;
+      }
+      if (versionGate.status !== "ready") {
+        setErrorMsg(versionGate.status === "update_required"
+          ? "앱을 최신 상태로 바꾼 뒤 다시 열어 주세요."
+          : "앱 버전을 확인하지 못했어요. 연결을 확인하고 다시 시도해 주세요.");
+        setPhase("error");
+        setEntryStatus("error");
+        request.markSettled();
+        return;
+      }
+
+      try {
+        const authenticatedChildId = await fetchAuthenticatedChildId(fetch, request.signal);
+        if (!request.isActive()) return;
+        if (authenticatedChildId !== cid) {
+          console.info("[Mission] replacing stale local child with authenticated child", {
+            hadDifferentLocalChild: true,
+          });
+          cid = authenticatedChildId;
+          setChildId(cid);
+          childIdRef.current = cid;
+          localStorage.setItem("k_child_id", cid);
+        }
+      } catch (error: unknown) {
+        if (isAbortError(error)) throw error;
+        console.error("[Mission] authenticated child reconciliation failed", error);
+        setErrorMsg("현재 로그인한 아이 정보를 확인하지 못했어요. 다시 로그인해 주세요.");
+        setPhase("error");
+        setEntryStatus("error");
+        request.markSettled();
+        return;
+      }
+
       const hour = getKstHour();
       const qpRound = searchParams?.get("roundType") as RoundType | null;
 
@@ -2846,53 +2900,43 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       let rawProgress: Record<string, unknown> | null = null;
       try {
         if (!request.isActive()) return;
-        const progressRes = await fetch(`/api/mission/v3/today-progress?childId=${cid}`, { signal: request.signal });
+        const progressRes = await fetch(`/api/mission/v3/today-progress?childId=${cid}`, {
+          signal: request.signal,
+          cache: "no-store",
+          headers: { "x-k-bestie-client-build": process.env.NEXT_PUBLIC_DEPLOYMENT_SHA || "local" },
+        });
         if (!request.isActive()) return;
         // fetch는 4xx/5xx에 throw하지 않는다. .ok를 확인하지 않으면 오류 응답의 본문이
         // 우연히 유효한 snapshot 형태일 때 v3 분기·시간/terminal 차단이 적용된다.
-        // non-ok는 snapshot 실패로 보고 v2 fail-open 경로로 보낸다.
+        // non-ok나 계약 위반은 정책을 추정하지 않고 서버 reconciliation 재시도로 보낸다.
         if (!progressRes.ok) throw new Error(`today-progress ${progressRes.status}`);
         const progress = await progressRes.json();
         if (!request.isActive()) return;
         rawProgress = progress;
         snapshot = parseMissionEntrySnapshot(progress);
+        const serverScope = parseMissionClientScope(progress);
+        if (!serverScope) throw new Error("Mission client scope is invalid");
+        const scopeResult = reconcileMissionClientScope(serverScope);
+        missionScopeKeyRef.current = scopeResult.scopeKey;
+        if (scopeResult.changed) {
+          sessionStorage.removeItem("mission-turn-recovery-paused");
+        }
+        if (serverScope.childId !== cid) {
+          cid = serverScope.childId;
+          setChildId(cid);
+          childIdRef.current = cid;
+        }
       } catch (error: unknown) {
         if (isAbortError(error)) throw error;
+        console.error("[Mission] server entry reconciliation failed", error);
       }
       if (!request.isActive()) return;
 
       if (!snapshot) {
-        missionPolicyRef.current = "v2_dual";
-        let timeRestrictionsEnabled = false;
-        let cfgActiveRound: RoundType | null = null;
-        let cfgScheduleEnforced = false;
-        try {
-          const cfgRes = await fetch("/api/config/child-time-restrictions", { signal: request.signal });
-          if (!request.isActive()) return;
-          if (cfgRes.ok) {
-            const cfg = await cfgRes.json();
-            if (!request.isActive()) return;
-            if (typeof cfg.enabled === "boolean") timeRestrictionsEnabled = cfg.enabled;
-            if (cfg.activeRound === "round1_day" || cfg.activeRound === "round2_night") cfgActiveRound = cfg.activeRound;
-            if (typeof cfg.scheduleEnforced === "boolean") cfgScheduleEnforced = cfg.scheduleEnforced;
-          }
-        } catch (error: unknown) {
-          if (isAbortError(error)) throw error;
-        }
-        if (!request.isActive()) return;
-        setScheduleEnforced(cfgScheduleEnforced);
-
-        const legacyRound: RoundType | null = cfgScheduleEnforced
-          ? (qpRound ?? cfgActiveRound)
-          : (qpRound ?? currentRound(hour) ?? (!timeRestrictionsEnabled ? "common" : null));
-        if (!legacyRound) {
-          setPhase("closed");
-          request.markSettled();
-          return;
-        }
-
-        setRoundType(legacyRound);
-        await fetchSessionData(cid, legacyRound, true, request);
+        setErrorMsg("서버에서 현재 미션 상태를 다시 확인하지 못했어요.");
+        setPhase("error");
+        setEntryStatus("error");
+        request.markSettled();
         return;
       }
 
@@ -3554,7 +3598,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
                 retryV3TurnRef.current();
                 return;
               }
-              const pending = await readPendingMissionTurn().catch(() => null);
+              const pending = await readPendingMissionTurn(
+                missionScopeKeyRef.current ?? undefined,
+                sessionIdRef.current ?? undefined,
+              ).catch(() => null);
               if (pending) {
                 window.location.reload();
                 return;

@@ -121,8 +121,41 @@ const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) =
   const url = String(input);
   runtime.push("fetch", { url, method: init?.method ?? "GET" });
   if (url === "/api/child/test-mode") return createResponse({ selectedMode: null });
+  if (url === "/api/child/me") return createResponse({ id: "child-1" });
   if (url === "/api/config/child-time-restrictions") {
     return createResponse({ enabled: false, scheduleEnforced: false, activeRound: null });
+  }
+  if (url.startsWith("/api/mission/v3/today-progress")) {
+    const isLocked = runtime.kind === "locked";
+    const isResumed = runtime.kind === "resumed";
+    return createResponse({
+      policyVersion: "v2_dual",
+      effectiveAt: "2026-08-14T00:00:00.000Z",
+      businessDate: "2026-08-14",
+      entryState: isLocked ? "completed" : isResumed ? "resume" : "start",
+      canEnter: !isLocked,
+      canStartNew: !isLocked && !isResumed,
+      sessionId: isLocked ? "locked-session" : isResumed ? "resumed-session" : null,
+      status: isLocked ? "COMPLETED" : isResumed ? "IN_PROGRESS" : null,
+      completed: isLocked,
+      blockReason: isLocked ? "daily_limit_reached" : null,
+      progress: isLocked || isResumed
+        ? { kind: "valid_answers", current: isLocked ? 5 : 1, target: 5 }
+        : null,
+      timeGate: {
+        enabled: false,
+        allowedForNewStart: !isLocked,
+        scheduleEnforced: false,
+        reason: null,
+      },
+      roundType: "common",
+      clientContext: {
+        actorUserId: "user-1",
+        familyId: "family-1",
+        childId: "child-1",
+        businessDate: "2026-08-14",
+      },
+    });
   }
   if (url === "/api/mission/start") {
     const request = JSON.parse(String(init?.body ?? "{}"));
@@ -149,6 +182,9 @@ const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) =
   }
   if (url.startsWith("/api/chat/messages?")) {
     return createResponse({ messages: [] });
+  }
+  if (url === "/api/client-version" && (init?.method ?? "GET") === "GET") {
+    return createResponse({ buildId: "local" });
   }
   if (url === "/api/client-version") return createResponse({ ok: true });
   return createResponse({ ok: true });
@@ -405,12 +441,11 @@ test("오늘 완료한 미션에 재진입하면 재시작 없이 잠금 화면�
   await act(async () => root?.render(React.createElement(ChildMissionsPage)));
   await flushReact();
 
-  assert.match(document.body.textContent ?? "", /미션을 이미 완료하였습니다/);
+  assert.match(document.body.textContent ?? "", /오늘의 미션을 모두 완료했어요/);
   assert.doesNotMatch(document.body.textContent ?? "", /다시 할래요/);
 
   const startRequest = runtime.timeline.find((item) => item.event === "mission.start.request");
-  assert.ok(startRequest);
-  assert.equal(Object.hasOwn(startRequest.request as object, "confirmRestart"), false);
+  assert.equal(startRequest, undefined, "완료 snapshot은 start API를 다시 호출하지 않아야 한다");
 
   await click("locked-completed-chat");
   const chatNavigation = runtime.timeline.find((item) => item.event === "router.replace" && Array.isArray(item.args) && item.args[0] === "/chat");
