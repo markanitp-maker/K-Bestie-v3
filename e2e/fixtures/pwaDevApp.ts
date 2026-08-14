@@ -75,9 +75,21 @@ export const loginAsQaChild = async (
   const loginButton = page.getByRole("button", { name: "로그인", exact: true });
   await expect(loginButton).toBeEnabled({ timeout: 10_000 });
   await loginButton.click();
-  await page.waitForURL((url) => !url.pathname.includes("/login"), {
-    timeout: 20_000,
-  });
+  await page.waitForURL(
+    (url) =>
+      url.pathname.includes("/child/home") ||
+      url.pathname.includes("/onboarding"),
+    { timeout: 20_000 },
+  );
+
+  if (page.url().includes("/onboarding")) {
+    const laterButton = page.getByRole("button", { name: /나중에 할게요/ });
+    await laterButton.waitFor({ state: "visible", timeout: 15_000 });
+    await laterButton.click();
+    await page.waitForURL((url) => url.pathname.includes("/child/home"), {
+      timeout: 20_000,
+    });
+  }
 };
 
 interface ServiceWorkerIdentity {
