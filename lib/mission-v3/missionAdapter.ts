@@ -98,10 +98,15 @@ export const selectNextPromptGoal = async (
 const buildAdapterInstruction = (goal: MissionPromptGoal | null): string | undefined => {
   if (!goal) return undefined;
   return [
-    "아이의 방금 말에 먼저 자연스럽게 반응해.",
-    `어색하지 않을 때만 다음 대화 방향을 한 번 이어가: ${goal.promptInstruction.trim()}`,
+    // "어색하지 않을 때만"은 너무 약한 권유라 모델이 대부분 무시하고 지금 화제에서
+    // 되묻기만 했다. 그러면 질문은 나오는데 새 Goal 주제로 넘어가지 않아 게이지가
+    // 중간에 멈춘다(2026-08-14 Production 실측: 4개 달성 후 정체).
+    // 반응은 짧게, 마지막은 아래 방향의 질문 하나로 끝내게 한다.
+    "아이의 방금 말에 한 문장으로 짧게 반응해.",
+    `그다음 반드시 이 방향으로 질문 하나를 던져 마무리해: ${goal.promptInstruction.trim()}`,
+    "질문은 하나만, 아이가 바로 답할 수 있게 짧고 쉽게.",
     "목표, 우선순위, 체크리스트, 질문 출처는 말하지 마.",
-    "아이가 거절하거나 화제를 바꾸면 반복해서 추궁하지 마.",
+    "다만 아이가 방금 그 주제를 거절했거나 힘들어하면 이번에는 묻지 말고 반응만 해.",
   ].join(" ");
 };
 

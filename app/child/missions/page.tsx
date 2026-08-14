@@ -925,7 +925,11 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
                 setRewardStatus("none");
                 setPhase("force_ended");
               } else {
-                setPhase("closed");
+                // 종료 상태가 아닌 423은 "다른 턴 처리 중"이나 "완료 확정 대기" 같은
+                // 일시적 차단이다. 여기서 phase를 closed로 두면 운영시간과 무관하게
+                // "미션 시간이 아니에요" 화면이 떠 아이도 보호자도 원인을 오해한다
+                // (2026-08-14 Production 실측). 재시도 가능한 안내로 되돌린다.
+                showRetry("잠시 후 다시 말해 줄래? 케이가 아직 정리하고 있어.");
               }
               return;
             }
