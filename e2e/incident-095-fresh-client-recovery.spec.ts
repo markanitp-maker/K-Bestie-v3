@@ -26,10 +26,27 @@ test('장애 095: 깨끗한 클라이언트에서 로그인·자유대화·미�
   });
 
   // 1. 로그인 — 리셋 직후 상태(빈 캐시·SW 없음)
+  //
+  // 최초 방문에서는 서비스워커가 activate하며 clients.claim()으로 제어권을 잡고,
+  // 그때 controllerchange가 떠서 페이지가 한 번 새로고침된다(기존 동작). 그 전에
+  // 입력하면 값이 날아가므로 새로고침이 끝난 뒤에 채운다.
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
-  await page.locator('input[type="text"]').fill(USERNAME);
-  await page.locator('input[type="password"]').fill(process.env.QA_TEST_PASSWORD || '');
-  await page.getByRole('button', { name: '로그인', exact: true }).click();
+  await page.waitForTimeout(6000);
+  await page.waitForLoadState('networkidle');
+
+  const idInput = page.getByPlaceholder('아이 아이디를 입력하세요');
+  const pwInput = page.getByPlaceholder('비밀번호를 입력하세요');
+  await idInput.fill(USERNAME);
+  await pwInput.fill(process.env.QA_TEST_PASSWORD || '');
+
+  const loginButton = page.getByRole('button', { name: '로그인', exact: true });
+  await expect(loginButton).toBeEnabled({ timeout: 10000 });
+  await loginButton.click();
+
+  // 로그인 직후 PWA 설치 안내가 먼저 뜬다. 실제 아이도 여기서 넘어가야 홈에 닿는다.
+  const skipInstall = page.getByRole('button', { name: /나중에 할게요/ });
+  await skipInstall.click({ timeout: 20000 }).catch(() => {});
+
   await page.waitForURL('**/child**', { timeout: 30000 });
   await page.waitForTimeout(2000);
 
