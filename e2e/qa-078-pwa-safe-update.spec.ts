@@ -538,6 +538,31 @@ const activateOnSafePages = async (
   });
 };
 
+const waitForMissionSendReady = async (page: Page): Promise<void> => {
+  const input = page.getByPlaceholder("케이에게 텍스트로 답하기...");
+  await expect(input).toBeVisible({ timeout: 45_000 });
+
+  const resumeButton = page.getByRole("button", {
+    name: /▶️?\s*미션 이어하기/,
+  });
+  const statusPanel = page.locator('[data-ui="text-mode-voice-state"]');
+
+  await expect
+    .poll(
+      async () => {
+        if (await resumeButton.isVisible().catch(() => false)) {
+          await resumeButton.click().catch(() => {});
+        }
+        const text = (await statusPanel.textContent().catch(() => "")) ?? "";
+        return text.includes("대기 중");
+      },
+      { timeout: 45_000, intervals: [200, 500, 1000] },
+    )
+    .toBe(true);
+
+  await expect(input).toBeEnabled({ timeout: 10_000 });
+};
+
 const enterMissionTextMode = async (page: Page, origin: string): Promise<void> => {
   await page.goto(`${origin}/child/missions`, { waitUntil: "domcontentloaded" });
   const entryButton = page.getByRole("button", {
@@ -554,19 +579,23 @@ const enterMissionTextMode = async (page: Page, origin: string): Promise<void> =
   await textModeButton.click();
   await expect(
     page.getByPlaceholder("케이에게 텍스트로 답하기..."),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 45_000 });
+  await waitForMissionSendReady(page);
 };
 
 const sendMissionText = async (page: Page, text: string): Promise<Request> => {
+  await waitForMissionSendReady(page);
+  const input = page.getByPlaceholder("케이에게 텍스트로 답하기...");
+  await input.fill(text);
+  const sendButton = page.getByRole("button", { name: "전송", exact: true });
+  await expect(sendButton).toBeEnabled({ timeout: 10_000 });
   const requestPromise = page.waitForRequest(
     (request) =>
       request.method() === "POST" &&
       new URL(request.url()).pathname === MISSION_TURN_PATH,
     { timeout: 45_000 },
   );
-  const input = page.getByPlaceholder("케이에게 텍스트로 답하기...");
-  await input.fill(text);
-  await page.getByRole("button", { name: "전송", exact: true }).click();
+  await sendButton.click();
   return requestPromise;
 };
 
