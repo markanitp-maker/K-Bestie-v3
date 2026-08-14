@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AdminShell, type AdminPageId } from "@/components/admin/shell/AdminShell";
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
@@ -164,7 +164,7 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
   </div>;
 }
 
-export default function CustomerRequestsPage() {
+function CustomerRequestsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedId = searchParams.get("requestId") ?? "";
@@ -244,4 +244,12 @@ export default function CustomerRequestsPage() {
     <AdminResponsiveTable mobileStrategy="card" columns={columns} data={rows} keyExtractor={(row) => row.id} isLoading={loading} emptyMessage="조건에 맞는 고객 접수가 없습니다." onRowClick={setDrawer} />
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm"><span>총 {data?.pagination.total ?? 0}건 · {data?.pagination.page ?? 1}/{data?.pagination.totalPages ?? 1}페이지</span><div className="flex items-center gap-2"><select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} className="rounded border p-2"><option value={25}>25개</option><option value={50}>50개</option><option value={100}>100개</option></select><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded border px-3 py-2 disabled:opacity-40">이전</button><button disabled={page >= (data?.pagination.totalPages ?? 1)} onClick={() => setPage((value) => value + 1)} className="rounded border px-3 py-2 disabled:opacity-40">다음</button></div></div>
   </div>{drawer && <RequestDrawer row={drawer} onClose={() => setDrawer(null)} onChanged={load} onNavigateUser={(tab, value) => router.push(`/admin/users?tab=${tab}&search=${encodeURIComponent(value)}`)} />}</AdminShell>;
+}
+
+export default function CustomerRequestsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-gray-500">고객 접수를 불러오는 중입니다.</div>}>
+      <CustomerRequestsPageContent />
+    </Suspense>
+  );
 }
