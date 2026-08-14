@@ -8,6 +8,8 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_DEV_SERVICE_ROLE_KEY || process.en
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_DEV_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const QA_ADMIN_EMAIL = (process.env.ADMIN_EMAILS ?? "").split(",")[0]?.trim();
 
+test.use({ serviceWorkers: "block" });
+
 async function attachAdminSession(context: BrowserContext) {
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY || !QA_ADMIN_EMAIL) {
     throw new Error("Dev Supabase QA credentials and ADMIN_EMAILS are required");
@@ -74,6 +76,7 @@ test.beforeEach(async ({ context, page }) => {
 test("두 비밀번호 input이 같은 브라우저 task에서 갱신돼도 값이 유실되지 않는다", async ({ page }) => {
   await page.goto(`${BASE}/signup?step=child`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("4 / 4 아이 등록", { exact: true })).toBeVisible();
+  await expect(page.getByPlaceholder("비밀번호 (6자 이상)")).toHaveAttribute("name", "child-new-password");
 
   await page.getByPlaceholder("성").fill("김");
   await page.getByPlaceholder("이름").fill("테스트");

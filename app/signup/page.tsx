@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
@@ -410,17 +410,21 @@ function FamilyStep({
 
 function ChildStep({
   familyId,
-  draft,
-  onDraftChange,
   onChildApproved,
   onBack,
 }: {
   familyId: string;
-  draft: ChildDraft;
-  onDraftChange: Dispatch<SetStateAction<ChildDraft>>;
   onChildApproved: (child: ChildStartGuideChild) => void;
   onBack: () => void;
 }) {
+  const [draft, setDraft] = useState<ChildDraft>({
+    familyName: "",
+    givenName: "",
+    gender: "",
+    username: "",
+    grade: "",
+    consent: false,
+  });
   const { familyName, givenName, gender, username, grade, consent } = draft;
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -431,6 +435,10 @@ function ChildStep({
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [showGuardianDocument, setShowGuardianDocument] = useState(false);
   const submittingRef = useRef(false);
+
+  const updateDraft = <Key extends keyof ChildDraft>(key: Key, value: ChildDraft[Key]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
 
   const canSubmit =
     familyName.trim() &&
@@ -518,14 +526,14 @@ function ChildStep({
           type="text"
           placeholder="성"
           value={familyName}
-          onChange={(e) => onDraftChange((current) => ({ ...current, familyName: e.target.value }))}
+          onInput={(e) => updateDraft("familyName", e.currentTarget.value)}
           className="w-full rounded-xl px-3 py-3 text-sm border border-gray-200 outline-none"
         />
         <input
           type="text"
           placeholder="이름"
           value={givenName}
-          onChange={(e) => onDraftChange((current) => ({ ...current, givenName: e.target.value }))}
+          onInput={(e) => updateDraft("givenName", e.currentTarget.value)}
           className="w-full rounded-xl px-3 py-3 text-sm border border-gray-200 outline-none"
         />
       </div>
@@ -537,7 +545,7 @@ function ChildStep({
           <button
             key={g.v}
             type="button"
-            onClick={() => onDraftChange((current) => ({ ...current, gender: g.v }))}
+            onClick={() => updateDraft("gender", g.v)}
             className={`flex-1 py-2.5 rounded-xl text-xs font-bold border cursor-pointer ${
               gender === g.v ? "text-white border-transparent" : "text-gray-600 border-gray-200 bg-white"
             }`}
@@ -549,7 +557,7 @@ function ChildStep({
       </div>
       <select
         value={grade}
-        onChange={(e) => onDraftChange((current) => ({ ...current, grade: e.target.value }))}
+        onChange={(e) => updateDraft("grade", e.currentTarget.value)}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white"
       >
         <option value="">학년을 선택해주세요</option>
@@ -571,7 +579,7 @@ function ChildStep({
           placeholder="아이 로그인 아이디"
           value={username}
           onChange={(e) => {
-            onDraftChange((current) => ({ ...current, username: e.target.value }));
+            updateDraft("username", e.currentTarget.value);
             if (usernameError) setUsernameError(null);
           }}
           className={`w-full rounded-xl px-4 py-3 text-sm border outline-none ${
@@ -623,7 +631,7 @@ function ChildStep({
           <input
             type="checkbox"
             checked={consent}
-            onChange={(e) => onDraftChange((current) => ({ ...current, consent: e.target.checked }))}
+            onChange={(e) => updateDraft("consent", e.currentTarget.checked)}
             className="mt-0.5"
           />
           <span>법정대리인으로서 위 아이의 정보 등록에 동의합니다.</span>
@@ -677,14 +685,6 @@ function SignupContent() {
   const [agreements, setAgreements] = useState<Record<string, boolean>>({});
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>({ name: "", relationship: "" });
   const [familyName, setFamilyName] = useState("");
-  const [childDraft, setChildDraft] = useState<ChildDraft>({
-    familyName: "",
-    givenName: "",
-    gender: "",
-    username: "",
-    grade: "",
-    consent: false,
-  });
   const [approvedChild, setApprovedChild] = useState<ChildStartGuideChild | null>(null);
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const handoffNavigatingRef = useRef(false);
@@ -890,8 +890,6 @@ function SignupContent() {
         (familyId ? (
           <ChildStep
             familyId={familyId}
-            draft={childDraft}
-            onDraftChange={setChildDraft}
             onChildApproved={setApprovedChild}
             onBack={() => navigateStep("family")}
           />
