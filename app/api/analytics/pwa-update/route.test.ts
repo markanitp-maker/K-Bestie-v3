@@ -2,11 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   POST,
+  PwaUpdateRouteDeps,
+} from "./route.js";
+import {
   isValidJsonContentType,
   isGenuineNoSessionAuthError,
   readJsonStreamWithLimit,
-  PwaUpdateRouteDeps,
-} from "./route.js";
+} from "./routeInternals.js";
 import { AppSessionError } from "../../../../lib/analytics/appSession.js";
 import { generateDeterministicEventId } from "../../../../lib/analytics/deterministicEventId.js";
 import type { BehaviorEventInput } from "../../../../lib/analytics/logBehaviorEvent.js";
