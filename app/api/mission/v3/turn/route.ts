@@ -15,7 +15,7 @@ import {
 import { fetchSameSessionTurns } from "@/lib/k-conversation/memory/sameSession";
 import { getLlmModel } from "@/lib/llm/modelRouter";
 import { assessGoalsFromUtterance } from "@/lib/mission-v3/goalAssessor";
-import { hasMissionGoalThreshold, type GoalAssessment } from "@/lib/mission-v3/goalEngine";
+import { hasMissionGoalThreshold, isOpenGoal, type GoalAssessment } from "@/lib/mission-v3/goalEngine";
 import { respondToMissionTurn } from "@/lib/mission-v3/missionAdapter";
 import { awardMissionV3Reward } from "@/lib/mission-v3/rewardPolicy";
 import {
@@ -312,7 +312,12 @@ export async function POST(req: NextRequest) {
       let promptGoals;
       try {
         const goals = await fetchMissionGoals(service, sessionId);
-        const openGoals = goals.filter((goal) => goal.status === "PENDING" || goal.status === "PARTIAL");
+        // SKIPPED는 "직전 발화와 무관"이라는 턴 단위 판정이지 Goal 종료가 아니다.
+        // 여기서 빼면 판정기에 넘길 Goal이 0개가 되어 assessGoalsFromUtterance가
+        // 즉시 빈 배열을 돌려주고, 이후 어떤 발화도 Goal을 SATISFIED로 만들지 못한다
+        // (2026-08-14 Production 실측: 26턴 대화에도 게이지 0 고정).
+        // 종료 상태는 SATISFIED/DECLINED뿐이다.
+        const openGoals = goals.filter(isOpenGoal);
         promptGoals = await loadMissionPromptGoals({
           db: service,
           childId: session.child_id,

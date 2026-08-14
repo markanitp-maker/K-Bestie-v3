@@ -106,6 +106,19 @@ const GOAL_ASSESSMENT_STATUSES: readonly GoalAssessment["status"][] = [
   "SKIPPED",
 ];
 
+/**
+ * Goal이 아직 열려 있는가(= 다시 물어볼 수 있고 SATISFIED로 승격될 수 있는가).
+ *
+ * 종료 상태는 SATISFIED/DECLINED 둘뿐이다. SKIPPED는 "직전 발화와 무관"이라는
+ * 턴 단위 판정일 뿐 Goal 종료가 아니므로 열린 Goal에 포함한다.
+ *
+ * 이 판정이 호출부마다 복제돼 있어 2026-08-14 Production에서 두 번 어긋났다:
+ * 질문 후보에서 SKIPPED를 빼 대화가 멈췄고, 판정 대상에서도 빼 게이지가 0으로
+ * 고정됐다. 새 호출부는 반드시 이 함수를 쓴다.
+ */
+export const isOpenGoal = (goal: Pick<ConversationGoal, "status">): boolean =>
+  goal.status === "PENDING" || goal.status === "PARTIAL" || goal.status === "SKIPPED";
+
 const normalizeSemanticGroup = (value: string): string => value.trim().toUpperCase();
 
 const toConversationGoal = (row: ConversationGoalRow): ConversationGoal => ({
