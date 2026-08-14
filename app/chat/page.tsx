@@ -735,12 +735,12 @@ export default function ChatPage() {
   }, [childId, usagePhase, isAuto, micPermission, status, handleStart]);
 
   const { viewportHeight, isKeyboardOpen } = useKeyboardConversationViewport();
-  const keyboardViewportHeight = mode === "text" && isKeyboardOpen && viewportHeight && viewportHeight > 0
-    ? viewportHeight
-    : null;
-  const keyboardViewportStyle = keyboardViewportHeight
-    ? { height: `${keyboardViewportHeight}px` }
-    : undefined;
+
+  // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
+  // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
+  // 화면이 튀는 현상(jitter)이 발생할 수 있습니다.
+  // 우측으로 밀리거나 잘리는 문제는 viewport 높이보다는 flex/grid 내의 
+  // min-width: 0 또는 width: 100vw 사용이 주 원인이므로 가로폭 안전 조건에 집중합니다.
 
   // 상태 플래그
   const isConnecting = status === "connecting";
@@ -885,13 +885,8 @@ export default function ChatPage() {
   }
 
   return (
-    <DemoFrame mobileViewportHeight={keyboardViewportHeight}>
-      <div
-        data-ui="freechat-conversation-viewport"
-        data-keyboard-open={isKeyboardOpen}
-        className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]"
-        style={{ overflowX: "hidden", overflowY: "hidden", ...keyboardViewportStyle }}
-      >
+    <DemoFrame>
+      <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "hidden" }}>
         {wakeLockWarning && (
           <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
@@ -900,12 +895,9 @@ export default function ChatPage() {
           </div>
         )}
         <div
-          data-ui="freechat-conversation-grid"
-          data-keyboard-open={isKeyboardOpen}
           className="w-full max-w-[480px] min-w-0 box-border h-[100dvh] relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto_auto_auto]"
           style={{
             background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)",
-            ...keyboardViewportStyle,
             "--chat-bubble-bottom-padding": "clamp(20px, 2.6dvh, 24px)",
             "--chat-mascot-bottom-padding": "clamp(37px, 4.8dvh, 43px)",
             "--chat-mascot-height": "clamp(145px, 42vw, 172px)",
@@ -1084,17 +1076,7 @@ export default function ChatPage() {
           )}
 
           {/* Bottom Inputs Area - 기존 UI 원본 100% 복원 (주황색 테두리 input + 주황색 52px 전송 버튼 + 흰색 52px X 버튼) */}
-          <div
-            data-ui="freechat-input-area"
-            className="relative z-30 w-full shrink-0 flex items-center justify-center"
-            style={{
-              paddingBottom: mode === "text"
-                ? (isKeyboardOpen
-                    ? "clamp(18px, 2.5dvh, 24px)"
-                    : "calc(clamp(18px, 2.5dvh, 24px) + env(safe-area-inset-bottom))")
-                : "calc(clamp(54px, 8dvh, 66px) + env(safe-area-inset-bottom))",
-            }}
-          >
+          <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(54px,8dvh,66px)+env(safe-area-inset-bottom))]">
             {mode === "text" ? (
               <div
                 className="w-full min-w-0 flex gap-2 box-border"

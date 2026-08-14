@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { useDemoView } from "./DemoViewContext";
 import { ViewToggle } from "./ViewToggle";
 
@@ -83,16 +83,9 @@ function useDeviceMode(setView: (v: "tablet" | "mobile") => void) {
   return { isPc, determined };
 }
 
-export function DemoFrame({
-  children,
-  mobileViewportHeight,
-}: {
-  children: ReactNode;
-  mobileViewportHeight?: number | null;
-}) {
+export function DemoFrame({ children }: { children: ReactNode }) {
   const { view, setView } = useDemoView();
   const { isPc, determined } = useDeviceMode(setView);
-  const hasMobileViewportHeight = typeof mobileViewportHeight === "number" && mobileViewportHeight > 0;
 
   if (!determined) {
     // 최초 디바이스 판정 전에는 children(내부에 iframe이 있을 수 있음)을 마운트하지
@@ -103,14 +96,7 @@ export function DemoFrame({
 
   if (!isPc) {
     return (
-      <div
-        data-ui="demo-frame-mobile-viewport"
-        className={`w-full ${hasMobileViewportHeight ? "overflow-hidden" : "h-dvh overflow-y-auto"}`}
-        style={{
-          background: "var(--color-k-surface)",
-          height: hasMobileViewportHeight ? `${mobileViewportHeight}px` : undefined,
-        }}
-      >
+      <div className="h-dvh w-full overflow-y-auto" style={{ background: "var(--color-k-surface)" }}>
         {children}
       </div>
     );

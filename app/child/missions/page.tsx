@@ -3730,8 +3730,8 @@ function MissionRouteGate() {
     <DemoFrame>
       <div className="mission-frame-wrapper relative w-full h-full">
         <style dangerouslySetInnerHTML={{ __html: `
-          .mission-frame-wrapper [class*="h-[100dvh]"]:not([data-keyboard-open="true"]),
-          .mission-frame-wrapper [class*="min-h-[100dvh]"]:not([data-keyboard-open="true"]) {
+          .mission-frame-wrapper [class*="h-[100dvh]"],
+          .mission-frame-wrapper [class*="min-h-[100dvh]"] {
             height: 100% !important;
             min-height: 100% !important;
           }
