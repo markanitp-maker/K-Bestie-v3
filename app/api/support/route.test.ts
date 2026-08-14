@@ -1,20 +1,26 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { POST, runtime } from "./route";
 import {
   GUEST_RATE_LIMIT_MAX_REQUESTS,
   GUEST_RATE_LIMIT_WINDOW_MS,
   MAX_EMAIL_LENGTH,
   MAX_PAYLOAD_BYTES,
-  POST,
   _resetGuestRateLimitsForTest,
   checkGuestRateLimit,
   getClientIp,
   isValidEmail,
   sweepExpiredRateLimits,
-} from "./route";
+} from "@/lib/support/landingInquiry";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+
+test("Next.js Route 규격에 맞게 runtime과 POST만 export한다", async () => {
+  const routeExports = await import("./route");
+  assert.deepEqual(Object.keys(routeExports).sort(), ["POST", "runtime"].sort());
+  assert.equal(runtime, "nodejs");
+});
 
 test("이메일 형식과 최대 길이를 검증한다", () => {
   assert.equal(isValidEmail("user@example.com"), true);

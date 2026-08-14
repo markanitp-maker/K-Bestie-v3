@@ -46,10 +46,10 @@ test("LandingSupportInquiryModal이 열려있을 때 027 한국어 정규 문구
 });
 
 test("모달 닫기 시 성공 여부와 무관하게 모든 폼 상태(email, content, error, success)와 멱등키가 초기화되도록 계약을 검증한다", async () => {
-  const source = await readFile(
+  const source = (await readFile(
     new URL("./LandingSupportInquiryModal.tsx", import.meta.url),
     "utf8"
-  );
+  )).replace(/\r\n/g, "\n");
 
   // resetAllFormState 함수가 모든 상태(email, content, errorMessage, successRequestNumber) 및 멱등키를 초기화하는지 검증
   assert.ok(source.includes('const resetAllFormState = useCallback(() => {'), "resetAllFormState 함수 정의가 존재해야 함");
@@ -79,10 +79,10 @@ test("모달 닫기 시 성공 여부와 무관하게 모든 폼 상태(email, c
 });
 
 test("제출 중 닫기 차단 및 제출 실패 시 입력값과 멱등키가 보존되어 재시도 가능함을 검증한다", async () => {
-  const source = await readFile(
+  const source = (await readFile(
     new URL("./LandingSupportInquiryModal.tsx", import.meta.url),
     "utf8"
-  );
+  )).replace(/\r\n/g, "\n");
 
   // 1. 제출 중 모든 닫기 경로(handleClose, Escape, 배경 클릭, X 버튼, 취소 버튼) 차단 검증
   assert.ok(source.includes("if (isSubmitting) return;"), "handleClose는 isSubmitting 상태에서 조기 리턴해야 함");
