@@ -71,15 +71,19 @@ export const selectNextPromptGoal = async (
   engine: Pick<MissionAdapterEngine, "isTopicOnCooldownForK"> = DEFAULT_ENGINE,
 ): Promise<MissionPromptGoal | null> => {
   const candidates = goals
-    .filter((goal) => goal.status === "PENDING" || goal.status === "PARTIAL")
+    // SKIPPED는 "이번 발화와 무관하다"는 판정이지 Goal 종료가 아니다. 질문 후보에서
+    // 빼면 첫 발화에서 LLM이 관련 없는 Goal을 모두 SKIPPED로 표시하는 순간 물어볼
+    // Goal이 0개가 되어 대화가 멈춘다(2026-08-14 Production 실측: Goal 10개 전건
+    // SKIPPED → 게이지 0 고정). 종료 상태는 SATISFIED/DECLINED뿐이다.
+    .filter((goal) => goal.status === "PENDING" || goal.status === "PARTIAL" || goal.status === "SKIPPED")
     .sort((left, right) => {
       const priorityDifference = GOAL_PRIORITY_ORDER[left.priority] - GOAL_PRIORITY_ORDER[right.priority];
       return priorityDifference || left.goalOrder - right.goalOrder;
     });
 
   for (const goal of candidates) {
-    // Parent Question P0 may override general cooldown, but a DECLINED/SKIPPED P0
-    // never reaches this list and therefore cannot be asked again in the session.
+    // Parent Question P0 may override general cooldown, but a DECLINED P0 never
+    // reaches this list and therefore cannot be asked again in the session.
     if (goal.priority === "P0" && goal.parentQuestionId) return goal;
     const settled = await Promise.allSettled([
       engine.isTopicOnCooldownForK(db, childId, goal.semanticGroup),

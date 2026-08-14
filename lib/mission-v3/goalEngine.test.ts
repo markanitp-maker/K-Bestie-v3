@@ -314,6 +314,42 @@ test("R-5: 부분 초기화의 두 UNIQUE 충돌은 pending 세트를 교체하�
   assert.deepEqual(initialized.map((goal) => goal.goalId), finalGoals.map((goal) => goal.goalId));
 });
 
+test("SKIPPED Goal은 질문 후보에서 제외되지 않는다 — 전건 SKIPPED에서도 물어볼 Goal이 남는다", async () => {
+  // 2026-08-14 Production 장애: 첫 발화에서 LLM이 관련 없는 Goal 10개를 모두
+  // SKIPPED로 판정하자 질문 후보가 0개가 되어 대화가 멈추고 게이지가 0으로 고정됐다.
+  // SKIPPED는 "이번 발화와 무관"이지 Goal 종료가 아니다. 종료는 SATISFIED/DECLINED뿐.
+  const db = {} as unknown as SupabaseClient;
+  const goals: MissionPromptGoal[] = Array.from({ length: 10 }, (_, index) => ({
+    ...makeGoal({
+      goalId: `goal-${index + 1}`,
+      goalOrder: index + 1,
+      semanticGroup: `GROUP_${index + 1}`,
+      status: "SKIPPED",
+    }),
+    promptInstruction: `주제 ${index + 1} 질문`,
+  }));
+
+  const selected = await selectNextPromptGoal(db, "child-1", goals, {
+    isTopicOnCooldownForK: async () => false,
+  });
+
+  assert.equal(selected?.goalId, "goal-1");
+});
+
+test("DECLINED Goal만 남으면 질문 후보가 없다", async () => {
+  const db = {} as unknown as SupabaseClient;
+  const goals: MissionPromptGoal[] = [
+    { ...makeGoal({ status: "DECLINED" }), promptInstruction: "거절된 질문" },
+    { ...makeGoal({ goalId: "goal-2", goalOrder: 2, semanticGroup: "G2", status: "SATISFIED" }), promptInstruction: "달성된 질문" },
+  ];
+
+  const selected = await selectNextPromptGoal(db, "child-1", goals, {
+    isTopicOnCooldownForK: async () => false,
+  });
+
+  assert.equal(selected, null);
+});
+
 test("다음 능동 Goal 선택은 P0을 cooldown보다 우선하고 거절 Goal은 제외한다", async () => {
   const db = {} as unknown as SupabaseClient;
   let cooldownChecks = 0;
