@@ -24,6 +24,7 @@ type PwaState =
 
 const BUILD_ID = PWA_CLIENT_VERSION;
 const RELOAD_GUARD_KEY = `pwa_sw_reloaded_${BUILD_ID}`;
+const REFRESH_RELOAD_GUARD_KEY = `pwa_sw_refresh_reloaded_${BUILD_ID}`;
 const DISMISS_KEY = `pwa_sw_dismissed_${BUILD_ID}`;
 
 function debugLog(event: string) {
@@ -120,6 +121,23 @@ export function PwaServiceWorker() {
 
     // waiting worker가 사라졌다면 다른 탭에서 이미 활성화됐을 수 있다. 동일 stale 객체에
     // 메시지를 반복하지 않고 현재 페이지를 한 번만 안전하게 새로고침한다.
+    //
+    // 가드가 필요한 이유: 이 경로는 예전에는 사용자가 "지금 업데이트"를 눌러야만
+    // 닿았지만, 대화 종료 시 자동 적용을 넣으면서 아이의 화면 이동만으로도 닿게 됐다.
+    // 가드가 없으면 waiting worker가 계속 남아 있는 동안 아이가 대화방과 홈을 오갈
+    // 때마다 화면이 새로고침된다.
+    try {
+      if (sessionStorage.getItem(REFRESH_RELOAD_GUARD_KEY)) {
+        debugLog("refresh_reload_skipped");
+        setPwaState("idle");
+        return;
+      }
+      sessionStorage.setItem(REFRESH_RELOAD_GUARD_KEY, "true");
+    } catch {
+      // 가드를 걸 수 없으면 새로고침하지 않는다 — staleClientRecovery와 같은 정책이다.
+      setPwaState("idle");
+      return;
+    }
     setPwaState("reloading");
     window.location.reload();
   }, [rememberWaitingWorker, scheduleDelayedState, startWaitingWorker]);

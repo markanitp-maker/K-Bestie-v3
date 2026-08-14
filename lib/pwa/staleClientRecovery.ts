@@ -77,16 +77,16 @@ export async function purgeStaleChunkCache(cacheStorage: CacheStorage): Promise<
   for (const name of names) {
     const cache = await cacheStorage.open(name);
     const requests = await cache.keys();
-    for (const request of requests) {
-      let pathname: string;
+    const targets = requests.filter((request) => {
       try {
-        pathname = new URL(request.url).pathname;
+        return new URL(request.url).pathname.startsWith(NEXT_STATIC_PREFIX);
       } catch {
-        continue;
+        return false;
       }
-      if (!pathname.startsWith(NEXT_STATIC_PREFIX)) continue;
-      if (await cache.delete(request)) removed += 1;
-    }
+    });
+    // 청크가 수백 개일 수 있다. 순차로 지우면 새로고침이 그만큼 늦어진다.
+    const results = await Promise.all(targets.map((request) => cache.delete(request)));
+    removed += results.filter(Boolean).length;
   }
   return removed;
 }
@@ -146,7 +146,15 @@ export async function recoverStaleClient({
   let guard: StaleRecoveryGuard;
   try {
     guard = readRecoveryGuard(sessionStorageImpl.getItem(STALE_RECOVERY_GUARD_KEY), at);
-    if (guard.count >= STALE_RECOVERY_MAX_ATTEMPTS) return "exhausted";
+    if (guard.count >= STALE_RECOVERY_MAX_ATTEMPTS) {
+      // 상한에 닿았으면 lastAt을 계속 밀어 창이 리셋되지 않게 한다. 그러지 않으면
+      // 영구히 404가 나는 자산이 하나 있을 때 "10분마다 3회 새로고침"이 끝없이 반복된다.
+      sessionStorageImpl.setItem(
+        STALE_RECOVERY_GUARD_KEY,
+        JSON.stringify({ count: guard.count, lastAt: at } satisfies StaleRecoveryGuard),
+      );
+      return "exhausted";
+    }
     if (guard.lastAt > 0 && at - guard.lastAt < STALE_RECOVERY_MIN_INTERVAL_MS) return "too_soon";
     sessionStorageImpl.setItem(
       STALE_RECOVERY_GUARD_KEY,

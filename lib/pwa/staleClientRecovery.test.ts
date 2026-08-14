@@ -152,6 +152,38 @@ test("배포가 여러 번 나가도 최소 간격만 지나면 매번 복구한
   assert.equal(reloads, STALE_RECOVERY_MAX_ATTEMPTS);
 });
 
+test("영구히 404가 나는 자산이 있어도 새로고침이 무한 반복되지 않는다", async () => {
+  // exhausted에서도 lastAt을 밀어 창이 리셋되지 않게 해야 한다. 그러지 않으면
+  // 10분마다 3회씩 새로고침이 끝없이 돈다.
+  const session = memorySessionStorage();
+  const { storage } = fakeCacheStorage({ [`${SHELL_CACHE_PREFIX}local`]: [CHUNK] });
+  let reloads = 0;
+  let clock = 1_000_000;
+
+  const attempt = () => recoverStaleClient({
+    cacheStorage: storage,
+    sessionStorageImpl: session,
+    reload: () => { reloads += 1; },
+    isOnline: () => true,
+    now: () => clock,
+  });
+
+  for (let i = 0; i < STALE_RECOVERY_MAX_ATTEMPTS; i += 1) {
+    assert.equal(await attempt(), "reloading");
+    clock += STALE_RECOVERY_MIN_INTERVAL_MS + 1;
+  }
+  // 오류가 계속 나는 동안에는 총 경과가 창을 아무리 넘겨도 다시 열리지 않는다.
+  for (let i = 0; i < 20; i += 1) {
+    clock += STALE_RECOVERY_WINDOW_MS / 2;
+    assert.equal(await attempt(), "exhausted");
+  }
+  assert.ok(
+    clock - 1_000_000 > STALE_RECOVERY_WINDOW_MS * 5,
+    "창 길이를 여러 배 넘긴 뒤에도 여전히 막혀 있어야 한다",
+  );
+  assert.equal(reloads, STALE_RECOVERY_MAX_ATTEMPTS);
+});
+
 test("창이 지나면 다시 복구할 수 있다 — 긴 세션에서 다음 배포 사고도 막아야 한다", async () => {
   const session = memorySessionStorage();
   const { storage } = fakeCacheStorage({ [`${SHELL_CACHE_PREFIX}local`]: [CHUNK] });
