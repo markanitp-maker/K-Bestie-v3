@@ -167,7 +167,7 @@ export function MissionConversationLayout({
     }
   };
 
-  const { viewportHeight, isKeyboardOpen } = useKeyboardConversationViewport();
+  const { isKeyboardOpen, conversationHeight, bottomSafeAreaInset } = useKeyboardConversationViewport();
 
   // The conversation viewport is intentionally measured after the current bubble.  Older
   // messages are optional UI, while the active question must never be clipped or squeezed.
@@ -239,8 +239,8 @@ export function MissionConversationLayout({
     // 극단적으로 길어 그 최소 공간조차 넘어서는 경우 hidden이면 상단이 조용히
     // 잘린다. auto는 그 극단적인 경우에만 스크롤로 전체 표시를 보장하는
     // 최후 방어선이고, 평소에는 콘텐츠가 뷰포트 안에 들어와 스크롤이 나타나지 않는다.
-    <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "auto" }}>
-      <div className="w-full max-w-[480px] min-w-0 h-[100dvh] relative box-border grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]" style={{ background: "linear-gradient(180deg, #D8EEFF 0%, #EAF6FB 46%, #FFF9EE 76%, #FFF4E6 100%)" }}>
+    <div className="w-full flex justify-center bg-[#D5ECFF]" style={{ height: conversationHeight, overflowX: "hidden", overflowY: "auto" }}>
+      <div className="w-full max-w-[480px] min-w-0 relative box-border grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]" style={{ height: conversationHeight, background: "linear-gradient(180deg, #D8EEFF 0%, #EAF6FB 46%, #FFF9EE 76%, #FFF4E6 100%)" }}>
         
         {/* Decorations */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
@@ -468,7 +468,7 @@ export function MissionConversationLayout({
           )}
 
           {/* Bottom Inputs Area - 미션 하단 UI 원본 100% 복원 (주황 테두리 input + 주황 52px 전송 + 흰색 52px X) */}
-          <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center pb-[calc(clamp(18px,2.5dvh,24px)+env(safe-area-inset-bottom))]">
+          <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center" style={{ paddingBottom: `calc(clamp(18px,2.5dvh,24px) + ${bottomSafeAreaInset})` }}>
             {isTextMode ? (
               <div
                 className="w-full min-w-0 flex gap-2 box-border"

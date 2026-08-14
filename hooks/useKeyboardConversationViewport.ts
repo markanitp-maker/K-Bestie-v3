@@ -53,5 +53,20 @@ export function useKeyboardConversationViewport() {
     };
   }, []);
 
-  return { viewportHeight, isKeyboardOpen };
+  // 대화 화면 컨테이너 높이.
+  //
+  // 평소에는 100dvh를 쓴다 — px를 상시 주입하면 주소창 접힘/펼침마다 화면이 튄다.
+  // 다만 iOS에서 100dvh는 소프트키보드가 올라와도 줄지 않는다(dvh는 브라우저 UI만
+  // 반영하고 키보드는 반영하지 않는다). 그래서 키보드가 열리면 컨테이너 아래쪽이
+  // 키보드 뒤에 남고, 그 배경이 입력창과 키보드 사이의 공백으로 보인다.
+  // 키보드가 열린 동안에만 실제 visual viewport 높이를 쓴다.
+  const conversationHeight = isKeyboardOpen && viewportHeight
+    ? `${viewportHeight}px`
+    : "100dvh";
+
+  // 키보드가 홈 인디케이터를 덮고 있는 동안 safe-area 하단 여백은 죽은 공간이다.
+  // 그대로 두면 위 공백에 그만큼이 더해진다.
+  const bottomSafeAreaInset = isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom)";
+
+  return { viewportHeight, isKeyboardOpen, conversationHeight, bottomSafeAreaInset };
 }

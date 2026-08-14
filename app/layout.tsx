@@ -68,6 +68,12 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  // Android Chrome은 기본값(resizes-visual)에서 키보드가 올라와도 레이아웃 뷰포트를
+  // 줄이지 않아 100dvh 컨테이너 아래가 키보드 뒤에 남고, 그 배경이 입력창과 키보드
+  // 사이 공백으로 보인다(071). resizes-content는 키보드 크기만큼 레이아웃 뷰포트를
+  // 줄여 이 문제를 브라우저 차원에서 해소한다. iOS는 이 값을 무시하므로
+  // useKeyboardConversationViewport의 실측 높이 보정이 계속 담당한다.
+  interactiveWidget: "resizes-content",
   themeColor: "var(--color-k-navy)",
 };
 

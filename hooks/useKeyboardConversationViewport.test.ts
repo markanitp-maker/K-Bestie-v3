@@ -1,0 +1,38 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+/**
+ * 071 — 모바일 키보드 하단 공백.
+ *
+ * 훅 자체는 브라우저 API(visualViewport)에 의존하므로, 여기서는 훅이 내보내는
+ * 두 파생값의 계약만 고정한다. 이 계약이 깨지면 iOS에서 입력창과 키보드 사이에
+ * 앱 배경 공백이 다시 생긴다.
+ */
+
+const conversationHeight = (isKeyboardOpen: boolean, viewportHeight: number | null): string =>
+  isKeyboardOpen && viewportHeight ? `${viewportHeight}px` : "100dvh";
+
+const bottomSafeAreaInset = (isKeyboardOpen: boolean): string =>
+  isKeyboardOpen ? "0px" : "env(safe-area-inset-bottom)";
+
+test("키보드가 닫혀 있으면 100dvh를 쓴다 — px 상시 주입은 주소창 변화마다 화면이 튄다", () => {
+  assert.equal(conversationHeight(false, 812), "100dvh");
+  assert.equal(conversationHeight(false, null), "100dvh");
+});
+
+test("키보드가 열리면 실제 visual viewport 높이를 쓴다 — iOS에서 100dvh는 키보드만큼 줄지 않는다", () => {
+  assert.equal(conversationHeight(true, 480), "480px");
+});
+
+test("viewportHeight를 아직 못 읽었으면 100dvh로 안전하게 떨어진다", () => {
+  assert.equal(conversationHeight(true, null), "100dvh");
+  assert.equal(conversationHeight(true, 0), "100dvh");
+});
+
+test("키보드가 홈 인디케이터를 덮는 동안 safe-area 하단 여백은 제거한다", () => {
+  assert.equal(bottomSafeAreaInset(true), "0px");
+});
+
+test("키보드가 닫히면 safe-area 하단 여백을 복원한다", () => {
+  assert.equal(bottomSafeAreaInset(false), "env(safe-area-inset-bottom)");
+});

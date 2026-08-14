@@ -734,7 +734,7 @@ export default function ChatPage() {
     }
   }, [childId, usagePhase, isAuto, micPermission, status, handleStart]);
 
-  const { viewportHeight, isKeyboardOpen } = useKeyboardConversationViewport();
+  const { isKeyboardOpen, conversationHeight, bottomSafeAreaInset } = useKeyboardConversationViewport();
 
   // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
   // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
@@ -886,7 +886,7 @@ export default function ChatPage() {
 
   return (
     <DemoFrame>
-      <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]" style={{ overflowX: "hidden", overflowY: "hidden" }}>
+      <div className="w-full flex justify-center bg-[#D5ECFF]" style={{ height: conversationHeight, overflowX: "hidden", overflowY: "hidden" }}>
         {wakeLockWarning && (
           <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
@@ -1075,8 +1075,14 @@ export default function ChatPage() {
           <div className="h-[clamp(16px,2.5dvh,24px)] w-full shrink-0" />
           )}
 
-          {/* Bottom Inputs Area - 기존 UI 원본 100% 복원 (주황색 테두리 input + 주황색 52px 전송 버튼 + 흰색 52px X 버튼) */}
-          <div className="relative z-30 w-full shrink-0 flex items-center justify-center pb-[calc(clamp(54px,8dvh,66px)+env(safe-area-inset-bottom))]">
+          <div
+            className="relative z-30 w-full shrink-0 flex items-center justify-center"
+            style={{
+              paddingBottom: mode === "text"
+                ? `calc(clamp(18px, 2.5dvh, 24px) + ${bottomSafeAreaInset})`
+                : `calc(clamp(54px, 8dvh, 66px) + ${bottomSafeAreaInset})`
+            }}
+          >
             {mode === "text" ? (
               <div
                 className="w-full min-w-0 flex gap-2 box-border"
