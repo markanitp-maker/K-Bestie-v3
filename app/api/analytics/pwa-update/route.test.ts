@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  POST,
+  handlePwaUpdatePost as POST,
   PwaUpdateRouteDeps,
-} from "./route.js";
+} from "./routeHandler.js";
 import {
   isValidJsonContentType,
   isGenuineNoSessionAuthError,
