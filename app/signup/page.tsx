@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
@@ -27,8 +27,6 @@ type ChildDraft = {
   givenName: string;
   gender: string;
   username: string;
-  password: string;
-  passwordConfirm: string;
   grade: string;
   consent: boolean;
 };
@@ -419,11 +417,15 @@ function ChildStep({
 }: {
   familyId: string;
   draft: ChildDraft;
-  onDraftChange: (draft: ChildDraft) => void;
+  onDraftChange: Dispatch<SetStateAction<ChildDraft>>;
   onChildApproved: (child: ChildStartGuideChild) => void;
   onBack: () => void;
 }) {
-  const { familyName, givenName, gender, username, password, passwordConfirm, grade, consent } = draft;
+  const { familyName, givenName, gender, username, grade, consent } = draft;
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordConfirmTouched, setPasswordConfirmTouched] = useState(false);
+  const passwordValuesRef = useRef({ password: "", passwordConfirm: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usernameError, setUsernameError] = useState<string | null>(null);
@@ -439,9 +441,26 @@ function ChildStep({
     password === passwordConfirm &&
     grade &&
     consent;
+  const passwordMismatch = passwordConfirm.length > 0 && password !== passwordConfirm;
+  const showPasswordMismatch = passwordMismatch && (passwordConfirmTouched || passwordConfirm.length >= password.length);
+
+  const updatePassword = (value: string) => {
+    passwordValuesRef.current.password = value;
+    setPassword(value);
+  };
+
+  const updatePasswordConfirm = (value: string) => {
+    passwordValuesRef.current.passwordConfirm = value;
+    setPasswordConfirm(value);
+  };
 
   const submit = async () => {
-    if (!canSubmit || submittingRef.current) return;
+    const currentPassword = passwordValuesRef.current.password;
+    const currentPasswordConfirm = passwordValuesRef.current.passwordConfirm;
+    if (!canSubmit || currentPassword.length < 6 || currentPassword !== currentPasswordConfirm || submittingRef.current) {
+      setPasswordConfirmTouched(true);
+      return;
+    }
     submittingRef.current = true;
     setLoading(true);
     setError(null);
@@ -455,7 +474,7 @@ function ChildStep({
           givenName: givenName.trim(),
           gender,
           username: username.trim(),
-          password,
+          password: currentPassword,
           grade,
           guardian_consent: consent,
         }),
@@ -499,14 +518,14 @@ function ChildStep({
           type="text"
           placeholder="성"
           value={familyName}
-          onChange={(e) => onDraftChange({ ...draft, familyName: e.target.value })}
+          onChange={(e) => onDraftChange((current) => ({ ...current, familyName: e.target.value }))}
           className="w-full rounded-xl px-3 py-3 text-sm border border-gray-200 outline-none"
         />
         <input
           type="text"
           placeholder="이름"
           value={givenName}
-          onChange={(e) => onDraftChange({ ...draft, givenName: e.target.value })}
+          onChange={(e) => onDraftChange((current) => ({ ...current, givenName: e.target.value }))}
           className="w-full rounded-xl px-3 py-3 text-sm border border-gray-200 outline-none"
         />
       </div>
@@ -518,7 +537,7 @@ function ChildStep({
           <button
             key={g.v}
             type="button"
-            onClick={() => onDraftChange({ ...draft, gender: g.v })}
+            onClick={() => onDraftChange((current) => ({ ...current, gender: g.v }))}
             className={`flex-1 py-2.5 rounded-xl text-xs font-bold border cursor-pointer ${
               gender === g.v ? "text-white border-transparent" : "text-gray-600 border-gray-200 bg-white"
             }`}
@@ -530,7 +549,7 @@ function ChildStep({
       </div>
       <select
         value={grade}
-        onChange={(e) => onDraftChange({ ...draft, grade: e.target.value })}
+        onChange={(e) => onDraftChange((current) => ({ ...current, grade: e.target.value }))}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none bg-white"
       >
         <option value="">학년을 선택해주세요</option>
@@ -552,7 +571,7 @@ function ChildStep({
           placeholder="아이 로그인 아이디"
           value={username}
           onChange={(e) => {
-            onDraftChange({ ...draft, username: e.target.value });
+            onDraftChange((current) => ({ ...current, username: e.target.value }));
             if (usernameError) setUsernameError(null);
           }}
           className={`w-full rounded-xl px-4 py-3 text-sm border outline-none ${
@@ -563,21 +582,50 @@ function ChildStep({
       </div>
       <input
         type="password"
+        name="child-new-password"
+        autoComplete="new-password"
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        enterKeyHint="next"
         placeholder="비밀번호 (6자 이상)"
         value={password}
-        onChange={(e) => onDraftChange({ ...draft, password: e.target.value })}
+        onInput={(e) => updatePassword(e.currentTarget.value)}
         className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
       />
-      <input
-        type="password"
-        placeholder="비밀번호 확인"
-        value={passwordConfirm}
-        onChange={(e) => onDraftChange({ ...draft, passwordConfirm: e.target.value })}
-        className="w-full rounded-xl px-4 py-3 text-sm border border-gray-200 outline-none"
-      />
+      <div>
+        <input
+          type="password"
+          name="child-new-password-confirmation"
+          autoComplete="new-password"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="done"
+          placeholder="비밀번호 확인"
+          value={passwordConfirm}
+          onInput={(e) => updatePasswordConfirm(e.currentTarget.value)}
+          onBlur={() => setPasswordConfirmTouched(true)}
+          aria-invalid={showPasswordMismatch}
+          aria-describedby={showPasswordMismatch ? "child-password-mismatch" : undefined}
+          className={`w-full rounded-xl px-4 py-3 text-sm border outline-none ${
+            showPasswordMismatch ? "border-red-400" : "border-gray-200"
+          }`}
+        />
+        {showPasswordMismatch && (
+          <p id="child-password-mismatch" className="mt-1 px-1 text-xs text-red-500" aria-live="polite">
+            비밀번호가 서로 달라요. 두 입력을 다시 확인해 주세요.
+          </p>
+        )}
+      </div>
       <div className="flex items-start justify-between gap-2">
         <label className="flex min-w-0 flex-1 items-start gap-2.5 text-xs text-gray-700 cursor-pointer">
-          <input type="checkbox" checked={consent} onChange={(e) => onDraftChange({ ...draft, consent: e.target.checked })} className="mt-0.5" />
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => onDraftChange((current) => ({ ...current, consent: e.target.checked }))}
+            className="mt-0.5"
+          />
           <span>법정대리인으로서 위 아이의 정보 등록에 동의합니다.</span>
         </label>
         {isLegalDetailAvailable("guardian_u14") && (
@@ -634,8 +682,6 @@ function SignupContent() {
     givenName: "",
     gender: "",
     username: "",
-    password: "",
-    passwordConfirm: "",
     grade: "",
     consent: false,
   });
