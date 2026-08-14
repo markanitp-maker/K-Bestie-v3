@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AdminShell, type AdminPageId } from "@/components/admin/shell/AdminShell";
 import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
 import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
@@ -51,18 +51,55 @@ const kstDate = (offsetDays = 0) => {
 };
 
 function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; onClose: () => void; onChanged: () => void; onNavigateUser: (tab: "families" | "parents" | "children", search: string) => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
   const [note, setNote] = useState(row.admin_note ?? "");
+  const [userResponse, setUserResponse] = useState(row.user_response ?? "");
   const [status, setStatus] = useState<CustomerRequestStatus>(row.status);
   const [category, setCategory] = useState<CustomerRequestCategory>(row.category);
   const [busy, setBusy] = useState(false);
   const allowedNext = nextStatus(row.status);
 
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, []);
+
   const save = async () => {
     if (row.category === "voc" && category !== "voc" && !window.confirm(`이 접수 건을 '${CATEGORY_LABELS[category]}'로 분류하시겠습니까?\n기존 접수번호와 상태는 유지됩니다.`)) return;
+    const trimmedResponse = userResponse.trim();
+    if (row.user_response && !trimmedResponse) {
+      window.alert("등록된 사용자 답변은 빈 값으로 삭제할 수 없습니다. 답변을 수정하거나 기존 내용을 유지해 주세요.");
+      return;
+    }
     setBusy(true);
     const response = await fetch(`/api/admin/support-requests/${row.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, admin_note: note, category }),
+      body: JSON.stringify({ status, admin_note: note, user_response: trimmedResponse || null, category }),
     });
     setBusy(false);
     if (!response.ok) return window.alert((await response.json().catch(() => ({}))).error || "변경하지 못했습니다.");
@@ -80,9 +117,9 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
     onChanged(); onClose();
   };
 
-  return <div role="dialog" aria-modal="true" aria-label="고객 접수 상세" className="fixed inset-0 z-[200] bg-black/30" onClick={onClose}>
+  return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="고객 접수 상세" className="fixed inset-0 z-[200] bg-black/30" onClick={onClose}>
     <aside className="absolute right-0 top-0 h-full w-full max-w-[600px] overflow-y-auto bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-      <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-gray-500">{row.request_number}</p><h2 className="mt-1 text-xl font-black text-gray-900">{row.subject}</h2></div><button onClick={onClose} className="rounded-lg border px-3 py-2 text-sm font-bold">닫기</button></div>
+      <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-gray-500">{row.request_number}</p><h2 className="mt-1 text-xl font-black text-gray-900">{row.subject}</h2></div><button ref={closeButtonRef} onClick={onClose} className="rounded-lg border px-3 py-2 text-sm font-bold">닫기</button></div>
       <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-3 rounded-xl border bg-gray-50 p-4 text-sm">
         <dt className="text-gray-500">유형</dt><dd className="font-bold">{CATEGORY_LABELS[row.category as CustomerRequestCategory] ?? row.category}</dd>
         <dt className="text-gray-500">제출자</dt>
@@ -117,7 +154,8 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
       <section className="mt-6 space-y-4 rounded-xl border p-4"><h3 className="font-bold">처리</h3>
         <label className="block text-sm font-semibold">상태<select value={status} onChange={(event) => setStatus(event.target.value as CustomerRequestStatus)} className="mt-1 w-full rounded-lg border p-3"><option value={row.status}>{STATUS_LABELS[row.status as CustomerRequestStatus]}</option>{allowedNext && <option value={allowedNext}>{STATUS_LABELS[allowedNext]}</option>}</select></label>
         {row.category === "voc" && <label className="block text-sm font-semibold">기존 접수 수동 분류<select value={category} onChange={(event) => setCategory(event.target.value as CustomerRequestCategory)} className="mt-1 w-full rounded-lg border p-3"><option value="voc">기존 문의·건의 유지</option><option value="inquiry">문의로 분류</option><option value="suggestion">건의로 분류</option></select></label>}
-        <label className="block text-sm font-semibold">관리자 메모<textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={4000} rows={5} className="mt-1 w-full resize-y rounded-lg border p-3" placeholder="내부 처리 메모" /></label>
+        <label className="block text-sm font-semibold">관리자 내부 메모<span className="ml-2 text-xs font-normal text-gray-500">사용자에게 보이지 않습니다.</span><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={4000} rows={5} className="mt-1 w-full resize-y rounded-lg border p-3" placeholder="내부 처리 메모" /></label>
+        <label className="block text-sm font-semibold">사용자에게 보내는 답변<span className="ml-2 text-xs font-normal text-orange-700">저장하면 사용자 알림이 전송됩니다.</span><textarea value={userResponse} onChange={(event) => setUserResponse(event.target.value)} maxLength={2000} rows={6} className="mt-1 w-full resize-y rounded-lg border border-orange-200 p-3" placeholder="사용자에게 공개할 공식 답변" /></label>
         <button disabled={busy} onClick={save} className="w-full rounded-lg bg-slate-900 px-4 py-3 font-bold text-white disabled:opacity-50">저장</button>
       </section>
       {(row.audit_history ?? []).length > 0 && <section className="mt-5"><h3 className="mb-2 font-bold">변경 이력</h3><ol className="space-y-2">{row.audit_history.map((item: Row, index: number) => <li key={`${item.created_at}-${index}`} className="rounded-lg border p-3 text-xs"><b>{item.action}</b><span className="ml-2 text-gray-500">{item.admin_email || "시스템"} · {formatDate(item.created_at)}</span></li>)}</ol></section>}
@@ -128,6 +166,9 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
 
 export default function CustomerRequestsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedId = searchParams.get("requestId") ?? "";
+  const requestedIdHandled = useRef(false);
   const [category, setCategory] = useState<"" | CustomerRequestCategory>("");
   const [status, setStatus] = useState("");
   const [role, setRole] = useState("");
@@ -146,12 +187,18 @@ export default function CustomerRequestsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-    if (category) params.set("category", category); if (status) params.set("status", status); if (role) params.set("submitter_role", role); if (query) params.set("q", query); if (startDate) params.set("startDate", startDate); if (endDate) params.set("endDate", endDate);
+    if (category) params.set("category", category); if (status) params.set("status", status); if (role) params.set("submitter_role", role); if (query) params.set("q", query); if (startDate) params.set("startDate", startDate); if (endDate) params.set("endDate", endDate); if (requestedId) params.set("requestId", requestedId);
     const response = await fetch(`/api/admin/support-requests?${params}`, { cache: "no-store" });
     const payload = await response.json().catch(() => null);
-    if (!response.ok) window.alert(payload?.error || "고객 접수를 불러오지 못했습니다."); else setData(payload);
+    if (!response.ok) window.alert(payload?.error || "고객 접수를 불러오지 못했습니다."); else {
+      setData(payload);
+      if (requestedId && !requestedIdHandled.current && payload?.requests?.[0]) {
+        requestedIdHandled.current = true;
+        setDrawer(payload.requests[0]);
+      }
+    }
     setLoading(false);
-  }, [category, status, role, query, startDate, endDate, page, pageSize]);
+  }, [category, status, role, query, startDate, endDate, page, pageSize, requestedId]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setSelected(new Set()); }, [category, status, role, query, startDate, endDate, page, pageSize]);
 

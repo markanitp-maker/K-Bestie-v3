@@ -60,6 +60,7 @@ DECLARE
   v_title text;
   v_body text;
   v_event text;
+  v_notification_child_id uuid;
 BEGIN
   SELECT * INTO v_before
   FROM public.support_requests
@@ -170,11 +171,34 @@ BEGIN
     p_request_trace_id, 'admin-customer-requests'
   );
 
-  -- landing guest는 user_id가 없으므로 inbox/Push 대상이 아니다.
+  -- 기존 인증 접수에는 submitter_role이 NULL인 행이 있으므로 현재 가족 membership을
+  -- fallback Source of Truth로 사용한다. landing guest(user_id NULL)는 계속 제외한다.
+  v_role := CASE WHEN v_after.submitter_role IN ('parent','child') THEN v_after.submitter_role ELSE NULL END;
+  IF v_after.user_id IS NOT NULL AND v_role IS NULL THEN
+    SELECT CASE WHEN fm.role = 'child' THEN 'child' ELSE 'parent' END
+    INTO v_role
+    FROM public.family_members fm
+    WHERE fm.user_id = v_after.user_id
+      AND fm.role IN ('child','parent','owner_parent')
+      AND fm.deleted_at IS NULL
+    ORDER BY CASE WHEN fm.role = 'child' THEN 0 ELSE 1 END
+    LIMIT 1;
+  END IF;
+  v_notification_child_id := CASE WHEN v_role = 'child' THEN v_after.child_id ELSE NULL END;
+  IF v_after.user_id IS NOT NULL AND v_role = 'child' AND v_notification_child_id IS NULL THEN
+    SELECT cp.id
+    INTO v_notification_child_id
+    FROM public.child_profiles cp
+    JOIN public.family_members fm ON fm.id = cp.member_id
+    WHERE fm.user_id = v_after.user_id
+      AND fm.role = 'child'
+      AND fm.deleted_at IS NULL
+    LIMIT 1;
+  END IF;
+
   IF v_after.user_id IS NOT NULL
-     AND v_after.submitter_role IN ('parent', 'child')
-     AND (v_after.submitter_role <> 'child' OR v_after.child_id IS NOT NULL) THEN
-    v_role := v_after.submitter_role;
+     AND v_role IN ('parent', 'child')
+     AND (v_role <> 'child' OR v_notification_child_id IS NOT NULL) THEN
 
     IF v_response_changed THEN
       v_event := 'response';
@@ -192,7 +216,7 @@ BEGIN
         source_id, idempotency_key, metadata
       ) VALUES (
         v_after.user_id,
-        CASE WHEN v_role = 'child' THEN v_after.child_id ELSE NULL END,
+        v_notification_child_id,
         v_role, 'system', v_title, v_body,
         '/support/requests/' || v_after.id::text,
         v_after.id::text,
@@ -232,7 +256,7 @@ BEGIN
         source_id, idempotency_key, metadata
       ) VALUES (
         v_after.user_id,
-        CASE WHEN v_role = 'child' THEN v_after.child_id ELSE NULL END,
+        v_notification_child_id,
         v_role, 'system', v_title, v_body,
         '/support/requests/' || v_after.id::text,
         v_after.id::text,

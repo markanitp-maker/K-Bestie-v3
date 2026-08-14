@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
   const status = params.get("status");
   const role = params.get("submitter_role") ?? params.get("role");
   const q = (params.get("q") ?? params.get("search") ?? "").trim().slice(0, 100);
+  const requestId = (params.get("requestId") ?? "").trim();
   const page = Math.max(1, Number.parseInt(params.get("page") ?? "1", 10) || 1);
   const requestedSize = Number.parseInt(params.get("pageSize") ?? "25", 10);
   const pageSize = PAGE_SIZES.has(requestedSize) ? requestedSize : 25;
@@ -25,6 +26,9 @@ export async function GET(req: NextRequest) {
   if (category && !isCustomerRequestCategory(category)) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
   if (status && !isCustomerRequestStatus(status)) return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   if (role && !["parent", "child", "guest"].includes(role)) return NextResponse.json({ error: "Invalid submitter role" }, { status: 400 });
+  if (requestId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
+    return NextResponse.json({ error: "Invalid request id" }, { status: 400 });
+  }
 
   const service = createServiceClient();
   let matchingChildIds: string[] = [];
@@ -48,6 +52,7 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false });
 
   if (category) query = query.eq("category", category);
+  if (requestId) query = query.eq("id", requestId);
   if (status) query = query.eq("status", status);
   if (role) query = query.eq("submitter_role", role);
   if (from) query = query.gte("created_at", from);

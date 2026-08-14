@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { POST, runtime } from "./route";
+import { GET, POST, runtime } from "./route";
 import {
   GUEST_RATE_LIMIT_MAX_REQUESTS,
   GUEST_RATE_LIMIT_WINDOW_MS,
@@ -18,7 +18,8 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 test("Next.js Route 규격에 맞게 runtime과 POST만 export한다", async () => {
   const routeExports = await import("./route");
-  assert.deepEqual(Object.keys(routeExports).sort(), ["POST", "runtime"].sort());
+  assert.deepEqual(Object.keys(routeExports).sort(), ["GET", "POST", "runtime"].sort());
+  assert.equal(typeof GET, "function");
   assert.equal(runtime, "nodejs");
 });
 

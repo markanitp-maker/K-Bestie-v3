@@ -23,7 +23,9 @@ test("단건 처리는 row lock 뒤 no-op과 동일 trace 재시도를 멱등 �
 
 test("답변과 중요 상태만 사용자 inbox 알림을 만들고 guest는 제외한다", () => {
   assert.match(sql, /v_after\.user_id IS NOT NULL/);
-  assert.match(sql, /v_after\.submitter_role IN \('parent', 'child'\)/);
+  assert.match(sql, /v_after\.submitter_role IN \('parent',\s*'child'\)/);
+  assert.match(sql, /FROM public\.family_members fm[\s\S]+fm\.user_id = v_after\.user_id/);
+  assert.match(sql, /JOIN public\.family_members fm ON fm\.id = cp\.member_id/);
   assert.match(sql, /v_after\.status IN \('in_progress', 'resolved'\)/);
   assert.match(sql, /support:' \|\| v_after\.id::text \|\| ':response:'/);
   assert.match(sql, /support:' \|\| v_after\.id::text \|\| ':status:'/);

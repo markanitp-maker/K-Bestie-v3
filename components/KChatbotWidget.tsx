@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
@@ -214,10 +215,11 @@ export default function KChatbotWidget({
   }, [view]);
 
   // Focus trap & Escape key
+  const closeModalRef = useRef<() => boolean>(() => true);
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!isOpen) return;
     if (e.key === "Escape") {
-      closeModal();
+      closeModalRef.current();
     } else if (e.key === "Tab") {
       if (!modalRef.current) return;
       const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
@@ -267,9 +269,13 @@ export default function KChatbotWidget({
   }, [isOpen, handleKeyDown]);
 
   const closeModal = () => {
+    if (isSubmitting || attachments.some((attachment) => attachment.status === "processing" || attachment.status === "uploading")) {
+      alert(appSurface === "child" ? "지금 내용을 보내고 있어. 잠시만 기다려 줘." : "제출 또는 이미지 처리가 끝날 때까지 잠시 기다려 주세요.");
+      return false;
+    }
     if (content.trim() !== "" || subject.trim() !== "" || attachments.length > 0) {
       if (!confirm(appSurface === "child" ? "작성하던 내용이 사라져. 정말 닫을까?" : "작성 중인 내용이 삭제됩니다. 정말 닫으시겠습니까?")) {
-        return;
+        return false;
       }
     }
     setIsOpen(false);
@@ -283,7 +289,9 @@ export default function KChatbotWidget({
     });
     
     resetForm();
+    return true;
   };
+  closeModalRef.current = closeModal;
 
   const resetForm = () => {
     setCategory("inquiry");
@@ -632,7 +640,12 @@ export default function KChatbotWidget({
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                   {/* 056: FAQ 안내 영역. 아래 3개 탭(문의/건의/버그)과 그 폼은 건드리지 않는다. */}
                   <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col items-center text-center gap-2 mb-2">
-                    <h3 className="font-bold text-gray-900">FAQ</h3>
+                    <div className="flex w-full items-center justify-between gap-3">
+                      <h3 className="font-bold text-gray-900">FAQ</h3>
+                      <Link href="/support/requests" onClick={(event) => { if (!closeModal()) event.preventDefault(); }} className="text-sm font-bold text-k-navy underline underline-offset-4">
+                        내 접수 확인
+                      </Link>
+                    </div>
                     <p className="text-sm text-gray-600">사용법이 궁금하면 언제든지 확인해 보세요.</p>
                     <a
                       href={FAQ_URL}

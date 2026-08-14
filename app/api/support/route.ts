@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveChildForUser } from "@/lib/child/testAccount";
 import { getSupabaseTarget } from "@/lib/supabase/env";
@@ -15,8 +15,43 @@ import {
   normalizeOptionalString,
   generateRequestNumber,
 } from "@/lib/support/landingInquiry";
+import { notifyDiscordOfNewSupportRequest } from "@/lib/support/discord";
+import { resolveNotificationScope } from "@/lib/notifications/scope";
 
 export const runtime = "nodejs";
+
+const SUPPORT_LIST_FIELDS = "id,request_number,category,subject,body,status,created_at,updated_at,user_response,responded_at,submitter_role";
+
+export async function GET(request: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const scope = await resolveNotificationScope(user.id);
+
+  const url = new URL(request.url);
+  const page = Math.max(1, Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+  const pageSize = Math.min(Math.max(Number.parseInt(url.searchParams.get("pageSize") ?? "20", 10) || 20, 1), 50);
+  const from = (page - 1) * pageSize;
+  const service = createServiceClient();
+  const { data, error, count } = await service
+    .from("support_requests")
+    .select(SUPPORT_LIST_FIELDS, { count: "exact" })
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .range(from, from + pageSize - 1);
+  if (error) {
+    console.error("[api/support] own request list failed", { code: error.code ?? "unknown" });
+    return NextResponse.json({ error: "Request lookup failed" }, { status: 500 });
+  }
+  return NextResponse.json({
+    requests: (data ?? []).map((item) => ({
+      ...item,
+      effective_role: scope?.role ?? (item.submitter_role === "child" ? "child" : "parent"),
+    })),
+    pagination: { page, pageSize, total: count ?? 0, totalPages: Math.max(1, Math.ceil((count ?? 0) / pageSize)) },
+  });
+}
 
 // 위젯은 첨부 업로드(app/api/support/attachments)와 문의 제출에 같은 idempotency
 // 값을 upload_session_id/idempotency_key로 같이 보낸다. 제출 시점에 그 세션으로
@@ -138,10 +173,10 @@ export async function POST(request: Request) {
         idempotency_key: idempotencyKey,
       };
 
-      const { error: insertErr } = await serviceClient
+      const { data: inserted, error: insertErr } = await serviceClient
         .from("support_requests")
         .insert(insertPayload)
-        .select("id")
+        .select("id,created_at")
         .single();
 
       if (insertErr) {
@@ -160,6 +195,17 @@ export async function POST(request: Request) {
         }
         console.error("[api/support] insert error:", insertErr.code || "unknown");
         return NextResponse.json({ error: "Database error" }, { status: 500 });
+      }
+
+      if (inserted?.id) {
+        after(() => notifyDiscordOfNewSupportRequest({
+            category: "inquiry",
+            requestNumber: request_number,
+            requestId: inserted.id,
+            appSurface: "landing",
+            createdAt: inserted.created_at ?? new Date().toISOString(),
+          }, new URL(request.url).origin)
+        );
       }
 
       return NextResponse.json({ ok: true, request_number });
@@ -284,7 +330,7 @@ export async function POST(request: Request) {
     const { data: inserted, error: insertErr } = await serviceClient
       .from("support_requests")
       .insert(insertPayload)
-      .select("id")
+      .select("id,created_at")
       .single();
 
     if (insertErr) {
@@ -307,6 +353,17 @@ export async function POST(request: Request) {
 
     if (idempotencyKey && inserted?.id) {
       await linkAttachments(serviceClient, idempotencyKey, user.id, inserted.id);
+    }
+
+    if (inserted?.id) {
+      after(() => notifyDiscordOfNewSupportRequest({
+          category,
+          requestNumber: request_number,
+          requestId: inserted.id,
+          appSurface: insertPayload.app_surface,
+          createdAt: inserted.created_at ?? new Date().toISOString(),
+        }, new URL(request.url).origin)
+      );
     }
 
     return NextResponse.json({ ok: true, request_number });
