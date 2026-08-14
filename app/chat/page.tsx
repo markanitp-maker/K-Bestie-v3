@@ -809,6 +809,13 @@ export default function ChatPage() {
     }
   }
 
+  // 자유대화 첫 진입에서 "아래 🎤 버튼을 눌러 대화를 시작해 보세요" 안내만 띄우면
+  // 아이가 어디를 눌러야 할지 몰라 망설이다 그냥 나간다. 미션의 「시작하기」와 같은
+  // 형태로 말풍선 자체를 누를 수 있게 만들어 다음 행동을 분명히 한다.
+  const showStartButton = status === "idle"
+    && micPermission !== "checking"
+    && micPermission !== "denied";
+
   const dailyRewardPresentation = dailyReward
     ? getFreechatRewardModalContent(dailyReward)
     : null;
@@ -962,6 +969,19 @@ export default function ChatPage() {
                 )}
               </div>
             )}
+            {showStartButton ? (
+              <button
+                onClick={handleStart}
+                aria-label="케이와 대화 시작하기"
+                className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 w-[clamp(84%,86%,88%)] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[clamp(20px,5.5vw,22px)] flex flex-col justify-center items-center min-h-[88px] min-w-0 shrink-0 cursor-pointer active:scale-95`}
+              >
+                <div className="text-[var(--color-k-navy)] text-[clamp(22px,6vw,26px)] font-[700]">
+                  시작하기
+                </div>
+                <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
+                <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
+              </button>
+            ) : (
             <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 w-[clamp(84%,86%,88%)] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[clamp(20px,5.5vw,22px)] py-[clamp(16px,2.2dvh,18px)] flex flex-col min-w-0 shrink-0`}>
               <div className="w-full">
                 <p className="text-left text-[#3a2f2a] text-[clamp(18px,5vw,21px)] font-[700] leading-[1.43] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
@@ -972,6 +992,7 @@ export default function ChatPage() {
               <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
               <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
             </div>
+            )}
           </div>
 
           {/* Mascot Area & Side Cards OR Text-Mode CTA.
