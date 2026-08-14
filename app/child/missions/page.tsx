@@ -48,6 +48,8 @@ import {
   reconcileMissionClientScope,
 } from "@/lib/mission/clientScope";
 import { ensureMissionClientVersion } from "@/lib/pwa/clientVersionGate";
+import { BUILD_STAMP } from "@/lib/pwa/buildStamp";
+import { forceUpdateAndReload } from "@/lib/pwa/staleClientRecovery";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -245,6 +247,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   // 상단 배너로 노출하던 것 전부 제거 — 일시적 인식 실패/timeout/fallback은 조용히 1회
   // 재시도하고, 그래도 안 되면 이 재시도 버튼만 표시한다(문구 없음, 배너 아님, 말풍선 아님).
   const [showRetryButton, setShowRetryButton] = useState(false);
+  // 「다시 시도」는 새 버전 확인을 위해 네트워크를 한 번 기다린다. 그동안 버튼이
+  // 아무 반응 없어 보이면 아이가 연타하므로 눌린 상태를 화면에 드러낸다.
+  const [isRetrying, setIsRetrying] = useState(false);
   // active → completing → completed (자세한 전이 규칙은 lib/mission/missionCompletionFlow.ts 참고).
   // completing부터 이미 100% 취급(마이크·입력 비활성화) — completed와의 차이는 "종료 발화가
   // 아직 재생 중인지"뿐이다.
@@ -3588,7 +3593,19 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         </p>
         <div className="flex gap-2 w-full">
           <button
+            disabled={isRetrying}
             onClick={async () => {
+              if (isRetrying) return;
+              setIsRetrying(true);
+              try {
+              // 2026-08-14 장애: 앱이 옛 버전에 물려 있으면 화면 안에서 턴만 다시
+              // 보내는 재시도로는 절대 풀리지 않아, 아이가 계속 눌러도 같은 자리에서
+              // 막혔다. 새 버전이 있으면 먼저 그것부터 적용하고 다시 연다. 미션 진행
+              // 상태는 서버에 있으므로 처음이 아니라 하던 지점에서 이어진다.
+              const updated = await forceUpdateAndReload({ clientBuildId: BUILD_STAMP })
+                .catch(() => "no_update" as const);
+              if (updated === "reloading") return;
+
               if (errorMsg === "연결 문제로 미션 종료 확인에 실패했어요. 다시 시도해 주세요.") {
                 handleForcedExpiry();
                 return;
@@ -3613,11 +3630,15 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
               } else if (isAuto && missionStateRef.current === "active") {
                 sttSetMicEnabledRef.current?.(true);
               }
+              } finally {
+                // 새로고침으로 이어지는 경우엔 화면이 곧 사라지므로 상태가 남아도 무해하다.
+                setIsRetrying(false);
+              }
             }}
-            className="flex-1 py-2 rounded-xl text-sm font-bold text-white cursor-pointer"
+            className="flex-1 py-2 rounded-xl text-sm font-bold text-white cursor-pointer disabled:opacity-60"
             style={{ background: "var(--color-k-orange)" }}
           >
-            다시 시도
+            {isRetrying ? "잠깐만요..." : "다시 시도"}
           </button>
           <button
             onClick={() => {

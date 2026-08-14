@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
-import { PWA_CLIENT_VERSION } from "@/lib/pwa/clientVersion";
+import { BUILD_STAMP } from "@/lib/pwa/buildStamp";
 
 export async function GET() {
-  const buildId = PWA_CLIENT_VERSION;
+  // 배포 식별자를 쓴다. 손으로 올리는 상수를 쓰면 상수를 안 올린 배포에서 이 파일이
+  // 바이트까지 동일해져 브라우저가 서비스워커를 갱신하지 않고, 옛 청크 캐시가 그대로
+  // 남는다 — 아이가 앱을 껐다 켜도 안 고쳐지던 원인이다(2026-08-14 장애).
+  const buildId = BUILD_STAMP;
   const CACHE_NAME = `kbestie-shell-${buildId}`;
 
   const swCode = `

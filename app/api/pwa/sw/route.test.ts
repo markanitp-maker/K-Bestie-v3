@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { GET } from "./route.js";
-import { PWA_CLIENT_VERSION } from "../../../../lib/pwa/clientVersion.js";
+import { BUILD_STAMP } from "../../../../lib/pwa/buildStamp.js";
 
 test("생성 SW는 사용자 메시지 handler 한 곳에서만 skipWaiting을 실행한다", async () => {
   const response = await GET();
@@ -23,7 +23,9 @@ test("SW 응답은 build별 shell cache와 no-cache 정책을 유지한다", asy
   assert.match(response.headers.get("cache-control") || "", /no-cache/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.equal(response.headers.get("service-worker-allowed"), "/");
-  assert.match(source, new RegExp(PWA_CLIENT_VERSION.replaceAll(".", "\\.")));
+  // 배포 식별자가 SW 본문에 박혀야 배포마다 파일이 달라지고 브라우저가 워커를
+  // 갱신한다. 손으로 올리는 상수를 쓰면 배포해도 본문이 동일해 갱신되지 않는다.
+  assert.match(source, new RegExp(BUILD_STAMP.replaceAll(".", "\\.")));
 });
 
 test("Push는 notificationId를 보존하고 클릭할 때 서버 읽음 처리 후 이동한다", async () => {

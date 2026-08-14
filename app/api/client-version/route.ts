@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { PWA_CLIENT_VERSION } from "@/lib/pwa/clientVersion";
+import { BUILD_STAMP } from "@/lib/pwa/buildStamp";
 
 export const runtime = "nodejs";
 
 function currentBuildId(): string {
-  return PWA_CLIENT_VERSION;
+  // 손으로 올리는 상수가 아니라 배포 식별자를 돌려준다. 상수를 쓰면 상수를 안 올린
+  // 배포에서 옛 클라이언트와 값이 같아져 버전 불일치를 영영 못 잡는다(2026-08-14).
+  return BUILD_STAMP;
 }
 
 export async function GET() {

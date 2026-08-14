@@ -91,6 +91,124 @@ export async function purgeStaleChunkCache(cacheStorage: CacheStorage): Promise<
   return removed;
 }
 
+export const FORCED_UPDATE_GUARD_KEY = "k_forced_update_reload";
+export const FORCED_UPDATE_MIN_INTERVAL_MS = 10_000;
+
+export type ForcedUpdateResult = "reloading" | "no_update" | "too_soon" | "unsupported";
+
+type ForcedUpdateOptions = {
+  clientBuildId: string;
+  fetchImpl?: typeof fetch;
+  cacheStorage?: CacheStorage | null;
+  sessionStorageImpl?: Pick<Storage, "getItem" | "setItem">;
+  reload?: () => void;
+  now?: () => number;
+  versionCheckTimeoutMs?: number;
+  /** 대기 중인 서비스워커를 찾아 즉시 적용시킨다. 없으면 false. */
+  activateWaitingWorker?: () => Promise<boolean>;
+};
+
+export const FORCED_UPDATE_VERSION_CHECK_TIMEOUT_MS = 2_000;
+
+async function defaultActivateWaitingWorker(): Promise<boolean> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return false;
+  const registration = await navigator.serviceWorker.getRegistration();
+  if (!registration) return false;
+  await registration.update().catch(() => {});
+  const waiting = registration.waiting;
+  if (!waiting) return false;
+  waiting.postMessage({ type: "SKIP_WAITING" });
+  return true;
+}
+
+/**
+ * 아이가 「다시 시도」를 눌렀을 때 실제로 최신 버전으로 갈아타고 다시 연다.
+ *
+ * 기존 「다시 시도」는 화면 안에서 턴만 다시 보내는 동작이라, 앱이 옛 버전에
+ * 물려 있으면 몇 번을 눌러도 같은 자리에서 막힌다(2026-08-14 장애). 새 버전이
+ * 있으면 청크 캐시를 비우고 대기 중인 서비스워커를 적용한 뒤 새로고침한다.
+ * 미션 진행 상태는 서버에 있으므로 처음부터가 아니라 하던 지점에서 이어진다.
+ */
+export async function forceUpdateAndReload({
+  clientBuildId,
+  fetchImpl = fetch,
+  cacheStorage = typeof caches === "undefined" ? null : caches,
+  sessionStorageImpl = typeof window === "undefined" ? undefined : window.sessionStorage,
+  reload = () => window.location.reload(),
+  now = () => Date.now(),
+  versionCheckTimeoutMs = FORCED_UPDATE_VERSION_CHECK_TIMEOUT_MS,
+  activateWaitingWorker = defaultActivateWaitingWorker,
+}: ForcedUpdateOptions): Promise<ForcedUpdateResult> {
+  if (!sessionStorageImpl) return "unsupported";
+
+  const at = now();
+  // 가드는 네트워크를 기다리기 "전에" 선점한다. await 뒤에 쓰면 아이가 버튼을 연타할 때
+  // 두 호출이 모두 검사를 통과해 새로고침이 겹친다.
+  let previousGuard = "";
+  try {
+    previousGuard = sessionStorageImpl.getItem(FORCED_UPDATE_GUARD_KEY) || "";
+    const lastAt = Number(previousGuard || 0);
+    if (lastAt > 0 && at - lastAt < FORCED_UPDATE_MIN_INTERVAL_MS) return "too_soon";
+    sessionStorageImpl.setItem(FORCED_UPDATE_GUARD_KEY, String(at));
+  } catch {
+    return "unsupported";
+  }
+
+  const restoreGuard = () => {
+    // 새로고침하지 않기로 했으면 선점을 되돌린다. 그러지 않으면 바로 이어지는
+    // 기존 재시도가 실패했을 때 10초 동안 버튼이 먹통이 된다.
+    try {
+      sessionStorageImpl.setItem(FORCED_UPDATE_GUARD_KEY, previousGuard);
+    } catch {
+      // 되돌리기 실패는 다음 시도를 조금 늦출 뿐이라 무시한다.
+    }
+  };
+
+  let serverBuildId: string | null = null;
+  try {
+    // 이 화면은 "연결이 나쁠 때" 뜨는 화면이다. 타임아웃이 없으면 아이가 버튼을 눌러도
+    // 수십 초 동안 아무 일도 안 일어난 것처럼 보인다.
+    const response = await fetchImpl("/api/client-version", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(versionCheckTimeoutMs),
+    });
+    if (response.ok) {
+      const body = await response.json() as { buildId?: unknown };
+      if (typeof body.buildId === "string" && body.buildId.trim()) serverBuildId = body.buildId.trim();
+    }
+  } catch {
+    // 버전을 확인 못 했으면 대기 중인 서비스워커 유무로만 판단한다.
+  }
+
+  const hasWaitingWorker = await activateWaitingWorker().catch(() => false);
+  const versionMismatch = serverBuildId !== null && serverBuildId !== clientBuildId;
+  if (!hasWaitingWorker && !versionMismatch) {
+    restoreGuard();
+    return "no_update";
+  }
+
+  if (cacheStorage) {
+    try {
+      await purgeStaleChunkCache(cacheStorage);
+    } catch {
+      // 캐시 삭제가 실패해도 새로고침은 시도한다.
+    }
+  }
+
+  // 새 워커가 활성화되면 controllerchange가 떠서 PwaServiceWorker가 한 번 더
+  // 새로고침한다. 그 가드를 미리 채워 화면이 두 번 깜빡이지 않게 한다.
+  if (serverBuildId) {
+    try {
+      sessionStorageImpl.setItem(`pwa_sw_reloaded_${serverBuildId}`, "true");
+    } catch {
+      // 채우지 못하면 새로고침이 한 번 더 일어날 뿐, 진행 상태는 서버에 남는다.
+    }
+  }
+
+  reload();
+  return "reloading";
+}
+
 export type StaleClientRecoveryResult =
   | "reloading"
   | "too_soon"

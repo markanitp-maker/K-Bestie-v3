@@ -33,6 +33,16 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["ai.k-bestie.com", "192.168.200.222"],
   env: {
     NEXT_PUBLIC_DEPLOYMENT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || "local",
+    // 배포 하나를 가리키는 식별자 — 클라이언트 번들과 서버에 같은 값이 인라인된다.
+    // 자세한 배경은 lib/pwa/buildStamp.ts 주석 참고(2026-08-14 장애).
+    // CLI 배포에는 VERCEL_GIT_COMMIT_SHA가 없으므로 그것만 믿으면 안 된다.
+    // 빌드마다 흔들리는 값(Date.now·난수)은 같은 배포 안에서 불일치를 만들어
+    // 새로고침이 반복되므로 절대 넣지 않는다.
+    NEXT_PUBLIC_BUILD_STAMP:
+      process.env.VERCEL_DEPLOYMENT_ID
+      || process.env.VERCEL_URL
+      || process.env.VERCEL_GIT_COMMIT_SHA
+      || "",
     // 공개 boolean feature flag만 client bundle에 명시적으로 주입한다. 둘 다 미설정이면
     // useSttRouter가 Browser primary를 끄고 기존 GCP-only 경로를 유지한다.
     BROWSER_STT_PRIMARY_ENABLED: process.env.BROWSER_STT_PRIMARY_ENABLED || "",

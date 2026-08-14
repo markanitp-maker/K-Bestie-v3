@@ -1,12 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  FORCED_UPDATE_MIN_INTERVAL_MS,
   NEXT_STATIC_PREFIX,
   SHELL_CACHE_PREFIX,
   STALE_RECOVERY_GUARD_KEY,
   STALE_RECOVERY_MAX_ATTEMPTS,
   STALE_RECOVERY_MIN_INTERVAL_MS,
   STALE_RECOVERY_WINDOW_MS,
+  forceUpdateAndReload,
   isStaleClientAssetError,
   purgeStaleChunkCache,
   readRecoveryGuard,
@@ -44,6 +46,120 @@ const CHUNK = `https://app.k-bestie.com${NEXT_STATIC_PREFIX}chunks/4821.js`;
 const OTHER_CHUNK = `https://app.k-bestie.com${NEXT_STATIC_PREFIX}css/main.css`;
 const OFFLINE = "https://app.k-bestie.com/offline";
 const ICON = "https://app.k-bestie.com/icons/icon-192-v4.png";
+
+function versionFetch(buildId: string): typeof fetch {
+  return (async () => ({
+    ok: true,
+    json: async () => ({ buildId }),
+  })) as unknown as typeof fetch;
+}
+
+test("「다시 시도」는 새 버전이 있으면 캐시를 비우고 최신으로 다시 연다", async () => {
+  // 장애 당시 「다시 시도」는 화면 안에서 턴만 다시 보내서, 앱이 옛 버전에 물려
+  // 있으면 아이가 몇 번을 눌러도 같은 자리에서 막혔다.
+  const session = memorySessionStorage();
+  const { storage, remaining } = fakeCacheStorage({
+    [`${SHELL_CACHE_PREFIX}local`]: [CHUNK, OFFLINE],
+  });
+  let reloads = 0;
+
+  const result = await forceUpdateAndReload({
+    clientBuildId: "2026-08-14.1",
+    fetchImpl: versionFetch("2026-08-14.2"),
+    cacheStorage: storage,
+    sessionStorageImpl: session,
+    reload: () => { reloads += 1; },
+    activateWaitingWorker: async () => false,
+    now: () => 1_000_000,
+  });
+
+  assert.equal(result, "reloading");
+  assert.equal(reloads, 1);
+  assert.deepEqual(remaining()[`${SHELL_CACHE_PREFIX}local`], [OFFLINE], "오프라인 자산은 남긴다");
+});
+
+test("「다시 시도」는 버전이 같고 대기 워커도 없으면 새로고침하지 않는다", async () => {
+  // 그래야 기존의 화면 안 재시도(턴 재전송)로 이어진다.
+  const session = memorySessionStorage();
+  const { storage } = fakeCacheStorage({ [`${SHELL_CACHE_PREFIX}local`]: [CHUNK] });
+  let reloads = 0;
+
+  const result = await forceUpdateAndReload({
+    clientBuildId: "2026-08-14.2",
+    fetchImpl: versionFetch("2026-08-14.2"),
+    cacheStorage: storage,
+    sessionStorageImpl: session,
+    reload: () => { reloads += 1; },
+    activateWaitingWorker: async () => false,
+  });
+
+  assert.equal(result, "no_update");
+  assert.equal(reloads, 0);
+});
+
+test("「다시 시도」는 버전이 같아도 대기 중인 서비스워커가 있으면 적용하고 다시 연다", async () => {
+  const session = memorySessionStorage();
+  const { storage } = fakeCacheStorage({ [`${SHELL_CACHE_PREFIX}local`]: [CHUNK] });
+  let reloads = 0;
+  let activated = false;
+
+  const result = await forceUpdateAndReload({
+    clientBuildId: "2026-08-14.2",
+    fetchImpl: versionFetch("2026-08-14.2"),
+    cacheStorage: storage,
+    sessionStorageImpl: session,
+    reload: () => { reloads += 1; },
+    activateWaitingWorker: async () => { activated = true; return true; },
+  });
+
+  assert.equal(result, "reloading");
+  assert.equal(activated, true);
+  assert.equal(reloads, 1);
+});
+
+test("「다시 시도」를 연타해도 새로고침이 겹치지 않는다", async () => {
+  const session = memorySessionStorage();
+  const { storage } = fakeCacheStorage({ [`${SHELL_CACHE_PREFIX}local`]: [CHUNK] });
+  let reloads = 0;
+  let clock = 1_000_000;
+
+  const tap = () => forceUpdateAndReload({
+    clientBuildId: "2026-08-14.1",
+    fetchImpl: versionFetch("2026-08-14.2"),
+    cacheStorage: storage,
+    sessionStorageImpl: session,
+    reload: () => { reloads += 1; },
+    activateWaitingWorker: async () => false,
+    now: () => clock,
+  });
+
+  assert.equal(await tap(), "reloading");
+  clock += FORCED_UPDATE_MIN_INTERVAL_MS - 1;
+  assert.equal(await tap(), "too_soon");
+  assert.equal(reloads, 1);
+
+  clock += 2;
+  assert.equal(await tap(), "reloading");
+  assert.equal(reloads, 2);
+});
+
+test("「다시 시도」는 버전 확인이 실패해도 대기 워커가 있으면 복구한다", async () => {
+  const session = memorySessionStorage();
+  const { storage } = fakeCacheStorage({ [`${SHELL_CACHE_PREFIX}local`]: [CHUNK] });
+  let reloads = 0;
+
+  const result = await forceUpdateAndReload({
+    clientBuildId: "2026-08-14.1",
+    fetchImpl: (async () => { throw new Error("offline"); }) as unknown as typeof fetch,
+    cacheStorage: storage,
+    sessionStorageImpl: session,
+    reload: () => { reloads += 1; },
+    activateWaitingWorker: async () => true,
+  });
+
+  assert.equal(result, "reloading");
+  assert.equal(reloads, 1);
+});
 
 test("isStaleClientAssetError는 배포 교체로 청크를 못 받은 오류만 잡는다", () => {
   const chunkError = new Error("Loading chunk 4821 failed.");

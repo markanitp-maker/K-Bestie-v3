@@ -1,0 +1,74 @@
+import { test, expect } from '@playwright/test';
+
+/**
+ * 2026-08-14 장애(김지호/jiho0520) 검증.
+ *
+ * 고객이 기기 앱을 리셋한 뒤 겪을 경로를 그대로 재현한다 — 캐시·서비스워커가
+ * 전혀 없는 상태에서 로그인해 자유대화와 미션이 실제로 열리는지 본다.
+ * 장애 당시 증상은 자유대화가 "케이가 이야기를 준비하고 있어요..."에서 멈추고,
+ * 미션이 "케이랑 접속이 끊겼네?" 오버레이로 막히는 것이었다.
+ */
+const BASE = process.env.PLAYWRIGHT_BASE_URL || 'https://app.k-bestie.com';
+const USERNAME = process.env.QA_CHILD_USERNAME || 'testa';
+
+test('장애 095: 깨끗한 클라이언트에서 로그인·자유대화·미션 진입이 정상이다', async ({ page }) => {
+  test.setTimeout(180000);
+
+  const consoleErrors: string[] = [];
+  const failedRequests: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
+  });
+  page.on('response', (res) => {
+    if (res.status() >= 400 && !res.url().includes('/api/analytics')) {
+      failedRequests.push(`${res.status()} ${res.url()}`);
+    }
+  });
+
+  // 1. 로그인 — 리셋 직후 상태(빈 캐시·SW 없음)
+  await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
+  await page.locator('input[type="text"]').fill(USERNAME);
+  await page.locator('input[type="password"]').fill(process.env.QA_TEST_PASSWORD || '');
+  await page.getByRole('button', { name: '로그인', exact: true }).click();
+  await page.waitForURL('**/child**', { timeout: 30000 });
+  await page.waitForTimeout(2000);
+
+  expect(await page.locator('body').innerText()).not.toContain('Application error');
+  console.log('[095] 로그인 OK ->', page.url());
+
+  // 2. 서버·클라이언트 버전이 일치해야 미션 진입 게이트를 통과한다
+  const versionBody = await page.evaluate(async () => {
+    const res = await fetch('/api/client-version', { cache: 'no-store' });
+    return res.json();
+  });
+  console.log('[095] 서버 buildId =', JSON.stringify(versionBody));
+  expect(typeof versionBody.buildId).toBe('string');
+
+  // 3. 자유대화 — 장애 때 "준비하고 있어요..."에서 멈췄던 화면
+  await page.goto(`${BASE}/chat`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(6000);
+  const chatText = await page.locator('body').innerText();
+  console.log('[095] 자유대화 화면:', chatText.replace(/\s+/g, ' ').slice(0, 300));
+  expect(chatText).not.toContain('Application error');
+  expect(chatText).not.toContain('케이랑 접속이 끊겼네');
+
+  // 4. 미션 진입 — 장애 때 오버레이로 막혔던 화면
+  await page.goto(`${BASE}/child/missions`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(8000);
+  const missionText = await page.locator('body').innerText();
+  console.log('[095] 미션 화면:', missionText.replace(/\s+/g, ' ').slice(0, 400));
+
+  await page.screenshot({ path: 'e2e-095-mission.png', fullPage: true });
+
+  expect(missionText).not.toContain('Application error');
+  expect(missionText).not.toContain('케이랑 접속이 끊겼네');
+  expect(missionText).not.toContain('앱을 최신 상태로 바꾼 뒤 다시 열어 주세요');
+  expect(missionText).not.toContain('서버에서 현재 미션 상태를 다시 확인하지 못했어요');
+
+  console.log('[095] 콘솔 오류:', consoleErrors.slice(0, 10));
+  console.log('[095] 실패 요청:', failedRequests.slice(0, 10));
+
+  // 배포 교체로 청크를 못 받는 상황이 있었다면 여기서 드러난다
+  const chunkFailures = failedRequests.filter((r) => r.includes('/_next/static/'));
+  expect(chunkFailures, `정적 자산 실패: ${chunkFailures.join(', ')}`).toHaveLength(0);
+});

@@ -1,4 +1,4 @@
-import { PWA_CLIENT_VERSION } from "./clientVersion";
+import { BUILD_STAMP } from "./buildStamp";
 import { purgeStaleChunkCache } from "./staleClientRecovery";
 
 export type MissionClientVersionGateResult =
@@ -36,7 +36,7 @@ async function defaultServiceWorkerUpdate(): Promise<void> {
 }
 
 export async function ensureMissionClientVersion({
-  clientBuildId = PWA_CLIENT_VERSION,
+  clientBuildId = BUILD_STAMP,
   fetchImpl = fetch,
   sessionStorageImpl = window.sessionStorage,
   reload = () => window.location.reload(),
