@@ -8,6 +8,7 @@ import {
   isPwaDismissCooldownActive,
   pwaUpdateCopy,
 } from "@/lib/pwa/updateFlow";
+import { PWA_CLIENT_VERSION } from "@/lib/pwa/clientVersion";
 
 type PwaState =
   | "idle"
@@ -24,7 +25,7 @@ type PwaState =
 const BUILD_ID =
   process.env.NEXT_PUBLIC_DEPLOYMENT_SHA ||
   process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
-  "v1";
+  PWA_CLIENT_VERSION;
 const RELOAD_GUARD_KEY = `pwa_sw_reloaded_${BUILD_ID}`;
 const DISMISS_KEY = `pwa_sw_dismissed_${BUILD_ID}`;
 

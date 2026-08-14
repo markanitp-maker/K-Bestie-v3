@@ -59,7 +59,7 @@ test("version endpoint 실패는 Mission 진입을 허용하지 않는다", asyn
   assert.equal(result.status, "unavailable");
 });
 
-test("local build는 개발 환경에서 호환으로 처리한다", () => {
-  assert.equal(compareMissionBuildIds("local", "sha-1"), "ready");
-  assert.equal(compareMissionBuildIds("sha-1", "local"), "ready");
+test("placeholder build ID도 불일치면 reload 대상으로 판정한다", () => {
+  assert.equal(compareMissionBuildIds("local", "sha-1"), "mismatch");
+  assert.equal(compareMissionBuildIds("sha-1", "local"), "mismatch");
 });

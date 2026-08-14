@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { PWA_CLIENT_VERSION } from "@/lib/pwa/clientVersion";
 
 export const runtime = "nodejs";
 
 function currentBuildId(): string {
-  return process.env.VERCEL_GIT_COMMIT_SHA
-    || process.env.NEXT_PUBLIC_DEPLOYMENT_SHA
-    || process.env.VERCEL_DEPLOYMENT_ID
-    || "local";
+  return PWA_CLIENT_VERSION;
 }
 
 export async function GET() {

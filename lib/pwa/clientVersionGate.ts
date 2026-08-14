@@ -1,3 +1,5 @@
+import { PWA_CLIENT_VERSION } from "./clientVersion";
+
 export type MissionClientVersionGateResult =
   | { status: "ready"; serverBuildId: string }
   | { status: "reload_started"; serverBuildId: string }
@@ -22,7 +24,6 @@ export function compareMissionBuildIds(
   clientBuildId: string,
   serverBuildId: string,
 ): "ready" | "mismatch" {
-  if (clientBuildId === "local" || serverBuildId === "local") return "ready";
   return clientBuildId === serverBuildId ? "ready" : "mismatch";
 }
 
@@ -33,7 +34,7 @@ async function defaultServiceWorkerUpdate(): Promise<void> {
 }
 
 export async function ensureMissionClientVersion({
-  clientBuildId = process.env.NEXT_PUBLIC_DEPLOYMENT_SHA || "local",
+  clientBuildId = PWA_CLIENT_VERSION,
   fetchImpl = fetch,
   sessionStorageImpl = window.sessionStorage,
   reload = () => window.location.reload(),

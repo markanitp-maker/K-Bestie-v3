@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { PWA_CLIENT_VERSION } from "@/lib/pwa/clientVersion";
 
 export async function GET() {
   const buildId =
@@ -6,7 +7,7 @@ export async function GET() {
     process.env.VERCEL_GIT_COMMIT_SHA ||
     process.env.VERCEL_DEPLOYMENT_ID ||
     process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
-    "v3.1.0";
+    PWA_CLIENT_VERSION;
   const CACHE_NAME = `kbestie-shell-${buildId}`;
 
   const swCode = `
