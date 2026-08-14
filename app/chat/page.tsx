@@ -895,8 +895,9 @@ export default function ChatPage() {
           </div>
         )}
         <div
-          className="w-full max-w-[480px] min-w-0 box-border h-[100dvh] relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto_auto_auto]"
+          className="w-full max-w-[480px] min-w-0 box-border relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto_auto_auto]"
           style={{
+            height: conversationHeight,
             background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)",
             "--chat-bubble-bottom-padding": "clamp(20px, 2.6dvh, 24px)",
             "--chat-mascot-bottom-padding": "clamp(37px, 4.8dvh, 43px)",
