@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
   if (category && !isCustomerRequestCategory(category)) return NextResponse.json({ error: "Invalid category" }, { status: 400 });
   if (status && !isCustomerRequestStatus(status)) return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-  if (role && !["parent", "child"].includes(role)) return NextResponse.json({ error: "Invalid submitter role" }, { status: 400 });
+  if (role && !["parent", "child", "guest"].includes(role)) return NextResponse.json({ error: "Invalid submitter role" }, { status: 400 });
 
   const service = createServiceClient();
   let matchingChildIds: string[] = [];
@@ -54,7 +54,12 @@ export async function GET(req: NextRequest) {
   if (toExclusive) query = query.lt("created_at", toExclusive);
   if (q) {
     const pattern = quoted(`%${q}%`);
-    const filters = [`request_number.ilike.${pattern}`, `subject.ilike.${pattern}`, `body.ilike.${pattern}`];
+    const filters = [
+      `request_number.ilike.${pattern}`,
+      `subject.ilike.${pattern}`,
+      `body.ilike.${pattern}`,
+      `contact_email.ilike.${pattern}`,
+    ];
     if (matchingChildIds.length) filters.push(`child_id.in.(${matchingChildIds.join(",")})`);
     if (matchingParentIds.length) filters.push(`user_id.in.(${matchingParentIds.join(",")})`);
     query = query.or(filters.join(","));
@@ -119,8 +124,16 @@ export async function GET(req: NextRequest) {
     const familyId: any = child?.family_id ?? familyByUser.get(row.user_id) ?? familyByUser.get(row.guardian_id) ?? null;
     return {
       ...row,
-      submitter_name: row.submitter_role === "child" ? child?.name ?? account?.display_name ?? null : parent?.name ?? null,
-      submitter_login: row.submitter_role === "child" ? account?.username ?? account?.email ?? null : parent?.email ?? null,
+      submitter_name: row.submitter_role === "child"
+        ? child?.name ?? account?.display_name ?? null
+        : row.submitter_role === "guest"
+          ? null
+          : parent?.name ?? null,
+      submitter_login: row.submitter_role === "child"
+        ? account?.username ?? account?.email ?? null
+        : row.submitter_role === "guest"
+          ? row.contact_email ?? null
+          : parent?.email ?? null,
       family_id: familyId,
       family_name: familyMap.get(familyId) ?? null,
       audit_history: auditByRequest.get(row.id) ?? [],

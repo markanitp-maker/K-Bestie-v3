@@ -25,6 +25,25 @@ const CATEGORIES: Array<{ value: "" | CustomerRequestCategory; label: string }> 
 const nextStatus = (status: CustomerRequestStatus) => CUSTOMER_REQUEST_STATUSES[CUSTOMER_REQUEST_STATUSES.indexOf(status) + 1] ?? null;
 const formatDate = (value?: string | null) => value ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "-";
 const statusVariant = (status: string): "success" | "warning" | "danger" | "neutral" => status === "resolved" ? "success" : status === "in_progress" ? "warning" : status === "closed" ? "neutral" : "danger";
+const formatSurface = (row: Row): string => {
+  const raw = (row.app_surface || row.source || "").toString().trim().toLowerCase();
+  if (raw === "landing") return "랜딩페이지";
+  if (raw === "parent_app" || raw === "parent") return "부모 앱";
+  if (raw === "child_app" || raw === "child") return "아이 앱";
+  if (raw === "web") return "웹";
+  if (raw === "ios") return "iOS";
+  if (raw === "android") return "Android";
+  if (row.app_surface || row.source) return String(row.app_surface || row.source);
+  if (row.submitter_role === "guest") return "랜딩페이지";
+  if (row.submitter_role === "child") return "아이 앱";
+  if (row.submitter_role === "parent") return "부모 앱";
+  return "앱";
+};
+const surfaceVariant = (row: Row): "info" | "neutral" => {
+  const raw = (row.app_surface || row.source || "").toString().trim().toLowerCase();
+  if (raw === "landing" || row.submitter_role === "guest") return "info";
+  return "neutral";
+};
 const kstDate = (offsetDays = 0) => {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const today = `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
@@ -66,10 +85,31 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
       <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-gray-500">{row.request_number}</p><h2 className="mt-1 text-xl font-black text-gray-900">{row.subject}</h2></div><button onClick={onClose} className="rounded-lg border px-3 py-2 text-sm font-bold">닫기</button></div>
       <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-3 rounded-xl border bg-gray-50 p-4 text-sm">
         <dt className="text-gray-500">유형</dt><dd className="font-bold">{CATEGORY_LABELS[row.category as CustomerRequestCategory] ?? row.category}</dd>
-        <dt className="text-gray-500">제출자</dt><dd><button onClick={() => onNavigateUser(row.submitter_role === "child" ? "children" : "parents", row.submitter_login || row.submitter_name || "")} className="font-bold text-blue-700 underline">{row.submitter_name || "이름 미등록"}</button><span className="ml-2 text-gray-500">{row.submitter_login || "로그인 정보 없음"} · {row.submitter_role === "child" ? "아이" : "부모"}</span></dd>
+        <dt className="text-gray-500">제출자</dt>
+        <dd>
+          {row.submitter_role === "guest" ? (
+            <>
+              <span className="font-bold text-gray-900">비회원</span>
+              <span className="ml-2 text-gray-500">
+                {row.contact_email ? `회신: ${row.contact_email}` : "회신처 없음"} · 비회원
+              </span>
+            </>
+          ) : (
+            <>
+              <button onClick={() => onNavigateUser(row.submitter_role === "child" ? "children" : "parents", row.submitter_login || row.submitter_name || "")} className="font-bold text-blue-700 underline">{row.submitter_name || "이름 미등록"}</button>
+              <span className="ml-2 text-gray-500">{row.submitter_login || "로그인 정보 없음"} · {row.submitter_role === "child" ? "아이" : "부모"}</span>
+            </>
+          )}
+        </dd>
+        {row.contact_email && (
+          <>
+            <dt className="text-gray-500">회신 연락처</dt>
+            <dd className="font-bold text-gray-900">{row.contact_email}</dd>
+          </>
+        )}
         <dt className="text-gray-500">가족</dt><dd>{row.family_name ? <button onClick={() => onNavigateUser("families", row.family_name)} className="font-bold text-blue-700 underline">{row.family_name}</button> : "가족 정보 없음"}</dd>
         <dt className="text-gray-500">접수일</dt><dd>{formatDate(row.created_at)}</dd>
-        <dt className="text-gray-500">화면</dt><dd>{row.current_route || "-"} · {row.app_surface || "-"} · {row.app_version || "버전 미수집"}</dd>
+        <dt className="text-gray-500">화면</dt><dd>{row.current_route || "-"} · {formatSurface(row)} · {row.app_version || "버전 미수집"}</dd>
       </dl>
       <section className="mt-5"><h3 className="mb-2 font-bold">접수 내용</h3><div className="whitespace-pre-wrap break-words rounded-xl border p-4 text-sm leading-6">{row.body}</div>{row.category !== "bug" && <p className="mt-2 text-xs text-gray-500">관련 세션: {row.play_session_id ? "연결됨" : "없음"} · 보호자 연결: {row.guardian_id ? "연결됨" : "없음"}</p>}</section>
       {row.category === "bug" && <section className="mt-5"><h3 className="mb-2 font-bold">오류 환경</h3><pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-slate-900 p-4 text-xs text-slate-100">{JSON.stringify(row.device_info ?? {}, null, 2)}</pre></section>}
@@ -136,8 +176,9 @@ export default function CustomerRequestsPage() {
     { key: "select", header: <input type="checkbox" aria-label="현재 페이지 전체 선택" checked={allChecked} onChange={toggleAll} />, render: (row: Row) => <input type="checkbox" aria-label={`${row.request_number} 선택`} checked={selected.has(row.id)} onClick={(event) => event.stopPropagation()} onChange={() => setSelected((before) => { const next = new Set(before); next.has(row.id) ? next.delete(row.id) : next.add(row.id); return next; })} /> },
     { key: "number", header: "접수번호", render: (row: Row) => <><b>{row.request_number}</b><span className="block text-xs text-gray-500">{formatDate(row.created_at)}</span></> },
     { key: "category", header: "유형", render: (row: Row) => CATEGORY_LABELS[row.category as CustomerRequestCategory] ?? row.category },
+    { key: "source", header: "출처", render: (row: Row) => <AdminStatusBadge text={formatSurface(row)} variant={surfaceVariant(row)} icon={false} /> },
     { key: "subject", header: "제목·내용", render: (row: Row) => <div className="max-w-[360px]"><b className="block truncate">{row.subject}</b><span className="block truncate text-xs text-gray-500">{row.body}</span></div> },
-    { key: "submitter", header: "제출자", render: (row: Row) => <>{row.submitter_name || "이름 미등록"}<span className="block text-xs text-gray-500">{row.submitter_login || (row.submitter_role === "child" ? "아이" : "부모")}</span></> },
+    { key: "submitter", header: "제출자", render: (row: Row) => row.submitter_role === "guest" ? <>비회원<span className="block text-xs text-gray-500">{row.contact_email || row.submitter_login || "비회원"}</span></> : <>{row.submitter_name || "이름 미등록"}<span className="block text-xs text-gray-500">{row.submitter_login || (row.submitter_role === "child" ? "아이" : "부모")}</span></> },
     { key: "status", header: "상태", render: (row: Row) => <AdminStatusBadge text={STATUS_LABELS[row.status as CustomerRequestStatus] ?? row.status} variant={statusVariant(row.status)} /> },
   ], [allChecked, selected]);
 
@@ -145,9 +186,9 @@ export default function CustomerRequestsPage() {
     <AdminPageHeader title="고객 접수" description="문의·건의·버그를 한 화면에서 조회하고 처리합니다. 기존 VOC는 수동 분류 전까지 그대로 보존됩니다." />
     <div className="mb-5 grid grid-cols-2 gap-2 md:grid-cols-5">{CATEGORIES.map((item) => <button key={item.value || "all"} onClick={() => { setCategory(item.value); setPage(1); }} className={`rounded-xl border p-3 text-left ${category === item.value ? "border-slate-900 bg-slate-900 text-white" : "bg-white"}`}><span className="block text-xs font-semibold opacity-70">{item.label}</span><b className="text-xl">{item.value ? categoryCounters[item.value] ?? 0 : data?.counters.total ?? 0}</b></button>)}</div>
     <div className="mb-4 grid gap-2 rounded-xl border bg-white p-3 md:grid-cols-6">
-      <input aria-label="고객 접수 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="접수번호·제목·내용·이름·로그인 ID" className="rounded-lg border p-2 md:col-span-2" />
+      <input aria-label="고객 접수 검색" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="접수번호·제목·내용·이름·로그인 ID·회신 이메일" className="rounded-lg border p-2 md:col-span-2" />
       <select aria-label="상태 필터" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-lg border p-2"><option value="">전체 상태</option>{CUSTOMER_REQUEST_STATUSES.map((value) => <option key={value} value={value}>{STATUS_LABELS[value]} ({data?.counters.statuses[value] ?? 0})</option>)}</select>
-      <select aria-label="제출자 필터" value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }} className="rounded-lg border p-2"><option value="">부모·아이 전체</option><option value="parent">부모</option><option value="child">아이</option></select>
+      <select aria-label="제출자 필터" value={role} onChange={(event) => { setRole(event.target.value); setPage(1); }} className="rounded-lg border p-2"><option value="">전체 제출자</option><option value="parent">부모</option><option value="child">아이</option><option value="guest">비회원</option></select>
       <input aria-label="시작일" type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setPage(1); }} className="rounded-lg border p-2" />
       <input aria-label="종료일" type="date" value={endDate} onChange={(event) => { setEndDate(event.target.value); setPage(1); }} className="rounded-lg border p-2" />
       <div className="flex flex-wrap gap-1 md:col-span-6"><span className="mr-1 self-center text-xs font-bold text-gray-500">빠른 기간</span><button onClick={() => setPeriod(1)} className="rounded border px-2 py-1 text-xs">오늘</button><button onClick={() => setPeriod(7)} className="rounded border px-2 py-1 text-xs">최근 7일</button><button onClick={() => setPeriod(30)} className="rounded border px-2 py-1 text-xs">최근 30일</button><button onClick={() => setPeriod(null)} className="rounded border px-2 py-1 text-xs">전체</button></div>
