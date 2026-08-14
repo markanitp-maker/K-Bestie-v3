@@ -78,6 +78,7 @@ export const viewport: Viewport = {
 };
 
 import { PwaServiceWorker } from "@/components/PwaServiceWorker";
+import { StaleClientRecovery } from "@/components/StaleClientRecovery";
 import { NotificationBadgeSync } from "@/components/notifications/NotificationBadgeSync";
 import { AppSessionTracking } from "@/hooks/useAppSessionTracking";
 
@@ -91,6 +92,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <DemoViewProvider>{children}</DemoViewProvider>
         <PwaServiceWorker />
+        <StaleClientRecovery />
         <NotificationBadgeSync />
         <AppSessionTracking />
       </body>

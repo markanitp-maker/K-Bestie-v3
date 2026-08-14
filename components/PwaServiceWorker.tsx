@@ -73,13 +73,6 @@ export function PwaServiceWorker() {
     }, PWA_ACTIVATION_DELAY_MS);
   }, [clearActivationTimer]);
 
-  const rememberWaitingWorker = useCallback((worker: ServiceWorker, allowPrompt = true) => {
-    waitingWorkerRef.current = worker;
-    if (!allowPrompt || isPwaDismissCooldownActive(lastDismissedAtRef.current)) return;
-    debugLog("update_available");
-    setPwaState(isCriticalSession() ? "deferred_during_session" : "update_available");
-  }, [isCriticalSession]);
-
   const startWaitingWorker = useCallback((worker: ServiceWorker) => {
     controllerChangeHandledRef.current = false;
     clearActivationTimer();
@@ -88,6 +81,21 @@ export function PwaServiceWorker() {
     worker.postMessage({ type: "SKIP_WAITING" });
     scheduleDelayedState();
   }, [clearActivationTimer, scheduleDelayedState]);
+
+  const rememberWaitingWorker = useCallback((worker: ServiceWorker, allowPrompt = true) => {
+    waitingWorkerRef.current = worker;
+    if (!allowPrompt || isPwaDismissCooldownActive(lastDismissedAtRef.current)) return;
+    debugLog("update_available");
+    if (isCriticalSession()) {
+      // 대화·미션·놀이 진행 중에는 끊지 않는다. 안내만 두고 경로를 벗어날 때 적용한다.
+      setPwaState("deferred_during_session");
+      return;
+    }
+    // 2026-08-14 Production 장애 대응: 예전에는 "지금 업데이트" 버튼을 눌러야 새
+    // 버전이 적용됐는데, 아이는 그 버튼을 누르지 않는다. 실제 장애에서도 배너가
+    // 떠 있는 채로 47분간 대화가 0턴이었다. 대화 중이 아닐 때는 묻지 않고 적용한다.
+    startWaitingWorker(worker);
+  }, [isCriticalSession, startWaitingWorker]);
 
   const refreshRegistration = useCallback(async (registration: ServiceWorkerRegistration) => {
     setPwaState("checking");
@@ -261,11 +269,12 @@ export function PwaServiceWorker() {
 
   useEffect(() => {
     if (pwaState === "deferred_during_session" && !isCriticalSession()) {
-      if (!isPwaDismissCooldownActive(lastDismissedAtRef.current)) setPwaState("update_available");
+      // 대화를 마치고 나온 시점 — 여기서도 버튼을 기다리지 않고 바로 적용한다.
+      if (!isPwaDismissCooldownActive(lastDismissedAtRef.current)) void triggerUpdate();
     } else if (pwaState === "update_available" && isCriticalSession()) {
       setPwaState("deferred_during_session");
     }
-  }, [pathname, pwaState, isCriticalSession]);
+  }, [pathname, pwaState, isCriticalSession, triggerUpdate]);
 
   if (["idle", "checking", "up_to_date", "activating", "reloading"].includes(pwaState)) return null;
 

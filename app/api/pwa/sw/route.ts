@@ -65,6 +65,17 @@ self.addEventListener("message", (event) => {
   }
 });
 
+// 배포 교체로 청크가 사라진 상황(404)만 해당 탭에 알린다.
+//
+// 전체 브로드캐스트를 하지 않는 이유: 새 빌드로 이미 정상 로드된 다른 탭까지 캐시를
+// 지우고 새로고침시키기 때문이다. 404를 실제로 받은 클라이언트에만 보낸다.
+function notifyStaleAsset(clientId) {
+  if (!clientId) return;
+  self.clients.get(clientId).then((client) => {
+    if (client) client.postMessage({ type: "K_STALE_ASSET" });
+  }).catch(() => {});
+}
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   const isHTMLNavigation = event.request.mode === "navigate" || event.request.destination === "document";
@@ -104,6 +115,14 @@ self.addEventListener("fetch", (event) => {
           return cachedResponse;
         }
         return fetch(event.request).then((networkResponse) => {
+          // 2026-08-14 Production 장애: 아이가 앱을 쓰는 중 프로덕션 배포가 나가면
+          // 이미 로드된 페이지가 사라진 청크를 요청해 404를 받는다. 이때 예외가
+          // 위로 올라오지 않고 동적 import가 그냥 멈춰(자유대화 "준비하고 있어요...",
+          // 미션 "접속이 끊겼네?") 아이는 아무것도 할 수 없다. 여기서 열린 탭에
+          // 알려 캐시를 비우고 자동 새로고침하게 한다.
+          if (isNextStatic && networkResponse && networkResponse.status === 404) {
+            notifyStaleAsset(event.clientId);
+          }
           if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== "basic") {
             return networkResponse;
           }
@@ -115,6 +134,9 @@ self.addEventListener("fetch", (event) => {
 
           return networkResponse;
         });
+        // fetch 거부(네트워크 끊김)는 여기서 알리지 않는다. 거부의 대다수는 배포
+        // 교체가 아니라 연결 불안정인데, 그때 캐시를 지우고 새로고침하면 아이 화면만
+        // 더 깨진다. 배포 교체 신호는 위의 404 분기 하나로 충분하다.
       })
     );
     return;

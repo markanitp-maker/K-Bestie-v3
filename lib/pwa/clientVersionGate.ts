@@ -1,4 +1,5 @@
 import { PWA_CLIENT_VERSION } from "./clientVersion";
+import { purgeStaleChunkCache } from "./staleClientRecovery";
 
 export type MissionClientVersionGateResult =
   | { status: "ready"; serverBuildId: string }
@@ -16,6 +17,7 @@ type VersionGateOptions = {
   sessionStorageImpl?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   reload?: () => void;
   requestServiceWorkerUpdate?: () => Promise<void>;
+  cacheStorage?: CacheStorage | null;
 };
 
 const RELOAD_GUARD_PREFIX = "k_mission_version_reload:";
@@ -39,6 +41,7 @@ export async function ensureMissionClientVersion({
   sessionStorageImpl = window.sessionStorage,
   reload = () => window.location.reload(),
   requestServiceWorkerUpdate = defaultServiceWorkerUpdate,
+  cacheStorage = typeof caches === "undefined" ? null : caches,
 }: VersionGateOptions = {}): Promise<MissionClientVersionGateResult> {
   let response: Response;
   try {
@@ -86,6 +89,19 @@ export async function ensureMissionClientVersion({
   } catch (error) {
     console.warn("[Mission] service worker update check failed before reload", error);
   }
+
+  // 2026-08-14 Production 장애: 새로고침만 하면 서비스워커가 캐시 우선으로 같은 옛
+  // 번들을 다시 내주기 때문에 두 번째 시도에서도 mismatch가 나고 아이는 update_required
+  // 안내에 갇힌다. 청크 캐시를 비운 뒤 새로고침해야 실제로 새 버전이 올라온다
+  // (오프라인 안내 화면용 precache 자산은 남긴다).
+  if (cacheStorage) {
+    try {
+      await purgeStaleChunkCache(cacheStorage);
+    } catch (error) {
+      console.warn("[Mission] stale chunk cache purge failed before reload", error);
+    }
+  }
+
   reload();
   return { status: "reload_started", serverBuildId };
 }
