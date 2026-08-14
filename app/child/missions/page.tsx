@@ -491,7 +491,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         }
       }
     } else {
-      isTerminal = false;
+      // 아직 시작하지 않아 종료할 세션이 없다. 끝낼 게 없는 상태를 "연결 문제로 종료
+      // 확인에 실패"로 표시하면, 아이는 멀쩡한 화면에서 "케이랑 접속이 끊겼네?"만 보고
+      // 미션을 시작조차 못 한다(2026-08-14 Production 장애). 조용히 마감 화면으로 보낸다.
+      isTerminal = true;
     }
 
     if (!isRequestActive()) return "stale" as const;
@@ -524,6 +527,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     return "closed" as const;
   }, [resetToIdle]);
 
+  // 서버가 알려준 오늘 미션 마감 시각(KST 자정 기준 분). 클라이언트가 시간을 임의로
+  // 재계산하지 않도록 서버 값만 쓴다.
+  const missionCloseMinuteRef = useRef<number | null>(null);
+
   useEffect(() => {
     let timerId: NodeJS.Timeout | null = null;
 
@@ -535,6 +542,34 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
       const nowUtc = Date.now();
       const kstNow = new Date(nowUtc + 9 * 3600000);
+
+      // Mission v3는 하루 한 번(09:00~23:50 KST)이라 아래 v2 라운드 경계(주간 17:50 /
+      // 야간 24:00)와 맞지 않는다. 2026-08-14 Production 장애: v3 전환 후에도 이 경계가
+      // 그대로 남아, 17:50이 지나 미션에 들어온 아이는 즉시 강제 만료 처리로 넘어갔다.
+      // 아직 시작 전이라 종료할 세션이 없으니 그 처리마저 실패해 "케이랑 접속이
+      // 끊겼네?"만 뜨고 미션은 영영 시작되지 않았다(그날 17:50 이후 시작된 미션 0건).
+      // v3에서는 서버가 준 마감 시각만 쓰고, 그 값을 모르면 강제 만료를 하지 않는다.
+      if (missionPolicyRef.current === "v3_single_daily") {
+        const closeMinute = missionCloseMinuteRef.current;
+        if (closeMinute === null) return;
+        const kstMidnightUtcMs = Date.UTC(
+          kstNow.getUTCFullYear(),
+          kstNow.getUTCMonth(),
+          kstNow.getUTCDate(),
+          0, 0, 0,
+        ) - 9 * 3600000;
+        const v3BoundaryMs = kstMidnightUtcMs + closeMinute * 60000;
+        if (nowUtc >= v3BoundaryMs) {
+          void handleForcedExpiry();
+          return;
+        }
+        if (timerId) clearTimeout(timerId);
+        timerId = setTimeout(() => {
+          void handleForcedExpiry();
+        }, Math.max(100, v3BoundaryMs - nowUtc));
+        return;
+      }
+
       const rType = roundTypeRef.current || (currentRound(kstNow.getUTCHours()) === "round2_night" ? "round2_night" : "round1_day");
 
       let boundaryMs = 0;
@@ -2947,6 +2982,13 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
       setScheduleEnforced(snapshot.timeGate.scheduleEnforced);
       missionPolicyRef.current = snapshot.policyVersion;
+
+      // 강제 만료 경계는 서버가 준 마감 시각으로만 판단한다(2026-08-14 장애 참고).
+      const rawTimeGate = rawProgress?.timeGate;
+      const rawCloseMinute = rawTimeGate && typeof rawTimeGate === "object"
+        ? (rawTimeGate as Record<string, unknown>).closesAtMinute
+        : undefined;
+      missionCloseMinuteRef.current = typeof rawCloseMinute === "number" ? rawCloseMinute : null;
       const destination = resolveMissionDestination(snapshot);
       if (destination.kind === "v3") {
         const current = snapshot.progress?.current ?? 0;

@@ -77,6 +77,10 @@ test('장애 095: 깨끗한 클라이언트에서 로그인·자유대화·미�
 
   await page.screenshot({ path: 'e2e-095-mission.png', fullPage: true });
 
+  // 단언보다 먼저 찍는다 — 실패했을 때 원인을 봐야 한다.
+  console.log('[095] 콘솔 오류 전체:', JSON.stringify(consoleErrors, null, 1));
+  console.log('[095] 실패 요청 전체:', JSON.stringify(failedRequests, null, 1));
+
   expect(missionText).not.toContain('Application error');
   expect(missionText).not.toContain('케이랑 접속이 끊겼네');
   expect(missionText).not.toContain('앱을 최신 상태로 바꾼 뒤 다시 열어 주세요');
