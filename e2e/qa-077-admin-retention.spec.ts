@@ -1,42 +1,66 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { createClient, type Session } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "https://k-bestie-v3-dev.vercel.app";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_DEV_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_DEV_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_DEV_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const QA_ADMIN_EMAIL = "qa-parent@kbestie.local";
+const QA_ADMIN_EMAIL = (process.env.ADMIN_EMAILS ?? "").split(",")[0]?.trim();
 
 function projectRef(url: string) {
   return new URL(url).hostname.split(".")[0];
 }
 
-async function useSession(context: BrowserContext, session: Session) {
-  const value = `base64-${Buffer.from(JSON.stringify(session), "utf8").toString("base64url")}`;
-  const cookieName = `sb-${projectRef(SUPABASE_URL!)}-auth-token`;
-  const chunks = value.length <= 3180
-    ? [{ name: cookieName, value }]
-    : Array.from({ length: Math.ceil(value.length / 3180) }, (_, index) => ({
-        name: `${cookieName}.${index}`,
-        value: value.slice(index * 3180, (index + 1) * 3180),
-      }));
-  await context.addCookies(chunks.map((chunk) => ({
-    ...chunk,
-    url: BASE,
+async function loginAsAdmin(context: BrowserContext) {
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY || !QA_ADMIN_EMAIL) {
+    throw new Error("Dev Supabase QA credentials and ADMIN_EMAILS are required");
+  }
+  const service = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data: link, error: linkError } = await service.auth.admin.generateLink({
+    type: "magiclink",
+    email: QA_ADMIN_EMAIL,
+  });
+  if (linkError || !link.properties?.hashed_token) throw linkError ?? new Error("QA admin magic link generation failed");
+  const auth = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await auth.auth.verifyOtp({
+    token_hash: link.properties.hashed_token,
+    type: "magiclink",
+  });
+  if (error || !data.session) throw error ?? new Error("QA admin session is missing");
+
+  let chunks: Array<{ name: string; value: string }> = [];
+  const ssr = createServerClient(SUPABASE_URL, ANON_KEY, {
+    cookies: {
+      getAll: () => [],
+      setAll: (next) => {
+        chunks = next.filter((cookie) => cookie.value).map(({ name, value }) => ({ name, value }));
+      },
+    },
+  });
+  const { error: sessionError } = await ssr.auth.setSession({
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+  });
+  if (sessionError || chunks.length === 0) throw sessionError ?? new Error("QA admin cookie creation failed");
+
+  const cookieName = `sb-${projectRef(SUPABASE_URL)}-auth-token`;
+  await context.addCookies(chunks.map((cookie) => ({
+    ...cookie,
+    domain: new URL(BASE).hostname,
+    path: "/",
+    httpOnly: false,
     secure: BASE.startsWith("https:"),
     sameSite: "Lax" as const,
   })));
-}
-
-async function loginAsAdmin(context: BrowserContext) {
-  if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY) throw new Error("Dev Supabase QA credentials are required");
-  const service = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
-  const { data: link, error: linkError } = await service.auth.admin.generateLink({ type: "magiclink", email: QA_ADMIN_EMAIL });
-  if (linkError || !link.properties?.hashed_token) throw new Error("QA admin magic link generation failed");
-  const anon = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
-  const { data, error } = await anon.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: "magiclink" });
-  if (error || !data.session) throw new Error("QA admin magic link verification failed");
-  await useSession(context, data.session);
+  const installed = await context.cookies(BASE);
+  if (installed.filter((cookie) => cookie.name.startsWith(cookieName)).length !== chunks.length) {
+    throw new Error("QA admin cookie installation failed");
+  }
 }
 
 async function apiJson(page: Page, path: string) {
