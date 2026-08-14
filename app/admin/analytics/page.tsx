@@ -9,6 +9,7 @@ import { AdminPageHeader } from "@/components/admin/shell/AdminPageHeader";
 import { AdminKpiCard, AdminKpiGrid } from "@/components/admin/shell/AdminKpiCard";
 import { AdminErrorState } from "@/components/admin/shell/AdminErrorState";
 import { AdminResponsiveTable } from "@/components/admin/shell/AdminResponsiveTable";
+import { RetentionPeopleTabs } from "@/components/admin/RetentionPeopleTabs";
 import { buildAnalyticsKpis, type AnalyticsPeriod, type AnalyticsScope, type InternalTestMode } from "@/lib/admin/analytics";
 
 const PERIODS: Array<[AnalyticsPeriod, string]> = [
@@ -17,6 +18,7 @@ const PERIODS: Array<[AnalyticsPeriod, string]> = [
 ];
 const SCOPES: Array<[AnalyticsScope, string]> = [["all", "전체"], ["family", "가족"], ["parent", "부모"], ["child", "아이"]];
 type DetailTab = "all" | "family" | "parent" | "child";
+type AnalysisTab = "overview" | "children" | "parents";
 
 function safeArray<T>(value: unknown): T[] { return Array.isArray(value) ? value as T[] : []; }
 function percent(value: unknown): string { return value == null ? "-" : `${Number(value).toFixed(1)}%`; }
@@ -49,6 +51,9 @@ function AdminAnalyticsContent() {
   const [customTo, setCustomTo] = useState(searchParams.get("to") || "");
   const [appliedCustom, setAppliedCustom] = useState({ from: searchParams.get("from") || "", to: searchParams.get("to") || "" });
   const [reportStatus, setReportStatus] = useState(searchParams.get("reportStatus") || "all");
+  const requestedTab = searchParams.get("tab");
+  const [analysisTab, setAnalysisTab] = useState<AnalysisTab>(requestedTab === "children" || requestedTab === "parents" ? requestedTab : "overview");
+  const [peopleQuery, setPeopleQuery] = useState("");
   const [detailTab, setDetailTab] = useState<DetailTab>("all");
   const [series, setSeries] = useState({ parent: true, child: true, total: true });
   const [data, setData] = useState<any>(null);
@@ -57,14 +62,19 @@ function AdminAnalyticsContent() {
   const [selected, setSelected] = useState<any>(null);
 
   const query = useMemo(() => {
-    const params = new URLSearchParams({ period, scope, internalTest, reportStatus });
+    const params = new URLSearchParams({ period, scope, internalTest, reportStatus, tab: analysisTab });
     if (period === "custom") { params.set("from", appliedCustom.from); params.set("to", appliedCustom.to); }
     return params;
-  }, [period, scope, internalTest, reportStatus, appliedCustom]);
+  }, [period, scope, internalTest, reportStatus, analysisTab, appliedCustom]);
   const queryString = query.toString();
+  const exportQueryString = analysisTab === "overview" ? queryString : peopleQuery || queryString;
 
   const load = useCallback(async () => {
     if (period === "custom" && (!appliedCustom.from || !appliedCustom.to)) return;
+    if (analysisTab !== "overview") {
+      history.replaceState(null, "", `/admin/analytics?${queryString}`);
+      return;
+    }
     setError(""); setData(null);
     try {
       const response = await fetch(`/api/admin/analytics?${queryString}`);
@@ -75,7 +85,7 @@ function AdminAnalyticsContent() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "통합 분석 데이터를 불러오지 못했습니다.");
     }
-  }, [period, appliedCustom, queryString]);
+  }, [period, appliedCustom, analysisTab, queryString]);
   useEffect(() => { load(); }, [load, reload]);
 
   const onMenuChange = (id: AdminPageId) => {
@@ -123,7 +133,7 @@ function AdminAnalyticsContent() {
 
   return <AdminShell activeMenuId="analytics" onMenuChange={onMenuChange}>
     <div className="min-w-0 space-y-6 p-4 md:p-8">
-      <AdminPageHeader title="통합 분석 대시보드" description="아이 활동부터 리포트 생성·부모 확인·재방문까지 KST 기준으로 한 화면에서 확인합니다. 분석 화면은 읽기 전용입니다." action={<div className="flex gap-2"><a className="inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-sm font-bold" href={`/api/admin/analytics/export?${queryString}&format=csv`}><Download size={16}/>CSV</a><a className="inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-sm font-bold" href={`/api/admin/analytics/export?${queryString}&format=xlsx`}><Download size={16}/>XLSX</a></div>} />
+      <AdminPageHeader title="통합 분석 대시보드" description="아이 활동부터 리포트 생성·부모 확인·재방문까지 KST 기준으로 한 화면에서 확인합니다. 분석 화면은 읽기 전용입니다." action={<div className="flex gap-2"><a className="inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-sm font-bold" href={`/api/admin/analytics/export?${exportQueryString}&format=csv`}><Download size={16}/>CSV</a><a className="inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-sm font-bold" href={`/api/admin/analytics/export?${exportQueryString}&format=xlsx`}><Download size={16}/>XLSX</a></div>} />
 
       <div className="rounded-2xl border border-[var(--admin-border)] bg-[var(--admin-surface)] p-4">
         <div className="flex gap-2 overflow-x-auto pb-2">{PERIODS.map(([key, label]) => <button key={key} onClick={() => setPeriod(key)} className="min-h-11 shrink-0 rounded-full border px-4 text-sm font-bold" style={{ borderColor: period === key ? "var(--admin-primary)" : "var(--admin-border)", color: period === key ? "var(--admin-primary)" : "var(--admin-text-secondary)", background: period === key ? "var(--admin-focus)" : "transparent" }}>{label}</button>)}</div>
@@ -131,7 +141,11 @@ function AdminAnalyticsContent() {
         <div className="mt-4 flex flex-wrap gap-3"><div role="group" aria-label="대상 범위" className="flex gap-1">{SCOPES.map(([key, label]) => <button key={key} onClick={() => setScope(key)} className="min-h-11 rounded-lg border px-3 text-sm font-bold" aria-pressed={scope === key}>{label}</button>)}</div><label className="text-sm font-bold">내부 테스트<select aria-label="내부 테스트" value={internalTest} onChange={(e) => setInternalTest(e.target.value as InternalTestMode)} className="ml-2 min-h-11 rounded-lg border px-3"><option value="exclude">제외</option><option value="include">포함</option><option value="only">테스트만</option></select></label><span className="self-center text-xs text-[var(--admin-text-secondary)]">기준 시간대 Asia/Seoul</span></div>
       </div>
 
-      {error ? <AdminErrorState error={error} onRetry={() => setReload((value) => value + 1)} /> : !data ? <div className="rounded-2xl border p-12 text-center text-[var(--admin-text-secondary)]">통합 지표를 불러오는 중입니다.</div> : <>
+      <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="분석 대상">
+        {([['overview', '전체 개요'], ['children', '아이별 분석'], ['parents', '부모별 분석']] as Array<[AnalysisTab, string]>).map(([key, label]) => <button key={key} role="tab" aria-selected={analysisTab === key} className="min-h-11 shrink-0 rounded-lg border px-5 text-sm font-bold" style={{ borderColor: analysisTab === key ? "var(--admin-primary)" : "var(--admin-border)", color: analysisTab === key ? "var(--admin-primary)" : "var(--admin-text-secondary)", background: analysisTab === key ? "var(--admin-focus)" : "var(--admin-surface)" }} onClick={() => setAnalysisTab(key)}>{label}</button>)}
+      </div>
+
+      {analysisTab === "overview" ? (error ? <AdminErrorState error={error} onRetry={() => setReload((value) => value + 1)} /> : !data ? <div className="rounded-2xl border p-12 text-center text-[var(--admin-text-secondary)]">통합 지표를 불러오는 중입니다.</div> : <>
         <div id="kpi"><AdminKpiGrid>{kpis.map((kpi) => <button key={kpi.key} className="text-left" onClick={() => document.getElementById(kpi.key.startsWith("d") ? "retention" : kpi.key.includes("report") || kpi.key.includes("mission") ? "funnel" : "dau")?.scrollIntoView({ behavior: "smooth" })}><AdminKpiCard title={kpi.label} value={kpi.unit === "percent" ? percent(kpi.value) : (kpi.value ?? "-").toLocaleString()} description={kpi.denominator == null ? undefined : `완료 ${kpi.numerator ?? 0} / 대상 ${kpi.denominator}`} /></button>)}</AdminKpiGrid></div>
 
         <Section id="funnel" title="행동 퍼널 / 리포트 생성 흐름" description="각 단계는 현재 기간·대상·내부 테스트 필터를 공유합니다.">
@@ -158,7 +172,7 @@ function AdminAnalyticsContent() {
           <div className="mb-4 flex gap-1 overflow-x-auto" role="tablist">{SCOPES.map(([key, label]) => <button role="tab" aria-selected={detailTab === key} key={key} onClick={() => setDetailTab(key)} className="min-h-11 shrink-0 rounded-lg border px-4 text-sm font-bold">{label}</button>)}</div>
           <AdminResponsiveTable mobileStrategy="card" data={detailRows} columns={detailColumns} keyExtractor={(row) => row._key} onRowClick={setSelected} error={detailError || undefined} onRetry={() => setReload((value) => value + 1)} emptyMessage="현재 필터에 해당하는 상세 사용자가 없습니다." />
         </Section>
-      </>}
+      </>) : <RetentionPeopleTabs key={analysisTab} tab={analysisTab} queryString={queryString} onQueryChange={setPeopleQuery} />}
     </div>
 
     {selected && <div className="fixed inset-0 z-[80] flex justify-end bg-black/40" onClick={() => setSelected(null)}><aside role="dialog" aria-modal="true" aria-label="분석 상세" className="h-full w-full overflow-y-auto bg-white p-6 shadow-2xl sm:max-w-lg" onClick={(e) => e.stopPropagation()}><button className="float-right min-h-11 min-w-11" aria-label="상세 닫기" onClick={() => setSelected(null)}><X/></button><h2 className="mb-6 text-xl font-black">{selected._name}</h2><dl className="grid grid-cols-2 gap-4 text-sm"><dt>유형</dt><dd>{selected._type}</dd><dt>최근 활동</dt><dd>{date(selected._last)}</dd><dt>활성 일수</dt><dd>{selected._active ?? "-"}</dd><dt>미션 / 자유대화 / 놀이</dt><dd>{selected._mission ?? "-"} / {selected._freechat ?? "-"} / {selected._play ?? "-"}</dd><dt>리포트</dt><dd>{selected._report ? <Status value={selected._report.status}/> : "-"}</dd><dt>D1 / D3 / D7</dt><dd>{retained(selected.d1Retained)} / {retained(selected.d3Retained)} / {retained(selected.d7Retained)}</dd></dl><a className="mt-8 inline-flex min-h-11 items-center rounded-lg bg-[var(--admin-primary)] px-4 font-bold text-white" href={`/admin/users?tab=${selected._type === "child" ? "children" : selected._type === "parent" ? "parents" : "families"}&search=${encodeURIComponent(selected._name || "")}`}>사용자 관리에서 보기</a></aside></div>}
