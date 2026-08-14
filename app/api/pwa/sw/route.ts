@@ -5,8 +5,6 @@ import {
   renderServiceWorker,
 } from "@/lib/pwa/renderServiceWorker";
 
-export const PRECACHE_ASSETS = DEFAULT_PWA_CACHE_ASSETS;
-
 export async function GET() {
   const buildId = BUILD_STAMP;
   const swVersion = `kbestie-shell-${buildId}`;
@@ -15,7 +13,7 @@ export async function GET() {
     buildId,
     buildStamp: BUILD_STAMP,
     swVersion,
-    cacheAssets: PRECACHE_ASSETS,
+    cacheAssets: DEFAULT_PWA_CACHE_ASSETS,
   });
 
   return new NextResponse(swCode, {

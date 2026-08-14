@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  GET,
-  POST,
+  handleClientVersionGet as GET,
+  handleClientVersionPost as POST,
   isValidJsonContentType,
   isGenuineNoSessionAuthError,
   readJsonStreamWithLimit,
   ClientVersionGetDeps,
   ClientVersionPostDeps,
-} from "./route.js";
+} from "./routeHandler.js";
 import { BUILD_STAMP } from "../../../lib/pwa/buildStamp.js";
 import { parseLatestVersionMetadata } from "../../../lib/pwa/clientVersion.js";
 import { AppSessionError } from "../../../lib/analytics/appSession.js";

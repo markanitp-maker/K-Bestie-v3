@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { GET, PRECACHE_ASSETS } from "./route.js";
-import { renderServiceWorker } from "../../../../lib/pwa/renderServiceWorker.js";
+import { GET } from "./route.js";
+import {
+  DEFAULT_PWA_CACHE_ASSETS,
+  renderServiceWorker,
+} from "../../../../lib/pwa/renderServiceWorker.js";
 import { BUILD_STAMP } from "../../../../lib/pwa/buildStamp.js";
 import { requestActivationViaChannel } from "../../../../lib/pwa/swProtocol.js";
 
@@ -38,13 +41,13 @@ test("SW 응답 및 renderer는 동일 입력 시 byte-for-byte 고정되며 SHA
     buildId: "test-build-1",
     buildStamp: "test-stamp-1",
     swVersion: "kbestie-shell-test-build-1",
-    cacheAssets: PRECACHE_ASSETS,
+    cacheAssets: DEFAULT_PWA_CACHE_ASSETS,
   });
   const rendered2 = renderServiceWorker({
     buildId: "test-build-1",
     buildStamp: "test-stamp-1",
     swVersion: "kbestie-shell-test-build-1",
-    cacheAssets: PRECACHE_ASSETS,
+    cacheAssets: DEFAULT_PWA_CACHE_ASSETS,
   });
   assert.equal(rendered1, rendered2);
 
