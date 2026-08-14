@@ -15,6 +15,7 @@ export interface MissionTranscriptTurn {
 export interface MissionConversationLayoutProps {
   onClose: () => void;
   isClosing?: boolean;
+  onKeyboardViewportHeightChange?: (height: number | null) => void;
 
   progressCurrent: number;
   progressTotal: number;
@@ -53,6 +54,7 @@ export interface MissionConversationLayoutProps {
 export function MissionConversationLayout({
   onClose,
   isClosing,
+  onKeyboardViewportHeightChange,
   progressCurrent,
   progressTotal,
   history,
@@ -168,9 +170,17 @@ export function MissionConversationLayout({
   };
 
   const { viewportHeight, isKeyboardOpen } = useKeyboardConversationViewport();
-  const keyboardViewportHeight = isKeyboardOpen && viewportHeight && viewportHeight > 0
-    ? `${viewportHeight}px`
+  const activeKeyboardViewportHeight = isTextMode && isKeyboardOpen && viewportHeight && viewportHeight > 0
+    ? viewportHeight
+    : null;
+  const keyboardViewportHeight = activeKeyboardViewportHeight
+    ? `${activeKeyboardViewportHeight}px`
     : undefined;
+
+  useLayoutEffect(() => {
+    onKeyboardViewportHeightChange?.(activeKeyboardViewportHeight);
+    return () => onKeyboardViewportHeightChange?.(null);
+  }, [activeKeyboardViewportHeight, onKeyboardViewportHeightChange]);
 
   // The conversation viewport is intentionally measured after the current bubble.  Older
   // messages are optional UI, while the active question must never be clipped or squeezed.
@@ -484,7 +494,7 @@ export function MissionConversationLayout({
             className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center"
             style={{
               paddingBottom: isTextMode && isKeyboardOpen
-                ? "clamp(18px, 2.5dvh, 24px)"
+                ? "0px"
                 : "calc(clamp(18px, 2.5dvh, 24px) + env(safe-area-inset-bottom))",
             }}
           >

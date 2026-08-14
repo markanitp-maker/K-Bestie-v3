@@ -1090,7 +1090,7 @@ export default function ChatPage() {
             style={{
               paddingBottom: mode === "text"
                 ? (isKeyboardOpen
-                    ? "clamp(18px, 2.5dvh, 24px)"
+                    ? "0px"
                     : "calc(clamp(18px, 2.5dvh, 24px) + env(safe-area-inset-bottom))")
                 : "calc(clamp(54px, 8dvh, 66px) + env(safe-area-inset-bottom))",
             }}

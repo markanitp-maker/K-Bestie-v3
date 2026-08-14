@@ -197,7 +197,13 @@ async function playClosingLineViaTts(text: string, sessionId: string | null): Pr
 // (/api/config/child-time-restrictions 참고) — 게이트 로직(getKstHour/currentRound) 자체는
 // 그대로 유지하고, 적용 여부만 이 스위치로 결정한다.
 
-function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: boolean) => void }) {
+function MissionInner({
+  onTextModeChange,
+  onKeyboardViewportHeightChange,
+}: {
+  onTextModeChange?: (isTextMode: boolean) => void;
+  onKeyboardViewportHeightChange?: (height: number | null) => void;
+}) {
   const router = useRouter();
   const rawSearchParams = useSearchParams();
   const searchParams = rawSearchParams ?? new URLSearchParams();
@@ -3644,6 +3650,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       <MissionConversationLayout
         onClose={handleClose}
         isClosing={isDone || isRewardModalOpen}
+        onKeyboardViewportHeightChange={onKeyboardViewportHeightChange}
         progressCurrent={gauge}
         progressTotal={requiredCount}
         history={allTurns as any}
@@ -3682,6 +3689,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
 function MissionRouteGate() {
   const [isTextMode, setIsTextMode] = useState(false);
+  const [mobileViewportHeight, setMobileViewportHeight] = useState<number | null>(null);
   const [decision, setDecision] = useState<"loading" | "ab" | "ef" | "cd" | "normal">("loading");
   const [selectedMode, setSelectedMode] = useState<"A" | "B" | "C" | "D" | "E" | "F">("C");
   useEffect(() => {
@@ -3727,7 +3735,7 @@ function MissionRouteGate() {
   }
   // 일반 계정 미션은 기존 그대로(DemoFrame) — 회귀 없음.
   return (
-    <DemoFrame>
+    <DemoFrame mobileViewportHeight={mobileViewportHeight}>
       <div className="mission-frame-wrapper relative w-full h-full">
         <style dangerouslySetInnerHTML={{ __html: `
           .mission-frame-wrapper [class*="h-[100dvh]"]:not([data-keyboard-open="true"]),
@@ -3736,7 +3744,10 @@ function MissionRouteGate() {
             min-height: 100% !important;
           }
         `}} />
-        <MissionInner onTextModeChange={setIsTextMode} />
+        <MissionInner
+          onTextModeChange={setIsTextMode}
+          onKeyboardViewportHeightChange={setMobileViewportHeight}
+        />
         {!isTextMode && (
           <div className="absolute top-0 right-0">
             <KChatbotWidget appSurface="child" topOffsetPx={104} containerMaxWidthPx={480} />

@@ -16,11 +16,14 @@ test("자유대화는 키보드가 열린 동안 같은 Visual Viewport 높이�
 
 test("자유대화 텍스트 입력은 키보드가 열린 동안 safe-area를 중복하지 않는다", () => {
   assert.match(pageSource, /data-ui="freechat-input-area"/);
-  assert.match(pageSource, /isKeyboardOpen\s*\? "clamp\(18px, 2\.5dvh, 24px\)"/);
+  assert.match(pageSource, /isKeyboardOpen\s*\? "0px"/);
   assert.match(pageSource, /calc\(clamp\(18px, 2\.5dvh, 24px\) \+ env\(safe-area-inset-bottom\)\)/);
 });
 
-test("Mission DemoFrame의 PC 높이 보정은 키보드 실측 높이를 덮어쓰지 않는다", () => {
+test("Mission은 키보드 Visual Viewport를 바깥 DemoFrame까지 올린다", () => {
+  assert.match(missionPageSource, /<DemoFrame mobileViewportHeight=\{mobileViewportHeight\}>/);
+  assert.match(missionPageSource, /onKeyboardViewportHeightChange=\{setMobileViewportHeight\}/);
+  assert.match(missionLayoutSource, /onKeyboardViewportHeightChange\?\.\(activeKeyboardViewportHeight\)/);
   assert.match(missionPageSource, /:not\(\[data-keyboard-open="true"\]\)/);
-  assert.match(missionLayoutSource, /isTextMode && isKeyboardOpen\s*\? "clamp\(18px, 2\.5dvh, 24px\)"/);
+  assert.match(missionLayoutSource, /isTextMode && isKeyboardOpen\s*\? "0px"/);
 });

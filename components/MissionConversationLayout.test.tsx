@@ -50,11 +50,13 @@ test("녹음 상태가 남아 있어도 텍스트 모드에서는 K 상태 뱃�
   const container = document.getElementById("root");
   assert.ok(container);
   const root = createRoot(container);
+  const viewportHeights: Array<number | null> = [];
 
   await act(async () => {
     root.render(
       <MissionConversationLayout
         onClose={() => {}}
+        onKeyboardViewportHeightChange={(height) => viewportHeights.push(height)}
         progressCurrent={0}
         progressTotal={5}
         history={[]}
@@ -93,6 +95,8 @@ test("녹음 상태가 남아 있어도 텍스트 모드에서는 K 상태 뱃�
   assert.equal(viewport?.style.height, "500px");
   assert.equal(grid?.style.height, "500px");
   assert.equal(inputArea?.dataset.keyboardOpen, "true");
+  assert.equal(inputArea?.style.paddingBottom, "0px");
+  assert.equal(viewportHeights.at(-1), 500);
   assert.ok(badge, "키보드가 열린 상태에서도 K 상태 뱃지가 있어야 한다");
   assert.equal(badge.getAttribute("data-keyboard-open"), "true");
   assert.match(badge.textContent ?? "", /대기 중/);
