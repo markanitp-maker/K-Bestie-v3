@@ -19,6 +19,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testIgnore: /qa-078-pwa-safe-update\.spec\.ts/,
       use: { 
         ...devices["Desktop Chrome"],
         launchOptions: {
@@ -31,14 +32,27 @@ export default defineConfig({
     },
     {
       name: "android-chrome",
+      testIgnore: /qa-078-pwa-safe-update\.spec\.ts/,
       use: {
         ...devices["Pixel 5"],
       },
     },
     {
       name: "iphone-webkit",
+      testIgnore: /qa-078-pwa-safe-update\.spec\.ts/,
       use: {
         ...devices["iPhone 13"],
+      },
+    },
+    {
+      name: "pwa-update-chromium",
+      testMatch: /qa-078-pwa-safe-update\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        serviceWorkers: "allow",
+        screenshot: "off",
+        trace: "off",
+        video: "off",
       },
     },
   ],

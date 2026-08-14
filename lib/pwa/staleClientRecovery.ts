@@ -12,6 +12,9 @@
 // 여기서는 "청크를 못 받았다"는 신호를 잡아 shell 캐시를 통째로 비우고 한 번만
 // 새로고침한다. 아이(사용자)가 업데이트 버튼을 누르지 않아도 스스로 복구되어야
 // 한다는 것이 이 모듈의 존재 이유다.
+
+import { requestStaleRecovery } from "./recoveryCoordinator";
+
 export const SHELL_CACHE_PREFIX = "kbestie-shell-";
 export const STALE_RECOVERY_GUARD_KEY = "k_stale_client_recovery";
 
@@ -85,8 +88,10 @@ export async function purgeStaleChunkCache(cacheStorage: CacheStorage): Promise<
       }
     });
     // 청크가 수백 개일 수 있다. 순차로 지우면 새로고침이 그만큼 늦어진다.
-    const results = await Promise.all(targets.map((request) => cache.delete(request)));
-    removed += results.filter(Boolean).length;
+    const results = await Promise.allSettled(targets.map((request) => cache.delete(request)));
+    removed += results.filter(
+      (r): r is PromiseFulfilledResult<boolean> => r.status === "fulfilled" && Boolean(r.value)
+    ).length;
   }
   return removed;
 }
@@ -142,8 +147,6 @@ export async function forceUpdateAndReload({
   if (!sessionStorageImpl) return "unsupported";
 
   const at = now();
-  // 가드는 네트워크를 기다리기 "전에" 선점한다. await 뒤에 쓰면 아이가 버튼을 연타할 때
-  // 두 호출이 모두 검사를 통과해 새로고침이 겹친다.
   let previousGuard = "";
   try {
     previousGuard = sessionStorageImpl.getItem(FORCED_UPDATE_GUARD_KEY) || "";
@@ -155,30 +158,22 @@ export async function forceUpdateAndReload({
   }
 
   const restoreGuard = () => {
-    // 새로고침하지 않기로 했으면 선점을 되돌린다. 그러지 않으면 바로 이어지는
-    // 기존 재시도가 실패했을 때 10초 동안 버튼이 먹통이 된다.
     try {
       sessionStorageImpl.setItem(FORCED_UPDATE_GUARD_KEY, previousGuard);
-    } catch {
-      // 되돌리기 실패는 다음 시도를 조금 늦출 뿐이라 무시한다.
-    }
+    } catch {}
   };
 
   let serverBuildId: string | null = null;
   try {
-    // 이 화면은 "연결이 나쁠 때" 뜨는 화면이다. 타임아웃이 없으면 아이가 버튼을 눌러도
-    // 수십 초 동안 아무 일도 안 일어난 것처럼 보인다.
     const response = await fetchImpl("/api/client-version", {
       cache: "no-store",
       signal: AbortSignal.timeout(versionCheckTimeoutMs),
     });
     if (response.ok) {
-      const body = await response.json() as { buildId?: unknown };
+      const body = (await response.json()) as { buildId?: unknown };
       if (typeof body.buildId === "string" && body.buildId.trim()) serverBuildId = body.buildId.trim();
     }
-  } catch {
-    // 버전을 확인 못 했으면 대기 중인 서비스워커 유무로만 판단한다.
-  }
+  } catch {}
 
   const hasWaitingWorker = await activateWaitingWorker().catch(() => false);
   const versionMismatch = serverBuildId !== null && serverBuildId !== clientBuildId;
@@ -187,22 +182,23 @@ export async function forceUpdateAndReload({
     return "no_update";
   }
 
+  // Notify recovery coordinator
+  requestStaleRecovery({
+    source: "manual",
+    buildId: serverBuildId || undefined,
+    timestamp: at,
+  });
+
   if (cacheStorage) {
     try {
       await purgeStaleChunkCache(cacheStorage);
-    } catch {
-      // 캐시 삭제가 실패해도 새로고침은 시도한다.
-    }
+    } catch {}
   }
 
-  // 새 워커가 활성화되면 controllerchange가 떠서 PwaServiceWorker가 한 번 더
-  // 새로고침한다. 그 가드를 미리 채워 화면이 두 번 깜빡이지 않게 한다.
   if (serverBuildId) {
     try {
       sessionStorageImpl.setItem(`pwa_sw_reloaded_${serverBuildId}`, "true");
-    } catch {
-      // 채우지 못하면 새로고침이 한 번 더 일어날 뿐, 진행 상태는 서버에 남는다.
-    }
+    } catch {}
   }
 
   reload();
@@ -225,7 +221,6 @@ export function readRecoveryGuard(raw: string | null, now: number): StaleRecover
     const parsed = JSON.parse(raw) as Partial<StaleRecoveryGuard>;
     const count = typeof parsed.count === "number" && parsed.count >= 0 ? parsed.count : 0;
     const lastAt = typeof parsed.lastAt === "number" && parsed.lastAt >= 0 ? parsed.lastAt : 0;
-    // 창을 벗어난 오래된 기록은 리셋한다 — 긴 세션에서 다음 배포 사고를 또 복구해야 한다.
     if (now - lastAt > STALE_RECOVERY_WINDOW_MS) return { count: 0, lastAt: 0 };
     return { count, lastAt };
   } catch {
@@ -244,9 +239,7 @@ type RecoverStaleClientOptions = {
 /**
  * 배포마다 갈리는 청크 캐시를 비우고 새로고침한다.
  *
- * 10분 창 안에서 최대 3회, 최소 60초 간격. 실제 장애가 "47분 동안 배포 3회"였기
- * 때문에 1회 제한으로는 두 번째 배포부터 아이가 그대로 멈춘다. 반대로 무제한이면
- * 새로고침 루프가 나는데, 그건 원래 장애보다 나쁘다.
+ * 10분 창 안에서 최대 3회, 최소 60초 간격.
  */
 export async function recoverStaleClient({
   cacheStorage = typeof caches === "undefined" ? null : caches,
@@ -257,7 +250,6 @@ export async function recoverStaleClient({
 }: RecoverStaleClientOptions = {}): Promise<StaleClientRecoveryResult> {
   if (!sessionStorageImpl) return "unsupported";
 
-  // 오프라인이면 새로고침해도 빈 화면만 남는다. 연결이 돌아온 뒤 다시 판단한다.
   if (!isOnline()) return "offline";
 
   const at = now();
@@ -265,31 +257,30 @@ export async function recoverStaleClient({
   try {
     guard = readRecoveryGuard(sessionStorageImpl.getItem(STALE_RECOVERY_GUARD_KEY), at);
     if (guard.count >= STALE_RECOVERY_MAX_ATTEMPTS) {
-      // 상한에 닿았으면 lastAt을 계속 밀어 창이 리셋되지 않게 한다. 그러지 않으면
-      // 영구히 404가 나는 자산이 하나 있을 때 "10분마다 3회 새로고침"이 끝없이 반복된다.
       sessionStorageImpl.setItem(
         STALE_RECOVERY_GUARD_KEY,
-        JSON.stringify({ count: guard.count, lastAt: at } satisfies StaleRecoveryGuard),
+        JSON.stringify({ count: guard.count, lastAt: at } satisfies StaleRecoveryGuard)
       );
       return "exhausted";
     }
     if (guard.lastAt > 0 && at - guard.lastAt < STALE_RECOVERY_MIN_INTERVAL_MS) return "too_soon";
     sessionStorageImpl.setItem(
       STALE_RECOVERY_GUARD_KEY,
-      JSON.stringify({ count: guard.count + 1, lastAt: at } satisfies StaleRecoveryGuard),
+      JSON.stringify({ count: guard.count + 1, lastAt: at } satisfies StaleRecoveryGuard)
     );
   } catch {
-    // sessionStorage를 못 쓰는 환경(사파리 프라이빗 등)에서는 루프 가드를 걸 수
-    // 없으므로 자동 새로고침을 하지 않는다. 무한 새로고침이 장애보다 나쁘다.
     return "unsupported";
   }
+
+  requestStaleRecovery({
+    source: "manual",
+    timestamp: at,
+  });
 
   if (cacheStorage) {
     try {
       await purgeStaleChunkCache(cacheStorage);
-    } catch {
-      // 캐시 삭제 실패해도 새로고침은 시도한다. 네트워크에서 새 청크를 받을 수 있다.
-    }
+    } catch {}
   }
 
   reload();

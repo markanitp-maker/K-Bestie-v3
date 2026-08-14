@@ -19,3 +19,25 @@ import { PWA_CLIENT_VERSION } from "./clientVersion";
  */
 export const BUILD_STAMP: string =
   (process.env.NEXT_PUBLIC_BUILD_STAMP || "").trim() || PWA_CLIENT_VERSION;
+
+export function getServerDeploymentInfo(): {
+  buildId: string;
+  buildStamp: string;
+  deploymentId: string;
+  swVersion: string;
+  serviceWorkerScriptUrl: string;
+} {
+  const buildStamp = BUILD_STAMP;
+  const deploymentId =
+    (process.env.VERCEL_DEPLOYMENT_ID || "").trim() || buildStamp;
+  const swVersion = buildStamp ? `kbestie-shell-${buildStamp}` : "";
+  const serviceWorkerScriptUrl = "/sw.js";
+
+  return {
+    buildId: buildStamp,
+    buildStamp,
+    deploymentId,
+    swVersion,
+    serviceWorkerScriptUrl,
+  };
+}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import HomeHubClient from "@/components/landing/HomeHubClient";
 import { UTM_KEYS, type PreservedLandingParams } from "@/lib/landing/preservedHref";
 import { getPwaIcons } from "@/lib/pwaIcons";
+import { PwaSafeRouteReady } from "@/components/pwa/PwaSafeRouteReady";
 
 const PRESERVED_PARAM_KEYS = [...UTM_KEYS, "returnUrl", "link_id"] as const;
 
@@ -74,6 +75,7 @@ export default async function HomePage({
 
   return (
     <>
+      <PwaSafeRouteReady expectedPath="/" />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

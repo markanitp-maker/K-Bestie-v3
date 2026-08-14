@@ -1,19 +1,22 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { isStaleClientAssetError } from "@/lib/pwa/staleClientRecovery";
+import { requestStaleRecovery } from "@/lib/pwa/recoveryCoordinator";
 import {
-  STALE_ASSET_MESSAGE_TYPE,
-  isStaleClientAssetError,
-  recoverStaleClient,
-} from "@/lib/pwa/staleClientRecovery";
+  validateStaleAssetEnvelope,
+  isLegacyStaleAssetMessage,
+  requestServiceWorkerIdentity,
+  isValidStaleAssetPath,
+} from "@/lib/pwa/swProtocol";
 
 /**
  * 2026-08-14 Production 장애 대응 — 배포 교체로 청크를 못 받은 클라이언트를
  * 사용자 조작 없이 스스로 복구시킨다.
  *
- * 배너로 "업데이트해 주세요"라고 안내해도 아이는 누르지 않는다. 실제 장애에서도
- * "새로운 버전이 준비됐어요" 배너가 떠 있는 채로 47분간 대화가 0턴이었다.
- * 그래서 안내가 아니라 자동 복구가 필요하다.
+ * StaleClientRecovery는 독자적 reload/cache purge를 수행하지 않고,
+ * 유효한 stale asset 신호와 controller 메시지를 엄격히 검증한 뒤
+ * recoveryCoordinator를 통해 PwaServiceWorker 단일 오케스트레이터로 위임한다.
  */
 export function StaleClientRecovery() {
   const recoveringRef = useRef(false);
@@ -21,33 +24,84 @@ export function StaleClientRecovery() {
   useEffect(() => {
     let disposed = false;
 
-    const recover = () => {
+    const triggerRecovery = (
+      source: "chunk_error" | "sw_message" | "unhandled_rejection",
+      pathname?: string,
+      buildId?: string,
+      workerNonce?: string
+    ) => {
       if (disposed || recoveringRef.current) return;
-      // 한 화면에서 청크 여러 개가 동시에 404가 날 수 있다. 가드를 sessionStorage에
-      // 쓰기 전에 겹쳐 들어오면 시도 횟수를 헛되이 소모하므로 여기서도 한 번 막는다.
       recoveringRef.current = true;
-      void recoverStaleClient()
-        .then((result) => {
-          if (result !== "reloading") recoveringRef.current = false;
-        })
-        .catch(() => {
-          // 복구 실패는 현재 화면을 더 망가뜨리지 않는다. 다음 진입에서 다시 시도된다.
-          recoveringRef.current = false;
-        });
+      requestStaleRecovery({
+        source,
+        pathname,
+        buildId,
+        workerNonce,
+        timestamp: Date.now(),
+      });
+      // Throttle rapid repeated triggers within the same page lifecycle
+      setTimeout(() => {
+        if (!disposed) recoveringRef.current = false;
+      }, 5_000);
     };
 
     const handleError = (event: ErrorEvent) => {
-      if (isStaleClientAssetError(event.error) || isStaleClientAssetError(event.message)) recover();
+      if (isStaleClientAssetError(event.error) || isStaleClientAssetError(event.message)) {
+        triggerRecovery("chunk_error");
+      }
     };
 
     const handleRejection = (event: PromiseRejectionEvent) => {
-      if (isStaleClientAssetError(event.reason)) recover();
+      if (isStaleClientAssetError(event.reason)) {
+        triggerRecovery("unhandled_rejection");
+      }
     };
 
-    // 서비스워커가 /_next/static/ 404를 만나면 알려준다 — 예외로 올라오지 않고
-    // 화면만 조용히 멈추는 경로(동적 import 대기)를 여기서 잡는다.
-    const handleServiceWorkerMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === STALE_ASSET_MESSAGE_TYPE) recover();
+    // 서비스워커 메시지 처리
+    const handleServiceWorkerMessage = async (event: MessageEvent) => {
+      if (disposed) return;
+      if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+
+      // 1. Source verification: MUST be from current active controller!
+      const currentController = navigator.serviceWorker.controller;
+      if (!currentController || event.source !== currentController) {
+        return;
+      }
+
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+
+      // 2. Strict v1 Stale Asset Envelope
+      if (data.protocol === 1 && data.type === "K_STALE_ASSET") {
+        // Query fresh controller identity
+        const identity = await requestServiceWorkerIdentity(currentController, 1500).catch(() => null);
+        if (!identity || identity.protocolVersion !== 1 || !identity.workerNonce || !identity.buildId) {
+          return;
+        }
+
+        const validated = validateStaleAssetEnvelope(data, {
+          controllerBuildId: identity.buildId,
+          controllerNonce: identity.workerNonce,
+        });
+
+        if (validated && validated.status === 404 && isValidStaleAssetPath(validated.pathname)) {
+          triggerRecovery("sw_message", validated.pathname, validated.buildId, validated.workerNonce);
+        }
+        return;
+      }
+
+      // 3. Legacy v0 { type: "K_STALE_ASSET" } backwards compatibility
+      if (isLegacyStaleAssetMessage(data)) {
+        // Bounded legacy identity check to validate read-only identity before accepting
+        const identity = await requestServiceWorkerIdentity(currentController, 1500).catch(() => null);
+        if (identity && identity.buildId) {
+          // v0 only signals coordinator; it NEVER initiates proposal, SKIP_WAITING, reload, or success telemetry directly!
+          triggerRecovery("sw_message", undefined, identity.buildId);
+        }
+        return;
+      }
+
+      // Any other unknown/forged message produces 0 coordinator calls
     };
 
     window.addEventListener("error", handleError);

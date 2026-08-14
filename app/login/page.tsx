@@ -7,6 +7,7 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { safePostAuthReturnUrl } from "@/lib/auth/safeReturnUrl";
 import { logAuthFlowEvent } from "@/lib/analytics/authFlowClient";
+import { PwaSafeRouteReady } from "@/components/pwa/PwaSafeRouteReady";
 
 function LoginContent() {
   const router = useRouter();
@@ -45,7 +46,7 @@ function LoginContent() {
     setLoadingProvider(provider);
     setError(null);
     const supabase = createClient();
-    
+
     localStorage.setItem("login_role", "owner");
     void logAuthFlowEvent("social_auth_provider_selected", { provider });
 
@@ -80,7 +81,7 @@ function LoginContent() {
     setError(null);
 
     const supabase = createClient();
-    
+
     // 구성원 로그인 플래그 세팅
     localStorage.setItem("login_role", "member");
 
@@ -111,6 +112,7 @@ function LoginContent() {
       className="min-h-dvh flex flex-col items-center justify-center px-5 md:max-w-[420px] md:mx-auto w-full py-8"
       style={{ background: "var(--color-k-surface)" }}
     >
+      <PwaSafeRouteReady expectedPath="/login" />
       <div className="text-center mb-8">
         <div className="relative w-[112px] h-[112px] mx-auto mb-3">
           <Image
@@ -144,7 +146,7 @@ function LoginContent() {
         {/* QR/Handoff의 role=child 진입에서는 아이 로그인만 바로 보여준다. */}
         {!childLoginOnly && <div className="flex flex-col gap-2.5">
           <p className="text-xs font-bold text-gray-500 mb-1 px-1">보호자 로그인</p>
-          
+
           <button
             onClick={() => handleOAuthLogin("kakao")}
             disabled={isLoading}
@@ -201,7 +203,7 @@ function LoginContent() {
         {/* ── 구성원 일반 로그인 섹션 ── */}
         <form onSubmit={handleMemberLogin} className="flex flex-col gap-3">
           <p className="text-xs font-bold text-gray-500 mb-1 px-1">아이 로그인</p>
-          
+
           <div>
             <input
               ref={childIdInputRef}

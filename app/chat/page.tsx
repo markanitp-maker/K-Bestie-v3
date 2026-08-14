@@ -19,6 +19,10 @@ import {
   parseFreechatPauseSuccess,
   type FreechatDailyReward,
 } from "@/lib/freechat/dailyEngagementReward";
+import {
+  tryAcquireConversationHazard,
+  type HazardTokenHandle,
+} from "@/lib/pwa/conversationActivity";
 
 const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
 const MAX_SESSION_TURNS = 20; // 20턴
@@ -79,7 +83,8 @@ export default function ChatPage() {
   const rewardRequestSessionsRef = useRef(new Set<string>());
   const rewardFinalizedSessionsRef = useRef(new Set<string>());
   const exitAfterRewardRef = useRef(false);
-  
+  const activeHazardTokenRef = useRef<HazardTokenHandle | null>(null);
+
   useEffect(() => {
     childIdRef.current = childId;
   }, [childId]);
@@ -95,15 +100,15 @@ export default function ChatPage() {
       const asrConfidence = turn.role === "child" ? getLastAsrConfidenceRef.current?.() : undefined;
       const turnId = turn.id || crypto.randomUUID();
       const displaySequence = (turn as any).displaySequence ?? nextDisplaySequence();
-      
+
       let pendingWrite: Promise<void>;
       pendingWrite = fetch("/api/chat/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          sessionId: sid, 
-          role: turn.role, 
-          content: turn.text, 
+        body: JSON.stringify({
+          sessionId: sid,
+          role: turn.role,
+          content: turn.text,
           asrConfidence,
           turnId,
           displaySequence
@@ -171,9 +176,15 @@ export default function ChatPage() {
     }
   }, [status]);
 
-  // 페이지 이탈(언마운트) 시 false 처리
+  // 페이지 이탈(언마운트) 시 false 처리 및 활성 hazard token 반납
   useEffect(() => {
-    return () => setSessionActive(false);
+    return () => {
+      setSessionActive(false);
+      if (activeHazardTokenRef.current) {
+        activeHazardTokenRef.current.release();
+        activeHazardTokenRef.current = null;
+      }
+    };
   }, []);
 
   // 화면 wake lock — 프리챗 세션이 실제로 연결돼 있는 동안(live)만 유지. status가 ended/
@@ -316,6 +327,10 @@ export default function ChatPage() {
   }, []);
 
   const finishPendingExit = useCallback(() => {
+    if (activeHazardTokenRef.current) {
+      activeHazardTokenRef.current.release();
+      activeHazardTokenRef.current = null;
+    }
     if (!exitAfterRewardRef.current) return;
     exitAfterRewardRef.current = false;
     router.replace("/child/home");
@@ -344,7 +359,7 @@ export default function ChatPage() {
       const storedMode = localStorage.getItem(`k_voice_input_mode:${stored}`);
       const auto = storedMode !== "manual";
       setIsAuto(auto);
-      
+
       if (auto) {
         if (navigator.permissions && navigator.permissions.query) {
           navigator.permissions.query({ name: "microphone" as PermissionName })
@@ -514,7 +529,7 @@ export default function ChatPage() {
       const data = await res.json();
       logVoiceEvent({ ts: Date.now(), eventType: "freechat_session_response", extra: { resumed: data.resumed, sessionId: data.sessionId, conversationWindow: data.conversationWindow } });
       console.log("[freechat] session response", { sessionId: data.sessionId, resumed: data.resumed, businessDate: data.businessDate, conversationWindow: data.conversationWindow });
-      
+
       if (data.sessionId) {
         setSessionId(data.sessionId);
         sessionIdRef.current = data.sessionId;
@@ -543,7 +558,7 @@ export default function ChatPage() {
                 text: m.content,
                 displaySequence: m.display_sequence
               } as Turn));
-              
+
               const maxSeq = Math.max(0, ...msgData.messages.map((m: MessageRow) => m.display_sequence ?? 0));
               displaySequenceCounterRef.current = Math.max(displaySequenceCounterRef.current, maxSeq);
 
@@ -561,6 +576,18 @@ export default function ChatPage() {
   }, []);
   const handleStart = useCallback(async () => {
     if (!childId) return;
+
+    // Activation barrier guard: cannot start conversation if update activation is preparing/committed
+    const hazard = tryAcquireConversationHazard("freechat", "start_session");
+    if (!hazard) {
+      console.warn("[freechat] cannot start session - update activation barrier active");
+      return;
+    }
+    if (activeHazardTokenRef.current) {
+      activeHazardTokenRef.current.release();
+    }
+    activeHazardTokenRef.current = hazard;
+
     setReportDone(false);
     setReportError(null);
 
@@ -577,6 +604,10 @@ export default function ChatPage() {
       seedTranscript(restoredTranscriptRef.current);
       setDailyLimitReached(true);
       setSessionActive(false);
+      if (activeHazardTokenRef.current) {
+        activeHazardTokenRef.current.release();
+        activeHazardTokenRef.current = null;
+      }
       return;
     }
 
@@ -592,7 +623,6 @@ export default function ChatPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sessionId: sessionIdRef.current,
-            childId,
             clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
             swVersion: e.data?.swVersion ?? "unknown",
           }),
@@ -603,11 +633,10 @@ export default function ChatPage() {
       fetch("/api/client-version", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          sessionId: sessionIdRef.current, 
-          childId, 
-          clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA, 
-          swVersion: "no-sw-controller" 
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current,
+          clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
+          swVersion: "no-sw-controller"
         }),
       }).catch(() => {});
     }
@@ -622,7 +651,7 @@ export default function ChatPage() {
           const wasLive = statusRef.current === "live";
           if (wasLive) stopSession();
           reset();
-          
+
           void restoreSession(childIdRef.current).then(() => {
             if (wasLive) {
               void startSession().then(() => {
@@ -648,7 +677,7 @@ export default function ChatPage() {
       }
       setInputMode("auto");
       setMicEnabled(true);
-      
+
       // manual -> auto 전환 시, 세션이 안 켜져있다면 즉시 시작 시도
       if (statusRef.current === "idle" || statusRef.current === "error") {
         handleStart();
@@ -739,7 +768,7 @@ export default function ChatPage() {
   // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
   // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
   // 화면이 튀는 현상(jitter)이 발생할 수 있습니다.
-  // 우측으로 밀리거나 잘리는 문제는 viewport 높이보다는 flex/grid 내의 
+  // 우측으로 밀리거나 잘리는 문제는 viewport 높이보다는 flex/grid 내의
   // min-width: 0 또는 width: 100vw 사용이 주 원인이므로 가로폭 안전 조건에 집중합니다.
 
   // 상태 플래그
@@ -911,7 +940,7 @@ export default function ChatPage() {
             "--chat-mascot-height": "clamp(145px, 42vw, 172px)",
           } as React.CSSProperties}
         >
-          
+
           {/* Decorations */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
             <div className="absolute top-[9%] left-[7%] w-[clamp(48px,15vw,64px)] h-[clamp(22px,7vw,30px)] bg-white/25 rounded-full blur-[2px]" />
@@ -1042,12 +1071,12 @@ export default function ChatPage() {
                      className="absolute top-[6%] w-[clamp(175px,48vw,205px)] h-[clamp(175px,48vw,205px)] rounded-full blur-[9px] pointer-events-none"
                      style={{ background: "radial-gradient(circle at 50% 42%, rgba(255,255,255,0.72) 0%, rgba(255,245,232,0.46) 47%, rgba(246,200,95,0.12) 72%, transparent 82%)" }}
                    />
-                   
+
                    {/* Mascot */}
                    <div className="relative z-30 flex justify-center items-end pb-[var(--chat-mascot-bottom-padding)]">
                      <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={165} className="!w-[var(--chat-mascot-height)] !h-auto object-contain" />
                    </div>
-                   
+
                    {/* Raised cylinder platform: distinct top plane, shaded side wall, and grounded shadow */}
                    <div className="absolute bottom-0 w-[clamp(205px,57vw,238px)] h-[clamp(58px,8.2dvh,70px)] pointer-events-none">
                      <div className="absolute -bottom-[8%] left-[8%] w-[84%] h-[30%] rounded-[50%] bg-[#9B7047]/28 blur-[8px]" />
@@ -1145,7 +1174,7 @@ export default function ChatPage() {
             ) : (
               <div className="w-full flex items-center justify-center h-[clamp(88px,13vw,100px)] relative">
                 {/* Keyboard Button */}
-                <button 
+                <button
                   onClick={switchToText}
                   disabled={isConnecting}
                   className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(46px,12vw,50px)] h-[clamp(46px,12vw,50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1197,8 +1226,8 @@ export default function ChatPage() {
                         </button>
                       </div>
                     ) : (
-                      <button 
-                        onClick={handleStart} 
+                      <button
+                        onClick={handleStart}
                         className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)]"
                         aria-label="대화 시작하기"
                       >
@@ -1206,8 +1235,8 @@ export default function ChatPage() {
                       </button>
                     )
                   ) : (
-                    <button 
-                      disabled 
+                    <button
+                      disabled
                       className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 opacity-60 cursor-not-allowed bg-gray-400"
                       aria-label="마이크 사용 불가"
                     >
@@ -1219,7 +1248,7 @@ export default function ChatPage() {
             )}
           </div>
         </div>
-        
+
         {/* 047 QA 실측: topOffsetPx가 너무 작아 문의 위젯이 상단 X(자유대화 종료) 버튼과
             정확히 같은 자리에 겹쳐 X가 완전히 가려졌다 - 미션 화면과 달리 진행률 바가
             없어 X 버튼 아래로 충분히 내려야 한다(X 버튼 높이 44px + 상단 패딩 고려). */}

@@ -50,6 +50,10 @@ import {
 import { ensureMissionClientVersion } from "@/lib/pwa/clientVersionGate";
 import { BUILD_STAMP } from "@/lib/pwa/buildStamp";
 import { forceUpdateAndReload } from "@/lib/pwa/staleClientRecovery";
+import {
+  tryAcquireConversationHazard,
+  type HazardTokenHandle,
+} from "@/lib/pwa/conversationActivity";
 
 type RoundType = "round1_day" | "round2_night" | "common";
 type VoiceMode = "stt_tts" | "live";
@@ -218,6 +222,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   const [entryStatus, setEntryStatus] = useState<"checking" | "ready_to_start" | "ready_to_resume" | "starting" | "resuming" | "active" | "error">("checking");
   const missionRequestGenerationRef = useRef(0);
   const activeMissionRequestAbortRef = useRef<AbortController | null>(null);
+  const activeMissionHazardRef = useRef<HazardTokenHandle | null>(null);
   // 073-P0 리뷰 지적: 마운트 effect의 요청은 그 effect의 cleanup(abortController.abort())으로
   // 정리되지만, 버튼(시작/이어하기) 트리거 요청은 외부 signal 없이 runMissionRequest를 호출해
   // 컴포넌트가 언마운트돼도 진행 중이던 요청과 watchdog이 정리되지 않았다 — unmount 시
@@ -226,6 +231,10 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   useEffect(() => {
     return () => {
       activeMissionRequestAbortRef.current?.abort();
+      if (activeMissionHazardRef.current) {
+        activeMissionHazardRef.current.release();
+        activeMissionHazardRef.current = null;
+      }
     };
   }, []);
   // 초기 조회 실패 후 같은 조회 effect를 다시 실행하기 위한 카운터이다.
@@ -322,9 +331,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   // 실어 보내 서버가 같은 턴에 대한 중복 요청을 식별할 수 있게 하는 idempotency key 재료.
   const childTurnSeqRef = useRef(0);
   const answerEpochRef = useRef(0);
-  
+
   const childContextRef = useRef<ChildConversationContext | null>(null);
-  
+
   // 8초 타임아웃 타이머는 useGeminiLive 내부 generationTimeout으로 이관됨
   // 종료 문구 TTS 폴백이 중복 실행되지 않도록 하는 가드(컨트롤러의 closingFinished 위에 얹는
   // 이중 방어) — onClosingAudioTimeout이 어떤 이유로든 두 번 불려도 재생/저장은 1회만.
@@ -399,7 +408,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         if (typeof live !== 'undefined' && live.setKSpeechAllowed) live.setKSpeechAllowed(false);
     setIsRecording(false);
     isRecordingRef.current = false;
-    
+
     if (buttonRef.current) {
       buttonRef.current.style.transform = "scale(1)";
       buttonRef.current.style.boxShadow = "none";
@@ -473,7 +482,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           if (!isRequestActive()) return "stale" as const;
           const data = await res.json().catch(() => ({}));
           if (!isRequestActive()) return "stale" as const;
-          
+
           if (data.status === "NOT_EXPIRED") {
             isNotExpired = true;
             break;
@@ -837,13 +846,13 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     }
 
     logVoiceEvent({ ts: Date.now(), eventType: "saveMessage_call", childTurnId: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence });
-    
+
     let isClarification = false;
     if (enrichedTurn.role === "k" && kClarificationTurnRef.current) {
       isClarification = true;
       kClarificationTurnRef.current = false;
     }
-    
+
     const wasServerPersistedK = enrichedTurn.role === "k"
       && serverPersistedKTextsRef.current[0] === enrichedTurn.text;
     const isGreetingChildTurn = !isV3Mission
@@ -1332,7 +1341,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           sessionStorage.removeItem("mission-turn-recovery-paused");
           logVoiceEvent({ ts: Date.now(), eventType: "answer_response" });
           if (currentEpoch !== answerEpochRef.current) return;
-          
+
           if (data.reason === "safety_signal" || data.status === "SAFETY_PAUSED") {
             if (manualTimeoutRef.current) {
               clearTimeout(manualTimeoutRef.current);
@@ -1360,7 +1369,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           // 인사 턴 완료 처리 (서버 전송 없이 로컬에서만 상태 업데이트)
           questionStatesRef.current["greeting_turn_0"] = "answered";
         }
-        
+
         if (data) {
           setGauge(data.validAnswerCount ?? 0);
           setProgressPercent(data.progressPercent ?? 0);
@@ -1925,11 +1934,11 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       if (isRecordingRef.current) {
         const scale = 1 + Math.min(level * 2.0, 0.45); // 최대 1.45배 확장
         const shadowRadius = Math.min(level * 50, 40); // 최대 40px glow
-        
+
         buttonRef.current.style.transform = `scale(${scale})`;
         // --color-k-warning (경고/오렌지색 계열) 디자인 토큰 활용
-        buttonRef.current.style.boxShadow = level > 0.005 
-          ? `0 0 ${shadowRadius}px var(--color-k-warning)` 
+        buttonRef.current.style.boxShadow = level > 0.005
+          ? `0 0 ${shadowRadius}px var(--color-k-warning)`
           : "none";
 
         if (pingRef.current) {
@@ -2656,7 +2665,6 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               sessionId: data.sessionId,
-              childId: cid,
               clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
               swVersion: e.data?.swVersion ?? "unknown",
             }),
@@ -2669,7 +2677,6 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sessionId: data.sessionId,
-            childId: cid,
             clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
             swVersion: "no-sw-controller",
           }),
@@ -2843,6 +2850,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
   // 요청을 안전하게 처리하므로, 이 수동 락은 더 필요 없고 오히려 위 회귀의 원인이었다.
   const handleStartMission = () => {
     if (!childIdRef.current || !roundType) return;
+    const hazard = tryAcquireConversationHazard("mission", "starting_mission");
+    if (!hazard) {
+      console.warn("[Mission] cannot start mission - update activation barrier active");
+      return;
+    }
+    if (activeMissionHazardRef.current) activeMissionHazardRef.current.release();
+    activeMissionHazardRef.current = hazard;
+
     setEntryStatus("starting");
     attemptKindRef.current = "starting";
     lastAttemptFnRef.current = handleStartMission;
@@ -2853,6 +2868,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   const handleResumeMission = () => {
     if (!childIdRef.current || !roundType) return;
+    const hazard = tryAcquireConversationHazard("mission", "resuming_mission");
+    if (!hazard) {
+      console.warn("[Mission] cannot resume mission - update activation barrier active");
+      return;
+    }
+    if (activeMissionHazardRef.current) activeMissionHazardRef.current.release();
+    activeMissionHazardRef.current = hazard;
+
     setEntryStatus("resuming");
     attemptKindRef.current = "resuming";
     lastAttemptFnRef.current = handleResumeMission;
@@ -3176,7 +3199,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
       } finally {
         setIsRecording(false);
         isRecordingRef.current = false;
-        
+
         // 레벨 시각 피드백 수동 리셋
         if (buttonRef.current) {
           buttonRef.current.style.transform = "scale(1)";
@@ -3613,7 +3636,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   // 회색 비활성 버튼의 문구를 "케이가 말하는 중"과 "케이가 생각하는 중"으로 구분
   const isKSpeakingNow = isLiveMode ? turnPhaseUi === "k_speaking" : sttTts.isSpeaking;
-  
+
   // 012 "좌측에 현재 미션 라벨(예: 하교 후 미션)" — roundType 판정 로직 자체는 건드리지
   // 않고 그 결과값(round1_day/round2_night/common)만 라벨 텍스트로 매핑한다.
   const missionLabel =
@@ -3713,7 +3736,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           </div>
         </div>
       )}
-      
+
       {retryOverlay}
 
 
@@ -3730,7 +3753,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
           </button>
         </div>
       )}
-      
+
       {!isConnecting && !isDone && autoStartFailed && (
         <div className="fixed top-[120px] left-1/2 -translate-x-1/2 z-[60] w-[90%] max-w-[320px]">
           <button
@@ -3798,7 +3821,7 @@ function MissionRouteGate() {
     let cancelled = false;
     fetch("/api/child/test-mode")
       .then((r) => (r.status === 200 ? r.json() : null))
-      .then((d) => { 
+      .then((d) => {
         if (!cancelled) {
           if (d?.selectedMode === "E" || d?.selectedMode === "F") {
             setSelectedMode(d.selectedMode);

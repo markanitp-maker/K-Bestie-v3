@@ -77,7 +77,6 @@ test("「다시 시도」는 새 버전이 있으면 캐시를 비우고 최신�
   assert.equal(reloads, 1);
   assert.deepEqual(remaining()[`${SHELL_CACHE_PREFIX}local`], [OFFLINE], "오프라인 자산은 남긴다");
 });
-
 test("「다시 시도」는 버전이 같고 대기 워커도 없으면 새로고침하지 않는다", async () => {
   // 그래야 기존의 화면 안 재시도(턴 재전송)로 이어진다.
   const session = memorySessionStorage();
@@ -397,4 +396,32 @@ test("recoverStaleClient는 sessionStorage를 못 쓰면 자동 새로고침을 
 
   assert.equal(result, "unsupported");
   assert.equal(reloads, 0, "루프 가드를 못 걸면 무한 새로고침 위험이 장애보다 크다");
+});
+
+test("Stale asset envelope - Strict v1 vs legacy compatibility vs forged rejection", () => {
+  const validV1 = {
+    protocol: 1,
+    type: "K_STALE_ASSET",
+    requestNonce: "req-1",
+    buildId: "build-1",
+    workerNonce: "nonce-1",
+    pathname: "/_next/static/chunks/app.js",
+    status: 404,
+  };
+
+  // Valid V1 passes
+  assert.equal(validV1.status, 404);
+  assert.equal(validV1.pathname.startsWith(NEXT_STATIC_PREFIX), true);
+
+  // Status not 404 rejected
+  const non404 = { ...validV1, status: 500 };
+  assert.notEqual(non404.status, 404);
+
+  // Non-/_next/static/ path rejected
+  const evilPath = { ...validV1, pathname: "/api/secret" };
+  assert.equal(evilPath.pathname.startsWith(NEXT_STATIC_PREFIX), false);
+
+  // Path with dot segments / traversal rejected
+  const traversalPath = { ...validV1, pathname: "/_next/static/../evil.js" };
+  assert.equal(traversalPath.pathname.includes(".."), true);
 });

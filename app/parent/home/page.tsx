@@ -18,6 +18,7 @@ import { NotificationOnboarding } from "@/components/notifications/NotificationO
 import { ChildStartGuideModal } from "@/components/parent/ChildStartGuide";
 import { PwaInstallGuideModal } from "@/components/pwa/PwaInstallGuideModal";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
+import { PwaSafeRouteReady } from "@/components/pwa/PwaSafeRouteReady";
 
 interface Report {
   id: string;
@@ -138,7 +139,7 @@ export default function ParentHomePage() {
       return;
     }
     const seq = ++fetchSeqRef.current;
-    
+
     setReportLoading(true);
     setReportError(null);
 
@@ -154,7 +155,7 @@ export default function ParentHomePage() {
       .then((data) => {
         if (fetchSeqRef.current !== seq) return;
         if (data.childId && data.childId !== activeChild.id) return;
-        
+
         const reports: Report[] = data?.reports ?? [];
         if (reports.length > 0) {
           setLatestReport(reports[0]);
@@ -268,6 +269,7 @@ export default function ParentHomePage() {
 
   return (
     <DemoFrame>
+      <PwaSafeRouteReady expectedPath="/parent/home" />
       <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
         {!showEventFromNotification && <AppEventAnnouncementModal />}
         {showEventFromNotification && (
@@ -303,8 +305,8 @@ export default function ParentHomePage() {
                 <>
                   <p className="text-sm font-bold text-gray-800">네트워크 연결이 끊어졌어요.</p>
                   <p className="text-xs text-gray-500 mt-1 mb-4">인터넷 연결을 확인하고 다시 시도해 주세요.</p>
-                  <button 
-                    onClick={() => fetchReports()} 
+                  <button
+                    onClick={() => fetchReports()}
                     className="px-6 py-2.5 bg-k-navy text-white text-sm font-bold rounded-xl active:scale-95 cursor-pointer"
                   >
                     재시도
@@ -314,8 +316,8 @@ export default function ParentHomePage() {
                 <>
                   <p className="text-sm font-bold text-gray-800">대화 가이드를 불러오지 못했어요.</p>
                   <p className="text-xs text-gray-500 mt-1 mb-4">잠시 후 다시 시도해 주세요.</p>
-                  <button 
-                    onClick={() => fetchReports()} 
+                  <button
+                    onClick={() => fetchReports()}
                     className="px-6 py-2.5 bg-k-navy text-white text-sm font-bold rounded-xl active:scale-95 cursor-pointer"
                   >
                     재시도
@@ -364,7 +366,7 @@ export default function ParentHomePage() {
         context={guideContext ?? context}
         onClose={closeGuide}
       />
-    
+
         <KChatbotWidget appSurface="parent" />
       </DemoFrame>
   );

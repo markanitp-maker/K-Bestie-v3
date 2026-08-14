@@ -20,6 +20,7 @@ import {
   resolveMissionDisplay,
 } from "@/lib/mission-v3/clientEntry";
 import type { MissionEntrySnapshot } from "@/lib/mission-v3/entryContract";
+import { PwaSafeRouteReady } from "@/components/pwa/PwaSafeRouteReady";
 
 // 이 프로젝트는 아이콘 라이브러리(lucide-react/heroicons)를 설치하지 않고 인라인
 // SVG·이모지만 사용하는 관례라(package.json에 둘 다 없음), 로그아웃/닫기 아이콘 2개만
@@ -59,10 +60,10 @@ export default function ChildHomePage() {
   const [goldKeyBalance, setGoldKeyBalance] = useState<number | null>(null);
   const [noChild, setNoChild] = useState(false);
   const [loading, setLoading] = useState(true);
-  
+
   // Mission snapshot state
   const [missionSnapshot, setMissionSnapshot] = useState<MissionEntrySnapshot | null>(null);
-  
+
   // PWA install banner state
   const {
     context,
@@ -161,7 +162,7 @@ export default function ChildHomePage() {
         setLoading(false);
       }
     };
-    
+
     fetchAll();
   }, [child?.id]);
 
@@ -286,6 +287,7 @@ export default function ChildHomePage() {
 
   return (
     <DemoFrame>
+      <PwaSafeRouteReady expectedPath="/child/home" />
       <div className="relative h-full flex flex-col overflow-y-auto overflow-x-hidden w-full text-[var(--color-k-navy)]"
            style={{ background: "linear-gradient(180deg, #BFE8FF 0%, #EAF7FF 38%, #FFF9F2 75%, #FFF7E9 100%)" }}>
         {child?.id && (
@@ -304,7 +306,7 @@ export default function ChildHomePage() {
            <div className="w-16 h-8 bg-white rounded-full blur-[2px] opacity-80" style={{ transform: "scale(1.5)" }} />
            <div className="w-20 h-10 bg-white rounded-full blur-[2px] opacity-80 mt-12" style={{ transform: "scale(1.2)" }} />
         </div>
-        
+
         {/* Top Action Bar */}
         <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top)] mt-4 relative z-10 w-full max-w-[430px] mx-auto child-home-content">
           <Link
@@ -321,7 +323,7 @@ export default function ChildHomePage() {
               🔥 이번 달 미션 진행
             </div>
           </div>
-          <button 
+          <button
             onClick={handleLogout}
             disabled={isLogoutProcessing}
             className="w-[44px] h-[44px] flex items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
@@ -332,7 +334,7 @@ export default function ChildHomePage() {
         </div>
 
         <div className="flex-1 w-full max-w-[430px] mx-auto px-4 pb-20 flex flex-col relative z-10 child-home-content">
-          
+
           {/* Mascot Area */}
           <div
             data-testid="child-home-mascot"
@@ -375,7 +377,7 @@ export default function ChildHomePage() {
           {/* Primary Action Cards */}
           <div className="mt-2 flex flex-col gap-2.5">
             {/* Mission Card (Primary) */}
-            <Link 
+            <Link
               href={missionUrl}
               onClick={handleMissionClick}
               data-testid="mission-primary-card"
@@ -399,7 +401,7 @@ export default function ChildHomePage() {
             {/* Sub Cards (Grid) */}
             <div data-testid="child-home-action-grid" className="grid grid-cols-2 gap-2.5">
               {/* Talk Card */}
-              <Link 
+              <Link
                 href="/chat"
                 className="flex min-h-[88px] w-full items-center gap-2.5 rounded-[20px] px-3 py-3.5 shadow-[0_5px_12px_rgba(136,82,25,0.14)] transition-transform active:scale-[0.98]"
                 style={{ background: "var(--color-k-mascot-orange)" }}
@@ -414,7 +416,7 @@ export default function ChildHomePage() {
               </Link>
 
               {/* Play Card */}
-              <Link 
+              <Link
                 href="/child/play"
                 className="flex min-h-[88px] w-full items-center gap-2.5 rounded-[20px] px-3 py-3.5 shadow-[0_5px_12px_rgba(35,102,145,0.16)] transition-transform active:scale-[0.98]"
                 style={{ background: "var(--color-k-sky-blue)" }}
@@ -442,7 +444,7 @@ export default function ChildHomePage() {
             </div>
           </div>
         </div>
-        
+
         {/* PWA Install Banner */}
         {showPwaBanner && (
           <div className="sticky bottom-0 w-full bg-[#FFF9F2] border-t border-black/5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] p-4 flex items-center justify-between z-50 mt-auto pb-[env(safe-area-inset-bottom,16px)]">
@@ -454,7 +456,7 @@ export default function ChildHomePage() {
               >
                 앱 설치하기
               </button>
-              <button 
+              <button
                 onClick={handleDismissPwa}
                 className="w-[44px] h-[44px] flex items-center justify-center rounded-full bg-black/5 text-[var(--color-k-navy)] active:bg-black/10 transition-colors"
                 aria-label="닫기"

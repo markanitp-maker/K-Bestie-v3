@@ -2,6 +2,11 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { DemoViewProvider } from "@/app/demo/components/DemoViewContext";
 import { getPwaIcons } from "@/lib/pwaIcons";
+import { getServerDeploymentInfo } from "@/lib/pwa/buildStamp";
+import {
+  DOCUMENT_DEPLOYMENT_META_NAME,
+  serializeDocumentDeploymentMarker,
+} from "@/lib/pwa/documentDeployment";
 
 const pwaIcons = getPwaIcons();
 
@@ -87,8 +92,22 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const deploymentInfo = getServerDeploymentInfo();
+  const deploymentMarkerContent = serializeDocumentDeploymentMarker({
+    schemaVersion: 1,
+    buildId: deploymentInfo.buildId,
+    buildStamp: deploymentInfo.buildStamp,
+    deploymentId: deploymentInfo.deploymentId,
+  });
+
   return (
     <html lang="ko" suppressHydrationWarning>
+      <head>
+        <meta
+          name={DOCUMENT_DEPLOYMENT_META_NAME}
+          content={deploymentMarkerContent}
+        />
+      </head>
       <body suppressHydrationWarning>
         <DemoViewProvider>{children}</DemoViewProvider>
         <PwaServiceWorker />
