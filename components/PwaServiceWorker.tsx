@@ -22,10 +22,7 @@ type PwaState =
   | "up_to_date"
   | "error";
 
-const BUILD_ID =
-  process.env.NEXT_PUBLIC_DEPLOYMENT_SHA ||
-  process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
-  PWA_CLIENT_VERSION;
+const BUILD_ID = PWA_CLIENT_VERSION;
 const RELOAD_GUARD_KEY = `pwa_sw_reloaded_${BUILD_ID}`;
 const DISMISS_KEY = `pwa_sw_dismissed_${BUILD_ID}`;
 
