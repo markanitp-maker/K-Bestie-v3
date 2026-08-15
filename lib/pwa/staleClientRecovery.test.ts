@@ -48,10 +48,14 @@ const OFFLINE = "https://app.k-bestie.com/offline";
 const ICON = "https://app.k-bestie.com/icons/icon-192-v4.png";
 
 function versionFetch(buildId: string): typeof fetch {
-  return (async () => ({
-    ok: true,
-    json: async () => ({ buildId }),
-  })) as unknown as typeof fetch;
+  return (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(init?.cache, "no-store");
+    assert.equal(new Headers(init?.headers).get("cache-control"), "no-store");
+    return {
+      ok: true,
+      json: async () => ({ buildId }),
+    };
+  }) as unknown as typeof fetch;
 }
 
 test("「다시 시도」는 새 버전이 있으면 캐시를 비우고 최신으로 다시 연다", async () => {

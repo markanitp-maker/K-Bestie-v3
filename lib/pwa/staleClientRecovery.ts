@@ -167,6 +167,7 @@ export async function forceUpdateAndReload({
   try {
     const response = await fetchImpl("/api/client-version", {
       cache: "no-store",
+      headers: { "Cache-Control": "no-store" },
       signal: AbortSignal.timeout(versionCheckTimeoutMs),
     });
     if (response.ok) {

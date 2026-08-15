@@ -35,7 +35,10 @@ export async function ensureMissionClientVersion({
     response = await fetchImpl("/api/client-version", {
       method: "GET",
       cache: "no-store",
-      headers: { "x-k-bestie-client-build": clientBuildId },
+      headers: {
+        "Cache-Control": "no-store",
+        "x-k-bestie-client-build": clientBuildId,
+      },
     });
   } catch (error) {
     console.error("[Mission] client version check failed", error);

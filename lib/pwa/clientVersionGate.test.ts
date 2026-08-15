@@ -14,16 +14,26 @@ import {
 test("동일 build는 Mission 진입을 허용한다", async () => {
   resetRecoveryCoordinatorForTest();
   let signaled = false;
+  let requestInit: RequestInit | undefined;
   const unsubscribe = subscribeStaleRecovery(() => {
     signaled = true;
   });
 
   const result = await ensureMissionClientVersion({
     clientBuildId: "sha-1",
-    fetchImpl: (async () => Response.json({ buildId: "sha-1" })) as typeof fetch,
+    fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestInit = init;
+      return Response.json({ buildId: "sha-1" });
+    }) as typeof fetch,
     requestServiceWorkerUpdate: async () => assert.fail("update must not run"),
   });
   assert.deepEqual(result, { status: "ready", serverBuildId: "sha-1" });
+  assert.equal(requestInit?.cache, "no-store");
+  assert.equal(new Headers(requestInit?.headers).get("cache-control"), "no-store");
+  assert.equal(
+    new Headers(requestInit?.headers).get("x-k-bestie-client-build"),
+    "sha-1",
+  );
   assert.equal(signaled, false, "Ready version emits 0 recovery signals");
 
   unsubscribe();
