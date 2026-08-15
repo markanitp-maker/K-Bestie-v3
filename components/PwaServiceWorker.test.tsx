@@ -86,7 +86,7 @@ test("U9-1: click snapshot creates and reads back the exact marker before activa
   );
   const clickFetch = componentSource.indexOf(
     "const latestResult = await fetchLatestVersionMetadataV1();",
-    componentSource.indexOf("const triggerUpdate"),
+    componentSource.indexOf("const runTriggeredUpdate"),
   );
   const autoStart = componentSource.indexOf("const maybeScheduleSafeCheck");
   const autoFetch = componentSource.indexOf(
@@ -243,6 +243,7 @@ test("U9-5: automatic target A is discarded when the click snapshot drifts to B"
     waiting: ServiceWorker | null;
     installing: ServiceWorker | null;
   } = { waiting: null, installing: null };
+  let registrationCalls = 0;
   const registration = {
     get waiting() {
       return registrationState.waiting;
@@ -259,7 +260,10 @@ test("U9-5: automatic target A is discarded when the click snapshot drifts to B"
   } as unknown as ServiceWorkerRegistration;
   const serviceWorkerContainer = Object.assign(new dom.window.EventTarget(), {
     controller: currentWorker,
-    register: async () => registration,
+    register: async () => {
+      registrationCalls += 1;
+      return registration;
+    },
     getRegistration: async () => registration,
   });
 
@@ -391,18 +395,60 @@ test("U9-5: automatic target A is discarded when the click snapshot drifts to B"
     );
     assert.equal(registration.waiting, workerB);
 
-    activation.responsePort.postMessage({
-      protocol: 1,
-      type: "PWA_ACTIVATION_ABORTED",
-      requestNonce: activation.message.requestNonce,
-      proposalId: activation.message.proposal.proposalId,
-      workerNonce: "nonce-b",
-      reason: "test_cleanup",
+    const stateBeforeRouteReady = button.textContent;
+    const fetchCountBeforeRouteReady = fetchedTargets.length;
+    saveExternalControllerPending({
+      schemaVersion: 1,
+      observedAt: Date.now(),
+      controllerBuildId: current.buildId,
+      controllerSwVersion: current.swVersion,
+      controllerScriptUrl: `https://app.k-bestie.com${current.serviceWorkerScriptUrl}`,
+    });
+    const routeRevision = startNavigation("/child/home");
+    publishRouteReady("/child/home", routeRevision);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    assert.equal(
+      fetchedTargets.length,
+      fetchCountBeforeRouteReady,
+      "route-ready must not fetch while a manual update is in flight",
+    );
+    assert.notEqual(
+      getExternalControllerPending(),
+      null,
+      "route-ready must not consume external pending state during a manual update",
+    );
+    assert.equal(
+      button.textContent,
+      stateBeforeRouteReady,
+      "route-ready must not overwrite the manual update state",
+    );
+    clearExternalControllerPending();
+
+    await act(async () => {
+      activation.responsePort.postMessage({
+        protocol: 1,
+        type: "PWA_ACTIVATION_ABORTED",
+        requestNonce: activation.message.requestNonce,
+        proposalId: activation.message.proposal.proposalId,
+        reason: "test_cleanup",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
     });
     await waitFor(
       () => getReloadPendingMarker(dom.window.sessionStorage) === null,
       "aborted B marker cleanup",
     );
+    await waitFor(
+      () => container.querySelector("button")?.textContent === "다시 업데이트",
+      "stable retry state after NACK",
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    assert.equal(container.querySelector("button")?.textContent, "다시 업데이트");
+    assert.equal(registrationCalls, 1, "state changes must not re-register the worker");
   } finally {
     await act(async () => root.unmount());
     globalThis.fetch = originalFetch;
@@ -968,6 +1014,26 @@ test("U8-4: Central Blocking Modal Authority - No dismiss, no ESC/back, no 'late
     componentSource,
     /\["idle",\s*"checking",\s*"up_to_date",\s*"deferred_during_session",\s*"reloading"\]/,
   );
+
+  const registrationLifecycleStart = componentSource.indexOf(
+    "// Service Worker Registration, Messages & Listeners",
+  );
+  const registrationLifecycleEnd = componentSource.indexOf(
+    '\n  useEffect(() => {\n    if (\n      pwaState === "deferred_during_session"',
+    registrationLifecycleStart + 80,
+  );
+  const registrationLifecycleSource = componentSource.slice(
+    registrationLifecycleStart,
+    registrationLifecycleEnd,
+  );
+  assert.match(registrationLifecycleSource, /pwaStateRef\.current/);
+  assert.match(
+    registrationLifecycleSource,
+    /subscribeRouteReadiness\(\(snapshot\) => \{\s*if \(manualUpdateInFlightRef\.current\)/,
+  );
+  assert.doesNotMatch(registrationLifecycleSource, /\n\s+pwaState,\s*\n/);
+  assert.match(componentSource, /manualUpdateInFlightRef\.current\) \{[\s\S]*safe_check_skipped_manual_update/);
+  assert.match(componentSource, /manualUpdateInFlightRef\.current = true;[\s\S]*try \{[\s\S]*await runTriggeredUpdate\(\);[\s\S]*finally \{[\s\S]*manualUpdateInFlightRef\.current = false;/);
 
   const unsafeRouteState = "deferred_during_session";
   const modalStateNames: readonly string[] = modalStates;

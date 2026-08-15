@@ -107,6 +107,8 @@ export function PwaServiceWorker() {
   const reloadIssuedRef = useRef(false);
   const lastCheckAtRef = useRef(0);
   const checkInFlightRef = useRef(false);
+  const manualUpdateInFlightRef = useRef(false);
+  const pwaStateRef = useRef<PwaState>("idle");
   const updateReasonRef = useRef<string>("user_update");
   const installedTargetRef = useRef<{
     worker: ServiceWorker;
@@ -128,6 +130,10 @@ export function PwaServiceWorker() {
   useEffect(() => {
     pathnameRef.current = pathname;
   }, [pathname]);
+
+  useEffect(() => {
+    pwaStateRef.current = pwaState;
+  }, [pwaState]);
 
   const clearActivationTimer = useCallback(() => {
     if (activationTimerRef.current) {
@@ -340,13 +346,19 @@ export function PwaServiceWorker() {
         return false;
       }
 
-      // 5. In-flight check
+      // 5. Manual update check
+      if (manualUpdateInFlightRef.current) {
+        debugLog("safe_check_skipped_manual_update", { trigger });
+        return false;
+      }
+
+      // 6. In-flight check
       if (checkInFlightRef.current) {
         debugLog("safe_check_skipped_in_flight", { trigger });
         return false;
       }
 
-      // 6. Throttle check
+      // 7. Throttle check
       const isThrottledTrigger =
         trigger === "visibility_visible" ||
         trigger === "online" ||
@@ -490,7 +502,7 @@ export function PwaServiceWorker() {
   // -------------------------------------------------------------
   // Trigger Update / Consensus / Activation Orchestration
   // -------------------------------------------------------------
-  const triggerUpdate = useCallback(async () => {
+  const runTriggeredUpdate = useCallback(async () => {
     clearActivationTimer();
     if (!navigator.onLine) {
       setPwaState("offline");
@@ -702,6 +714,20 @@ export function PwaServiceWorker() {
     reloadPageOnce,
     scheduleDelayedState,
   ]);
+
+  const triggerUpdate = useCallback(async () => {
+    if (manualUpdateInFlightRef.current) {
+      debugLog("manual_update_skipped_in_flight");
+      return;
+    }
+
+    manualUpdateInFlightRef.current = true;
+    try {
+      await runTriggeredUpdate();
+    } finally {
+      manualUpdateInFlightRef.current = false;
+    }
+  }, [runTriggeredUpdate]);
 
   // -------------------------------------------------------------
   // History Lock / Sentinel & Capture Navigation Lock for Central Blocking Modal
@@ -1026,11 +1052,18 @@ export function PwaServiceWorker() {
 
     // Subscribe to route readiness transitions
     const unsubscribeRoute = subscribeRouteReadiness((snapshot) => {
+      if (manualUpdateInFlightRef.current) {
+        debugLog("route_ready_skipped_manual_update", {
+          routeRevision: snapshot.routeRevision,
+        });
+        return;
+      }
+
       if (snapshot.isRouteReady && !snapshot.isNavigationInFlight) {
         const currentPath = pathnameRef.current;
         if (getExternalControllerPending()) {
           void consumeExternalControllerPendingIfSafe();
-        } else if (pwaState === "deferred_during_session" && isSafeRoutePath(currentPath) && isCurrentRouteSafeAndReady(currentPath)) {
+        } else if (pwaStateRef.current === "deferred_during_session" && isSafeRoutePath(currentPath) && isCurrentRouteSafeAndReady(currentPath)) {
           if (
             installedTargetRef.current &&
             waitingWorkerRef.current === installedTargetRef.current.worker &&
@@ -1064,7 +1097,6 @@ export function PwaServiceWorker() {
     consumeExternalControllerPendingIfSafe,
     maybeScheduleSafeCheck,
     performPostReloadVerification,
-    pwaState,
     reloadPageOnce,
     triggerUpdate,
   ]);
