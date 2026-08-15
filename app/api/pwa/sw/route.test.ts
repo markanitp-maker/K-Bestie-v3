@@ -355,6 +355,399 @@ test("SW identity handshake - PWA_GET_IDENTITY (v1) and GET_VERSION (v0 legacy)"
   assert.equal(messageField(legacyMsg, "workerNonce"), null);
 });
 
+test("SW identity handshake - PWA_GET_IDENTITY succeeds with empty source URL or null source via transferred MessagePort (iOS regression)", async () => {
+  const response = await GET();
+  const swSource = await response.text();
+  const env = createMockSwEnvironment(swSource);
+
+  // 1. Client with empty source URL (iOS Safari waiting worker symptom)
+  const iosEmptySourceClient = {
+    id: "ios-tab-1",
+    url: "",
+    postMessage() {},
+  };
+
+  let portMsg: MessageRecord | null = null;
+  const mockPort = captureMessage((message) => {
+    portMsg = message;
+  });
+
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_GET_IDENTITY",
+      requestNonce: "req-ios-empty-source-1",
+    },
+    source: iosEmptySourceClient,
+    ports: [mockPort],
+  });
+
+  assert.notEqual(portMsg, null);
+  assert.equal(messageField(portMsg, "protocol"), 1);
+  assert.equal(messageField(portMsg, "type"), "PWA_IDENTITY_RESPONSE");
+  assert.equal(messageField(portMsg, "requestNonce"), "req-ios-empty-source-1");
+  assert.equal(messageField(portMsg, "buildId"), BUILD_STAMP);
+  assert.match(messageString(portMsg, "workerNonce"), /^[0-9a-fA-F-]{36}$/);
+
+  // 2. Null event.source with transferred MessagePort
+  let nullSourceMsg: MessageRecord | null = null;
+  const nullSourcePort = captureMessage((message) => {
+    nullSourceMsg = message;
+  });
+
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_GET_IDENTITY",
+      requestNonce: "req-null-source-2",
+    },
+    source: null,
+    ports: [nullSourcePort],
+  });
+
+  assert.notEqual(nullSourceMsg, null);
+  assert.equal(messageField(nullSourceMsg, "protocol"), 1);
+  assert.equal(messageField(nullSourceMsg, "type"), "PWA_IDENTITY_RESPONSE");
+  assert.equal(messageField(nullSourceMsg, "requestNonce"), "req-null-source-2");
+
+  // 3. But PWA_PREPARE_ACTIVATION strictly rejects empty source URL client
+  let abortMsg: MessageRecord | null = null;
+  const privatePort = captureMessage((message) => {
+    abortMsg = message;
+  });
+
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_PREPARE_ACTIVATION",
+      requestNonce: "req-prep-empty-source",
+      proposal: {
+        protocol: 1,
+        proposalId: "11111111-1111-4111-8111-111111111111",
+        ownerTabId: "22222222-2222-4222-8222-222222222222",
+        targetBuild: BUILD_STAMP,
+        workerNonce: "nonce-xyz",
+        createdAt: Date.now() - 1000,
+        expiresAt: Date.now() + 30000,
+      },
+    },
+    source: iosEmptySourceClient,
+    ports: [privatePort],
+  });
+
+  // Since source URL is empty, prepare activation is ignored completely and never commits
+  assert.equal(env.getSkipWaitingCount(), 0);
+});
+
+test("SW identity handshake - non-empty cross-origin source with MessagePort is strictly rejected for PWA_GET_IDENTITY", async () => {
+  const response = await GET();
+  const swSource = await response.text();
+  const env = createMockSwEnvironment(swSource);
+
+  const crossOriginClient = {
+    id: "attacker-tab-1",
+    url: "https://malicious-attacker.com/exploit",
+    postMessage() {},
+  };
+
+  let portMsg: MessageRecord | null = null;
+  const mockPort = captureMessage((message) => {
+    portMsg = message;
+  });
+
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_GET_IDENTITY",
+      requestNonce: "req-cross-origin-identity",
+    },
+    source: crossOriginClient,
+    ports: [mockPort],
+  });
+
+  // Cross-origin source with port must be rejected
+  assert.equal(portMsg, null);
+});
+
+test("SW identity handshake - non-null source missing url or with non-string url is strictly rejected for PWA_GET_IDENTITY", async () => {
+  const response = await GET();
+  const swSource = await response.text();
+  const env = createMockSwEnvironment(swSource);
+
+  // 1. Non-null source missing url
+  const missingUrlClient = {
+    id: "missing-url-tab",
+    postMessage() {},
+  };
+  let portMsg1: MessageRecord | null = null;
+  const mockPort1 = captureMessage((message) => {
+    portMsg1 = message;
+  });
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_GET_IDENTITY",
+      requestNonce: "req-missing-url-identity",
+    },
+    source: missingUrlClient,
+    ports: [mockPort1],
+  });
+  assert.equal(portMsg1, null);
+
+  // 2. Non-null source with numeric url
+  const numericUrlClient = {
+    id: "numeric-url-tab",
+    url: 12345,
+    postMessage() {},
+  };
+  let portMsg2: MessageRecord | null = null;
+  const mockPort2 = captureMessage((message) => {
+    portMsg2 = message;
+  });
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_GET_IDENTITY",
+      requestNonce: "req-numeric-url-identity",
+    },
+    source: numericUrlClient,
+    ports: [mockPort2],
+  });
+  assert.equal(portMsg2, null);
+
+  // 3. Non-null source with object url
+  const objectUrlClient = {
+    id: "object-url-tab",
+    url: { href: "https://app.k-bestie.com/child/home" },
+    postMessage() {},
+  };
+  let portMsg3: MessageRecord | null = null;
+  const mockPort3 = captureMessage((message) => {
+    portMsg3 = message;
+  });
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_GET_IDENTITY",
+      requestNonce: "req-object-url-identity",
+    },
+    source: objectUrlClient,
+    ports: [mockPort3],
+  });
+  assert.equal(portMsg3, null);
+
+  // 4. Non-null source with null url
+  const nullUrlClient = {
+    id: "null-url-tab",
+    url: null,
+    postMessage() {},
+  };
+  let portMsg4: MessageRecord | null = null;
+  const mockPort4 = captureMessage((message) => {
+    portMsg4 = message;
+  });
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_GET_IDENTITY",
+      requestNonce: "req-null-url-identity",
+    },
+    source: nullUrlClient,
+    ports: [mockPort4],
+  });
+  assert.equal(portMsg4, null);
+});
+
+test("SW legacy GET_VERSION - strictly rejected for empty/null source and cross-origin source even with MessagePort", async () => {
+  const response = await GET();
+  const swSource = await response.text();
+  const env = createMockSwEnvironment(swSource);
+
+  // 1. Empty source URL + port -> rejected
+  let emptyPortMsg: MessageRecord | null = null;
+  const emptyPort = captureMessage((msg) => {
+    emptyPortMsg = msg;
+  });
+  env.listeners["message"]({
+    data: { type: "GET_VERSION", requestNonce: "req-legacy-empty" },
+    source: { id: "empty-tab", url: "", postMessage() {} },
+    ports: [emptyPort],
+  });
+  assert.equal(emptyPortMsg, null);
+
+  // 2. Null source + port -> rejected
+  let nullPortMsg: MessageRecord | null = null;
+  const nullPort = captureMessage((msg) => {
+    nullPortMsg = msg;
+  });
+  env.listeners["message"]({
+    data: { type: "GET_VERSION", requestNonce: "req-legacy-null" },
+    source: null,
+    ports: [nullPort],
+  });
+  assert.equal(nullPortMsg, null);
+
+  // 3. Cross-origin source + port -> rejected
+  let crossPortMsg: MessageRecord | null = null;
+  const crossPort = captureMessage((msg) => {
+    crossPortMsg = msg;
+  });
+  env.listeners["message"]({
+    data: { type: "GET_VERSION", requestNonce: "req-legacy-cross" },
+    source: { id: "cross-tab", url: "https://attacker.com/page", postMessage() {} },
+    ports: [crossPort],
+  });
+  assert.equal(crossPortMsg, null);
+});
+
+test("SW activation messages - strictly rejected for cross-origin or null source", async () => {
+  const response = await GET();
+  const swSource = await response.text();
+  const env = createMockSwEnvironment(swSource);
+
+  const crossOriginClient = {
+    id: "cross-origin-tab",
+    url: "https://evil.com/phish",
+    postMessage() {},
+  };
+
+  let privatePortResult: MessageRecord | null = null;
+  const privatePort = captureMessage((msg) => {
+    privatePortResult = msg;
+  });
+
+  const proposal = {
+    protocol: 1,
+    proposalId: "12345678-1234-4234-8234-123456789abc",
+    ownerTabId: "87654321-4321-4321-8321-cba987654321",
+    targetBuild: BUILD_STAMP,
+    workerNonce: "nonce-xyz",
+    createdAt: Date.now() - 1000,
+    expiresAt: Date.now() + 30000,
+  };
+
+  // Cross-origin client sending PWA_PREPARE_ACTIVATION
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_PREPARE_ACTIVATION",
+      requestNonce: "req-cross-prep",
+      proposal,
+    },
+    source: crossOriginClient,
+    ports: [privatePort],
+  });
+
+  assert.equal(env.getSkipWaitingCount(), 0);
+  assert.equal(privatePortResult, null);
+
+  // Null source sending PWA_PREPARE_ACTIVATION
+  let nullPortResult: MessageRecord | null = null;
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_PREPARE_ACTIVATION",
+      requestNonce: "req-null-prep",
+      proposal,
+    },
+    source: null,
+    ports: [
+      captureMessage((msg) => {
+        nullPortResult = msg;
+      }),
+    ],
+  });
+
+  assert.equal(env.getSkipWaitingCount(), 0);
+  assert.equal(nullPortResult, null);
+});
+
+test("SW consensus votes - cross-origin and null sources cannot complete or abort an active pass", async () => {
+  const response = await GET();
+  const swSource = await response.text();
+  const env = createMockSwEnvironment(swSource);
+
+  let privatePortResult: MessageRecord | null = null;
+  const client1: MockWindowClient = {
+    id: "client-tab-1",
+    url: "https://app.k-bestie.com/parent/home",
+    postMessage(value: unknown) {
+      const prepare = parsePrepareMessage(value);
+      if (!prepare) return;
+
+      const vote = {
+        protocol: 1,
+        type: "PWA_TAB_VOTE_ACK",
+        requestNonce: prepare.requestNonce,
+        proposalId: prepare.proposal.proposalId,
+        passId: prepare.passId,
+        voteNonce: prepare.voteNonce,
+        targetBuild: BUILD_STAMP,
+        workerNonce,
+        status: "ACK_SAFE",
+      };
+
+      env.listeners["message"]({
+        data: vote,
+        source: {
+          ...client1,
+          url: "https://attacker.example/forged-vote",
+        },
+      });
+      env.listeners["message"]({
+        data: {
+          ...vote,
+          type: "PWA_TAB_VOTE_NACK",
+          status: "NACK_ACTIVE",
+          reason: "forged null-source veto",
+        },
+        source: null,
+      });
+
+      setTimeout(() => {
+        env.listeners["message"]({ data: vote, source: client1 });
+      }, 20);
+    },
+  };
+  env.mockClientsList.push(client1);
+
+  const workerNonce = getWorkerRuntimeNonce(env, client1);
+  const proposal = {
+    protocol: 1,
+    proposalId: "77777777-3333-4333-8333-333333333333",
+    ownerTabId: "11111111-2222-4333-8444-555555555555",
+    targetBuild: BUILD_STAMP,
+    workerNonce,
+    createdAt: Date.now() - 1000,
+    expiresAt: Date.now() + 30000,
+  };
+  let waitUntilPromise: Promise<void> | null = null;
+
+  env.listeners["message"]({
+    data: {
+      protocol: 1,
+      type: "PWA_PREPARE_ACTIVATION",
+      requestNonce: "req-untrusted-votes",
+      proposal,
+    },
+    source: client1,
+    ports: [captureMessage((message) => {
+      privatePortResult = message;
+    })],
+    waitUntil(p: Promise<void>) {
+      waitUntilPromise = p;
+    },
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(privatePortResult, null);
+  assert.equal(env.getSkipWaitingCount(), 0);
+
+  if (waitUntilPromise) await waitUntilPromise;
+  assert.equal(messageField(privatePortResult, "type"), "PWA_ACTIVATION_COMMITTED");
+  assert.equal(env.getSkipWaitingCount(), 1);
+});
+
 test("Legacy identity rejected for activation handshake", async () => {
   // Mock a legacy worker that only supports GET_VERSION
   const mockLegacyWorker = {

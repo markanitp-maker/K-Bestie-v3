@@ -75,7 +75,7 @@ self.addEventListener("activate", (event) => {
 });
 
 function isSameOriginClient(source) {
-  if (!source || !source.url) return false;
+  if (!source || !source.url || typeof source.url !== "string" || !source.url.trim()) return false;
   try {
     const clientUrl = new URL(source.url);
     return clientUrl.origin === self.location.origin;
@@ -324,12 +324,23 @@ async function runTwoPassConsensus(requestNonce, proposal, privatePort) {
 
 self.addEventListener("message", (event) => {
   if (!event.data || typeof event.data !== "object") return;
-  if (!isSameOriginClient(event.source)) return;
 
   const data = event.data;
 
   if (data.protocol === 1 && data.type === "PWA_GET_IDENTITY") {
     if (typeof data.requestNonce !== "string" || !data.requestNonce.trim()) return;
+    const hasPort = Boolean(event.ports && event.ports[0]);
+    const isSameOrigin = isSameOriginClient(event.source);
+    const isPortException =
+      event.source === null ||
+      (typeof event.source === "object" &&
+        event.source !== null &&
+        typeof event.source.url === "string" &&
+        event.source.url.trim() === "");
+
+    const allowed = isSameOrigin || (hasPort && isPortException);
+    if (!allowed) return;
+
     const responseMsg = {
       protocol: 1,
       type: "PWA_IDENTITY_RESPONSE",
@@ -338,15 +349,18 @@ self.addEventListener("message", (event) => {
       swVersion: CACHE_NAME,
       workerNonce: SW_INSTANCE_NONCE,
     };
-    if (event.ports && event.ports[0]) {
+    if (hasPort) {
       event.ports[0].postMessage(responseMsg);
-    } else if (event.source) {
+    } else if (event.source && isSameOrigin) {
       event.source.postMessage(responseMsg);
     }
     return;
   }
 
   if (data.type === "GET_VERSION" || data.action === "GET_VERSION") {
+    if (!isSameOriginClient(event.source)) return;
+    const hasPort = Boolean(event.ports && event.ports[0]);
+
     const responseMsg = {
       protocol: 0,
       type: "VERSION_RESPONSE",
@@ -356,13 +370,15 @@ self.addEventListener("message", (event) => {
       workerNonce: null,
       requestNonce: typeof data.requestNonce === "string" ? data.requestNonce : null,
     };
-    if (event.ports && event.ports[0]) {
+    if (hasPort) {
       event.ports[0].postMessage(responseMsg);
     } else if (event.source) {
       event.source.postMessage(responseMsg);
     }
     return;
   }
+
+  if (!isSameOriginClient(event.source)) return;
 
   if (data.protocol === 1 && data.type === "PWA_PREPARE_ACTIVATION") {
     const { requestNonce, proposal } = data;

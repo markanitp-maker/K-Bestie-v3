@@ -371,6 +371,148 @@ test("performRegistrationUpdate - Returns target-replaced when waiting is not th
   assert.equal(result.result, "target-replaced");
 });
 
+test("performRegistrationUpdate - Settles when registration.waiting assignment lags installingTarget installed state", async () => {
+  const listeners: Record<string, () => void> = {};
+  const mockInstalling = {
+    state: "installing",
+    scriptURL: "https://app.k-bestie.com/sw.js",
+    addEventListener: (event: string, cb: () => void) => {
+      listeners[event] = cb;
+    },
+    removeEventListener: (event: string) => {
+      delete listeners[event];
+    },
+    postMessage: (message: unknown, transfer?: Transferable[]) => {
+      if (!message || typeof message !== "object") return;
+      const requestNonce = (message as Record<string, unknown>).requestNonce;
+      const responsePort = transfer?.[0];
+      if (typeof requestNonce !== "string" || !(responsePort instanceof MessagePort)) return;
+      responsePort.postMessage({
+        protocol: 1,
+        type: "PWA_IDENTITY_RESPONSE",
+        requestNonce,
+        buildId: targetMetadataA.buildId,
+        swVersion: targetMetadataA.swVersion,
+        workerNonce: "nonce-delayed-settle",
+      });
+    },
+  };
+
+  const mockReg: {
+    update: () => Promise<void>;
+    waiting: typeof mockInstalling | null;
+    installing: typeof mockInstalling;
+  } = {
+    update: async () => {
+      setTimeout(() => {
+        // State changes to installed first, but registration.waiting is initially null
+        mockInstalling.state = "installed";
+        listeners["statechange"]?.();
+
+        // registration.waiting assignment lags by 25ms (e.g. Safari / microtask lag)
+        setTimeout(() => {
+          mockReg.waiting = mockInstalling;
+        }, 25);
+      }, 10);
+    },
+    waiting: null,
+    installing: mockInstalling,
+  } as unknown as ServiceWorkerRegistration;
+
+  const outcome = await performRegistrationUpdate({
+    registration: mockReg,
+    targetSnapshot: targetMetadataA,
+    installTimeoutMs: 500,
+  });
+
+  assert.equal(outcome.result, "installed-target");
+  assert.equal(outcome.worker, mockInstalling as unknown as ServiceWorker);
+  assert.equal(outcome.identity?.protocolVersion, 1);
+  assert.equal(outcome.identity?.buildId, targetMetadataA.buildId);
+  assert.equal(outcome.identity?.workerNonce, "nonce-delayed-settle");
+});
+
+test("performRegistrationUpdate - returns target-replaced when waiting worker is replaced during identity await", async () => {
+  const waitingWorker1 = {
+    state: "installed",
+    scriptURL: "https://app.k-bestie.com/sw.js",
+    postMessage: (message: unknown, transfer?: Transferable[]) => {
+      const requestNonce = (message as Record<string, unknown>).requestNonce;
+      const responsePort = transfer?.[0] as MessagePort;
+      // Before responding, worker is replaced in registration.waiting:
+      mockReg.waiting = waitingWorker2 as unknown as ServiceWorker;
+      setTimeout(() => {
+        responsePort.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce,
+          buildId: targetMetadataA.buildId,
+          swVersion: targetMetadataA.swVersion,
+          workerNonce: "nonce-replaced-1",
+        });
+      }, 10);
+    },
+  } as unknown as ServiceWorker;
+
+  const waitingWorker2 = {
+    state: "installed",
+    scriptURL: "https://app.k-bestie.com/sw.js",
+  };
+
+  const mockReg = {
+    waiting: waitingWorker1,
+    installing: null,
+    update: async () => {},
+  } as unknown as ServiceWorkerRegistration;
+
+  const outcome = await performRegistrationUpdate({
+    registration: mockReg,
+    targetSnapshot: targetMetadataA,
+  });
+
+  assert.equal(outcome.result, "target-replaced");
+});
+
+test("performRegistrationUpdate - returns target-replaced when worker transitions to redundant during identity await", async () => {
+  const mockWorker: {
+    state: ServiceWorkerState;
+    scriptURL: string;
+    postMessage: (message: unknown, transfer?: Transferable[]) => void;
+  } = {
+    state: "installed",
+    scriptURL: "https://app.k-bestie.com/sw.js",
+    postMessage: (message: unknown, transfer?: Transferable[]) => {
+      const requestNonce = (message as Record<string, unknown>).requestNonce;
+      const responsePort = transfer?.[0] as MessagePort;
+      // Worker state changes to redundant while waiting for identity
+      mockWorker.state = "redundant";
+      setTimeout(() => {
+        responsePort.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce,
+          buildId: targetMetadataA.buildId,
+          swVersion: targetMetadataA.swVersion,
+          workerNonce: "nonce-redundant-1",
+        });
+      }, 10);
+    },
+  };
+
+  const mockReg = {
+    waiting: mockWorker as unknown as ServiceWorker,
+    installing: null,
+    update: async () => {},
+  } as unknown as ServiceWorkerRegistration;
+
+  const outcome = await performRegistrationUpdate({
+    registration: mockReg,
+    targetSnapshot: targetMetadataA,
+  });
+
+  assert.equal(outcome.result, "target-replaced");
+});
+
 // -------------------------------------------------------------
 // Strict Marker Schema v3 Tests
 // -------------------------------------------------------------

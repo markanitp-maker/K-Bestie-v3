@@ -20,6 +20,7 @@ import {
   validateStaleAssetEnvelope,
   requestServiceWorkerIdentity,
   requestActivationViaChannel,
+  waitForControllerIdentity,
   ActivationProposal,
 } from "./swProtocol";
 
@@ -196,10 +197,10 @@ test("Stale asset envelope validation & unknown keys", () => {
 
 test("requestServiceWorkerIdentity - v1 MessageChannel vs v0 legacy fallback", async () => {
   class MockPort {
-    onmessage: ((ev: any) => void) | null = null;
+    onmessage: ((ev: { data: unknown }) => void) | null = null;
     otherPort: MockPort | null = null;
 
-    postMessage(msg: any) {
+    postMessage(msg: unknown) {
       if (this.otherPort && this.otherPort.onmessage) {
         setTimeout(() => {
           if (this.otherPort?.onmessage) {
@@ -212,8 +213,9 @@ test("requestServiceWorkerIdentity - v1 MessageChannel vs v0 legacy fallback", a
     close() {}
   }
 
-  const originalMessageChannel = (globalThis as any).MessageChannel;
-  (globalThis as any).MessageChannel = class {
+  const globalObj = globalThis as unknown as { MessageChannel?: unknown };
+  const originalMessageChannel = globalObj.MessageChannel;
+  globalObj.MessageChannel = class {
     port1 = new MockPort();
     port2 = new MockPort();
     constructor() {
@@ -224,8 +226,10 @@ test("requestServiceWorkerIdentity - v1 MessageChannel vs v0 legacy fallback", a
 
   try {
     // 1. Worker supporting protocol v1 identity
-    const mockV1Worker: any = {
-      postMessage(msg: any, ports: any[]) {
+    const mockV1Worker = {
+      postMessage(msgValue: unknown, transfers?: Transferable[]) {
+        const msg = msgValue as Record<string, unknown>;
+        const ports = transfers as unknown as MessagePort[] | undefined;
         if (msg.protocol === 1 && msg.type === "PWA_GET_IDENTITY" && ports && ports[0]) {
           ports[0].postMessage({
             protocol: 1,
@@ -237,7 +241,7 @@ test("requestServiceWorkerIdentity - v1 MessageChannel vs v0 legacy fallback", a
           });
         }
       },
-    };
+    } as unknown as ServiceWorker;
 
     const identityV1 = await requestServiceWorkerIdentity(mockV1Worker, 500);
     assert.notEqual(identityV1, null);
@@ -246,8 +250,10 @@ test("requestServiceWorkerIdentity - v1 MessageChannel vs v0 legacy fallback", a
     assert.equal(identityV1?.workerNonce, "nonce-v1-test");
 
     // 2. Legacy worker supporting only GET_VERSION (v0)
-    const mockV0Worker: any = {
-      postMessage(msg: any, ports: any[]) {
+    const mockV0Worker = {
+      postMessage(msgValue: unknown, transfers?: Transferable[]) {
+        const msg = msgValue as Record<string, unknown>;
+        const ports = transfers as unknown as MessagePort[] | undefined;
         if (msg.type === "GET_VERSION" && ports && ports[0]) {
           ports[0].postMessage({
             protocol: 0,
@@ -259,7 +265,7 @@ test("requestServiceWorkerIdentity - v1 MessageChannel vs v0 legacy fallback", a
           });
         }
       },
-    };
+    } as unknown as ServiceWorker;
 
     const identityV0 = await requestServiceWorkerIdentity(mockV0Worker, 100);
     assert.notEqual(identityV0, null);
@@ -267,16 +273,73 @@ test("requestServiceWorkerIdentity - v1 MessageChannel vs v0 legacy fallback", a
     assert.equal(identityV0?.buildId, "legacy-v0-build");
     assert.equal(identityV0?.workerNonce, null);
   } finally {
-    (globalThis as any).MessageChannel = originalMessageChannel;
+    globalObj.MessageChannel = originalMessageChannel;
+  }
+});
+
+test("requestServiceWorkerIdentity - abort closes the active channel and skips legacy fallback", async () => {
+  let closedPortCount = 0;
+  const postedTypes: string[] = [];
+
+  class MockPort {
+    onmessage: ((ev: { data: unknown }) => void) | null = null;
+    otherPort: MockPort | null = null;
+
+    postMessage() {}
+
+    close() {
+      closedPortCount += 1;
+    }
+  }
+
+  const globalObj = globalThis as unknown as { MessageChannel?: unknown };
+  const originalMessageChannel = globalObj.MessageChannel;
+  globalObj.MessageChannel = class {
+    port1 = new MockPort();
+    port2 = new MockPort();
+    constructor() {
+      this.port1.otherPort = this.port2;
+      this.port2.otherPort = this.port1;
+    }
+  };
+
+  const unresponsiveWorker = {
+    postMessage(messageValue: unknown) {
+      const message = messageValue as Record<string, unknown>;
+      if (typeof message.type === "string") postedTypes.push(message.type);
+    },
+  } as unknown as ServiceWorker;
+  const abortController = new AbortController();
+
+  try {
+    const startedAt = Date.now();
+    const identityPromise = requestServiceWorkerIdentity(
+      unresponsiveWorker,
+      5000,
+      abortController.signal
+    );
+    abortController.abort();
+
+    const identity = await identityPromise;
+    assert.equal(identity, null);
+    assert.ok(Date.now() - startedAt < 500);
+    assert.deepEqual(postedTypes, ["PWA_GET_IDENTITY"]);
+    assert.equal(closedPortCount, 1);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(postedTypes, ["PWA_GET_IDENTITY"]);
+    assert.equal(closedPortCount, 1);
+  } finally {
+    globalObj.MessageChannel = originalMessageChannel;
   }
 });
 
 test("requestActivationViaChannel - private MessageChannel activation handshake", async () => {
   class MockPort {
-    onmessage: ((ev: any) => void) | null = null;
+    onmessage: ((ev: { data: unknown }) => void) | null = null;
     otherPort: MockPort | null = null;
 
-    postMessage(msg: any) {
+    postMessage(msg: unknown) {
       if (this.otherPort && this.otherPort.onmessage) {
         setTimeout(() => {
           if (this.otherPort?.onmessage) {
@@ -289,8 +352,9 @@ test("requestActivationViaChannel - private MessageChannel activation handshake"
     close() {}
   }
 
-  const originalMessageChannel = (globalThis as any).MessageChannel;
-  (globalThis as any).MessageChannel = class {
+  const globalObj = globalThis as unknown as { MessageChannel?: unknown };
+  const originalMessageChannel = globalObj.MessageChannel;
+  globalObj.MessageChannel = class {
     port1 = new MockPort();
     port2 = new MockPort();
     constructor() {
@@ -311,43 +375,338 @@ test("requestActivationViaChannel - private MessageChannel activation handshake"
 
   try {
     // 1. Success case: worker replies with PWA_ACTIVATION_COMMITTED
-    const mockSuccessWorker: any = {
-      postMessage(msg: any, ports: any[]) {
+    const mockSuccessWorker = {
+      postMessage(msgValue: unknown, transfers?: Transferable[]) {
+        const msg = msgValue as Record<string, unknown>;
+        const ports = transfers as unknown as MessagePort[] | undefined;
         if (msg.protocol === 1 && msg.type === "PWA_PREPARE_ACTIVATION" && ports && ports[0]) {
           ports[0].postMessage({
             protocol: 1,
             type: "PWA_ACTIVATION_COMMITTED",
             requestNonce: msg.requestNonce,
-            proposalId: msg.proposal.proposalId,
+            proposalId: (msg.proposal as ActivationProposal).proposalId,
             workerNonce: "nonce-1",
           });
         }
       },
-    };
+    } as unknown as ServiceWorker;
 
     const successResult = await requestActivationViaChannel(mockSuccessWorker, proposal, 500);
     assert.equal(successResult.ok, true);
     assert.equal(successResult.workerNonce, "nonce-1");
 
     // 2. Abort case: worker replies with PWA_ACTIVATION_ABORTED
-    const mockAbortWorker: any = {
-      postMessage(msg: any, ports: any[]) {
+    const mockAbortWorker = {
+      postMessage(msgValue: unknown, transfers?: Transferable[]) {
+        const msg = msgValue as Record<string, unknown>;
+        const ports = transfers as unknown as MessagePort[] | undefined;
         if (msg.protocol === 1 && msg.type === "PWA_PREPARE_ACTIVATION" && ports && ports[0]) {
           ports[0].postMessage({
             protocol: 1,
             type: "PWA_ACTIVATION_ABORTED",
             requestNonce: msg.requestNonce,
-            proposalId: msg.proposal.proposalId,
+            proposalId: (msg.proposal as ActivationProposal).proposalId,
             reason: "NACK_ACTIVE from tab",
           });
         }
       },
-    };
+    } as unknown as ServiceWorker;
 
     const abortResult = await requestActivationViaChannel(mockAbortWorker, proposal, 500);
     assert.equal(abortResult.ok, false);
     assert.equal(abortResult.reason, "NACK_ACTIVE from tab");
   } finally {
-    (globalThis as any).MessageChannel = originalMessageChannel;
+    globalObj.MessageChannel = originalMessageChannel;
   }
+});
+
+test("waitForControllerIdentity - resolves when initial null controller becomes ready with matching identity", async () => {
+  const listeners: Record<string, ((ev: Event) => void)[]> = {};
+  const mockContainer = {
+    controller: null as ServiceWorker | null,
+    addEventListener(type: string, listener: (ev: Event) => void) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(listener);
+    },
+    removeEventListener(type: string, listener: (ev: Event) => void) {
+      if (listeners[type]) {
+        listeners[type] = listeners[type].filter((l) => l !== listener);
+      }
+    },
+  };
+
+  const mockWorker = {
+    postMessage(messageValue: unknown, transfers?: Transferable[]) {
+      const message = messageValue as Record<string, unknown>;
+      const port = transfers?.[0] as MessagePort | undefined;
+      if (
+        message?.protocol === 1 &&
+        message?.type === "PWA_GET_IDENTITY" &&
+        port &&
+        typeof port.postMessage === "function"
+      ) {
+        port.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce: message.requestNonce,
+          buildId: "build-target-v1",
+          swVersion: "sw-target-v1",
+          workerNonce: "nonce-resolved-controller",
+        });
+      }
+    },
+  } as unknown as ServiceWorker;
+
+  setTimeout(() => {
+    mockContainer.controller = mockWorker;
+    for (const listener of listeners["controllerchange"] || []) {
+      listener(new Event("controllerchange"));
+    }
+  }, 20);
+
+  const res = await waitForControllerIdentity({
+    expectedBuildId: "build-target-v1",
+    expectedSwVersion: "sw-target-v1",
+    timeoutMs: 500,
+    swContainer: mockContainer,
+  });
+
+  assert.equal(res.controller, mockWorker);
+  assert.notEqual(res.identity, null);
+  assert.equal(res.identity?.buildId, "build-target-v1");
+  assert.equal(res.identity?.workerNonce, "nonce-resolved-controller");
+});
+
+test("waitForControllerIdentity - bounded wait returns mismatched identity without infinite wait", async () => {
+  const listeners: Record<string, ((ev: Event) => void)[]> = {};
+  const mockWorkerOld = {
+    postMessage(messageValue: unknown, transfers?: Transferable[]) {
+      const message = messageValue as Record<string, unknown>;
+      const port = transfers?.[0] as MessagePort | undefined;
+      if (
+        message?.protocol === 1 &&
+        message?.type === "PWA_GET_IDENTITY" &&
+        port &&
+        typeof port.postMessage === "function"
+      ) {
+        port.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce: message.requestNonce,
+          buildId: "build-old",
+          swVersion: "sw-old",
+          workerNonce: "nonce-old",
+        });
+      }
+    },
+  } as unknown as ServiceWorker;
+
+  const mockContainer = {
+    controller: mockWorkerOld,
+    addEventListener(type: string, listener: (ev: Event) => void) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(listener);
+    },
+    removeEventListener(type: string, listener: (ev: Event) => void) {
+      if (listeners[type]) {
+        listeners[type] = listeners[type].filter((l) => l !== listener);
+      }
+    },
+  };
+
+  const res = await waitForControllerIdentity({
+    expectedBuildId: "build-new",
+    expectedSwVersion: "sw-new",
+    timeoutMs: 150,
+    swContainer: mockContainer,
+  });
+
+  assert.equal(res.controller, mockWorkerOld);
+  assert.equal(res.identity?.buildId, "build-old");
+});
+
+test("waitForControllerIdentity - returns null controller when timeout expires on null controller", async () => {
+  const mockContainer = {
+    controller: null,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  const res = await waitForControllerIdentity({
+    expectedBuildId: "build-new",
+    expectedSwVersion: "sw-new",
+    timeoutMs: 100,
+    swContainer: mockContainer,
+  });
+
+  assert.equal(res.controller, null);
+  assert.equal(res.identity, null);
+});
+
+test("waitForControllerIdentity - controller replacement during wait discards stale identity and resolves with new controller", async () => {
+  const listeners: Record<string, ((ev: Event) => void)[]> = {};
+
+  const mockWorkerOld = {
+    postMessage(messageValue: unknown, transfers?: Transferable[]) {
+      const message = messageValue as Record<string, unknown>;
+      const port = transfers?.[0] as MessagePort | undefined;
+      if (
+        message?.protocol === 1 &&
+        message?.type === "PWA_GET_IDENTITY" &&
+        port &&
+        typeof port.postMessage === "function"
+      ) {
+        port.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce: message.requestNonce,
+          buildId: "build-old",
+          swVersion: "sw-old",
+          workerNonce: "nonce-old",
+        });
+      }
+    },
+  } as unknown as ServiceWorker;
+
+  const mockWorkerNew = {
+    postMessage(messageValue: unknown, transfers?: Transferable[]) {
+      const message = messageValue as Record<string, unknown>;
+      const port = transfers?.[0] as MessagePort | undefined;
+      if (
+        message?.protocol === 1 &&
+        message?.type === "PWA_GET_IDENTITY" &&
+        port &&
+        typeof port.postMessage === "function"
+      ) {
+        port.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce: message.requestNonce,
+          buildId: "build-new",
+          swVersion: "sw-new",
+          workerNonce: "nonce-new",
+        });
+      }
+    },
+  } as unknown as ServiceWorker;
+
+  const mockContainer = {
+    controller: mockWorkerOld,
+    addEventListener(type: string, listener: (ev: Event) => void) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(listener);
+    },
+    removeEventListener(type: string, listener: (ev: Event) => void) {
+      if (listeners[type]) {
+        listeners[type] = listeners[type].filter((l) => l !== listener);
+      }
+    },
+  };
+
+  // Controller is replaced after 20ms
+  setTimeout(() => {
+    mockContainer.controller = mockWorkerNew;
+    for (const listener of listeners["controllerchange"] || []) {
+      listener(new Event("controllerchange"));
+    }
+  }, 20);
+
+  const res = await waitForControllerIdentity({
+    expectedBuildId: "build-new",
+    expectedSwVersion: "sw-new",
+    timeoutMs: 500,
+    swContainer: mockContainer,
+  });
+
+  assert.equal(res.controller, mockWorkerNew);
+  assert.notEqual(res.identity, null);
+  assert.equal(res.identity?.buildId, "build-new");
+  assert.equal(res.identity?.workerNonce, "nonce-new");
+});
+
+test("waitForControllerIdentity - controller replacement right before timeout never combines new controller with old identity", async () => {
+  const listeners: Record<string, ((ev: Event) => void)[]> = {};
+
+  const mockWorkerOld = {
+    postMessage(messageValue: unknown, transfers?: Transferable[]) {
+      const message = messageValue as Record<string, unknown>;
+      const port = transfers?.[0] as MessagePort | undefined;
+      if (
+        message?.protocol === 1 &&
+        message?.type === "PWA_GET_IDENTITY" &&
+        port &&
+        typeof port.postMessage === "function"
+      ) {
+        port.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce: message.requestNonce,
+          buildId: "build-old",
+          swVersion: "sw-old",
+          workerNonce: "nonce-old",
+        });
+      }
+    },
+  } as unknown as ServiceWorker;
+
+  const mockWorkerUnresponsive = {
+    postMessage() {
+      // Never responds
+    },
+  } as unknown as ServiceWorker;
+
+  const mockContainer = {
+    controller: mockWorkerOld,
+    addEventListener(type: string, listener: (ev: Event) => void) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(listener);
+    },
+    removeEventListener(type: string, listener: (ev: Event) => void) {
+      if (listeners[type]) {
+        listeners[type] = listeners[type].filter((l) => l !== listener);
+      }
+    },
+  };
+
+  // Controller changes to unresponsive worker at 25ms
+  setTimeout(() => {
+    mockContainer.controller = mockWorkerUnresponsive;
+    for (const listener of listeners["controllerchange"] || []) {
+      listener(new Event("controllerchange"));
+    }
+  }, 25);
+
+  const res = await waitForControllerIdentity({
+    expectedBuildId: "build-new",
+    expectedSwVersion: "sw-new",
+    timeoutMs: 100,
+    swContainer: mockContainer,
+  });
+
+  // Must have new controller, but identity MUST BE null (never combined with build-old identity!)
+  assert.equal(res.controller, mockWorkerUnresponsive);
+  assert.equal(res.identity, null);
+});
+
+test("waitForControllerIdentity - AbortSignal abort immediately settles with null", async () => {
+  const abortController = new AbortController();
+  const mockContainer = {
+    controller: null,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+
+  setTimeout(() => {
+    abortController.abort();
+  }, 20);
+
+  const res = await waitForControllerIdentity({
+    expectedBuildId: "build-new",
+    timeoutMs: 5000,
+    swContainer: mockContainer,
+    signal: abortController.signal,
+  });
+
+  assert.equal(res.controller, null);
+  assert.equal(res.identity, null);
 });

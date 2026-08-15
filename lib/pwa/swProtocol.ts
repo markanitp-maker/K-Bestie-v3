@@ -544,9 +544,10 @@ export function isLegacyStaleAssetMessage(data: unknown): boolean {
 
 export async function requestServiceWorkerIdentity(
   worker: ServiceWorker,
-  timeoutMs = 1500
+  timeoutMs = 1500,
+  signal?: AbortSignal
 ): Promise<ServiceWorkerIdentity | null> {
-  if (!worker || typeof worker.postMessage !== "function") return null;
+  if (!worker || typeof worker.postMessage !== "function" || signal?.aborted) return null;
 
   const requestNonce = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "";
   if (!requestNonce) return null;
@@ -556,22 +557,26 @@ export async function requestServiceWorkerIdentity(
     const v1Result = await new Promise<ServiceWorkerIdentity | null>((resolve) => {
       let settled = false;
       const channel = new MessageChannel();
+      let timer: ReturnType<typeof setTimeout> | null = null;
 
-      const timer = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          channel.port1.close();
-          resolve(null);
-        }
-      }, timeoutMs);
+      const finish = (result: ServiceWorkerIdentity | null) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        channel.port1.onmessage = null;
+        channel.port1.close();
+        resolve(result);
+      };
+      const onAbort = () => finish(null);
+
+      timer = setTimeout(() => finish(null), timeoutMs);
+      signal?.addEventListener("abort", onAbort, { once: true });
 
       channel.port1.onmessage = (event) => {
         if (settled) return;
         if (isPwaIdentityResponse(event.data, requestNonce)) {
-          settled = true;
-          clearTimeout(timer);
-          channel.port1.close();
-          resolve({
+          finish({
             protocolVersion: 1,
             buildId: event.data.buildId,
             swVersion: event.data.swVersion,
@@ -580,14 +585,23 @@ export async function requestServiceWorkerIdentity(
         }
       };
 
-      worker.postMessage(
-        {
-          protocol: 1,
-          type: "PWA_GET_IDENTITY",
-          requestNonce,
-        },
-        [channel.port2]
-      );
+      if (signal?.aborted) {
+        finish(null);
+        return;
+      }
+
+      try {
+        worker.postMessage(
+          {
+            protocol: 1,
+            type: "PWA_GET_IDENTITY",
+            requestNonce,
+          },
+          [channel.port2]
+        );
+      } catch {
+        finish(null);
+      }
     });
 
     if (v1Result !== null) {
@@ -595,31 +609,37 @@ export async function requestServiceWorkerIdentity(
     }
   } catch {}
 
+  if (signal?.aborted) return null;
+
   // Attempt 2: Fallback to legacy GET_VERSION (protocol v0) via MessageChannel
   try {
     const v0Result = await new Promise<ServiceWorkerIdentity | null>((resolve) => {
       let settled = false;
       const channel = new MessageChannel();
+      let timer: ReturnType<typeof setTimeout> | null = null;
 
-      const timer = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          channel.port1.close();
-          resolve(null);
-        }
-      }, timeoutMs);
+      const finish = (result: ServiceWorkerIdentity | null) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        channel.port1.onmessage = null;
+        channel.port1.close();
+        resolve(result);
+      };
+      const onAbort = () => finish(null);
+
+      timer = setTimeout(() => finish(null), timeoutMs);
+      signal?.addEventListener("abort", onAbort, { once: true });
 
       channel.port1.onmessage = (event) => {
         if (settled) return;
         const data = event.data as Record<string, unknown> | null;
         if (data && (data.type === "VERSION_RESPONSE" || typeof data.version === "string")) {
-          settled = true;
-          clearTimeout(timer);
-          channel.port1.close();
           const buildId = String(data.buildId || data.version || "");
           const swVersion = String(data.swVersion || data.version || "");
           if (buildId) {
-            resolve({
+            finish({
               protocolVersion: 0,
               buildId,
               swVersion,
@@ -630,7 +650,16 @@ export async function requestServiceWorkerIdentity(
         }
       };
 
-      worker.postMessage({ type: "GET_VERSION", requestNonce }, [channel.port2]);
+      if (signal?.aborted) {
+        finish(null);
+        return;
+      }
+
+      try {
+        worker.postMessage({ type: "GET_VERSION", requestNonce }, [channel.port2]);
+      } catch {
+        finish(null);
+      }
     });
 
     return v0Result;
@@ -706,5 +735,193 @@ export async function requestActivationViaChannel(
         resolve({ ok: false, reason: (err as Error)?.message || "Failed to post message" });
       }
     }
+  });
+}
+
+export interface ServiceWorkerContainerLike {
+  controller: ServiceWorker | null;
+  addEventListener(type: string, listener: (event: Event) => void): void;
+  removeEventListener(type: string, listener: (event: Event) => void): void;
+}
+
+export interface WaitForControllerIdentityOptions {
+  timeoutMs?: number;
+  expectedBuildId?: string;
+  expectedSwVersion?: string;
+  swContainer?: ServiceWorkerContainerLike;
+  signal?: AbortSignal;
+}
+
+export interface ControllerIdentityResolution {
+  controller: ServiceWorker | null;
+  identity: ServiceWorkerIdentity | null;
+}
+
+export async function waitForControllerIdentity(
+  options: WaitForControllerIdentityOptions = {}
+): Promise<ControllerIdentityResolution> {
+  const {
+    timeoutMs = 2500,
+    expectedBuildId,
+    expectedSwVersion,
+    swContainer = typeof navigator !== "undefined" && "serviceWorker" in navigator
+      ? (navigator.serviceWorker as unknown as ServiceWorkerContainerLike)
+      : undefined,
+    signal,
+  } = options;
+
+  if (!swContainer || signal?.aborted) {
+    return { controller: null, identity: null };
+  }
+
+  const deadline = Date.now() + Math.max(100, timeoutMs);
+
+  return new Promise<ControllerIdentityResolution>((resolve) => {
+    let settled = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    let inFlightIdentityCheck = false;
+    let lastInspected: { controller: ServiceWorker; identity: ServiceWorkerIdentity | null } | null = null;
+
+    const cleanup = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer);
+        timeoutTimer = null;
+      }
+      try {
+        swContainer.removeEventListener("controllerchange", onControllerChange);
+      } catch {}
+      if (signal) {
+        try {
+          signal.removeEventListener("abort", onAbort);
+        } catch {}
+      }
+    };
+
+    const finish = (result: ControllerIdentityResolution) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const onAbort = () => {
+      finish({ controller: null, identity: null });
+    };
+
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    const tryInspect = async () => {
+      if (settled || inFlightIdentityCheck) return;
+      const currentController = swContainer.controller;
+      if (!currentController) {
+        lastInspected = null;
+        if (Date.now() >= deadline && swContainer.controller === null) {
+          finish({ controller: null, identity: null });
+        }
+        return;
+      }
+
+      if (lastInspected && lastInspected.controller !== currentController) {
+        lastInspected = null;
+      }
+
+      inFlightIdentityCheck = true;
+      try {
+        const remainingMs = Math.max(100, deadline - Date.now());
+        const perRequestTimeout = Math.min(1000, remainingMs);
+        const identity = await requestServiceWorkerIdentity(
+          currentController,
+          perRequestTimeout,
+          signal
+        );
+        if (settled) return;
+
+        // Controller may have changed during identity request
+        if (swContainer.controller !== currentController) {
+          lastInspected = null;
+          return;
+        }
+
+        lastInspected = { controller: currentController, identity };
+
+        const isExactMatch = Boolean(
+          identity &&
+          identity.protocolVersion === 1 &&
+          typeof identity.workerNonce === "string" &&
+          identity.workerNonce.trim() &&
+          (!expectedBuildId || identity.buildId === expectedBuildId) &&
+          (!expectedSwVersion || identity.swVersion === expectedSwVersion)
+        );
+
+        if (isExactMatch && swContainer.controller === currentController) {
+          finish({ controller: currentController, identity });
+          return;
+        }
+
+        if (Date.now() >= deadline) {
+          if (swContainer.controller === currentController) {
+            finish({ controller: currentController, identity });
+          } else {
+            lastInspected = null;
+            finish({ controller: swContainer.controller, identity: null });
+          }
+          return;
+        }
+      } catch {
+        if (Date.now() >= deadline) {
+          const activeController = swContainer.controller;
+          if (activeController && lastInspected && lastInspected.controller === activeController) {
+            finish({ controller: activeController, identity: lastInspected.identity });
+          } else {
+            finish({ controller: activeController, identity: null });
+          }
+        }
+      } finally {
+        inFlightIdentityCheck = false;
+        if (!settled && swContainer.controller !== currentController) {
+          lastInspected = null;
+          void tryInspect();
+        }
+      }
+    };
+
+    const onControllerChange = () => {
+      if (lastInspected && lastInspected.controller !== swContainer.controller) {
+        lastInspected = null;
+      }
+      void tryInspect();
+    };
+
+    try {
+      swContainer.addEventListener("controllerchange", onControllerChange);
+    } catch {}
+
+    const remainingTotal = Math.max(100, deadline - Date.now());
+    timeoutTimer = setTimeout(() => {
+      if (!settled) {
+        const activeController = swContainer.controller;
+        if (!activeController) {
+          finish({ controller: null, identity: null });
+        } else if (lastInspected && lastInspected.controller === activeController) {
+          finish({ controller: activeController, identity: lastInspected.identity });
+        } else {
+          finish({ controller: activeController, identity: null });
+        }
+      }
+    }, remainingTotal);
+
+    pollTimer = setInterval(() => {
+      void tryInspect();
+    }, 50);
+
+    // Initial inspection immediately
+    void tryInspect();
   });
 }

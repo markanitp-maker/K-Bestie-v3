@@ -167,6 +167,11 @@ export async function performRegistrationUpdate(
     ) {
       return { result: "identity-mismatch", worker, identity };
     }
+
+    if (registration.waiting !== worker || worker.state !== "installed") {
+      return { result: "target-replaced" };
+    }
+
     return {
       result: "installed-target",
       worker,
@@ -230,6 +235,14 @@ export async function performRegistrationUpdate(
     }
 
     // Installing target transitioned to installed.
+    // Allow bounded microtask/event settling for registration.waiting exact object
+    if (registration.waiting !== installingTarget) {
+      const settleDeadline = Date.now() + Math.min(1000, installTimeoutMs);
+      while (registration.waiting !== installingTarget && Date.now() < settleDeadline) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    }
+
     // Exact check: registration.waiting must be the exact installing target.
     if (registration.waiting !== installingTarget) {
       return { result: "target-replaced" };
@@ -257,6 +270,10 @@ export async function performRegistrationUpdate(
       identity.swVersion !== validTarget.swVersion
     ) {
       return { result: "identity-mismatch", worker, identity };
+    }
+
+    if (registration.waiting !== worker || worker.state !== "installed") {
+      return { result: "target-replaced" };
     }
 
     return {

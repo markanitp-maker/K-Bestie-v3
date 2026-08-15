@@ -35,6 +35,7 @@ import {
   saveReloadPendingMarker,
   getReloadPendingMarker,
   clearReloadPendingMarker,
+  verifyLatestHandshake,
   ReloadPendingMarkerV3,
 } from "@/lib/pwa/updateFlow";
 import {
@@ -52,6 +53,7 @@ import {
   isLegacyStaleAssetMessage,
   ServiceWorkerIdentity,
   isValidStaleAssetPath,
+  waitForControllerIdentity,
 } from "@/lib/pwa/swProtocol";
 import type { LatestVersionMetadataV1 } from "@/lib/pwa/clientVersion";
 
@@ -1039,4 +1041,540 @@ test("U8-4: Central Blocking Modal Authority - No dismiss, no ESC/back, no 'late
   const modalStateNames: readonly string[] = modalStates;
   const isModalOpenForUnsafe = modalStateNames.includes(unsafeRouteState);
   assert.equal(isModalOpenForUnsafe, false);
+});
+
+test("Post-reload verification waits boundedly for initial null controller to become ready and settles up_to_date", async () => {
+  const target: LatestVersionMetadataV1 = {
+    schemaVersion: 1,
+    buildId: "build-post-reload-1",
+    buildStamp: "stamp-post-reload-1",
+    deploymentId: "dpl-post-reload-1",
+    swVersion: "kbestie-shell-post-reload-1",
+    serviceWorkerScriptUrl: "/sw.js",
+  };
+
+  const marker: ReloadPendingMarkerV3 = {
+    schemaVersion: 3,
+    proposalId: "12345678-1234-4234-8234-123456789abc",
+    target,
+    activationWorkerNonce: "worker-nonce-post-1",
+    successEventId: "87654321-4321-4321-8321-cba987654321",
+    documentBuildStampBeforeReload: "stamp-old",
+    startedAt: Date.now() - 2000,
+    expiresAt: Date.now() + 58000,
+    reason: "user_update",
+  };
+
+  const listeners: Record<string, ((ev: Event) => void)[]> = {};
+  const mockContainer = {
+    controller: null as ServiceWorker | null,
+    addEventListener(type: string, listener: (ev: Event) => void) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(listener);
+    },
+    removeEventListener(type: string, listener: (ev: Event) => void) {
+      if (listeners[type]) {
+        listeners[type] = listeners[type].filter((l) => l !== listener);
+      }
+    },
+  };
+
+  const mockActiveWorker = {
+    scriptURL: "https://app.k-bestie.com/sw.js",
+    postMessage(messageValue: unknown, transfers?: Transferable[]) {
+      const message = messageValue as Record<string, unknown>;
+      const port = transfers?.[0] as MessagePort | undefined;
+      if (
+        message?.protocol === 1 &&
+        message?.type === "PWA_GET_IDENTITY" &&
+        port &&
+        typeof port.postMessage === "function"
+      ) {
+        port.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce: message.requestNonce,
+          buildId: target.buildId,
+          swVersion: target.swVersion,
+          workerNonce: "worker-nonce-post-1",
+        });
+      }
+    },
+  } as unknown as ServiceWorker;
+
+  // Controller is initially null (iOS post-reload delay), becomes ready after 20ms
+  setTimeout(() => {
+    mockContainer.controller = mockActiveWorker;
+    for (const listener of listeners["controllerchange"] || []) {
+      listener(new Event("controllerchange"));
+    }
+  }, 20);
+
+  const { controller, identity } = await waitForControllerIdentity({
+    expectedBuildId: marker.target.buildId,
+    expectedSwVersion: marker.target.swVersion,
+    timeoutMs: 500,
+    swContainer: mockContainer,
+  });
+
+  assert.equal(controller, mockActiveWorker);
+  assert.notEqual(identity, null);
+  assert.equal(identity?.protocolVersion, 1);
+  assert.equal(identity?.buildId, target.buildId);
+  assert.equal(identity?.workerNonce, "worker-nonce-post-1");
+
+  // Verify handshake succeeds with resolved controller & identity
+  const handshakeResult = verifyLatestHandshake({
+    marker,
+    serverMetadata: target,
+    documentMarker: {
+      schemaVersion: 1,
+      buildId: target.buildId,
+      buildStamp: target.buildStamp,
+      deploymentId: target.deploymentId,
+    },
+    controllerIdentity: identity,
+    controllerScriptUrl: controller?.scriptURL,
+  });
+
+  assert.equal(handshakeResult.ok, true);
+  assert.equal(handshakeResult.status, "success");
+});
+
+test("Post-reload verification unmount guard - unmount immediately aborts wait and causes 0 setState, 0 marker clear, 0 telemetry", async () => {
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on("jsdomError", () => undefined);
+  const dom = new JSDOM(
+    "<!doctype html><html lang=\"ko\"><head></head><body><div id=\"root\"></div></body></html>",
+    {
+      url: "https://app.k-bestie.com/child/home",
+      virtualConsole,
+    },
+  );
+
+  const target: LatestVersionMetadataV1 = {
+    schemaVersion: 1,
+    buildId: "build-unmount-v1",
+    buildStamp: "stamp-unmount-v1",
+    deploymentId: "dpl-unmount-v1",
+    swVersion: "sw-unmount-v1",
+    serviceWorkerScriptUrl: "/sw.js",
+  };
+
+  const meta = dom.window.document.createElement("meta");
+  meta.name = "kbestie-document-deployment-v1";
+  meta.content = JSON.stringify({
+    schemaVersion: 1,
+    buildId: target.buildId,
+    buildStamp: target.buildStamp,
+    deploymentId: target.deploymentId,
+  });
+  dom.window.document.head.append(meta);
+
+  const marker: ReloadPendingMarkerV3 = {
+    schemaVersion: 3,
+    proposalId: "33333333-3333-4333-8333-333333333333",
+    target,
+    activationWorkerNonce: "worker-nonce-unmount",
+    successEventId: "44444444-4444-4444-8444-444444444444",
+    documentBuildStampBeforeReload: "stamp-old",
+    startedAt: Date.now() - 1000,
+    expiresAt: Date.now() + 59000,
+    reason: "user_update",
+  };
+
+  saveReloadPendingMarker(marker, dom.window.sessionStorage);
+
+  const telemetryCalls: unknown[] = [];
+  const clientVersionCalls: unknown[] = [];
+
+  const mockActiveWorker = {
+    state: "activated",
+    scriptURL: "https://app.k-bestie.com/sw.js",
+    postMessage: (messageValue: unknown, transfers?: Transferable[]) => {
+      const message = messageValue as Record<string, unknown>;
+      const port = transfers?.[0] as MessagePort | undefined;
+      if (
+        message?.protocol === 1 &&
+        message?.type === "PWA_GET_IDENTITY" &&
+        port &&
+        typeof port.postMessage === "function"
+      ) {
+        port.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce: message.requestNonce,
+          buildId: target.buildId,
+          swVersion: target.swVersion,
+          workerNonce: "worker-nonce-unmount",
+        });
+      }
+    },
+  } as unknown as ServiceWorker;
+
+  const registration = {
+    waiting: null,
+    installing: null,
+    update: async () => {},
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  } as unknown as ServiceWorkerRegistration;
+
+  const swContainer = Object.assign(new dom.window.EventTarget(), {
+    controller: null as ServiceWorker | null,
+    register: async () => registration,
+    getRegistration: async () => registration,
+  });
+
+  const globalKeys = [
+    "window",
+    "document",
+    "navigator",
+    "HTMLElement",
+    "MouseEvent",
+    "SubmitEvent",
+    "Event",
+    "MessageEvent",
+    "Storage",
+    "React",
+    "IS_REACT_ACT_ENVIRONMENT",
+  ] as const;
+  const originalDescriptors = new Map(
+    globalKeys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
+  );
+  const originalFetch = globalThis.fetch;
+  const originalConsoleInfo = console.info;
+
+  const installGlobal = (key: (typeof globalKeys)[number], value: unknown) => {
+    Object.defineProperty(globalThis, key, {
+      configurable: true,
+      writable: true,
+      value,
+    });
+  };
+  installGlobal("window", dom.window);
+  installGlobal("document", dom.window.document);
+  installGlobal("navigator", dom.window.navigator);
+  installGlobal("HTMLElement", dom.window.HTMLElement);
+  installGlobal("MouseEvent", dom.window.MouseEvent);
+  installGlobal("SubmitEvent", dom.window.SubmitEvent);
+  installGlobal("Event", dom.window.Event);
+  installGlobal("MessageEvent", dom.window.MessageEvent);
+  installGlobal("Storage", dom.window.Storage);
+  installGlobal("React", React);
+  installGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  Object.defineProperty(dom.window.navigator, "onLine", {
+    configurable: true,
+    value: true,
+  });
+  Object.defineProperty(dom.window.navigator, "serviceWorker", {
+    configurable: true,
+    value: swContainer,
+  });
+
+  globalThis.fetch = async (input: string | URL | Request) => {
+    const rawUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    const url = new URL(rawUrl, dom.window.location.origin);
+    if (url.pathname === "/api/client-version") {
+      clientVersionCalls.push(url);
+      return new Response(JSON.stringify(target), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+    if (url.pathname === "/api/analytics/pwa-update") {
+      telemetryCalls.push(url);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url.pathname}`);
+  };
+  console.info = () => undefined;
+
+  const container = dom.window.document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+
+  try {
+    const { PwaServiceWorker } = await import("./PwaServiceWorker");
+    await act(async () => {
+      root.render(createElement(PwaServiceWorker));
+    });
+
+    // Let the initial fetch /api/client-version run and enter waitForControllerIdentity (controller is null)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    assert.ok(clientVersionCalls.length >= 1);
+
+    // Unmount before controller becomes ready
+    await act(async () => {
+      root.unmount();
+    });
+
+    // Now simulate controller becoming ready after unmount
+    swContainer.controller = mockActiveWorker;
+    swContainer.dispatchEvent(new dom.window.Event("controllerchange"));
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // 1. Unmount must NOT have cleared the pending marker
+    const markerAfterUnmount = getReloadPendingMarker(dom.window.sessionStorage);
+    assert.notEqual(markerAfterUnmount, null);
+    assert.equal(markerAfterUnmount?.proposalId, marker.proposalId);
+
+    // 2. Unmount must NOT have emitted telemetry
+    assert.equal(telemetryCalls.length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.info = originalConsoleInfo;
+    for (const key of globalKeys) {
+      const descriptor = originalDescriptors.get(key);
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+    clearReloadPendingMarker(dom.window.sessionStorage);
+    dom.window.close();
+  }
+});
+
+test("Post-reload verification retry path unmount guard - unmount during retry immediately aborts wait and causes 0 setState, 0 marker clear, 0 telemetry", async () => {
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on("jsdomError", () => undefined);
+  const dom = new JSDOM(
+    "<!doctype html><html lang=\"ko\"><head></head><body><div id=\"root\"></div></body></html>",
+    {
+      url: "https://app.k-bestie.com/child/home",
+      virtualConsole,
+    },
+  );
+
+  const target: LatestVersionMetadataV1 = {
+    schemaVersion: 1,
+    buildId: "build-retry-unmount-v1",
+    buildStamp: "stamp-retry-unmount-v1",
+    deploymentId: "dpl-retry-unmount-v1",
+    swVersion: "sw-retry-unmount-v1",
+    serviceWorkerScriptUrl: "/sw.js",
+  };
+
+  const meta = dom.window.document.createElement("meta");
+  meta.name = "kbestie-document-deployment-v1";
+  meta.content = JSON.stringify({
+    schemaVersion: 1,
+    buildId: target.buildId,
+    buildStamp: target.buildStamp,
+    deploymentId: target.deploymentId,
+  });
+  dom.window.document.head.append(meta);
+
+  const marker: ReloadPendingMarkerV3 = {
+    schemaVersion: 3,
+    proposalId: "55555555-5555-4555-8555-555555555555",
+    target,
+    activationWorkerNonce: "worker-nonce-retry-unmount",
+    successEventId: "66666666-6666-4666-8666-666666666666",
+    documentBuildStampBeforeReload: "stamp-old",
+    startedAt: Date.now() - 1000,
+    expiresAt: Date.now() + 59000,
+    reason: "user_update",
+  };
+
+  saveReloadPendingMarker(marker, dom.window.sessionStorage);
+
+  const telemetryCalls: unknown[] = [];
+  const clientVersionCalls: unknown[] = [];
+  let clientVersionFetchCount = 0;
+
+  const mockActiveWorker = {
+    state: "activated",
+    scriptURL: "https://app.k-bestie.com/sw.js",
+    postMessage: (messageValue: unknown, transfers?: Transferable[]) => {
+      const message = messageValue as Record<string, unknown>;
+      const port = transfers?.[0] as MessagePort | undefined;
+      if (
+        message?.protocol === 1 &&
+        message?.type === "PWA_GET_IDENTITY" &&
+        port &&
+        typeof port.postMessage === "function"
+      ) {
+        port.postMessage({
+          protocol: 1,
+          type: "PWA_IDENTITY_RESPONSE",
+          requestNonce: message.requestNonce,
+          buildId: target.buildId,
+          swVersion: target.swVersion,
+          workerNonce: "worker-nonce-retry-unmount",
+        });
+      }
+    },
+  } as unknown as ServiceWorker;
+
+  const registration = {
+    waiting: null,
+    installing: null,
+    update: async () => {},
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  } as unknown as ServiceWorkerRegistration;
+
+  const swContainer = Object.assign(new dom.window.EventTarget(), {
+    controller: null as ServiceWorker | null,
+    register: async () => registration,
+    getRegistration: async () => registration,
+  });
+
+  const globalKeys = [
+    "window",
+    "document",
+    "navigator",
+    "HTMLElement",
+    "MouseEvent",
+    "SubmitEvent",
+    "Event",
+    "MessageEvent",
+    "Storage",
+    "React",
+    "IS_REACT_ACT_ENVIRONMENT",
+  ] as const;
+  const originalDescriptors = new Map(
+    globalKeys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]),
+  );
+  const originalFetch = globalThis.fetch;
+  const originalConsoleInfo = console.info;
+
+  const installGlobal = (key: (typeof globalKeys)[number], value: unknown) => {
+    Object.defineProperty(globalThis, key, {
+      configurable: true,
+      writable: true,
+      value,
+    });
+  };
+  installGlobal("window", dom.window);
+  installGlobal("document", dom.window.document);
+  installGlobal("navigator", dom.window.navigator);
+  installGlobal("HTMLElement", dom.window.HTMLElement);
+  installGlobal("MouseEvent", dom.window.MouseEvent);
+  installGlobal("SubmitEvent", dom.window.SubmitEvent);
+  installGlobal("Event", dom.window.Event);
+  installGlobal("MessageEvent", dom.window.MessageEvent);
+  installGlobal("Storage", dom.window.Storage);
+  installGlobal("React", React);
+  installGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  Object.defineProperty(dom.window.navigator, "onLine", {
+    configurable: true,
+    value: true,
+  });
+  Object.defineProperty(dom.window.navigator, "serviceWorker", {
+    configurable: true,
+    value: swContainer,
+  });
+
+  globalThis.fetch = async (input: string | URL | Request) => {
+    const rawUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    const url = new URL(rawUrl, dom.window.location.origin);
+    if (url.pathname === "/api/client-version") {
+      clientVersionFetchCount++;
+      clientVersionCalls.push(url);
+      if (clientVersionFetchCount === 1) {
+        // Initial boot verification returns 503 -> fails and modal enters error/retry state
+        return new Response(JSON.stringify({ error: "temporary_unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(target), {
+        status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
+    if (url.pathname === "/api/analytics/pwa-update") {
+      telemetryCalls.push(url);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url.pathname}`);
+  };
+  console.info = () => undefined;
+
+  const container = dom.window.document.getElementById("root");
+  assert.ok(container);
+  const root = createRoot(container);
+
+  try {
+    const { PwaServiceWorker } = await import("./PwaServiceWorker");
+    await act(async () => {
+      root.render(createElement(PwaServiceWorker));
+    });
+
+    // Let initial fetch fail and modal show retry button
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    assert.equal(clientVersionFetchCount, 1);
+    const retryButton = container?.querySelector("button");
+    assert.ok(retryButton);
+    assert.equal(retryButton?.textContent, "다시 업데이트");
+
+    // Click retry button -> starts retry verification
+    await act(async () => {
+      retryButton?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    });
+
+    // Let retry fetch run and enter waitForControllerIdentity (controller is null)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    assert.ok(clientVersionFetchCount >= 2);
+
+    // Unmount during active retry verification
+    await act(async () => {
+      root.unmount();
+    });
+
+    // Now simulate controller becoming ready after unmount
+    swContainer.controller = mockActiveWorker;
+    swContainer.dispatchEvent(new dom.window.Event("controllerchange"));
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // 1. Unmount must NOT have cleared the pending marker
+    const markerAfterUnmount = getReloadPendingMarker(dom.window.sessionStorage);
+    assert.notEqual(markerAfterUnmount, null);
+    assert.equal(markerAfterUnmount?.proposalId, marker.proposalId);
+
+    // 2. Unmount must NOT have emitted telemetry
+    assert.equal(telemetryCalls.length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.info = originalConsoleInfo;
+    for (const key of globalKeys) {
+      const descriptor = originalDescriptors.get(key);
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+    clearReloadPendingMarker(dom.window.sessionStorage);
+    dom.window.close();
+  }
 });

@@ -52,6 +52,7 @@ import {
 import {
   requestServiceWorkerIdentity,
   requestActivationViaChannel,
+  waitForControllerIdentity,
   type ServiceWorkerIdentity,
 } from "@/lib/pwa/swProtocol";
 import {
@@ -122,6 +123,10 @@ export function PwaServiceWorker() {
   const expectedWorkerNonceRef = useRef<string | null>(null);
   const expectedProposalIdRef = useRef<string | null>(null);
 
+  // Component lifecycle abort contract shared across mount & all retries
+  const lifecycleAbortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(false);
+
   // History lock refs
   const originalUrlRef = useRef<string | null>(null);
   const originalHistoryStateRef = useRef<unknown>(null);
@@ -163,78 +168,104 @@ export function PwaServiceWorker() {
   // -------------------------------------------------------------
   // Post-Reload Latest Verification Handshake
   // -------------------------------------------------------------
-  const performPostReloadVerification = useCallback(async (marker: ReloadPendingMarkerV3) => {
-    setPwaState("verifying_latest");
-    debugLog("post_reload_verification_started", { marker });
+  const performPostReloadVerification = useCallback(
+    async (
+      marker: ReloadPendingMarkerV3,
+      options?: { signal?: AbortSignal; isMounted?: () => boolean }
+    ) => {
+      const signal = options?.signal ?? lifecycleAbortControllerRef.current?.signal;
+      const isMountedCheck = options?.isMounted ?? (() => isMountedRef.current);
+      const isAborted = () =>
+        Boolean(signal?.aborted || !isMountedCheck());
 
-    const latestResult = await fetchLatestVersionMetadataV1();
-    if (!latestResult.ok) {
-      setPwaState(
-        (latestResult.code === "network" || latestResult.code === "timeout") &&
-          !navigator.onLine
-          ? "offline"
-          : "error",
-      );
-      return;
-    }
+      if (isAborted()) return;
 
-    const controller =
-      typeof navigator !== "undefined" && "serviceWorker" in navigator
-        ? navigator.serviceWorker.controller
-        : null;
+      setPwaState("verifying_latest");
+      debugLog("post_reload_verification_started", { marker });
 
-    const controllerIdentity = controller ? await requestServiceWorkerIdentity(controller, 1500).catch(() => null) : null;
+      const latestResult = await fetchLatestVersionMetadataV1();
+      if (isAborted()) return;
 
-    const handshakeResult = verifyLatestHandshake({
-      marker,
-      serverMetadata: latestResult.snapshot,
-      documentMarker: getDocumentDeploymentMarker(),
-      controllerIdentity,
-      controllerScriptUrl: controller?.scriptURL,
-    });
-
-    debugLog("post_reload_verification_result", handshakeResult);
-
-    if (handshakeResult.ok) {
-      // Handshake succeeded! Emit success telemetry using marker's successEventId
-      try {
-        if (reportedSuccessEventIdsRef.current.has(marker.successEventId)) {
-          clearReloadPendingMarker();
-          setPwaState("up_to_date");
-          return;
-        }
-        reportedSuccessEventIdsRef.current.add(marker.successEventId);
-        const eventType =
-          marker.reason === "stale_asset_recovery"
-            ? "pwa_stale_client_recovery_success"
-            : "pwa_update_success";
-
-        void fetch("/api/analytics/pwa-update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_id: marker.successEventId,
-            event_type: eventType,
-            correlation_id: marker.proposalId,
-            route: pathnameRef.current || "/",
-            current_version: BUILD_ID,
-            latest_version: marker.target.buildId,
-          }),
-        }).catch(() => {});
-      } catch {}
-
-      // Clear local marker and unlock gate
-      clearReloadPendingMarker();
-      setPwaState("up_to_date");
-    } else {
-      // Retain marker & gate; allow retry
-      if (handshakeResult.status === "network_error") {
-        setPwaState("offline");
-      } else {
-        setPwaState("error");
+      if (!latestResult.ok) {
+        if (isAborted()) return;
+        setPwaState(
+          (latestResult.code === "network" || latestResult.code === "timeout") &&
+            !navigator.onLine
+            ? "offline"
+            : "error",
+        );
+        return;
       }
-    }
-  }, []);
+
+      const { controller, identity: controllerIdentity } = await waitForControllerIdentity({
+        expectedBuildId: marker.target.buildId,
+        expectedSwVersion: marker.target.swVersion,
+        timeoutMs: 2500,
+        signal,
+      });
+
+      if (isAborted()) return;
+
+      const handshakeResult = verifyLatestHandshake({
+        marker,
+        serverMetadata: latestResult.snapshot,
+        documentMarker: getDocumentDeploymentMarker(),
+        controllerIdentity,
+        controllerScriptUrl: controller?.scriptURL,
+      });
+
+      debugLog("post_reload_verification_result", handshakeResult);
+
+      if (isAborted()) return;
+
+      if (handshakeResult.ok) {
+        // Handshake succeeded! Emit success telemetry using marker's successEventId
+        try {
+          if (reportedSuccessEventIdsRef.current.has(marker.successEventId)) {
+            if (isAborted()) return;
+            clearReloadPendingMarker();
+            setPwaState("up_to_date");
+            return;
+          }
+          reportedSuccessEventIdsRef.current.add(marker.successEventId);
+          const eventType =
+            marker.reason === "stale_asset_recovery"
+              ? "pwa_stale_client_recovery_success"
+              : "pwa_update_success";
+
+          if (isAborted()) return;
+
+          void fetch("/api/analytics/pwa-update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              event_id: marker.successEventId,
+              event_type: eventType,
+              correlation_id: marker.proposalId,
+              route: pathnameRef.current || "/",
+              current_version: BUILD_ID,
+              latest_version: marker.target.buildId,
+            }),
+          }).catch(() => {});
+        } catch {}
+
+        if (isAborted()) return;
+
+        // Clear local marker and unlock gate
+        clearReloadPendingMarker();
+        setPwaState("up_to_date");
+      } else {
+        if (isAborted()) return;
+        // Retain marker & gate; allow retry
+        if (handshakeResult.status === "network_error") {
+          setPwaState("offline");
+        } else {
+          setPwaState("error");
+        }
+      }
+    },
+    []
+  );
 
   // -------------------------------------------------------------
   // Consume Pending External Controller when Safe & Ready
@@ -520,7 +551,10 @@ export function PwaServiceWorker() {
     // Check if there is an unresolved reload pending marker (retry path)
     const existingMarker = getReloadPendingMarker();
     if (existingMarker) {
-      await performPostReloadVerification(existingMarker);
+      await performPostReloadVerification(existingMarker, {
+        signal: lifecycleAbortControllerRef.current?.signal,
+        isMounted: () => isMountedRef.current,
+      });
       return;
     }
 
@@ -854,7 +888,17 @@ export function PwaServiceWorker() {
   // Service Worker Registration, Messages & Listeners
   // -------------------------------------------------------------
   useEffect(() => {
-    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    isMountedRef.current = true;
+    const abortController = new AbortController();
+    lifecycleAbortControllerRef.current = abortController;
+
+    if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+      return () => {
+        isMountedRef.current = false;
+        abortController.abort();
+        lifecycleAbortControllerRef.current = null;
+      };
+    }
 
     let disposed = false;
     let registration: ServiceWorkerRegistration | null = null;
@@ -863,7 +907,10 @@ export function PwaServiceWorker() {
     // Check if we just booted from a pending reload marker
     const pendingMarker = getReloadPendingMarker();
     if (pendingMarker) {
-      void performPostReloadVerification(pendingMarker);
+      void performPostReloadVerification(pendingMarker, {
+        signal: abortController.signal,
+        isMounted: () => isMountedRef.current,
+      });
     }
 
     const observeWorker = (worker: ServiceWorker) => {
@@ -1081,6 +1128,9 @@ export function PwaServiceWorker() {
 
     return () => {
       disposed = true;
+      isMountedRef.current = false;
+      abortController.abort();
+      lifecycleAbortControllerRef.current = null;
       clearActivationTimer();
       clearInterval(periodicTimer);
       unsubscribeRoute();
