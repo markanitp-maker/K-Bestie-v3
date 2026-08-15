@@ -352,7 +352,19 @@ const expectController = async (
   target: PwaTargetConfig,
 ): Promise<void> => {
   await expect
-    .poll(async () => getSwIdentityFromPage(page, "controller"), {
+    .poll(async () => {
+      try {
+        return await getSwIdentityFromPage(page, "controller");
+      } catch (error: unknown) {
+        if (
+          error instanceof Error &&
+          error.message.includes("Execution context was destroyed")
+        ) {
+          return null;
+        }
+        throw error;
+      }
+    }, {
       timeout: 30_000,
     })
     .toMatchObject({
