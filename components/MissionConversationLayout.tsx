@@ -41,6 +41,8 @@ export interface MissionConversationLayoutProps {
   onSendText: () => void;
   isTextMode: boolean;
   onToggleTextMode: () => void;
+  canEnterTextMode?: boolean;
+  canSendText?: boolean;
 
   hasError?: boolean;
   
@@ -70,6 +72,8 @@ export function MissionConversationLayout({
   onSendText,
   isTextMode,
   onToggleTextMode,
+  canEnterTextMode = false,
+  canSendText = false,
   hasError,
   entryStatus = "active",
   onStartMission,
@@ -471,6 +475,8 @@ export function MissionConversationLayout({
           <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center" style={{ paddingBottom: `calc(clamp(18px,2.5dvh,24px) + ${bottomSafeAreaInset})` }}>
             {isTextMode ? (
               <div
+                data-ui="mission-text-composer"
+                data-send-ready={canSendText ? "true" : "false"}
                 className="w-full min-w-0 flex gap-2 box-border"
                 style={{
                   paddingLeft: "max(16px, env(safe-area-inset-left))",
@@ -492,7 +498,7 @@ export function MissionConversationLayout({
                 />
                 <button
                   onClick={onSendText}
-                  disabled={!textInput.trim() || isClosing || entryStatus !== "active"}
+                  disabled={!canSendText || !textInput.trim() || isClosing || entryStatus !== "active"}
                   className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center text-white disabled:opacity-40 cursor-pointer shadow-md bg-[var(--color-k-orange)] active:scale-95 transition-all"
                   aria-label="전송"
                 >
@@ -513,7 +519,7 @@ export function MissionConversationLayout({
                 <div className="absolute left-[clamp(8px,2vw,16px)] flex w-[clamp(112px,29vw,128px)] flex-col items-center gap-1">
                   <button
                     onClick={onToggleTextMode}
-                    disabled={isClosing || entryStatus !== "active" || isRecording}
+                    disabled={isClosing || entryStatus !== "active" || isRecording || !canEnterTextMode}
                     className="w-[clamp(46px,12vw,50px)] h-[clamp(46px,12vw,50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     aria-label="텍스트로 답하기"
                     aria-describedby={isRecording ? "keyboard-recording-hint" : undefined}

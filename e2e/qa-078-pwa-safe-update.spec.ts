@@ -539,28 +539,36 @@ const activateOnSafePages = async (
 };
 
 const waitForMissionSendReady = async (page: Page): Promise<void> => {
-  const input = page.getByPlaceholder("케이에게 텍스트로 답하기...");
-  await expect(input).toBeVisible({ timeout: 45_000 });
-
-  const resumeButton = page.getByRole("button", {
+  const resumeErrorOverlay = page.getByRole("button", {
     name: /▶️?\s*미션 이어하기/,
   });
-  const statusPanel = page.locator('[data-ui="text-mode-voice-state"]');
+  const currentBubble = page.locator('[data-ui="current-bubble"]');
+  const composer = page.locator('[data-ui="mission-text-composer"]');
+  const input = page.getByPlaceholder("케이에게 텍스트로 답하기...");
 
-  await expect
-    .poll(
-      async () => {
-        if (await resumeButton.isVisible().catch(() => false)) {
-          await resumeButton.click().catch(() => {});
-        }
-        const text = (await statusPanel.textContent().catch(() => "")) ?? "";
-        return text.includes("대기 중");
-      },
-      { timeout: 45_000, intervals: [200, 500, 1000] },
-    )
-    .toBe(true);
+  const overlayWatcher = resumeErrorOverlay
+    .waitFor({ state: "visible", timeout: 45_000 })
+    .then(() => {
+      throw new Error(
+        "Mission resume error overlay (▶️ 미션 이어하기) became visible during mission send-ready wait",
+      );
+    });
+  overlayWatcher.catch(() => {});
 
-  await expect(input).toBeEnabled({ timeout: 10_000 });
+  const readinessFlow = (async () => {
+    await expect(input).toBeVisible({ timeout: 45_000 });
+    await expect(currentBubble).not.toHaveText(
+      "케이가 질문을 준비하고 있어요...",
+      { timeout: 45_000 },
+    );
+    await expect(composer).toHaveAttribute("data-send-ready", "true", {
+      timeout: 45_000,
+    });
+    await expect(input).toBeEnabled({ timeout: 10_000 });
+  })();
+
+  await Promise.race([readinessFlow, overlayWatcher]);
+  await expect(resumeErrorOverlay).toBeHidden();
 };
 
 const enterMissionTextMode = async (page: Page, origin: string): Promise<void> => {
@@ -569,18 +577,35 @@ const enterMissionTextMode = async (page: Page, origin: string): Promise<void> =
     name: /새 미션 시작하기|진행 중인 미션 이어하기/,
   });
   await expect(entryButton).toBeVisible({ timeout: 45_000 });
-  await entryButton.click();
-  const textModeButton = page.getByRole("button", {
-    name: "텍스트로 답하기",
-    exact: true,
+
+  const resumeErrorOverlay = page.getByRole("button", {
+    name: /▶️?\s*미션 이어하기/,
   });
-  await expect(textModeButton).toBeVisible({ timeout: 45_000 });
-  await expect(textModeButton).toBeEnabled({ timeout: 45_000 });
-  await textModeButton.click();
-  await expect(
-    page.getByPlaceholder("케이에게 텍스트로 답하기..."),
-  ).toBeVisible({ timeout: 45_000 });
-  await waitForMissionSendReady(page);
+  const overlayWatcher = resumeErrorOverlay
+    .waitFor({ state: "visible", timeout: 45_000 })
+    .then(() => {
+      throw new Error(
+        "Mission resume error overlay (▶️ 미션 이어하기) became visible during mission readiness flow",
+      );
+    });
+  overlayWatcher.catch(() => {});
+
+  const readinessFlow = (async () => {
+    await entryButton.click();
+
+    const textModeButton = page.getByRole("button", {
+      name: "텍스트로 답하기",
+      exact: true,
+    });
+    await expect(textModeButton).toBeVisible({ timeout: 45_000 });
+    await expect(textModeButton).toBeEnabled({ timeout: 45_000 });
+    await textModeButton.click();
+
+    await waitForMissionSendReady(page);
+  })();
+
+  await Promise.race([readinessFlow, overlayWatcher]);
+  await expect(resumeErrorOverlay).toBeHidden();
 };
 
 const sendMissionText = async (page: Page, text: string): Promise<Request> => {

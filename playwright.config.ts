@@ -53,6 +53,12 @@ export default defineConfig({
         screenshot: "off",
         trace: "off",
         video: "off",
+        launchOptions: {
+          args: [
+            "--use-fake-ui-for-media-stream",
+            "--use-fake-device-for-media-stream",
+          ],
+        },
       },
     },
   ],

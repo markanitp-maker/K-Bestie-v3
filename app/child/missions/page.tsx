@@ -2185,6 +2185,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
   const switchToText = useCallback(() => {
     if (missionStateRef.current !== "active") return;
+    if (voice.status !== "live") return;
     // 수동 녹음 중에는 이미 activityStart와 PCM이 전송되고 있다. 이 턴을 아이 답변으로
     // 확정하지 않은 채 overlay로 전환할 수 없으므로, 먼저 마이크 버튼으로 녹음을 끝내게 한다.
     if (isRecordingRef.current || (isLiveMode && live.hasPendingAutoSpeech())) return;
@@ -2207,7 +2208,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     }
 
     setMode("text");
-  }, [live, isLiveMode, sttTts]);
+  }, [live, isLiveMode, sttTts, voice.status]);
 
   const switchToVoice = useCallback(() => {
     if (missionStateRef.current !== "active") return;
@@ -3795,6 +3796,8 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         onSendText={handleSendText}
         isTextMode={mode === "text"}
         onToggleTextMode={() => (mode === "text" ? switchToVoice() : switchToText())}
+        canEnterTextMode={voice.status === "live"}
+        canSendText={mode === "text" && voice.canSendTypedText()}
         entryStatus={entryStatus}
         onStartMission={handleStartMission}
         onResumeMission={handleResumeMission}
