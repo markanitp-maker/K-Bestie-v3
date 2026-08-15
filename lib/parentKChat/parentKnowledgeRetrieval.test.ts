@@ -51,14 +51,25 @@ test("후속 질문은 직전 부모-K 주제를 검색어에 유지한다", () 
   ]);
   assert.match(effective, /야외/);
   assert.match(effective, /원래도 그래/);
+  assert.doesNotMatch(effective, /최근 리포트/);
 });
 
 test("daily/dashboard 중복은 하나로 합치고 출처·날짜 구조를 보존한다", () => {
-  const base = { date: "2026-08-07", area: "마음 흐름", content: "야외에서 제일 즐거워해요", relevance: 0, confidence: 0.85 };
+  const base = {
+    date: "2026-08-07",
+    area: "마음 흐름",
+    content: "야외에서 제일 즐거워해요",
+    relevance: 0,
+    confidence: 0.85,
+    businessDate: "2026-08-07",
+    sourceDate: "2026-08-07",
+    temporalMatch: "NONE" as const,
+    primary: true,
+  };
   const evidence: ParentKnowledgeEvidence[] = [
     { ...base, id: "daily", source: "daily_report" },
     { ...base, id: "dashboard", source: "dashboard" },
-    { id: "memory", source: "memory_fact", date: "2026-08-01", area: "interest", content: "로블록스 게임을 즐겨 함", relevance: 0.8, confidence: 0.9 },
+    { id: "memory", source: "memory_fact", date: "2026-08-01", area: "interest", content: "로블록스 게임을 즐겨 함", relevance: 0.8, confidence: 0.9, businessDate: null, sourceDate: "2026-08-01", temporalMatch: "NONE", primary: true },
   ];
   const ranked = rankAndDedupeParentEvidence("야외에서 노는 걸 좋아해?", evidence);
   assert.equal(ranked.filter((item) => item.content === base.content).length, 1);
@@ -91,4 +102,66 @@ test("모든 source는 동일한 검증 childId만 조회하고 형제자매 ID�
   assert.deepEqual(requestedChildIds, ["child-a", "child-a", "child-a"]);
   assert.equal(result.status, "ok");
   if (result.status === "ok") assert.equal(result.evidence.every((item) => item.id.includes("child-b") === false), true);
+});
+
+test("EXACT_DATE는 daily loader에 target date를 전달하고 다른 날짜 memory를 primary에서 제외한다", async () => {
+  const requestedKinds: string[] = [];
+  const result = await retrieveParentKContext({} as any, {
+    childId: "child-a",
+    query: "어제 뭐 했어?",
+    allowDetailedReports: false,
+    now: new Date("2026-08-10T03:00:00.000Z"),
+  }, {
+    loadDaily: async (_db, _childId, temporal) => {
+      requestedKinds.push(`daily:${temporal.kind}:${temporal.targetDate}`);
+      return { rows: [{ id: "d1", business_date: "2026-08-09", summary_line: "놀이터에서 즐겁게 놀았어요" }], error: null };
+    },
+    loadWeekly: async (_db, _childId, temporal) => {
+      requestedKinds.push(`weekly:${temporal.kind}`);
+      return { rows: [], error: null };
+    },
+    searchMemory: async () => ({
+      status: "ok",
+      facts: [{ factId: "m1", factType: "interest", content: "8월 1일에는 게임을 했어요", confidence: 1, importance: 1, sourceDate: "2026-08-01", sourceCount: 1, similarity: 0.99 }],
+    }),
+  });
+
+  assert.deepEqual(requestedKinds, ["daily:EXACT_DATE:2026-08-09", "weekly:EXACT_DATE"]);
+  assert.equal(result.status, "ok");
+  if (result.status === "ok") {
+    assert.equal(result.evidence.every((item) => item.date.includes("2026-08-09")), true);
+    assert.equal(result.evidence.some((item) => item.source === "memory_fact"), false);
+    assert.equal(result.temporal.targetDate, "2026-08-09");
+  }
+});
+
+test("EXACT_DATE primary 조회 실패는 다른 source가 있어도 SYSTEM error로 보존한다", async () => {
+  const result = await retrieveParentKContext({} as any, {
+    childId: "child-a",
+    query: "8월 9일 뭐 했어?",
+    allowDetailedReports: false,
+    now: new Date("2026-08-10T03:00:00.000Z"),
+  }, {
+    loadDaily: async () => ({ rows: [], error: "daily unavailable" }),
+    loadWeekly: async () => ({ rows: [], error: null }),
+    searchMemory: async () => ({
+      status: "ok",
+      facts: [{ factId: "m1", factType: "interest", content: "게임을 했어요", confidence: 1, importance: 1, sourceDate: "2026-08-09", sourceCount: 1, similarity: 0.99 }],
+    }),
+  });
+  assert.equal(result.status, "error");
+});
+
+test("EXACT_DATE daily 조회가 정상 0건이면 optional memory 장애와 무관하게 NO_DATA다", async () => {
+  const result = await retrieveParentKContext({} as any, {
+    childId: "child-a",
+    query: "8월 9일 뭐 했어?",
+    allowDetailedReports: false,
+    now: new Date("2026-08-10T03:00:00.000Z"),
+  }, {
+    loadDaily: async () => ({ rows: [], error: null }),
+    loadWeekly: async () => ({ rows: [], error: null }),
+    searchMemory: async () => ({ status: "error", reason: "embedding unavailable" }),
+  });
+  assert.equal(result.status, "no_data");
 });

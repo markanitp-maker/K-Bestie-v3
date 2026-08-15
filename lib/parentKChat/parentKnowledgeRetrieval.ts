@@ -1,12 +1,22 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { searchMemoryFactsDetailed, type SearchMemoryFactsResult } from "@/lib/memory/vectorRetrieval";
 import { meaningfulReportSectionContent } from "@/lib/reports/reportSectionAvailability";
+import {
+  parentSourcePriority,
+  resolveTemporalFromUserContext,
+  temporalMatchForEvidence,
+  type ParentTemporalMatch,
+  type ParentTemporalResolution,
+} from "@/lib/parentKChat/temporalQuery";
 
 export type ParentKnowledgeSource = "daily_report" | "dashboard" | "weekly_report" | "detailed_report" | "memory_fact";
 
 export interface ParentConversationTurn {
   role: "user" | "k";
   text: string;
+  askChildProposal?: string | null;
+  lastUnknownDetail?: string | null;
+  targetDate?: string | null;
 }
 
 export interface ParentKnowledgeEvidence {
@@ -17,12 +27,16 @@ export interface ParentKnowledgeEvidence {
   content: string;
   relevance: number;
   confidence: number;
+  businessDate: string | null;
+  sourceDate: string | null;
+  temporalMatch: ParentTemporalMatch;
+  primary: boolean;
 }
 
 export type ParentKnowledgeRetrievalResult =
-  | { status: "ok"; evidence: ParentKnowledgeEvidence[]; contextText: string; effectiveQuery: string }
-  | { status: "no_data"; effectiveQuery: string }
-  | { status: "error"; reason: string; effectiveQuery: string };
+  | { status: "ok"; evidence: ParentKnowledgeEvidence[]; contextText: string; effectiveQuery: string; temporal: ParentTemporalResolution }
+  | { status: "no_data"; effectiveQuery: string; temporal: ParentTemporalResolution }
+  | { status: "error"; reason: string; effectiveQuery: string; temporal: ParentTemporalResolution };
 
 interface RetrieveOptions {
   childId: string;
@@ -30,6 +44,8 @@ interface RetrieveOptions {
   conversationContext?: ParentConversationTurn[];
   allowDetailedReports: boolean;
   topK?: number;
+  now?: Date;
+  temporal?: ParentTemporalResolution;
 }
 
 export interface RetrievalDependencies {
@@ -91,6 +107,7 @@ export function buildEffectiveParentQuery(query: string, context: ParentConversa
   const followUp = /^(원래도|평소에도|계속|자주|그것도|그런|그래|왜|어때|정말)/.test(current) || current.length <= 12;
   if (!followUp) return current;
   const recent = context
+    .filter((turn) => turn.role === "user")
     .slice(-4)
     .map((turn) => turn.text.trim().slice(0, 240))
     .filter(Boolean);
@@ -119,7 +136,8 @@ export function scoreParentEvidence(query: string, evidence: Pick<ParentKnowledg
   }
   if (matches === 0) return 0;
   const base = matches / Math.min(Math.max(terms.length, 1), 6);
-  const date = new Date(`${evidence.date}T00:00:00Z`);
+  const evidenceDate = evidence.date.match(/20\d{2}-\d{2}-\d{2}/)?.[0] ?? evidence.date;
+  const date = new Date(`${evidenceDate}T00:00:00Z`);
   const ageDays = Number.isNaN(date.getTime()) ? 365 : Math.max(0, (now.getTime() - date.getTime()) / 86_400_000);
   const recency = Math.max(0, 0.14 - ageDays * 0.002);
   return Math.min(1, Number((base + recency).toFixed(4)));
@@ -128,7 +146,20 @@ export function scoreParentEvidence(query: string, evidence: Pick<ParentKnowledg
 function evidenceFromText(source: ParentKnowledgeSource, recordId: string, date: string, area: string, value: unknown): ParentKnowledgeEvidence | null {
   const content = safeContent(value);
   if (!content) return null;
-  return { id: `${source}:${recordId}:${area}`, source, date, area, content, relevance: 0, confidence: 0.85 };
+  const sourceDate = date.match(/20\d{2}-\d{2}-\d{2}/)?.[0] ?? null;
+  return {
+    id: `${source}:${recordId}:${area}`,
+    source,
+    date,
+    area,
+    content,
+    relevance: 0,
+    confidence: 0.85,
+    businessDate: source === "daily_report" || source === "dashboard" || source === "detailed_report" ? sourceDate : null,
+    sourceDate,
+    temporalMatch: "NONE",
+    primary: true,
+  };
 }
 
 export function extractReportEvidence(dailyRows: any[], weeklyRows: any[], allowDetailedReports: boolean): ParentKnowledgeEvidence[] {
@@ -189,18 +220,32 @@ export function extractReportEvidence(dailyRows: any[], weeklyRows: any[], allow
   return evidence;
 }
 
-function sourcePriority(source: ParentKnowledgeSource, query: string): number {
-  const normalizedQuery = compact(query);
-  if (/이번주|주간|지난주/.test(normalizedQuery) && source === "weekly_report") return -2;
-  if (/원래|평소|계속|자주/.test(normalizedQuery) && source === "memory_fact") return -2;
-  return { daily_report: 0, dashboard: 1, weekly_report: 2, detailed_report: 3, memory_fact: 4 }[source];
-}
-
-export function rankAndDedupeParentEvidence(query: string, evidence: ParentKnowledgeEvidence[], topK = 10): ParentKnowledgeEvidence[] {
+export function rankAndDedupeParentEvidence(
+  query: string,
+  evidence: ParentKnowledgeEvidence[],
+  topK = 10,
+  temporal: ParentTemporalResolution = resolveTemporalFromUserContext(query, []),
+): ParentKnowledgeEvidence[] {
   const ranked = evidence
-    .map((item) => ({ ...item, relevance: item.source === "memory_fact" ? item.relevance : scoreParentEvidence(query, item) }))
-    .filter((item) => item.relevance >= 0.16)
-    .sort((a, b) => b.relevance - a.relevance || sourcePriority(a.source, query) - sourcePriority(b.source, query) || b.date.localeCompare(a.date));
+    .map((item) => {
+      const temporalMatch = temporalMatchForEvidence(item.date, temporal);
+      const semanticRelevance = item.source === "memory_fact" ? item.relevance : scoreParentEvidence(query, item);
+      const dateScopedRelevance = temporalMatch === "EXACT" && item.source !== "memory_fact"
+        ? Math.max(semanticRelevance, 0.16)
+        : semanticRelevance;
+      return {
+        ...item,
+        temporalMatch,
+        primary: temporalMatch !== "MISMATCH",
+        relevance: dateScopedRelevance,
+      };
+    })
+    .filter((item) => item.primary && item.relevance >= 0.16)
+    .sort((a, b) =>
+      parentSourcePriority(temporal.kind, a.source) - parentSourcePriority(temporal.kind, b.source)
+      || b.relevance - a.relevance
+      || b.date.localeCompare(a.date)
+    );
 
   const result: ParentKnowledgeEvidence[] = [];
   const seen = new Set<string>();
@@ -228,16 +273,25 @@ export function formatParentKnowledgeContext(evidence: ParentKnowledgeEvidence[]
   return output.trim();
 }
 
-async function loadDailyReports(db: SupabaseClient, childId: string): Promise<{ rows: any[]; error: string | null }> {
+async function loadDailyReports(
+  db: SupabaseClient,
+  childId: string,
+  temporal: ParentTemporalResolution,
+): Promise<{ rows: any[]; error: string | null }> {
   const rows: any[] = [];
   const foundDashboardFields = new Set<string>();
   const pageSize = 100;
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await db
+    let query = db
       .from("daily_reports")
       .select("id, child_id, business_date, created_at, summary_line, parent_guide, dashboard_cards, school_academy_life, peer_friendship, emotion_hint, interests_preferences, study_concerns, digital_content_interests, future_dreams, teacher_adults, recurring_stories")
       .eq("child_id", childId)
-      .is("deleted_at", null)
+      .is("deleted_at", null);
+    if (temporal.kind === "EXACT_DATE" && temporal.targetDate) query = query.eq("business_date", temporal.targetDate);
+    if ((temporal.kind === "DATE_RANGE" || temporal.kind === "RECENT") && temporal.dateRange) {
+      query = query.gte("business_date", temporal.dateRange.from).lte("business_date", temporal.dateRange.to);
+    }
+    const { data, error } = await query
       .order("business_date", { ascending: false })
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
@@ -253,11 +307,20 @@ async function loadDailyReports(db: SupabaseClient, childId: string): Promise<{ 
   return { rows, error: null };
 }
 
-async function loadWeeklyReports(db: SupabaseClient, childId: string): Promise<{ rows: any[]; error: string | null }> {
-  const { data, error } = await db.from("weekly_summaries")
+async function loadWeeklyReports(
+  db: SupabaseClient,
+  childId: string,
+  temporal: ParentTemporalResolution,
+): Promise<{ rows: any[]; error: string | null }> {
+  if (temporal.kind === "EXACT_DATE") return { rows: [], error: null };
+  let query = db.from("weekly_summaries")
     .select("id, child_id, week_start, week_end, created_at, summary_text, highlights, parent_guide, weekend_activity_recommendation, detail_text, detail_dashboard_cards")
     .eq("child_id", childId)
-    .is("deleted_at", null)
+    .is("deleted_at", null);
+  if ((temporal.kind === "DATE_RANGE" || temporal.kind === "RECENT") && temporal.dateRange) {
+    query = query.lte("week_start", temporal.dateRange.to).gte("week_end", temporal.dateRange.from);
+  }
+  const { data, error } = await query
     .order("week_start", { ascending: false })
     .limit(8);
   return { rows: Array.isArray(data) ? data : [], error: error?.message ?? null };
@@ -265,14 +328,20 @@ async function loadWeeklyReports(db: SupabaseClient, childId: string): Promise<{
 
 export async function retrieveParentKContext(db: SupabaseClient, options: RetrieveOptions, dependencies: RetrievalDependencies = {}): Promise<ParentKnowledgeRetrievalResult> {
   const effectiveQuery = buildEffectiveParentQuery(options.query, options.conversationContext);
+  const temporal = options.temporal ?? resolveTemporalFromUserContext(options.query, options.conversationContext ?? [], options.now);
   const searchMemory = dependencies.searchMemory ?? searchMemoryFactsDetailed;
   const loadDaily = dependencies.loadDaily ?? loadDailyReports;
   const loadWeekly = dependencies.loadWeekly ?? loadWeeklyReports;
-  const [dailyResult, weeklyResult, memoryResult] = await Promise.all([
-    loadDaily(db, options.childId),
-    loadWeekly(db, options.childId),
+  const settled = await Promise.allSettled([
+    loadDaily(db, options.childId, temporal),
+    loadWeekly(db, options.childId, temporal),
     searchMemory(db, options.childId, effectiveQuery, 6),
   ]);
+  const dailyResult = settled[0].status === "fulfilled" ? settled[0].value : { rows: [], error: "daily_report_exception" };
+  const weeklyResult = settled[1].status === "fulfilled" ? settled[1].value : { rows: [], error: "weekly_report_exception" };
+  const memoryResult: SearchMemoryFactsResult = settled[2].status === "fulfilled"
+    ? settled[2].value
+    : { status: "error", reason: "memory_exception" };
 
   const reportEvidence = extractReportEvidence(dailyResult.rows, weeklyResult.rows, options.allowDetailedReports);
   const memoryEvidence = memoryResult.status === "ok" ? memoryResult.facts.map((fact) => ({
@@ -283,17 +352,24 @@ export async function retrieveParentKContext(db: SupabaseClient, options: Retrie
     content: fact.content,
     relevance: Math.max(Number(fact.similarity || 0), Number(fact.confidence || 0) * 0.5),
     confidence: Number(fact.confidence || 0),
+    businessDate: null,
+    sourceDate: String(fact.sourceDate).slice(0, 10),
+    temporalMatch: temporalMatchForEvidence(String(fact.sourceDate).slice(0, 10), temporal),
+    primary: true,
   })) : [];
 
-  const evidence = rankAndDedupeParentEvidence(effectiveQuery, [...reportEvidence, ...memoryEvidence], options.topK ?? 10);
-  if (evidence.length > 0) return { status: "ok", evidence, contextText: formatParentKnowledgeContext(evidence), effectiveQuery };
+  const evidence = rankAndDedupeParentEvidence(effectiveQuery, [...reportEvidence, ...memoryEvidence], options.topK ?? 10, temporal);
+  const exactPrimaryFailed = temporal.kind === "EXACT_DATE" && Boolean(dailyResult.error);
+  if (exactPrimaryFailed) return { status: "error", reason: dailyResult.error || "daily_report_error", effectiveQuery, temporal };
+  if (evidence.length > 0) return { status: "ok", evidence, contextText: formatParentKnowledgeContext(evidence), effectiveQuery, temporal };
 
   const reportFailed = Boolean(dailyResult.error || weeklyResult.error);
-  if (reportFailed || memoryResult.status === "error") {
+  const memoryFailureAffectsAnswer = temporal.kind !== "EXACT_DATE" && memoryResult.status === "error";
+  if (reportFailed || memoryFailureAffectsAnswer) {
     const reasons = [dailyResult.error, weeklyResult.error, memoryResult.status === "error" ? memoryResult.reason : null].filter(Boolean);
-    return { status: "error", reason: reasons.join("|") || "retrieval_error", effectiveQuery };
+    return { status: "error", reason: reasons.join("|") || "retrieval_error", effectiveQuery, temporal };
   }
-  return { status: "no_data", effectiveQuery };
+  return { status: "no_data", effectiveQuery, temporal };
 }
 
 export type { SearchMemoryFactsResult };

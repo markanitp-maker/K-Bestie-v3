@@ -24,6 +24,9 @@ export interface IntentClassification {
 export interface ParentQueryContextTurn {
   role: "user" | "k";
   text: string;
+  askChildProposal?: string | null;
+  lastUnknownDetail?: string | null;
+  targetDate?: string | null;
 }
 
 export interface AskChildProposalContext {
@@ -32,6 +35,7 @@ export interface AskChildProposalContext {
 }
 
 const CONTEXTUAL_QUERY_REQUEST_PATTERN = /^(그럼|그러면|그렇다면|그걸|그거|직접)(?:\s|,)/;
+const PLAIN_QUERY_REQUEST_PATTERN = /^(?:그럼\s*)?(?:아이(?:에게)?\s*)?(?:물어\s*봐(?:\s*줘|\s*줄래)?|여쭤\s*봐(?:\s*줘)?)[.!?\s]*$/;
 
 const PROPOSAL_MAX_LENGTH = 300;
 const REQUESTED_TOPIC_MAX_LENGTH = 120;
@@ -67,6 +71,19 @@ export function buildAskChildProposal(
       proposal: `${pendingProposal.slice(0, pendingBudget)}${suffix}`,
       requestedTopic: pendingProposal.slice(0, REQUESTED_TOPIC_MAX_LENGTH),
     };
+  }
+
+  if (PLAIN_QUERY_REQUEST_PATTERN.test(currentRequest)) {
+    const previousUnknown = [...conversationContext]
+      .reverse()
+      .find((turn) => turn.role === "k" && (turn.askChildProposal || turn.lastUnknownDetail));
+    if (previousUnknown) {
+      const detail = (previousUnknown.lastUnknownDetail || previousUnknown.askChildProposal || "").trim();
+      return {
+        proposal: (previousUnknown.askChildProposal || detail).slice(0, PROPOSAL_MAX_LENGTH),
+        requestedTopic: detail.slice(0, REQUESTED_TOPIC_MAX_LENGTH),
+      };
+    }
   }
 
   const previousUserTurn = [...conversationContext]
@@ -121,6 +138,9 @@ const FEEDBACK_PATTERNS = [
   /다시\s*답해/, // "다시 답해 줘"(§10.1 문맥 기반 FEEDBACK) — "다시 말해 줘"(일반대화)와 구분
   /내가\s*묻는\s*말에\s*답해/,
   /안\s*들려\?|안\s*들리니/, // "내 말 안 들려?"류 지적
+  /아니[,\s]/,
+  /라고\s*했잖아|랬잖아/,
+  /날짜가\s*왜|다른\s*날짜/,
 ];
 
 // 일반 대화 — 인사·감사·연결확인·소소한 확인.
