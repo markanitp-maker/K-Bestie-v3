@@ -17,9 +17,58 @@ function koreanDate(value: string): string {
 
 export function answerForUnavailable(status: "NO_DATA" | "SYSTEM_ERROR", temporal: ParentTemporalResolution): string {
   if (status === "SYSTEM_ERROR") return "지금은 기록을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.";
-  if (temporal.kind === "EXACT_DATE" && temporal.targetDate) return "그 날짜에 확인되는 기록이 없어요.";
+  if (temporal.kind === "EXACT_DATE" && temporal.targetDate) return `${koreanDate(temporal.targetDate)}에 확인되는 기록이 없어요.`;
+  if (temporal.label) return `${temporal.label}에 확인되는 기록이 없어요.`;
   return "그 내용은 아직 확인되는 기록에 없어요.";
 }
+
+function attachTopicParticle(word: string): string {
+  const trimmed = word.trim();
+  if (!trimmed) return "그 날은";
+  const lastChar = trimmed[trimmed.length - 1];
+  const code = lastChar.charCodeAt(0);
+  if (code >= 0xac00 && code <= 0xd7a3) {
+    const hasBatchim = (code - 0xac00) % 28 !== 0;
+    return `${trimmed}${hasBatchim ? "은" : "는"}`;
+  }
+  if (/[0-9]/.test(lastChar)) {
+    const batchimDigits = ["0", "1", "3", "6", "7", "8"];
+    const hasBatchim = batchimDigits.includes(lastChar);
+    return `${trimmed}${hasBatchim ? "은" : "는"}`;
+  }
+  return `${trimmed}은`;
+}
+
+/** 기록 조회가 아니라 "그 날이 며칠인지" 자체를 묻는 질문인지 판정한다. */
+export function isDateFactQuestion(text: string): boolean {
+  const normalized = text.normalize("NFKC").replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+
+  // 1. 아이의 활동/기록/상태 조회나 일반 요청은 날짜 사실 질문에서 제외
+  const EXCLUDE_PATTERN = /(?:기록|리포트|보고서|내용|활동|대화|일과|일기|숙제|학교|학원|친구|서아|서현|우리\s*애|아이|딸|아들|뭐했|뭐\s*했|뭐\s*먹|어땠|좋아|놀았|갔|했어|했니|했는지|물어|취소)/;
+  if (EXCLUDE_PATTERN.test(normalized)) {
+    return false;
+  }
+
+  // 2. 날짜/시점 키워드와 질문/인지 여부 표현 결합 확인
+  const hasDateTarget = /(?:어제|오늘|그제|그저께|내일|그날|그\s*날|그때|그\s*때|날짜|일자)/.test(normalized);
+  const hasDateAsk = /(?:며칠|몇\s*일|몇일|언제)/.test(normalized);
+  const hasDateKnowledge = /(?:날짜|일자).*(?:모르|몰라|알아|알고|알지|맞춰|맞혀|뭐야|뭔데|어떻게\s*돼|알려)/.test(normalized);
+  const hasTargetKnowledge = /(?:어제|오늘|그제|그저께|그날|그\s*날|그때|그\s*때).*(?:날짜).*(?:모르|몰라|알아|알고|알지)/.test(normalized);
+
+  if (hasDateTarget && hasDateAsk) return true;
+  if (hasDateKnowledge || hasTargetKnowledge) return true;
+
+  return false;
+}
+
+/** 날짜 자체 질문에 대한 답. 해석된 날짜를 밝힌다. temporal이 날짜로 확정되지 않으면 null. */
+export function answerForDateFact(temporal: ParentTemporalResolution): string | null {
+  if (!temporal.targetDate) return null;
+  const subject = temporal.label ? attachTopicParticle(temporal.label) : "그 날은";
+  return `${subject} ${koreanDate(temporal.targetDate)}이에요.`;
+}
+
 
 export function buildAskChildContext(
   parentQuestion: string,

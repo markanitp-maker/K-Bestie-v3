@@ -6,10 +6,12 @@ import { getLlmModel } from "@/lib/llm/modelRouter";
 import { retrieveParentKContext, type ParentConversationTurn } from "@/lib/parentKChat/parentKnowledgeRetrieval";
 import { buildAskChildProposal, classifyParentKChatIntent } from "@/lib/parentKChat/intentClassifier";
 import {
+  answerForDateFact,
   answerForUnavailable,
   buildAskChildContext,
   buildCorrectionRetrievalQuery,
   findPreviousParentInformationQuery,
+  isDateFactQuestion,
   isForbiddenGenericEvidenceFallback,
   partialEvidenceFallback,
 } from "@/lib/parentKChat/answerPolicy";
@@ -350,6 +352,39 @@ export async function POST(request: Request) {
         ? buildCorrectionRetrievalQuery(trimmedQuestion, previousInformationQuery!)
         : trimmedQuestion;
       const resolvedTemporal = resolveTemporalFromUserContext(trimmedQuestion, conversationContext);
+
+      if (isDateFactQuestion(trimmedQuestion)) {
+        const dateFactAnswer = answerForDateFact(resolvedTemporal);
+        if (dateFactAnswer !== null) {
+          logTurn({
+            retrievalAttempted: false,
+            retrievalSource: [],
+            retrievalResultCount: 0,
+            responseMode: "DATE_FACT",
+            fallbackReason: null,
+            temporalKind: resolvedTemporal.kind,
+            targetDate: resolvedTemporal.targetDate,
+          });
+          return NextResponse.json({
+            answerable: true,
+            confidence: 1,
+            answer: dateFactAnswer,
+            suggestedParentQuestion: null,
+            evidenceIds: [],
+            askChildProposal: null,
+            evidenceDateRange: null,
+            intent,
+            retrievalStatus: "NOT_ATTEMPTED",
+            answerStatus: "EVIDENCE_FOUND",
+            requestedTopic: null,
+            requestedArea: null,
+            lastUnknownDetail: null,
+            temporalContext: resolvedTemporal,
+            targetDate: resolvedTemporal.targetDate,
+          });
+        }
+      }
+
       const retrievalResult = await retrieveParentKContext(serviceClient, {
         childId: child_id,
         query: informationQuery,
