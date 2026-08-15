@@ -174,6 +174,13 @@ const PENDING_FOLLOWUP_EDIT_PATTERNS = [
   /부드럽게|딱딱해|다르게\s*해/,
 ];
 
+const NEW_QUERY_PATTERNS = [
+  /어제|오늘|그제|엊그제|지난주|이번주|저번주|요즘|평소|최근|그날/,
+  /(?:\d{4}\s*년\s*)?\d+\s*월\s*\d+\s*일(?:에)?/,
+  /\d+\s*일에/,
+  /(?:뭐\s*했|어땠|어떤|무슨|좋아해|기억에\s*남|있었).*\?[.!\s]*$/,
+];
+
 export function classifyParentKChatIntent(
   rawText: string,
   hasPendingDraft = false
@@ -190,10 +197,14 @@ export function classifyParentKChatIntent(
       if (PENDING_FOLLOWUP_EDIT_PATTERNS.some((p) => p.test(text))) {
         return { intent: "PARENT_QUERY_REQUEST", confidence: 0.9, isFollowUpToPendingDraft: true };
       }
-      // 명시적 후속 신호가 없어도, 새 "물어봐줘"류 요청(완전히 별개의 신규 제안)이
-      // 아니라면 애매한 입력은 여전히 "직전 제안에 대한 보충 설명"으로 취급한다
-      // (§5) — 어차피 부모가 모달에서 최종 확인해야만 실제 등록되므로 안전하다.
-      if (!PARENT_QUERY_REQUEST_PATTERNS.some((p) => p.test(text))) {
+      // 명백한 새 아이 정보 질문(날짜/기간 표현이 있거나 아이 정보 의문형)이면
+      // 초안 수정 catch-all로 삼키지 않고 통과시켜 아래쪽 기본 분기가 판정하게 한다.
+      if (NEW_QUERY_PATTERNS.some((p) => p.test(text))) {
+        // 통과: 아래쪽 기존 분기가 처리
+      } else if (!PARENT_QUERY_REQUEST_PATTERNS.some((p) => p.test(text))) {
+        // 명시적 후속 신호가 없어도, 새 "물어봐줘"류 요청(완전히 별개의 신규 제안)이
+        // 아니라면 애매한 입력은 여전히 "직전 제안에 대한 보충 설명"으로 취급한다
+        // (§5) — 어차피 부모가 모달에서 최종 확인해야만 실제 등록되므로 안전하다.
         return { intent: "PARENT_QUERY_REQUEST", confidence: 0.6, isFollowUpToPendingDraft: true };
       }
     }

@@ -188,3 +188,35 @@ test("plain '물어봐줘'는 직전 미확인 세부 내용과 날짜를 재입
   assert.equal(result.proposal, "2026년 8월 9일에 어떤 장면을 가장 기억하는지");
   assert.equal(result.requestedTopic, "어떤 장면을 가장 기억하는지");
 });
+
+test("hasPendingDraft=true 상태에서 명백한 새 질문은 isFollowUpToPendingDraft가 true가 아니어야 한다", () => {
+  const newQueryCases = [
+    "8월 9일 김서현이는 뭐했어?",
+    "2020년 1월 1일에 김서현이는 뭐했어?",
+    "평소 김서현이는 뭘 좋아해?",
+    "그날 어떤 게 제일 기억에 남았대?",
+  ];
+  for (const text of newQueryCases) {
+    const result = classifyParentKChatIntent(text, true);
+    assert.equal(result.intent, "CHILD_INFORMATION_QUERY");
+    assert.notEqual(result.isFollowUpToPendingDraft, true);
+  }
+});
+
+test("hasPendingDraft=true 상태에서 '물어봐줘'는 신규 제안 요청으로 처리된다", () => {
+  const result = classifyParentKChatIntent("물어봐줘", true);
+  assert.equal(result.intent, "PARENT_QUERY_REQUEST");
+  assert.notEqual(result.isFollowUpToPendingDraft, true);
+});
+
+test("hasPendingDraft=true 상태에서 '좀 더 부드럽게 바꿔줘'는 isFollowUpToPendingDraft === true 여야 한다", () => {
+  const result = classifyParentKChatIntent("좀 더 부드럽게 바꿔줘", true);
+  assert.equal(result.intent, "PARENT_QUERY_REQUEST");
+  assert.equal(result.isFollowUpToPendingDraft, true);
+});
+
+test("hasPendingDraft=true 상태에서 취소 케이스는 여전히 PARENT_QUERY_REQUEST_CANCEL로 판정된다", () => {
+  assert.equal(classifyParentKChatIntent("그 질문은 취소해", true).intent, "PARENT_QUERY_REQUEST_CANCEL");
+  assert.equal(classifyParentKChatIntent("취소할래", true).intent, "PARENT_QUERY_REQUEST_CANCEL");
+});
+
