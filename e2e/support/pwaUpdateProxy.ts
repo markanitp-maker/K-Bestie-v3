@@ -191,16 +191,23 @@ export class PwaUpdateProxy {
   public async stop(): Promise<void> {
     const server = this.server;
     this.server = null;
-    this.portNumber = 0;
-    this.resetFaults();
-    if (!server) return;
+    if (!server) {
+      this.portNumber = 0;
+      this.resetFaults();
+      return;
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) reject(error);
-        else resolve();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) reject(error);
+          else resolve();
+        });
       });
-    });
+    } finally {
+      this.portNumber = 0;
+      this.resetFaults();
+    }
   }
 
   public setTarget(targetName: PwaTargetName): void {

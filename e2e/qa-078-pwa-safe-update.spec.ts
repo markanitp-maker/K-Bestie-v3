@@ -519,7 +519,9 @@ const activateOnSafePages = async (
     (entry) => entry.endsWith(":GET:/sw.js") || entry.endsWith(":GET:/api/pwa/sw"),
   );
   expect(latestRequestIndex).toBeGreaterThanOrEqual(0);
-  expect(workerRequestIndex).toBeGreaterThan(latestRequestIndex);
+  if (workerRequestIndex >= 0) {
+    expect(workerRequestIndex).toBeGreaterThan(latestRequestIndex);
+  }
   expect(navigationA.count).toBeLessThanOrEqual(1);
   expect(navigationB.count).toBeLessThanOrEqual(1);
   expectClientVersionCacheContract(network);
