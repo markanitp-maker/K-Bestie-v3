@@ -123,6 +123,9 @@ export const respondToMissionTurn = async (input: {
   sessionId: string;
   currentUtterance: string;
   sourceTurnId: string;
+  /** clientTurnId — start_mission_turn_v3가 chat_messages.turn_id로 저장하는 canonical ID.
+   * child_message_id(sourceTurnId)와는 다른 값이므로 혼용하지 않는다(005 §3-3). */
+  currentTurnId?: string;
   assessedAt?: string;
   asrConfidence?: number;
   appMode?: "auto" | "manual";
@@ -186,6 +189,7 @@ export const respondToMissionTurn = async (input: {
       mode: "MISSION",
       currentUtterance: input.currentUtterance,
       currentUtteranceAlreadyInSession: true,
+      currentTurnId: input.currentTurnId,
       asrConfidence: input.asrConfidence,
       appMode: input.appMode,
     },

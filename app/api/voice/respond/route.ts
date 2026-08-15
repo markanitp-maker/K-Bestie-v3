@@ -37,11 +37,14 @@ export const runtime = "nodejs";
 //   5) usage_events 과금 로깅, API 응답 포맷 번역
 const LOW_ASR_CONFIDENCE_THRESHOLD = 0.55;
 
-interface HistoryTurn { role: "child" | "k"; text: string }
+/** id는 클라이언트 Turn.id — /api/chat/messages의 turnId, DB chat_messages.turn_id와 동일한
+ * canonical ID다. Same-session Memory에서 현재 turn만 제외하는 데 쓴다(005). */
+interface HistoryTurn { role: "child" | "k"; text: string; id?: string }
 
 function isValidHistoryTurn(value: unknown): value is HistoryTurn {
   if (!value || typeof value !== "object") return false;
   const row = value as Record<string, unknown>;
+  if (row.id !== undefined && typeof row.id !== "string") return false;
   return (row.role === "child" || row.role === "k") && typeof row.text === "string";
 }
 
@@ -138,6 +141,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no child utterance in history" }, { status: 400 });
   }
   const childText = lastChild.text.trim();
+  // 현재 child turn의 canonical ID. /api/chat/messages 저장이 먼저 끝난 경우에도
+  // Same-session Memory가 이 turn을 다시 가져오지 않도록 Engine까지 전달한다(005 §3-2).
+  const currentTurnId =
+    typeof lastChild.id === "string" && lastChild.id.trim() && lastChild.id.length <= 200
+      ? lastChild.id.trim()
+      : undefined;
 
   // Safety preflight — 이 아래의 모든 조기 반환 경로(방학 규칙/기억회상)보다 반드시 먼저
   // 실행한다. 걸리면 그 무엇보다 우선해 즉시 반환한다.
@@ -202,6 +211,7 @@ export async function POST(req: NextRequest) {
       sessionId,
       mode: "FREE_CHAT",
       currentUtterance: childText,
+      currentTurnId,
       asrConfidence: isLowConfidenceAsr ? 0 : 1,
       appMode: body.appMode === "manual" ? "manual" : "auto",
     },

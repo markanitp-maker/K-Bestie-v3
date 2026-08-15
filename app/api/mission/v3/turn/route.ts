@@ -439,6 +439,7 @@ export async function POST(req: NextRequest) {
           sessionId,
           currentUtterance: answerText,
           sourceTurnId: turnRecord.child_message_id,
+          currentTurnId: clientTurnId,
           goals: promptGoals,
           assessments,
           previousPromptedGoalId: started.previous_prompted_goal_id,

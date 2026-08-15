@@ -181,6 +181,7 @@ export async function respond(
       childId: input.childId,
       sessionId: input.sessionId,
       currentUtterance: input.currentUtterance,
+      currentTurnId: input.currentTurnId,
     }),
     loadCorePersonaContext(deps.db, input.childId),
   ]);

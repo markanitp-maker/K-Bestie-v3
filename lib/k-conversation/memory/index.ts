@@ -22,6 +22,8 @@ export interface RelationshipMemoryInput {
   childId: string;
   sessionId: string | null | undefined;
   currentUtterance: string;
+  /** 현재 child turn의 canonical turn_id. Same-session Source에서 이 turn만 제외한다. */
+  currentTurnId?: string | null;
 }
 
 const MAX_TEXT = 500;
@@ -40,7 +42,7 @@ export async function loadRelationshipMemory(
   // AGENTS.md 병렬 호출 하드룰: Promise.all 금지, Promise.allSettled 필수 — 하위 tier가
   // 내부적으로 fail-open이더라도 이 계약 자체는 지켜야 한다(codex-rv 지적).
   const [sameSessionSettled, sameDaySettled, longTermSettled] = await Promise.allSettled([
-    fetchSameSessionTurns(db, input.childId, input.sessionId),
+    fetchSameSessionTurns(db, input.childId, input.sessionId, input.currentTurnId),
     fetchSameDayTurns(db, input.childId, input.sessionId),
     queryText
       ? fetchLongTermMemory(db, input.childId, queryText)
