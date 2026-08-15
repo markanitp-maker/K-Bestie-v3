@@ -14,6 +14,7 @@ const CASES: Array<[string, "GENERAL_CONVERSATION" | "FEEDBACK_OR_CORRECTION" | 
   ["서현이 이야기하기 전에 내 말 잘 들리는지 확인할게", "GENERAL_CONVERSATION"],
   ["어제 학교에서 무슨 일 있었어?", "CHILD_INFORMATION_QUERY"],
   ["다시 답해 줘", "FEEDBACK_OR_CORRECTION"],
+  ["아니, 어제라고 했잖아. 날짜가 왜 달라?", "FEEDBACK_OR_CORRECTION"],
   // requests/request-parent-k-query-router-error-analysis-dev-prod.md 가설 A 확정
   ["이번 주말에 뭐 하고 싶은지 물어봐줘", "PARENT_QUERY_REQUEST"],
   ["이번 주 뭐하고 놀았으면 좋은지 물어봐", "PARENT_QUERY_REQUEST"],
@@ -169,4 +170,21 @@ test("명시적인 새 질문 요청은 이전 주제로 바꾸지 않는다", (
 
   assert.equal(result.proposal, "이번 주말에 뭐 하고 싶은지 물어봐줘");
   assert.equal(result.requestedTopic, "이번 주말에 뭐 하고 싶은지 물어봐줘");
+});
+
+test("plain '물어봐줘'는 직전 미확인 세부 내용과 날짜를 재입력 없이 승계한다", () => {
+  const result = buildAskChildProposal(
+    "물어봐줘",
+    [{
+      role: "k",
+      text: "어떤 장면을 기억하는지는 기록에 없어요.",
+      askChildProposal: "2026년 8월 9일에 어떤 장면을 가장 기억하는지",
+      lastUnknownDetail: "어떤 장면을 가장 기억하는지",
+      targetDate: "2026-08-09",
+    }],
+    null,
+    false,
+  );
+  assert.equal(result.proposal, "2026년 8월 9일에 어떤 장면을 가장 기억하는지");
+  assert.equal(result.requestedTopic, "어떤 장면을 가장 기억하는지");
 });
