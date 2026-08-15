@@ -10,6 +10,11 @@ import {
   sanitizeReportSectionRecord,
 } from "@/lib/reports/reportSectionAvailability";
 import { getCompletedWeekBoundsForRunDateKst } from "@/lib/utils/weeklyDates";
+import { validateReportLanguageIntegrity } from "@/lib/reports/reportLanguageIntegrity";
+import {
+  buildLanguageRetryInstruction,
+  buildLanguageFailureMessage,
+} from "@/lib/reports/reportLanguageRetry";
 
 export interface WeeklySummaryResult {
   created: string[];  // 생성된 weekly_summary id 목록
@@ -67,26 +72,61 @@ async function reduceToWeeklyReport(
   weekRange: string,
   transcriptText: string,
 ): Promise<WeeklyReportJson> {
-  const prompt = WEEKLY_REPORT_PROMPT_TEMPLATE
+  const basePrompt = WEEKLY_REPORT_PROMPT_TEMPLATE
     .replace("{{WEEK_RANGE}}", weekRange)
     .replace("{{TRANSCRIPT}}", transcriptText);
 
-  const result = await ai.models.generateContent({
-    model: modelId,
-    contents: prompt,
-    config: {
-      systemInstruction: "반드시 지정된 스키마의 JSON 객체로만, 한국어로 응답한다. JSON 외 텍스트 금지.",
-      maxOutputTokens: 8192,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
-    },
-  });
+  const systemInstruction =
+    "반드시 지정된 스키마의 JSON 객체로만, 한국어로 응답한다. JSON 외 텍스트 금지. 모든 문장은 자연스러운 한국어로만 작성하고 일본어 문자(히라가나·가타카나)를 절대 사용하지 않는다. 한자어는 한글로 풀어 쓰며, 영어 고유명사(Roblox, YouTube, MBTI 등)는 그대로 두어도 된다.";
 
-  const text = (result.text ?? "").trim();
-  try {
-    return sanitizeReportJson(extractJSON(text));
-  } catch {
-    throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
+  const MAX_ATTEMPTS = 2;
+  let lastViolations: Array<{ path: string; kind: string }> = [];
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const prompt =
+      attempt === 1
+        ? basePrompt
+        : basePrompt + buildLanguageRetryInstruction(lastViolations);
+
+    const result = await ai.models.generateContent({
+      model: modelId,
+      contents: prompt,
+      config: {
+        systemInstruction,
+        maxOutputTokens: 8192,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
+      },
+    });
+
+    const text = (result.text ?? "").trim();
+    let parsed: unknown;
+    try {
+      parsed = sanitizeReportJson(extractJSON(text));
+    } catch {
+      throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
+    }
+
+    const validation = validateReportLanguageIntegrity(parsed);
+    if (validation.ok) {
+      return parsed as WeeklyReportJson;
+    }
+
+    lastViolations = validation.violations.map((v) => ({
+      path: v.path,
+      kind: v.kind,
+    }));
+
+    console.warn(
+      `[reduceToWeeklyReport] 주간 리포트 언어 검증 위반 (${validation.violations.length}건, 시도 ${attempt}/${MAX_ATTEMPTS}):`,
+      lastViolations,
+    );
+
+    if (attempt === MAX_ATTEMPTS) {
+      throw new Error(buildLanguageFailureMessage(lastViolations));
+    }
   }
+
+  throw new Error(buildLanguageFailureMessage(lastViolations));
 }
 
 /** 원문 재분석 — 토큰 상한 초과 시 청크 맵-리듀스로 압축한 뒤 리듀스한다. */
