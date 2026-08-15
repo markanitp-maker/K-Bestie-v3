@@ -309,10 +309,16 @@ const createNetworkRecorder = (
 
 const createNavigationRecorder = (page: Page): NavigationRecorder => {
   let count = 0;
-  const listener = (frame: ReturnType<Page["mainFrame"]>): void => {
-    if (frame === page.mainFrame()) count += 1;
+  const listener = (request: Request): void => {
+    if (
+      request.isNavigationRequest() &&
+      request.resourceType() === "document" &&
+      request.frame() === page.mainFrame()
+    ) {
+      count += 1;
+    }
   };
-  page.on("framenavigated", listener);
+  page.on("request", listener);
   return {
     get count() {
       return count;
@@ -320,7 +326,7 @@ const createNavigationRecorder = (page: Page): NavigationRecorder => {
     reset: () => {
       count = 0;
     },
-    stop: () => page.off("framenavigated", listener),
+    stop: () => page.off("request", listener),
   };
 };
 

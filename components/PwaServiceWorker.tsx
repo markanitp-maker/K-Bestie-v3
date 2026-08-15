@@ -708,6 +708,7 @@ export function PwaServiceWorker() {
   // -------------------------------------------------------------
   const isModalOpen = [
     "update_available",
+    "checking",
     "activating",
     "delayed",
     "offline",
@@ -1091,7 +1092,7 @@ export function PwaServiceWorker() {
     }
   }, [consumeExternalControllerPendingIfSafe, pathname, pwaState]);
 
-  if (["idle", "checking", "up_to_date", "deferred_during_session", "reloading"].includes(pwaState)) {
+  if (["idle", "up_to_date", "deferred_during_session", "reloading"].includes(pwaState)) {
     return null;
   }
 
@@ -1117,6 +1118,8 @@ export function PwaServiceWorker() {
           <div className="text-[var(--color-k-navy)] font-bold text-lg mb-1.5">
             {pwaState === "verifying_latest"
               ? "새 버전 적용을 확인하고 있어요."
+              : pwaState === "checking"
+              ? "업데이트를 확인하고 있어요."
               : pwaState === "activating"
               ? "새 버전을 적용하고 있어요."
               : pwaState === "update_available"
@@ -1126,6 +1129,8 @@ export function PwaServiceWorker() {
           <div className="text-gray-600 text-sm break-keep leading-relaxed">
             {pwaState === "verifying_latest"
               ? "잠시만 기다려 주세요. 최신 화면으로 전환됩니다."
+              : pwaState === "checking"
+              ? "잠시만 기다려 주세요. 안전하게 업데이트할 수 있는지 확인하고 있어요."
               : pwaState === "activating"
               ? "새 버전으로 앱을 전환하고 있어요..."
               : pwaState === "update_available"
@@ -1143,10 +1148,18 @@ export function PwaServiceWorker() {
         <div className="w-full mt-2">
           <button
             onClick={triggerUpdate}
-            disabled={pwaState === "activating" || pwaState === "verifying_latest"}
+            disabled={
+              pwaState === "checking" ||
+              pwaState === "activating" ||
+              pwaState === "verifying_latest"
+            }
             className="w-full py-3.5 px-5 bg-[var(--color-k-orange)] text-white text-base font-bold rounded-xl active:scale-[0.98] transition-transform shadow-md disabled:opacity-60 cursor-pointer"
           >
-            {pwaState === "update_available" ? "업데이트" : "다시 업데이트"}
+            {pwaState === "update_available"
+              ? "업데이트"
+              : pwaState === "checking"
+              ? "확인 중..."
+              : "다시 업데이트"}
           </button>
         </div>
       </div>

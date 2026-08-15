@@ -927,15 +927,50 @@ test("PWA_TAB_PREPARE synchronously opens activation barrier and evaluates vote"
 });
 
 test("U8-4: Central Blocking Modal Authority - No dismiss, no ESC/back, no 'later', only update buttons", () => {
-  const modalStates = ["update_available", "delayed", "offline", "error", "verifying_latest"] as const;
+  const modalStates = [
+    "update_available",
+    "checking",
+    "activating",
+    "delayed",
+    "offline",
+    "error",
+    "verifying_latest",
+  ] as const;
 
   for (const st of modalStates) {
-    const isAvailable = st === "update_available";
-    const expectedButtonText = isAvailable ? "업데이트" : "다시 업데이트";
-    assert.ok(expectedButtonText === "업데이트" || expectedButtonText === "다시 업데이트");
+    const expectedButtonText =
+      st === "update_available"
+        ? "업데이트"
+        : st === "checking"
+        ? "확인 중..."
+        : "다시 업데이트";
+    assert.ok(
+      expectedButtonText === "업데이트" ||
+        expectedButtonText === "확인 중..." ||
+        expectedButtonText === "다시 업데이트",
+    );
   }
 
+  const componentSource = readFileSync(
+    fileURLToPath(new URL("./PwaServiceWorker.tsx", import.meta.url)),
+    "utf8",
+  );
+  const modalAuthorityStart = componentSource.indexOf("const isModalOpen = [");
+  const modalAuthorityEnd = componentSource.indexOf("].includes(pwaState)", modalAuthorityStart);
+  const modalAuthoritySource = componentSource.slice(
+    modalAuthorityStart,
+    modalAuthorityEnd >= 0 ? modalAuthorityEnd : modalAuthorityStart + 260,
+  );
+  assert.match(modalAuthoritySource, /"checking"/);
+  assert.match(componentSource, /pwaState === "checking"\s*\|\|\s*pwaState === "activating"/);
+  assert.match(componentSource, /pwaState === "checking"\s*\? "확인 중\.\.\."/);
+  assert.doesNotMatch(
+    componentSource,
+    /\["idle",\s*"checking",\s*"up_to_date",\s*"deferred_during_session",\s*"reloading"\]/,
+  );
+
   const unsafeRouteState = "deferred_during_session";
-  const isModalOpenForUnsafe = ["update_available", "activating", "delayed", "offline", "error", "verifying_latest"].includes(unsafeRouteState);
+  const modalStateNames: readonly string[] = modalStates;
+  const isModalOpenForUnsafe = modalStateNames.includes(unsafeRouteState);
   assert.equal(isModalOpenForUnsafe, false);
 });
