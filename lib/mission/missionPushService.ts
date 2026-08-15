@@ -22,7 +22,8 @@ export type MissionPushResult = {
 export function missionPushTemplate(missionType: MissionPushType) {
   return {
     roundType: missionType === 1 ? "round1_day" as const : "round2_night" as const,
-    title: missionType === 1 ? "미션 시작 시간이야!" : "저녁 미션 시작 시간이야!",
+    // Mission v3는 하루 1회 정책이므로 18:00 단독 알림도 "저녁 2차"가 아닌 하루 1회 문구를 쓴다.
+    title: "미션 시작 시간이야!",
     body: "케이와 함께 오늘의 미션을 시작해 볼까요?",
     url: "/child/missions",
   };

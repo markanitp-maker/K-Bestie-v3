@@ -29,14 +29,6 @@
       "schedule": "0 22 * * *"
     },
     {
-      "path": "/api/cron/mission-start?missionType=1",
-      "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/cron/mission-start?missionType=1",
-      "schedule": "0 4 * * *"
-    },
-    {
       "path": "/api/cron/mission-start?missionType=2",
       "schedule": "0 9 * * *"
     }
