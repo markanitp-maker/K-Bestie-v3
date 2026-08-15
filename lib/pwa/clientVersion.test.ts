@@ -223,6 +223,7 @@ test("fetchLatestVersionMetadataV1 - sends the strict no-store same-origin reque
   assert.equal(requestInit?.credentials, "same-origin");
   assert.equal(requestInit?.redirect, "manual");
   assert.equal(new Headers(requestInit?.headers).get("accept"), "application/json");
+  assert.equal(new Headers(requestInit?.headers).get("cache-control"), "no-store");
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.notEqual(result.snapshot, latest);

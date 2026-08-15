@@ -228,7 +228,10 @@ export async function fetchLatestVersionMetadataV1(
       cache: "no-store",
       credentials: "same-origin",
       redirect: "manual",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-store",
+      },
       signal: controller.signal,
     });
 

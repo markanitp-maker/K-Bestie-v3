@@ -264,7 +264,8 @@ export class PwaUpdateProxy {
     request: http.IncomingMessage,
     response: http.ServerResponse,
   ): Promise<void> {
-    const requestUrl = new URL(request.url ?? "/", this.origin);
+    const localOrigin = this.origin;
+    const requestUrl = new URL(request.url ?? "/", localOrigin);
     const requestFaults = Object.freeze({ ...this.faultState });
 
     if (request.method === "GET" && isServiceWorkerEndpoint(requestUrl.pathname)) {
@@ -310,12 +311,13 @@ export class PwaUpdateProxy {
       return;
     }
 
-    await this.forwardToUpstream(request, response);
+    await this.forwardToUpstream(request, response, localOrigin);
   }
 
   private async forwardToUpstream(
     request: http.IncomingMessage,
     response: http.ServerResponse,
+    localOrigin: string,
   ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const upstreamRequest = https.request(
@@ -328,7 +330,7 @@ export class PwaUpdateProxy {
           headers: copyProxyRequestHeaders(
             request.headers,
             this.upstreamUrl,
-            this.origin,
+            localOrigin,
           ),
           servername: this.upstreamUrl.hostname,
         },
@@ -338,7 +340,7 @@ export class PwaUpdateProxy {
             copyProxyResponseHeaders(
               upstreamResponse.headers,
               this.upstreamUrl,
-              this.origin,
+              localOrigin,
             ),
           );
           upstreamResponse.pipe(response);
