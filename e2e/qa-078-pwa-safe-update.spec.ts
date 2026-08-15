@@ -685,6 +685,22 @@ const sendFreeChatText = async (page: Page, text: string): Promise<Request> => {
 
 const exitConversationToHome = async (page: Page): Promise<void> => {
   await page.getByRole("button", { name: "뒤로가기", exact: true }).click();
+
+  const rewardDialog = page.locator(
+    '[role="dialog"][aria-labelledby="gold-key-reward-title"]',
+  );
+  const exitResult = await Promise.race([
+    page
+      .waitForURL(/\/child\/home(?:[/?#]|$)/, { timeout: 30_000 })
+      .then(() => "home" as const),
+    rewardDialog
+      .waitFor({ state: "visible", timeout: 30_000 })
+      .then(() => "reward" as const),
+  ]);
+
+  if (exitResult === "reward") {
+    await rewardDialog.getByRole("button").last().click();
+  }
   await expectHomeReady(page);
 };
 
