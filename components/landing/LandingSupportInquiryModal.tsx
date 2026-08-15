@@ -35,7 +35,7 @@ function getSafeDeviceInfo() {
   };
 }
 
-export default function LandingSupportInquiryModal({
+export function LandingSupportInquiryModal({
   isOpen,
   onClose,
   triggerRef,
@@ -175,23 +175,16 @@ export default function LandingSupportInquiryModal({
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const payload = {
-      app_surface: "landing",
-      contact_email: trimmedEmail,
-      content: trimmedContent,
-      current_route: typeof window !== "undefined" ? window.location.pathname : "/",
-      app_version: process.env.NEXT_PUBLIC_APP_VERSION || "unknown",
-      device_info: getSafeDeviceInfo(),
-      idempotency_key: idempotencyKeyRef.current,
-    };
-
     try {
-      const response = await fetch("/api/support", {
+      const response = await fetch("/api/support/landing", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          email: trimmedEmail,
+          content: trimmedContent,
+        }),
       });
 
       const data = (await response.json().catch(() => ({}))) as {
@@ -200,8 +193,8 @@ export default function LandingSupportInquiryModal({
         error?: string;
       };
 
-      if (response.ok && data.ok && data.request_number) {
-        setSuccessRequestNumber(data.request_number);
+      if (response.ok && (data.ok || data.request_number)) {
+        setSuccessRequestNumber(data.request_number || "접수완료");
         setErrorMessage(null);
       } else if (response.status === 429) {
         setErrorMessage("요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
@@ -311,6 +304,8 @@ export default function LandingSupportInquiryModal({
                   id="landing-inquiry-email"
                   type="email"
                   required
+                  maxLength={254}
+                  autoComplete="email"
                   placeholder="답변받을 이메일을 입력해 주세요."
                   value={email}
                   disabled={isSubmitting}
@@ -378,3 +373,5 @@ export default function LandingSupportInquiryModal({
     </div>
   );
 }
+
+export default LandingSupportInquiryModal;

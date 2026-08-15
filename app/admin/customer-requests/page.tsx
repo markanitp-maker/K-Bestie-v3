@@ -44,6 +44,7 @@ const surfaceVariant = (row: Row): "info" | "neutral" => {
   if (raw === "landing" || row.submitter_role === "guest") return "info";
   return "neutral";
 };
+const sourceLabel = formatSurface;
 const kstDate = (offsetDays = 0) => {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const today = `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
@@ -60,6 +61,7 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
   const [category, setCategory] = useState<CustomerRequestCategory>(row.category);
   const [busy, setBusy] = useState(false);
   const allowedNext = nextStatus(row.status);
+  const isLandingInquiry = row.source === "landing";
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
@@ -122,13 +124,14 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
       <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-gray-500">{row.request_number}</p><h2 className="mt-1 text-xl font-black text-gray-900">{row.subject}</h2></div><button ref={closeButtonRef} onClick={onClose} className="rounded-lg border px-3 py-2 text-sm font-bold">닫기</button></div>
       <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-3 rounded-xl border bg-gray-50 p-4 text-sm">
         <dt className="text-gray-500">유형</dt><dd className="font-bold">{CATEGORY_LABELS[row.category as CustomerRequestCategory] ?? row.category}</dd>
+        <dt className="text-gray-500">출처</dt><dd>{formatSurface(row)}</dd>
         <dt className="text-gray-500">제출자</dt>
         <dd>
-          {row.submitter_role === "guest" ? (
+          {isLandingInquiry || row.submitter_role === "guest" ? (
             <>
-              <span className="font-bold text-gray-900">비회원</span>
+              <span className="font-bold text-gray-900">비회원 (랜딩페이지 방문자)</span>
               <span className="ml-2 text-gray-500">
-                {row.contact_email ? `회신: ${row.contact_email}` : "회신처 없음"} · 비회원
+                {row.contact_email ? `회신: ${row.contact_email}` : "회신처 없음"}
               </span>
             </>
           ) : (
@@ -138,13 +141,9 @@ function RequestDrawer({ row, onClose, onChanged, onNavigateUser }: { row: Row; 
             </>
           )}
         </dd>
-        {row.contact_email && (
-          <>
-            <dt className="text-gray-500">회신 연락처</dt>
-            <dd className="font-bold text-gray-900">{row.contact_email}</dd>
-          </>
-        )}
-        <dt className="text-gray-500">가족</dt><dd>{row.family_name ? <button onClick={() => onNavigateUser("families", row.family_name)} className="font-bold text-blue-700 underline">{row.family_name}</button> : "가족 정보 없음"}</dd>
+        <dt className="text-gray-500">이메일</dt>
+        <dd className="font-bold text-gray-900">{row.contact_email || row.submitter_login || "-"}</dd>
+        <dt className="text-gray-500">가족</dt><dd>{row.family_name ? <button onClick={() => onNavigateUser("families", row.family_name)} className="font-bold text-blue-700 underline">{row.family_name}</button> : (isLandingInquiry ? "-" : "가족 정보 없음")}</dd>
         <dt className="text-gray-500">접수일</dt><dd>{formatDate(row.created_at)}</dd>
         <dt className="text-gray-500">화면</dt><dd>{row.current_route || "-"} · {formatSurface(row)} · {row.app_version || "버전 미수집"}</dd>
       </dl>
@@ -224,6 +223,7 @@ function CustomerRequestsPageContent() {
     { key: "number", header: "접수번호", render: (row: Row) => <><b>{row.request_number}</b><span className="block text-xs text-gray-500">{formatDate(row.created_at)}</span></> },
     { key: "category", header: "유형", render: (row: Row) => CATEGORY_LABELS[row.category as CustomerRequestCategory] ?? row.category },
     { key: "source", header: "출처", render: (row: Row) => <AdminStatusBadge text={formatSurface(row)} variant={surfaceVariant(row)} icon={false} /> },
+    { key: "contact_email", header: "문의 이메일", render: (row: Row) => row.contact_email || row.submitter_login || "-" },
     { key: "subject", header: "제목·내용", render: (row: Row) => <div className="max-w-[360px]"><b className="block truncate">{row.subject}</b><span className="block truncate text-xs text-gray-500">{row.body}</span></div> },
     { key: "submitter", header: "제출자", render: (row: Row) => row.submitter_role === "guest" ? <>비회원<span className="block text-xs text-gray-500">{row.contact_email || row.submitter_login || "비회원"}</span></> : <>{row.submitter_name || "이름 미등록"}<span className="block text-xs text-gray-500">{row.submitter_login || (row.submitter_role === "child" ? "아이" : "부모")}</span></> },
     { key: "status", header: "상태", render: (row: Row) => <AdminStatusBadge text={STATUS_LABELS[row.status as CustomerRequestStatus] ?? row.status} variant={statusVariant(row.status)} /> },
