@@ -5,7 +5,7 @@ import path from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppTopHeader } from "../AppTopHeader";
-import { isPlayCloseMessage, PLAY_RETURN_PATH } from "./PlayFrame";
+import { isPlayCloseMessage, PLAY_RETURN_PATH, stopPlayIframe } from "./PlayFrame";
 
 const ROOT = path.join(__dirname, "..", "..");
 const readSource = (relativePath: string) => readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -63,6 +63,42 @@ test("닫기는 history 이동 계열을 쓰지 않고 replace로 /child/play �
   for (const forbidden of ["router.back()", "history.back()", "window.history.back()", "router.push("]) {
     assert.equal(source.includes(forbidden), false, `${forbidden}를 닫기 동작에 쓰면 안 된다`);
   }
+});
+
+test("iframe 정지는 항목을 늘리지 않는 방식만 쓴다(src 대입 금지)", () => {
+  const source = readSource("components/play/PlayFrame.tsx");
+  // `iframe.src = ...` 대입은 iframe 탐색이라 history 항목을 하나 더 만든다.
+  // 주석 안 설명 문구는 대입이 아니므로, 실제 대입문만 없어야 한다.
+  assert.equal(/^\s*(?:if \(iframe\) )?iframe\.src\s*=/m.test(source), false);
+  assert.match(source, /location\.replace\(BLANK_SRC\)/);
+  assert.match(source, /removeAttribute\("src"\)/);
+});
+
+test("stopPlayIframe은 contentWindow가 없으면 src 속성을 제거한다", () => {
+  const removed: string[] = [];
+  const noWindow = {
+    contentWindow: null,
+    removeAttribute: (name: string) => removed.push(name),
+  } as unknown as HTMLIFrameElement;
+  stopPlayIframe(noWindow);
+  assert.deepEqual(removed, ["src"]);
+
+  // null이 들어와도 터지지 않는다.
+  assert.doesNotThrow(() => stopPlayIframe(null));
+});
+
+test("stopPlayIframe은 접근 가능한 iframe을 location.replace로 정지시킨다", () => {
+  const replaced: string[] = [];
+  let removeCalled = false;
+  const sameOrigin = {
+    contentWindow: { location: { replace: (url: string) => replaced.push(url) } },
+    removeAttribute: () => {
+      removeCalled = true;
+    },
+  } as unknown as HTMLIFrameElement;
+  stopPlayIframe(sameOrigin);
+  assert.deepEqual(replaced, ["about:blank"]);
+  assert.equal(removeCalled, false, "location.replace가 됐으면 src 제거 fallback을 타면 안 된다");
 });
 
 test("MBTI·퀴즈마스터는 공통 PlayFrame만 쓰고 자체 닫기 로직을 두지 않는다", () => {

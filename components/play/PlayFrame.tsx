@@ -10,6 +10,28 @@ export const PLAY_RETURN_PATH = "/child/play";
 
 const BLANK_SRC = "about:blank";
 
+/** 놀이 iframe을 정지시킨다.
+ *
+ * `iframe.src = "about:blank"`로 정지시키면 안 된다 — iframe 탐색은 joint session
+ * history에 항목을 하나 더 쌓아서, 닫기를 replace로 바꾼 의미가 사라지고 안드로이드
+ * 하드웨어 뒤로가기가 다시 닫은 놀이로 돌아간다(025의 원래 신고 증상).
+ *
+ * 동일 Origin이므로 `location.replace`로 현재 항목을 덮어써서 항목이 늘지 않게 한다.
+ * 접근이 막히면 src 속성을 제거한다 — 이것도 탐색이 아니라 항목을 만들지 않는다. */
+export function stopPlayIframe(iframe: HTMLIFrameElement | null) {
+  if (!iframe) return;
+  try {
+    const frameWindow = iframe.contentWindow;
+    if (frameWindow) {
+      frameWindow.location.replace(BLANK_SRC);
+      return;
+    }
+  } catch {
+    // cross-origin 등으로 접근이 막힌 경우 아래 fallback으로 내려간다.
+  }
+  iframe.removeAttribute("src");
+}
+
 /** iframe 안 놀이 앱이 스스로 종료를 요청할 때 쓰는 메시지 계약(SPEC.md §5). */
 export function isPlayCloseMessage(event: MessageEvent, origin: string, messageSource: string): boolean {
   if (event.origin !== origin) return false;
@@ -48,9 +70,8 @@ export function PlayFrame({
   const closePlay = useCallback(() => {
     if (closedRef.current) return;
     closedRef.current = true;
-    const iframe = iframeRef.current;
     // display만 숨기는 재사용 금지(3-2). unmount 전에 먼저 놀이를 정지시킨다.
-    if (iframe) iframe.src = BLANK_SRC;
+    stopPlayIframe(iframeRef.current);
     router.replace(PLAY_RETURN_PATH);
   }, [router]);
 
@@ -68,15 +89,14 @@ export function PlayFrame({
   // iframe을 잠깐 살려두면서 이벤트를 계속 흘리는 사례를 막는다(3-3).
   useEffect(() => {
     const iframe = iframeRef.current;
-    return () => {
-      if (iframe) iframe.src = BLANK_SRC;
-    };
+    return () => stopPlayIframe(iframe);
   }, []);
 
   const handleIframeLoad = () => {
     if (!hideInnerHeaderCss) return;
     const iframe = iframeRef.current;
-    if (!iframe || iframe.src.startsWith(BLANK_SRC)) return;
+    // 종료 중에 뜨는 blank 문서에는 주입하지 않는다.
+    if (!iframe || closedRef.current) return;
 
     try {
       const doc = iframe.contentDocument || iframe.contentWindow?.document;
