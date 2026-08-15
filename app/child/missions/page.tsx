@@ -3812,6 +3812,7 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         onClose={handleCloseRewardCompletion}
         idPrefix="mission-reward"
       />
+
     </>
   );
 }
@@ -3824,7 +3825,7 @@ function MissionRouteGate() {
     let cancelled = false;
     fetch("/api/child/test-mode")
       .then((r) => (r.status === 200 ? r.json() : null))
-      .then((d) => {
+      .then((d) => { 
         if (!cancelled) {
           if (d?.selectedMode === "E" || d?.selectedMode === "F") {
             setSelectedMode(d.selectedMode);
@@ -3866,8 +3867,8 @@ function MissionRouteGate() {
     <DemoFrame>
       <div className="mission-frame-wrapper relative w-full h-full">
         <style dangerouslySetInnerHTML={{ __html: `
-          .mission-frame-wrapper [class*="h-[100dvh]"],
-          .mission-frame-wrapper [class*="min-h-[100dvh]"] {
+          .mission-frame-wrapper [class*="h-[100dvh]"]:not([data-keyboard-open="true"]),
+          .mission-frame-wrapper [class*="min-h-[100dvh]"]:not([data-keyboard-open="true"]) {
             height: 100% !important;
             min-height: 100% !important;
           }

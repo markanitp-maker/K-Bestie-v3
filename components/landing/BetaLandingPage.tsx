@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import LandingDashboard from "@/components/landing/LandingDashboard";
 import LandingDailyReport from "@/components/landing/LandingDailyReport";
+import LandingSupportInquiryModal from "@/components/landing/LandingSupportInquiryModal";
 import LandingVideoSection from "@/components/landing/LandingVideoSection";
 import LandingWeeklyReport from "@/components/landing/LandingWeeklyReport";
 import { captureAttribution } from "@/lib/acquisition/captureAttribution";
@@ -69,9 +70,6 @@ const HOW_STEPS = [
     body: "하루의 흐름과 대화 실마리를 확인하고 자연스럽게 다음 대화를 시작합니다.",
   },
 ];
-
-const faqUrl = process.env.NEXT_PUBLIC_FAQ_URL;
-const isValidFaqUrl = typeof faqUrl === "string" && /^https?:\/\//.test(faqUrl);
 
 function readAttribution(): LandingAttribution {
   if (typeof window === "undefined") return {};
@@ -141,6 +139,8 @@ export default function BetaLandingPage({
 }: {
   preservedParams?: PreservedLandingParams;
 }) {
+  const [isInquiryOpen, setIsInquiryOpen] = useState(false);
+  const inquiryTriggerRef = useRef<HTMLButtonElement>(null);
   const headerLoginHref = buildPreservedHref("/login?entry=header_login", preservedParams);
   const headerSignupHref = buildPreservedHref("/login?entry=header_signup", preservedParams);
   const viewedSections = useRef(new Set<string>());
@@ -404,14 +404,23 @@ export default function BetaLandingPage({
             <a href="#weekly-report" className="min-h-11 py-3 underline-offset-4 hover:underline">주간 리포트</a>
             <a href="#faq" className="min-h-11 py-3 underline-offset-4 hover:underline">자주 묻는 질문</a>
             <Link href="/privacy" className="min-h-11 py-3 underline-offset-4 hover:underline">개인정보처리방침</Link>
-            {isValidFaqUrl ? (
-              <a href={faqUrl} target="_blank" rel="noopener noreferrer" className="min-h-11 py-3 underline-offset-4 hover:underline">문의하기</a>
-            ) : (
-              <span aria-disabled="true" className="min-h-11 py-3 text-slate-400">문의하기 준비 중</span>
-            )}
+            <button
+              ref={inquiryTriggerRef}
+              type="button"
+              onClick={() => setIsInquiryOpen(true)}
+              className="min-h-11 py-3 text-xs font-semibold text-slate-600 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            >
+              문의하기
+            </button>
           </nav>
         </div>
       </footer>
+
+      <LandingSupportInquiryModal
+        isOpen={isInquiryOpen}
+        onClose={() => setIsInquiryOpen(false)}
+        triggerRef={inquiryTriggerRef}
+      />
     </div>
   );
 }

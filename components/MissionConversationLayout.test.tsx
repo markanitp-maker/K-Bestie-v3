@@ -101,8 +101,15 @@ test("녹음 상태가 남아 있어도 텍스트 모드에서는 K 상태 뱃�
   const badge = container.querySelector('[data-ui="text-mode-voice-state"]');
   const icon = container.querySelector('[data-ui="text-mode-state-icon"]');
   const statusPanel = container.querySelector('[data-ui="conversation-status-panel"]');
+  const viewport = container.querySelector<HTMLElement>('[data-ui="mission-conversation-viewport"]');
+  const grid = container.querySelector<HTMLElement>('[data-ui="mission-conversation-grid"]');
+  const inputArea = container.querySelector<HTMLElement>('[data-ui="mission-input-area"]');
 
   assert.equal(document.activeElement, input, "텍스트 입력창이 focus되어 있어야 한다");
+  assert.equal(viewport?.dataset.keyboardOpen, "true");
+  assert.equal(viewport?.style.height, "500px");
+  assert.equal(grid?.style.height, "500px");
+  assert.equal(inputArea?.dataset.keyboardOpen, "true");
   assert.ok(badge, "키보드가 열린 상태에서도 K 상태 뱃지가 있어야 한다");
   assert.equal(badge.getAttribute("data-keyboard-open"), "true");
   assert.match(badge.textContent ?? "", /대기 중/);

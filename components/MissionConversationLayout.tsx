@@ -219,12 +219,6 @@ export function MissionConversationLayout({
     return () => resizeObserver.disconnect();
   }, [currentQuestionText, updateVisibleHistoryCount]);
 
-  // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
-  // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
-  // 화면이 튀는 현상(jitter)이 발생할 수 있습니다.
-  // 우측으로 밀리거나 잘리는 문제는 viewport 높이보다는 flex/grid 내의 
-  // min-width: 0 또는 width: 100vw 사용이 주 원인이므로 가로폭 안전 조건에 집중합니다.
-
   const [lastProgress, setLastProgress] = useState(progressCurrent);
   const [scaleStar, setScaleStar] = useState(-1);
   useEffect(() => {
@@ -243,8 +237,18 @@ export function MissionConversationLayout({
     // 극단적으로 길어 그 최소 공간조차 넘어서는 경우 hidden이면 상단이 조용히
     // 잘린다. auto는 그 극단적인 경우에만 스크롤로 전체 표시를 보장하는
     // 최후 방어선이고, 평소에는 콘텐츠가 뷰포트 안에 들어와 스크롤이 나타나지 않는다.
-    <div className="w-full flex justify-center bg-[#D5ECFF]" style={{ ...conversationContainerStyle, overflowX: "hidden", overflowY: "auto" }}>
-      <div className="w-full max-w-[480px] min-w-0 relative box-border grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]" style={{ height: conversationHeight, background: "linear-gradient(180deg, #D8EEFF 0%, #EAF6FB 46%, #FFF9EE 76%, #FFF4E6 100%)" }}>
+    <div
+      data-ui="mission-conversation-viewport"
+      data-keyboard-open={isKeyboardOpen}
+      className="w-full flex justify-center bg-[#D5ECFF]"
+      style={{ ...conversationContainerStyle, overflowX: "hidden", overflowY: "auto" }}
+    >
+      <div
+        data-ui="mission-conversation-grid"
+        data-keyboard-open={isKeyboardOpen}
+        className="w-full max-w-[480px] min-w-0 relative box-border grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]"
+        style={{ height: conversationHeight, background: "linear-gradient(180deg, #D8EEFF 0%, #EAF6FB 46%, #FFF9EE 76%, #FFF4E6 100%)" }}
+      >
         
         {/* Decorations */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
@@ -472,7 +476,12 @@ export function MissionConversationLayout({
           )}
 
           {/* Bottom Inputs Area - 미션 하단 UI 원본 100% 복원 (주황 테두리 input + 주황 52px 전송 + 흰색 52px X) */}
-          <div className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center" style={{ paddingBottom: `calc(clamp(18px,2.5dvh,24px) + ${bottomSafeAreaInset})` }}>
+          <div
+            data-ui="mission-input-area"
+            data-keyboard-open={isTextMode && isKeyboardOpen}
+            className="relative z-30 w-full min-w-0 max-w-full shrink-0 flex items-center justify-center"
+            style={{ paddingBottom: `calc(clamp(18px,2.5dvh,24px) + ${bottomSafeAreaInset})` }}
+          >
             {isTextMode ? (
               <div
                 data-ui="mission-text-composer"

@@ -922,7 +922,12 @@ export default function ChatPage() {
 
   return (
     <DemoFrame>
-      <div className="w-full flex justify-center bg-[#D5ECFF]" style={{ ...conversationContainerStyle, overflowX: "hidden", overflowY: "hidden" }}>
+      <div
+        data-ui="freechat-conversation-viewport"
+        data-keyboard-open={isKeyboardOpen}
+        className="w-full flex justify-center bg-[#D5ECFF]"
+        style={{ ...conversationContainerStyle, overflowX: "hidden", overflowY: "hidden" }}
+      >
         {wakeLockWarning && (
           <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
@@ -931,6 +936,8 @@ export default function ChatPage() {
           </div>
         )}
         <div
+          data-ui="freechat-conversation-grid"
+          data-keyboard-open={isKeyboardOpen}
           className="w-full max-w-[480px] min-w-0 box-border relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto_auto_auto]"
           style={{
             height: conversationHeight,
@@ -1126,12 +1133,14 @@ export default function ChatPage() {
           <div className="h-[clamp(16px,2.5dvh,24px)] w-full shrink-0" />
           )}
 
+          {/* Bottom Inputs Area - 기존 UI 원본 100% 복원 (주황색 테두리 input + 주황색 52px 전송 버튼 + 흰색 52px X 버튼) */}
           <div
+            data-ui="freechat-input-area"
             className="relative z-30 w-full shrink-0 flex items-center justify-center"
             style={{
               paddingBottom: mode === "text"
                 ? `calc(clamp(18px, 2.5dvh, 24px) + ${bottomSafeAreaInset})`
-                : `calc(clamp(54px, 8dvh, 66px) + ${bottomSafeAreaInset})`
+                : `calc(clamp(54px, 8dvh, 66px) + ${bottomSafeAreaInset})`,
             }}
           >
             {mode === "text" ? (
