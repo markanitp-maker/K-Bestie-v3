@@ -204,6 +204,8 @@ export async function POST(request: Request) {
             requestId: inserted.id,
             appSurface: "landing",
             createdAt: inserted.created_at ?? new Date().toISOString(),
+            title: "문의하기",
+            content: finalContent,
           }, new URL(request.url).origin)
         );
       }
@@ -362,6 +364,8 @@ export async function POST(request: Request) {
           requestId: inserted.id,
           appSurface: insertPayload.app_surface,
           createdAt: inserted.created_at ?? new Date().toISOString(),
+          title: finalSubject,
+          content: finalContent,
         }, new URL(request.url).origin)
       );
     }

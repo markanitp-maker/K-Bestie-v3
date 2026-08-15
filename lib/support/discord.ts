@@ -4,34 +4,36 @@ export type SupportDiscordNotice = {
   requestId: string;
   appSurface: string | null;
   createdAt: string;
+  title: string;
+  content: string;
 };
 
 const DISCORD_TIMEOUT_MS = 5_000;
 const CATEGORY_LABELS: Record<SupportDiscordNotice["category"], string> = {
-  inquiry: "📨 새로운 문의",
-  suggestion: "💡 새로운 건의",
-  bug: "🐞 새로운 버그 신고",
+  inquiry: "문의",
+  suggestion: "건의",
+  bug: "버그",
 };
 
+export function truncateContent(content: string, maxChars = 20): string {
+  const chars = Array.from(content);
+  if (chars.length <= maxChars) {
+    return content;
+  }
+  return chars.slice(0, maxChars).join("") + "…";
+}
+
 export function buildSupportDiscordPayload(notice: SupportDiscordNotice, origin: string) {
-  const source = notice.appSurface === "landing"
-    ? "랜딩페이지"
-    : notice.appSurface === "child_app"
-      ? "아이 앱"
-      : notice.appSurface === "parent_app"
-        ? "부모 앱"
-        : "앱";
   const adminUrl = new URL("/admin/customer-requests", origin);
   adminUrl.searchParams.set("requestId", notice.requestId);
   return {
     content: null,
     allowed_mentions: { parse: [] as string[] },
     embeds: [{
-      title: CATEGORY_LABELS[notice.category],
       fields: [
-        { name: "접수번호", value: notice.requestNumber, inline: true },
-        { name: "출처", value: source, inline: true },
-        { name: "접수시각", value: notice.createdAt, inline: false },
+        { name: "유형", value: CATEGORY_LABELS[notice.category], inline: true },
+        { name: "제목", value: notice.title, inline: false },
+        { name: "내용", value: truncateContent(notice.content), inline: false },
       ],
       url: adminUrl.toString(),
       color: notice.category === "bug" ? 0xdc2626 : notice.category === "suggestion" ? 0xf59e0b : 0x2563eb,
@@ -41,7 +43,12 @@ export function buildSupportDiscordPayload(notice: SupportDiscordNotice, origin:
 
 export async function notifyDiscordOfNewSupportRequest(notice: SupportDiscordNotice, origin: string) {
   const webhookUrl = process.env.DISCORD_SUPPORT_WEBHOOK_URL?.trim();
-  if (!webhookUrl) return { outcome: "not_configured" as const };
+  if (!webhookUrl) {
+    console.warn("[support-discord] DISCORD_SUPPORT_WEBHOOK_URL is not configured; skipping notification", {
+      requestNumber: notice.requestNumber,
+    });
+    return { outcome: "not_configured" as const };
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DISCORD_TIMEOUT_MS);
   try {
@@ -52,12 +59,15 @@ export async function notifyDiscordOfNewSupportRequest(notice: SupportDiscordNot
       signal: controller.signal,
     });
     if (!response.ok) {
-      console.error("[support-discord] webhook failed", { status: response.status, requestNumber: notice.requestNumber });
+      console.warn("[support-discord] webhook delivery failed", {
+        status: response.status,
+        requestNumber: notice.requestNumber,
+      });
       return { outcome: "failed" as const };
     }
     return { outcome: "sent" as const };
   } catch (error) {
-    console.error("[support-discord] webhook failed", {
+    console.warn("[support-discord] webhook delivery failed", {
       code: error instanceof Error && error.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR",
       requestNumber: notice.requestNumber,
     });
@@ -66,3 +76,4 @@ export async function notifyDiscordOfNewSupportRequest(notice: SupportDiscordNot
     clearTimeout(timer);
   }
 }
+

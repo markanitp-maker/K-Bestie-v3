@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getSupabaseTarget } from "@/lib/supabase/env";
+import { notifyDiscordOfNewSupportRequest } from "@/lib/support/discord";
 
 export const runtime = "nodejs";
 
@@ -39,18 +40,37 @@ export async function POST(request: NextRequest) {
     if (isRateLimited(getClientIp(request))) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
 
     const requestNumber = generateRequestNumber();
-    const { error } = await createServiceClient().from("support_requests").insert({
+    const { data: inserted, error } = await createServiceClient().from("support_requests").insert({
       user_id: null, guardian_id: null, child_id: null, category: "inquiry", subject: "랜딩페이지 문의", body: content,
       contact_email: contactEmail, source: "landing", submitter_role: null, app_surface: "landing", current_route: "/",
       environment: getSupabaseTarget(), request_number: requestNumber, status: "open",
-    });
+    }).select("id,created_at").single();
     if (error) {
       console.error("[api/support/landing] insert error:", error);
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
+
+    if (inserted?.id) {
+      try {
+        after(() => notifyDiscordOfNewSupportRequest({
+            category: "inquiry",
+            requestNumber,
+            requestId: inserted.id,
+            appSurface: "landing",
+            createdAt: inserted.created_at ?? new Date().toISOString(),
+            title: "랜딩페이지 문의",
+            content,
+          }, new URL(request.url).origin)
+        );
+      } catch (notifyError) {
+        console.warn("[api/support/landing] discord notification failed to schedule", notifyError);
+      }
+    }
+
     return NextResponse.json({ ok: true, request_number: requestNumber });
   } catch (error) {
     console.error("[api/support/landing] unhandled error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
