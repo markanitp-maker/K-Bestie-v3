@@ -31,6 +31,10 @@ export interface EngineInput {
    * 조회 결과의 마지막 발화가 실제로 일치할 때만 중복을 제거하며, 조회 실패·순서 경합
    * 때도 현재 발화 자체가 boredom 판정에서 빠지지 않도록 항상 다시 추가한다. */
   currentUtteranceAlreadyInSession?: boolean;
+  /** 현재 child turn의 canonical turn_id(Free Chat=Turn.id, Mission=clientTurnId).
+   * Same-session Memory Source에서 이 turn만 제외해 프롬프트 중복 유입을 막는다.
+   * 문자열 비교가 아니므로 아이가 실제로 같은 말을 반복한 과거 발화는 보존된다. */
+  currentTurnId?: string;
   /** ASR 신뢰도가 낮으면 규칙 기반 unclear_audio 경로로 결정론적 처리(Gemini 미호출). */
   asrConfidence?: number;
   /** 자동/수동 입력 모드 — Mission/자유대화 공통 세션 UI 상태(비즈니스 목표 아님).
