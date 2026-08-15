@@ -6,6 +6,11 @@ import {
   isMeaningfulReportSection,
   reportSectionValueForStorage,
 } from "@/lib/reports/reportSectionAvailability";
+import { validateReportLanguageIntegrity } from "@/lib/reports/reportLanguageIntegrity";
+import {
+  buildLanguageRetryInstruction,
+  buildLanguageFailureMessage,
+} from "@/lib/reports/reportLanguageRetry";
 
 const REPORT_PROMPT_TEMPLATE = `
 아이의 오늘 하루 대화 전문입니다. 이를 바탕으로 부모님을 위한 요약 리포트를 작성해주세요.
@@ -240,7 +245,9 @@ async function processSingleReportJob(
     .map((m: any) => `${m.role === "child" ? "아이" : "케이"}: ${m.content}`)
     .join("\n");
 
-  const prompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
+  const basePrompt = REPORT_PROMPT_TEMPLATE.replace("{{TRANSCRIPT}}", transcriptText);
+  const systemInstruction =
+    "모든 문장은 자연스러운 한국어로만 작성하고 일본어 문자(히라가나·가타카나)를 절대 사용하지 않는다. 한자어는 한글로 풀어 쓰며, 영어 고유명사(Roblox, YouTube, MBTI 등)는 그대로 두어도 된다.";
 
   // 4. Generate Content via @google/genai SDK with explicit responseSchema
   const responseSchema = {
@@ -286,25 +293,61 @@ async function processSingleReportJob(
     ],
   };
 
-  const genResult = await ai.models.generateContent({
-    model: getLlmModel("dailyReport"),
-    contents: prompt,
-    config: {
-      responseSchema,
-      // Gemini requires responseMimeType: "application/json" whenever responseSchema
-      // is set — 2026-08-02 Production 실사용에서 이 누락으로 Context Correction과
-      // 동일한 400 INVALID_ARGUMENT("text/plain" unsupported)가 재현됨을 확인.
-      responseMimeType: "application/json",
-      maxOutputTokens: reportModel.maxOutputTokens ?? 8192,
-      thinkingConfig: { thinkingLevel: 'MEDIUM' as any },
-    },
-  });
-
+  const MAX_ATTEMPTS = 2;
+  let lastViolations: Array<{ path: string; kind: string }> = [];
   let report: any;
-  try {
-    report = sanitizeReportJson(extractJSON(genResult.text ?? "{}"));
-  } catch {
-    throw new Error(`PARSE_FAIL: Invalid JSON response`);
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const prompt =
+      attempt === 1
+        ? basePrompt
+        : basePrompt + buildLanguageRetryInstruction(lastViolations);
+
+    const genResult = await ai.models.generateContent({
+      model: getLlmModel("dailyReport"),
+      contents: prompt,
+      config: {
+        systemInstruction,
+        responseSchema,
+        // Gemini requires responseMimeType: "application/json" whenever responseSchema
+        // is set — 2026-08-02 Production 실사용에서 이 누락으로 Context Correction과
+        // 동일한 400 INVALID_ARGUMENT("text/plain" unsupported)가 재현됨을 확인.
+        responseMimeType: "application/json",
+        maxOutputTokens: reportModel.maxOutputTokens ?? 8192,
+        thinkingConfig: { thinkingLevel: 'MEDIUM' as any },
+      },
+    });
+
+    let rawParsed: any;
+    try {
+      rawParsed = sanitizeReportJson(extractJSON(genResult.text ?? "{}"));
+    } catch {
+      throw new Error(`PARSE_FAIL: Invalid JSON response`);
+    }
+
+    const validation = validateReportLanguageIntegrity(rawParsed);
+    if (validation.ok) {
+      report = rawParsed;
+      break;
+    }
+
+    lastViolations = validation.violations.map((v) => ({
+      path: v.path,
+      kind: v.kind,
+    }));
+
+    console.warn(
+      `[processSingleReportJob] 일일 리포트 언어 검증 위반 (${validation.violations.length}건, 시도 ${attempt}/${MAX_ATTEMPTS}):`,
+      lastViolations,
+    );
+
+    if (attempt === MAX_ATTEMPTS) {
+      throw new Error(buildLanguageFailureMessage(lastViolations));
+    }
+  }
+
+  if (!report) {
+    throw new Error(buildLanguageFailureMessage(lastViolations));
   }
 
   const dashboardCards = await validateAndCompressDashboardCards(
