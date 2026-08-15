@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { LogOut } from "lucide-react";
+import { LogOut, X } from "lucide-react";
 import { revokeCurrentPushInstallation } from "@/lib/notifications/usePushSubscription";
 
 export interface AppTopHeaderProps {
@@ -10,9 +10,12 @@ export interface AppTopHeaderProps {
   onBack?: () => void;
   backHref?: string;
   backLabel?: string;
+  /** "close"는 히스토리 이동이 아니라 현재 화면 자체를 종료하는 컨트롤이다(놀이 실행 화면).
+   * 025: 놀이는 `← 뒤로` 대신 `X 닫기`를 기본 종료 컨트롤로 쓴다. */
+  backVariant?: "back" | "close";
 }
 
-export function AppTopHeader({ title, onBack, backHref = "/child/home", backLabel = "아이 홈으로 돌아가기" }: AppTopHeaderProps) {
+export function AppTopHeader({ title, onBack, backHref = "/child/home", backLabel = "아이 홈으로 돌아가기", backVariant = "back" }: AppTopHeaderProps) {
   const [isLogoutProcessing, setIsLogoutProcessing] = useState(false);
   const handleLogout = async () => {
     if (isLogoutProcessing) return;
@@ -30,18 +33,27 @@ export function AppTopHeader({ title, onBack, backHref = "/child/home", backLabe
 
   const BackButton = () => {
     const className = "w-[70px] h-[40px] flex items-center text-sm font-bold cursor-pointer active:scale-95 text-[var(--color-k-navy)]";
-    
+    const isClose = backVariant === "close";
+    const content = isClose ? (
+      <>
+        <X size={18} strokeWidth={2.5} />
+        <span className="ml-1">닫기</span>
+      </>
+    ) : (
+      <>← 뒤로</>
+    );
+
     if (onBack) {
       return (
-        <button onClick={onBack} className={className} aria-label="뒤로가기">
-          ← 뒤로
+        <button onClick={onBack} className={className} aria-label={isClose ? "닫기" : "뒤로가기"}>
+          {content}
         </button>
       );
     }
-    
+
     return (
-      <Link href={backHref} className={className} aria-label={backLabel}>
-        ← 뒤로
+      <Link href={backHref} className={className} aria-label={isClose ? "닫기" : backLabel}>
+        {content}
       </Link>
     );
   };
