@@ -1,4 +1,8 @@
-import type { ConversationGoal } from "@/lib/mission-v3/goalEngine";
+import {
+  countSatisfiedGoals,
+  getCompletionThreshold,
+  type ConversationGoal,
+} from "@/lib/mission-v3/goalEngine";
 import type { MissionTimeGateDisplayKey } from "@/lib/mission-v3/timePolicy";
 
 export type MissionEntryState =
@@ -98,11 +102,13 @@ export function buildV2Progress(
 export function buildV3Progress(
   goals: ConversationGoal[],
 ): NormalizedMissionProgress {
-  const satisfied = goals.filter((goal) => goal.status === "SATISFIED").length;
+  // 완료 기준을 여기서 다시 적으면 서버 판정(LEAST(5, 총 Goal 수))과 어긋난다.
+  // 2026-08-16 안서현: 화면은 4/3(이미 넘은 것처럼)인데 서버는 5개를 요구해
+  // 미션이 끝나지 않았다. 기준은 goalEngine 한 곳에서만 계산한다.
   return {
     kind: "conversation_goals",
-    current: satisfied,
-    target: 3, // completionThreshold = 3 (not total count)
+    current: countSatisfiedGoals(goals),
+    target: getCompletionThreshold(goals),
   };
 }
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { ConversationGoal } from "./goalEngine";
 import { test } from "node:test";
 
 import type { ConversationGoal } from "./goalEngine.js";
@@ -69,7 +70,7 @@ test("1. v2 진행 3/5 -> entryState: 'resume', progress: { kind: 'valid_answers
   });
 });
 
-test("2. v3 진행 satisfied=1 -> progress: { kind: 'conversation_goals', current: 1, target: 3 } (completionThreshold)", () => {
+test("2. v3 진행 satisfied=1 -> progress: { kind: 'conversation_goals', current: 1, target: 4 } (Goal 4개면 기준도 4)", () => {
   const goals: ConversationGoal[] = [
     {
       goalId: "goal-1",
@@ -102,10 +103,11 @@ test("2. v3 진행 satisfied=1 -> progress: { kind: 'conversation_goals', curren
   ];
 
   const v3Progress = buildV3Progress(goals);
+  // Goal이 4개면 완료 기준은 min(5, 4) = 4다. 여기에 상수를 다시 적으면 서버 판정과 어긋난다.
   assert.deepEqual(v3Progress, {
     kind: "conversation_goals",
     current: 1,
-    target: 3, // completionThreshold = 3 (not total count 4)
+    target: 4,
   });
 
   const input: BuildMissionEntrySnapshotInput = {
@@ -128,7 +130,7 @@ test("2. v3 진행 satisfied=1 -> progress: { kind: 'conversation_goals', curren
   assert.deepEqual(snapshot.progress, {
     kind: "conversation_goals",
     current: 1,
-    target: 3,
+    target: 4,
   });
 });
 
@@ -552,4 +554,34 @@ test("18. 낮 완료 행 + 밤 진행 행이 함께 있을 때 현재 라운드(
   assert.equal(snapshot.canEnter, true);
   assert.equal(snapshot.completed, false);
   assert.equal(snapshot.sessionId, "session-night-in-progress");
+});
+
+test("진행률 목표치는 서버 완료 기준과 같은 계산을 쓴다", () => {
+  // 2026-08-16 안서현 Production: Goal 10개 중 4개 달성인데 화면이 4/3으로 보여
+  // "이미 넘었는데 왜 안 끝나지"가 됐다. 서버는 LEAST(5, 총 Goal 수)=5를 요구한다.
+  const make = (count: number, satisfied: number): ConversationGoal[] =>
+    Array.from({ length: count }, (_, index) => ({
+      goalId: `goal-${index + 1}`,
+      missionSessionId: "session-1",
+      childId: "child-1",
+      goalOrder: index + 1,
+      semanticGroup: "SCHOOL_EXPERIENCE",
+      priority: "P3" as const,
+      status: (index < satisfied ? "SATISFIED" : "PENDING") as ConversationGoal["status"],
+      evidenceSource: null,
+      sourceTurnId: null,
+      confidence: null,
+      satisfiedAt: null,
+      parentQuestionId: null,
+    }));
+
+  assert.deepEqual(buildV3Progress(make(10, 4)), {
+    kind: "conversation_goals",
+    current: 4,
+    target: 5,
+  });
+  // Goal이 기준보다 적으면 목표치도 그만큼만 요구한다.
+  assert.equal(buildV3Progress(make(3, 1)).target, 3);
+  assert.equal(buildV3Progress(make(7, 7)).current, 7);
+  assert.equal(buildV3Progress(make(7, 7)).target, 5);
 });
