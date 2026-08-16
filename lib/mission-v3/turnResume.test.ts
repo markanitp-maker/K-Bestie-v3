@@ -76,79 +76,66 @@ test("레코드가 없으면 이어받지 않는다", () => {
 
 // ── fetchResumableMissionTurn ────────────────────────────────────────────────
 
-type StubResult = { data: unknown; error: { message: string } | null };
+type StubRow = { data: unknown; error: { message: string } | null };
 
-/** mission_turns 조회 체인만 흉내내는 최소 스텁. */
-const stubDb = (result: StubResult, captured: { filters?: string[] } = {}) => {
+/** mission_turns → chat_messages 2단 조회를 흉내내는 최소 스텁. */
+const stubDb = (turn: StubRow, message: StubRow, captured: { filters?: string[] } = {}) => {
   const filters: string[] = [];
   captured.filters = filters;
-  const builder: Record<string, unknown> = {};
-  for (const method of ["select", "eq", "neq", "is", "not", "order", "limit"]) {
-    builder[method] = (...args: unknown[]) => {
-      filters.push(`${method}(${args.map((a) => JSON.stringify(a)).join(",")})`);
-      return builder;
-    };
-  }
-  builder.maybeSingle = async () => result;
-  return { from: () => builder } as unknown as Parameters<typeof fetchResumableMissionTurn>[0];
+  const make = (result: StubRow, tag: string) => {
+    const builder: Record<string, unknown> = {};
+    for (const method of ['select', 'eq', 'neq', 'is', 'not', 'order', 'limit']) {
+      builder[method] = (...args: unknown[]) => {
+        filters.push(`${tag}.${method}(${args.map((a) => JSON.stringify(a)).join(',')})`);
+        return builder;
+      };
+    }
+    builder.maybeSingle = async () => result;
+    return builder;
+  };
+  return {
+    from: (table: string) => (table === 'mission_turns' ? make(turn, 'turn') : make(message, 'msg')),
+  } as unknown as Parameters<typeof fetchResumableMissionTurn>[0];
 };
 
-test("K 응답이 없는 턴을 이어하기 정보로 돌려준다", async () => {
-  const captured: { filters?: string[] } = {};
-  const db = stubDb({
-    data: {
-      client_turn_id: "aac658db-61cf-4032-9bee-1dfecc15f95c",
-      chat_messages: { content: "응?", voice_mode: "stt_tts", display_sequence: 42 },
-    },
-    error: null,
-  }, captured);
+const okTurn: StubRow = { data: { client_turn_id: 'aac658db-61cf-4032-9bee-1dfecc15f95c', child_message_id: 'msg-1' }, error: null };
 
-  const resumable = await fetchResumableMissionTurn(db, "7dbd3513-c89e-4fbc-acc5-6628d8e6e3cb");
-  assert.deepEqual(resumable, {
-    clientTurnId: "aac658db-61cf-4032-9bee-1dfecc15f95c",
-    answerText: "응?",
-    voiceMode: "stt_tts",
+test('K 응답이 없는 턴을 이어하기 정보로 돌려준다', async () => {
+  const captured: { filters?: string[] } = {};
+  const db = stubDb(okTurn, { data: { content: '응?', voice_mode: 'stt_tts', display_sequence: 42 }, error: null }, captured);
+
+  assert.deepEqual(await fetchResumableMissionTurn(db, '7dbd3513-c89e-4fbc-acc5-6628d8e6e3cb'), {
+    clientTurnId: 'aac658db-61cf-4032-9bee-1dfecc15f95c',
+    answerText: '응?',
+    voiceMode: 'stt_tts',
     displaySequence: 42,
   });
-  const filters = (captured.filters ?? []).join(" ");
-  assert.match(filters, /neq\("status","FINALIZED"\)/, "완료된 턴은 제외해야 한다");
-  assert.match(filters, /is\("k_response_draft",null\)/);
-  assert.match(filters, /is\("k_message_id",null\)/);
+  const filters = (captured.filters ?? []).join(' ');
+  assert.match(filters, /turn\.neq\("status","FINALIZED"\)/, '완료된 턴은 제외해야 한다');
+  assert.match(filters, /turn\.is\("k_response_draft",null\)/);
+  assert.match(filters, /turn\.is\("k_message_id",null\)/);
 });
 
-test("배열로 조인된 chat_messages도 처리한다", async () => {
-  const db = stubDb({
-    data: {
-      client_turn_id: "turn-1",
-      chat_messages: [{ content: "학교 갔다 왔어", voice_mode: "live", display_sequence: 0 }],
-    },
-    error: null,
-  });
-  const resumable = await fetchResumableMissionTurn(db, "session-1");
-  assert.equal(resumable?.answerText, "학교 갔다 왔어");
-  assert.equal(resumable?.voiceMode, "live");
-  assert.equal(resumable?.displaySequence, 0);
+test('이어할 턴이 없으면 null이다', async () => {
+  assert.equal(await fetchResumableMissionTurn(stubDb({ data: null, error: null }, { data: null, error: null }), 's'), null);
 });
 
-test("이어할 턴이 없으면 null이다", async () => {
-  const db = stubDb({ data: null, error: null });
-  assert.equal(await fetchResumableMissionTurn(db, "session-1"), null);
+test('조회가 실패해도 미션 진입을 막지 않는다(fail-open)', async () => {
+  assert.equal(await fetchResumableMissionTurn(stubDb({ data: null, error: { message: 'boom' } }, { data: null, error: null }), 's'), null);
+  assert.equal(await fetchResumableMissionTurn(stubDb(okTurn, { data: null, error: { message: 'boom' } }), 's'), null);
 });
 
-test("조회가 실패해도 미션 진입을 막지 않는다(fail-open)", async () => {
-  const db = stubDb({ data: null, error: { message: "boom" } });
-  assert.equal(await fetchResumableMissionTurn(db, "session-1"), null);
-});
-
-test("재전송에 필요한 값이 하나라도 없으면 이어하기를 제안하지 않는다", async () => {
-  const cases = [
-    { client_turn_id: null, chat_messages: { content: "응?", voice_mode: "stt_tts", display_sequence: 1 } },
-    { client_turn_id: "t", chat_messages: { content: "   ", voice_mode: "stt_tts", display_sequence: 1 } },
-    { client_turn_id: "t", chat_messages: { content: "응?", voice_mode: "unknown", display_sequence: 1 } },
-    { client_turn_id: "t", chat_messages: { content: "응?", voice_mode: "stt_tts", display_sequence: null } },
-    { client_turn_id: "t", chat_messages: null },
+test('재전송에 필요한 값이 하나라도 없으면 이어하기를 제안하지 않는다', async () => {
+  const bad = [
+    { content: '   ', voice_mode: 'stt_tts', display_sequence: 1 },
+    { content: '응?', voice_mode: 'unknown', display_sequence: 1 },
+    { content: '응?', voice_mode: 'stt_tts', display_sequence: null },
+    null,
   ];
-  for (const data of cases) {
-    assert.equal(await fetchResumableMissionTurn(stubDb({ data, error: null }), "s"), null, JSON.stringify(data));
+  for (const data of bad) {
+    assert.equal(await fetchResumableMissionTurn(stubDb(okTurn, { data, error: null }), 's'), null, JSON.stringify(data));
   }
+  // turn 쪽 필수값이 빠진 경우
+  assert.equal(await fetchResumableMissionTurn(stubDb({ data: { client_turn_id: null, child_message_id: 'm' }, error: null }, { data: null, error: null }), 's'), null);
+  assert.equal(await fetchResumableMissionTurn(stubDb({ data: { client_turn_id: 't', child_message_id: null }, error: null }, { data: null, error: null }), 's'), null);
 });

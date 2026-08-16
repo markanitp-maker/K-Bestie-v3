@@ -161,9 +161,11 @@ export const fetchResumableMissionTurn = async (
   db: SupabaseClient,
   sessionId: string,
 ): Promise<ResumableMissionTurn | null> => {
-  const { data, error } = await db
+  // PostgREST 임베드 조인은 mission_turns↔chat_messages 관계를 스키마 캐시에서 찾지
+  // 못한다(2026-08-16 Dev 실측). 두 번 나눠 조회한다.
+  const { data: turnData, error: turnError } = await db
     .from("mission_turns")
-    .select("client_turn_id, chat_messages!mission_turns_child_message_id_fkey(content, voice_mode, display_sequence)")
+    .select("client_turn_id, child_message_id")
     .eq("session_id", sessionId)
     .eq("question_id", "v3_turn")
     .neq("status", "FINALIZED")
@@ -173,18 +175,29 @@ export const fetchResumableMissionTurn = async (
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) {
+  if (turnError) {
     // 이어하기 정보가 없다고 미션 진입 자체를 막으면 안 된다 — fail-open.
-    console.error("[mission-v3/routeSupport] 이어할 턴 조회 실패", error.message);
+    console.error("[mission-v3/routeSupport] 이어할 턴 조회 실패", turnError.message);
     return null;
   }
-  const row = data as ResumableTurnRow | null;
-  const message = Array.isArray(row?.chat_messages) ? row?.chat_messages[0] : row?.chat_messages;
-  const clientTurnId = row?.client_turn_id?.trim();
+  const turnRow = turnData as { client_turn_id: string | null; child_message_id: string | null } | null;
+  const clientTurnId = turnRow?.client_turn_id?.trim();
+  if (!clientTurnId || !turnRow?.child_message_id) return null;
+
+  const { data: messageData, error: messageError } = await db
+    .from("chat_messages")
+    .select("content, voice_mode, display_sequence")
+    .eq("id", turnRow.child_message_id)
+    .maybeSingle();
+  if (messageError) {
+    console.error("[mission-v3/routeSupport] 이어할 아이 발화 조회 실패", messageError.message);
+    return null;
+  }
+  const message = messageData as ResumableTurnRow["chat_messages"];
   const answerText = message?.content?.trim();
   const voiceMode = message?.voice_mode;
   const displaySequence = message?.display_sequence;
-  if (!clientTurnId || !answerText) return null;
+  if (!answerText) return null;
   if (voiceMode !== "live" && voiceMode !== "stt_tts") return null;
   if (typeof displaySequence !== "number" || !Number.isSafeInteger(displaySequence) || displaySequence < 0) return null;
   return { clientTurnId, answerText, voiceMode, displaySequence };
