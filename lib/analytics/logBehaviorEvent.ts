@@ -9,6 +9,7 @@ export interface BehaviorEventInput {
   familyId?: string | null;
   childId?: string | null;
   sessionId?: string | null;
+  eventKey?: string | null;
   feature:
     | "auth" | "home" | "mission" | "freechat" | "play" | "daily_report"
     | "weekly_report" | "monthly_report" | "conversation_topic"
@@ -51,6 +52,7 @@ export async function logBehaviorEvent(
     if (input.familyId !== undefined) payload.family_id = input.familyId;
     if (input.childId !== undefined) payload.child_id = input.childId;
     if (input.sessionId !== undefined) payload.session_id = input.sessionId;
+    if (input.eventKey !== undefined && input.eventKey !== null) payload.event_key = input.eventKey;
     if (input.route !== undefined) payload.route = input.route;
     if (input.conversationMode !== undefined) payload.conversation_mode = input.conversationMode;
     if (input.playType !== undefined) payload.play_type = input.playType;

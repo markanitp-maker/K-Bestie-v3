@@ -15,6 +15,11 @@ import {
   type ResolvedScenarioCard,
 } from "./scenarioCard";
 import type { RelationshipCalendarStage } from "./calendarStage";
+import { buildRelationshipMemoryPack } from "./memoryPack";
+import {
+  DEFAULT_RELATIONSHIP_MEMORY_PACK_LIMIT,
+  loadRelationshipMemoryPackLimit,
+} from "./memoryPackConfig";
 
 export type RelationshipConversationMode = "mission" | "free_chat";
 
@@ -56,6 +61,7 @@ export interface RelationshipContextSnapshot {
   /** 없으면 기존과 완전히 동일하게 동작해야 한다(하위 호환). */
   scenarioCard?: ResolvedScenarioCard | null;
   effectiveStage?: RelationshipCalendarStage | null;
+  memoryPackLimit?: number;
 }
 
 export interface BuiltRelationshipContext {
@@ -73,6 +79,7 @@ type MemorySearch = (
 
 interface RelationshipContextDependencies {
   searchMemory?: MemorySearch;
+  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
 }
 
 const MAX_CONTEXT_TEXT = 160;
@@ -146,8 +153,20 @@ export function formatRelationshipContext(snapshot: RelationshipContextSnapshot)
     lines.push(`최근 에피소드: ${cleanContextText(snapshot.recentEpisode.content)}`);
   }
 
-  const memoryLines = snapshot.memoryFacts
-    .slice(0, MAX_MEMORY_FACTS)
+  let formattedFacts: RetrievedMemoryFact[];
+  if (snapshot.scenarioCard) {
+    const limit = snapshot.memoryPackLimit ?? DEFAULT_RELATIONSHIP_MEMORY_PACK_LIMIT;
+    const pack = buildRelationshipMemoryPack({
+      facts: snapshot.memoryFacts,
+      recommendedTypes: snapshot.scenarioCard.stageCard.recommendedMemoryTypes,
+      limit,
+    });
+    formattedFacts = pack.facts;
+  } else {
+    formattedFacts = snapshot.memoryFacts.slice(0, MAX_MEMORY_FACTS);
+  }
+
+  const memoryLines = formattedFacts
     .map((fact) => cleanContextText(fact.content))
     .filter(Boolean);
   if (memoryLines.length > 0) {
@@ -195,6 +214,7 @@ export async function buildRelationshipContext(
   try {
     const searchMemory = dependencies.searchMemory ?? searchMemoryFactsDetailed;
     const queryText = cleanContextText(input.currentText, 500);
+    const memoryPackLimit = loadRelationshipMemoryPackLimit(dependencies.env);
 
   const profilePromise = db
     .from("child_profiles")
@@ -209,10 +229,10 @@ export async function buildRelationshipContext(
         .eq("id", input.sessionId)
         .eq("child_id", input.childId)
         .maybeSingle()
-    : Promise.resolve({ data: null, error: null });
+      : Promise.resolve({ data: null, error: null });
 
   const memoryPromise = queryText
-    ? searchMemory(db, input.childId, queryText, MAX_MEMORY_FACTS)
+    ? searchMemory(db, input.childId, queryText, memoryPackLimit)
     : Promise.resolve<SearchMemoryFactsResult>({ status: "no_data" });
 
   const [profileSettled, sessionSettled, memorySettled] = await Promise.allSettled([
@@ -285,7 +305,7 @@ export async function buildRelationshipContext(
 
   const memoryFacts =
     memorySettled.status === "fulfilled" && memorySettled.value.status === "ok"
-      ? memorySettled.value.facts.slice(0, MAX_MEMORY_FACTS)
+      ? memorySettled.value.facts
       : [];
 
     return formatRelationshipContext({
@@ -295,11 +315,13 @@ export async function buildRelationshipContext(
       memoryFacts,
       scenarioCard,
       effectiveStage,
+      memoryPackLimit,
     });
   } catch (error) {
     // 개인화 조회 장애가 아이의 대화 자체를 막아서는 안 된다. 내용·식별자는 로그에
     // 남기지 않고 고정 안전 규칙만 포함한 context로 fail-open한다.
     console.error("[relationshipContext] context build failed", (error as Error).message);
+    const memoryPackLimit = loadRelationshipMemoryPackLimit(dependencies.env);
     return formatRelationshipContext({
       profile: null,
       recentSession: [],
@@ -307,6 +329,7 @@ export async function buildRelationshipContext(
       memoryFacts: [],
       scenarioCard: null,
       effectiveStage: null,
+      memoryPackLimit,
     });
   }
 }

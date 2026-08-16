@@ -5,6 +5,7 @@ import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 import { evaluateRelationshipStage } from "@/lib/relationship/stageEvaluation";
 import { persistRelationshipStage } from "@/lib/relationship/persistStage";
+import { checkAndRecordReturnedAfterGap } from "@/lib/relationship/relationshipEvents";
 
 export const runtime = "nodejs";
 
@@ -77,6 +78,13 @@ export async function POST(req: NextRequest) {
     try {
       const evaluated = await evaluateRelationshipStage({ db: service, childId });
       await persistRelationshipStage({ db: service, childId, sessionId: sessionData.id, evaluated });
+      await checkAndRecordReturnedAfterGap({
+        db: service,
+        childId,
+        sessionId: sessionData.id,
+        currentBusinessDate: businessDate,
+        familyId: childData?.family_id,
+      });
     } catch (error) {
       console.error("[chat/session] 관계 판정/저장 실패:", error);
     }

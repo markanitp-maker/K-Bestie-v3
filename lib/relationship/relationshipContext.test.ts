@@ -555,3 +555,107 @@ test("input.scenarioCard를 직접 넘기면 DB 값보다 우선한다", async (
   assert.match(result.fragment, /\[관계 시나리오 - SHARED_HISTORY \(W3\)\]/);
   assert.match(result.fragment, /단계 목표: 우리 둘이 아는 이야기가 생겼다\./);
 });
+
+test("Memory Pack: 카드가 없으면 기억 줄이 기존과 완전히 동일하게 MAX_MEMORY_FACTS slice로 처리된다", () => {
+  const facts = [
+    { ...baseFact, factId: "f1", factType: "routine", content: "루틴1" },
+    { ...baseFact, factId: "f2", factType: "interest", content: "관심사2" },
+    { ...baseFact, factId: "f3", factType: "event", content: "사건3" },
+    { ...baseFact, factId: "f4", factType: "preference", content: "선호4" },
+    { ...baseFact, factId: "f5", factType: "friend", content: "친구5" },
+    { ...baseFact, factId: "f6", factType: "interest", content: "관심사6" },
+  ];
+
+  const result = formatRelationshipContext({
+    profile: null,
+    recentSession: [],
+    recentEpisode: null,
+    memoryFacts: facts,
+    scenarioCard: null,
+  });
+
+  const memorySection = result.fragment.split("관련 기억:\n")[1]?.split("\n사용 규칙:")[0];
+  assert.equal(
+    memorySection,
+    "- 루틴1\n- 관심사2\n- 사건3\n- 선호4\n- 친구5",
+  );
+  assert.equal(result.memoryFactCount, 5);
+});
+
+test("Memory Pack: 카드가 있고 권장 타입에 맞는 기억이 있으면 권장 타입 기억이 앞에 온다", () => {
+  const card = resolveScenarioCard({ grade: "3학년", effectiveStage: "W2" });
+  assert.ok(card);
+
+  const facts = [
+    { ...baseFact, factId: "f1", factType: "routine", content: "매일 아침 달리기함" },
+    { ...baseFact, factId: "f2", factType: "interest", content: "공룡을 엄청 좋아함" },
+    { ...baseFact, factId: "f3", factType: "event", content: "어제 놀이공원에 다녀옴" },
+    { ...baseFact, factId: "f4", factType: "friend", content: "민우랑 친함" },
+  ];
+
+  const result = formatRelationshipContext({
+    profile: null,
+    recentSession: [],
+    recentEpisode: null,
+    memoryFacts: facts,
+    scenarioCard: card,
+  });
+
+  const memorySection = result.fragment.split("관련 기억:\n")[1]?.split("\n사용 규칙:")[0];
+  assert.equal(
+    memorySection,
+    "- 공룡을 엄청 좋아함\n- 어제 놀이공원에 다녀옴\n- 매일 아침 달리기함\n- 민우랑 친함",
+  );
+  assert.equal(result.memoryFactCount, 4);
+});
+
+test("Memory Pack: 권장 타입 기억이 없어도 나머지로 채워지고 개수가 limit을 넘지 않는다", () => {
+  const card = resolveScenarioCard({ grade: "3학년", effectiveStage: "W2" });
+  assert.ok(card);
+
+  const facts = [
+    { ...baseFact, factId: "f1", factType: "routine", content: "루틴1" },
+    { ...baseFact, factId: "f2", factType: "routine", content: "루틴2" },
+    { ...baseFact, factId: "f3", factType: "friend", content: "친구3" },
+    { ...baseFact, factId: "f4", factType: "friend", content: "친구4" },
+    { ...baseFact, factId: "f5", factType: "routine", content: "루틴5" },
+    { ...baseFact, factId: "f6", factType: "friend", content: "친구6" },
+  ];
+
+  const result = formatRelationshipContext({
+    profile: null,
+    recentSession: [],
+    recentEpisode: null,
+    memoryFacts: facts,
+    scenarioCard: card,
+    memoryPackLimit: 3,
+  });
+
+  const memorySection = result.fragment.split("관련 기억:\n")[1]?.split("\n사용 규칙:")[0];
+  assert.equal(
+    memorySection,
+    "- 루틴1\n- 루틴2\n- 친구3",
+  );
+  assert.equal(result.memoryFactCount, 3);
+});
+
+test("Memory Pack: 권장 타입 정렬이 원본 memoryFacts 배열을 변형하지 않는다 (불변성)", () => {
+  const card = resolveScenarioCard({ grade: "3학년", effectiveStage: "W2" });
+  assert.ok(card);
+
+  const facts = [
+    { ...baseFact, factId: "f1", factType: "routine", content: "루틴1" },
+    { ...baseFact, factId: "f2", factType: "interest", content: "관심사2" },
+  ];
+  const factsCopy = JSON.parse(JSON.stringify(facts));
+
+  formatRelationshipContext({
+    profile: null,
+    recentSession: [],
+    recentEpisode: null,
+    memoryFacts: facts,
+    scenarioCard: card,
+  });
+
+  assert.deepEqual(facts, factsCopy);
+});

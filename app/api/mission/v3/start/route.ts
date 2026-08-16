@@ -22,6 +22,7 @@ import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
 import { evaluateRelationshipStage } from "@/lib/relationship/stageEvaluation";
 import { persistRelationshipStage } from "@/lib/relationship/persistStage";
+import { checkAndRecordReturnedAfterGap } from "@/lib/relationship/relationshipEvents";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -278,6 +279,12 @@ export async function POST(req: NextRequest) {
     try {
       const evaluated = await evaluateRelationshipStage({ db: service, childId });
       await persistRelationshipStage({ db: service, childId, sessionId, evaluated });
+      await checkAndRecordReturnedAfterGap({
+        db: service,
+        childId,
+        sessionId,
+        currentBusinessDate: operation.businessDate,
+      });
     } catch (error) {
       console.error("[mission/v3/start] 관계 판정/저장 실패:", error);
     }
