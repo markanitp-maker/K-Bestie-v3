@@ -29,6 +29,10 @@ k-bestie3-*.json
 /scratch/
 .omc/
 worktrees/
+# 2026-08-16: 실제 워크트리 경로는 `.worktrees/`(점 포함)라 위 규칙에 걸리지 않았다.
+# 워크트리 10개가 통째로 업로드돼 파일 17,730개로 Vercel 상한(15,000)을 넘겨
+# 배포가 실패했다. 두 형태를 모두 제외한다.
+.worktrees/
 candidate-release/
 e2e-results/
 # Agent tooling state. .claude/worktrees/ holds six FULL copies of this repo —
