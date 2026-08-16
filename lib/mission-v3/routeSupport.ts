@@ -137,6 +137,59 @@ export const isResumableStuckTurn = (
   return nowMs - updatedAtMs >= inflightWindowMs;
 };
 
+export interface ResumableMissionTurn {
+  clientTurnId: string;
+  answerText: string;
+  voiceMode: "live" | "stt_tts";
+  displaySequence: number;
+}
+
+interface ResumableTurnRow {
+  client_turn_id: string | null;
+  chat_messages: { content: string | null; voice_mode: string | null; display_sequence: number | null } | null;
+}
+
+/**
+ * 아이 발화만 저장되고 K 응답이 없는 턴을 서버에서 찾아 돌려준다.
+ *
+ * 재시도에 필요한 정보(clientTurnId·아이 발화)를 브라우저 메모리에만 두면 앱을 껐다
+ * 켜거나 새로고침하는 순간 사라져 「다시 시도」가 아무 일도 하지 않는다(2026-08-16
+ * 안서현 Production 장애: 몇 시간 뒤 재시도했지만 서버에 요청 자체가 오지 않았다).
+ * 서버가 SSOT를 그대로 돌려주면 언제 다시 들어와도 같은 턴을 이어서 처리할 수 있다.
+ */
+export const fetchResumableMissionTurn = async (
+  db: SupabaseClient,
+  sessionId: string,
+): Promise<ResumableMissionTurn | null> => {
+  const { data, error } = await db
+    .from("mission_turns")
+    .select("client_turn_id, chat_messages!mission_turns_child_message_id_fkey(content, voice_mode, display_sequence)")
+    .eq("session_id", sessionId)
+    .eq("question_id", "v3_turn")
+    .neq("status", "FINALIZED")
+    .is("k_response_draft", null)
+    .is("k_message_id", null)
+    .not("child_message_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    // 이어하기 정보가 없다고 미션 진입 자체를 막으면 안 된다 — fail-open.
+    console.error("[mission-v3/routeSupport] 이어할 턴 조회 실패", error.message);
+    return null;
+  }
+  const row = data as ResumableTurnRow | null;
+  const message = Array.isArray(row?.chat_messages) ? row?.chat_messages[0] : row?.chat_messages;
+  const clientTurnId = row?.client_turn_id?.trim();
+  const answerText = message?.content?.trim();
+  const voiceMode = message?.voice_mode;
+  const displaySequence = message?.display_sequence;
+  if (!clientTurnId || !answerText) return null;
+  if (voiceMode !== "live" && voiceMode !== "stt_tts") return null;
+  if (typeof displaySequence !== "number" || !Number.isSafeInteger(displaySequence) || displaySequence < 0) return null;
+  return { clientTurnId, answerText, voiceMode, displaySequence };
+};
+
 export const loadMissionPromptGoals = async (input: {
   db: SupabaseClient;
   childId: string;

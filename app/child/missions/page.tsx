@@ -290,6 +290,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
     displaySequence: number;
   } | null>(null);
   const retryV3TurnRef = useRef<(() => void) | null>(null);
+  // 서버가 알려준 미완료 턴 이어하기 — 자동 1회 + 「다시 시도」 버튼 공용.
+  const v3ResumeInFlightRef = useRef(false);
+  const v3ResumeAttemptedRef = useRef(false);
   const voiceModeRef = useRef<VoiceMode | null>(null);
   voiceModeRef.current = voiceMode;
   const questionsRef = useRef<MissionQuestion[]>([]);
@@ -2603,6 +2606,58 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
 
       setSessionId(data.sessionId);
       sessionIdRef.current = data.sessionId;
+
+      // 서버가 "아이 발화만 저장되고 K 응답이 없는 턴"을 알려주면 그대로 이어서 보낸다.
+      // 재시도 정보를 브라우저 메모리·IndexedDB TTL(5분)에 두면 앱을 껐다 켜는 순간
+      // 사라져 「다시 시도」가 아무 일도 하지 않는다(2026-08-16 안서현 Production 장애:
+      // 몇 시간 뒤 재시도했지만 서버에 요청 자체가 오지 않았다).
+      if (isV3Mission && data.pendingTurn && data.sessionId) {
+        const pending = data.pendingTurn as {
+          clientTurnId: string;
+          answerText: string;
+          voiceMode: "live" | "stt_tts";
+          displaySequence: number;
+        };
+        const resumeSessionId = data.sessionId as string;
+        const resumePendingV3Turn = async () => {
+          if (v3ResumeInFlightRef.current) return;
+          v3ResumeInFlightRef.current = true;
+          try {
+            const resumeRes = await fetch("/api/mission/v3/turn", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                sessionId: resumeSessionId,
+                clientTurnId: pending.clientTurnId,
+                answerText: pending.answerText,
+                voiceMode: pending.voiceMode,
+                displaySequence: pending.displaySequence,
+              }),
+            });
+            console.info("[Mission] v3 미완료 턴 이어하기", {
+              clientTurnId: pending.clientTurnId,
+              status: resumeRes.status,
+            });
+            if (resumeRes.ok) {
+              // 서버 SSOT를 다시 읽어 K 응답과 게이지를 그대로 반영한다.
+              retryV3TurnRef.current = null;
+              setShowRetryButton(false);
+              setPhase("loading");
+              setEntryStatus("checking");
+              setRetryTrigger((value) => value + 1);
+            }
+          } catch (error) {
+            console.error("[Mission] v3 미완료 턴 이어하기 실패", error);
+          } finally {
+            v3ResumeInFlightRef.current = false;
+          }
+        };
+        retryV3TurnRef.current = () => { void resumePendingV3Turn(); };
+        if (!v3ResumeAttemptedRef.current) {
+          v3ResumeAttemptedRef.current = true;
+          void resumePendingV3Turn();
+        }
+      }
 
       // Local pending은 TTL이나 pause 표식만으로 삭제하지 않는다. mission_turns,
       // chat_messages, mission_progress.question_states를 먼저 대조하고, 불명확할 때만

@@ -12,6 +12,7 @@ import { loadMissionQuestionGoalCandidates } from "@/lib/mission-v3/questionBank
 import {
   buildGoalProgress,
   fetchMissionGoals,
+  fetchResumableMissionTurn,
   getMissionWeekday,
 } from "@/lib/mission-v3/routeSupport";
 import { decideDailySingleOperation } from "@/lib/mission-v3/timePolicy";
@@ -272,7 +273,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { tier, voiceMode, liveVoiceName } = await getVoiceModeForChild(childId);
+  // 이전 요청이 실패해 아이 발화만 남은 턴이 있으면 그대로 알려준다. 클라이언트가
+  // 브라우저 메모리에 기대지 않고 언제 다시 들어와도 같은 턴을 이어서 보낼 수 있다.
+  const pendingTurn = await fetchResumableMissionTurn(service, sessionId);
   return NextResponse.json({
+    pendingTurn,
     resumed,
     sessionId,
     policyVersion: progress.mission_policy_version,
