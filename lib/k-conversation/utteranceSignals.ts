@@ -21,6 +21,7 @@ export interface UtteranceSignals {
   hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
   hasPlayRequestWithoutTarget: boolean; // 심심해/놀아줘/뭐 하고 놀까 등 게임 미지정 놀이 요청
   hasPlayRejection: boolean; // 싫어/안 할래/하기 싫어/됐어 등 제안 거절 (단독 부정)
+  hasPlayStop?: boolean; // 그만할래/안 할래/그만하자/그만 등 게임 명시적 종료 요청
 }
 
 const ACHIEVEMENT_KWS = ["1등", "100점", "맞았어", "해냈", "성공했", "이겼", "합격", "칭찬받"];
@@ -187,6 +188,26 @@ function detectPlayRejection(
   return STANDALONE_REJECTION_PATTERN.test(trimmed);
 }
 
+// 게임 명시적 종료 신호 ("그만할래", "안 할래", "그만하자", "그만", "안해" 등)
+const PLAY_STOP_PATTERNS = [
+  /(?:끝말잇기|초성|게임|놀이|퀴즈)?\s*(?:그만|그만하자|그만할래|그만해|그만둘래|안\s*할래|안해|안\s*해|하기\s*싫어|끝낼래|안\s*놀래|포기|항복|너\s*이겼어)/,
+  /^(?:그만|그만해|그만하자|그만할래|끝|안해|안\s*해|싫어|포기|항복|이제\s*그만|다음에\s*할래)$/,
+];
+
+function detectPlayStop(
+  text: string,
+  hasChosungGameStart: boolean,
+  hasWordChainGameStart: boolean,
+): boolean {
+  if (hasChosungGameStart || hasWordChainGameStart) return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  for (const exclusion of REJECTION_EXCLUSION_PATTERNS) {
+    if (exclusion.test(trimmed)) return false;
+  }
+  return PLAY_STOP_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 export function extractUtteranceSignals(text: string): UtteranceSignals {
   const trimmed = text.trim();
   const isQuestion = /[?？]/.test(trimmed) || includesAny(trimmed, QUESTION_WORDS);
@@ -217,6 +238,11 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     Boolean(hasWordChainGameStart),
     hasPlayRequestWithoutTarget,
   );
+  const hasPlayStop = detectPlayStop(
+    trimmed,
+    hasChosungGameStart,
+    Boolean(hasWordChainGameStart),
+  );
 
   return {
     hasAchievement,
@@ -235,6 +261,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasWordChainGameStart,
     hasPlayRequestWithoutTarget,
     hasPlayRejection,
+    hasPlayStop,
   };
 }
 
