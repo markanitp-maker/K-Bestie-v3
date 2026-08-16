@@ -149,3 +149,10 @@ dev_diff.sql
 /.vscode/
 
 .vercel
+
+# 작업 폴더 정리 규칙(AGENTS.md §17) — worktree는 .worktrees/ 한 곳에만 만들고
+# 세션 종료 시 제거한다. 실수로 커밋되는 것을 막기 위해 무시 목록에 둔다.
+.worktrees/
+worktrees/
+.codex-worktrees/
+.claude/worktrees/
