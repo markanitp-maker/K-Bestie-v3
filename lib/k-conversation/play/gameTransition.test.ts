@@ -445,3 +445,23 @@ test("080: 시작 의도가 있거나 게임 이름만 말하면 시작 요청�
     assert.equal(s.hasWordChainGameStart ?? false, true, `끝말 미탐: ${text}`);
   }
 });
+
+/** 2026-08-17 박말똥 Production 회귀. 080 1차 수정이 시작 의도 표현을 화이트리스트로
+ *  요구한 탓에, 아이가 실제로 쓴 말이 목록에 없어 초성게임이 한 번도 시작되지 않았다
+ *  (세션 0건). 아래는 그 대화에서 그대로 가져온 발화다. */
+test("080 회귀: 박말똥 실제 발화로 게임이 시작된다", () => {
+  const real = [
+    "초성 퀴즈 하잖아",
+    "그러면 너 끝말잇기 해 봐",
+    "너 나랑 지금 초성 퀴즈 하는 거 아냐",
+  ];
+  for (const text of real) {
+    const s = extractUtteranceSignals(text) as {
+      hasChosungGameStart?: boolean; hasWordChainGameStart?: boolean;
+    };
+    assert.ok(
+      s.hasChosungGameStart || s.hasWordChainGameStart,
+      `실제 발화가 시작으로 안 잡힘: ${text}`,
+    );
+  }
+});

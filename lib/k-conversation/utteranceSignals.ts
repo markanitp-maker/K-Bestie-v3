@@ -67,36 +67,31 @@ function includesAny(text: string, keywords: string[]): boolean {
 /** 080: 게임 이름이 문장에 등장하기만 해도 시작 요청으로 잡히던 문제를 막는다.
  *  Production 사고 이후 "직접 요청이 활성 게임을 이긴다"로 바꾸면서, 비교·회상
  *  발화("이거 초성게임보다 재밌다", "끝말잇기 어제 했어")까지 게임을 강제 전환시켰다.
- *  시작 의도 표현이 있거나, 게임 이름만 말한 경우에만 시작으로 본다. */
-const PLAY_START_INTENT_KWS = [
-  "하자", "할래", "할까", "하까", "하고 싶", "하고싶", "시작",
-  "해줘", "해봐", "해보자", "해볼래", "가자", "고고", "ㄱㄱ", "한판", "한 판",
-  // 아이가 실제로 쓰는 변형들. 기존 초성게임 케이스에서 "내줘"·"놀자"가 빠져
-  // 회귀가 났다(2026-08-17 실측).
-  "내줘", "내봐", "내주라", "놀자", "놀래", "놀아", "맞춰볼래", "맞혀볼래",
-];
+ *
+ *  2026-08-17 재수정: 처음에는 "하자/할래" 같은 시작 의도 표현을 **요구**했으나,
+ *  박말똥 Production 대화에서 "초성 퀴즈 하잖아", "너 끝말잇기 해 봐"가 목록에 없어
+ *  게임이 아예 시작되지 않았다(초성 세션 0건). 아이가 쓰는 말끝은 무한히 많아
+ *  화이트리스트로 감당할 수 없다.
+ *
+ *  그래서 **비교·회상 표현만 차단**하는 방식으로 바꾼다. 080에서 실제로 문제가 된
+ *  것은 그 표현들뿐이었다. 못 잡아서 게임이 안 되는 쪽이, 가끔 잘못 잡히는 쪽보다
+ *  훨씬 나쁘다. */
 const PLAY_START_REFERENCE_KWS = [
-  "보다", "말고", "대신", "했어", "했었", "했지", "했다", "하던", "하는 거야",
-  "재밌었", "재미있었", "좋아했", "어땠", "기억나",
+  "보다 재밌", "보다 재미", "보다 나", "보다 좋",
+  "말고", "대신",
+  "했어", "했었", "했지", "했다", "하던", "했는데",
+  "재밌었", "재미있었", "좋아했", "어땠", "기억나", "기억 나",
 ];
 
-function hasPlayStartIntent(text: string, namePatterns: readonly RegExp[]): boolean {
-  // 비교·회상 발화는 시작 요청이 아니다.
-  if (includesAny(text, PLAY_START_REFERENCE_KWS)) return false;
-  if (includesAny(text, PLAY_START_INTENT_KWS)) return true;
-  // 게임 이름만 말한 경우("끝말잇기!", "초성게임")도 시작 의도로 본다.
-  let stripped = text;
-  for (const pattern of namePatterns) {
-    stripped = stripped.replace(new RegExp(pattern.source, "g"), "");
-  }
-  return stripped.replace(/[\s!?.~,\uAC00-\uD7A3]{0,0}/g, "").replace(/[\s!?.~,]/g, "").length === 0;
+function isPlayReferenceOnly(text: string): boolean {
+  return includesAny(text, PLAY_START_REFERENCE_KWS);
 }
 
 function detectChosungGameStart(text: string): boolean {
   if (includesAny(text, CHOSUNG_START_NEGATION_KWS)) return false;
   if (includesAny(text, CHOSUNG_START_DEFINITION_KWS)) return false;
-  if (!CHOSUNG_START_PATTERNS.some((pattern) => pattern.test(text))) return false;
-  return hasPlayStartIntent(text, CHOSUNG_START_PATTERNS);
+  if (isPlayReferenceOnly(text)) return false;
+  return CHOSUNG_START_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 function detectChosungHintRequest(text: string): boolean {
@@ -161,8 +156,8 @@ const WORD_CHAIN_START_DEFINITION_KWS = ["뭐야", "뭔데", "무슨 뜻", "무�
 function detectWordChainGameStart(text: string): boolean {
   if (includesAny(text, WORD_CHAIN_START_NEGATION_KWS)) return false;
   if (includesAny(text, WORD_CHAIN_START_DEFINITION_KWS)) return false;
-  if (!WORD_CHAIN_START_PATTERNS.some((pattern) => pattern.test(text))) return false;
-  return hasPlayStartIntent(text, WORD_CHAIN_START_PATTERNS);
+  if (isPlayReferenceOnly(text)) return false;
+  return WORD_CHAIN_START_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 // 게임 미지정 놀이 요청 신호 ("심심해", "놀아줘", "뭐 하고 놀까", "재미없어" 등)
