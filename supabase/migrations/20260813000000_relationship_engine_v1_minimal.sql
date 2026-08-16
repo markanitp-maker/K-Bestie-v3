@@ -95,8 +95,11 @@ ALTER TABLE public.chat_sessions
         AND length(relationship_context->>'stage_rule_version') > 0
         AND jsonb_typeof(relationship_context->'scenario_id') = 'string'
         AND length(relationship_context->>'scenario_id') > 0
+        -- ||와 ->>는 우선순위가 같아 왼쪽부터 묶인다. 괄호가 없으면
+        -- ('G' || relationship_context)로 해석돼 text||jsonb가 되고
+        -- 'G'를 JSON으로 파싱하려다 22P02로 실패한다(2026-08-16 Dev 실측).
         AND relationship_context->>'scenario_id' =
-          'G' || relationship_context->>'grade' || '_' ||
+          'G' || (relationship_context->>'grade') || '_' ||
           CASE relationship_context->>'effective_stage'
             WHEN 'W1' THEN 'MEET'
             WHEN 'W2' THEN 'REMEMBER'
@@ -196,6 +199,10 @@ ALTER TABLE public.behavior_events
     'auth', 'home', 'mission', 'freechat', 'play', 'daily_report',
     'weekly_report', 'monthly_report', 'conversation_topic',
     'child_management', 'guardian_settings', 'subscription', 'app_session',
+    -- pwa_update는 078/102 PWA 업데이트 텔레메트리가 이미 쓰는 값이다.
+    -- 빼면 기존 행(2026-08-16 실측 Dev 54건 / Prod 25건)이 CHECK를 위반해
+    -- migration 자체가 실패한다.
+    'pwa_update',
     'relationship'
   )),
   ADD CONSTRAINT behavior_events_relationship_contract_check CHECK (
