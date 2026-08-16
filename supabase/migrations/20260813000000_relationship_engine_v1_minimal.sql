@@ -11,7 +11,7 @@
 --   2) public.chat_sessions (relationship_context JSONB write-once 스냅샷 + 보호 트리거)
 --   3) public.behavior_events (event_key 컬럼 + feature/relationship CHECK + partial unique index)
 
-BEGIN;
+-- BEGIN/COMMIT는 apply-migration.js가 자체 트랜잭션으로 원자 처리하므로 제거한다.
 
 -- -----------------------------------------------------------------------------
 -- 1) child_relationship_state -> child_profiles 1:1 확장
@@ -235,4 +235,3 @@ GRANT ALL ON public.chat_sessions TO anon, authenticated;
 GRANT ALL ON public.behavior_events TO anon, authenticated;
 GRANT ALL ON public.behavior_events TO service_role;
 
-COMMIT;
