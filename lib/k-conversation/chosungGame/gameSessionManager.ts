@@ -257,9 +257,16 @@ export async function submitChosungAnswer(
     hintUsed: r.hint_used,
   }));
 
-  const persona = resolveGradePersona(gradeRaw) ?? GRADE_PERSONAS[1];
-  const minDifficulty = persona.chosungGame.minDifficulty;
-  const maxDifficulty = persona.chosungGame.maxDifficulty;
+  // gradeRaw가 없으면 1학년 페르소나로 떨어져 하한이 1이 된다. 그러면 3학년 아이가
+  // 오답 몇 번에 1학년 난이도까지 밀린다(2026-08-16 실측: 하한 2인데 1로 하강).
+  // 학년을 모르면 난이도를 낮추지 않는다 — 현재 난이도를 하한으로 삼아 방어한다.
+  const persona = resolveGradePersona(gradeRaw);
+  const minDifficulty = persona
+    ? persona.chosungGame.minDifficulty
+    : Math.max(session.current_difficulty, GRADE_PERSONAS[1].chosungGame.minDifficulty);
+  const maxDifficulty = persona
+    ? persona.chosungGame.maxDifficulty
+    : Math.max(session.current_difficulty, GRADE_PERSONAS[1].chosungGame.maxDifficulty);
 
   const rawNextDifficulty = computeNextDifficulty({
     currentDifficulty: session.current_difficulty,

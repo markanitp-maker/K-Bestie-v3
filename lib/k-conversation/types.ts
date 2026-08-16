@@ -43,6 +43,8 @@ export interface EngineInput {
   /** Adapter 전용 확장 슬롯. Engine 내부 어떤 모듈도 이 값의 존재/내용을 조건 분기에 쓰지 않는다.
    * Mission Adapter가 goal/completion/parent_questions 등을 넘길 때만 사용, Free Chat Adapter는 항상 비운다. */
   adapterContext?: Record<string, unknown>;
+  /** 아이 학년 정보 (초성게임 난이도 계산 등용). 미지정 시 corePersona에서 조회 */
+  gradeRaw?: string | number | null;
 }
 
 export type EngineResponseCategory =

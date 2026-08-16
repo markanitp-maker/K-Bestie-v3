@@ -16,6 +16,7 @@ import { recordTopicUsage } from "./semanticTopicHistory";
 import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn } from "./responseGenerator";
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
+import { runChosungTurn } from "./chosungGame/gameOrchestrator";
 
 export type { EngineInput, EngineOutput, ConversationAction, ConversationMode } from "./types";
 export type { GenerateArgs } from "./responseGenerator";
@@ -239,6 +240,45 @@ export async function respond(
     recentActions: deps.recentActions ?? [],
   });
 
+  // 6-1) 초성게임 턴 처리 — 세션 상태 조회 및 deterministic 출제/판정.
+  // runChosungTurn이 handled: true면 instruction을 adapterInstruction 앞에 결합하고,
+  // handled: false면 기존 흐름을 그대로 유지한다.
+  let chosungInstruction: string | undefined;
+  const gradeRaw =
+    input.gradeRaw ??
+    coreCtx.peerPersona.realGrade ??
+    coreCtx.peerPersona.gradeLabel;
+
+  if (input.childId && input.sessionId) {
+    const chosungResult = await runChosungTurn({
+      db: deps.db,
+      childId: input.childId,
+      chatSessionId: input.sessionId,
+      gradeRaw,
+      utterance: input.currentUtterance,
+      signals: {
+        hasChosungGameStart: signals.hasChosungGameStart,
+        hasChosungAnswerAttempt: signals.hasChosungAnswerAttempt,
+        hasChosungHintRequest: signals.hasChosungHintRequest,
+      },
+    });
+
+    if (chosungResult.handled && chosungResult.instruction) {
+      chosungInstruction = chosungResult.instruction;
+    }
+  }
+
+  const effectiveAction: ConversationAction = chosungInstruction
+    ? "PLAYFUL_GAME_CHOSUNG"
+    : action;
+
+  const combinedAdapterInstruction = [
+    chosungInstruction,
+    deps.adapterInstruction,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
   // 7) 응답 생성 — Gemini 자연생성, 30자/물음표 hard guard 없음.
   const recentHistory = filterRecentHistory(
     memorySnapshot.sameSession,
@@ -250,13 +290,13 @@ export async function respond(
     modelId: deps.modelId,
     input: {
       mode: input.mode,
-      action,
+      action: effectiveAction,
       corePersonaFragment,
       gradePersonaFragment,
       memoryFragment,
       currentUtterance: input.currentUtterance,
       recentHistory,
-      adapterInstruction: deps.adapterInstruction,
+      adapterInstruction: combinedAdapterInstruction || undefined,
       isGeneralKnowledgeQuestion: signals.hasGeneralKnowledgeQuestion,
     },
   });
@@ -270,7 +310,7 @@ export async function respond(
   // semantic_group을 가리켜 행 경합도 자연히 사라진다.
   const topicMode = input.mode === "MISSION" ? "mission" : "free_chat";
   await recordTopicUsage(deps.db, input.childId, semanticGroup, topicMode, "child");
-  if (action === "TOPIC_SHIFT") {
+  if (effectiveAction === "TOPIC_SHIFT") {
     const kResponseSemanticGroup = estimateSemanticGroup(extractUtteranceSignals(generated.text));
     if (kResponseSemanticGroup !== semanticGroup) {
       await recordTopicUsage(deps.db, input.childId, kResponseSemanticGroup, topicMode, "k");
@@ -279,7 +319,7 @@ export async function respond(
 
   return {
     text: generated.text,
-    action,
+    action: effectiveAction,
     category: "generated",
     boredom,
     memoryTiersUsed: memorySnapshot.tiersUsed,

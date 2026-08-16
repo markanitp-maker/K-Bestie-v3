@@ -28,16 +28,20 @@ function createMockSupabase(options?: {
       if (shouldFail) {
         return {
           insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "Mock DB insert error" } }) }) }),
-          select: () => ({
-            eq: () => ({
-              is: () => ({
-                single: async () => ({ data: null, error: { message: "Mock DB query error" } }),
-                maybeSingle: async () => ({ data: null, error: { message: "Mock DB query error" } }),
-              }),
-              single: async () => ({ data: null, error: { message: "Mock DB query error" } }),
-              order: () => ({ limit: async () => ({ data: null, error: { message: "Mock DB query error" } }) }),
-            }),
-          }),
+          // 제품 코드가 쓰는 모든 체인을 지원해야 한다. 빠지면 "eq is not a function"
+          // 같은 엉뚱한 TypeError가 나서 정작 검증하려던 에러 메시지를 못 본다.
+          select: () => {
+            const err = { data: null, error: { message: "Mock DB query error" } };
+            const node: Record<string, unknown> = {};
+            const chain = () => node;
+            for (const method of ["eq", "is", "not", "in", "order", "gte", "lte", "neq"]) {
+              node[method] = chain;
+            }
+            node.limit = async () => err;
+            node.single = async () => err;
+            node.maybeSingle = async () => err;
+            return node;
+          },
           update: () => ({
             eq: () => ({
               eq: () => ({
