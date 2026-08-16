@@ -415,3 +415,33 @@ test("Invariant 3: 직접 요청이 없으면 기존처럼 활성 세션이 처�
   assert.equal(result.handled, true);
   assert.equal(result.instruction, "chosung-processed-사자");
 });
+
+/** 080 리뷰 지적: 게임 이름이 문장에 등장하기만 해도 시작 요청으로 잡혀,
+ *  "직접 요청이 활성 게임을 이긴다"로 바꾼 뒤 비교·회상 발화에서 게임이
+ *  강제 전환됐다. 시작 의도가 있을 때만 전환되어야 한다. */
+test("080: 비교·회상 발화는 게임 시작 요청이 아니다", () => {
+  const notStart = [
+    "이거 초성게임보다 재밌다",
+    "끝말잇기 어제 했어",
+    "초성게임 말고 딴거",
+    "끝말잇기 재밌었어",
+    "초성게임 기억나?",
+  ];
+  for (const text of notStart) {
+    const s = extractUtteranceSignals(text);
+    assert.equal(s.hasChosungGameStart, false, `초성 오탐: ${text}`);
+    assert.equal((s as { hasWordChainGameStart?: boolean }).hasWordChainGameStart ?? false, false, `끝말 오탐: ${text}`);
+  }
+});
+
+test("080: 시작 의도가 있거나 게임 이름만 말하면 시작 요청이다", () => {
+  const chosung = ["초성게임 하자", "초성게임", "초성 퀴즈 할래?"];
+  const wordChain = ["끝말잇기 하자", "끝말잇기", "우리 끝말잇기 할래?"];
+  for (const text of chosung) {
+    assert.equal(extractUtteranceSignals(text).hasChosungGameStart, true, `초성 미탐: ${text}`);
+  }
+  for (const text of wordChain) {
+    const s = extractUtteranceSignals(text) as { hasWordChainGameStart?: boolean };
+    assert.equal(s.hasWordChainGameStart ?? false, true, `끝말 미탐: ${text}`);
+  }
+});
