@@ -1,3 +1,4 @@
+import { recoverGameCommand } from "@/lib/stt/gameCommandRecovery";
 // K Conversation Engine — 발화 의미 신호 추출 (codex-rv 지적 반영: 기존
 // lib/freechat/reactionEngine.ts의 10-카테고리 분류는 canned 템플릿 선택용으로 설계되어
 // 071의 12개 Action을 구분하기엔 너무 성기다("100점 맞았어"가 neutral로 떨어지거나,
@@ -243,7 +244,10 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
   const hasNegativeEmotion = includesAny(trimmed, NEGATIVE_EMOTION_KWS);
   const hasPhysicalNeed = includesAny(trimmed, PHYSICAL_KWS);
 
-  const hasChosungGameStart = detectChosungGameStart(trimmed);
+  // 정확 매칭이 먼저다. 실패했을 때만 STT 오인식 복구를 시도한다(2026-08-17).
+  // 브라우저 STT가 "초성"을 "호성"으로, "퀴즈"를 "키즈"로 뭉개는 사례가 실제로 있었고
+  // 그 탓에 초성게임이 한 번도 시작되지 않았다(박말똥 Production).
+  let hasChosungGameStart = detectChosungGameStart(trimmed);
   const hasChosungHintRequest = detectChosungHintRequest(trimmed);
   const hasChosungAnswerAttempt = detectChosungAnswerAttempt(
     trimmed,
@@ -251,7 +255,24 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasChosungHintRequest,
     hasAchievement || hasConflict || hasNegativeEmotion || hasPhysicalNeed,
   );
-  const hasWordChainGameStart = detectWordChainGameStart(trimmed);
+  let hasWordChainGameStart = detectWordChainGameStart(trimmed);
+  // 복구 계층도 비교·회상 차단을 똑같이 거쳐야 한다. 안 그러면 정확 매칭에서 막은
+  // "이거 초성게임보다 재밌다"가 복구로 되살아난다(2026-08-17 실측).
+  // 복구 계층도 정확 매칭과 같은 가드를 전부 거쳐야 한다. 안 그러면 정확 매칭에서
+  // 막은 발화가 복구로 되살아난다 — "이거 초성게임보다 재밌다"(비교),
+  // "초성게임 안 할래"(거절), "초성이 뭐야?"(정의 질문) 모두 실측으로 확인됐다.
+  const blockedFromRecovery =
+    isPlayReferenceOnly(trimmed)
+    || includesAny(trimmed, CHOSUNG_START_NEGATION_KWS)
+    || includesAny(trimmed, CHOSUNG_START_DEFINITION_KWS)
+    || includesAny(trimmed, WORD_CHAIN_START_NEGATION_KWS)
+    || includesAny(trimmed, WORD_CHAIN_START_DEFINITION_KWS);
+
+  if (!hasChosungGameStart && !hasWordChainGameStart && !blockedFromRecovery) {
+    const recovered = recoverGameCommand(trimmed);
+    if (recovered === "CHOSUNG") hasChosungGameStart = true;
+    else if (recovered === "WORD_CHAIN") hasWordChainGameStart = true;
+  }
   const hasPlayRequestWithoutTarget = detectPlayRequestWithoutTarget(
     trimmed,
     hasChosungGameStart,
