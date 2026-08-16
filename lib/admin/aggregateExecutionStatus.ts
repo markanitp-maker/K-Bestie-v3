@@ -189,8 +189,17 @@ export async function aggregateExecutionStatus(
   const statuses = Array.from(statusByChild.values()).map(s => {
     const r = reportByChild.get(s.childId);
     if (r) {
+      const isReportTerminal = s.reportRawStatus === "completed" || s.reportRawStatus === "failed";
+      const shouldDeriveReportStatus = !isReportTerminal;
+      if (shouldDeriveReportStatus) {
+        summary.report.created++;
+      }
       return {
         ...s,
+        ...(shouldDeriveReportStatus ? {
+          report: "완료",
+          reportStatusDerivedFromRow: true,
+        } : {}),
         lastReportGeneratedAt: r.updated_at || r.created_at,
         generationSource: r.generation_source,
         generationVersion: r.generation_version
@@ -199,6 +208,7 @@ export async function aggregateExecutionStatus(
     return s;
   });
   const isTerminal = (st?: string) => st === "completed" || st === "failed";
+  const isReportComplete = (s: any) => isTerminal(s.reportRawStatus) || s.reportStatusDerivedFromRow === true;
 
   let isComplete = false;
   if (statuses.length > 0) {
@@ -212,7 +222,7 @@ export async function aggregateExecutionStatus(
         return isTerminal(s.collectionRawStatus);
       }
       if (action === "generate") {
-        return isTerminal(s.memoryRawStatus) && isTerminal(s.reportRawStatus);
+        return isTerminal(s.memoryRawStatus) && isReportComplete(s);
       }
       if (action === "collect_and_generate") {
         if (upstreamFailed) return true;
@@ -220,14 +230,14 @@ export async function aggregateExecutionStatus(
           isTerminal(s.collectionRawStatus) &&
           isTerminal(s.correctionRawStatus) &&
           isTerminal(s.memoryRawStatus) &&
-          isTerminal(s.reportRawStatus)
+          isReportComplete(s)
         );
       }
 
       const cDone = !s.collectionRawStatus || isTerminal(s.collectionRawStatus);
       const corDone = !s.correctionRawStatus || isTerminal(s.correctionRawStatus);
       const mDone = upstreamFailed || !s.memoryRawStatus || isTerminal(s.memoryRawStatus);
-      const rDone = upstreamFailed || !s.reportRawStatus || isTerminal(s.reportRawStatus);
+      const rDone = upstreamFailed || !s.reportRawStatus || isReportComplete(s);
       return cDone && corDone && mDone && rDone;
     });
   }

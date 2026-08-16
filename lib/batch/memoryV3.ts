@@ -1,5 +1,11 @@
 import { createServiceClient } from "@/lib/supabase/server";
-import { getSupabaseUrl } from "@/lib/supabase/env";
+import {
+  generateMemorySummaries,
+  generateMemoryFacts,
+  type MemorySummaryResult,
+  type MemoryFactBatchResult,
+} from "@/lib/batch/generateMemory";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type MemoryExecutionResult = {
   status: "completed" | "skipped" | "failed";
@@ -8,41 +14,41 @@ export type MemoryExecutionResult = {
   error?: string;
 };
 
+export interface MemoryBatchDependencies {
+  db?: SupabaseClient;
+  generateSummaries?: (
+    db: SupabaseClient,
+    targetDate: string,
+    targetChildId?: string
+  ) => Promise<MemorySummaryResult>;
+  generateFacts?: (
+    db: SupabaseClient,
+    targetDate: string,
+    targetChildId?: string
+  ) => Promise<MemoryFactBatchResult>;
+}
+
 export async function executeMemoryBatchForChildDate(
   childId: string,
-  businessDate: string
+  businessDate: string,
+  deps?: MemoryBatchDependencies
 ): Promise<MemoryExecutionResult> {
-  const baseUrl = getSupabaseUrl();
-  const secret = process.env.BATCH_SECRET || process.env.CRON_SECRET;
+  const db = deps?.db ?? createServiceClient();
+  const runSummaries = deps?.generateSummaries ?? generateMemorySummaries;
+  const runFacts = deps?.generateFacts ?? generateMemoryFacts;
 
-  if (!baseUrl || !secret) {
-    throw new Error(
-      "MEMORY_CONFIG_MISSING: Missing SUPABASE_URL or secret (BATCH_SECRET / CRON_SECRET)"
-    );
+  const result = await runSummaries(db, businessDate, childId);
+
+  let memoryFacts: Partial<MemoryFactBatchResult> & { error?: string } = { skipped: [] };
+  try {
+    memoryFacts = await runFacts(db, businessDate, childId);
+  } catch (e) {
+    console.error("[memory-batch] generateMemoryFacts 실패:", e);
+    memoryFacts = {
+      error: String(e),
+      errors: childId ? [{ childId, error: String(e) }] : [],
+    };
   }
-
-  const endpointUrl = `${baseUrl.replace(/\/$/, "")}/functions/v1/memory-batch`;
-
-  const res = await fetch(endpointUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${secret}`,
-    },
-    body: JSON.stringify({ date: businessDate, childId }),
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status}: ${errorText.substring(0, 200)}`);
-  }
-
-  const data = await res.json().catch(() => null);
-  if (!data || data.ok !== true || !data.result) {
-    throw new Error(data?.error || "Memory batch returned invalid response");
-  }
-
-  const result = data.result;
 
   // Inspect payload-level errors
   const childErr = (result.errors || []).find((e: any) => e.childId === childId);
@@ -50,14 +56,14 @@ export async function executeMemoryBatchForChildDate(
     throw new Error(`Memory summary failed for child: ${childErr.error}`);
   }
 
-  const factErrors = result.memoryFacts?.errors || [];
+  const factErrors = memoryFacts?.errors || [];
   const factChildErr = factErrors.find((e: any) => e.childId === childId);
   if (factChildErr) {
     throw new Error(`Memory facts failed for child: ${factChildErr.error}`);
   }
 
-  if (result.memoryFacts?.error && typeof result.memoryFacts.error === "string") {
-    throw new Error(`Memory facts error: ${result.memoryFacts.error}`);
+  if (memoryFacts?.error && typeof memoryFacts.error === "string") {
+    throw new Error(`Memory facts error: ${memoryFacts.error}`);
   }
 
   if (Array.isArray(result.childrenProcessed) && result.childrenProcessed.includes(childId)) {

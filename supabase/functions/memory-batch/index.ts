@@ -1,3 +1,10 @@
+/**
+ * @deprecated [DEPRECATED - 2026-08-17 / Task 085-B]
+ * 이 Edge Function은 더 이상 프로덕션에서 호출되지 않습니다.
+ * BATCH_SECRET 불일치로 인한 401 오류 및 HTTP hop 제거를 위해
+ * Memory Batch 로직이 Next.js 앱 런타임(`lib/batch/generateMemory.ts` 및 `lib/batch/memoryV3.ts`)으로 완전히 이식되었습니다.
+ * Production pg_cron 및 Vercel Worker는 이제 `app.k-bestie.com` 런타임 내에서 직접 실행됩니다.
+ */
 import { serviceClient, generateMemorySummaries, generateMemoryFacts, kstToday, checkAuth } from "../_shared/batch.ts";
 
 Deno.serve(async (req: Request) => {
