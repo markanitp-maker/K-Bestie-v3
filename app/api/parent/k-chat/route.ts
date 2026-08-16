@@ -6,6 +6,7 @@ import { getLlmModel } from "@/lib/llm/modelRouter";
 import { retrieveParentKContext, type ParentConversationTurn } from "@/lib/parentKChat/parentKnowledgeRetrieval";
 import { buildAskChildProposal, classifyParentKChatIntent } from "@/lib/parentKChat/intentClassifier";
 import {
+  answerForClockFact,
   answerForDateFact,
   answerForUnavailable,
   buildAskChildContext,
@@ -299,6 +300,27 @@ export async function POST(request: Request) {
         // 날짜·요일 질문은 모델 추측이 아니라 KST 기준 계산값으로 답한다(084 §9).
         // 084로 날짜 질문이 GENERAL_CONVERSATION으로 오게 되면서, 아래 아이 조회
         // 경로에 있던 날짜 응답 분기에 더 이상 도달하지 못한다. 여기서 먼저 처리한다.
+        // 요일·시간·월은 모델이 추측하면 틀린다(2026-08-16 Dev 실측: 일요일을 수요일로 답함).
+        const clockAnswer = answerForClockFact(trimmedQuestion);
+        if (clockAnswer) {
+          logTurn({
+            retrievalAttempted: false,
+            retrievalSource: [],
+            retrievalResultCount: 0,
+            responseMode: "GENERAL_CLOCK_FACT",
+            fallbackReason: null,
+          });
+          return NextResponse.json({
+            answerable: true,
+            confidence: 1,
+            answer: clockAnswer,
+            suggestedParentQuestion: null,
+            evidenceIds: [],
+            askChildProposal: null,
+            evidenceDateRange: null,
+            intent,
+          });
+        }
         if (isDateFactQuestion(trimmedQuestion)) {
           const generalTemporal = resolveTemporalFromUserContext(trimmedQuestion, conversationContext);
           const dateAnswer = answerForDateFact(generalTemporal);

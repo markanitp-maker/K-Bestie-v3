@@ -70,6 +70,37 @@ export function answerForDateFact(temporal: ParentTemporalResolution): string | 
 }
 
 
+/** 요일·시간·월처럼 아이 기록과 무관한 사실 질문인지 판정한다(084 §9).
+ *
+ * 날짜(며칠)와 달리 요일·시간은 모델이 추측하면 틀린다 — 2026-08-16 Dev 실측에서
+ * 일요일을 "수요일"로 답했다. 아이 기록 조회 질문과 구분되는 순수 사실 질문만 잡는다. */
+export function isClockFactQuestion(text: string): boolean {
+  const normalized = text.normalize("NFKC").replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+  const EXCLUDE = /(?:기록|리포트|보고서|내용|활동|대화|일과|일기|숙제|학교|학원|친구|서아|서현|우리\s*애|아이|딸|아들|뭐했|뭐\s*했|어땠|좋아|놀았|물어)/;
+  if (EXCLUDE.test(normalized)) return false;
+  const asksWeekday = /(?:무슨\s*요일|요일이야|요일이에요|요일인가|몇\s*요일)/.test(normalized);
+  const asksTime = /(?:몇\s*시|시간이\s*(?:어떻게|뭐)|지금\s*몇)/.test(normalized);
+  const asksMonth = /(?:몇\s*월|무슨\s*달)/.test(normalized);
+  return asksWeekday || asksTime || asksMonth;
+}
+
+/** 요일·시간·월 질문에 KST 기준 계산값으로 답한다. 해당 질문이 아니면 null. */
+export function answerForClockFact(text: string, now: Date = new Date()): string | null {
+  if (!isClockFactQuestion(text)) return null;
+  const normalized = text.normalize("NFKC").replace(/\s+/g, " ").trim();
+  const fmt = (opts: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", ...opts }).format(now);
+
+  if (/(?:무슨\s*요일|요일이야|요일이에요|요일인가|몇\s*요일)/.test(normalized)) {
+    return `오늘은 ${fmt({ weekday: "long" })}이에요.`;
+  }
+  if (/(?:몇\s*시|시간이\s*(?:어떻게|뭐)|지금\s*몇)/.test(normalized)) {
+    return `지금은 ${fmt({ hour: "numeric", minute: "2-digit", hour12: true })}예요.`;
+  }
+  return `이번 달은 ${fmt({ month: "long" })}이에요.`;
+}
+
 export function buildAskChildContext(
   parentQuestion: string,
   temporal: ParentTemporalResolution,

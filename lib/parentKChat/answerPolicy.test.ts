@@ -6,6 +6,8 @@ import {
   buildAskChildContext,
   buildCorrectionRetrievalQuery,
   findPreviousParentInformationQuery,
+  answerForClockFact,
+  isClockFactQuestion,
   isDateFactQuestion,
   latestAskChildContext,
 } from "./answerPolicy";
@@ -84,4 +86,28 @@ test("plain 물어봐줘는 직전 K의 구조화된 unknown detail을 승계한
   ]);
   assert.equal(result?.lastUnknownDetail, "가장 기억나는 장면");
   assert.equal(result?.targetDate, "2026-08-09");
+});
+
+test("요일·시간·월은 KST 계산값으로 답한다(모델 추측 금지)", () => {
+  // 2026-08-16 Dev 실측: 일요일인데 LLM이 "수요일"로 답했다. 084 §9 위반.
+  const now = new Date("2026-08-16T02:30:00Z"); // KST 2026-08-16(일) 11:30
+  assert.equal(answerForClockFact("오늘 무슨 요일이야?", now), "오늘은 일요일이에요.");
+  assert.match(String(answerForClockFact("지금 몇 시야?", now)), /^지금은 오전 11:30/);
+  assert.equal(answerForClockFact("이번 달이 몇 월이야?", now), "이번 달은 8월이에요.");
+});
+
+test("아이에 대한 질문은 요일·시간 답변으로 새지 않는다", () => {
+  for (const q of [
+    "우리 아이가 오늘 뭐 했어?",
+    "서현이 오늘 무슨 요일에 학원 가?",
+    "어제 우리 애 기분 어땠어?",
+  ]) {
+    assert.equal(isClockFactQuestion(q), false, q);
+    assert.equal(answerForClockFact(q), null, q);
+  }
+});
+
+test("날짜(며칠) 질문은 기존 경로가 계속 담당한다", () => {
+  assert.equal(isClockFactQuestion("어제 날짜가 몇 일이야?"), false);
+  assert.equal(isDateFactQuestion("어제 날짜가 몇 일이야?"), true);
 });
