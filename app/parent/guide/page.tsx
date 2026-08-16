@@ -31,6 +31,8 @@ type Message = {
   requestedTopic?: string;
   requestedArea?: string;
   parentIntent?: string;
+  lastUnknownDetail?: string | null;
+  targetDate?: string | null;
 };
 
 // requests/request-parent-question-draft-modal-fix.md §6 — 초안 질문 모달 상태.
@@ -278,7 +280,13 @@ export default function ParentGuidePage() {
           child_id: requestChildId,
           question: textToSend,
           priorAskChildProposal: pendingAskChildProposal,
-          conversationContext: messages.slice(-6).map((message) => ({ role: message.role, text: message.text })),
+          conversationContext: messages.slice(-6).map((message) => ({
+            role: message.role,
+            text: message.text,
+            askChildProposal: message.askChildProposal ?? null,
+            lastUnknownDetail: message.lastUnknownDetail ?? null,
+            targetDate: message.targetDate ?? null,
+          })),
         }),
       });
 
@@ -304,6 +312,8 @@ export default function ParentGuidePage() {
           requestedTopic: data.requestedTopic,
           requestedArea: data.requestedArea,
           parentIntent: data.intent,
+          lastUnknownDetail: data.lastUnknownDetail ?? null,
+          targetDate: data.targetDate ?? null,
         }
       ]);
     } catch (err) {

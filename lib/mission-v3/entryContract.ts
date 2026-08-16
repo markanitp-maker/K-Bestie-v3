@@ -1,4 +1,8 @@
-import type { ConversationGoal } from "@/lib/mission-v3/goalEngine";
+import {
+  countSatisfiedGoals,
+  getCompletionThreshold,
+  type ConversationGoal,
+} from "@/lib/mission-v3/goalEngine";
 import type { MissionTimeGateDisplayKey } from "@/lib/mission-v3/timePolicy";
 
 export type MissionEntryState =
@@ -98,11 +102,10 @@ export function buildV2Progress(
 export function buildV3Progress(
   goals: ConversationGoal[],
 ): NormalizedMissionProgress {
-  const satisfied = goals.filter((goal) => goal.status === "SATISFIED").length;
   return {
     kind: "conversation_goals",
-    current: satisfied,
-    target: 3, // completionThreshold = 3 (not total count)
+    current: countSatisfiedGoals(goals),
+    target: getCompletionThreshold(goals),
   };
 }
 

@@ -69,43 +69,20 @@ test("1. v2 진행 3/5 -> entryState: 'resume', progress: { kind: 'valid_answers
   });
 });
 
-test("2. v3 진행 satisfied=1 -> progress: { kind: 'conversation_goals', current: 1, target: 3 } (completionThreshold)", () => {
-  const goals: ConversationGoal[] = [
-    {
-      goalId: "goal-1",
-      order: 1,
-      targetTurnIndex: 1,
-      conceptTitle: "Goal 1",
-      status: "SATISFIED",
-    },
-    {
-      goalId: "goal-2",
-      order: 2,
-      targetTurnIndex: 2,
-      conceptTitle: "Goal 2",
-      status: "PENDING",
-    },
-    {
-      goalId: "goal-3",
-      order: 3,
-      targetTurnIndex: 3,
-      conceptTitle: "Goal 3",
-      status: "PENDING",
-    },
-    {
-      goalId: "goal-4",
-      order: 4,
-      targetTurnIndex: 4,
-      conceptTitle: "Goal 4",
-      status: "PENDING",
-    },
-  ];
+test("2. v3 진행 satisfied=1 -> progress: { kind: 'conversation_goals', current: 1, target: 5 } (completionThreshold)", () => {
+  const goals: ConversationGoal[] = Array.from({ length: 10 }, (_, i) => ({
+    goalId: `goal-${i + 1}`,
+    order: i + 1,
+    targetTurnIndex: i + 1,
+    conceptTitle: `Goal ${i + 1}`,
+    status: i === 0 ? "SATISFIED" : "PENDING",
+  }));
 
   const v3Progress = buildV3Progress(goals);
   assert.deepEqual(v3Progress, {
     kind: "conversation_goals",
     current: 1,
-    target: 3, // completionThreshold = 3 (not total count 4)
+    target: 5, // completionThreshold = 5
   });
 
   const input: BuildMissionEntrySnapshotInput = {
@@ -128,7 +105,7 @@ test("2. v3 진행 satisfied=1 -> progress: { kind: 'conversation_goals', curren
   assert.deepEqual(snapshot.progress, {
     kind: "conversation_goals",
     current: 1,
-    target: 3,
+    target: 5,
   });
 });
 
