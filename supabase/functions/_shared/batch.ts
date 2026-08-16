@@ -27,6 +27,11 @@ import {
 } from "../../../app/api/_lib/prompts.ts";
 import { getLlmModel, type LlmModelRole } from "../../../lib/llm/modelRouter.ts";
 import { sanitizeReportJson } from "../../../app/api/_lib/reportSafetyGuard.ts";
+import { validateReportLanguageIntegrity } from "../../../lib/reports/reportLanguageIntegrity.ts";
+import {
+  buildLanguageRetryInstruction,
+  buildLanguageFailureMessage,
+} from "../../../lib/reports/reportLanguageRetry.ts";
 
 function extractJSON(text: string) {
   try {
@@ -458,20 +463,56 @@ async function mapChunkSummary(model: GroupAModelResolved, chunk: string): Promi
 }
 
 async function reduceToWeeklyReport(model: GroupAModelResolved, weekRange: string, transcriptText: string): Promise<WeeklyReportJson> {
-  const prompt = WEEKLY_REPORT_PROMPT_TEMPLATE
-    .replace("{{WEEK_RANGE}}", weekRange)
-    .replace("{{TRANSCRIPT}}", transcriptText);
-  // summary_text/detail_text/detail_dashboard_cards/highlights/parent_guide/
-  // weekend_activity_recommendation을 한 응답에 전부 담아야 하므로 2048로는
-  // 활동이 많은 주(예: 방학·여행 주간)에서 JSON이 중간에 잘려 파싱 실패로
-  // 이어졌다(2026-08-10 실측) — lib/batch/generateWeeklySummary.ts(로컬
-  // 개발용 사본)와 동일하게 8192로 맞춘다.
-  const text = await callReportModel(model, prompt, 8192);
-  try {
-    return sanitizeReportJson(extractJSON(text));
-  } catch {
-    throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
+  const basePrompt =
+    WEEKLY_REPORT_PROMPT_TEMPLATE
+      .replace("{{WEEK_RANGE}}", weekRange)
+      .replace("{{TRANSCRIPT}}", transcriptText) +
+    "\n\n[언어 및 표기 규칙]\n- 모든 문장은 자연스러운 한국어로만 작성한다.\n- 일본어 문자(히라가나·가타카나)를 절대 쓰지 않는다.\n- 한자어는 한글로 풀어 쓴다.\n- 영어 고유명사(Roblox, YouTube, MBTI 등)는 그대로 두어도 된다.";
+
+  const MAX_ATTEMPTS = 2;
+  let lastViolations: Array<{ path: string; kind: string }> = [];
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const prompt =
+      attempt === 1
+        ? basePrompt
+        : basePrompt + buildLanguageRetryInstruction(lastViolations);
+
+    // summary_text/detail_text/detail_dashboard_cards/highlights/parent_guide/
+    // weekend_activity_recommendation을 한 응답에 전부 담아야 하므로 2048로는
+    // 활동이 많은 주(예: 방학·여행 주간)에서 JSON이 중간에 잘려 파싱 실패로
+    // 이어졌다(2026-08-10 실측) — lib/batch/generateWeeklySummary.ts(로컬
+    // 개발용 사본)와 동일하게 8192로 맞춘다.
+    const text = await callReportModel(model, prompt, 8192);
+
+    let parsed: unknown;
+    try {
+      parsed = sanitizeReportJson(extractJSON(text));
+    } catch {
+      throw new Error(`주간 리포트 JSON 파싱 실패: ${text.slice(0, 100)}`);
+    }
+
+    const validation = validateReportLanguageIntegrity(parsed);
+    if (validation.ok) {
+      return parsed as WeeklyReportJson;
+    }
+
+    lastViolations = validation.violations.map((v) => ({
+      path: v.path,
+      kind: v.kind,
+    }));
+
+    console.warn(
+      `[reduceToWeeklyReport] 주간 리포트 언어 검증 위반 (${validation.violations.length}건, 시도 ${attempt}/${MAX_ATTEMPTS}):`,
+      lastViolations,
+    );
+
+    if (attempt === MAX_ATTEMPTS) {
+      throw new Error(buildLanguageFailureMessage(lastViolations));
+    }
   }
+
+  throw new Error(buildLanguageFailureMessage(lastViolations));
 }
 
 /** 원문 재분석 — 토큰 상한 초과 시 청크 맵-리듀스로 압축한 뒤 리듀스. */
