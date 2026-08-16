@@ -4,6 +4,7 @@ import type { RelationshipCalendarStage } from "./calendarStage";
 import { resolveGradeStrategy } from "./gradeStrategy";
 import {
   buildScenarioCardFragment,
+  buildScenarioId,
   buildScenarioKey,
   cleanScenarioCardText,
   RELATIONSHIP_STAGE_CARDS,
@@ -140,6 +141,14 @@ test("buildScenarioKey가 올바른 형식의 키를 생성한다", () => {
   assert.equal(buildScenarioKey(3, "REMEMBER", "V1"), "G3_REMEMBER_V1");
   assert.equal(buildScenarioKey(1, "MEET", "V2"), "G1_MEET_V2");
   assert.equal(buildScenarioKey(6, "VOLUNTARY_RETURN", "V1"), "G6_VOLUNTARY_RETURN_V1");
+});
+
+test("buildScenarioId가 버전 접미사 없이 G<grade>_<STAGE> 형식의 ID를 생성한다 (§23)", () => {
+  assert.equal(buildScenarioId(3, "REMEMBER"), "G3_REMEMBER");
+  assert.equal(buildScenarioId(1, "MEET"), "G1_MEET");
+  assert.equal(buildScenarioId(6, "VOLUNTARY_RETURN"), "G6_VOLUNTARY_RETURN");
+  assert.equal(buildScenarioId(4, "SHARED_HISTORY"), "G4_SHARED_HISTORY");
+  assert.equal(buildScenarioId(3, "REMEMBER").includes("_V"), false);
 });
 
 test("문자열 학년('초3', '3학년')도 올바른 scenarioKey를 반환한다", () => {

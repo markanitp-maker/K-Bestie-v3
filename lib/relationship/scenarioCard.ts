@@ -129,6 +129,12 @@ export function buildScenarioKey(grade: number, stageKey: RelationshipStageKey, 
   return `G${grade}_${stageKey}_${version}`;
 }
 
+/** DB relationship_context에 저장할 시나리오 ID (버전 접미사 없음). 예: "G3_REMEMBER" (§23) */
+export function buildScenarioId(grade: number, stageKey: RelationshipStageKey): string {
+  return `G${grade}_${stageKey}`;
+}
+
+
 /** stage 카드 + grade strategy 를 합성한 최종 카드. 데이터를 복사하지 않고 참조로 담는다. */
 export interface ResolvedScenarioCard {
   scenarioKey: string;          // G3_REMEMBER_V1
