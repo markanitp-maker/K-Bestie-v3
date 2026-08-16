@@ -183,11 +183,20 @@ export const filterQuestionCandidatesByCooldown = async (input: {
   return input.candidates.filter((candidate) => !blockedGroups.has(candidate.semanticGroup));
 };
 
+/**
+ * applyCooldown=false는 "이번 세션에 이미 확정 저장된 Goal의 instruction을 복원"하는
+ * 용도 전용이다(2026-08-16 Production 장애). cooldown은 세션 시작 시 어떤 주제를
+ * 새로 고를지에만 적용해야 하는데, 이미 conversation_goals에 저장된 Goal까지 매 턴
+ * 다시 필터링하면 그 사이 cooldown에 걸린 semantic_group의 instruction이 사라져
+ * `/turn`이 500으로 죽고 미션이 영구히 갇힌다. 신규 Goal 선택 경로는 기본값 그대로
+ * cooldown을 적용한다.
+ */
 export const loadMissionQuestionGoalCandidates = async (input: {
   db: SupabaseClient;
   childId: string;
   grade: number;
   weekday: MissionWeekday;
+  applyCooldown?: boolean;
 }): Promise<MissionQuestionGoalCandidate[]> => {
   if (!Number.isInteger(input.grade) || input.grade < 1 || input.grade > 6) {
     throw new Error("미션 질문은행 조회 학년은 1~6이어야 합니다.");
@@ -234,6 +243,8 @@ export const loadMissionQuestionGoalCandidates = async (input: {
       const rightRecentRank = recentRank.get(right.semanticGroup) ?? Number.MAX_SAFE_INTEGER;
       return rightRecentRank - leftRecentRank;
     });
+
+  if (input.applyCooldown === false) return candidates;
 
   return filterQuestionCandidatesByCooldown({
     db: input.db,

@@ -22,6 +22,8 @@ import {
   type MissionQuestionGoalCandidate,
   type MissionQuestionMetadataRow,
 } from "./questionBank.js";
+import { loadMissionPromptGoals } from "./routeSupport";
+import type { ConversationGoal } from "./goalEngine";
 
 interface TopicState {
   child_id: string;
@@ -199,6 +201,87 @@ test("FREE_CHAT에서 K가 먼저 쓴 semantic group은 같은 공용 테이블�
   });
 
   assert.deepEqual(candidates.map((candidate) => candidate.semanticGroup), ["SCHOOL_EXPERIENCE"]);
+});
+
+test("applyCooldown=false면 cooldown 중인 주제도 후보에 남는다(확정 Goal instruction 복원용)", async () => {
+  // 2026-08-16 안서현 Production 장애: 이미 conversation_goals에 저장된 Goal의
+  // semantic_group이 cooldown에 걸리면 instruction을 못 찾아 /turn이 500으로 죽었다.
+  const { db } = makeDb([
+    makeQuestionRow(),
+    makeQuestionRow({
+      id: "question-mood",
+      question_text: "오늘 기분을 색깔로 말하면 무슨 색이야?",
+      semantic_group: "MOOD_CHECK",
+      topic: "mood_check",
+      weekday_affinity: [],
+      answer_mode: "metaphor",
+    }),
+  ]);
+  await recordTopicUsage(db, "child-1", "MOOD_CHECK", "free_chat", "k", 3);
+
+  const filtered = await loadMissionQuestionGoalCandidates({
+    db, childId: "child-1", grade: 4, weekday: "mon",
+  });
+  assert.deepEqual(
+    filtered.map((candidate) => candidate.semanticGroup),
+    ["SCHOOL_EXPERIENCE"],
+    "기본값은 기존대로 cooldown을 적용해야 한다",
+  );
+
+  const restored = await loadMissionQuestionGoalCandidates({
+    db, childId: "child-1", grade: 4, weekday: "mon", applyCooldown: false,
+  });
+  const groups = restored.map((candidate) => candidate.semanticGroup);
+  assert.ok(groups.includes("MOOD_CHECK"), "cooldown 중인 주제도 복원 경로에서는 남아야 한다");
+  assert.ok(groups.includes("SCHOOL_EXPERIENCE"));
+  for (const candidate of restored) {
+    assert.ok(candidate.promptInstruction.trim().length > 0, "instruction이 비면 복원이 실패한다");
+  }
+});
+
+const openGoal = (goalOrder: number, semanticGroup: string): ConversationGoal => ({
+  goalId: `goal-${goalOrder}`,
+  missionSessionId: "7dbd3513-c89e-4fbc-acc5-6628d8e6e3cb",
+  childId: "child-1",
+  goalOrder,
+  semanticGroup,
+  priority: "P3",
+  status: "PENDING",
+  evidenceSource: null,
+  sourceTurnId: null,
+  confidence: null,
+  satisfiedAt: null,
+  parentQuestionId: null,
+});
+
+test("확정 저장된 Goal은 semantic_group이 cooldown 중이어도 instruction이 복원된다", async () => {
+  // 2026-08-16 안서현 Production 재현: 열린 Goal 3개(ACHIEVEMENT/INTEREST_AND_PREFERENCE/
+  // PHYSICAL_STATE) 중 다음 차례인 ACHIEVEMENT가 cooldown 상태였다.
+  // 수정 전에는 여기서 "Conversation Goal 대화 지시를 복원할 수 없습니다"로 throw했고
+  // /turn이 500 "미션 대화 목표를 불러오지 못했어요."로 죽었다.
+  const groups = ["ACHIEVEMENT", "INTEREST_AND_PREFERENCE", "PHYSICAL_STATE"];
+  const { db } = makeDb(groups.map((semanticGroup, index) => makeQuestionRow({
+    id: `question-${semanticGroup.toLowerCase()}`,
+    question_text: `${semanticGroup} 질문 ${index}`,
+    semantic_group: semanticGroup,
+    topic: semanticGroup.toLowerCase(),
+    weekday_affinity: [],
+  })));
+  await recordTopicUsage(db, "child-1", "ACHIEVEMENT", "mission", "k", 7);
+
+  const openGoals = [openGoal(8, "ACHIEVEMENT"), openGoal(9, "INTEREST_AND_PREFERENCE"), openGoal(10, "PHYSICAL_STATE")];
+  const restored = await loadMissionPromptGoals({
+    db, childId: "child-1", grade: 4, goals: openGoals,
+  });
+
+  assert.equal(restored.length, 3);
+  const byGroup = new Map(restored.map((goal) => [goal.semanticGroup, goal.promptInstruction]));
+  for (const semanticGroup of groups) {
+    const instruction = byGroup.get(semanticGroup);
+    assert.ok(instruction && instruction.trim().length > 0, `${semanticGroup} instruction 복원 실패`);
+  }
+  // Goal 8이 이번 장애의 실제 차단 지점이다.
+  assert.ok(byGroup.get("ACHIEVEMENT"));
 });
 
 test("아이가 먼저 꺼낸 질문은행 주제는 cooldown 중이어도 제한하지 않는다", async () => {

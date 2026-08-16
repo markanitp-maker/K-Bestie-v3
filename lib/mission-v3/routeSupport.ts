@@ -98,6 +98,45 @@ export const buildGoalProgress = (goals: ConversationGoal[]) => ({
   completionThreshold: getCompletionThreshold(goals),
 });
 
+/** start_mission_turn_v3의 v_recent_processing과 같은 창(30초). 두 값이 어긋나면
+ * 실제 처리 중인 요청을 고착으로 오인하거나 그 반대가 된다. */
+export const MISSION_TURN_INFLIGHT_WINDOW_MS = 30_000;
+
+export interface MissionTurnResumeRecord {
+  status?: string | null;
+  child_message_id?: string | null;
+  k_message_id?: string | null;
+  k_response_draft?: string | null;
+  updated_at?: string | null;
+}
+
+/**
+ * "이전 요청이 실패한 뒤 고착된 turn"인지 판정한다(2026-08-16 안서현 Production 장애).
+ *
+ * 아이 발화는 이미 저장됐는데 K 응답이 한 줄도 없는 상태가 in-flight 창을 넘겨
+ * 남아 있으면, 그 요청은 이미 죽은 것이다. 이때는 409로 막지 말고 같은 turn을
+ * 이어서 처리해야 한다 — 아이 메시지를 다시 넣지 않으므로 중복이 생기지 않는다.
+ *
+ * 창 안이면 진짜로 다른 요청이 돌고 있을 수 있으므로 판정하지 않는다. 시간 기반
+ * 판정을 여기서만 하도록 모아 두어 라우트에서 추측 규칙이 흩어지지 않게 한다.
+ */
+export const isResumableStuckTurn = (
+  record: MissionTurnResumeRecord | null | undefined,
+  nowMs: number = Date.now(),
+  inflightWindowMs: number = MISSION_TURN_INFLIGHT_WINDOW_MS,
+): boolean => {
+  if (!record) return false;
+  if (record.status !== "CHILD_PERSISTED") return false;
+  // K 응답이 한 조각이라도 있으면 고착이 아니라 이어받기/재생 경로다.
+  if (record.k_response_draft != null) return false;
+  if (record.k_message_id != null) return false;
+  // 아이 발화가 없으면 이어서 처리할 대상 자체가 없다.
+  if (!record.child_message_id) return false;
+  const updatedAtMs = record.updated_at ? Date.parse(record.updated_at) : Number.NaN;
+  if (!Number.isFinite(updatedAtMs)) return false;
+  return nowMs - updatedAtMs >= inflightWindowMs;
+};
+
 export const loadMissionPromptGoals = async (input: {
   db: SupabaseClient;
   childId: string;
@@ -107,11 +146,16 @@ export const loadMissionPromptGoals = async (input: {
 }): Promise<MissionPromptGoal[]> => {
   if (input.goals.length === 0) return [];
 
+  // 이미 conversation_goals에 확정 저장된 Goal의 instruction 복원이다 — cooldown은
+  // "세션 시작 시 어떤 주제를 새로 고를지"에만 적용한다. 여기서 다시 필터링하면
+  // 그 사이 cooldown에 걸린 semantic_group의 instruction을 못 찾아 아래에서 throw하고
+  // `/turn`이 500으로 죽는다(2026-08-16 안서현 Production 장애: Goal 8 ACHIEVEMENT).
   const bankCandidates = await loadMissionQuestionGoalCandidates({
     db: input.db,
     childId: input.childId,
     grade: input.grade,
     weekday: getMissionWeekday(input.now),
+    applyCooldown: false,
   });
   const instructionBySemanticGroup = new Map<string, string>();
   for (const candidate of bankCandidates) {

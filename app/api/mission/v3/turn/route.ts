@@ -24,6 +24,7 @@ import {
   buildGoalProgress,
   fetchMissionGoals,
   fetchRecentMissionHistory,
+  isResumableStuckTurn,
   loadMissionPromptGoals,
   parseStoredGoalAssessments,
 } from "@/lib/mission-v3/routeSupport";
@@ -109,7 +110,7 @@ const fetchTurnRecord = async (
   const { data, error } = await service
     .from("mission_turns")
     .select(
-      "status, child_message_id, k_message_id, answer_result, k_response_draft, previous_prompted_goal_id, prompted_goal_id, engine_category, safety_subcategory, boredom_early_finish",
+      "status, child_message_id, k_message_id, answer_result, k_response_draft, previous_prompted_goal_id, prompted_goal_id, engine_category, safety_subcategory, boredom_early_finish, attempt_count, updated_at",
     )
     .eq("session_id", sessionId)
     .eq("client_turn_id", clientTurnId)
@@ -290,10 +291,29 @@ export async function POST(req: NextRequest) {
   if (started.already_processed
     && started.turn_status !== "FINALIZED"
     && !started.k_response_draft) {
-    return NextResponse.json({
-      error: "같은 턴을 처리하고 있어요. 잠시 후 다시 시도해 주세요.",
-      code: "TURN_IN_PROGRESS",
-    }, { status: 409 });
+    // RPC는 "최근 30초 안에 건드려진 turn"을 처리 중으로 본다. 그런데 그 사이 요청이
+    // 500으로 죽으면 아이 발화만 남은 turn이 그대로 굳고, 이후 재시도는 여기서 409로
+    // 튕긴다(2026-08-16 안서현 Production 장애). 서버 SSOT를 다시 읽어 실제로 죽은
+    // turn이면 막지 말고 같은 turn을 이어서 처리한다 — 아이 메시지를 다시 넣지
+    // 않으므로 중복이 생기지 않고, 이후 finalize는 advisory lock으로 보호된다.
+    let ssotTurn = null;
+    try {
+      ssotTurn = await fetchTurnRecord(service, sessionId, clientTurnId);
+    } catch (error) {
+      console.error("[mission/v3/turn] 고착 턴 판정용 재조회 실패", error);
+    }
+    if (!isResumableStuckTurn(ssotTurn)) {
+      return NextResponse.json({
+        error: "같은 턴을 처리하고 있어요. 잠시 후 다시 시도해 주세요.",
+        code: "TURN_IN_PROGRESS",
+      }, { status: 409 });
+    }
+    console.warn("[mission/v3/turn] 실패 후 고착된 턴을 이어서 처리", {
+      sessionId,
+      clientTurnId,
+      status: ssotTurn?.status,
+      attemptCount: ssotTurn?.attempt_count,
+    });
   }
 
   let turnRecord;
