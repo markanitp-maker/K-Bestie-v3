@@ -9,7 +9,7 @@ import {
   resolveGradeAdaptivePersona,
 } from "@/lib/persona/gradeAdaptivePersona";
 
-import type { ResolvedScenarioCard } from "./scenarioCard";
+import { resolveScenarioCard, type ResolvedScenarioCard } from "./scenarioCard";
 import type { RelationshipCalendarStage } from "./calendarStage";
 
 export type RelationshipConversationMode = "mission" | "free_chat";
@@ -96,6 +96,13 @@ function selectRecentEpisode(facts: RetrievedMemoryFact[]): RetrievedMemoryFact 
   const episodes = facts.filter((fact) => fact.factType === "event");
   if (episodes.length === 0) return null;
   return [...episodes].sort((a, b) => b.sourceDate.localeCompare(a.sourceDate))[0] ?? null;
+}
+
+function parseEffectiveStage(value: unknown): RelationshipCalendarStage | null {
+  if (value === "W1" || value === "W2" || value === "W3" || value === "W4") {
+    return value;
+  }
+  return null;
 }
 
 /** 순수 formatter. 조회 결과는 전부 신뢰하지 않는 참고 데이터이며, 지시문으로 실행하지
@@ -205,7 +212,7 @@ export async function buildRelationshipContext(
 
   const profilePromise = db
     .from("child_profiles")
-    .select("given_name,grade,interests")
+    .select("given_name,grade,interests,relationship_effective_stage")
     .eq("id", input.childId)
     .maybeSingle();
 
@@ -229,6 +236,7 @@ export async function buildRelationshipContext(
   ]);
 
   let profile: ProfileContext | null = null;
+  let dbEffectiveStage: RelationshipCalendarStage | null = null;
   if (profileSettled.status === "fulfilled" && !profileSettled.value.error && profileSettled.value.data) {
     const row = profileSettled.value.data as Record<string, unknown>;
     profile = {
@@ -236,7 +244,28 @@ export async function buildRelationshipContext(
       grade: cleanContextText(row.grade, 30) || null,
       interests: normalizeInterests(row.interests),
     };
+    dbEffectiveStage = parseEffectiveStage(row.relationship_effective_stage);
   }
+
+  let dbScenarioCard: ResolvedScenarioCard | null = null;
+  if (dbEffectiveStage && profile?.grade) {
+    try {
+      dbScenarioCard = resolveScenarioCard({
+        grade: profile.grade,
+        effectiveStage: dbEffectiveStage,
+      });
+    } catch {
+      dbScenarioCard = null;
+    }
+  }
+
+  const scenarioCard = input.scenarioCard !== undefined
+    ? input.scenarioCard
+    : dbScenarioCard;
+
+  const effectiveStage = input.effectiveStage !== undefined
+    ? input.effectiveStage
+    : (scenarioCard === dbScenarioCard ? dbEffectiveStage : null);
 
   let recentSession: SessionTurnContext[] = [];
   const verifiedSession =
@@ -278,8 +307,8 @@ export async function buildRelationshipContext(
       recentSession,
       recentEpisode: selectRecentEpisode(memoryFacts),
       memoryFacts,
-      scenarioCard: input.scenarioCard,
-      effectiveStage: input.effectiveStage,
+      scenarioCard,
+      effectiveStage,
     });
   } catch (error) {
     // 개인화 조회 장애가 아이의 대화 자체를 막아서는 안 된다. 내용·식별자는 로그에

@@ -399,3 +399,159 @@ test("buildRelationshipContext는 input의 scenarioCard와 effectiveStage를 sna
   assert.match(result.fragment, /\[관계 시나리오 - REMEMBER/);
   assert.match(result.fragment, /단계 목표: 케이가 나를 기억하고 있구나\./);
 });
+
+test("DB의 relationship_effective_stage가 null이면 fragment에 관계 섹션이 없다", async () => {
+  const db = {
+    from() {
+      const builder = {
+        select() { return builder; },
+        eq() { return builder; },
+        order() { return builder; },
+        limit() { return Promise.resolve({ data: [], error: null }); },
+        maybeSingle() {
+          return Promise.resolve({
+            data: { given_name: "서아", grade: "4학년", interests: ["로봇"], relationship_effective_stage: null },
+            error: null,
+          });
+        },
+      };
+      return builder;
+    },
+  } as any;
+
+  const result = await buildRelationshipContext(
+    db,
+    { childId: "child-1", currentText: "안녕", mode: "mission" },
+    { searchMemory: async () => ({ status: "no_data" }) },
+  );
+
+  assert.equal(result.fragment.includes("[관계 시나리오"), false);
+});
+
+test("DB의 relationship_effective_stage가 'W2'이고 학년이 있으면 fragment에 관계 섹션이 나타난다", async () => {
+  const db = {
+    from() {
+      const builder = {
+        select() { return builder; },
+        eq() { return builder; },
+        order() { return builder; },
+        limit() { return Promise.resolve({ data: [], error: null }); },
+        maybeSingle() {
+          return Promise.resolve({
+            data: { given_name: "서아", grade: "4학년", interests: ["로봇"], relationship_effective_stage: "W2" },
+            error: null,
+          });
+        },
+      };
+      return builder;
+    },
+  } as any;
+
+  const result = await buildRelationshipContext(
+    db,
+    { childId: "child-1", currentText: "안녕", mode: "mission" },
+    { searchMemory: async () => ({ status: "no_data" }) },
+  );
+
+  assert.match(result.fragment, /\[관계 시나리오 - REMEMBER \(W2\)\]/);
+  assert.match(result.fragment, /단계 목표: 케이가 나를 기억하고 있구나\./);
+  assert.match(result.fragment, /전략: 현재 대화 맥락과 직접 관련된 기억을 자연스럽게 연결하여 공감대를 넓힌다\./);
+  assert.match(result.fragment, /표현 방식: 아이의 현재 말에 먼저 공감한 뒤 관련된 기억을 자연스럽게 연결/);
+  assert.match(result.fragment, /피해야 할 것:/);
+});
+
+test("DB의 relationship_effective_stage가 이상한 문자열('XX', '', 'W9')이어도 관계 섹션이 없고 예외가 발생하지 않는다", async () => {
+  for (const invalidStage of ["XX", "", "W9", "INVALID", 123, true, {}]) {
+    const db = {
+      from() {
+        const builder = {
+          select() { return builder; },
+          eq() { return builder; },
+          order() { return builder; },
+          limit() { return Promise.resolve({ data: [], error: null }); },
+          maybeSingle() {
+            return Promise.resolve({
+              data: { given_name: "서아", grade: "4학년", interests: ["로봇"], relationship_effective_stage: invalidStage },
+              error: null,
+            });
+          },
+        };
+        return builder;
+      },
+    } as any;
+
+    const result = await buildRelationshipContext(
+      db,
+      { childId: "child-1", currentText: "안녕", mode: "mission" },
+      { searchMemory: async () => ({ status: "no_data" }) },
+    );
+
+    assert.equal(result.fragment.includes("[관계 시나리오"), false, `Stage '${invalidStage}' must not produce scenario section`);
+  }
+});
+
+test("학년이 없으면 relationship_effective_stage가 'W2'여도 카드가 null이고 관계 섹션이 없다", async () => {
+  const db = {
+    from() {
+      const builder = {
+        select() { return builder; },
+        eq() { return builder; },
+        order() { return builder; },
+        limit() { return Promise.resolve({ data: [], error: null }); },
+        maybeSingle() {
+          return Promise.resolve({
+            data: { given_name: "서아", grade: null, interests: ["로봇"], relationship_effective_stage: "W2" },
+            error: null,
+          });
+        },
+      };
+      return builder;
+    },
+  } as any;
+
+  const result = await buildRelationshipContext(
+    db,
+    { childId: "child-1", currentText: "안녕", mode: "mission" },
+    { searchMemory: async () => ({ status: "no_data" }) },
+  );
+
+  assert.equal(result.fragment.includes("[관계 시나리오"), false);
+});
+
+test("input.scenarioCard를 직접 넘기면 DB 값보다 우선한다", async () => {
+  const db = {
+    from() {
+      const builder = {
+        select() { return builder; },
+        eq() { return builder; },
+        order() { return builder; },
+        limit() { return Promise.resolve({ data: [], error: null }); },
+        maybeSingle() {
+          return Promise.resolve({
+            data: { given_name: "서아", grade: "4학년", interests: ["로봇"], relationship_effective_stage: "W1" },
+            error: null,
+          });
+        },
+      };
+      return builder;
+    },
+  } as any;
+
+  const cardW3 = resolveScenarioCard({ grade: "4학년", effectiveStage: "W3" });
+  assert.ok(cardW3);
+
+  const result = await buildRelationshipContext(
+    db,
+    {
+      childId: "child-1",
+      currentText: "안녕",
+      mode: "mission",
+      scenarioCard: cardW3,
+      effectiveStage: "W3",
+    },
+    { searchMemory: async () => ({ status: "no_data" }) },
+  );
+
+  assert.match(result.fragment, /\[관계 시나리오 - SHARED_HISTORY \(W3\)\]/);
+  assert.match(result.fragment, /단계 목표: 우리 둘이 아는 이야기가 생겼다\./);
+});
