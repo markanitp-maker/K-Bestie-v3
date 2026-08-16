@@ -1,15 +1,16 @@
 "use client";
 
-import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { SUPPORT_CATEGORY_LABELS, formatSupportDate, supportStatusLabel, type SupportRole } from "@/lib/support/presentation";
+import { useParams, useRouter } from "next/navigation";
+import { X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { SUPPORT_CATEGORY_LABELS, SUPPORT_REQUEST_LIST_PATH, formatSupportDate, supportStatusLabel, type SupportRole } from "@/lib/support/presentation";
 
 type Attachment = { id: string; original_filename: string; signed_url: string };
 type SupportRequest = { id: string; request_number: string; category: string; subject: string; body: string; status: string; created_at: string; user_response: string | null; responded_at: string | null; effective_role: SupportRole; attachments: Attachment[] };
 
 export default function SupportRequestDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [item, setItem] = useState<SupportRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -27,9 +28,15 @@ export default function SupportRequestDetailPage() {
     return () => { active = false; };
   }, [params.id]);
 
+  /** 목록으로 push하면 history가 [목록, 상세, 목록]이 되어 뒤로가기가 다시 상세로 들어간다.
+   *  replace로 현재 상세 항목을 목록으로 바꿔 목록↔상세 왕복 구조 자체를 만들지 않는다. */
+  const closeToList = useCallback(() => {
+    router.replace(SUPPORT_REQUEST_LIST_PATH);
+  }, [router]);
+
   const role: SupportRole = item?.effective_role ?? "parent";
   return <main className="min-h-dvh bg-slate-50 px-4 py-6 text-slate-900"><div className="mx-auto max-w-2xl">
-    <header className="mb-6 flex items-center justify-between gap-3"><Link href="/support/requests" className="rounded-xl border bg-white px-4 py-2 font-bold">목록</Link><h1 className="text-xl font-black">접수 상세</h1><span className="w-16" /></header>
+    <header className="mb-6 flex items-center justify-between gap-3"><span className="w-16" aria-hidden="true" /><h1 className="text-xl font-black">접수 상세</h1><button type="button" onClick={closeToList} aria-label="닫기" className="flex items-center gap-1 rounded-xl border bg-white px-4 py-2 font-bold"><X size={18} strokeWidth={2.5} aria-hidden="true" />닫기</button></header>
     {loading && <p className="rounded-2xl bg-white p-6 text-center text-slate-500">접수 내용을 불러오고 있어요.</p>}
     {error && <div className="rounded-2xl border border-red-200 bg-white p-6 text-center"><p>접수 내용을 확인하지 못했어요.</p><button onClick={() => location.reload()} className="mt-3 rounded-xl bg-slate-900 px-4 py-2 font-bold text-white">다시 시도</button></div>}
     {item && <div className="space-y-4"><section className="rounded-2xl border bg-white p-5"><div className="flex items-center justify-between gap-3"><span className="text-sm font-bold text-slate-500">{item.request_number}</span><span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-800">{supportStatusLabel(item.status, role)}</span></div><h2 className="mt-4 text-lg font-black">{SUPPORT_CATEGORY_LABELS[item.category] ?? item.category} · {item.subject}</h2><p className="mt-2 text-sm text-slate-500">{formatSupportDate(item.created_at)}</p><p className="mt-5 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 leading-7">{item.body}</p></section>

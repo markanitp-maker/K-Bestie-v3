@@ -1,3 +1,8 @@
+/** 접수 상세에서 닫기를 눌렀을 때 항상 돌아갈 목록 경로.
+ *  상세에서 목록으로 push하면 history가 [목록, 상세, 목록]이 되어 뒤로가기가 다시
+ *  상세로 들어간다. 호출부는 반드시 router.replace로 이 경로를 쓴다. */
+export const SUPPORT_REQUEST_LIST_PATH = "/support/requests";
+
 export type SupportRole = "parent" | "child";
 
 export const SUPPORT_CATEGORY_LABELS: Record<string, string> = {
