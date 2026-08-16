@@ -1,0 +1,339 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1786574805744,
+  "projectRoot": "/mnt/e/VibeCoding/K-Bestie-v3/.claude/worktrees/agent-a2ea1e4243c2a6b0c",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "next",
+        "version": "15.3.3",
+        "category": "fullstack"
+      },
+      {
+        "name": "react",
+        "version": "19.0.0",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.0.0",
+        "category": "frontend"
+      },
+      {
+        "name": "@playwright/test",
+        "version": "1.62.1",
+        "category": "testing"
+      },
+      {
+        "name": "playwright",
+        "version": "1.61.1",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npx tsc --noEmit 2>&1 | tail -40",
+    "testCommand": "npm test",
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "next dev --turbopack",
+      "dev:https": "next dev --turbopack --experimental-https --experimental-https-key ./192.168.200.222+2-key.pem --experimental-https-cert ./192.168.200.222+2.pem --hostname 0.0.0.0",
+      "build": "next build",
+      "start": "next start",
+      "lint": "next lint",
+      "test": "node --import tsx --test hooks/useSttRouter.test.ts lib/utils/weeklyDates.test.ts lib/mission/missionCompletionFlow.test.ts lib/mission/missionRewardPresentation.test.ts lib/mission/turnGuard.test.ts lib/mission/turnRequest.test.ts lib/stt/scriptGuard.test.ts lib/freechat/reflectiveEngine.test.ts lib/freechat/geminiPolicy.test.ts lib/k-conversation/boredomDetection.test.ts lib/pwa/standalone.test.ts lib/pwa/updateFlow.test.ts lib/plan/approvalGuard.test.ts lib/plan/conversationMode.test.ts lib/plan/retention.test.ts lib/batch/planRetentionCleanup.test.ts lib/batch/collectionCutover.test.ts lib/billing/gcpBilling.test.ts lib/mission/eReactionPool.test.ts lib/mbti/scoreResult.test.ts lib/mbti/selectQuestions.test.ts lib/utils/koreanParticle.test.ts lib/memory/vectorRetrieval.test.ts lib/conversation/recentKUtterances.test.ts lib/mission/missionTimeGate.test.ts lib/mission/validateAnswer.test.ts lib/questions/answerClarification.test.ts lib/parentKChat/intentClassifier.test.ts lib/parentKChat/parentKnowledgeRetrieval.test.ts lib/mission/parentQuestionReconfirm.test.ts lib/admin/softDeleteService.test.ts lib/admin/customerRequests.test.ts lib/admin/userManagement.test.ts lib/admin/analytics.test.ts lib/admin/analyticsKst.test.ts lib/admin/analyticsPhase2.test.ts lib/admin/attendanceRouletteFilter.test.ts lib/admin/operationsConsole.test.ts lib/admin/retentionChildMetrics.test.ts components/admin/shell/AdminTables.test.tsx components/parent/RedCoachingModal.test.tsx lib/plan/parentQueryRouterEngine.test.ts lib/plan/parentQueryRouterGrade4.test.ts lib/plan/parentQueryRouterGrades.test.ts lib/plan/parentQuestionRewrite.test.ts lib/freechat/memoryRecallTrigger.test.ts lib/events/attendanceRoulette.test.ts lib/relationship/relationshipContext.test.ts lib/persona/gradeAdaptivePersona.test.ts lib/familyInvites/oneTimeInvite.test.ts lib/mission-v3/goalEngine.test.ts lib/mission-v3/goalAssessor.test.ts lib/mission-v3/questionBank.test.ts lib/mission-v3/policyResolution.test.ts lib/mission-v3/timePolicy.test.ts lib/mission-v3/rewardPolicy.test.ts lib/legal/legalDocuments.test.ts && npm run test:mission-real-repro",
+      "test:mission-real-repro": "TSX_TSCONFIG_PATH=tsconfig.test.json node --experimental-test-module-mocks --import tsx app/child/missions/page.real-repro.test.ts && node --import tsx --test components/MissionConversationLayout.test.tsx",
+      "test:attendance-filter": "tsx --test lib/admin/attendanceRouletteFilter.test.ts lib/events/attendanceRoulette.test.ts",
+      "test:pwa-update": "tsx --test lib/pwa/standalone.test.ts lib/pwa/updateFlow.test.ts app/api/pwa/sw/route.test.ts",
+      "validate-env": "node scripts/validate-env-separation.js",
+      "prebuild": "node scripts/validate-env-separation.js",
+      "postbuild": "node scripts/verify-client-bundle-env.js && node scripts/verify-no-client-secrets.js"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "app",
+      "components",
+      "docs",
+      "lib",
+      "public",
+      "scripts",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app": {
+      "path": "app",
+      "purpose": "Application code",
+      "fileCount": 3,
+      "lastAccessed": 1786574805479,
+      "keyFiles": [
+        "globals.css",
+        "layout.tsx",
+        "page.tsx"
+      ]
+    },
+    "components": {
+      "path": "components",
+      "purpose": "UI components",
+      "fileCount": 19,
+      "lastAccessed": 1786574805487,
+      "keyFiles": [
+        "AppTopHeader.tsx",
+        "ConnectionQualityIndicator.tsx",
+        "KBestieMascotAnimation.tsx",
+        "KChatbotWidget.tsx",
+        "MissionConversationLayout.test.tsx"
+      ]
+    },
+    "data": {
+      "path": "data",
+      "purpose": "Data files",
+      "fileCount": 0,
+      "lastAccessed": 1786574805498,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 9,
+      "lastAccessed": 1786574805512,
+      "keyFiles": [
+        "DEV-SPEC.md",
+        "conventions.md",
+        "dev-acceptance-checklist.md",
+        "dev-external-services-migration.md",
+        "k-bestie-llm-wiki-design.md"
+      ]
+    },
+    "e2e": {
+      "path": "e2e",
+      "purpose": null,
+      "fileCount": 55,
+      "lastAccessed": 1786574805529,
+      "keyFiles": [
+        "draggable-chatbot.spec.ts",
+        "qa-0001-utm-landing.spec.ts",
+        "qa-025.spec.ts",
+        "qa-027.spec.ts",
+        "qa-028-play-home.spec.ts"
+      ]
+    },
+    "hooks": {
+      "path": "hooks",
+      "purpose": null,
+      "fileCount": 14,
+      "lastAccessed": 1786574805536,
+      "keyFiles": [
+        "useAppSessionTracking.ts",
+        "useGeminiLive.ts",
+        "useInstallPrompt.ts",
+        "useKeyboardConversationViewport.ts",
+        "useParentVoice.ts"
+      ]
+    },
+    "kbestie-play-scaffold": {
+      "path": "kbestie-play-scaffold",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1786574805545,
+      "keyFiles": [
+        "README.md",
+        "package.json"
+      ]
+    },
+    "lib": {
+      "path": "lib",
+      "purpose": "Library code",
+      "fileCount": 6,
+      "lastAccessed": 1786574805551,
+      "keyFiles": [
+        "cn.ts",
+        "freeChatReactions.ts",
+        "mail.ts",
+        "pwaIcons.ts",
+        "store.ts"
+      ]
+    },
+    "outputs": {
+      "path": "outputs",
+      "purpose": null,
+      "fileCount": 19,
+      "lastAccessed": 1786574805565,
+      "keyFiles": [
+        "agy-ab-live.log",
+        "agy-brief-ab.md",
+        "beta-approval-analysis-20260726.md",
+        "beta-launch-checklist.md",
+        "deep-interview-decisions.md"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 3,
+      "lastAccessed": 1786574805576,
+      "keyFiles": [
+        "naver339bf75111ff45b25a5c6ebd75af8f20.html",
+        "robots.txt",
+        "sitemap.xml"
+      ]
+    },
+    "requests": {
+      "path": "requests",
+      "purpose": null,
+      "fileCount": 10,
+      "lastAccessed": 1786574805586,
+      "keyFiles": [
+        "001-answer-dashboard.md",
+        "002-multi.md",
+        "003-multi.md",
+        "027-feature-landing-support-inquiry.md",
+        "028-req-cs.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 34,
+      "lastAccessed": 1786574805600,
+      "keyFiles": [
+        "apply-migration.js",
+        "audit-088-pipeline.mjs",
+        "bootstrap-migration-tracking.js",
+        "check-funcs.js",
+        "check-migrations.mjs"
+      ]
+    },
+    "services": {
+      "path": "services",
+      "purpose": "Business logic services",
+      "fileCount": 3,
+      "lastAccessed": 1786574805613,
+      "keyFiles": [
+        "vertex-live-relay-upload-v2.zip",
+        "vertex-live-relay-upload-v3-20260716-222326.zip",
+        "vertex-live-relay-upload.zip"
+      ]
+    },
+    "supabase": {
+      "path": "supabase",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1786574805620,
+      "keyFiles": [
+        "config.toml"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 3,
+      "lastAccessed": 1786574805627,
+      "keyFiles": [
+        "local-db-integration-test.mjs",
+        "qa-reserve-e2e.mjs",
+        "results.json"
+      ]
+    },
+    "app/api": {
+      "path": "app/api",
+      "purpose": "API routes",
+      "fileCount": 0,
+      "lastAccessed": 1786574805642,
+      "keyFiles": []
+    },
+    "kbestie-play-scaffold/docs": {
+      "path": "kbestie-play-scaffold/docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1786574805680,
+      "keyFiles": [
+        "API_CONTRACT.md"
+      ]
+    },
+    "lib/api": {
+      "path": "lib/api",
+      "purpose": "API routes",
+      "fileCount": 3,
+      "lastAccessed": 1786574805705,
+      "keyFiles": [
+        "fetchMbtiSessionProgress.ts",
+        "mbtiComplete.ts",
+        "mbtiProgress.ts"
+      ]
+    },
+    "supabase/migrations": {
+      "path": "supabase/migrations",
+      "purpose": "Database migrations",
+      "fileCount": 282,
+      "lastAccessed": 1786574805740,
+      "keyFiles": [
+        "20260607000000_phase1_schema.sql",
+        "20260608000000_session_type_weekly.sql",
+        "20260609000000_auth_and_rls.sql"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "app/child/missions/MissionV3Conversation.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1786574832632,
+      "type": "file"
+    },
+    {
+      "path": "app/api/mission/v3/start/route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1786574842724,
+      "type": "file"
+    },
+    {
+      "path": "app/api/mission/v3/turn/route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1786574854125,
+      "type": "file"
+    },
+    {
+      "path": "app/api/mission/v3/today-progress/route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1786574854271,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

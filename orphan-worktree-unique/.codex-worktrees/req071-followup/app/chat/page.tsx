@@ -1,0 +1,1224 @@
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { useVoiceChat, type Turn } from "@/hooks/useVoiceChat";
+import { DemoFrame } from "@/app/demo/components/DemoFrame";
+import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
+import { logVoiceEvent } from "@/lib/voiceTimelineLog";
+import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
+import KChatbotWidget from "@/components/KChatbotWidget";
+import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
+import { AppTopHeader } from "@/components/AppTopHeader";
+import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversationViewport";
+import { getFreeChatConversationState } from "@/lib/freechat/conversationState";
+import { GoldKeyRewardModal } from "@/components/rewards/GoldKeyRewardModal";
+import {
+  getFreechatRewardModalContent,
+  parseFreechatPauseSuccess,
+  type FreechatDailyReward,
+} from "@/lib/freechat/dailyEngagementReward";
+
+const MAX_SESSION_DURATION_MS = 10 * 60 * 1000; // 10분
+const MAX_SESSION_TURNS = 20; // 20턴
+
+// 자유대화 10분 세션+1분 휴식 및 20턴 하드리밋 — 현재 베타 확정 정책(Goal 없음·
+// Completion 없음·횟수/시간/턴 제한 없음)에 따라 기본 OFF. 로직 자체는 삭제하지
+// 않고 "true"로 켤 때만(next.config.ts env 참고) 그대로 동작하게 유지한다.
+const isFreeChatHardLimitEnabled = () => process.env.FREE_CHAT_HARD_LIMIT_ENABLED === "true";
+
+const getCurrentKSTWindow = () => {
+  const now = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kstNow = new Date(now.getTime() + kstOffset);
+  const yyyy = kstNow.getUTCFullYear();
+  const mm = String(kstNow.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(kstNow.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}-${kstNow.getUTCHours() < 18 ? 'day' : 'evening'}`;
+};
+export default function ChatPage() {
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [childId, setChildId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [reportDone, setReportDone] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [dailyReward, setDailyReward] = useState<FreechatDailyReward | null>(null);
+  const [mode, setMode] = useState<"voice" | "text">("voice");
+  const [textInput, setTextInput] = useState("");
+  const restoredTranscriptRef = useRef<Turn[]>([]);
+  const displaySequenceCounterRef = useRef(0);
+  const nextDisplaySequence = useCallback(() => {
+    displaySequenceCounterRef.current += 1;
+    return displaySequenceCounterRef.current;
+  }, []);
+  const [isAuto, setIsAuto] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
+  const pendingMessageWritesRef = useRef(new Set<Promise<void>>());
+
+  const [micPermission, setMicPermission] = useState<PermissionState | "checking" | "not_needed">("checking");
+  const autoStartAttempted = useRef(false);
+
+  // 030: 서버 시간 기준 10분 연속 사용 + 1분 휴식 게이트. usagePhase가 "ready"가 되기
+  // 전에는 음성/텍스트 대화 화면을 아예 렌더링하지 않는다(클라이언트 버튼 비활성화만으로
+  // 처리하지 않기 위함 — 주소창 직접 접근도 이 게이트를 거친다).
+  const [usagePhase, setUsagePhase] = useState<"checking" | "cooldown" | "ready">("checking");
+  const [dailyLimitReached, setDailyLimitReached] = useState(false);
+  const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
+  const usageSessionStartedAtRef = useRef<string | null>(null);
+  const usageSessionEndsAtMsRef = useRef<number | null>(null);
+
+  const voiceBubbleRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const statusRef = useRef<string>("idle");
+  const currentWindowRef = useRef<string | null>(null);
+  const childIdRef = useRef<string | null>(null);
+  const rewardRequestSessionsRef = useRef(new Set<string>());
+  const rewardFinalizedSessionsRef = useRef(new Set<string>());
+  const exitAfterRewardRef = useRef(false);
+  
+  useEffect(() => {
+    childIdRef.current = childId;
+  }, [childId]);
+  // respondText는 훅 생성 이후에만 얻을 수 있어 ref로 우회(핸들러는 훅 생성 전에 정의 필요)
+  const respondTextRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const getLastAsrConfidenceRef = useRef<(() => number | undefined) | undefined>(undefined);
+
+  // 실시간 메시지 저장 + 아이 발화 시 케이 텍스트 응답 생성(음성 없음, 텍스트만)
+  const handleTurnComplete = useCallback((turn: Turn) => {
+    logVoiceEvent({ ts: Date.now(), eventType: "freechat_handleTurnComplete", extra: { role: turn.role } });
+    const sid = sessionIdRef.current;
+    if (sid) {
+      const asrConfidence = turn.role === "child" ? getLastAsrConfidenceRef.current?.() : undefined;
+      const turnId = turn.id || crypto.randomUUID();
+      const displaySequence = (turn as any).displaySequence ?? nextDisplaySequence();
+      
+      let pendingWrite: Promise<void>;
+      pendingWrite = fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          sessionId: sid, 
+          role: turn.role, 
+          content: turn.text, 
+          asrConfidence,
+          turnId,
+          displaySequence
+        }),
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`message save failed (${response.status})`);
+          }
+        })
+        .catch((error) => {
+          console.error("[freechat-message] save failed", {
+            sessionId: sid,
+            turnId,
+            message: error instanceof Error ? error.message : "unknown error",
+          });
+        })
+        .finally(() => {
+          pendingMessageWritesRef.current.delete(pendingWrite);
+        });
+      pendingMessageWritesRef.current.add(pendingWrite);
+    }
+    if (turn.role === "child") {
+      void respondTextRef.current?.();
+    }
+  }, [nextDisplaySequence]);
+
+  const {
+    status: rawStatus,
+    transcript,
+    interimChildText,
+    startSession,
+    stopSession,
+    getTranscript,
+    reset,
+    respondText,
+    sayText,
+    sendTypedText,
+    setMicEnabled,
+    releaseMicrophone,
+    reacquireMicrophone,
+    getLastAsrConfidence,
+    setInputMode,
+    manualFinalize,
+    isResponding,
+    isSpeaking,
+    seedTranscript,
+  } = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
+  respondTextRef.current = respondText;
+  getLastAsrConfidenceRef.current = getLastAsrConfidence;
+
+  const status = mounted ? rawStatus : "idle";
+
+  // 실시간 status 동기화
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const [sessionActive, setSessionActive] = useState(false);
+
+  // 세션 종료(대화 종료 처리) 시에만 명시적으로 false 처리
+  useEffect(() => {
+    if (status === "ended") {
+      setSessionActive(false);
+    }
+  }, [status]);
+
+  // 페이지 이탈(언마운트) 시 false 처리
+  useEffect(() => {
+    return () => setSessionActive(false);
+  }, []);
+
+  // 화면 wake lock — 프리챗 세션이 실제로 연결돼 있는 동안(live)만 유지. status가 ended/
+  // error/idle로 바뀌는 즉시(대화 종료, 하드리밋 종료, 홈 이동으로 인한 언마운트 등) 훅
+  // 내부에서 자동 반납된다.
+  const wakeLockWarning = useScreenWakeLock(sessionActive);
+
+  // 하드 리밋 세션 중단 핸들러 — 자유대화는 케이가 음성으로 말하지 않음(텍스트만) → 세션 종료
+  const triggerHardLimitStop = useCallback((noticeText: string) => {
+    sayText(noticeText);
+    stopSession();
+    setSessionActive(false);
+  }, [sayText, stopSession]);
+
+  // 030: 서버가 내려준 sessionEndsAt 기준 하드 리밋(음성/텍스트 모드 공통 — 기존에는
+  // status==="live"일 때만 고정 10분 타이머가 걸려 텍스트 전용 사용에는 시간 제한이
+  // 전혀 없었다). usagePhase가 "ready"가 된 시점의 남은 시간만큼만 타이머를 건다(새로고침
+  // 복귀 시 남은 시간이 10분보다 짧을 수 있음).
+  useEffect(() => {
+    if (!isFreeChatHardLimitEnabled()) return;
+    if (usagePhase !== "ready" || usageSessionEndsAtMsRef.current === null) return;
+    const delay = Math.max(0, usageSessionEndsAtMsRef.current - Date.now());
+    timerRef.current = setTimeout(() => {
+      const cId = childIdRef.current;
+      const startedAt = usageSessionStartedAtRef.current;
+      if (cId && startedAt) {
+        fetch("/api/chat/freechat-usage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId: cId, action: "end", startedAt }),
+        }).catch(() => {});
+      }
+      triggerHardLimitStop("오늘 대화는 여기까지야! 1분 쉬었다가 다시 이야기하러 와줘 🌿");
+      setCooldownRemainingSec(60);
+      setUsagePhase("cooldown");
+    }, delay);
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [usagePhase, triggerHardLimitStop]);
+
+  // 030: 자유대화 진입 게이트 — childId가 확정되면 서버 상태를 먼저 확인한다.
+  // 휴식 중이면 대화 화면을 렌더링하지 않고 휴식 안내로 전환하고, 그 외에는
+  // start를 호출해(이미 활성 세션이면 그대로 재개) 서버 기준 종료 시각을 받는다.
+  useEffect(() => {
+    if (!childId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const statusRes = await fetch(`/api/chat/freechat-usage?childId=${childId}`);
+        const statusData = await statusRes.json();
+        if (cancelled) return;
+        if (statusData.status === "cooldown") {
+          setCooldownRemainingSec(statusData.remainingCooldownSeconds ?? 60);
+          setUsagePhase("cooldown");
+          return;
+        }
+        const startRes = await fetch("/api/chat/freechat-usage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ childId, action: "start" }),
+        });
+        const startData = await startRes.json();
+        if (cancelled) return;
+        if (!startData.allowed) {
+          setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 60);
+          setUsagePhase("cooldown");
+          return;
+        }
+        usageSessionStartedAtRef.current = startData.startedAt;
+        usageSessionEndsAtMsRef.current = new Date(startData.sessionEndsAt).getTime();
+        setUsagePhase("ready");
+      } catch (e) {
+        console.error("[freechat-usage] init error:", e);
+        // 서버 상태 확인 자체가 실패하면(네트워크 등) 정상 사용자를 완전히 막지 않고
+        // 클라이언트 기준 10분으로 fail-open — 단, DB 기준 우회 방지가 핵심 목적인
+        // 다중기기/새로고침 우회 시나리오는 서버 응답이 정상일 때만 보장된다.
+        usageSessionEndsAtMsRef.current = Date.now() + MAX_SESSION_DURATION_MS;
+        setUsagePhase("ready");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [childId]);
+
+  // 030: 휴식 카운트다운 — 1초마다 감소, 0이 되면 새로고침 없이 재진입 시도(§5)
+  useEffect(() => {
+    if (usagePhase !== "cooldown") return;
+    if (cooldownRemainingSec <= 0) {
+      const cId = childIdRef.current;
+      if (!cId) return;
+      setUsagePhase("checking");
+      (async () => {
+        try {
+          const startRes = await fetch("/api/chat/freechat-usage", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ childId: cId, action: "start" }),
+          });
+          const startData = await startRes.json();
+          if (startData.allowed) {
+            usageSessionStartedAtRef.current = startData.startedAt;
+            usageSessionEndsAtMsRef.current = new Date(startData.sessionEndsAt).getTime();
+            setUsagePhase("ready");
+          } else {
+            setCooldownRemainingSec(startData.remainingCooldownSeconds ?? 60);
+            setUsagePhase("cooldown");
+          }
+        } catch (e) {
+          console.error("[freechat-usage] cooldown re-check error:", e);
+          setCooldownRemainingSec(1);
+          setUsagePhase("cooldown");
+        }
+      })();
+      return;
+    }
+    const t = setTimeout(() => setCooldownRemainingSec((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [usagePhase, cooldownRemainingSec]);
+
+  // 턴 수 제한 하드 리밋 감지
+  useEffect(() => {
+    if (!isFreeChatHardLimitEnabled()) return;
+    if (status === "live") {
+      const childTurns = transcript.filter((t) => t.role === "child").length;
+      if (childTurns >= MAX_SESSION_TURNS) {
+        triggerHardLimitStop("오늘 대화는 여기까지야! 다음에 더 재미있는 이야기 많이 들려줘 👋");
+      }
+    }
+  }, [transcript, status, triggerHardLimitStop]);
+
+  // 페이지 이탈 시 세션 마감 연동 로직 제거됨
+
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
+  const getSupabase = useCallback(() => {
+    if (!supabaseRef.current) supabaseRef.current = createClient();
+    return supabaseRef.current;
+  }, []);
+
+  const finishPendingExit = useCallback(() => {
+    if (!exitAfterRewardRef.current) return;
+    exitAfterRewardRef.current = false;
+    router.replace("/child/home");
+  }, [router]);
+
+  const handleCloseDailyReward = useCallback(() => {
+    setDailyReward(null);
+    finishPendingExit();
+  }, [finishPendingExit]);
+
+  useEffect(() => {
+    reset();
+    setReportDone(false);
+    setReportError(null);
+    setMounted(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("k_child_id");
+    if (stored) {
+      setChildId(stored);
+      void restoreSession(stored).then(() => {
+        seedTranscript(restoredTranscriptRef.current);
+      });
+      const storedMode = localStorage.getItem(`k_voice_input_mode:${stored}`);
+      const auto = storedMode !== "manual";
+      setIsAuto(auto);
+      
+      if (auto) {
+        if (navigator.permissions && navigator.permissions.query) {
+          navigator.permissions.query({ name: "microphone" as PermissionName })
+            .then(res => {
+              setMicPermission(res.state);
+              res.onchange = () => setMicPermission(res.state);
+            })
+            .catch(() => {
+              setMicPermission("prompt");
+            });
+        } else {
+          setMicPermission("prompt");
+        }
+      } else {
+        setMicPermission("not_needed");
+      }
+      return;
+    }
+    router.replace("/");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 대화 종료 시 리포트 자동 생성
+  useEffect(() => {
+    if (status !== "ended" || !sessionId) return;
+    const t = getTranscript();
+    fetch("/api/report/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, transcript: t }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) setReportError(d.error);
+        else setReportDone(true);
+      })
+      .catch((e) => setReportError(e.message));
+  }, [status, sessionId, getTranscript]);
+
+  // 대화 종료 시 30일 이벤트 자유대화 보상 적격성 판정(089) — 실패해도 대화 종료
+  // 자체를 막지 않는다. 실제 적격성(발화 수/시간/spam 판정)은 서버가 재확인한다.
+  useEffect(() => {
+    if (status !== "ended" || !sessionId || rewardRequestSessionsRef.current.has(sessionId)) return;
+
+    rewardRequestSessionsRef.current.add(sessionId);
+    const childTurnCount = getTranscript().filter((turn) => turn.role === "child").length;
+
+    const finalizeDailyReward = async () => {
+      while (pendingMessageWritesRef.current.size > 0) {
+        const pendingWrites = Array.from(pendingMessageWritesRef.current);
+        let waitTimeoutId: number | null = null;
+        const waitResult = await Promise.race([
+          Promise.allSettled(pendingWrites).then(() => "settled" as const),
+          new Promise<"timeout">((resolve) => {
+            waitTimeoutId = window.setTimeout(() => resolve("timeout"), 8000);
+          }),
+        ]);
+        if (waitTimeoutId !== null) window.clearTimeout(waitTimeoutId);
+        if (waitResult === "timeout") {
+          console.error("[freechat-reward] pending message writes timed out", {
+            sessionId,
+            pendingCount: pendingMessageWritesRef.current.size,
+          });
+          break;
+        }
+      }
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const abortController = new AbortController();
+        const timeoutId = window.setTimeout(() => abortController.abort(), 8000);
+        try {
+          const response = await fetch("/api/chat/pause", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId, turnCount: childTurnCount, ended: true }),
+            signal: abortController.signal,
+          });
+
+          if (!response.ok) {
+            console.error("[freechat-reward] pause request failed", {
+              sessionId,
+              status: response.status,
+              attempt,
+            });
+            if (attempt < 2) continue;
+            logVoiceEvent({
+              ts: Date.now(),
+              sessionId,
+              mode: "free",
+              eventType: "freechat_reward_request_failed",
+              extra: { status: response.status, attempt },
+            });
+            rewardFinalizedSessionsRef.current.add(sessionId);
+            finishPendingExit();
+            return;
+          }
+
+          const parsed = parseFreechatPauseSuccess(await response.json());
+          if (!parsed) {
+            console.error("[freechat-reward] invalid pause response", { sessionId, attempt });
+            logVoiceEvent({
+              ts: Date.now(),
+              sessionId,
+              mode: "free",
+              eventType: "freechat_reward_response_invalid",
+              extra: { attempt },
+            });
+            rewardFinalizedSessionsRef.current.add(sessionId);
+            finishPendingExit();
+            return;
+          }
+
+          rewardFinalizedSessionsRef.current.add(sessionId);
+          if (getFreechatRewardModalContent(parsed.reward)) {
+            setDailyReward(parsed.reward);
+          } else {
+            finishPendingExit();
+          }
+          return;
+        } catch (error) {
+          console.error("[freechat-reward] pause request error", {
+            sessionId,
+            attempt,
+            message: error instanceof Error ? error.message : "unknown error",
+          });
+          if (attempt < 2) continue;
+          logVoiceEvent({
+            ts: Date.now(),
+            sessionId,
+            mode: "free",
+            eventType: "freechat_reward_request_failed",
+            extra: { attempt, reason: "network_or_parse_error" },
+          });
+          rewardFinalizedSessionsRef.current.add(sessionId);
+          finishPendingExit();
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      }
+    };
+
+    void finalizeDailyReward();
+  }, [status, sessionId, getTranscript, finishPendingExit]);
+
+  useEffect(() => {
+    voiceBubbleRef.current?.scrollTo({ top: voiceBubbleRef.current.scrollHeight, behavior: "smooth" });
+  }, [transcript, interimChildText]);
+
+  // 세션이 live가 될 때 저장된 자동/수동 모드를 훅에 반영 — 수동 모드는 아이가 명시적으로
+  // 말하기 버튼을 누르기 전까지 마이크를 꺼둔다(불필요한 상시 캡처 방지).
+  useEffect(() => {
+    if (status === "live") {
+      setInputMode(isAuto ? "auto" : "manual");
+      setMicEnabled(isAuto);
+    }
+  }, [status, isAuto, setInputMode, setMicEnabled]);
+
+  const restoreSession = useCallback(async (cId: string) => {
+    logVoiceEvent({ ts: Date.now(), eventType: "freechat_restore_start", extra: { childId: cId } });
+    console.log("[freechat] restoreSession start", { childId: cId });
+    try {
+      const res = await fetch("/api/chat/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ childId: cId }),
+      });
+      const data = await res.json();
+      logVoiceEvent({ ts: Date.now(), eventType: "freechat_session_response", extra: { resumed: data.resumed, sessionId: data.sessionId, conversationWindow: data.conversationWindow } });
+      console.log("[freechat] session response", { sessionId: data.sessionId, resumed: data.resumed, businessDate: data.businessDate, conversationWindow: data.conversationWindow });
+      
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+        sessionIdRef.current = data.sessionId;
+        if (data.businessDate && data.conversationWindow) {
+          currentWindowRef.current = `${data.businessDate}-${data.conversationWindow}`;
+        } else {
+          currentWindowRef.current = getCurrentKSTWindow();
+        }
+        localStorage.setItem("k_session_id", data.sessionId);
+
+        if (data.resumed) {
+          const msgRes = await fetch(`/api/chat/messages?sessionId=${data.sessionId}`);
+          if (msgRes.ok) {
+            const msgData = await msgRes.json();
+            logVoiceEvent({ ts: Date.now(), eventType: "freechat_restore_messages", extra: { messageCount: msgData.messages?.length ?? 0 } });
+            if (msgData.messages) {
+              type MessageRow = {
+                turn_id?: string;
+                display_sequence?: number;
+                role: "child" | "k" | "system";
+                content: string;
+              };
+              const mapped: Turn[] = msgData.messages.map((m: MessageRow) => ({
+                id: m.turn_id || m.display_sequence?.toString() || Math.random().toString(),
+                role: m.role as "child" | "k",
+                text: m.content,
+                displaySequence: m.display_sequence
+              } as Turn));
+              
+              const maxSeq = Math.max(0, ...msgData.messages.map((m: MessageRow) => m.display_sequence ?? 0));
+              displaySequenceCounterRef.current = Math.max(displaySequenceCounterRef.current, maxSeq);
+
+              restoredTranscriptRef.current = mapped;
+              console.log("[freechat] restored messages", { sessionId: data.sessionId, count: mapped.length });
+            }
+          }
+        } else {
+          restoredTranscriptRef.current = [];
+        }
+      }
+    } catch (err) {
+      console.error("Session restore error:", err);
+    }
+  }, []);
+  const handleStart = useCallback(async () => {
+    if (!childId) return;
+    setReportDone(false);
+    setReportError(null);
+
+    await restoreSession(childId);
+
+    // 이미 이 대화(같은 business_date+conversation_window)에서 하루 턴 한도를 다 쓴
+    // 세션을 재개하는 경우 — 예전에는 여기서 그대로 live로 붙였다가 턴수 하드리밋
+    // effect가 즉시 재발동해 "오늘 대화는 여기까지야"가 매번 다시 뜨고 세션이 곧바로
+    // 종료됐다. 아이 입장에선 마이크를 눌러도 아무것도 안 되는 것처럼 보였다
+    // (2026-08-02 자유대화 무응답 재보고로 확인). live 연결 자체를 시도하지 않고
+    // 바로 한도 안내 화면으로 전환한다.
+    const restoredChildTurns = restoredTranscriptRef.current.filter((t) => t.role === "child").length;
+    if (isFreeChatHardLimitEnabled() && restoredChildTurns >= MAX_SESSION_TURNS) {
+      seedTranscript(restoredTranscriptRef.current);
+      setDailyLimitReached(true);
+      setSessionActive(false);
+      return;
+    }
+
+    setSessionActive(true);
+    await startSession();
+    seedTranscript(restoredTranscriptRef.current);
+
+    if (navigator.serviceWorker?.controller) {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = (e) => {
+        fetch("/api/client-version", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: sessionIdRef.current,
+            childId,
+            clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA,
+            swVersion: e.data?.swVersion ?? "unknown",
+          }),
+        }).catch(() => {});
+      };
+      navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" }, [channel.port2]);
+    } else {
+      fetch("/api/client-version", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          sessionId: sessionIdRef.current, 
+          childId, 
+          clientSha: process.env.NEXT_PUBLIC_DEPLOYMENT_SHA, 
+          swVersion: "no-sw-controller" 
+        }),
+      }).catch(() => {});
+    }
+  }, [childId, startSession, restoreSession, seedTranscript]);
+
+  // 주기적으로 윈도우 변경을 감지하고 세션 갱신
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (childIdRef.current && currentWindowRef.current) {
+        const currentWindow = getCurrentKSTWindow();
+        if (currentWindowRef.current !== currentWindow) {
+          const wasLive = statusRef.current === "live";
+          if (wasLive) stopSession();
+          reset();
+          
+          void restoreSession(childIdRef.current).then(() => {
+            if (wasLive) {
+              void startSession().then(() => {
+                seedTranscript(restoredTranscriptRef.current);
+              });
+            } else {
+              seedTranscript(restoredTranscriptRef.current);
+            }
+          });
+        }
+      }
+    }, 10000); // 10초마다 확인
+    return () => clearInterval(interval);
+  }, [restoreSession, stopSession, reset, startSession, seedTranscript]);
+
+  const handleModeChange = useCallback((newMode: "auto" | "manual") => {
+    if (newMode === "auto") {
+      // 수동 모드에서 녹음 중이던 발화가 있었다면 안전하게 먼저 확정
+      if (isRecordingRef.current) {
+        manualFinalize();
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
+      setInputMode("auto");
+      setMicEnabled(true);
+      
+      // manual -> auto 전환 시, 세션이 안 켜져있다면 즉시 시작 시도
+      if (statusRef.current === "idle" || statusRef.current === "error") {
+        handleStart();
+      }
+    } else {
+      setInputMode("manual");
+      setMicEnabled(false);
+    }
+    setIsAuto(newMode === "auto");
+    if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, newMode);
+  }, [childId, manualFinalize, setInputMode, setMicEnabled, handleStart]);
+
+  const handleCentralButtonClick = useCallback(() => {
+    if (!isRecordingRef.current) {
+      // 케이가 아직 반응을 생성/전송하는 중이면 새 녹음을 시작하지 않는다(턴 겹침 방지 —
+      // useVoiceChat.ts의 respondingRef 가드와 동일한 원칙을 버튼 단에서도 재확인).
+      if (isResponding) return;
+      setMicEnabled(true);
+      setIsRecording(true);
+      isRecordingRef.current = true;
+    } else {
+      manualFinalize();
+      setMicEnabled(false);
+      setIsRecording(false);
+      isRecordingRef.current = false;
+    }
+  }, [setMicEnabled, manualFinalize, isResponding]);
+
+  const switchToText = useCallback(() => {
+    // 진행 중인 녹음이 있으면 먼저 정상 종료(교착 방지) — handleCentralButtonClick의
+    // "정지" 분기와 동일한 순서: manualFinalize 먼저, 그 다음 mic/recording 상태 정리.
+    if (isRecordingRef.current) {
+      manualFinalize();
+      setIsRecording(false);
+      isRecordingRef.current = false;
+    }
+    setInputMode("manual");
+    setIsAuto(false);
+    setMicEnabled(false);
+    // setMicEnabled는 처리 게이트일 뿐 실제 마이크 스트림은 안 끈다 — 텍스트 모드에서
+    // OS/브라우저 마이크 사용 표시를 끄려면 스트림 자체를 정지해야 한다.
+    releaseMicrophone();
+    setMode("text");
+    if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, "manual");
+  }, [setMicEnabled, releaseMicrophone, setInputMode, manualFinalize, childId]);
+
+  const switchToVoice = useCallback(() => {
+    // 키보드 종료 후에는 항상 수동 음성 모드로 복귀한다 — 자동 VAD를 다시 켜지 않고,
+    // 마이크도 자동으로 켜지 않는다(사용자가 마이크 버튼을 눌러야 녹음 시작).
+    setInputMode("manual");
+    setIsAuto(false);
+    setMode("voice");
+    // 텍스트 모드에서 정지해둔 마이크 스트림을 미리 재획득해, 사용자가 마이크
+    // 버튼을 눌렀을 때 곧바로 녹음이 시작되도록 한다(실패 시 상태가 "연결 오류"로
+    // 전환되어 화면에 노출된다).
+    void reacquireMicrophone();
+  }, [setInputMode, reacquireMicrophone]);
+
+  const handleSendText = useCallback(async () => {
+    const text = textInput.trim();
+    if (!text) return;
+
+    if (statusRef.current === "idle" || statusRef.current === "error") {
+      await handleStart();
+    }
+
+    setTextInput("");
+    sendTypedText(text);
+  }, [textInput, handleStart, sendTypedText]);
+
+  // 자동 모드일 때 마이크 권한이 이미 'granted'라면 자동 시작
+  useEffect(() => {
+    if (
+      childId &&
+      usagePhase === "ready" &&
+      isAuto &&
+      micPermission === "granted" &&
+      !autoStartAttempted.current &&
+      status === "idle"
+    ) {
+      autoStartAttempted.current = true;
+      handleStart();
+    }
+  }, [childId, usagePhase, isAuto, micPermission, status, handleStart]);
+
+  const { viewportHeight, viewportPageTop, isKeyboardOpen } = useKeyboardConversationViewport();
+  const keyboardViewportHeight = mode === "text" && isKeyboardOpen && viewportHeight && viewportHeight > 0
+    ? viewportHeight
+    : null;
+  const keyboardViewportStyle = keyboardViewportHeight
+    ? { height: `${keyboardViewportHeight}px` }
+    : undefined;
+
+  // 상태 플래그
+  const isConnecting = status === "connecting";
+  const isLive = status === "live";
+  const isEnded = status === "ended";
+
+  const computedVoiceState = getFreeChatConversationState({
+    mode,
+    status,
+    isRecording,
+    isResponding,
+    isSpeaking,
+  });
+
+  let stateText = "";
+  let StateIcon = null;
+  switch (computedVoiceState) {
+    case "listening":
+      stateText = "듣고 있어";
+      StateIcon = <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>;
+      break;
+    case "thinking":
+      stateText = "생각 중";
+      StateIcon = <div className="flex gap-1"><div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"0ms"}}/><div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"150ms"}}/><div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-gray-500 animate-bounce motion-reduce:animate-none" style={{animationDelay:"300ms"}}/></div>;
+      break;
+    case "speaking":
+      stateText = "말하는 중";
+      StateIcon = <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>;
+      break;
+    case "connecting":
+      stateText = "연결 중";
+      StateIcon = <div className="w-5 h-5 border-[2.5px] border-gray-300 border-t-gray-600 rounded-full animate-spin motion-reduce:animate-none" />;
+      break;
+    case "error":
+      stateText = "연결 오류";
+      StateIcon = <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+      break;
+    default:
+      stateText = "대기 중";
+  }
+
+  // 048 hotfix: 1·2·3 영역은 화자별 채팅이 아니라 "케이가 실제로 말한 발화"만의
+  // 최근 3단계 타임라인이다(아이 발화는 어디에도 노출하지 않는다). 미션·자유대화가
+  // 동일한 규칙을 쓰도록 공유 selector로 계산한다.
+  const { current: currentKText, previous: prevKText, older: olderKText } = getRecentKUtterances(transcript);
+  let currentQuestionText = currentKText || "케이가 이야기를 준비하고 있어요...";
+
+  if (isEnded) {
+    // codex 047 리뷰 지적: 기존에는 대화 종료 후 별도 헤더로 "오늘도 이야기해줘서
+    // 고마워요"(reportDone) 또는 "대화가 끝났어요" 안내를 보여줬는데, 새 레이아웃으로
+    // 옮기며 그 안내 자체가 완전히 사라졌었다 - 현재 말풍선 영역에 동일한 문구로 복원한다.
+    currentQuestionText = reportDone
+      ? "오늘도 이야기해줘서 고마워요.\n부모님이 리포트에서 확인할 수 있어요."
+      : "대화가 끝났어요.\n부모님이 리포트에서 확인할 수 있어요.";
+  } else if (status === "connecting") {
+    currentQuestionText = "연결 중...";
+  } else if (status === "error") {
+    currentQuestionText = "연결에 오류가 발생했어요.\n아래 🎤 버튼을 눌러 다시 연결해주세요.";
+  } else if (status === "idle") {
+    if (isAuto) {
+      if (micPermission === "checking") currentQuestionText = "잠시만 기다려주세요...";
+      else if (micPermission === "denied") currentQuestionText = "대화를 위해 마이크 권한을 허용해주세요.";
+      else currentQuestionText = "아래 🎤 버튼을 눌러 대화를 시작해 보세요! 🌿";
+    } else {
+      currentQuestionText = "아래 🎤 버튼을 눌러 대화를 시작해 보세요! 🌿";
+    }
+  }
+
+  const dailyRewardPresentation = dailyReward
+    ? getFreechatRewardModalContent(dailyReward)
+    : null;
+  const dailyRewardModal = (
+    <GoldKeyRewardModal
+      open={dailyRewardPresentation !== null}
+      title={dailyRewardPresentation?.title ?? ""}
+      description={dailyRewardPresentation?.description ?? ""}
+      awarded={dailyRewardPresentation?.awarded ?? false}
+      onClose={handleCloseDailyReward}
+      idPrefix="freechat-daily-reward"
+    />
+  );
+
+  if (!mounted || usagePhase === "checking") {
+    return (
+      <DemoFrame>
+        <div className="h-full flex items-center justify-center" style={{ background: "var(--color-k-surface)" }}>
+          <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "var(--color-k-navy) var(--color-k-navy) transparent transparent" }} />
+        </div>
+        {dailyRewardModal}
+      </DemoFrame>
+    );
+  }
+
+  if (dailyLimitReached) {
+    return (
+      <DemoFrame>
+        <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]">
+          <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+            <KBestieMascotAnimation state="idle" size={120} />
+            <p className="text-[#3a2f2a] text-[19px] font-bold leading-relaxed">
+              오늘 대화는 여기까지야!<br />
+              다음에 더 재미있는 이야기 많이 들려줘 👋
+            </p>
+            <button
+              onClick={() => router.replace("/child/home")}
+              className="mt-2 px-6 py-3 rounded-2xl text-sm font-bold text-white cursor-pointer active:scale-95"
+              style={{ background: "var(--color-k-orange)" }}
+            >
+              홈으로 갈래요
+            </button>
+          </div>
+        </div>
+        {dailyRewardModal}
+      </DemoFrame>
+    );
+  }
+
+  if (usagePhase === "cooldown") {
+    const mm = String(Math.floor(cooldownRemainingSec / 60)).padStart(2, "0");
+    const ss = String(cooldownRemainingSec % 60).padStart(2, "0");
+    return (
+      <DemoFrame>
+        <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]">
+          <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+            <KBestieMascotAnimation state="idle" size={120} />
+            <p className="text-[#3a2f2a] text-[19px] font-bold leading-relaxed">
+              지금은 잠깐 쉬는 시간이야.<br />
+              {cooldownRemainingSec > 0 ? `${mm}:${ss} 뒤에 다시 이야기할 수 있어.` : "이제 다시 이야기할 수 있어."}
+            </p>
+            <button
+              onClick={() => router.replace("/child/home")}
+              className="mt-2 px-6 py-3 rounded-2xl text-sm font-bold text-white cursor-pointer active:scale-95"
+              style={{ background: "var(--color-k-orange)" }}
+            >
+              홈으로 갈래요
+            </button>
+          </div>
+        </div>
+        {dailyRewardModal}
+      </DemoFrame>
+    );
+  }
+
+  return (
+    <DemoFrame
+      mobileViewportHeight={keyboardViewportHeight}
+      mobileViewportPageTop={isKeyboardOpen ? viewportPageTop : null}
+    >
+      <div
+        data-ui="freechat-conversation-viewport"
+        data-keyboard-open={isKeyboardOpen}
+        className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]"
+        style={{ overflowX: "hidden", overflowY: "hidden", ...keyboardViewportStyle }}
+      >
+        {wakeLockWarning && (
+          <div className="absolute top-[80px] left-0 right-0 flex justify-center z-50 pointer-events-none animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="bg-gray-800/80 text-white text-xs px-4 py-2 rounded-full backdrop-blur-md shadow-lg">
+              기기 설정으로 화면이 꺼질 수 있어요
+            </div>
+          </div>
+        )}
+        <div
+          data-ui="freechat-conversation-grid"
+          data-keyboard-open={isKeyboardOpen}
+          className="w-full max-w-[480px] min-w-0 box-border h-[100dvh] relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto_auto_auto]"
+          style={{
+            background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)",
+            ...keyboardViewportStyle,
+            "--chat-bubble-bottom-padding": "clamp(20px, 2.6dvh, 24px)",
+            "--chat-mascot-bottom-padding": "clamp(37px, 4.8dvh, 43px)",
+            "--chat-mascot-height": "clamp(145px, 42vw, 172px)",
+          } as React.CSSProperties}
+        >
+          
+          {/* Decorations */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
+            <div className="absolute top-[9%] left-[7%] w-[clamp(48px,15vw,64px)] h-[clamp(22px,7vw,30px)] bg-white/25 rounded-full blur-[2px]" />
+            <div className="absolute top-[18%] right-[9%] w-[clamp(40px,12vw,54px)] h-[clamp(18px,5vw,24px)] bg-white/30 rounded-full blur-[2px]" />
+            <div className="absolute top-[14%] left-[52%] w-[clamp(6px,2vw,10px)] h-[clamp(6px,2vw,10px)] bg-[#F6C85F]/45 rounded-full" />
+            <div className="absolute top-[37%] left-[8%] text-[clamp(14px,4vw,20px)] text-[#F6C85F]/40">✦</div>
+            <div className="absolute top-[51%] right-[8%] text-[clamp(12px,3.5vw,18px)] text-[#F6A21A]/35 rotate-12">✦</div>
+            <div className="absolute top-[68%] left-[12%] w-[clamp(16px,5vw,24px)] h-[clamp(16px,5vw,24px)] bg-white/20 rounded-full blur-[1px]" />
+            <div className="absolute top-[27%] right-[18%] w-[clamp(10px,3vw,14px)] h-[clamp(7px,2vw,10px)] rounded-[3px] bg-[#FF8A6B]/55 rotate-[24deg] shadow-[0_2px_4px_rgba(224,90,63,0.12)]" />
+            <div className="absolute top-[46%] left-[5%] w-[clamp(12px,3.4vw,16px)] h-[clamp(8px,2.2vw,11px)] rounded-[3px] bg-[#8ED7A8]/45 -rotate-[28deg] shadow-[0_2px_4px_rgba(68,130,90,0.10)]" />
+            <div className="absolute top-[62%] right-[16%] w-[clamp(28px,8vw,36px)] h-[clamp(12px,3.5vw,16px)] rounded-full bg-white/30 blur-[1px]" />
+          </div>
+
+          {/* 공통 헤더 */}
+          <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
+            <AppTopHeader title="대화" onBack={() => {
+                  if (isLive) {
+                    if (!sessionId) {
+                      stopSession();
+                      setSessionActive(false);
+                      router.replace("/child/home");
+                      return;
+                    }
+                    exitAfterRewardRef.current = true;
+                    stopSession();
+                    setSessionActive(false);
+                    return;
+                  }
+                  if (
+                    status === "ended"
+                    && sessionId
+                    && !rewardFinalizedSessionsRef.current.has(sessionId)
+                  ) {
+                    exitAfterRewardRef.current = true;
+                    return;
+                  }
+                  router.replace("/child/home");
+            }} />
+          </div>
+
+          {/* The mascot-area height is derived from the shared dimensions below, preserving a 20px tail-to-head gap as viewport dimensions change. */}
+          <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[var(--chat-bubble-bottom-padding)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
+            <div className="absolute top-[calc(58px+env(safe-area-inset-top))] left-0 w-full h-[clamp(18px,3dvh,24px)] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
+            {(olderKText || prevKText) && (
+              <div className="mt-auto flex flex-col justify-end items-center min-h-0 overflow-hidden w-full shrink mb-[clamp(10px,1.5dvh,14px)]">
+                {olderKText && (
+                  <div className="mb-[clamp(8px,1.2dvh,10px)] text-gray-400/70 text-[clamp(14px,3.7vw,15px)] leading-[1.45] text-center max-w-[82%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                    {olderKText}
+                  </div>
+                )}
+                {prevKText && (
+                  <div className="bg-white/75 backdrop-blur-md px-[clamp(16px,4.5vw,18px)] py-[clamp(11px,1.7dvh,13px)] rounded-[18px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[80%] text-center shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                    {prevKText}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 w-[clamp(84%,86%,88%)] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[clamp(20px,5.5vw,22px)] py-[clamp(16px,2.2dvh,18px)] flex flex-col min-w-0 shrink-0`}>
+              <div className="w-full">
+                <p className="text-left text-[#3a2f2a] text-[clamp(18px,5vw,21px)] font-[700] leading-[1.43] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  {currentQuestionText}
+                </p>
+              </div>
+              {/* Triangle tail */}
+              <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
+              <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
+            </div>
+          </div>
+
+          {/* Mascot Area & Side Cards OR Text-Mode CTA.
+              Text mode keeps K's state visible even while the software keyboard is open. */}
+          {(mode === "text" || !isKeyboardOpen) && (
+          <div
+            data-ui="conversation-status-panel"
+            className={`relative z-10 w-full shrink-0 transition-all duration-300 flex items-center justify-center ${mode === "text" && isKeyboardOpen ? "h-[clamp(68px,10dvh,84px)]" : "h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)]"}`}
+          >
+            {mode === "text" ? (
+              /* Text overlay retains K's latest state above the close CTA. */
+              <div className={`relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300 ${isKeyboardOpen ? "gap-0" : "gap-4"}`}>
+                <div
+                  data-ui="text-mode-voice-state"
+                  data-keyboard-open={isKeyboardOpen}
+                  className="flex items-center gap-2 rounded-full border border-white/80 bg-white/85 px-4 py-2 text-[#5F7181] shadow-[0_3px_10px_rgba(75,85,99,0.10)] backdrop-blur-md"
+                  aria-live="polite"
+                >
+                  <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,10.5vw,46px)] w-[clamp(40px,10.5vw,46px)] items-center justify-center">
+                    {StateIcon}
+                  </div>
+                  <span className="text-[14px] font-bold leading-none">{stateText}</span>
+                </div>
+                {!isKeyboardOpen && (
+                  <button
+                    onClick={switchToVoice}
+                    style={{ backgroundColor: "#EF5350" }}
+                    className="h-[68px] min-w-[270px] px-9 rounded-full text-white font-[700] text-[21px] shadow-xl shadow-red-300/40 flex items-center justify-center gap-3 cursor-pointer active:scale-95 hover:bg-[#E53935] transition-all border border-red-300/30"
+                    aria-label="채팅창 닫기"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    <span>채팅창 닫기</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* mode !== "text": 케이 캐릭터 & Platform & 상태 카드 정상 노출 */
+              <>
+                {/* Mascot & Platform - Centered strictly */}
+                <div className="free-chat-mascot-group absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
+                   {/* Soft dimensional halo: diffuse light rather than a visible ring */}
+                   <div
+                     className="absolute top-[-4%] w-[clamp(205px,56vw,238px)] h-[clamp(205px,56vw,238px)] rounded-full blur-[18px] pointer-events-none"
+                     style={{ background: "radial-gradient(circle, rgba(255,245,222,0.82) 0%, rgba(250,217,138,0.30) 42%, rgba(250,217,138,0.08) 63%, transparent 75%)" }}
+                   />
+                   <div
+                     className="absolute top-[6%] w-[clamp(175px,48vw,205px)] h-[clamp(175px,48vw,205px)] rounded-full blur-[9px] pointer-events-none"
+                     style={{ background: "radial-gradient(circle at 50% 42%, rgba(255,255,255,0.72) 0%, rgba(255,245,232,0.46) 47%, rgba(246,200,95,0.12) 72%, transparent 82%)" }}
+                   />
+                   
+                   {/* Mascot */}
+                   <div className="relative z-30 flex justify-center items-end pb-[var(--chat-mascot-bottom-padding)]">
+                     <KBestieMascotAnimation state={computedVoiceState === "speaking" ? "talking" : "idle"} size={165} className="!w-[var(--chat-mascot-height)] !h-auto object-contain" />
+                   </div>
+                   
+                   {/* Raised cylinder platform: distinct top plane, shaded side wall, and grounded shadow */}
+                   <div className="absolute bottom-0 w-[clamp(205px,57vw,238px)] h-[clamp(58px,8.2dvh,70px)] pointer-events-none">
+                     <div className="absolute -bottom-[8%] left-[8%] w-[84%] h-[30%] rounded-[50%] bg-[#9B7047]/28 blur-[8px]" />
+                     <div className="absolute top-[25%] w-full h-[60%] rounded-b-[50%] border-x border-b border-[#D7A87A]/70 bg-gradient-to-b from-[#F4CFAB] via-[#E8B98C] to-[#C98755] shadow-[0_9px_10px_rgba(125,79,37,0.24)]" />
+                     <div className="absolute bottom-[3%] left-[3%] w-[94%] h-[30%] rounded-b-[50%] bg-[linear-gradient(90deg,rgba(168,99,48,0.28),transparent_18%,rgba(255,240,214,0.40)_50%,transparent_82%,rgba(147,78,33,0.32))]" />
+                     <div className="absolute top-0 z-10 w-full h-[51%] rounded-[100%] border border-[#E7C49D] shadow-[inset_0_2px_6px_rgba(255,255,255,0.85),0_2px_3px_rgba(167,103,47,0.14)]" style={{ background: "radial-gradient(ellipse at 50% 30%, #fffdf8 0%, #fff4e4 45%, #f3d3ad 77%, #dfad7b 100%)" }} />
+                     <div className="absolute top-[10%] left-[18%] z-20 w-[64%] h-[20%] rounded-[50%] bg-white/60 blur-[3px]" />
+                     <div className="absolute top-[32%] left-[12%] z-20 w-[76%] h-[17%] rounded-[50%] bg-[#B97942]/13 blur-[2px]" />
+                   </div>
+                </div>
+
+                {/* Right State Card - Independent Absolute Overlay */}
+                <div className="absolute right-[clamp(16px,5vw,24px)] top-[clamp(36px,5.5dvh,48px)]">
+                  <div
+                    className="relative z-20 bg-[#D5ECFF]/45 backdrop-blur-sm rounded-[18px] flex flex-col items-center justify-center w-[clamp(64px,18vw,72px)] min-h-[clamp(72px,18vw,80px)] py-[clamp(7px,1dvh,9px)] shadow-[0_2px_8px_rgba(75,85,99,0.06)] pointer-events-auto"
+                    aria-live="polite"
+                  >
+                     <div className="w-[clamp(36px,9.5vw,40px)] h-[clamp(36px,9.5vw,40px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1 shrink-0">
+                       {StateIcon}
+                     </div>
+                     <span className="text-[clamp(14px,3.8vw,16px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          )}
+
+          {/* Auto/Manual Mode Toggles */}
+          {mode !== "text" && !isKeyboardOpen && (
+          <div className="relative z-20 flex justify-center h-[clamp(38px,5dvh,42px)] shrink-0 pointer-events-none">
+            <div className="flex w-[clamp(130px,36vw,145px)] h-full p-1 rounded-full bg-white/95 border border-[#E6B77F] shadow-[0_4px_8px_rgba(117,68,28,0.22)] pointer-events-auto">
+             <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+               자동
+               {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
+             </button>
+             <button onClick={() => handleModeChange('manual')} disabled={isConnecting} aria-pressed={!isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${!isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+               수동
+               {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
+             </button>
+            </div>
+          </div>
+          )}
+
+          {/* Spacer between mode and mic */}
+          {mode !== "text" && !isKeyboardOpen && (
+          <div className="h-[clamp(16px,2.5dvh,24px)] w-full shrink-0" />
+          )}
+
+          {/* Bottom Inputs Area - 기존 UI 원본 100% 복원 (주황색 테두리 input + 주황색 52px 전송 버튼 + 흰색 52px X 버튼) */}
+          <div
+            data-ui="freechat-input-area"
+            className="relative z-30 w-full shrink-0 flex items-center justify-center"
+            style={{
+              paddingBottom: mode === "text"
+                ? (isKeyboardOpen
+                    ? "0px"
+                    : "calc(clamp(18px, 2.5dvh, 24px) + env(safe-area-inset-bottom))")
+                : "calc(clamp(54px, 8dvh, 66px) + env(safe-area-inset-bottom))",
+            }}
+          >
+            {mode === "text" ? (
+              <div
+                className="w-full min-w-0 flex gap-2 box-border"
+                style={{
+                  paddingLeft: "max(16px, env(safe-area-inset-left))",
+                  paddingRight: "max(16px, env(safe-area-inset-right))",
+                }}
+              >
+                <input
+                  ref={(el) => { if (el) el.focus(); }}
+                  type="text"
+                  value={textInput}
+                  onChange={(e) => setTextInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendText(); }
+                  }}
+                  placeholder="케이에게 텍스트로 답하기..."
+                  disabled={isConnecting || isEnded}
+                  className="flex-1 min-w-0 bg-white/90 backdrop-blur-md px-4 py-3.5 rounded-2xl text-[16px] font-medium text-gray-800 shadow-sm border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-k-orange)] focus:border-[var(--color-k-orange)] transition-colors disabled:opacity-50"
+                  maxLength={200}
+                />
+                <button
+                  onClick={handleSendText}
+                  disabled={!textInput.trim() || isConnecting || isEnded}
+                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center text-white disabled:opacity-40 cursor-pointer shadow-md bg-[var(--color-k-orange)] active:scale-95 transition-all"
+                  aria-label="전송"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+                <button
+                  onClick={switchToVoice}
+                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40 transition-all"
+                  aria-label="텍스트 입력창 닫기"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+            ) : (
+              <div className="w-full flex items-center justify-center h-[clamp(88px,13vw,100px)] relative">
+                {/* Keyboard Button */}
+                <button 
+                  onClick={switchToText}
+                  disabled={isConnecting}
+                  className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(46px,12vw,50px)] h-[clamp(46px,12vw,50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="텍스트로 답하기"
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
+                </button>
+
+                {/* Main Mic Button */}
+                <div className="relative flex items-center justify-center">
+                  {isRecording && (
+                    <>
+                      <div className="absolute w-[clamp(102px,27vw,112px)] h-[clamp(102px,27vw,112px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
+                      <div className="absolute w-[clamp(116px,31vw,128px)] h-[clamp(116px,31vw,128px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
+                    </>
+                  )}
+
+                  {isLive && !isAuto ? (
+                    <button
+                      onClick={handleCentralButtonClick}
+                      className={`w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)] ${isRecording ? 'rounded-2xl' : 'rounded-full'}`}
+                      aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
+                    >
+                      {isRecording ? (
+                        <div className="w-[24px] h-[24px] rounded-sm bg-white" />
+                      ) : (
+                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+                      )}
+                    </button>
+                  ) : isLive && isAuto ? (
+                    // 자동 모드에서는 VAD가 자동으로 듣기 시작/종료를 처리한다(수동 토글 버튼
+                    // 없음 - 원본 코드도 이 상태에서 별도 버튼을 그리지 않았다). 아래 "마이크
+                    // 사용 불가" 회색 처리로 떨어지면 정상 자동 청취 중에도 고장난 것처럼
+                    // 보이므로, 클릭 불가한 정적 활성 표시만 보여준다.
+                    <div
+                      className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 bg-[var(--color-k-orange)]"
+                      aria-label="자동으로 듣고 있어요"
+                    >
+                      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                    </div>
+                  ) : (!isLive && !isConnecting) ? (
+                    isAuto && micPermission === "denied" ? (
+                      <div className="flex flex-col items-center">
+                        <button
+                          onClick={handleStart}
+                          className="px-5 py-2.5 bg-red-50 text-red-600 rounded-full text-sm font-bold border border-red-200 active:scale-95 transition-transform cursor-pointer"
+                        >
+                          권한 다시 시도하기
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={handleStart} 
+                        className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)]"
+                        aria-label="대화 시작하기"
+                      >
+                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                      </button>
+                    )
+                  ) : (
+                    <button 
+                      disabled 
+                      className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 opacity-60 cursor-not-allowed bg-gray-400"
+                      aria-label="마이크 사용 불가"
+                    >
+                      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* 047 QA 실측: topOffsetPx가 너무 작아 문의 위젯이 상단 X(자유대화 종료) 버튼과
+            정확히 같은 자리에 겹쳐 X가 완전히 가려졌다 - 미션 화면과 달리 진행률 바가
+            없어 X 버튼 아래로 충분히 내려야 한다(X 버튼 높이 44px + 상단 패딩 고려). */}
+        {mode !== "text" && <KChatbotWidget appSurface="child" topOffsetPx={64} />}
+        {dailyRewardModal}
+      </div>
+    </DemoFrame>
+  );
+}
