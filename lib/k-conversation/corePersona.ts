@@ -10,9 +10,12 @@ import {
   type KPeerPersonaInfo,
 } from "@/lib/persona/kPeerPersona";
 
+import type { RelationshipCalendarStage } from "@/lib/relationship/calendarStage";
+
 export interface CorePersonaContext {
   givenName: string | null;
   peerPersona: KPeerPersonaInfo;
+  effectiveStage: RelationshipCalendarStage | null;
 }
 
 /** child_id로 서버가 직접 재조회 — 클라이언트 입력을 신뢰하지 않는 kPeerPersona.ts의
@@ -21,8 +24,8 @@ export async function loadCorePersonaContext(
   db: SupabaseClient,
   childId: string,
 ): Promise<CorePersonaContext> {
-  const { givenName, persona } = await fetchVerifiedChildIdentity(db, childId);
-  return { givenName, peerPersona: persona };
+  const { givenName, persona, effectiveStage } = await fetchVerifiedChildIdentity(db, childId);
+  return { givenName, peerPersona: persona, effectiveStage };
 }
 
 /** 학년과 무관하게 항상 적용되는 케이의 기본 정체성/금지선. */

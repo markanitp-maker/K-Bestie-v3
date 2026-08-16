@@ -17,6 +17,7 @@ import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn 
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { runChosungTurn } from "./chosungGame/gameOrchestrator";
+import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 
 export type { EngineInput, EngineOutput, ConversationAction, ConversationMode } from "./types";
 export type { GenerateArgs } from "./responseGenerator";
@@ -199,8 +200,19 @@ export async function respond(
   const coreCtx: CorePersonaContext =
     coreCtxSettled.status === "fulfilled"
       ? coreCtxSettled.value
-      : { givenName: null, peerPersona: { hasGrade: false, realGrade: null, gradeLabel: "학년 정보 확인 전", peerAge: null } };
+      : {
+          givenName: null,
+          peerPersona: { hasGrade: false, realGrade: null, gradeLabel: "학년 정보 확인 전", peerAge: null },
+          effectiveStage: null,
+        };
   const gradePersona = resolveGradePersona(coreCtx.peerPersona.realGrade ?? coreCtx.peerPersona.gradeLabel);
+  const scenarioCard = resolveScenarioCard({
+    grade: coreCtx.peerPersona.realGrade ?? coreCtx.peerPersona.gradeLabel,
+    effectiveStage: coreCtx.effectiveStage,
+  });
+  const relationshipFragment = scenarioCard
+    ? buildScenarioCardFragment(scenarioCard, coreCtx.effectiveStage)
+    : undefined;
 
   const corePersonaFragment = buildCorePersonaFragment(coreCtx);
   const gradePersonaFragment = gradePersona
@@ -293,6 +305,7 @@ export async function respond(
       action: effectiveAction,
       corePersonaFragment,
       gradePersonaFragment,
+      relationshipFragment,
       memoryFragment,
       currentUtterance: input.currentUtterance,
       recentHistory,

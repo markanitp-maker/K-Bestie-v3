@@ -85,6 +85,7 @@ test("페르소나 문구는 반말·동갑내기 정체성을 포함하고 존�
 interface FakeChildRow {
   given_name: string | null;
   grade: string | null;
+  relationship_effective_stage?: string | null;
 }
 
 function makeFakeDb(rows: Record<string, FakeChildRow>) {
@@ -124,10 +125,36 @@ test("fetchKPeerPersonaForChild — 형제자매마다 완전히 분리된 학�
 });
 
 test("fetchVerifiedChildIdentity — 존재하지 않는 childId는 이름 없이 안전 fallback 페르소나를 반환한다", async () => {
-  const db = makeFakeDb({ "child-a": { given_name: "가영", grade: "3학년" } });
+  const db = makeFakeDb({ "child-a": { given_name: "가영", grade: "3학년", relationship_effective_stage: "W2" } });
   const identity = await fetchVerifiedChildIdentity(db, "unknown-child");
   assert.equal(identity.givenName, null);
   assert.equal(identity.persona.hasGrade, false);
+  assert.equal(identity.effectiveStage, null);
+});
+
+test("fetchVerifiedChildIdentity — W1~W4는 그대로 전달하고 이상값/null은 null로 반환한다", async () => {
+  const db = makeFakeDb({
+    "child-w1": { given_name: "아이1", grade: "1학년", relationship_effective_stage: "W1" },
+    "child-w2": { given_name: "아이2", grade: "2학년", relationship_effective_stage: "W2" },
+    "child-w3": { given_name: "아이3", grade: "3학년", relationship_effective_stage: "W3" },
+    "child-w4": { given_name: "아이4", grade: "4학년", relationship_effective_stage: "W4" },
+    "child-null": { given_name: "아이5", grade: "5학년", relationship_effective_stage: null },
+    "child-invalid": { given_name: "아이6", grade: "6학년", relationship_effective_stage: "W9" },
+  });
+
+  const idW1 = await fetchVerifiedChildIdentity(db, "child-w1");
+  const idW2 = await fetchVerifiedChildIdentity(db, "child-w2");
+  const idW3 = await fetchVerifiedChildIdentity(db, "child-w3");
+  const idW4 = await fetchVerifiedChildIdentity(db, "child-w4");
+  const idNull = await fetchVerifiedChildIdentity(db, "child-null");
+  const idInvalid = await fetchVerifiedChildIdentity(db, "child-invalid");
+
+  assert.equal(idW1.effectiveStage, "W1");
+  assert.equal(idW2.effectiveStage, "W2");
+  assert.equal(idW3.effectiveStage, "W3");
+  assert.equal(idW4.effectiveStage, "W4");
+  assert.equal(idNull.effectiveStage, null);
+  assert.equal(idInvalid.effectiveStage, null);
 });
 
 test("학년 변경은 다음 조회부터 즉시 반영된다(캐시하지 않음)", async () => {

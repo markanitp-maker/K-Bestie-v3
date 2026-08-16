@@ -166,3 +166,38 @@ export function resolveScenarioCard(input: {
     gradeStrategy,
   };
 }
+
+export function cleanScenarioCardText(value: unknown, maxLength = 160): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+/** 미션 및 자유대화에서 공용으로 사용할 관계 시나리오 프롬프트 fragment 조립기.
+ *  expectedEvents 등의 내부 추적 메타데이터는 의도적으로 프롬프트에 포함하지 않는다. */
+export function buildScenarioCardFragment(
+  card: ResolvedScenarioCard,
+  effectiveStage?: RelationshipCalendarStage | null,
+): string {
+  const stageCard = card.stageCard;
+  const stageLabel = effectiveStage
+    ? `${cleanScenarioCardText(card.stageKey, 30)} (${cleanScenarioCardText(effectiveStage, 10)})`
+    : cleanScenarioCardText(card.stageKey, 30);
+
+  const scenarioParts: string[] = [
+    `[관계 시나리오 - ${stageLabel}]`,
+    `단계 목표: ${cleanScenarioCardText(stageCard.primaryGoal, 160)}`,
+    `전략: ${cleanScenarioCardText(stageCard.strategy, 160)}`,
+    `표현 방식: ${cleanScenarioCardText(stageCard.responseStyle, 160)}`,
+  ];
+  const forbidden = (stageCard.forbiddenPatterns ?? [])
+    .map((item) => cleanScenarioCardText(item, 80))
+    .filter(Boolean);
+  if (forbidden.length > 0) {
+    scenarioParts.push(`피해야 할 것: ${forbidden.join(", ")}`);
+  }
+  return scenarioParts.join("\n");
+}

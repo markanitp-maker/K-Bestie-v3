@@ -9,7 +9,11 @@ import {
   resolveGradeAdaptivePersona,
 } from "@/lib/persona/gradeAdaptivePersona";
 
-import { resolveScenarioCard, type ResolvedScenarioCard } from "./scenarioCard";
+import {
+  buildScenarioCardFragment,
+  resolveScenarioCard,
+  type ResolvedScenarioCard,
+} from "./scenarioCard";
 import type { RelationshipCalendarStage } from "./calendarStage";
 
 export type RelationshipConversationMode = "mission" | "free_chat";
@@ -127,25 +131,7 @@ export function formatRelationshipContext(snapshot: RelationshipContextSnapshot)
   }
 
   if (snapshot.scenarioCard) {
-    const card = snapshot.scenarioCard;
-    const stageCard = card.stageCard;
-    const stageLabel = snapshot.effectiveStage
-      ? `${cleanContextText(card.stageKey, 30)} (${cleanContextText(snapshot.effectiveStage, 10)})`
-      : cleanContextText(card.stageKey, 30);
-
-    const scenarioParts: string[] = [
-      `[관계 시나리오 - ${stageLabel}]`,
-      `단계 목표: ${cleanContextText(stageCard.primaryGoal, 160)}`,
-      `전략: ${cleanContextText(stageCard.strategy, 160)}`,
-      `표현 방식: ${cleanContextText(stageCard.responseStyle, 160)}`,
-    ];
-    const forbidden = (stageCard.forbiddenPatterns ?? [])
-      .map((item) => cleanContextText(item, 80))
-      .filter(Boolean);
-    if (forbidden.length > 0) {
-      scenarioParts.push(`피해야 할 것: ${forbidden.join(", ")}`);
-    }
-    lines.push(scenarioParts.join("\n"));
+    lines.push(buildScenarioCardFragment(snapshot.scenarioCard, snapshot.effectiveStage));
   }
 
   if (snapshot.recentSession.length > 0) {

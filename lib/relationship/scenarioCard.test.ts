@@ -3,7 +3,9 @@ import test from "node:test";
 import type { RelationshipCalendarStage } from "./calendarStage";
 import { resolveGradeStrategy } from "./gradeStrategy";
 import {
+  buildScenarioCardFragment,
   buildScenarioKey,
+  cleanScenarioCardText,
   RELATIONSHIP_STAGE_CARDS,
   type RelationshipStageKey,
   resolveScenarioCard,
@@ -150,3 +152,64 @@ test("문자열 학년('초3', '3학년')도 올바른 scenarioKey를 반환한�
   assert.deepEqual(fromText2, fromNumber);
   assert.equal(fromText1?.scenarioKey, "G3_REMEMBER_V1");
 });
+
+test("buildScenarioCardFragment — 출력에 단계 목표·전략·표현 방식·금지사항이 포함된다", () => {
+  const card = resolveScenarioCard({ grade: 3, effectiveStage: "W2" });
+  assert.ok(card);
+
+  const fragment = buildScenarioCardFragment(card, "W2");
+  assert.match(fragment, /\[관계 시나리오 - REMEMBER \(W2\)\]/);
+  assert.match(fragment, /단계 목표: 케이가 나를 기억하고 있구나\./);
+  assert.match(fragment, /전략: 현재 대화 맥락과 직접 관련된 기억을 자연스럽게 연결하여 공감대를 넓힌다\./);
+  assert.match(fragment, /표현 방식: 아이의 현재 말에 먼저 공감한 뒤 관련된 기억을 자연스럽게 연결/);
+  assert.match(fragment, /피해야 할 것: 현재 감정·상황을 무시하고 억지로 기억 끼워넣기, 가짜 기억 지어내기/);
+});
+
+test("buildScenarioCardFragment — expectedEvents 값이 절대 포함되지 않는다", () => {
+  for (const grade of ALL_GRADES) {
+    for (const effectiveStage of ALL_STAGES) {
+      const card = resolveScenarioCard({ grade, effectiveStage });
+      assert.ok(card);
+      assert.ok(card.stageCard.expectedEvents.length > 0);
+
+      const fragmentWithStage = buildScenarioCardFragment(card, effectiveStage);
+      const fragmentWithoutStage = buildScenarioCardFragment(card);
+
+      for (const eventName of card.stageCard.expectedEvents) {
+        assert.equal(
+          fragmentWithStage.includes(eventName),
+          false,
+          `expectedEvent '${eventName}' must not appear in fragment with stage`,
+        );
+        assert.equal(
+          fragmentWithoutStage.includes(eventName),
+          false,
+          `expectedEvent '${eventName}' must not appear in fragment without stage`,
+        );
+      }
+    }
+  }
+});
+
+test("buildScenarioCardFragment — effectiveStage 유무에 따라 라벨이 올바르게 포맷된다", () => {
+  const card = resolveScenarioCard({ grade: 4, effectiveStage: "W1" });
+  assert.ok(card);
+
+  const withStage = buildScenarioCardFragment(card, "W1");
+  assert.match(withStage, /\[관계 시나리오 - MEET \(W1\)\]/);
+
+  const withoutStage = buildScenarioCardFragment(card, null);
+  assert.match(withoutStage, /\[관계 시나리오 - MEET\]/);
+  assert.equal(withoutStage.includes("(W1)"), false);
+
+  const withUndefined = buildScenarioCardFragment(card, undefined);
+  assert.match(withUndefined, /\[관계 시나리오 - MEET\]/);
+});
+
+test("cleanScenarioCardText — 비정상 문자 제거 및 최대 길이 제한이 정상 작동한다", () => {
+  assert.equal(cleanScenarioCardText("안녕\u0000하세요   친구", 100), "안녕 하세요 친구");
+  assert.equal(cleanScenarioCardText("가".repeat(200), 50), "가".repeat(50));
+  assert.equal(cleanScenarioCardText(null, 100), "");
+  assert.equal(cleanScenarioCardText(undefined, 100), "");
+});
+

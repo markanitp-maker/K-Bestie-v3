@@ -9,6 +9,7 @@
 // 문항 호환 매핑값(초6)을 노출하면 안 된다.
 import { parseGrade } from "@/lib/mission/selectQuestions";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { RelationshipCalendarStage } from "@/lib/relationship/calendarStage";
 
 export const GRADE_TO_PEER_AGE: Readonly<Record<number, number>> = {
   1: 8,
@@ -76,21 +77,33 @@ export async function fetchKPeerPersonaForChild(
   return resolveKPeerPersona(data?.grade ?? null);
 }
 
-/** given_name + 페르소나를 한 번에 서버에서 새로 조회한다. 이름·학년 모두 클라이언트가
- *  보낸 값(예: 요청 body의 childContext)을 신뢰하지 않고, 이미 인증/권한 검증을 마친
- *  childId로 항상 새로 가져온다 — 형제자매 정보 혼입·스푸핑을 원천 차단한다. */
+function parseEffectiveStage(value: unknown): RelationshipCalendarStage | null {
+  if (value === "W1" || value === "W2" || value === "W3" || value === "W4") {
+    return value;
+  }
+  return null;
+}
+
+/** given_name + 페르소나 + effectiveStage를 한 번에 서버에서 새로 조회한다. 이름·학년·관계단계 모두
+ *  클라이언트가 보낸 값을 신뢰하지 않고, 이미 인증/권한 검증을 마친 childId로 항상 새로 가져온다 —
+ *  형제자매 정보 혼입·스푸핑을 원천 차단한다. */
 export async function fetchVerifiedChildIdentity(
   db: SupabaseClient,
   childId: string
-): Promise<{ givenName: string | null; persona: KPeerPersonaInfo }> {
+): Promise<{
+  givenName: string | null;
+  persona: KPeerPersonaInfo;
+  effectiveStage: RelationshipCalendarStage | null;
+}> {
   const { data } = await db
     .from("child_profiles")
-    .select("given_name, grade")
+    .select("given_name, grade, relationship_effective_stage")
     .eq("id", childId)
     .maybeSingle();
   return {
     givenName: data?.given_name ?? null,
     persona: resolveKPeerPersona(data?.grade ?? null),
+    effectiveStage: parseEffectiveStage(data?.relationship_effective_stage),
   };
 }
 
