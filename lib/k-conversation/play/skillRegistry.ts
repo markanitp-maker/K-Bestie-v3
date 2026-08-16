@@ -1,5 +1,6 @@
 import type { PlaySkillId, PlaySkillModule } from "./skillTypes";
 import { CHOSUNG_SKILL } from "./chosungSkill";
+import { WORD_CHAIN_SKILL } from "../wordChain/wordChainSkill";
 import type { UtteranceSignals } from "../utteranceSignals";
 
 /**
@@ -8,6 +9,7 @@ import type { UtteranceSignals } from "../utteranceSignals";
  */
 export const PLAY_SKILL_REGISTRY: readonly PlaySkillModule[] = [
   CHOSUNG_SKILL,
+  WORD_CHAIN_SKILL,
 ];
 
 /**

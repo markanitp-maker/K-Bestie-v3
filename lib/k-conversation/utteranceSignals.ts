@@ -18,6 +18,7 @@ export interface UtteranceSignals {
   hasChosungGameStart: boolean; // 초성 게임 시작 요청 ("초성게임 하자", "ㅊㅅ게임", "초성 퀴즈" 등)
   hasChosungAnswerAttempt: boolean; // 초성 게임 답변 시도로 보이는 발화 ("사과", "정답 사과", "바나나인가?")
   hasChosungHintRequest: boolean; // 초성 게임 힌트 요청 ("힌트 줘", "모르겠어", "어려워" 등)
+  hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
 }
 
 const ACHIEVEMENT_KWS = ["1등", "100점", "맞았어", "해냈", "성공했", "이겼", "합격", "칭찬받"];
@@ -117,6 +118,20 @@ function detectChosungAnswerAttempt(
   return false;
 }
 
+// 끝말잇기 게임 시작 신호
+const WORD_CHAIN_START_PATTERNS = [
+  /(?:끝말\s*잇기|끝말잇기|말잇기|단어\s*잇기|단어잇기)/,
+  /(?:끝말|단어)\s*이어\s*(?:가기|하기|달리기)/,
+];
+const WORD_CHAIN_START_NEGATION_KWS = ["안 해", "안해", "안 할", "안할", "싫어", "하기 싫", "하지 마", "하지마", "그만", "재미없", "안 놀"];
+const WORD_CHAIN_START_DEFINITION_KWS = ["뭐야", "뭔데", "무슨 뜻", "무슨 말", "어떤 뜻", "의미", "알아?", "알려줘", "규칙이 뭐야", "어떻게 하는"];
+
+function detectWordChainGameStart(text: string): boolean {
+  if (includesAny(text, WORD_CHAIN_START_NEGATION_KWS)) return false;
+  if (includesAny(text, WORD_CHAIN_START_DEFINITION_KWS)) return false;
+  return WORD_CHAIN_START_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export function extractUtteranceSignals(text: string): UtteranceSignals {
   const trimmed = text.trim();
   const isQuestion = /[?？]/.test(trimmed) || includesAny(trimmed, QUESTION_WORDS);
@@ -135,6 +150,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasChosungHintRequest,
     hasAchievement || hasConflict || hasNegativeEmotion || hasPhysicalNeed,
   );
+  const hasWordChainGameStart = detectWordChainGameStart(trimmed);
 
   return {
     hasAchievement,
@@ -150,6 +166,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasChosungGameStart,
     hasChosungAnswerAttempt,
     hasChosungHintRequest,
+    hasWordChainGameStart,
   };
 }
 
@@ -158,6 +175,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
  * 질문은행 metadata(073에서 정식 도입)가 없으므로 신호 기반 근사치를 쓴다. */
 export function estimateSemanticGroup(signals: UtteranceSignals): string {
   if (signals.hasChosungGameStart) return "PLAYFUL_GAME_CHOSUNG";
+  if (signals.hasWordChainGameStart) return "PLAYFUL_GAME_WORD_CHAIN";
   if (signals.hasAchievement) return "ACHIEVEMENT";
   if (signals.hasConflict) return "FRIEND_CONFLICT";
   if (signals.hasNegativeEmotion) return "MOOD_CHECK";

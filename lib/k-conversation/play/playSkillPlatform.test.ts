@@ -47,15 +47,20 @@ function createMockDb(): SupabaseClient {
 }
 
 test("SkillRegistry: 기본 등록된 Skill 목록 및 조회 함수 검증", () => {
-  assert.equal(PLAY_SKILL_REGISTRY.length, 1);
+  assert.equal(PLAY_SKILL_REGISTRY.length, 2);
   assert.equal(PLAY_SKILL_REGISTRY[0].id, "CHOSUNG");
+  assert.equal(PLAY_SKILL_REGISTRY[1].id, "WORD_CHAIN");
 
   // findSkillById
   const chosung = findSkillById("CHOSUNG");
   assert.ok(chosung);
   assert.equal(chosung?.id, "CHOSUNG");
 
-  const nonExistent = findSkillById("WORD_CHAIN");
+  const wordChain = findSkillById("WORD_CHAIN");
+  assert.ok(wordChain);
+  assert.equal(wordChain?.id, "WORD_CHAIN");
+
+  const nonExistent = findSkillById("TWENTY_QUESTIONS" as any);
   assert.equal(nonExistent, null);
 
   // findDirectlyRequestedSkill
@@ -66,6 +71,10 @@ test("SkillRegistry: 기본 등록된 Skill 목록 및 조회 함수 검증", ()
   const matched = findDirectlyRequestedSkill(chosungSignals, "초성게임 하자");
   assert.ok(matched);
   assert.equal(matched?.id, "CHOSUNG");
+
+  const wordChainMatched = findDirectlyRequestedSkill(defaultSignals, "끝말잇기 하자");
+  assert.ok(wordChainMatched);
+  assert.equal(wordChainMatched?.id, "WORD_CHAIN");
 
   const unmatched = findDirectlyRequestedSkill(defaultSignals, "오늘 날씨 어때?");
   assert.equal(unmatched, null);
