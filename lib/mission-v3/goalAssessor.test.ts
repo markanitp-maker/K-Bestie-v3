@@ -141,3 +141,71 @@ test("API가 세 번 모두 예외를 던지면 빈 배열을 반환한다", asy
   assert.deepEqual(result, []);
   assert.equal(calls, 3);
 });
+
+/** 079 — Production 290턴 중 18건(6.2%)이 질문에 명백히 답했는데 SATISFIED가 되지
+ *  않았다. 원인은 별 UI가 아니라 판정 프롬프트였다. 아래 테스트는 완화된 기준과
+ *  과도한 완화를 막는 안전장치가 함께 프롬프트에 남아 있는지 고정한다. */
+const capturePrompt = async (extra: Partial<Parameters<typeof assessGoalsFromUtterance>[0]> = {}) => {
+  let captured = "";
+  const ai = makeAi((async (params: { contents: string }) => {
+    captured = params.contents;
+    return responseFor("[]");
+  }) as unknown as GenerateContentFn);
+  await assessGoalsFromUtterance({
+    ai,
+    modelId: "test-model",
+    currentUtterance: "던지는 거",
+    goals: [makeGoal()],
+    ...extra,
+  } as Parameters<typeof assessGoalsFromUtterance>[0]);
+  return captured;
+};
+
+test("079: 완화된 판정 기준 문구가 모두 프롬프트에 있다", async () => {
+  const prompt = await capturePrompt();
+  const required = [
+    "핵심 정보를 직접 제공한 경우",
+    "답변 길이나 문장 완성도를 SATISFIED의 조건으로 쓰지 마라",
+    "한 단어나 짧은 구라도",
+    "더 자세히 이야기할 여지가 있다는 이유만으로 PARTIAL을 주지 마라",
+    "핵심 정보가 실제로 아직 빠진 경우에만",
+    "해결된 답변으로 취급",
+    "직전에 K가 물어본 Goal을 먼저 평가",
+    "학년이 낮을수록",
+  ];
+  for (const phrase of required) {
+    assert.ok(prompt.includes(phrase), `프롬프트에 빠진 문구: ${phrase}`);
+  }
+});
+
+test("079: 과도한 완화를 막는 PARTIAL·금지 예시가 남아 있다", async () => {
+  const prompt = await capturePrompt();
+  assert.ok(prompt.includes("있다는 것만 알고 무엇인지 모름"), "PARTIAL 예시 누락");
+  assert.ok(prompt.includes("이유가 빠짐"), "PARTIAL 예시 누락");
+  assert.ok(prompt.includes("SATISFIED 금지"), "무관 답변 금지 문구 누락");
+  assert.ok(prompt.includes("부루마불"), "무관 답변 예시 누락");
+});
+
+test("079: Production 오판 사례가 SATISFIED 예시로 들어가 있다", async () => {
+  const prompt = await capturePrompt();
+  for (const example of ["던지는 거", "만화책", "속상했어", "로블록스"]) {
+    assert.ok(prompt.includes(example), `SATISFIED 예시 누락: ${example}`);
+  }
+});
+
+test("079: gradeRaw를 주면 학년이 프롬프트에 들어간다", async () => {
+  const prompt = await capturePrompt({ gradeRaw: "초2" });
+  assert.ok(prompt.includes("[아이 학년] 초2"), "학년 문구 누락");
+});
+
+test("079: gradeRaw가 없으면 학년 문구가 없다(하위 호환)", async () => {
+  const prompt = await capturePrompt();
+  assert.ok(!prompt.includes("[아이 학년]"), "학년 문구가 잘못 포함됨");
+});
+
+test("079: 기존 DECLINED·SKIPPED 정의와 JSON 계약이 유지된다", async () => {
+  const prompt = await capturePrompt();
+  assert.ok(prompt.includes("DECLINED:"), "DECLINED 정의 누락");
+  assert.ok(prompt.includes("SKIPPED:"), "SKIPPED 정의 누락");
+  assert.ok(prompt.includes("evidenceSource는 모든 원소에서 반드시 child_utterance"), "JSON 계약 누락");
+});
