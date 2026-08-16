@@ -1848,3 +1848,67 @@ test("078 E2E launcher is shell-neutral and invokes Playwright on Windows or POS
   );
   assert.match(result.stdout, /Usage: npx playwright test|playwright test/);
 });
+
+test("SW source - isNextStatic branch is network-first while isPrecacheAsset is cache-first", async () => {
+  const rendered = renderServiceWorker({
+    buildId: "test-build-1",
+    buildStamp: "test-stamp-1",
+    swVersion: "kbestie-shell-test-build-1",
+    cacheAssets: DEFAULT_PWA_CACHE_ASSETS,
+  });
+
+  const precacheIndex = rendered.indexOf("if (isPrecacheAsset)");
+  const nextStaticIndex = rendered.indexOf("if (isNextStatic)");
+  assert.ok(precacheIndex > -1, "isPrecacheAsset branch must exist");
+  assert.ok(nextStaticIndex > -1, "isNextStatic branch must exist");
+
+  // Verify isPrecacheAsset block is cache-first
+  const precacheBlock = rendered.slice(precacheIndex, nextStaticIndex);
+  const precacheMatchIndex = precacheBlock.indexOf("caches.match(");
+  const precacheFetchIndex = precacheBlock.indexOf("fetch(");
+  assert.ok(precacheMatchIndex > -1, "isPrecacheAsset must query caches.match");
+  assert.ok(precacheFetchIndex > -1, "isPrecacheAsset must query fetch");
+  assert.ok(
+    precacheMatchIndex < precacheFetchIndex,
+    "isPrecacheAsset must be cache-first (caches.match before fetch)"
+  );
+
+  // Verify isNextStatic block is network-first
+  const fetchHandlerEndIndex = rendered.indexOf('self.addEventListener("push"');
+  const nextStaticBlock = rendered.slice(nextStaticIndex, fetchHandlerEndIndex);
+  const nextFetchIndex = nextStaticBlock.indexOf("fetch(event.request)");
+  const nextMatchIndex = nextStaticBlock.indexOf("caches.match(event.request)");
+  assert.ok(nextFetchIndex > -1, "isNextStatic must query fetch");
+  assert.ok(nextMatchIndex > -1, "isNextStatic must query caches.match fallback");
+  assert.ok(
+    nextFetchIndex < nextMatchIndex,
+    "isNextStatic must be network-first (fetch before caches.match)"
+  );
+});
+
+test("SW source - notifyStaleAsset includes getWindowClients fallback and pathname validation", async () => {
+  const rendered = renderServiceWorker({
+    buildId: "test-build-1",
+    buildStamp: "test-stamp-1",
+    swVersion: "kbestie-shell-test-build-1",
+    cacheAssets: DEFAULT_PWA_CACHE_ASSETS,
+  });
+
+  const notifyFnStart = rendered.indexOf("function notifyStaleAsset(");
+  const notifyFnEnd = rendered.indexOf("async function getWindowClients()");
+  assert.ok(notifyFnStart > -1, "notifyStaleAsset function must exist");
+  assert.ok(notifyFnEnd > -1, "getWindowClients function must exist");
+
+  const notifyBlock = rendered.slice(notifyFnStart, notifyFnEnd);
+
+  // Fallback path when clientId is absent or empty
+  assert.match(notifyBlock, /getWindowClients\(\)/, "notifyStaleAsset must call getWindowClients fallback");
+  assert.match(notifyBlock, /self\.clients\.get\(clientId\)/, "notifyStaleAsset must query specific client when clientId is present");
+
+  // Pathname validation intact
+  assert.match(notifyBlock, /pathname\.startsWith\("\/_next\/static\/"\)/);
+  assert.match(notifyBlock, /pathname\.includes\("\?"\)/);
+  assert.match(notifyBlock, /pathname\.includes\("#"\)/);
+  assert.match(notifyBlock, /\[\\x00-\\x1F\\x7F\]/);
+});
+

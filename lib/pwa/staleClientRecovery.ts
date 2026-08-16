@@ -235,7 +235,26 @@ type RecoverStaleClientOptions = {
   reload?: () => void;
   isOnline?: () => boolean;
   now?: () => number;
+  /** 새로고침 직전 비콘 전송. 테스트에서 주입해 호출 여부를 검증한다. */
+  sendBeacon?: (eventType: string, payload: Record<string, unknown>) => void;
 };
+
+/** 새로고침 직전에 남기는 keepalive 비콘.
+ *
+ * 102 §3: 자동 복구가 실제로 동작했는지 다음 장애 때 증명할 방법이 없었다
+ * (2026-08-14 진단은 서버 로그 0건 상태의 추론이었다). reload() 직후 페이지가
+ * 사라지므로 일반 fetch는 중간에 끊긴다 — keepalive로 보내야 도착한다. */
+function defaultRecoveryBeacon(eventType: string, payload: Record<string, unknown>) {
+  if (typeof fetch !== "function") return;
+  try {
+    void fetch("/api/analytics/pwa-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event_type: eventType, metadata: payload }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+}
 
 /**
  * 배포마다 갈리는 청크 캐시를 비우고 새로고침한다.
@@ -248,6 +267,7 @@ export async function recoverStaleClient({
   reload = () => window.location.reload(),
   isOnline = () => (typeof navigator === "undefined" ? true : navigator.onLine),
   now = () => Date.now(),
+  sendBeacon = defaultRecoveryBeacon,
 }: RecoverStaleClientOptions = {}): Promise<StaleClientRecoveryResult> {
   if (!sessionStorageImpl) return "unsupported";
 
@@ -283,6 +303,15 @@ export async function recoverStaleClient({
       await purgeStaleChunkCache(cacheStorage);
     } catch {}
   }
+
+  // 새로고침하면 이 페이지는 사라진다. 복구가 실제로 일어났다는 유일한 증거를
+  // 여기서 남긴다(102 §3).
+  try {
+    sendBeacon("pwa_stale_client_recovery_started", {
+      recovery_action: "reload",
+      attempt: guard.count + 1,
+    });
+  } catch {}
 
   reload();
   return "reloading";

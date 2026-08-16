@@ -85,20 +85,40 @@ function isSameOriginClient(source) {
 }
 
 function notifyStaleAsset(clientId, pathname) {
-  if (!clientId || !pathname || typeof pathname !== "string") return;
+  if (!pathname || typeof pathname !== "string") return;
   if (!pathname.startsWith("/_next/static/") || pathname.includes("?") || pathname.includes("#")) return;
   if (/[\\x00-\\x1F\\x7F]/.test(pathname)) return;
-  self.clients.get(clientId).then((client) => {
-    if (client && isSameOriginClient(client)) {
-      client.postMessage({
-        protocol: 1,
-        type: "K_STALE_ASSET",
-        requestNonce: crypto.randomUUID(),
-        buildId: BUILD_ID,
-        workerNonce: SW_INSTANCE_NONCE,
-        pathname: pathname,
-        status: 404
-      });
+
+  if (typeof clientId === "string" && clientId.trim()) {
+    self.clients.get(clientId).then((client) => {
+      if (client && isSameOriginClient(client)) {
+        client.postMessage({
+          protocol: 1,
+          type: "K_STALE_ASSET",
+          requestNonce: crypto.randomUUID(),
+          buildId: BUILD_ID,
+          workerNonce: SW_INSTANCE_NONCE,
+          pathname: pathname,
+          status: 404
+        });
+      }
+    }).catch(() => {});
+    return;
+  }
+
+  getWindowClients().then((clients) => {
+    for (const client of clients) {
+      try {
+        client.postMessage({
+          protocol: 1,
+          type: "K_STALE_ASSET",
+          requestNonce: crypto.randomUUID(),
+          buildId: BUILD_ID,
+          workerNonce: SW_INSTANCE_NONCE,
+          pathname: pathname,
+          status: 404
+        });
+      } catch {}
     }
   }).catch(() => {});
 }
@@ -499,16 +519,13 @@ self.addEventListener("fetch", (event) => {
   const isPrecacheAsset = PRECACHE_ASSETS.includes(url.pathname);
   const isNextStatic = url.pathname.startsWith("/_next/static/");
 
-  if (isPrecacheAsset || isNextStatic) {
+  if (isPrecacheAsset) {
     event.respondWith(
       caches.match(event.request).then((cachedResponse) => {
         if (cachedResponse) {
           return cachedResponse;
         }
         return fetch(event.request).then((networkResponse) => {
-          if (isNextStatic && networkResponse && networkResponse.status === 404) {
-            notifyStaleAsset(event.clientId, url.pathname);
-          }
           if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== "basic") {
             return networkResponse;
           }
@@ -521,6 +538,42 @@ self.addEventListener("fetch", (event) => {
           return networkResponse;
         });
       })
+    );
+    return;
+  }
+
+  if (isNextStatic) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 404) {
+            notifyStaleAsset(event.clientId, url.pathname);
+            return caches.match(event.request).then((cachedResponse) => {
+              if (cachedResponse) {
+                return cachedResponse;
+              }
+              return networkResponse;
+            });
+          }
+          if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== "basic") {
+            return networkResponse;
+          }
+
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+
+          return networkResponse;
+        })
+        .catch((fetchError) => {
+          return caches.match(event.request).then((cachedResponse) => {
+            if (cachedResponse) {
+              return cachedResponse;
+            }
+            throw fetchError;
+          });
+        })
     );
     return;
   }

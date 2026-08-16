@@ -32,7 +32,11 @@ const nextConfig: NextConfig = {
   // ai.k-bestie.com → 192.168.200.222:3000 포트포워딩 시 HMR WebSocket 허용
   allowedDevOrigins: ["ai.k-bestie.com", "192.168.200.222"],
   env: {
-    NEXT_PUBLIC_DEPLOYMENT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || "local",
+    NEXT_PUBLIC_DEPLOYMENT_SHA:
+      process.env.VERCEL_GIT_COMMIT_SHA
+      || process.env.VERCEL_DEPLOYMENT_ID
+      || process.env.PWA_CLIENT_VERSION
+      || "local",
     // 배포 하나를 가리키는 식별자 — 클라이언트 번들과 서버에 같은 값이 인라인된다.
     // 자세한 배경은 lib/pwa/buildStamp.ts 주석 참고(2026-08-14 장애).
     // CLI 배포에는 VERCEL_GIT_COMMIT_SHA가 없으므로 그것만 믿으면 안 된다.

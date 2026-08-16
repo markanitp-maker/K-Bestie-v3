@@ -244,6 +244,49 @@ test("recoverStaleClient는 청크 캐시를 비우고 새로고침한다", asyn
   });
 });
 
+test("새로고침 직전에 복구 비콘을 남긴다", async () => {
+  // 102 §3: 2026-08-14 진단은 서버 로그 0건 상태의 추론이었다. reload() 뒤에는
+  // 페이지가 사라지므로, 복구가 실제로 일어났다는 증거는 여기서만 남길 수 있다.
+  const session = memorySessionStorage();
+  const { storage } = fakeCacheStorage({ [`${SHELL_CACHE_PREFIX}local`]: [CHUNK] });
+  const beacons: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+  let reloadedAfterBeacon = false;
+
+  const result = await recoverStaleClient({
+    cacheStorage: storage,
+    sessionStorageImpl: session,
+    reload: () => { reloadedAfterBeacon = beacons.length > 0; },
+    isOnline: () => true,
+    now: () => 1_000_000,
+    sendBeacon: (eventType, payload) => { beacons.push({ eventType, payload }); },
+  });
+
+  assert.equal(result, "reloading");
+  assert.equal(beacons.length, 1);
+  assert.equal(beacons[0].eventType, "pwa_stale_client_recovery_started");
+  assert.equal(beacons[0].payload.recovery_action, "reload");
+  assert.equal(beacons[0].payload.attempt, 1);
+  assert.equal(reloadedAfterBeacon, true, "비콘은 반드시 reload 이전에 나가야 한다");
+});
+
+test("비콘 전송이 실패해도 복구 새로고침은 그대로 진행된다", async () => {
+  const session = memorySessionStorage();
+  const { storage } = fakeCacheStorage({ [`${SHELL_CACHE_PREFIX}local`]: [CHUNK] });
+  let reloads = 0;
+
+  const result = await recoverStaleClient({
+    cacheStorage: storage,
+    sessionStorageImpl: session,
+    reload: () => { reloads += 1; },
+    isOnline: () => true,
+    now: () => 1_000_000,
+    sendBeacon: () => { throw new Error("beacon down"); },
+  });
+
+  assert.equal(result, "reloading");
+  assert.equal(reloads, 1);
+});
+
 test("배포가 여러 번 나가도 최소 간격만 지나면 매번 복구한다", async () => {
   // 실제 장애가 47분 동안 배포 3회였다. 1회 제한이면 두 번째 배포부터 아이가 멈춘 채 남는다.
   const session = memorySessionStorage();
