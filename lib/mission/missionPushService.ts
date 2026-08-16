@@ -19,12 +19,25 @@ export type MissionPushResult = {
   errorCode: string | null;
 };
 
-export function missionPushTemplate(missionType: MissionPushType) {
+/** 오늘 미션을 어디까지 했는지. Push 문구를 가른다(079 §5·§7). */
+export type MissionPushProgressState = "NOT_STARTED" | "IN_PROGRESS";
+
+/**
+ * Mission v3는 하루 1회다. 사용자 노출 문구에 V2 라운드 개념(1차/2차/낮/저녁)을
+ * 쓰지 않는다(079 §5 금지 목록). round_type은 기존 로그 조회·중복방지 키라
+ * 그대로 두고 문구만 V3화한다 — 바꾸면 과거 발송 이력과 어긋난다.
+ */
+export function missionPushTemplate(
+  missionType: MissionPushType,
+  progressState: MissionPushProgressState = "NOT_STARTED",
+) {
+  const inProgress = progressState === "IN_PROGRESS";
   return {
     roundType: missionType === 1 ? "round1_day" as const : "round2_night" as const,
-    // Mission v3는 하루 1회 정책이므로 18:00 단독 알림도 "저녁 2차"가 아닌 하루 1회 문구를 쓴다.
-    title: "미션 시작 시간이야!",
-    body: "케이와 함께 오늘의 미션을 시작해 볼까요?",
+    title: inProgress ? "오늘의 미션을 이어가 볼까?" : "오늘의 미션 시간이야!",
+    body: inProgress
+      ? "케이가 기다리고 있어요."
+      : "케이와 오늘 이야기를 시작해 볼까요?",
     url: "/child/missions",
   };
 }
@@ -46,13 +59,15 @@ export async function sendMissionStartPushToChild({
   childId,
   missionType,
   source,
+  progressState = "NOT_STARTED",
 }: {
   childId: string;
   missionType: MissionPushType;
   source: MissionPushSource;
+  progressState?: MissionPushProgressState;
 }): Promise<MissionPushResult> {
   const db = createServiceClient();
-  const template = missionPushTemplate(missionType);
+  const template = missionPushTemplate(missionType, progressState);
   const businessDate = kstBusinessDate();
   const nowIso = new Date().toISOString();
 
