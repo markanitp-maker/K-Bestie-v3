@@ -9,12 +9,16 @@ import {
 } from "./dictionaryIndex";
 import { DICTIONARY_PART1 } from "./dictionary.part1";
 import { DICTIONARY_PART2 } from "./dictionary.part2";
+import { DICTIONARY_PART3 } from "./dictionary.part3";
+import { DICTIONARY_PART4 } from "./dictionary.part4";
 
 describe("WordChain DictionaryIndex", () => {
-  it("WORD_CHAIN_DICTIONARY는 part1(284개)과 part2(380개)의 합본으로 총 664개여야 한다", () => {
+  it("WORD_CHAIN_DICTIONARY는 part1(284개), part2(380개), part3(380개), part4(360개)의 합본으로 총 1404개여야 한다", () => {
     assert.equal(DICTIONARY_PART1.length, 284);
     assert.equal(DICTIONARY_PART2.length, 380);
-    assert.equal(WORD_CHAIN_DICTIONARY.length, 664);
+    assert.equal(DICTIONARY_PART3.length, 380);
+    assert.equal(DICTIONARY_PART4.length, 360);
+    assert.equal(WORD_CHAIN_DICTIONARY.length, 1404);
   });
 
   it("사전 합본에 중복된 단어가 없어야 한다", () => {
@@ -34,9 +38,10 @@ describe("WordChain DictionaryIndex", () => {
   });
 
   it("WORD_SET은 모든 등록 단어를 포함해야 한다", () => {
-    assert.ok(WORD_SET.size >= 664);
+    assert.ok(WORD_SET.size >= 1044);
     assert.ok(WORD_SET.has("가방"));
     assert.ok(WORD_SET.has("하늘"));
+    assert.ok(WORD_SET.has("컴퓨터"));
     assert.ok(!WORD_SET.has("없는단어입니다"));
   });
 

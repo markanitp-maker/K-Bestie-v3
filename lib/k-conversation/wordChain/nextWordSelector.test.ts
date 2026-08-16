@@ -124,7 +124,7 @@ describe("WordChain K Next Word Selector (nextWordSelector)", () => {
     assert.equal(res1.normalizedWord, res2.normalizedWord);
   });
 
-  it("실제 게임 턴 시뮬레이션: 664개 사전으로 막힐 때까지 진행하여 턴 수 측정", () => {
+  it("실제 게임 턴 시뮬레이션: 전체 사전으로 막힐 때까지 진행하여 턴 수 측정", () => {
     // 1. 단일 게임 시뮬레이션 ('튤립'으로 시작)
     let currentWord = lookupWord("튤립")!;
     const usedWords = new Set<string>([currentWord.normalizedWord]);
@@ -192,7 +192,7 @@ describe("WordChain K Next Word Selector (nextWordSelector)", () => {
 
     const avgTurns = totalTurns / WORD_CHAIN_DICTIONARY.length;
     console.log(
-      `[전체 사전 664개 전수 시뮬레이션] 평균 턴 수: ${avgTurns.toFixed(2)}턴, 최다 턴 수: ${maxTurns}턴 (시작 단어: '${bestStartWord}')`
+      `[전체 사전 ${WORD_CHAIN_DICTIONARY.length}개 전수 시뮬레이션] 평균 턴 수: ${avgTurns.toFixed(2)}턴, 최다 턴 수: ${maxTurns}턴 (시작 단어: '${bestStartWord}')`
     );
 
     assert.ok(
