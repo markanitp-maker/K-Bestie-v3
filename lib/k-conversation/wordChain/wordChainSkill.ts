@@ -236,6 +236,8 @@ function buildRejectionInstruction(params: {
  */
 export const WORD_CHAIN_SKILL: PlaySkillModule = {
   id: "WORD_CHAIN",
+  displayName: "끝말잇기",
+  childFacingDescription: "앞 말의 끝 글자로 이어서 말하는 놀이",
   proposal: {
     label: "끝말잇기",
     shortDescription: "마지막 글자로 이어지는 단어를 번갈아 말하는 놀이",

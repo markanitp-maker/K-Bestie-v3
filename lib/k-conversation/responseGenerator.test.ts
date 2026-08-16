@@ -115,3 +115,46 @@ test("buildSystemInstruction — PLAY_PROPOSAL Action 지시문 검증", () => {
   assert.match(prompt, /규칙을 길게 설명하지 말고/);
   assert.match(prompt, /아이에게 '끝말잇기'\(단어 잇기\) 놀이를 해보자고/);
 });
+
+test("buildSystemInstruction — playCatalogFragment가 없을 때 기존 출력과 바이트 단위로 동일하다", () => {
+  const withoutField = buildSystemInstruction(baseInput);
+  const withUndefined = buildSystemInstruction({ ...baseInput, playCatalogFragment: undefined });
+
+  assert.equal(withoutField, withUndefined);
+  assert.equal(withoutField.includes("[네가 같이 할 수 있는 놀이]"), false);
+});
+
+test("buildSystemInstruction — playCatalogFragment가 주어지면 초성게임과 끝말잇기가 모두 포함되고 올바른 위치에 들어간다", () => {
+  const catalogFragment = [
+    "[네가 같이 할 수 있는 놀이]",
+    "- 초성게임: 내가 초성을 주면 무슨 말인지 맞히는 놀이",
+    "- 끝말잇기: 앞 말의 끝 글자로 이어서 말하는 놀이",
+    "- 아이가 무슨 놀이를 할 수 있냐고 물으면 이 목록에서 골라 네가 먼저 말해줘. 아이에게 되묻지 마.",
+    "- 이 목록에 없는 놀이는 할 수 있다고 하지 마.",
+  ].join("\n");
+
+  const prompt = buildSystemInstruction({
+    ...baseInput,
+    playCatalogFragment: catalogFragment,
+  });
+
+  assert.match(prompt, /\[네가 같이 할 수 있는 놀이\]/);
+  assert.match(prompt, /초성게임/);
+  assert.match(prompt, /끝말잇기/);
+
+  const memoryIndex = prompt.indexOf("[Memory]");
+  const catalogIndex = prompt.indexOf("[네가 같이 할 수 있는 놀이]");
+  const actionIndex = prompt.indexOf("[지금 이 턴의 방향 - Action]");
+
+  assert.ok(memoryIndex !== -1);
+  assert.ok(catalogIndex !== -1);
+  assert.ok(actionIndex !== -1);
+  assert.ok(
+    memoryIndex < catalogIndex,
+    `memory (${memoryIndex}) must precede catalog (${catalogIndex})`
+  );
+  assert.ok(
+    catalogIndex < actionIndex,
+    `catalog (${catalogIndex}) must precede action (${actionIndex})`
+  );
+});

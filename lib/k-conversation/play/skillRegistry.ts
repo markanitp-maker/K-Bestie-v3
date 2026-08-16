@@ -37,3 +37,26 @@ export function findDirectlyRequestedSkill(
   }
   return null;
 }
+
+/**
+ * 활성화된 모든 Play Skill 목록에서 케이가 아이에게 안내할 놀이 카탈로그 프래그먼트를 파생 생성합니다.
+ */
+export function buildPlayCatalogFragment(
+  registry: readonly PlaySkillModule[] = PLAY_SKILL_REGISTRY
+): string {
+  if (!registry || registry.length === 0) {
+    return "";
+  }
+  const items = registry
+    .map((skill) => `- ${skill.displayName}: ${skill.childFacingDescription}`)
+    .join("\n");
+
+  return [
+    "[네가 같이 할 수 있는 놀이]",
+    items,
+    "- 아이가 무슨 놀이를 할 수 있냐고 물으면 이 목록에서 골라 네가 먼저 말해줘. 아이에게 되묻지 마.",
+    // 081 리뷰: 단순 금지만 두면 "숨바꼭질 하자"에 퉁명스럽게 거절하게 된다.
+    // 못 하는 이유를 짧게 말하고 대안을 먼저 내미는 쪽으로 유도한다.
+    "- 이 목록에 없는 놀이는 직접 할 수 없다고 친절히 말하고, 대신 목록에 있는 놀이를 하자고 제안해줘.",
+  ].join("\n");
+}

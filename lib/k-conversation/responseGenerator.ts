@@ -30,6 +30,8 @@ export interface ResponseGeneratorInput {
    * "느낌만 말하기"가 아니라 "아는 만큼은 편하게 답하고 모르면 솔직히 모른다고 하기"를
    * 추가로 지시하는 데만 쓴다(codex-rv 3차 지적: 이전에는 사실 답변 방향이 보장 안 됐다). */
   isGeneralKnowledgeQuestion?: boolean;
+  /** 케이가 함께할 수 있는 놀이 목록 및 놀이 안내 지침 프래그먼트. */
+  playCatalogFragment?: string;
 }
 
 const PROMPT_LEAK_PATTERNS = [
@@ -71,6 +73,7 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
     input.gradePersonaFragment,
     input.relationshipFragment,
     input.memoryFragment,
+    input.playCatalogFragment,
     "[지금 이 턴의 방향 - Action]",
     ACTION_DIRECTIVES[input.action],
     input.isGeneralKnowledgeQuestion

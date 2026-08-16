@@ -88,10 +88,81 @@ function isPlayReferenceOnly(text: string): boolean {
   return includesAny(text, PLAY_START_REFERENCE_KWS);
 }
 
+// 081-A: 능력·평가 화제 표지 (불평/질문을 게임 시작으로 오인 방지)
+// 081 2차 리뷰: 처음엔 `하` 계열만 잡아 "초성게임 잘 못해"가 가드를 그냥 지나갔다.
+// 한국어에서 "못 하"와 "못 해"는 글자가 달라 하나만 적으면 반드시 구멍이 난다.
+const CAPABILITY_EVALUATION_PATTERNS = [
+  /(?:못|안)\s*(?:하|해)/, // 안하지, 안 하네, 못하잖아, 잘 못해
+  // "초성 문제 안 줘?"처럼 동사가 하/해가 아닌 부정형. 자모 복구 경로가
+  // "문제"를 놀이 문맥으로 보고 게임을 열어버려서 여기서도 막아야 한다.
+  /(?:못|안)\s*(?:줘|주|내|맞)/,
+  /할\s*줄/, // 할 줄 알아, 할 줄 몰라
+  /밖에/,
+  /모르|몰라/,
+];
+
+// 081-A: 명시적 시작 의도 키워드
+const EXPLICIT_START_INTENT_KWS = [
+  "하자", "할래", "할까", "해줘", "해 줘", "내줘", "내 줘", "내봐", "내 봐",
+  "해보자", "해 보자", "해봐", "해 봐", "놀자", "놀래", "시작", "가자",
+  "하잖아", "하고 싶", "할게",
+  // 081 리뷰 지적: "해볼래/해볼까/맞춰볼래" 계열이 빠져 있어, "초성게임 잘 모르지만
+  // 해볼래" 같은 정상 요청이 능력 표지("모르")에 걸려 통째로 막혔다.
+  "해볼래", "해 볼래", "해볼까", "해 볼까", "해보고", "해 보고",
+  "맞춰볼래", "맞혀볼래", "맞춰보자", "맞혀보자",
+  "문제 줘", "문제줘", "문제 내", "문제내",
+];
+
+/** 081 리뷰 지적: 아이가 케이의 말을 옮기며 불평하는 인용문 — "너 왜 맨날 초성게임
+ *  하자고 해?" — 은 요청이 아니다. 능력 표지가 없어 위 가드에 걸리지 않으므로
+ *  별도로 막는다. 인용형만 있고 실제 시작 표현이 없을 때만 차단한다. */
+const PLAY_START_QUOTATIVE_PATTERNS = [/하자고/, /하재/, /한대/, /하냬/, /하라고/];
+
+/** 081 리뷰 지적(치명): 시작 키워드를 부분일치로 찾으면 부정형·인용형이 그대로 걸린다.
+ *  - "못하잖아" / "안하잖아" 는 "하잖아" 를 포함해 가드를 무력화했다 —
+ *    "너 초성게임 잘 못하잖아" 가 게임을 시작시켰다.
+ *  - "하자고 해?" 는 아이가 케이의 말을 인용하며 불평하는 것이지 요청이 아니다.
+ *  시작 의도로 인정하기 전에 이 형태들을 먼저 제거한다. */
+const NEGATED_OR_QUOTED_START_PATTERNS = [
+  // "하라고 하잖아", "하자고 해" — 인용 뒤에 붙은 서술어까지 통째로 걷어낸다.
+  // 인용형만 지우면 뒤의 "하잖아"가 시작 의도로 남아 가드가 뚫린다.
+  // 반드시 아래 단독 인용형 패턴보다 먼저 와야 더 긴 쪽이 소비된다.
+  /(?:하자고|하라고|하재|한대|하냬)\s*(?:하|해)[가-힣]*/,
+  /(?:못|안)\s*(?:하|해)/,
+  // 081 2차 리뷰: "초성 문제 안 줘?"처럼 부정형 뒤에 시작 키워드가 붙는 형태.
+  // 위 `하|해` 패턴으로는 안 잡혀 "문제 줘"가 그대로 남았다.
+  /(?:못|안)\s*(?:줘|주|내|맞)/,
+  // 인용형은 아래 PLAY_START_QUOTATIVE_PATTERNS와 반드시 같은 목록이어야 한다.
+  ...PLAY_START_QUOTATIVE_PATTERNS,
+];
+
+function hasExplicitStartIntent(text: string): boolean {
+  if (!includesAny(text, EXPLICIT_START_INTENT_KWS)) return false;
+  // 부정·인용 형태를 걷어낸 뒤에도 시작 키워드가 남아야 진짜 요청이다.
+  const stripped = NEGATED_OR_QUOTED_START_PATTERNS.reduce(
+    (acc, pattern) => acc.replace(new RegExp(pattern.source, "g"), " "),
+    text,
+  );
+  return includesAny(stripped, EXPLICIT_START_INTENT_KWS);
+}
+
+function isBlockedByCapabilityOrEvaluation(text: string): boolean {
+  const hasTopicMarker = CAPABILITY_EVALUATION_PATTERNS.some((pattern) => pattern.test(text));
+  if (!hasTopicMarker) return false;
+  return !hasExplicitStartIntent(text);
+}
+
+function isQuotedPlayRequest(text: string): boolean {
+  if (!PLAY_START_QUOTATIVE_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  return !hasExplicitStartIntent(text);
+}
+
 function detectChosungGameStart(text: string): boolean {
   if (includesAny(text, CHOSUNG_START_NEGATION_KWS)) return false;
-  if (includesAny(text, CHOSUNG_START_DEFINITION_KWS)) return false;
+  if (includesAny(text, CHOSUNG_START_DEFINITION_KWS) && !hasExplicitStartIntent(text)) return false;
   if (isPlayReferenceOnly(text)) return false;
+  if (isBlockedByCapabilityOrEvaluation(text)) return false;
+  if (isQuotedPlayRequest(text)) return false;
   return CHOSUNG_START_PATTERNS.some((pattern) => pattern.test(text));
 }
 
@@ -156,8 +227,10 @@ const WORD_CHAIN_START_DEFINITION_KWS = ["뭐야", "뭔데", "무슨 뜻", "무�
 
 function detectWordChainGameStart(text: string): boolean {
   if (includesAny(text, WORD_CHAIN_START_NEGATION_KWS)) return false;
-  if (includesAny(text, WORD_CHAIN_START_DEFINITION_KWS)) return false;
+  if (includesAny(text, WORD_CHAIN_START_DEFINITION_KWS) && !hasExplicitStartIntent(text)) return false;
   if (isPlayReferenceOnly(text)) return false;
+  if (isBlockedByCapabilityOrEvaluation(text)) return false;
+  if (isQuotedPlayRequest(text)) return false;
   return WORD_CHAIN_START_PATTERNS.some((pattern) => pattern.test(text));
 }
 
@@ -263,10 +336,12 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
   // "초성게임 안 할래"(거절), "초성이 뭐야?"(정의 질문) 모두 실측으로 확인됐다.
   const blockedFromRecovery =
     isPlayReferenceOnly(trimmed)
+    || isBlockedByCapabilityOrEvaluation(trimmed)
+    || isQuotedPlayRequest(trimmed)
     || includesAny(trimmed, CHOSUNG_START_NEGATION_KWS)
-    || includesAny(trimmed, CHOSUNG_START_DEFINITION_KWS)
+    || (includesAny(trimmed, CHOSUNG_START_DEFINITION_KWS) && !hasExplicitStartIntent(trimmed))
     || includesAny(trimmed, WORD_CHAIN_START_NEGATION_KWS)
-    || includesAny(trimmed, WORD_CHAIN_START_DEFINITION_KWS);
+    || (includesAny(trimmed, WORD_CHAIN_START_DEFINITION_KWS) && !hasExplicitStartIntent(trimmed));
 
   if (!hasChosungGameStart && !hasWordChainGameStart && !blockedFromRecovery) {
     const recovered = recoverGameCommand(trimmed);

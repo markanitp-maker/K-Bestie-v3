@@ -19,6 +19,8 @@ import {
  */
 export const CHOSUNG_SKILL: PlaySkillModule = {
   id: "CHOSUNG",
+  displayName: "초성게임",
+  childFacingDescription: "내가 초성을 주면 무슨 말인지 맞히는 놀이",
   proposal: {
     label: "초성게임",
     shortDescription: "자음 힌트를 보고 단어를 맞히는 퀴즈 놀이",

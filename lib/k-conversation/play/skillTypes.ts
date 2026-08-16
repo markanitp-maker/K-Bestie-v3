@@ -39,6 +39,10 @@ export interface PlaySkillEndInput {
 
 export interface PlaySkillModule {
   id: PlaySkillId;
+  /** 아이에게 말할 때 쓰는 놀이 이름 */
+  displayName: string;
+  /** 아이가 "무슨 놀이 있어?"라고 물었을 때 한 줄로 설명하는 문구 */
+  childFacingDescription: string;
   /** 아이가 이 Skill을 직접 지목했는가(예: "끝말잇기 하자"). */
   matchesDirectRequest(signals: UtteranceSignals, utterance: string): boolean;
   /** 이 아이에게 지금 활성 세션이 있는가. 없으면 null. */

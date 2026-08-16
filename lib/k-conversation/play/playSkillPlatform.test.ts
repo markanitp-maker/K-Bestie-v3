@@ -11,8 +11,9 @@ import type {
   PlaySkillEndInput,
   PlaySkillTurnResult,
 } from "./skillTypes";
-import { PLAY_SKILL_REGISTRY, findSkillById, findDirectlyRequestedSkill } from "./skillRegistry";
+import { PLAY_SKILL_REGISTRY, findSkillById, findDirectlyRequestedSkill, buildPlayCatalogFragment } from "./skillRegistry";
 import { CHOSUNG_SKILL } from "./chosungSkill";
+import { WORD_CHAIN_SKILL } from "../wordChain/wordChainSkill";
 import { routePlaySkillTurn } from "./skillRouter";
 
 const defaultSignals: UtteranceSignals = {
@@ -398,3 +399,58 @@ test("SkillRouter 확장성: Registry에 새로운 가짜 Skill을 추가해도 
   assert.equal(result.handled, true);
   assert.equal(result.instruction, "새놀이 시작 완료: child-test");
 });
+
+test("PlaySkillModule 메타데이터: CHOSUNG_SKILL 및 WORD_CHAIN_SKILL의 displayName 및 childFacingDescription 검증", () => {
+  assert.equal(CHOSUNG_SKILL.displayName, "초성게임");
+  assert.equal(CHOSUNG_SKILL.childFacingDescription, "내가 초성을 주면 무슨 말인지 맞히는 놀이");
+  assert.ok(CHOSUNG_SKILL.displayName.length <= 25);
+  assert.ok(CHOSUNG_SKILL.childFacingDescription.length <= 25);
+
+  assert.equal(WORD_CHAIN_SKILL.displayName, "끝말잇기");
+  assert.equal(WORD_CHAIN_SKILL.childFacingDescription, "앞 말의 끝 글자로 이어서 말하는 놀이");
+  assert.ok(WORD_CHAIN_SKILL.displayName.length <= 25);
+  assert.ok(WORD_CHAIN_SKILL.childFacingDescription.length <= 25);
+});
+
+test("buildPlayCatalogFragment: 기본 registry의 놀이 메타데이터(초성게임, 끝말잇기)가 모두 포함된다", () => {
+  const fragment = buildPlayCatalogFragment();
+  assert.match(fragment, /\[네가 같이 할 수 있는 놀이\]/);
+  assert.match(fragment, /- 초성게임: 내가 초성을 주면 무슨 말인지 맞히는 놀이/);
+  assert.match(fragment, /- 끝말잇기: 앞 말의 끝 글자로 이어서 말하는 놀이/);
+  assert.match(
+    fragment,
+    /- 아이가 무슨 놀이를 할 수 있냐고 물으면 이 목록에서 골라 네가 먼저 말해줘\. 아이에게 되묻지 마\./
+  );
+  // 081 리뷰 반영: 단순 금지가 아니라 "친절히 말하고 대안을 제안" 형태여야 한다.
+  assert.match(fragment, /이 목록에 없는 놀이는 직접 할 수 없다고 친절히 말하고/);
+  assert.match(fragment, /대신 목록에 있는 놀이를 하자고 제안해줘/);
+});
+
+test("buildPlayCatalogFragment: 가짜 모듈이 추가된 registry를 넘기면 파생되어 목록에 포함된다 (파생 검증)", () => {
+  const mockSkill: PlaySkillModule = {
+    id: "CHOSUNG",
+    displayName: "스무고개",
+    childFacingDescription: "스무 번 질문해서 정답을 맞히는 놀이",
+    proposal: { label: "스무고개", shortDescription: "스무고개 퀴즈" },
+    matchesDirectRequest: () => false,
+    getActiveSession: async () => null,
+    start: async () => ({ handled: true }),
+    handleTurn: async () => ({ handled: true }),
+    end: async () => {},
+  };
+
+  const customRegistry: readonly PlaySkillModule[] = [
+    ...PLAY_SKILL_REGISTRY,
+    mockSkill,
+  ];
+
+  const fragment = buildPlayCatalogFragment(customRegistry);
+  assert.match(fragment, /- 초성게임: 내가 초성을 주면 무슨 말인지 맞히는 놀이/);
+  assert.match(fragment, /- 끝말잇기: 앞 말의 끝 글자로 이어서 말하는 놀이/);
+  assert.match(fragment, /- 스무고개: 스무 번 질문해서 정답을 맞히는 놀이/);
+});
+
+test("buildPlayCatalogFragment: 빈 registry는 빈 문자열을 반환한다", () => {
+  assert.equal(buildPlayCatalogFragment([]), "");
+});
+

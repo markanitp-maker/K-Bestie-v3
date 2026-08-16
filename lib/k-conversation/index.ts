@@ -19,7 +19,7 @@ import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/r
 import { routePlaySkillTurn } from "./play/skillRouter";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
-import { PLAY_SKILL_REGISTRY, findSkillById } from "./play/skillRegistry";
+import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
 
 export type { EngineInput, EngineOutput, ConversationAction, ConversationMode } from "./types";
 export type { GenerateArgs } from "./responseGenerator";
@@ -363,6 +363,8 @@ export async function respond(
     input.currentUtterance,
     input.currentUtteranceAlreadyInSession,
   );
+  const playCatalogFragment =
+    input.mode === "FREE_CHAT" ? buildPlayCatalogFragment() : undefined;
   const generated = await generateResponse({
     ai: deps.ai,
     modelId: deps.modelId,
@@ -377,6 +379,7 @@ export async function respond(
       recentHistory,
       adapterInstruction: combinedAdapterInstruction || undefined,
       isGeneralKnowledgeQuestion: signals.hasGeneralKnowledgeQuestion,
+      playCatalogFragment,
     },
   });
 
