@@ -220,3 +220,61 @@ test("hasPendingDraft=true 상태에서 취소 케이스는 여전히 PARENT_QUE
   assert.equal(classifyParentKChatIntent("취소할래", true).intent, "PARENT_QUERY_REQUEST_CANCEL");
 });
 
+test("일반 대화는 아이 기록 조회로 가지 않는다", () => {
+  const generalCases = [
+    // 실측 8건
+    "어제 날짜가 몇 일이야?",
+    "오늘 날짜가 뭐야?",
+    "오늘 무슨 요일이야?",
+    "지금 몇 시야?",
+    "너 이름이 뭐야?",
+    "그렇구나",
+    "알겠어",
+    "아하",
+    // 기존/추가 일반 대화·날짜·정체성·리액션
+    "고마워",
+    "안녕",
+    "내일은 몇 일이야?",
+    "이번 달이 몇 월이야?",
+    "너 누구야?",
+    "케이가 누구야?",
+    "그래",
+    "응",
+    "네",
+  ];
+
+  for (const text of generalCases) {
+    const result = classifyParentKChatIntent(text);
+    assert.equal(result.intent, "GENERAL_CONVERSATION", `"${text}"는 GENERAL_CONVERSATION이어야 합니다.`);
+  }
+});
+
+test("시점 표현이 있어도 아이에 대한 질문은 아이 정보 조회다", () => {
+  const childInfoCases = [
+    "서현이가 어제 뭐했어?",
+    "서현이는 요즘 뭐 좋아해?",
+    "서현이가 야외에서 노는 걸 좋아해?",
+    "우리 아이가 오늘 뭐 했어?",
+    "어제 우리 애 기분 어땠어?",
+    "서아가 오늘 학교 갔어?",
+    "우리 아이가 요즘 힘들어해?",
+  ];
+
+  for (const text of childInfoCases) {
+    const result = classifyParentKChatIntent(text);
+    assert.equal(result.intent, "CHILD_INFORMATION_QUERY", `"${text}"는 CHILD_INFORMATION_QUERY이어야 합니다.`);
+  }
+
+  // PARENT_QUERY_REQUEST 회귀 확인
+  const parentQueryCases = [
+    "서현이에게 물어봐줘",
+    "이번 주말에 뭐 하고 싶은지 물어봐줘",
+  ];
+
+  for (const text of parentQueryCases) {
+    const result = classifyParentKChatIntent(text);
+    assert.equal(result.intent, "PARENT_QUERY_REQUEST", `"${text}"는 PARENT_QUERY_REQUEST이어야 합니다.`);
+  }
+});
+
+

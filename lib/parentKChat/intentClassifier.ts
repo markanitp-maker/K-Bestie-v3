@@ -155,6 +155,57 @@ const GENERAL_PATTERNS = [
   /너는\s*누구야|넌\s*누구야/,
 ];
 
+// 케이 정체성 — "너 이름이 뭐야?", "너 누구야?", "케이가 누구야?"
+const IDENTITY_PATTERNS = [
+  /너(?:는|의|\s*ㄴ)?\s*이름(?:이|은)?\s*(?:뭐|무엇)/,
+  /너\s*누구야|넌\s*누구야|너는\s*누구야/,
+  /케이(?:가|는)?\s*누구야/,
+  /이름이\s*(?:뭐야|뭐니|어떻게\s*돼)/,
+];
+
+// 짧은 리액션 — 그렇구나 / 알겠어 / 그래 / 응 / 네 / 아하 (왜? 그래? 그건? 정말? 같은 후속 발화는 제외)
+const SHORT_REACTION_PATTERNS = [
+  /^(?:그렇구나|알겠어|알겠습니다|그래|응|네|아하)[.!?~^;\s]*$/,
+];
+
+// 아이 지칭 및 아이 상태/행동 표현 (날짜/요일/시간 질문이 아이 정보 질문으로 오염되는 것을 방지)
+const CHILD_REFERENCE_OR_ACTION_PATTERNS = [
+  /(?:아이|우리\s*애|우리\s*아이|우리\s*딸|우리\s*아들|딸|아들|서현|서아|애기|자식)/,
+  /(?:뭐\s*했|했어|했니|했는지|어땠|어떤|좋아해|놀았|기분|학교|학원|유치원|어린이집)/,
+];
+
+// 날짜/요일/시간 사실 질문 (아이와 무관한 순수 사실 질문)
+const DATE_TIME_PATTERNS = [
+  // 날짜 자체 질문 (예: "오늘 날짜가 뭐야?", "어제 날짜가 몇 일이야?", "내일은 몇 일이야?", "내일은 며칠이야?")
+  /(?:오늘|어제|내일|모레|그제|엊그제)?\s*날짜(?:가|는)?\s*(?:뭐|무엇|몇|어떻게|알려)/,
+  /(?:오늘|어제|내일|모레|그제|엊그제)(?:은|는|이|가)?\s*(?:몇\s*일|며칠)/,
+  /(?:이번\s*달|다음\s*달|지난\s*달|저번\s*달)(?:은|는|이|가)?\s*(?:몇\s*월|무슨\s*달)/,
+  /(?:올해|작년|내년)(?:는|은|이|가)?\s*(?:몇\s*년|무슨\s*년)/,
+  // 요일 질문 (예: "오늘 무슨 요일이야?", "내일 무슨 요일이야?", "어제 무슨 요일이었어?")
+  /(?:오늘|어제|내일|모레|그제|엊그제|이번\s*주|다음\s*주|지난\s*주)?\s*(?:무슨\s*요일|요일이\s*(?:뭐|무엇|어떻게))/,
+  // 시간 질문 (예: "지금 몇 시야?", "지금 몇 분이야?", "현재 몇 시야?")
+  /(?:지금|현재)\s*(?:몇\s*시|몇\s*분|시간이\s*(?:어떻게|몇\s*시|뭐))/,
+];
+
+function isGeneralConversation(text: string): boolean {
+  if (GENERAL_PATTERNS.some((p) => p.test(text))) {
+    return true;
+  }
+  if (IDENTITY_PATTERNS.some((p) => p.test(text))) {
+    return true;
+  }
+  if (SHORT_REACTION_PATTERNS.some((p) => p.test(text))) {
+    return true;
+  }
+  if (
+    DATE_TIME_PATTERNS.some((p) => p.test(text)) &&
+    !CHILD_REFERENCE_OR_ACTION_PATTERNS.some((p) => p.test(text))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // requests/request-parent-k-conversation-context-and-draft-edit-fix.md §5 "강한 후속 신호" —
 // 취소 신호를 수정 신호보다 먼저 검사한다("그만 물어봐줘"처럼 두 종류 단어가 섞여도
 // 취소 의도가 이겨야 한다).
@@ -193,7 +244,7 @@ export function classifyParentKChatIntent(
       return { intent: "PARENT_QUERY_REQUEST_CANCEL", confidence: 0.9 };
     }
     // FEEDBACK/GENERAL 신호가 명확하면 그쪽을 우선한다(예: "안녕", "그 답변 이상해").
-    if (!FEEDBACK_PATTERNS.some((p) => p.test(text)) && !GENERAL_PATTERNS.some((p) => p.test(text))) {
+    if (!FEEDBACK_PATTERNS.some((p) => p.test(text)) && !isGeneralConversation(text)) {
       if (PENDING_FOLLOWUP_EDIT_PATTERNS.some((p) => p.test(text))) {
         return { intent: "PARENT_QUERY_REQUEST", confidence: 0.9, isFollowUpToPendingDraft: true };
       }
@@ -218,7 +269,7 @@ export function classifyParentKChatIntent(
     return { intent: "FEEDBACK_OR_CORRECTION", confidence: 0.9 };
   }
 
-  if (GENERAL_PATTERNS.some((p) => p.test(text))) {
+  if (isGeneralConversation(text)) {
     return { intent: "GENERAL_CONVERSATION", confidence: 0.9 };
   }
 

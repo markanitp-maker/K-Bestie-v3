@@ -296,6 +296,34 @@ export async function POST(request: Request) {
       // 일반 대화와 이전 정보 질문이 없는 단순 피드백만 Retrieval을 생략한다. 날짜나 사실을
       // 정정하는 피드백은 아래에서 직전 부모 질문을 복구해 반드시 다시 조회한다.
       if (intent === "GENERAL_CONVERSATION" || (intent === "FEEDBACK_OR_CORRECTION" && !previousInformationQuery)) {
+        // 날짜·요일 질문은 모델 추측이 아니라 KST 기준 계산값으로 답한다(084 §9).
+        // 084로 날짜 질문이 GENERAL_CONVERSATION으로 오게 되면서, 아래 아이 조회
+        // 경로에 있던 날짜 응답 분기에 더 이상 도달하지 못한다. 여기서 먼저 처리한다.
+        if (isDateFactQuestion(trimmedQuestion)) {
+          const generalTemporal = resolveTemporalFromUserContext(trimmedQuestion, conversationContext);
+          const dateAnswer = answerForDateFact(generalTemporal);
+          if (dateAnswer) {
+            logTurn({
+              retrievalAttempted: false,
+              retrievalSource: [],
+              retrievalResultCount: 0,
+              responseMode: "GENERAL_DATE_FACT",
+              fallbackReason: null,
+              temporalKind: generalTemporal.kind,
+              targetDate: generalTemporal.targetDate,
+            });
+            return NextResponse.json({
+              answerable: true,
+              confidence: 1,
+              answer: dateAnswer,
+              suggestedParentQuestion: null,
+              evidenceIds: [],
+              askChildProposal: null,
+              evidenceDateRange: null,
+              intent,
+            });
+          }
+        }
         const conversationalSystemPrompt = `당신은 부모용 케이입니다. 부모의 일반적인 대화(인사, 감사, 연결 확인, 소소한 질문)에 자연스럽고
 짧게 답하세요. 아이 정보를 검색하지 말고, "알고 있는 내용이 없다"는 표현을 쓰지 마세요.
 한국어 1~2문장, 부드러운 말투로 답하세요. 다른 설명 없이 답변 문장만 출력하세요.`;
