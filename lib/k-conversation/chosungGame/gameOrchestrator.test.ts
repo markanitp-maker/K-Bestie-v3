@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runChosungTurn, type ChosungTurnInput } from "./gameOrchestrator";
+import {
+  CHOSUNG_MAX_WRONG_BEFORE_REVEAL,
+  CHOSUNG_REVEAL_HINT_LEVEL,
+  runChosungTurn,
+  type ChosungTurnInput,
+} from "./gameOrchestrator";
 import type { ChosungGameSessionRow, ChosungGameRoundRow } from "./gameSessionManager";
 
 /**
@@ -378,4 +383,66 @@ test("6. DB 오류 시 throw하지 않고 fail-open (handled: false)", async () 
   // 예외를 던지지 않고 { handled: false }를 반환해야 함
   const result = await runChosungTurn(input);
   assert.equal(result.handled, false);
+});
+
+const makeSession = (over: Partial<ChosungGameSessionRow> = {}): ChosungGameSessionRow => ({
+  id: "sess-reveal",
+  child_id: "child-r",
+  chat_session_id: "chat-r",
+  state: "PLAYING_CHILD_ASKS",
+  initiated_by: "CHILD",
+  current_word: "사과",
+  current_chosung: "ㅅㄱ",
+  current_category: "음식",
+  current_difficulty: 1,
+  hint_level: 0,
+  recent_words: ["사과"],
+  started_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  ended_at: null,
+  ...over,
+});
+
+const answerTurn = (db: SupabaseClient, over: Partial<ChosungTurnInput> = {}): ChosungTurnInput => ({
+  db,
+  childId: "child-r",
+  chatSessionId: "chat-r",
+  gradeRaw: 1,
+  utterance: "수박?",
+  signals: { hasChosungGameStart: false, hasChosungAnswerAttempt: true, hasChosungHintRequest: false },
+  ...over,
+});
+
+test("7. 오답이 누적되면 정답을 알려주고 다음 문제로 넘어간다", async () => {
+  // 답을 끝까지 감추면 아이는 답답하기만 하고 배우는 것도 없다(§19 힌트 4단계 = 정답 공개).
+  const db = createMockSupabase({
+    sessions: [makeSession({ hint_level: CHOSUNG_MAX_WRONG_BEFORE_REVEAL - 1 })],
+  });
+  const result = await runChosungTurn(answerTurn(db));
+
+  assert.equal(result.handled, true);
+  assert.match(String(result.instruction), /사과/, "정답을 알려줘야 한다");
+  assert.match(String(result.instruction), /다음 문제/, "다음 문제로 넘어가야 한다");
+});
+
+test("8. 오답이 아직 적으면 정답을 말하지 않고 힌트만 준다", async () => {
+  const db = createMockSupabase({ sessions: [makeSession({ hint_level: 0 })] });
+  const result = await runChosungTurn(answerTurn(db));
+
+  assert.equal(result.handled, true);
+  assert.equal(String(result.instruction).includes("사과"), false, "아직은 정답을 감춰야 한다");
+  assert.match(String(result.instruction), /힌트/);
+});
+
+test("9. 힌트를 끝까지 요청하면 정답을 알려준다", async () => {
+  const db = createMockSupabase({
+    sessions: [makeSession({ hint_level: CHOSUNG_REVEAL_HINT_LEVEL - 1 })],
+  });
+  const result = await runChosungTurn(answerTurn(db, {
+    utterance: "모르겠어",
+    signals: { hasChosungGameStart: false, hasChosungAnswerAttempt: false, hasChosungHintRequest: true },
+  }));
+
+  assert.equal(result.handled, true);
+  assert.match(String(result.instruction), /사과/, "힌트 마지막 단계는 정답 공개다");
 });

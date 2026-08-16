@@ -5,6 +5,7 @@ import {
   submitChosungAnswer,
   nextChosungRound,
   updateChosungHintLevel,
+  type ChosungGameSessionRow,
 } from "./gameSessionManager";
 
 export interface ChosungTurnInput {
@@ -31,6 +32,44 @@ export interface ChosungTurnResult {
  * 초성게임 부품과 K 대화 엔진을 연결하는 오케스트레이터.
  * 순수 조합만 수행하며, DB 오류 시 fail-open({ handled: false })하여 일반 대화 흐름을 보존합니다.
  */
+/** 힌트 4단계 = 정답 공개(§19). 이 값에 도달하면 답을 알려주고 다음 문제로 넘어간다. */
+export const CHOSUNG_REVEAL_HINT_LEVEL = 4;
+
+/** 한 문제에서 이만큼 틀리면 정답을 알려주고 넘어간다. 계속 붙잡으면 아이가 지친다. */
+export const CHOSUNG_MAX_WRONG_BEFORE_REVEAL = 3;
+
+/**
+ * 정답을 알려주고 다음 문제로 넘어간다.
+ *
+ * 맞히든 틀리든 아이는 결국 답을 알아야 한다 — 답을 끝까지 감추면 배우는 것도 없고
+ * 답답하기만 하다. 라운드는 `revealed`로 기록해 난이도 조절이 이 사실을 반영한다.
+ */
+async function revealAndAdvance(input: {
+  db: SupabaseClient;
+  childId: string;
+  gradeRaw?: string | number | null;
+  session: ChosungGameSessionRow;
+  lead: string;
+}): Promise<ChosungTurnResult> {
+  const { db, childId, gradeRaw, session, lead } = input;
+  const answer = session.current_word ?? "";
+
+  await submitChosungAnswer(db, {
+    sessionId: session.id,
+    childId,
+    roundResult: "revealed",
+    gradeRaw,
+  });
+
+  const nextSession = await nextChosungRound(db, { sessionId: session.id, childId, gradeRaw });
+  const nextChosung = nextSession.current_chosung ?? "";
+
+  return {
+    handled: true,
+    instruction: `[초성게임] ${lead}. 정답은 "${answer}"였어. 정답을 알려주고 아이가 민망하지 않게 격려한 뒤, 다음 문제 초성 "${nextChosung}"를 내줘. 새 문제의 정답은 말하지 마.`,
+  };
+}
+
 export async function runChosungTurn(
   input: ChosungTurnInput
 ): Promise<ChosungTurnResult> {
@@ -78,11 +117,30 @@ export async function runChosungTurn(
           instruction: `[초성게임] 아이가 정답 "${correctWord}"를 맞혔어. 칭찬하고 다음 문제 초성 "${nextChosung}"를 내줘. 정답 단어는 절대 말하지 마.`,
         };
       } else {
-        // 오답: 정답 단어는 지시문에 절대 노출하지 않고 힌트 및 격려 유도
+        // 오답. 몇 번까지는 힌트로 붙잡아 주되, 계속 못 맞히면 정답을 알려주고
+        // 다음 문제로 넘어간다(§19 힌트 4단계 = 정답 공개). 답을 끝까지 감추면
+        // 아이는 답답하기만 하고 배우는 것도 없다.
+        const wrongCount = (activeSession.hint_level ?? 0) + 1;
+        await updateChosungHintLevel(db, {
+          sessionId: activeSession.id,
+          childId,
+          hintLevel: wrongCount,
+        });
+
+        if (wrongCount >= CHOSUNG_MAX_WRONG_BEFORE_REVEAL) {
+          return revealAndAdvance({
+            db,
+            childId,
+            gradeRaw,
+            session: activeSession,
+            lead: "아이가 여러 번 시도했지만 못 맞혔어",
+          });
+        }
+
         const currentChosung = activeSession.current_chosung ?? "";
         return {
           handled: true,
-          instruction: `[초성게임] 아이 답은 틀렸어. 정답을 말하지 말고 격려하면서 힌트를 줘. 초성은 "${currentChosung}"야.`,
+          instruction: `[초성게임] 아이 답은 틀렸어. 아직 정답은 말하지 말고 격려하면서 힌트를 줘. 초성은 "${currentChosung}"야.`,
         };
       }
     }
@@ -102,6 +160,19 @@ export async function runChosungTurn(
       const categoryHint = currentCategory
         ? `단어의 범주("${currentCategory}")나 `
         : "";
+      const nextHintLevel = updatedSession.hint_level ?? activeSession.hint_level + 1;
+
+      // 힌트 4단계는 정답 공개다(§19). 계속 힌트만 주면 아이는 답을 영영 못 듣고
+      // 답답하기만 하다. 알려주고 다음 문제로 넘어가는 것이 게임의 정상 흐름이다.
+      if (nextHintLevel >= CHOSUNG_REVEAL_HINT_LEVEL) {
+        return revealAndAdvance({
+          db,
+          childId,
+          gradeRaw,
+          session: activeSession,
+          lead: "아이가 계속 어려워해",
+        });
+      }
 
       return {
         handled: true,
