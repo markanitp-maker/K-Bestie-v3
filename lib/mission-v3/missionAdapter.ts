@@ -78,6 +78,8 @@ export const selectNextPromptGoal = async (
       return priorityDifference || left.goalOrder - right.goalOrder;
     });
 
+  if (candidates.length === 0) return null;
+
   for (const goal of candidates) {
     // Parent Question P0 may override general cooldown, but a DECLINED P0 never
     // reaches this list and therefore cannot be asked again in the session.
@@ -92,7 +94,20 @@ export const selectNextPromptGoal = async (
     }
     if (!cooldownResult.value) return goal;
   }
-  return null;
+
+  // 열린 Goal이 전부 cooldown이어도 null을 돌려주면 안 된다. 그러면 K가 이번 턴에
+  // 던질 목표가 없어 잡담만 하고, 아이가 아무리 대화해도 게이지가 오르지 않아
+  // 미션이 끝나지 않는다(2026-08-16 안서현 Production: prompted_goal_id가 세션 내내
+  // 전부 null, 남은 Goal 3개가 모두 cooldown이었다).
+  //
+  // cooldown은 "세션 시작 시 어떤 주제를 새로 고를지"를 위한 장치다. 이미 이번
+  // 세션 Goal로 확정된 주제는 물어봐야 미션이 진행된다 — 여기서는 순서를 미루는
+  // 용도로만 쓰고, 마지막에는 우선순위가 가장 높은 Goal을 그대로 고른다.
+  console.warn("[mission-v3/adapter] 열린 Goal이 모두 cooldown — 우선순위 상위 Goal로 진행", {
+    childId,
+    openGoalCount: candidates.length,
+  });
+  return candidates[0];
 };
 
 const buildAdapterInstruction = (goal: MissionPromptGoal | null): string | undefined => {

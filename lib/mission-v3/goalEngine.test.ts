@@ -912,3 +912,37 @@ test("SKIPPED 상태의 Goal에 다시 SKIPPED 판정이 오면 무의미하게 
   assert.deepEqual(decisions, []);
 });
 
+
+test("열린 Goal이 전부 cooldown이어도 질문할 Goal을 고른다", async () => {
+  // 2026-08-16 안서현 Production: 남은 Goal 3개가 모두 cooldown이라 매 턴
+  // prompted_goal_id가 null이 됐고, K가 목표 없이 잡담만 해 게이지가 오르지
+  // 않아 미션이 끝나지 않았다. cooldown은 세션 시작 시 주제 선택용이지
+  // 확정된 Goal을 막는 장치가 아니다.
+  const db = {} as unknown as SupabaseClient;
+  const goals: MissionPromptGoal[] = [
+    { ...makeGoal({ goalId: "goal-8", goalOrder: 8, semanticGroup: "ACHIEVEMENT", status: "SKIPPED" }), promptInstruction: "성취 질문" },
+    { ...makeGoal({ goalId: "goal-9", goalOrder: 9, semanticGroup: "INTEREST_AND_PREFERENCE", status: "SKIPPED" }), promptInstruction: "관심사 질문" },
+    { ...makeGoal({ goalId: "goal-10", goalOrder: 10, semanticGroup: "PHYSICAL_STATE", status: "PENDING" }), promptInstruction: "몸 상태 질문" },
+  ];
+
+  const selected = await selectNextPromptGoal(db, "child-1", goals, {
+    isTopicOnCooldownForK: async () => true,
+  });
+
+  assert.ok(selected, "전부 cooldown이어도 null을 돌려주면 미션이 끝나지 않는다");
+  assert.equal(selected?.goalId, "goal-8", "우선순위·순서가 가장 앞선 Goal을 고른다");
+});
+
+test("cooldown이 아닌 Goal이 있으면 그쪽을 먼저 고른다(기존 동작 유지)", async () => {
+  const db = {} as unknown as SupabaseClient;
+  const goals: MissionPromptGoal[] = [
+    { ...makeGoal({ goalId: "goal-1", goalOrder: 1, semanticGroup: "COOLED", status: "PENDING" }), promptInstruction: "쿨다운 주제" },
+    { ...makeGoal({ goalId: "goal-2", goalOrder: 2, semanticGroup: "FRESH", status: "PENDING" }), promptInstruction: "새 주제" },
+  ];
+
+  const selected = await selectNextPromptGoal(db, "child-1", goals, {
+    isTopicOnCooldownForK: async (_db, _childId, group) => group === "COOLED",
+  });
+
+  assert.equal(selected?.goalId, "goal-2");
+});
