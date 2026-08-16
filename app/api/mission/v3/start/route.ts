@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import {
+  CONVERSATION_GOAL_COUNT,
   initializeConversationGoals,
   type ConversationGoal,
 } from "@/lib/mission-v3/goalEngine";
@@ -20,7 +21,11 @@ import { getEffectiveContentGrade, parseGrade } from "@/lib/mission/selectQuesti
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
-import { evaluateRelationshipStage } from "@/lib/relationship/stageEvaluation";
+import type { RelationshipCalendarStage } from "@/lib/relationship/calendarStage";
+import {
+  evaluateRelationshipStage,
+  type EvaluatedRelationshipStage,
+} from "@/lib/relationship/stageEvaluation";
 import { persistRelationshipStage } from "@/lib/relationship/persistStage";
 import { checkAndRecordReturnedAfterGap } from "@/lib/relationship/relationshipEvents";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -65,15 +70,17 @@ const ensureGoals = async (input: {
   childId: string;
   contentGrade: number;
   now: Date;
+  effectiveStage?: RelationshipCalendarStage | null;
 }): Promise<ConversationGoal[]> => {
   const existingGoals = await fetchMissionGoals(input.service, input.sessionId);
-  if (existingGoals.length === 4) return existingGoals;
+  if (existingGoals.length === CONVERSATION_GOAL_COUNT) return existingGoals;
 
   const candidates = await loadMissionQuestionGoalCandidates({
     db: input.service,
     childId: input.childId,
     grade: input.contentGrade,
     weekday: getMissionWeekday(input.now),
+    effectiveStage: input.effectiveStage,
   });
   return initializeConversationGoals({
     db: input.service,
@@ -255,9 +262,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let effectiveStage: RelationshipCalendarStage | null = null;
+  let evaluatedRelationship: EvaluatedRelationshipStage | null = null;
+  if (!resumed) {
+    try {
+      evaluatedRelationship = await evaluateRelationshipStage({ db: service, childId });
+      effectiveStage = evaluatedRelationship?.effectiveStage ?? null;
+    } catch (error) {
+      console.error("[mission/v3/start] 관계 단계 평가 실패 (평가 실패해도 Goal 선택 계속):", error);
+      effectiveStage = null;
+      evaluatedRelationship = null;
+    }
+  }
+
   let goals: ConversationGoal[];
   try {
-    goals = await ensureGoals({ service, sessionId, childId, contentGrade, now });
+    goals = await ensureGoals({ service, sessionId, childId, contentGrade, now, effectiveStage });
   } catch (error) {
     console.error("[mission/v3/start] Conversation Goal 초기화 실패", error);
     if (!resumed) await rollbackCreatedSession(service, sessionId);
@@ -277,8 +297,10 @@ export async function POST(req: NextRequest) {
 
   if (!resumed) {
     try {
-      const evaluated = await evaluateRelationshipStage({ db: service, childId });
-      await persistRelationshipStage({ db: service, childId, sessionId, evaluated });
+      if (!evaluatedRelationship) {
+        evaluatedRelationship = await evaluateRelationshipStage({ db: service, childId });
+      }
+      await persistRelationshipStage({ db: service, childId, sessionId, evaluated: evaluatedRelationship });
       await checkAndRecordReturnedAfterGap({
         db: service,
         childId,

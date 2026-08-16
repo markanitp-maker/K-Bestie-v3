@@ -99,7 +99,8 @@ test("CHOSUNG_SKILL Adapter: 인터페이스 계약 및 기본 속성 검증", a
   );
 });
 
-test("SkillRouter: 활성 세션이 있으면 직접 요청보다 활성 세션이 우선한다", async () => {
+test("SkillRouter: 다른 게임 직접 요청 시 기존 활성 세션이 end되고 새 게임이 start된다 (Invariant 2)", async () => {
+  let activeEndCalled = false;
   let activeTurnCalled = false;
   let startCalled = false;
 
@@ -116,7 +117,9 @@ test("SkillRouter: 활성 세션이 있으면 직접 요청보다 활성 세션�
       activeTurnCalled = true;
       return { handled: true, instruction: "active-turn-instruction" };
     },
-    end: async () => {},
+    end: async () => {
+      activeEndCalled = true;
+    },
   };
 
   const mockDirectRequestedSkill: PlaySkillModule = {
@@ -142,10 +145,11 @@ test("SkillRouter: 활성 세션이 있으면 직접 요청보다 활성 세션�
     registry: [mockActiveSkill, mockDirectRequestedSkill],
   });
 
-  assert.equal(activeTurnCalled, true, "활성 세션의 handleTurn이 호출되어야 함");
-  assert.equal(startCalled, false, "직접 요청의 start는 호출되지 않아야 함");
+  assert.equal(activeEndCalled, true, "기존 활성 세션이 end 되어야 함");
+  assert.equal(startCalled, true, "직접 요청된 새 게임의 start가 호출되어야 함");
+  assert.equal(activeTurnCalled, false, "기존 활성 세션의 handleTurn은 호출되지 않아야 함");
   assert.equal(result.handled, true);
-  assert.equal(result.instruction, "active-turn-instruction");
+  assert.equal(result.instruction, "word-chain-start");
 });
 
 test("SkillRouter: 활성 세션이 없고 직접 요청이 있으면 start가 불린다", async () => {

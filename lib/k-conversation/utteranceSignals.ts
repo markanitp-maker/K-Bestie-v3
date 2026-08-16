@@ -21,6 +21,7 @@ export interface UtteranceSignals {
   hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
   hasPlayRequestWithoutTarget: boolean; // 심심해/놀아줘/뭐 하고 놀까 등 게임 미지정 놀이 요청
   hasPlayRejection: boolean; // 싫어/안 할래/하기 싫어/됐어 등 제안 거절 (단독 부정)
+  hasPlayStop?: boolean; // 그만할래/안 할래/그만하자/그만 등 게임 명시적 종료 요청
 }
 
 const ACHIEVEMENT_KWS = ["1등", "100점", "맞았어", "해냈", "성공했", "이겼", "합격", "칭찬받"];
@@ -63,10 +64,39 @@ function includesAny(text: string, keywords: string[]): boolean {
   return keywords.some((kw) => text.includes(kw));
 }
 
+/** 080: 게임 이름이 문장에 등장하기만 해도 시작 요청으로 잡히던 문제를 막는다.
+ *  Production 사고 이후 "직접 요청이 활성 게임을 이긴다"로 바꾸면서, 비교·회상
+ *  발화("이거 초성게임보다 재밌다", "끝말잇기 어제 했어")까지 게임을 강제 전환시켰다.
+ *  시작 의도 표현이 있거나, 게임 이름만 말한 경우에만 시작으로 본다. */
+const PLAY_START_INTENT_KWS = [
+  "하자", "할래", "할까", "하까", "하고 싶", "하고싶", "시작",
+  "해줘", "해봐", "해보자", "해볼래", "가자", "고고", "ㄱㄱ", "한판", "한 판",
+  // 아이가 실제로 쓰는 변형들. 기존 초성게임 케이스에서 "내줘"·"놀자"가 빠져
+  // 회귀가 났다(2026-08-17 실측).
+  "내줘", "내봐", "내주라", "놀자", "놀래", "놀아", "맞춰볼래", "맞혀볼래",
+];
+const PLAY_START_REFERENCE_KWS = [
+  "보다", "말고", "대신", "했어", "했었", "했지", "했다", "하던", "하는 거야",
+  "재밌었", "재미있었", "좋아했", "어땠", "기억나",
+];
+
+function hasPlayStartIntent(text: string, namePatterns: readonly RegExp[]): boolean {
+  // 비교·회상 발화는 시작 요청이 아니다.
+  if (includesAny(text, PLAY_START_REFERENCE_KWS)) return false;
+  if (includesAny(text, PLAY_START_INTENT_KWS)) return true;
+  // 게임 이름만 말한 경우("끝말잇기!", "초성게임")도 시작 의도로 본다.
+  let stripped = text;
+  for (const pattern of namePatterns) {
+    stripped = stripped.replace(new RegExp(pattern.source, "g"), "");
+  }
+  return stripped.replace(/[\s!?.~,\uAC00-\uD7A3]{0,0}/g, "").replace(/[\s!?.~,]/g, "").length === 0;
+}
+
 function detectChosungGameStart(text: string): boolean {
   if (includesAny(text, CHOSUNG_START_NEGATION_KWS)) return false;
   if (includesAny(text, CHOSUNG_START_DEFINITION_KWS)) return false;
-  return CHOSUNG_START_PATTERNS.some((pattern) => pattern.test(text));
+  if (!CHOSUNG_START_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  return hasPlayStartIntent(text, CHOSUNG_START_PATTERNS);
 }
 
 function detectChosungHintRequest(text: string): boolean {
@@ -131,7 +161,8 @@ const WORD_CHAIN_START_DEFINITION_KWS = ["뭐야", "뭔데", "무슨 뜻", "무�
 function detectWordChainGameStart(text: string): boolean {
   if (includesAny(text, WORD_CHAIN_START_NEGATION_KWS)) return false;
   if (includesAny(text, WORD_CHAIN_START_DEFINITION_KWS)) return false;
-  return WORD_CHAIN_START_PATTERNS.some((pattern) => pattern.test(text));
+  if (!WORD_CHAIN_START_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  return hasPlayStartIntent(text, WORD_CHAIN_START_PATTERNS);
 }
 
 // 게임 미지정 놀이 요청 신호 ("심심해", "놀아줘", "뭐 하고 놀까", "재미없어" 등)
@@ -187,6 +218,26 @@ function detectPlayRejection(
   return STANDALONE_REJECTION_PATTERN.test(trimmed);
 }
 
+// 게임 명시적 종료 신호 ("그만할래", "안 할래", "그만하자", "그만", "안해" 등)
+const PLAY_STOP_PATTERNS = [
+  /(?:끝말잇기|초성|게임|놀이|퀴즈)?\s*(?:그만|그만하자|그만할래|그만해|그만둘래|안\s*할래|안해|안\s*해|하기\s*싫어|끝낼래|안\s*놀래|포기|항복|너\s*이겼어)/,
+  /^(?:그만|그만해|그만하자|그만할래|끝|안해|안\s*해|싫어|포기|항복|이제\s*그만|다음에\s*할래)$/,
+];
+
+function detectPlayStop(
+  text: string,
+  hasChosungGameStart: boolean,
+  hasWordChainGameStart: boolean,
+): boolean {
+  if (hasChosungGameStart || hasWordChainGameStart) return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  for (const exclusion of REJECTION_EXCLUSION_PATTERNS) {
+    if (exclusion.test(trimmed)) return false;
+  }
+  return PLAY_STOP_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 export function extractUtteranceSignals(text: string): UtteranceSignals {
   const trimmed = text.trim();
   const isQuestion = /[?？]/.test(trimmed) || includesAny(trimmed, QUESTION_WORDS);
@@ -217,6 +268,11 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     Boolean(hasWordChainGameStart),
     hasPlayRequestWithoutTarget,
   );
+  const hasPlayStop = detectPlayStop(
+    trimmed,
+    hasChosungGameStart,
+    Boolean(hasWordChainGameStart),
+  );
 
   return {
     hasAchievement,
@@ -235,6 +291,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasWordChainGameStart,
     hasPlayRequestWithoutTarget,
     hasPlayRejection,
+    hasPlayStop,
   };
 }
 
