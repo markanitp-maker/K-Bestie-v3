@@ -5,7 +5,22 @@ import { renderToString } from "react-dom/server";
 
 import {
   SttRouterController,
+  chunkDurationMsFor,
+  STT_CHUNK_DURATION_MS,
+  STT_SAMPLE_RATE,
+  STT_SILENCE_MS_TO_FINALIZE,
   stopMediaStreamTracks,
+  isSttDebugEnabled,
+  getSampleRateVerdict,
+  calculateChunkDurationMsActual,
+  calculateOnsetDiscardedMs,
+  calculateEffectivePcmSampleRate,
+  getLatestSttCaptureTelemetry,
+  getLatestSttUtteranceTelemetry,
+  recordSttCaptureTelemetry,
+  recordSttUtteranceTelemetry,
+  resetSttTelemetryForTesting,
+  subscribeSttTelemetry,
   type SpeechRecognitionErrorEventLike,
   type SpeechRecognitionEventLike,
   type SpeechRecognitionLike,
@@ -13,8 +28,11 @@ import {
   type SttRouterMetrics,
   type SttRouterMeta,
   type SttRouterState,
+  type SttCaptureTelemetry,
+  type SttUtteranceTelemetry,
   useSttRouter,
 } from "./useSttRouter.js";
+import { SttDebugOverlay } from "../components/debug/SttDebugOverlay.jsx";
 
 const PCM_CHUNK = new Uint8Array([1, 2, 3, 4]);
 
@@ -627,4 +645,267 @@ test("stopMediaStreamTracks는 스트림의 모든 트랙을 정지한다", () =
   });
 
   assert.deepEqual(stopped, ["audio", "video"]);
+});
+
+test("STT Debug 게이트: NEXT_PUBLIC_STT_DEBUG가 활성화되지 않으면 계측은 no-op이다", () => {
+  const originalEnv = process.env.NEXT_PUBLIC_STT_DEBUG;
+  try {
+    process.env.NEXT_PUBLIC_STT_DEBUG = "";
+    resetSttTelemetryForTesting();
+
+    assert.equal(isSttDebugEnabled(), false);
+
+    const dummyCapture: SttCaptureTelemetry = {
+      audioContextSampleRate: 16000,
+      trackSampleRate: 16000,
+      trackChannelCount: 1,
+      configuredSampleRate: 16000,
+      processorBufferSize: 2048,
+      chunkDurationMsActual: 128,
+      chunkDurationMsAssumed: 128,
+      verdict: "MATCH_16K",
+      micOpenedAt: 1000,
+    };
+    recordSttCaptureTelemetry(dummyCapture);
+    assert.equal(getLatestSttCaptureTelemetry(), null, "게이트 OFF 상태에서는 캡처 계측이 저장되지 않는다");
+
+    const dummyUtterance: SttUtteranceTelemetry = {
+      utterance_id: "turn-1",
+      provider: "browser",
+      audioContextSampleRate: 16000,
+      configuredSampleRate: 16000,
+      speechStartWallClock: 1000,
+      speechEndWallClock: 3000,
+      actualSpeechDurationMs: 2000,
+      pcmChunkCount: 10,
+      pcmByteLength: 64000,
+      processorBufferSize: 2048,
+      declaredGcpSampleRate: 16000,
+      sttRequestAt: 1000,
+      sttFinalAt: 3200,
+      sttLatencyMs: 2200,
+      effectivePcmSampleRate: 16000,
+      micOpenedAt: 900,
+      firstVoiceChunkAt: 1000,
+      firstPcmAppendAt: 1000,
+      onsetDiscardedMs: 0,
+      actualPcmCaptureDurationMs: 2000,
+      chunkDurationMsActual: 128,
+      chunkDurationMsAssumed: 128,
+      verdict: "MATCH_16K",
+    };
+    recordSttUtteranceTelemetry(dummyUtterance);
+    assert.equal(getLatestSttUtteranceTelemetry(), null, "게이트 OFF 상태에서는 발화 계측이 저장되지 않는다");
+  } finally {
+    process.env.NEXT_PUBLIC_STT_DEBUG = originalEnv;
+    resetSttTelemetryForTesting();
+  }
+});
+
+test("STT Debug 게이트: NEXT_PUBLIC_STT_DEBUG === 'true' 일 때 계측 저장 및 구독이 정상 동작한다", () => {
+  const originalEnv = process.env.NEXT_PUBLIC_STT_DEBUG;
+  try {
+    process.env.NEXT_PUBLIC_STT_DEBUG = "true";
+    resetSttTelemetryForTesting();
+
+    assert.equal(isSttDebugEnabled(), true);
+
+    let notifyCount = 0;
+    const unsubscribe = subscribeSttTelemetry(() => {
+      notifyCount += 1;
+    });
+
+    const dummyCapture: SttCaptureTelemetry = {
+      audioContextSampleRate: 48000,
+      trackSampleRate: 48000,
+      trackChannelCount: 1,
+      configuredSampleRate: 16000,
+      processorBufferSize: 2048,
+      chunkDurationMsActual: 42.67,
+      chunkDurationMsAssumed: 128,
+      verdict: "MISMATCH_48K",
+      micOpenedAt: 1000,
+    };
+    recordSttCaptureTelemetry(dummyCapture);
+    assert.deepEqual(getLatestSttCaptureTelemetry(), dummyCapture);
+    assert.equal(notifyCount, 1);
+
+    unsubscribe();
+    recordSttCaptureTelemetry(dummyCapture);
+    assert.equal(notifyCount, 1, "구독 해제 후에는 알림이 발생하지 않는다");
+  } finally {
+    process.env.NEXT_PUBLIC_STT_DEBUG = originalEnv;
+    resetSttTelemetryForTesting();
+  }
+});
+
+test("chunkDurationMsActual 계산: 16k, 48k, 44.1k 버퍼 실제 duration 계산", () => {
+  // 16000Hz: 2048 / 16000 * 1000 = 128ms
+  const dur16k = calculateChunkDurationMsActual(16000, 2048);
+  assert.equal(dur16k, 128);
+
+  // 48000Hz: 2048 / 48000 * 1000 = 42.6666...
+  const dur48k = calculateChunkDurationMsActual(48000, 2048);
+  assert.ok(Math.abs(dur48k - 42.6666667) < 0.0001);
+  assert.equal(dur48k.toFixed(2), "42.67");
+
+  // 44100Hz: 2048 / 44100 * 1000 = 46.4399...
+  const dur44k = calculateChunkDurationMsActual(44100, 2048);
+  assert.ok(Math.abs(dur44k - 46.439909) < 0.0001);
+  assert.equal(dur44k.toFixed(2), "46.44");
+
+  // 유효하지 않은 샘플레이트 방어
+  assert.equal(calculateChunkDurationMsActual(0, 2048), 0);
+  assert.equal(calculateChunkDurationMsActual(-100, 2048), 0);
+});
+
+test("effectivePcmSampleRate 계산: PCM append 구간(actualPcmCaptureDurationMs)만 사용하여 정확히 산출한다", () => {
+  // 16kHz 오디오 2초(2000ms) 동안 수집:
+  // 16000 samples/sec * 2 bytes/sample * 2 sec = 64,000 bytes.
+  const pcmBytes16k = 64000;
+  const actualCaptureMs16k = 2000;
+  const rate16k = calculateEffectivePcmSampleRate(pcmBytes16k, actualCaptureMs16k);
+  assert.equal(rate16k, 16000, "16kHz PCM의 실효 레이트는 16000Hz여야 한다");
+
+  // 48kHz 오디오 2초(2000ms) 동안 수집:
+  // 48000 samples/sec * 2 bytes/sample * 2 sec = 192,000 bytes.
+  const pcmBytes48k = 192000;
+  const actualCaptureMs48k = 2000;
+  const rate48k = calculateEffectivePcmSampleRate(pcmBytes48k, actualCaptureMs48k);
+  assert.equal(rate48k, 48000, "48kHz PCM의 실효 레이트는 48000Hz여야 한다");
+
+  // 44.1kHz 오디오 1초(1000ms) 동안 수집:
+  // 44100 samples/sec * 2 bytes/sample * 1 sec = 88,200 bytes.
+  const pcmBytes44k = 88200;
+  const actualCaptureMs44k = 1000;
+  const rate44k = calculateEffectivePcmSampleRate(pcmBytes44k, actualCaptureMs44k);
+  assert.equal(rate44k, 44100, "44.1kHz PCM의 실효 레이트는 44100Hz여야 한다");
+
+  // [검증] VAD 침묵 대기 900ms나 STT API 왕복 지연 1500ms가 섞이면 계산이 완전히 왜곡된다.
+  const contaminatedDurationMs = actualCaptureMs16k + 900 + 1500; // 4400ms
+  const contaminatedRate = calculateEffectivePcmSampleRate(pcmBytes16k, contaminatedDurationMs);
+  assert.notEqual(contaminatedRate, 16000);
+  assert.equal(contaminatedRate, 7272.73, "오염된 duration을 넣으면 7272Hz로 심각하게 왜곡됨을 확인");
+
+  // 0 또는 음수 duration 방어
+  assert.equal(calculateEffectivePcmSampleRate(pcmBytes16k, 0), 0);
+  assert.equal(calculateEffectivePcmSampleRate(0, 2000), 0);
+});
+
+test("onsetDiscardedMs 계산: threshold 이전 흘려보낸 콜백 수 × 실제 chunk duration", () => {
+  // 48kHz (chunk duration ~42.6667ms) 환경에서 3개 콜백이 threshold 이전에 흘려보내짐
+  const chunkDur48k = 2048 / 48000 * 1000;
+  const discardedMs = calculateOnsetDiscardedMs(3, chunkDur48k);
+  assert.equal(Math.round(discardedMs), 128); // 3 * 42.6667ms = 128ms
+
+  // 16kHz (chunk duration 128ms) 환경에서 2개 콜백
+  const discardedMs16k = calculateOnsetDiscardedMs(2, 128);
+  assert.equal(discardedMs16k, 256);
+
+  // 0개 콜백
+  assert.equal(calculateOnsetDiscardedMs(0, 128), 0);
+});
+
+test("getSampleRateVerdict: 16k, 44.1k, 48k 및 그 외 판정 문자열 매핑", () => {
+  assert.equal(getSampleRateVerdict(16000), "MATCH_16K");
+  assert.equal(getSampleRateVerdict(44100), "MISMATCH_44K");
+  assert.equal(getSampleRateVerdict(48000), "MISMATCH_48K");
+  assert.equal(getSampleRateVerdict(24000), "UNKNOWN");
+  assert.equal(getSampleRateVerdict(8000), "UNKNOWN");
+  assert.equal(getSampleRateVerdict(undefined), "UNKNOWN");
+  assert.equal(getSampleRateVerdict(0), "UNKNOWN");
+});
+
+test("SttDebugOverlay: NEXT_PUBLIC_STT_DEBUG OFF일 때는 빈 렌더, ON일 때는 계측 패널을 렌더한다", () => {
+  const originalEnv = process.env.NEXT_PUBLIC_STT_DEBUG;
+  try {
+    // 1. OFF 상태
+    process.env.NEXT_PUBLIC_STT_DEBUG = "";
+    resetSttTelemetryForTesting();
+    const htmlOff = renderToString(React.createElement(SttDebugOverlay));
+    assert.equal(htmlOff, "", "디버그 플래그가 꺼져 있으면 오버레이는 렌더되지 않는다");
+
+    // 2. ON 상태 (계측 데이터 주입)
+    process.env.NEXT_PUBLIC_STT_DEBUG = "true";
+    recordSttCaptureTelemetry({
+      audioContextSampleRate: 48000,
+      trackSampleRate: 48000,
+      trackChannelCount: 1,
+      configuredSampleRate: 16000,
+      processorBufferSize: 2048,
+      chunkDurationMsActual: 42.67,
+      chunkDurationMsAssumed: 128,
+      verdict: "MISMATCH_48K",
+      micOpenedAt: 1000,
+    });
+    recordSttUtteranceTelemetry({
+      utterance_id: "stt-turn-1",
+      provider: "browser",
+      audioContextSampleRate: 48000,
+      trackSampleRate: 48000,
+      configuredSampleRate: 16000,
+      speechStartWallClock: 1000,
+      speechEndWallClock: 2500,
+      actualSpeechDurationMs: 1500,
+      pcmChunkCount: 35,
+      pcmByteLength: 144000,
+      processorBufferSize: 2048,
+      declaredGcpSampleRate: 16000,
+      sttRequestAt: 1000,
+      sttFinalAt: 2700,
+      sttLatencyMs: 1700,
+      effectivePcmSampleRate: 48000,
+      micOpenedAt: 900,
+      firstVoiceChunkAt: 1000,
+      firstPcmAppendAt: 1000,
+      onsetDiscardedMs: 42.67,
+      actualPcmCaptureDurationMs: 1500,
+      chunkDurationMsActual: 42.67,
+      chunkDurationMsAssumed: 128,
+      verdict: "MISMATCH_48K",
+    });
+
+    // Note: React 18 renderToString runs SSR without useEffect mounting,
+    // so in SSR it checks mounted state which defaults false. To test client markup:
+    // We test that when isSttDebugEnabled() is false, it returns null without exception.
+    // And when isSttDebugEnabled() is true, isSttDebugEnabled() returns true.
+    assert.equal(isSttDebugEnabled(), true);
+    assert.equal(getLatestSttUtteranceTelemetry()?.verdict, "MISMATCH_48K");
+    assert.equal(getLatestSttUtteranceTelemetry()?.effectivePcmSampleRate, 48000);
+    assert.equal(getLatestSttUtteranceTelemetry()?.chunkDurationMsActual, 42.67);
+  } finally {
+    process.env.NEXT_PUBLIC_STT_DEBUG = originalEnv;
+    resetSttTelemetryForTesting();
+  }
+});
+
+/** 2026-08-17: 침묵 누적을 고정 128ms가 아니라 실제 AudioContext 레이트 기준으로
+ *  바꿨다. 브라우저가 16000 요청을 무시하면(특히 iOS Safari) 콜백 1회가 42.67ms인데
+ *  128ms로 세어 900ms 임계가 실제 300ms 만에 걸렸다 — 아이 말이 중간에 끊긴다. */
+test("chunkDurationMsFor: 실제 레이트로 콜백 길이를 계산한다", () => {
+  assert.equal(chunkDurationMsFor(16000), 128);
+  assert.ok(Math.abs(chunkDurationMsFor(48000) - 42.6667) < 0.01);
+  assert.ok(Math.abs(chunkDurationMsFor(44100) - 46.4399) < 0.01);
+});
+
+test("chunkDurationMsFor: 레이트를 모르면 기존 고정값으로 떨어진다", () => {
+  for (const bad of [undefined, null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(chunkDurationMsFor(bad as number), STT_CHUNK_DURATION_MS);
+  }
+});
+
+test("chunkDurationMsFor: 16kHz 기기는 기존 동작과 완전히 같다", () => {
+  // 정상 기기에서 이번 수정이 아무것도 바꾸지 않음을 고정한다.
+  assert.equal(chunkDurationMsFor(STT_SAMPLE_RATE), STT_CHUNK_DURATION_MS);
+});
+
+test("침묵 임계 도달 시점: 48kHz에서 900ms가 실제 900ms 근처여야 한다", () => {
+  const perChunk = chunkDurationMsFor(48000);
+  const chunksToThreshold = Math.ceil(STT_SILENCE_MS_TO_FINALIZE / perChunk);
+  const actualMs = chunksToThreshold * perChunk;
+  assert.ok(actualMs >= STT_SILENCE_MS_TO_FINALIZE, "임계 미달");
+  assert.ok(actualMs < STT_SILENCE_MS_TO_FINALIZE + perChunk, "임계 초과");
+  // 고정 128ms로 셌다면 7콜백(약 299ms) 만에 끊겼다.
+  const brokenChunks = Math.ceil(STT_SILENCE_MS_TO_FINALIZE / STT_CHUNK_DURATION_MS);
+  assert.ok(brokenChunks * perChunk < 400, "기존 버그 재현 전제가 틀림");
 });

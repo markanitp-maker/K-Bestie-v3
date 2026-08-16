@@ -51,6 +51,8 @@ const nextConfig: NextConfig = {
     // useSttRouter가 Browser primary를 끄고 기존 GCP-only 경로를 유지한다.
     BROWSER_STT_PRIMARY_ENABLED: process.env.BROWSER_STT_PRIMARY_ENABLED || "",
     GCP_STT_FALLBACK_ENABLED: process.env.GCP_STT_FALLBACK_ENABLED || "",
+    // Dev 전용 STT 런타임 계측 플래그. "true"일 때만 STT 라우터 및 디버그 오버레이가 활성화된다.
+    NEXT_PUBLIC_STT_DEBUG: process.env.NEXT_PUBLIC_STT_DEBUG || "",
     // 자유대화 10분 세션+1분 휴식 및 20턴 하드리밋 — 현재 베타 확정 정책(Goal 없음·
     // Completion 없음·횟수/시간/턴 제한 없음)에 따라 미설정 시 항상 OFF. 로직 자체는
     // 삭제하지 않고 유지하며, 값을 "true"로 설정할 때만 활성화된다.

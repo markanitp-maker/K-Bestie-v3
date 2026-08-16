@@ -12,11 +12,162 @@ export const DEFAULT_BROWSER_STT_FINAL_TIMEOUT_MS = 3000;
 export const STT_SILENCE_MS_TO_FINALIZE = 900;
 export const STT_RMS_SILENCE_THRESHOLD = 0.012;
 export const STT_MAX_UTTERANCE_MS = 10000;
+/** 브라우저가 돌려줄 N-best 개수. 너무 크면 잡음 후보가 섞인다. */
+export const BROWSER_STT_MAX_ALTERNATIVES = 3;
 
-const STT_PROCESSOR_BUFFER_SIZE = 2048;
-const STT_SAMPLE_RATE = 16000;
-const STT_CHANNEL_COUNT = 1;
-const STT_CHUNK_DURATION_MS = 128;
+export const STT_PROCESSOR_BUFFER_SIZE = 2048;
+export const STT_SAMPLE_RATE = 16000;
+export const STT_CHANNEL_COUNT = 1;
+export const STT_CHUNK_DURATION_MS = 128;
+
+/** onaudioprocess 콜백 1회가 담는 실제 오디오 길이(ms).
+ *
+ *  2026-08-17: 기존에는 `STT_CHUNK_DURATION_MS = 128`(16kHz 가정)을 고정으로 썼다.
+ *  그러나 브라우저는 `new AudioContext({ sampleRate: 16000 })` 요청을 보장하지 않고,
+ *  특히 iOS Safari는 하드웨어 기본값(44.1k/48k)을 강제하는 사례가 알려져 있다.
+ *  48kHz면 콜백 1회는 2048/48000 = 42.67ms인데 128ms로 세면 침묵이 3배 빠르게 쌓여
+ *  900ms 임계가 실제 약 300ms 만에 걸린다 — 아이가 숨 쉬는 순간 발화가 끊긴다.
+ *
+ *  실제 sampleRate가 16000이면 정확히 128을 돌려주므로 정상 기기의 동작은 그대로다. */
+export function chunkDurationMsFor(sampleRate: number | undefined | null): number {
+  if (typeof sampleRate !== "number" || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+    return STT_CHUNK_DURATION_MS;
+  }
+  return (STT_PROCESSOR_BUFFER_SIZE / sampleRate) * 1000;
+}
+
+export type SttSampleRateMatchVerdict = "MATCH_16K" | "MISMATCH_44K" | "MISMATCH_48K" | "UNKNOWN";
+
+export interface SttCaptureTelemetry {
+  audioContextSampleRate: number;
+  trackSampleRate?: number;
+  trackChannelCount?: number;
+  configuredSampleRate: number; // 16000
+  processorBufferSize: number; // 2048
+  chunkDurationMsActual: number; // 2048 / audioContextSampleRate * 1000
+  chunkDurationMsAssumed: number; // 128
+  verdict: SttSampleRateMatchVerdict;
+  micOpenedAt: number;
+}
+
+export interface SttUtteranceTelemetry {
+  utterance_id: string;
+  provider?: "browser" | "gcp";
+  audioContextSampleRate: number;
+  trackSampleRate?: number;
+  configuredSampleRate: number; // 16000
+  speechStartWallClock: number;
+  speechEndWallClock: number;
+  actualSpeechDurationMs: number;
+  pcmChunkCount: number;
+  pcmByteLength: number;
+  processorBufferSize: number; // 2048
+  declaredGcpSampleRate: number; // 16000
+  sttRequestAt: number;
+  sttFinalAt: number;
+  sttLatencyMs: number;
+  effectivePcmSampleRate: number;
+  micOpenedAt: number;
+  firstVoiceChunkAt: number;
+  firstPcmAppendAt: number;
+  onsetDiscardedMs: number;
+  actualPcmCaptureDurationMs: number;
+  chunkDurationMsActual: number;
+  chunkDurationMsAssumed: number;
+  verdict: SttSampleRateMatchVerdict;
+}
+
+export const isSttDebugEnabled = (): boolean => {
+  return typeof process !== "undefined" && process.env?.NEXT_PUBLIC_STT_DEBUG === "true";
+};
+
+export const getSampleRateVerdict = (sampleRate: number | undefined): SttSampleRateMatchVerdict => {
+  if (sampleRate === 16000) return "MATCH_16K";
+  if (sampleRate === 44100) return "MISMATCH_44K";
+  if (sampleRate === 48000) return "MISMATCH_48K";
+  return "UNKNOWN";
+};
+
+export const calculateChunkDurationMsActual = (sampleRate: number, bufferSize = STT_PROCESSOR_BUFFER_SIZE): number => {
+  if (!sampleRate || sampleRate <= 0) return 0;
+  return (bufferSize / sampleRate) * 1000;
+};
+
+export const calculateOnsetDiscardedMs = (
+  discardedCallbackCount: number,
+  chunkDurationMsActual: number,
+): number => {
+  if (discardedCallbackCount <= 0 || chunkDurationMsActual <= 0) return 0;
+  return discardedCallbackCount * chunkDurationMsActual;
+};
+
+/**
+ * Calculates effective PCM sample rate (Hz).
+ * Formula: (pcmByteLength / 2 bytes per sample) / (actualPcmCaptureDurationMs / 1000)
+ *
+ * IMPORTANT: actualPcmCaptureDurationMs MUST be the duration of the actual PCM append interval
+ * (first appendPcm timestamp to last appendPcm timestamp).
+ * It MUST NOT include VAD silence finalization wait (e.g. 900ms) or STT API network round-trip latency.
+ * If actualPcmCaptureDurationMs is 0 or negative, returns 0.
+ */
+export const calculateEffectivePcmSampleRate = (
+  pcmByteLength: number,
+  actualPcmCaptureDurationMs: number,
+): number => {
+  if (actualPcmCaptureDurationMs <= 0 || pcmByteLength <= 0) return 0;
+  const samples = pcmByteLength / 2;
+  const durationSec = actualPcmCaptureDurationMs / 1000;
+  return Math.round((samples / durationSec) * 100) / 100;
+};
+
+let latestCaptureTelemetry: SttCaptureTelemetry | null = null;
+let latestUtteranceTelemetry: SttUtteranceTelemetry | null = null;
+const telemetryListeners = new Set<() => void>();
+
+export const getLatestSttCaptureTelemetry = (): SttCaptureTelemetry | null => {
+  return latestCaptureTelemetry;
+};
+
+export const getLatestSttUtteranceTelemetry = (): SttUtteranceTelemetry | null => {
+  return latestUtteranceTelemetry;
+};
+
+export const subscribeSttTelemetry = (listener: () => void): (() => void) => {
+  telemetryListeners.add(listener);
+  return () => {
+    telemetryListeners.delete(listener);
+  };
+};
+
+export const recordSttCaptureTelemetry = (telemetry: SttCaptureTelemetry): void => {
+  if (!isSttDebugEnabled()) return;
+  latestCaptureTelemetry = telemetry;
+  telemetryListeners.forEach((fn) => {
+    try {
+      fn();
+    } catch {
+      // Ignore listener error
+    }
+  });
+};
+
+export const recordSttUtteranceTelemetry = (telemetry: SttUtteranceTelemetry): void => {
+  if (!isSttDebugEnabled()) return;
+  latestUtteranceTelemetry = telemetry;
+  telemetryListeners.forEach((fn) => {
+    try {
+      fn();
+    } catch {
+      // Ignore listener error
+    }
+  });
+};
+
+export const resetSttTelemetryForTesting = (): void => {
+  latestCaptureTelemetry = null;
+  latestUtteranceTelemetry = null;
+  telemetryListeners.clear();
+};
 
 export type SttRouterState =
   | "IDLE"
@@ -87,7 +238,10 @@ interface SpeechRecognitionAlternativeLike {
 
 interface SpeechRecognitionResultLike {
   isFinal: boolean;
+  /** N-best 후보 개수. maxAlternatives를 켜면 1보다 커진다. */
+  length?: number;
   0?: SpeechRecognitionAlternativeLike;
+  [index: number]: SpeechRecognitionAlternativeLike | undefined;
 }
 
 interface SpeechRecognitionResultListLike {
@@ -108,6 +262,8 @@ export interface SpeechRecognitionLike {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
+  /** 브라우저가 이미 계산해 둔 N-best를 함께 받는다. 추가 지연·호출이 없다. */
+  maxAlternatives?: number;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
   onend: (() => void) | null;
@@ -139,6 +295,9 @@ interface TurnContext {
   inputMode: "auto" | "manual";
   platform: "iOS" | "Android" | "Desktop";
   browser: string;
+  /** 실제 AudioContext 레이트. 브라우저가 16000 요청을 무시할 수 있어 고정값을
+   *  신고하면 GCP가 잘못된 속도로 해석한다. 알 수 없으면 undefined. */
+  audioContextSampleRate?: number;
 }
 
 export interface SttRouterControllerOptions extends SttRouterOptions {
@@ -229,6 +388,9 @@ const defaultCallGcp = async (
         sessionId: context.sessionId,
         childTurnId: context.childTurnId,
         conversationMode: context.conversationMode,
+        // 실제 캡처 레이트를 그대로 알린다. 오디오가 48kHz인데 16kHz라고 신고하면
+        // GCP가 3배 느린 소리로 해석해 인식이 무너진다. 리샘플링 대신 사실을 전달한다.
+        sampleRateHertz: context.audioContextSampleRate,
       }),
       signal,
     });
@@ -369,6 +531,10 @@ export class SttRouterController implements SttRouter {
       }
       recognition.continuous = true;
       recognition.interimResults = true;
+      // 아이 발음은 오인식이 잦다("퀴즈"→"키즈", "초성"→"호성"). 브라우저는 이미
+      // 여러 후보를 계산해 두므로 함께 받아 두면 게임 명령 감지를 후보 전체에
+      // 대해 시도할 수 있다. 지연도 추가 호출도 없다(2026-08-17 박말똥 사고 대응).
+      recognition.maxAlternatives = BROWSER_STT_MAX_ALTERNATIVES;
       recognition.lang = this.options.language ?? "ko-KR";
       recognition.onresult = (event) => this.handleBrowserResult(turnId, event);
       recognition.onerror = () => this.handleBrowserError(turnId);
@@ -738,6 +904,8 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
   const speechDetectedRef = useRef(false);
   const silenceMsRef = useRef(0);
   const speechStartedAtRef = useRef(0);
+  const speechStartWallClockRef = useRef(0);
+  const speechEndWallClockRef = useRef(0);
   const streamRef = useRef<MediaStream | null>(null);
   const inputContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -745,6 +913,19 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
   const captureGenerationRef = useRef(0);
   const captureRequestedRef = useRef(true);
   const capturePromiseRef = useRef<Promise<void> | null>(null);
+
+  // Dev 계측 전용 ref — NEXT_PUBLIC_STT_DEBUG === "true" 일 때만 값이 갱신된다.
+  const micOpenedAtRef = useRef(0);
+  const audioContextSampleRateRef = useRef(STT_SAMPLE_RATE);
+  const trackSampleRateRef = useRef<number | undefined>(undefined);
+  const trackChannelCountRef = useRef<number | undefined>(undefined);
+  const preVoiceCallbacksRef = useRef(0);
+  const onsetDiscardedCallbacksRef = useRef(0);
+  const firstVoiceChunkAtRef = useRef(0);
+  const firstPcmAppendAtRef = useRef(0);
+  const lastPcmAppendAtRef = useRef(0);
+  const turnPcmChunkCountRef = useRef(0);
+  const turnPcmByteLengthRef = useRef(0);
 
   const controllerRef = useRef<SttRouterController | null>(null);
   if (!controllerRef.current) {
@@ -763,8 +944,65 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
         inputMode: optionsRef.current.getInputMode?.() ?? inputModeRef.current,
         platform: detectPlatform(),
         browser: detectBrowser(),
+        audioContextSampleRate: audioContextSampleRateRef.current ?? undefined,
       }),
-      onFinalTranscript: (transcript, meta) => optionsRef.current.onFinalTranscript(transcript, meta),
+      onFinalTranscript: (transcript, meta) => {
+        if (isSttDebugEnabled()) {
+          const actualContextRate = audioContextSampleRateRef.current;
+          const actualChunkDuration = calculateChunkDurationMsActual(
+            actualContextRate,
+            STT_PROCESSOR_BUFFER_SIZE,
+          );
+          const firstAppend = firstPcmAppendAtRef.current;
+          const lastAppend = lastPcmAppendAtRef.current;
+
+          // actualPcmCaptureDurationMs는 PCM이 실제로 append된 구간(첫 appendPcm ~ 마지막 appendPcm)만을 측정합니다.
+          // VAD 침묵 900ms 대기나 STT API 왕복 지연 시간은 포함하지 않습니다.
+          const actualPcmCaptureDurationMs = lastAppend > firstAppend
+            ? (lastAppend - firstAppend)
+            : (turnPcmChunkCountRef.current * actualChunkDuration);
+
+          const speechEnd = speechEndWallClockRef.current || Date.now();
+          const speechStart = speechStartWallClockRef.current || (speechEnd - meta.totalLatencyMs);
+          const actualSpeechDurationMs = Math.max(0, speechEnd - speechStart);
+
+          const utteranceTelemetry: SttUtteranceTelemetry = {
+            utterance_id: meta.childTurnId,
+            provider: meta.provider,
+            audioContextSampleRate: actualContextRate,
+            trackSampleRate: trackSampleRateRef.current,
+            configuredSampleRate: STT_SAMPLE_RATE,
+            speechStartWallClock: speechStart,
+            speechEndWallClock: speechEnd,
+            actualSpeechDurationMs,
+            pcmChunkCount: turnPcmChunkCountRef.current,
+            pcmByteLength: turnPcmByteLengthRef.current,
+            processorBufferSize: STT_PROCESSOR_BUFFER_SIZE,
+            declaredGcpSampleRate: STT_SAMPLE_RATE,
+            sttRequestAt: speechStart,
+            sttFinalAt: Date.now(),
+            sttLatencyMs: meta.totalLatencyMs,
+            effectivePcmSampleRate: calculateEffectivePcmSampleRate(
+              turnPcmByteLengthRef.current,
+              actualPcmCaptureDurationMs,
+            ),
+            micOpenedAt: micOpenedAtRef.current,
+            firstVoiceChunkAt: firstVoiceChunkAtRef.current,
+            firstPcmAppendAt: firstAppend,
+            onsetDiscardedMs: calculateOnsetDiscardedMs(
+              onsetDiscardedCallbacksRef.current,
+              actualChunkDuration,
+            ),
+            actualPcmCaptureDurationMs,
+            chunkDurationMsActual: actualChunkDuration,
+            chunkDurationMsAssumed: STT_CHUNK_DURATION_MS,
+            verdict: getSampleRateVerdict(actualContextRate),
+          };
+
+          recordSttUtteranceTelemetry(utteranceTelemetry);
+        }
+        optionsRef.current.onFinalTranscript(transcript, meta);
+      },
       onFailure: (reason) => optionsRef.current.onFailure(reason),
       onStateChange: setState,
       onInterimTranscript: setInterimTranscript,
@@ -778,6 +1016,15 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
   }, []);
 
   const startTurn = useCallback(() => {
+    if (isSttDebugEnabled()) {
+      speechStartWallClockRef.current = Date.now();
+      onsetDiscardedCallbacksRef.current = preVoiceCallbacksRef.current;
+      preVoiceCallbacksRef.current = 0;
+      firstPcmAppendAtRef.current = 0;
+      lastPcmAppendAtRef.current = 0;
+      turnPcmChunkCountRef.current = 0;
+      turnPcmByteLengthRef.current = 0;
+    }
     controllerRef.current?.startTurn();
     resetVad();
   }, [resetVad]);
@@ -792,11 +1039,21 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
       optionsRef.current.onEmptyAudio?.();
       return;
     }
+    if (isSttDebugEnabled()) {
+      speechEndWallClockRef.current = Date.now();
+    }
     controller.endTurn();
     resetVad();
   }, [resetVad]);
 
   const cancel = useCallback(() => {
+    if (isSttDebugEnabled()) {
+      preVoiceCallbacksRef.current = 0;
+      turnPcmChunkCountRef.current = 0;
+      turnPcmByteLengthRef.current = 0;
+      firstPcmAppendAtRef.current = 0;
+      lastPcmAppendAtRef.current = 0;
+    }
     controllerRef.current?.cancel();
     setInterimTranscript("");
     resetVad();
@@ -854,6 +1111,32 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
       try {
         const inputContext = new AudioContext({ sampleRate: STT_SAMPLE_RATE });
         inputContextRef.current = inputContext;
+        const actualContextRate = inputContext.sampleRate;
+        const audioTrack = stream.getAudioTracks?.()?.[0] ?? stream.getTracks?.()?.[0];
+        const trackSettings = audioTrack?.getSettings?.();
+        const actualTrackRate = trackSettings?.sampleRate;
+        const actualTrackChannels = trackSettings?.channelCount;
+        const micOpenedAt = Date.now();
+
+        micOpenedAtRef.current = micOpenedAt;
+        audioContextSampleRateRef.current = actualContextRate;
+        trackSampleRateRef.current = actualTrackRate;
+        trackChannelCountRef.current = actualTrackChannels;
+
+        if (isSttDebugEnabled()) {
+          recordSttCaptureTelemetry({
+            audioContextSampleRate: actualContextRate,
+            trackSampleRate: actualTrackRate,
+            trackChannelCount: actualTrackChannels,
+            configuredSampleRate: STT_SAMPLE_RATE,
+            processorBufferSize: STT_PROCESSOR_BUFFER_SIZE,
+            chunkDurationMsActual: calculateChunkDurationMsActual(actualContextRate, STT_PROCESSOR_BUFFER_SIZE),
+            chunkDurationMsAssumed: STT_CHUNK_DURATION_MS,
+            verdict: getSampleRateVerdict(actualContextRate),
+            micOpenedAt,
+          });
+        }
+
         const source = inputContext.createMediaStreamSource(stream);
         const processor = inputContext.createScriptProcessor(
           STT_PROCESSOR_BUFFER_SIZE,
@@ -874,6 +1157,12 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
         const rms = Math.sqrt(sumSquares / float32.length);
         const hasVoice = rms >= STT_RMS_SILENCE_THRESHOLD;
 
+        if (isSttDebugEnabled()) {
+          if (!hasVoice && controller.state !== "LISTENING") {
+            preVoiceCallbacksRef.current += 1;
+          }
+        }
+
         // Both modes gate the Browser recognizer's start on actual RMS voice,
         // not on mic-enabled alone. Starting it the instant the mic opens (the
         // old manual-mode behavior) meant a child who paused a few seconds
@@ -884,6 +1173,16 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
           hasVoice
           && controller.state !== "LISTENING"
         ) {
+          if (isSttDebugEnabled()) {
+            firstVoiceChunkAtRef.current = Date.now();
+            onsetDiscardedCallbacksRef.current = preVoiceCallbacksRef.current;
+            preVoiceCallbacksRef.current = 0;
+            speechStartWallClockRef.current = Date.now();
+            firstPcmAppendAtRef.current = 0;
+            lastPcmAppendAtRef.current = 0;
+            turnPcmChunkCountRef.current = 0;
+            turnPcmByteLengthRef.current = 0;
+          }
           controller.startTurn();
         }
         if (controller.state !== "LISTENING") return;
@@ -892,6 +1191,17 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
         for (let index = 0; index < float32.length; index += 1) {
           pcm[index] = Math.max(-32768, Math.min(32767, float32[index] * 32768));
         }
+
+        if (isSttDebugEnabled()) {
+          const now = Date.now();
+          if (turnPcmChunkCountRef.current === 0) {
+            firstPcmAppendAtRef.current = now;
+          }
+          lastPcmAppendAtRef.current = now;
+          turnPcmChunkCountRef.current += 1;
+          turnPcmByteLengthRef.current += pcm.byteLength;
+        }
+
         controller.appendPcm(new Uint8Array(pcm.buffer.slice(0)));
 
         if (hasVoice) {
@@ -906,19 +1216,27 @@ export const useSttRouter = (options: UseSttRouterInternalOptions): UseSttRouter
             && Date.now() - speechStartedAtRef.current >= STT_MAX_UTTERANCE_MS
           ) {
             optionsRef.current.onSpeechEnd?.(controller.currentChildTurnId);
+            if (isSttDebugEnabled()) {
+              speechEndWallClockRef.current = Date.now();
+            }
             controller.endTurn();
             resetVad();
           }
           return;
         }
 
-        silenceMsRef.current += STT_CHUNK_DURATION_MS;
+        // 고정 128ms가 아니라 이 AudioContext의 실제 레이트 기준으로 누적한다.
+        // 16kHz면 128과 같고, 48kHz면 42.67이 되어 900ms 임계가 제때 걸린다.
+        silenceMsRef.current += chunkDurationMsFor(inputContextRef.current?.sampleRate);
         if (
           inputModeRef.current === "auto"
           && speechDetectedRef.current
           && silenceMsRef.current >= STT_SILENCE_MS_TO_FINALIZE
         ) {
           optionsRef.current.onSpeechEnd?.(controller.currentChildTurnId);
+          if (isSttDebugEnabled()) {
+            speechEndWallClockRef.current = Date.now();
+          }
           controller.endTurn();
           resetVad();
         }

@@ -10,6 +10,9 @@ import { checkApprovalForSession } from "@/lib/plan/approvalGuard";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 
+/** 클라이언트가 실제 레이트를 못 알려줄 때의 기존 동작값. */
+const DEFAULT_STT_SAMPLE_RATE_HERTZ = 16000;
+
 // LINEAR16/16kHz/mono 고정 인코딩 기준 — 1초 = 16000 샘플 * 2바이트
 const PCM16_BYTES_PER_SEC = 16000 * 2;
 
@@ -34,7 +37,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "STT not configured" }, { status: 500 });
   }
 
-  let body: { audioBase64?: string; sessionId?: string; childTurnId?: string };
+  let body: {
+    audioBase64?: string;
+    sessionId?: string;
+    childTurnId?: string;
+    /** 클라이언트가 실제로 캡처한 레이트. 브라우저가 16000 요청을 무시할 수 있다. */
+    sampleRateHertz?: number;
+  };
   try {
     body = await req.json();
   } catch (err) {
@@ -52,7 +61,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "sessionId required" }, { status: 400 });
   }
 
-  console.log("[mission/stt] start", { sessionId: body.sessionId, childTurnId: body.childTurnId, mode: "stt_tts" });
+  // 2026-08-17: 예전에는 16000을 고정 신고했다. 오디오가 실제 48kHz인데 16kHz라고
+  // 알리면 GCP가 3배 느린 소리로 해석해 인식이 무너진다. 클라이언트가 보낸 실제
+  // 레이트를 그대로 쓰되, 값이 없거나 GCP 허용 범위(8k~48k)를 벗어나면 기존 기본값을
+  // 유지해 동작이 바뀌지 않게 한다.
+  const GCP_MIN_SAMPLE_RATE = 8000;
+  const GCP_MAX_SAMPLE_RATE = 48000;
+  const reportedRate = body.sampleRateHertz;
+  const effectiveSampleRateHertz =
+    typeof reportedRate === "number"
+    && Number.isFinite(reportedRate)
+    && reportedRate >= GCP_MIN_SAMPLE_RATE
+    && reportedRate <= GCP_MAX_SAMPLE_RATE
+      ? Math.round(reportedRate)
+      : DEFAULT_STT_SAMPLE_RATE_HERTZ;
+
+  console.log("[mission/stt] start", {
+    sessionId: body.sessionId,
+    childTurnId: body.childTurnId,
+    mode: "stt_tts",
+    sampleRateHertz: effectiveSampleRateHertz,
+    sampleRateReported: reportedRate ?? null,
+  });
 
   const consentBlocked = await checkConsentForSession(body.sessionId);
   if (consentBlocked) {
@@ -157,7 +187,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           config: {
             encoding: "LINEAR16",
-            sampleRateHertz: 16000,
+            sampleRateHertz: effectiveSampleRateHertz,
             languageCode: "ko-KR",
             model: "default",
             audioChannelCount: 1,

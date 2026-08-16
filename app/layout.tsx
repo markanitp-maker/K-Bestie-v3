@@ -86,6 +86,7 @@ import { PwaServiceWorker } from "@/components/PwaServiceWorker";
 import { StaleClientRecovery } from "@/components/StaleClientRecovery";
 import { NotificationBadgeSync } from "@/components/notifications/NotificationBadgeSync";
 import { AppSessionTracking } from "@/hooks/useAppSessionTracking";
+import { SttDebugOverlay } from "@/components/debug/SttDebugOverlay";
 
 export default function RootLayout({
   children,
@@ -114,6 +115,7 @@ export default function RootLayout({
         <StaleClientRecovery />
         <NotificationBadgeSync />
         <AppSessionTracking />
+        <SttDebugOverlay />
       </body>
     </html>
   );
