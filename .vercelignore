@@ -33,6 +33,17 @@ worktrees/
 # 워크트리 10개가 통째로 업로드돼 파일 17,730개로 Vercel 상한(15,000)을 넘겨
 # 배포가 실패했다. 두 형태를 모두 제외한다.
 .worktrees/
+
+# 2026-08-16 실측: 아래 임시 폴더 4개가 총 1,775개 파일을 배포에 실어보내고 있었다.
+# 전부 git 추적 대상이 아닌 일회성 산출물이라 배포와 무관하다.
+# (`/scratch/`만 막혀 있고 나머지 세 개는 그대로 통과하고 있었다)
+scratch_audit/
+scratch_curl/
+scratch_pg/
+
+# vertex-live-relay는 Cloud Run에 따로 배포되는 별도 서비스다. 웹앱 번들에 들어갈
+# 이유가 없는데 node_modules까지 959개 파일이 통째로 올라가고 있었다.
+services/
 candidate-release/
 e2e-results/
 # Agent tooling state. .claude/worktrees/ holds six FULL copies of this repo —
