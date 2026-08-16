@@ -1,0 +1,66 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  WORD_CHAIN_DICTIONARY,
+  WORD_SET,
+  ALIAS_MAP,
+  BY_FIRST_SYLLABLE,
+  lookupWord,
+} from "./dictionaryIndex";
+import { DICTIONARY_PART1 } from "./dictionary.part1";
+import { DICTIONARY_PART2 } from "./dictionary.part2";
+
+describe("WordChain DictionaryIndex", () => {
+  it("WORD_CHAIN_DICTIONARY는 part1(284개)과 part2(380개)의 합본으로 총 664개여야 한다", () => {
+    assert.equal(DICTIONARY_PART1.length, 284);
+    assert.equal(DICTIONARY_PART2.length, 380);
+    assert.equal(WORD_CHAIN_DICTIONARY.length, 664);
+  });
+
+  it("사전 합본에 중복된 단어가 없어야 한다", () => {
+    const seen = new Set<string>();
+    const duplicates: string[] = [];
+    for (const entry of WORD_CHAIN_DICTIONARY) {
+      if (seen.has(entry.normalizedWord)) {
+        duplicates.push(entry.normalizedWord);
+      }
+      seen.add(entry.normalizedWord);
+    }
+    assert.deepEqual(
+      duplicates,
+      [],
+      `사전 합본에 중복 단어가 있습니다: ${duplicates.join(", ")}`
+    );
+  });
+
+  it("WORD_SET은 모든 등록 단어를 포함해야 한다", () => {
+    assert.ok(WORD_SET.size >= 664);
+    assert.ok(WORD_SET.has("가방"));
+    assert.ok(WORD_SET.has("하늘"));
+    assert.ok(!WORD_SET.has("없는단어입니다"));
+  });
+
+  it("BY_FIRST_SYLLABLE은 첫 음절별로 단어를 올바르게 색인해야 한다", () => {
+    const gaWords = BY_FIRST_SYLLABLE.get("가");
+    assert.ok(gaWords && gaWords.length > 0);
+    for (const entry of gaWords) {
+      assert.equal(entry.firstSyllable, "가");
+    }
+  });
+
+  it("lookupWord는 공백 정규화 후 단어를 정확히 찾아야 한다", () => {
+    const found1 = lookupWord("가방");
+    assert.ok(found1);
+    assert.equal(found1.word, "가방");
+
+    const foundWithSpaces = lookupWord("  가  방  ");
+    assert.ok(foundWithSpaces);
+    assert.equal(foundWithSpaces.word, "가방");
+  });
+
+  it("lookupWord는 등록되지 않은 단어에 대해 null을 반환해야 한다", () => {
+    assert.equal(lookupWord("없는외계어단어"), null);
+    assert.equal(lookupWord(""), null);
+    assert.equal(lookupWord("   "), null);
+  });
+});
