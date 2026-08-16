@@ -209,3 +209,10 @@ test("079: 기존 DECLINED·SKIPPED 정의와 JSON 계약이 유지된다", asyn
   assert.ok(prompt.includes("SKIPPED:"), "SKIPPED 정의 누락");
   assert.ok(prompt.includes("evidenceSource는 모든 원소에서 반드시 child_utterance"), "JSON 계약 누락");
 });
+
+test("079: 복합 질문에 하나만 답하면 PARTIAL이라는 규칙이 있다", async () => {
+  // 리뷰 지적: "누구랑 뭐 했어?"에 "민준이"만 답해도 통과할 위험이 있었다.
+  const prompt = await capturePrompt();
+  assert.ok(prompt.includes("두 가지 이상을 함께 물었다면"), "복합 질문 규칙 누락");
+  assert.ok(prompt.includes("하나만 답한 경우는 PARTIAL"), "복합 질문 판정 누락");
+});
