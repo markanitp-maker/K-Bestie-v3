@@ -16,7 +16,7 @@ import { recordTopicUsage } from "./semanticTopicHistory";
 import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn } from "./responseGenerator";
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
-import { runChosungTurn } from "./chosungGame/gameOrchestrator";
+import { routePlaySkillTurn } from "./play/skillRouter";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById } from "./play/skillRegistry";
@@ -248,10 +248,14 @@ export async function respond(
 
   // 5-1) 놀이 제안 거절 기록 — 아이가 이번 턴에 명확히 거절했으면 쿨다운을 기록하여 반복 제안 차단
   if (signals.hasPlayRejection && input.childId) {
-    await recordPlayRejection(deps.db, input.childId, topicMode);
+    try {
+      await recordPlayRejection(deps.db, input.childId, topicMode);
+    } catch (err) {
+      console.error("[k-conversation/index] recordPlayRejection failed:", err);
+    }
   }
 
-  // 5-2) 활성 게임 세션 존재 여부 확인
+  // 5-2) 활성 놀이 세션 존재 여부 확인 (Registry 순회)
   let hasActivePlaySession = false;
   if (input.childId) {
     for (const skill of PLAY_SKILL_REGISTRY) {
@@ -261,13 +265,45 @@ export async function respond(
           hasActivePlaySession = true;
           break;
         }
-      } catch {
-        // fail-open
+      } catch (err) {
+        console.error("[k-conversation/index] getActiveSession failed:", err);
       }
     }
   }
 
-  // 6) Action 선택 — 방향만 결정, 고정 문구 아님.
+  // 6) 놀이 스킬 턴 처리 (§3-3, §3-22) — Router를 통해 활성 세션 또는 직접 요청 dispatch.
+  // Router가 handled: true면 instruction을 adapterInstruction 앞에 결합하고,
+  // handled: false면 기존 자유대화 흐름을 그대로 유지한다.
+  let playSkillInstruction: string | undefined;
+  let playSkillHandled = false;
+  const gradeRaw =
+    input.gradeRaw ??
+    coreCtx.peerPersona.realGrade ??
+    coreCtx.peerPersona.gradeLabel;
+
+  if (input.childId && input.sessionId) {
+    try {
+      const playTurnResult = await routePlaySkillTurn({
+        db: deps.db,
+        childId: input.childId,
+        chatSessionId: input.sessionId,
+        gradeRaw,
+        utterance: input.currentUtterance,
+        signals,
+      });
+
+      if (playTurnResult.handled) {
+        playSkillHandled = true;
+        if (playTurnResult.instruction) {
+          playSkillInstruction = playTurnResult.instruction;
+        }
+      }
+    } catch (error) {
+      console.error("[k-conversation/index] play turn failed:", error);
+    }
+  }
+
+  // 6-1) Action 선택 — 방향만 결정, 고정 문구 아님.
   let action = selectAction({
     signals,
     boredom,
@@ -276,64 +312,45 @@ export async function respond(
     recentActions: deps.recentActions ?? [],
   });
 
-  // 6-0) PLAY_PROPOSAL 제안 결정 — Action Selector가 후보를 만들었거나 놀이 요청 신호가 있을 때
+  // 6-2) PLAY_PROPOSAL 제안 결정 — 게임이 처리되지 않은 턴에만 제안 가능
   let playProposalInstruction: string | undefined;
-  if (action === "PLAY_PROPOSAL" || signals.hasPlayRequestWithoutTarget) {
-    const proposalDecision = await decidePlayProposal({
-      db: deps.db,
-      childId: input.childId,
-      signals,
-      boredom: boredom.level,
-      hasActivePlaySession,
-      sessionRejected: false,
-    });
+  if (!playSkillHandled && (action === "PLAY_PROPOSAL" || signals.hasPlayRequestWithoutTarget)) {
+    try {
+      const proposalDecision = await decidePlayProposal({
+        db: deps.db,
+        childId: input.childId,
+        signals,
+        boredom: boredom.level,
+        hasActivePlaySession,
+        sessionRejected: false,
+      });
 
-    if (proposalDecision.shouldPropose && proposalDecision.skillId) {
-      action = "PLAY_PROPOSAL";
-      const proposedSkill = findSkillById(proposalDecision.skillId);
-      if (proposedSkill) {
-        playProposalInstruction = `[놀이 제안 지침]\n아이에게 '${proposedSkill.proposal.label}'(${proposedSkill.proposal.shortDescription}) 놀이를 해보자고 친구처럼 자연스럽게 제안해줘. 규칙을 구구절절 설명하지 말고 같이 하자고 가볍게 권유해.`;
+      if (proposalDecision.shouldPropose && proposalDecision.skillId) {
+        action = "PLAY_PROPOSAL";
+        const proposedSkill = findSkillById(proposalDecision.skillId);
+        if (proposedSkill) {
+          playProposalInstruction = `[놀이 제안 지침]\n아이에게 '${proposedSkill.proposal.label}'(${proposedSkill.proposal.shortDescription}) 놀이를 해보자고 친구처럼 자연스럽게 제안해줘. 규칙을 구구절절 설명하지 말고 같이 하자고 가볍게 권유해.`;
+        }
+        try {
+          await recordPlayProposal(deps.db, input.childId, proposalDecision.skillId, topicMode);
+        } catch (err) {
+          console.error("[k-conversation/index] recordPlayProposal failed:", err);
+        }
+      } else if (action === "PLAY_PROPOSAL") {
+        action = "FOLLOW_UP";
       }
-      await recordPlayProposal(deps.db, input.childId, proposalDecision.skillId, topicMode);
-    } else if (action === "PLAY_PROPOSAL") {
-      action = "FOLLOW_UP";
+    } catch (error) {
+      console.error("[k-conversation/index] decidePlayProposal failed:", error);
+      if (action === "PLAY_PROPOSAL") {
+        action = "FOLLOW_UP";
+      }
     }
+  } else if (playSkillHandled && action === "PLAY_PROPOSAL") {
+    action = "FOLLOW_UP";
   }
-
-  // 6-1) 초성게임 턴 처리 — 세션 상태 조회 및 deterministic 출제/판정.
-  // runChosungTurn이 handled: true면 instruction을 adapterInstruction 앞에 결합하고,
-  // handled: false면 기존 흐름을 그대로 유지한다.
-  let chosungInstruction: string | undefined;
-  const gradeRaw =
-    input.gradeRaw ??
-    coreCtx.peerPersona.realGrade ??
-    coreCtx.peerPersona.gradeLabel;
-
-  if (input.childId && input.sessionId) {
-    const chosungResult = await runChosungTurn({
-      db: deps.db,
-      childId: input.childId,
-      chatSessionId: input.sessionId,
-      gradeRaw,
-      utterance: input.currentUtterance,
-      signals: {
-        hasChosungGameStart: signals.hasChosungGameStart,
-        hasChosungAnswerAttempt: signals.hasChosungAnswerAttempt,
-        hasChosungHintRequest: signals.hasChosungHintRequest,
-      },
-    });
-
-    if (chosungResult.handled && chosungResult.instruction) {
-      chosungInstruction = chosungResult.instruction;
-    }
-  }
-
-  const effectiveAction: ConversationAction = chosungInstruction
-    ? "PLAYFUL_GAME_CHOSUNG"
-    : action;
 
   const combinedAdapterInstruction = [
-    chosungInstruction,
+    playSkillInstruction,
     playProposalInstruction,
     deps.adapterInstruction,
   ]
@@ -351,7 +368,7 @@ export async function respond(
     modelId: deps.modelId,
     input: {
       mode: input.mode,
-      action: effectiveAction,
+      action,
       corePersonaFragment,
       gradePersonaFragment,
       relationshipFragment,
@@ -363,26 +380,24 @@ export async function respond(
     },
   });
 
-  // 8) Semantic Topic History 기록. codex-rv 3차 지적 반영: "매 턴 K 응답도 무조건
-  // initiatedBy='k'로 기록"하면 K가 그냥 아이 주제에 맞춰 대답한 것까지 "K가 먼저 꺼낸
-  // 주제"로 오염되고, 같은 semantic_group 행에 child/k 기록이 동시에 경합해 last_initiated_by가
-  // 완료 순서에 따라 흔들린다. TOPIC_SHIFT는 정의상 "K가 의도적으로 다른 주제로 넘어가는"
-  // 유일한 Action이므로, K-initiated 기록은 이때만 남긴다 — 나머지 Action은 전부 아이가
-  // 꺼낸 주제에 반응하는 것이므로 child 기록만으로 충분하고, 대부분 서로 다른
-  // semantic_group을 가리켜 행 경합도 자연히 사라진다.
-  await recordTopicUsage(deps.db, input.childId, semanticGroup, topicMode, "child");
-  if (effectiveAction === "TOPIC_SHIFT") {
-    const kResponseSemanticGroup = estimateSemanticGroup(extractUtteranceSignals(generated.text));
-    if (kResponseSemanticGroup !== semanticGroup) {
-      await recordTopicUsage(deps.db, input.childId, kResponseSemanticGroup, topicMode, "k");
+  // 8) Semantic Topic History 기록.
+  try {
+    await recordTopicUsage(deps.db, input.childId, semanticGroup, topicMode, "child");
+    if (action === "TOPIC_SHIFT") {
+      const kResponseSemanticGroup = estimateSemanticGroup(extractUtteranceSignals(generated.text));
+      if (kResponseSemanticGroup !== semanticGroup) {
+        await recordTopicUsage(deps.db, input.childId, kResponseSemanticGroup, topicMode, "k");
+      }
+    } else if (action === "PLAY_PROPOSAL") {
+      await recordTopicUsage(deps.db, input.childId, "PLAY_PROPOSAL", topicMode, "k");
     }
-  } else if (effectiveAction === "PLAY_PROPOSAL") {
-    await recordTopicUsage(deps.db, input.childId, "PLAY_PROPOSAL", topicMode, "k");
+  } catch (err) {
+    console.error("[k-conversation/index] recordTopicUsage failed:", err);
   }
 
   return {
     text: generated.text,
-    action: effectiveAction,
+    action,
     category: "generated",
     boredom,
     memoryTiersUsed: memorySnapshot.tiersUsed,
