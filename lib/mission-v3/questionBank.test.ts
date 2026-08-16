@@ -19,6 +19,7 @@ import {
   loadMissionQuestionGoalCandidates,
   recordMissionQuestionTopicUsage,
   toGoalCandidate,
+  toMetadataRow,
   type MissionQuestionGoalCandidate,
   type MissionQuestionMetadataRow,
 } from "./questionBank.js";
@@ -165,19 +166,49 @@ const metadataQuestion: MissionQuestionMetadataRow = {
 };
 
 test("질문 metadata는 Phase 1 GoalCandidate 계약의 semanticGroup/priority/promptInstruction로 변환된다", () => {
-  const periodic = toGoalCandidate(metadataQuestion, "tue");
-  assert.equal(periodic.semanticGroup, "PEER_CONNECTION");
-  assert.equal(periodic.priority, "P1");
-  assert.match(periodic.promptInstruction, /peer_connection/);
-  assert.match(periodic.promptInstruction, /이번 주에 친구와 제일 즐거웠던 일/);
+  const weekdayMatch = toGoalCandidate(metadataQuestion, "tue");
+  assert.equal(weekdayMatch.semanticGroup, "PEER_CONNECTION");
+  assert.equal(weekdayMatch.priority, "P1");
+  assert.match(weekdayMatch.promptInstruction, /peer_connection/);
+  assert.match(weekdayMatch.promptInstruction, /이번 주에 친구와 제일 즐거웠던 일/);
 
-  const weekday = toGoalCandidate({ ...metadataQuestion, periodicity: "flexible" }, "tue");
-  const fallback = toGoalCandidate({ ...metadataQuestion, periodicity: "flexible" }, "fri");
-  assert.equal(weekday.priority, "P2");
+  const periodicOnly = toGoalCandidate({ ...metadataQuestion, weekdayAffinity: [] }, "fri");
+  assert.equal(periodicOnly.priority, "P2");
+
+  const fallback = toGoalCandidate({ ...metadataQuestion, periodicity: "flexible", weekdayAffinity: [], memoryUsable: false }, "fri");
   assert.equal(fallback.priority, "P3");
 });
 
-test("FREE_CHAT에서 K가 먼저 쓴 semantic group은 같은 공용 테이블을 보는 MISSION 질문 후보에서 제외된다", async () => {
+test("filterQuestionCandidatesByCooldown은 K가 먼저 쓴 semantic group을 제외한다", async () => {
+  const { db } = makeDb();
+  const freeChatSemanticGroup = estimateSemanticGroup(extractUtteranceSignals("오늘 정말 좋았어."));
+  assert.equal(freeChatSemanticGroup, "MOOD_CHECK");
+  await recordTopicUsage(db, "child-1", freeChatSemanticGroup, "free_chat", "k", 3);
+
+  const candidate1 = toGoalCandidate(toMetadataRow(makeQuestionRow()), "mon");
+  const candidate2 = toGoalCandidate(
+    toMetadataRow(makeQuestionRow({
+      id: "question-mood",
+      question_text: "오늘 기분을 색깔로 말하면 무슨 색이야?",
+      semantic_group: "MOOD_CHECK",
+      topic: "mood_check",
+      weekday_affinity: [],
+      answer_mode: "metaphor",
+    })),
+    "mon",
+  );
+
+  const filtered = await filterQuestionCandidatesByCooldown({
+    db,
+    childId: "child-1",
+    candidates: [candidate1, candidate2],
+    initiatedBy: "k",
+  });
+
+  assert.deepEqual(filtered.map((candidate) => candidate.semanticGroup), ["SCHOOL_EXPERIENCE"]);
+});
+
+test("loadMissionQuestionGoalCandidates는 non-cooldown을 먼저 두고 cooldown 후보를 뒤에 배치한다", async () => {
   const { db } = makeDb([
     makeQuestionRow(),
     makeQuestionRow({
@@ -189,9 +220,7 @@ test("FREE_CHAT에서 K가 먼저 쓴 semantic group은 같은 공용 테이블�
       answer_mode: "metaphor",
     }),
   ]);
-  const freeChatSemanticGroup = estimateSemanticGroup(extractUtteranceSignals("오늘 정말 좋았어."));
-  assert.equal(freeChatSemanticGroup, "MOOD_CHECK");
-  await recordTopicUsage(db, "child-1", freeChatSemanticGroup, "free_chat", "k", 3);
+  await recordTopicUsage(db, "child-1", "MOOD_CHECK", "free_chat", "k", 3);
 
   const candidates = await loadMissionQuestionGoalCandidates({
     db,
@@ -200,7 +229,9 @@ test("FREE_CHAT에서 K가 먼저 쓴 semantic group은 같은 공용 테이블�
     weekday: "mon",
   });
 
-  assert.deepEqual(candidates.map((candidate) => candidate.semanticGroup), ["SCHOOL_EXPERIENCE"]);
+  assert.equal(candidates[0].semanticGroup, "SCHOOL_EXPERIENCE");
+  assert.equal(candidates[1].semanticGroup, "MOOD_CHECK");
+  assert.equal(candidates[1].priority, "P3");
 });
 
 test("applyCooldown=false면 cooldown 중인 주제도 후보에 남는다(확정 Goal instruction 복원용)", async () => {
@@ -222,11 +253,8 @@ test("applyCooldown=false면 cooldown 중인 주제도 후보에 남는다(확�
   const filtered = await loadMissionQuestionGoalCandidates({
     db, childId: "child-1", grade: 4, weekday: "mon",
   });
-  assert.deepEqual(
-    filtered.map((candidate) => candidate.semanticGroup),
-    ["SCHOOL_EXPERIENCE"],
-    "기본값은 기존대로 cooldown을 적용해야 한다",
-  );
+  assert.equal(filtered[0].semanticGroup, "SCHOOL_EXPERIENCE");
+  assert.equal(filtered[1].semanticGroup, "MOOD_CHECK");
 
   const restored = await loadMissionQuestionGoalCandidates({
     db, childId: "child-1", grade: 4, weekday: "mon", applyCooldown: false,

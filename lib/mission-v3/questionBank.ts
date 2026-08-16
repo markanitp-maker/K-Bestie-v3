@@ -8,6 +8,8 @@ import {
 } from "@/lib/k-conversation/semanticTopicHistory";
 import type { GoalCandidate } from "@/lib/mission-v3/goalEngine";
 
+import type { RelationshipCalendarStage } from "@/lib/relationship/calendarStage";
+
 export type MissionWeekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 export type QuestionPeriodicity = "onboarding_once" | "flexible" | "weekly" | "monthly" | "quarterly";
 export type QuestionSensitivity = "low" | "medium" | "high";
@@ -75,7 +77,7 @@ const toWeekdays = (values: string[]): MissionWeekday[] => values.filter(
   (value): value is MissionWeekday => WEEKDAYS.has(value as MissionWeekday),
 );
 
-const toMetadataRow = (row: MissionQuestionDbRow): MissionQuestionMetadataRow => ({
+export const toMetadataRow = (row: MissionQuestionDbRow): MissionQuestionMetadataRow => ({
   id: row.id,
   questionText: row.question_text,
   applicableGrades: row.applicable_grades,
@@ -124,18 +126,62 @@ const answerInstruction = (answerMode: string): string => {
 };
 
 /**
- * Phase 1 GoalCandidate 계약을 그대로 만족시키는 질문은행 adapter다.
- * 주기 질문은 P1, 오늘 요일과 affinity가 맞는 질문은 P2, 나머지는 P3다.
+ * 078 Phase 1 우선순위 분류:
+ * 1) 관계단계/친해지기 (W1 초기: sensitivity low)
+ * 2) 요일·생활맥락 (오늘 요일 일치)
+ * 3) 최근 관심사/기억 (memoryUsable)
+ * 4) 주기 (periodicity !== 'flexible')
+ * 5) 일반
+ */
+export const getCandidateTier = (
+  question: Pick<MissionQuestionMetadataRow, "weekdayAffinity" | "periodicity" | "sensitivity" | "memoryUsable">,
+  weekday: MissionWeekday,
+  effectiveStage?: RelationshipCalendarStage | null,
+): number => {
+  if (effectiveStage === "W1" && question.sensitivity === "low") {
+    return 1;
+  }
+  if (question.weekdayAffinity?.includes(weekday)) {
+    return 2;
+  }
+  if (question.memoryUsable) {
+    return 3;
+  }
+  if (question.periodicity && question.periodicity !== "flexible") {
+    return 4;
+  }
+  return 5;
+};
+
+/**
+ * Phase 1 GoalCandidate 계약을 만족시키는 질문은행 adapter다.
+ * - W1: 친해지기(low sensitivity) P1, 요일/기억 P2, 주기/일반 P3
+ * - W1 외 / null: 요일 P1, 기억/주기 P2, 일반 P3 (요일이 주기보다 위)
  */
 export const toGoalCandidate = (
   question: MissionQuestionMetadataRow,
   weekday: MissionWeekday,
+  effectiveStage?: RelationshipCalendarStage | null,
 ): MissionQuestionGoalCandidate => {
-  const priority: GoalCandidate["priority"] = question.periodicity !== "flexible"
-    ? "P1"
-    : question.weekdayAffinity.includes(weekday)
-      ? "P2"
-      : "P3";
+  const tier = getCandidateTier(question, weekday, effectiveStage);
+  let priority: GoalCandidate["priority"];
+  if (effectiveStage === "W1") {
+    if (tier === 1) {
+      priority = "P1";
+    } else if (tier === 2 || tier === 3) {
+      priority = "P2";
+    } else {
+      priority = "P3";
+    }
+  } else {
+    if (tier === 2) {
+      priority = "P1";
+    } else if (tier === 3 || tier === 4) {
+      priority = "P2";
+    } else {
+      priority = "P3";
+    }
+  }
 
   return {
     questionId: question.id,
@@ -185,17 +231,16 @@ export const filterQuestionCandidatesByCooldown = async (input: {
 
 /**
  * applyCooldown=false는 "이번 세션에 이미 확정 저장된 Goal의 instruction을 복원"하는
- * 용도 전용이다(2026-08-16 Production 장애). cooldown은 세션 시작 시 어떤 주제를
- * 새로 고를지에만 적용해야 하는데, 이미 conversation_goals에 저장된 Goal까지 매 턴
- * 다시 필터링하면 그 사이 cooldown에 걸린 semantic_group의 instruction이 사라져
- * `/turn`이 500으로 죽고 미션이 영구히 갇힌다. 신규 Goal 선택 경로는 기본값 그대로
- * cooldown을 적용한다.
+ * 용도 전용이다(2026-08-16 Production 장애). 신규 Goal 선택 경로는 기본값 그대로
+ * cooldown을 적용하되, non-cooldown 후보를 우선 채우고 부족하면 cooldown 후보를
+ * 마지막 사용이 가장 오래된 순으로 backfill하여 10개 불변식을 지킨다.
  */
 export const loadMissionQuestionGoalCandidates = async (input: {
   db: SupabaseClient;
   childId: string;
   grade: number;
   weekday: MissionWeekday;
+  effectiveStage?: RelationshipCalendarStage | null;
   applyCooldown?: boolean;
 }): Promise<MissionQuestionGoalCandidate[]> => {
   if (!Number.isInteger(input.grade) || input.grade < 1 || input.grade > 6) {
@@ -232,26 +277,95 @@ export const loadMissionQuestionGoalCandidates = async (input: {
   const recentRank = new Map(
     recentTopics.map((topic, index) => [normalizeSemanticGroup(topic.semanticGroup), index]),
   );
+  const lastUsedMap = new Map(
+    recentTopics.map((topic) => [normalizeSemanticGroup(topic.semanticGroup), topic.lastUsedAt]),
+  );
 
-  const candidates = ((questionResult.value.data ?? []) as MissionQuestionDbRow[])
-    .map(toMetadataRow)
-    .map((question) => toGoalCandidate(question, input.weekday))
-    .sort((left, right) => {
-      const priorityDifference = PRIORITY_ORDER[left.priority] - PRIORITY_ORDER[right.priority];
+  const metadataRows = ((questionResult.value.data ?? []) as MissionQuestionDbRow[])
+    .map(toMetadataRow);
+
+  const candidateItems = metadataRows.map((question) => ({
+    candidate: toGoalCandidate(question, input.weekday, input.effectiveStage),
+    rawQuestion: question,
+  }));
+
+  const sortAvailable = (
+    items: Array<{ candidate: MissionQuestionGoalCandidate; rawQuestion: MissionQuestionMetadataRow }>,
+  ) => {
+    items.sort((left, right) => {
+      // 1) Tier 비교
+      const leftTier = getCandidateTier(left.rawQuestion, input.weekday, input.effectiveStage);
+      const rightTier = getCandidateTier(right.rawQuestion, input.weekday, input.effectiveStage);
+      if (leftTier !== rightTier) return leftTier - rightTier;
+
+      // 2) Priority 비교
+      const priorityDifference = PRIORITY_ORDER[left.candidate.priority] - PRIORITY_ORDER[right.candidate.priority];
       if (priorityDifference !== 0) return priorityDifference;
-      const leftRecentRank = recentRank.get(left.semanticGroup) ?? Number.MAX_SAFE_INTEGER;
-      const rightRecentRank = recentRank.get(right.semanticGroup) ?? Number.MAX_SAFE_INTEGER;
+
+      // 3) W1 단계인 경우 가벼운 질문(low) 최우선
+      if (input.effectiveStage === "W1") {
+        const sensitivityRank: Record<QuestionSensitivity, number> = { low: 1, medium: 2, high: 3 };
+        const sensDiff = sensitivityRank[left.candidate.sensitivity] - sensitivityRank[right.candidate.sensitivity];
+        if (sensDiff !== 0) return sensDiff;
+      }
+
+      // 4) 덜 최근에 사용된 topic 우선
+      const leftRecentRank = recentRank.get(left.candidate.semanticGroup) ?? Number.MAX_SAFE_INTEGER;
+      const rightRecentRank = recentRank.get(right.candidate.semanticGroup) ?? Number.MAX_SAFE_INTEGER;
       return rightRecentRank - leftRecentRank;
     });
+  };
 
-  if (input.applyCooldown === false) return candidates;
+  if (input.applyCooldown === false) {
+    sortAvailable(candidateItems);
+    return candidateItems.map((item) => item.candidate);
+  }
 
-  return filterQuestionCandidatesByCooldown({
-    db: input.db,
-    childId: input.childId,
-    candidates,
-    initiatedBy: "k",
+  const uniqueGroups = [...new Set(candidateItems.map((item) => item.candidate.semanticGroup))];
+  const cooldownSettled = await Promise.allSettled(
+    uniqueGroups.map((semanticGroup) => isTopicOnCooldownForK(input.db, input.childId, semanticGroup)),
+  );
+  const blockedGroups = new Set<string>();
+  cooldownSettled.forEach((res, index) => {
+    if (res.status === "fulfilled" && res.value) {
+      blockedGroups.add(uniqueGroups[index]);
+    } else if (res.status === "rejected") {
+      console.error("[mission-v3/questionBank] cooldown lookup rejected", res.reason);
+    }
   });
+
+  const available: typeof candidateItems = [];
+  const onCooldown: typeof candidateItems = [];
+
+  for (const item of candidateItems) {
+    if (blockedGroups.has(item.candidate.semanticGroup)) {
+      onCooldown.push(item);
+    } else {
+      available.push(item);
+    }
+  }
+
+  // 1) Non-cooldown 후보는 우선순위 티어 순으로 정렬
+  sortAvailable(available);
+
+  // 2) Cooldown 후보는 마지막 사용이 가장 오래된 순으로 정렬
+  onCooldown.sort((left, right) => {
+    const leftLastUsed = lastUsedMap.get(left.candidate.semanticGroup);
+    const rightLastUsed = lastUsedMap.get(right.candidate.semanticGroup);
+    const leftTime = leftLastUsed ? new Date(leftLastUsed).getTime() : 0;
+    const rightTime = rightLastUsed ? new Date(rightLastUsed).getTime() : 0;
+    if (leftTime !== rightTime) return leftTime - rightTime; // ascending: 오래된 순
+    const leftTier = getCandidateTier(left.rawQuestion, input.weekday, input.effectiveStage);
+    const rightTier = getCandidateTier(right.rawQuestion, input.weekday, input.effectiveStage);
+    return leftTier - rightTier;
+  });
+
+  const cooldownCandidates = onCooldown.map((item) => ({
+    ...item.candidate,
+    priority: "P3" as const,
+  }));
+
+  return [...available.map((item) => item.candidate), ...cooldownCandidates];
 };
 
 /** 호출부가 K의 질문 제안을 실제 발화에 반영한 시점에만 사용한다. */
