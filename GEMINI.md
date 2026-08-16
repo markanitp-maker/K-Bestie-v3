@@ -283,10 +283,15 @@ npx playwright install --only-shell chromium
 ## 8-A. 작업 폴더 정리 (완료조건 — 필수)
 
 - **정리하지 않은 작업은 완료가 아니다.** 완료·실패·중단 어느 쪽으로 끝나든 정리한다.
-- QA·진단용 일회성 파일은 **저장소가 아니라 `/tmp`에 만들고** 테스트 후 삭제한다. 저장소 안에 만들었다면 반드시 지운다.
-- worktree는 `.worktrees/` 한 곳에만 만든다. 끝나면 `git worktree remove` 후 `git worktree prune`.
+- **무조건 삭제하지 마라. 3분류로 판정한다.**
+  - 즉시 삭제: `.next`·node_modules·cache·temp build·log·일회성 scratch/진단 스크립트·중복 스크린샷·재생성 가능한 QA 산출물
+  - backup 이동: 미커밋 유효 코드·main 미반영 고유 변경·장애 분석에 재사용 가치가 있는 QA 증거 → `backup/YYYY-MM-DD/<work-name>/`
+  - 보존: 소스·정식 테스트·migration·운영 스크립트·문서·`requests/`·규칙 파일
+- backup 이동 **전에** 원본 경로·관련 Request·commit(또는 diff)·보존 이유를 `README.md`/`manifest.md`에 기록한다.
+- QA·진단용 일회성 파일은 저장소가 아니라 `/tmp`에 만들고 테스트 후 삭제한다.
+- worktree는 `.worktrees/` 한 곳에만. 끝나면 `git worktree remove` 후 `git worktree prune`.
 - 삭제 전 `git status`·`git diff`·untracked·HEAD의 main 도달 여부를 확인한다. 미커밋 유효 코드가 있으면 삭제하지 말고 보고한다.
-- 완료 보고에 최종 `git status`, 남은 worktree 수, 프로젝트 루트 임시파일 0건 여부를 포함한다.
+- 완료 보고에 **삭제한 임시항목 수 / backup 이동 항목과 이유 / 남은 worktree·orphan 수 / 루트 임시파일 0건 여부**를 포함한다.
 - 상세 기준: AGENTS.md §17(작업 폴더 정리).
 
 ---
