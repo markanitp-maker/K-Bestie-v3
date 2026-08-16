@@ -26,7 +26,7 @@ export interface ActionSelectorInput {
 // 꺼냈다는 뜻이고, 그걸 K 재질문 제한에 쓰면 071 §9("아이가 먼저 꺼내는 건 제한 안 함")를
 // 어긴다(codex-rv 3차 지적으로 발견, index.ts에서 관련 배선 제거). K가 스스로 새 화제를
 // 능동적으로 고르는 지점이 생기면(예: 073 질문은행) 그 로직에서 cooldown을 확인한다.
-const BOREDOM_ACTIONS: ConversationAction[] = ["TOPIC_SHIFT", "JUST_LISTEN", "JOKE", "IMAGINATION"];
+const BOREDOM_ACTIONS: ConversationAction[] = ["PLAY_PROPOSAL", "TOPIC_SHIFT", "JUST_LISTEN", "JOKE", "IMAGINATION"];
 
 function pickAvoidingRecent(
   candidates: ConversationAction[],
@@ -56,7 +56,7 @@ function pickPrimaryOrRotate(
 }
 
 /** 신호 조합으로 후보 Action 목록을 만든다. 우선순위: 갈등 > 부정감정 > 신체상태 >
- * 초성게임 시작 > 성취/긍정감정 > 장난/상상 > 기억회상 질의 > 일반지식 질문 > 중립.
+ * 초성게임 시작 > 성취/긍정감정 > 장난/상상 > 기억회상 질의 > 일반지식 질문 > 놀이 요청(미지정) > 중립.
  * hasDeterministicPrimary=true인 신호는 candidates[0]을 강하게 지켜야 하는 필수 방향으로
  * 다룬다(pickPrimaryOrRotate 사용) — 그 외는 다양성을 우선한다(pickAvoidingRecent 사용). */
 function candidatesFromSignals(
@@ -77,6 +77,7 @@ function candidatesFromSignals(
       : { candidates: ["OWN_OPINION", "JUST_LISTEN"], deterministic: true };
   }
   if (signals.hasGeneralKnowledgeQuestion) return { candidates: ["OWN_OPINION", "CURIOSITY"], deterministic: true };
+  if (signals.hasPlayRequestWithoutTarget) return { candidates: ["PLAY_PROPOSAL", "JOKE", "CURIOSITY"], deterministic: false };
   if (signals.isVeryShortLowEffort) return { candidates: ["JUST_LISTEN", "CURIOSITY"], deterministic: false };
   return { candidates: ["FOLLOW_UP", "CURIOSITY", "JUST_LISTEN"], deterministic: false };
 }

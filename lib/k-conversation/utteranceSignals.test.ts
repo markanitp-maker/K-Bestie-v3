@@ -136,3 +136,90 @@ test("기존 신호 추출 기능 무결성 유지", () => {
   assert.equal(playful.hasPlayfulSilly, true);
   assert.equal(playful.hasChosungGameStart, false);
 });
+
+test("hasPlayRequestWithoutTarget: 게임 미지정 놀이 요청 긍정/부정 케이스", () => {
+  // 긍정 케이스
+  const positives = [
+    "심심해",
+    "놀아줘",
+    "뭐 하고 놀까",
+    "재미없어",
+    "나랑 놀자",
+    "게임하자",
+    "놀이하자",
+    "너무 지루해",
+    "놀고 싶어",
+  ];
+  for (const text of positives) {
+    const signals = extractUtteranceSignals(text);
+    assert.equal(
+      signals.hasPlayRequestWithoutTarget,
+      true,
+      `[${text}]는 hasPlayRequestWithoutTarget === true 이어야 함`
+    );
+    assert.equal(
+      estimateSemanticGroup(signals),
+      "PLAY_PROPOSAL",
+      `[${text}]의 semantic_group은 PLAY_PROPOSAL이어야 함`
+    );
+  }
+
+  // 부정 케이스: 특정 게임 지목, 부정어, 무관 발화
+  const negatives = [
+    "끝말잇기 하자", // 특정 게임 지목
+    "초성게임 하자", // 특정 게임 지목
+    "스무고개 하자", // 특정 게임 지목
+    "안 놀아", // 놀이 거부
+    "놀기 싫어", // 놀이 거부
+    "오늘 100점 맞았어", // 성취
+    "친구랑 싸웠어", // 갈등
+  ];
+  for (const text of negatives) {
+    const signals = extractUtteranceSignals(text);
+    assert.equal(
+      signals.hasPlayRequestWithoutTarget,
+      false,
+      `[${text}]는 hasPlayRequestWithoutTarget === false 이어야 함`
+    );
+  }
+});
+
+test("hasPlayRejection: 단독 거절 긍정 케이스 및 복합 문장 부정 케이스", () => {
+  // 긍정 케이스 (단독 부정/거절)
+  const rejections = [
+    "싫어",
+    "안 할래",
+    "하기 싫어",
+    "됐어",
+    "그건 싫어",
+    "아니 안 할래",
+    "별로",
+    "안 놀래",
+  ];
+  for (const text of rejections) {
+    const signals = extractUtteranceSignals(text);
+    assert.equal(
+      signals.hasPlayRejection,
+      true,
+      `[${text}]는 hasPlayRejection === true 이어야 함`
+    );
+  }
+
+  // 부정 케이스: 대안 제시, 특정 게임 요청 등 (거절로 잡으면 안 됨)
+  const nonRejections = [
+    "초성게임은 싫고 끝말잇기 할래", // 특정 게임으로 전환
+    "싫은데 딴 거 할래", // 다른 놀이 요청
+    "끝말잇기 하자",
+    "초성게임 하자",
+    "나 지금 슬퍼",
+    "배고파",
+  ];
+  for (const text of nonRejections) {
+    const signals = extractUtteranceSignals(text);
+    assert.equal(
+      signals.hasPlayRejection,
+      false,
+      `[${text}]는 hasPlayRejection === false 이어야 함`
+    );
+  }
+});

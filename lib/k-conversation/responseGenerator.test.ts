@@ -103,3 +103,15 @@ test("buildSystemInstruction — MISSION 모드에서도 relationshipFragment �
   assert.match(prompt, /\[추가 지시\]\n오늘 있었던 일을 자연스럽게 물어봐\./);
   assert.match(prompt, /- Scenario는 목표이지 강제 대본이 아니야/);
 });
+
+test("buildSystemInstruction — PLAY_PROPOSAL Action 지시문 검증", () => {
+  const prompt = buildSystemInstruction({
+    ...baseInput,
+    action: "PLAY_PROPOSAL",
+    adapterInstruction: "[놀이 제안 지침]\n아이에게 '끝말잇기'(단어 잇기) 놀이를 해보자고 친구처럼 자연스럽게 제안해줘.",
+  });
+
+  assert.match(prompt, /아이에게 가볍고 신나게 같이 놀자고 놀이를 제안해봐/);
+  assert.match(prompt, /규칙을 길게 설명하지 말고/);
+  assert.match(prompt, /아이에게 '끝말잇기'\(단어 잇기\) 놀이를 해보자고/);
+});

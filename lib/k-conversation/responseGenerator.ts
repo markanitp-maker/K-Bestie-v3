@@ -56,6 +56,8 @@ const ACTION_DIRECTIVES: Record<ConversationAction, string> = {
   JUST_LISTEN: "굳이 되묻거나 파고들지 말고 짧게 들어주는 반응만 해.",
   PLAYFUL_GAME_CHOSUNG:
     "아이와 함께 신나게 초성게임을 해. 문제를 내거나 아이 답을 듣고 맞으면 칭찬, 틀리면 격려와 힌트로 반응해줘(정답을 먼저 말해버리지 마).",
+  PLAY_PROPOSAL:
+    "아이에게 가볍고 신나게 같이 놀자고 놀이를 제안해봐. 게임 규칙을 길게 설명하지 말고 '이런 놀이 어때?' 정도로 자연스럽게 권유하고, 아이에게 선택권을 줘(강요하지 마).",
 };
 
 export function buildSystemInstruction(input: ResponseGeneratorInput): string {

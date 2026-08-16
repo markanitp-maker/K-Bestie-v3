@@ -130,3 +130,35 @@ test("최근 액션 반복 방지 및 단일 후보 유지 검증", () => {
   });
   assert.equal(rotatedAchievement, "CURIOSITY");
 });
+
+test("PLAY_PROPOSAL: 놀이 요청(게임 미지정) 시 PLAY_PROPOSAL이 후보에 포함된다", () => {
+  const action = runSelector("심심해", { rand: () => 0 });
+  assert.equal(action, "PLAY_PROPOSAL");
+
+  const actionPlay = runSelector("놀아줘", { rand: () => 0 });
+  assert.equal(actionPlay, "PLAY_PROPOSAL");
+});
+
+test("PLAY_PROPOSAL: 감정·갈등·신체상태는 놀이 요청보다 항상 우선한다 (우선순위 보장)", () => {
+  // 1. 갈등 + 심심해
+  const conflict = runSelector("친구랑 싸웠어 심심해");
+  assert.equal(conflict, "EMPATHY");
+
+  // 2. 부정 감정 + 심심해
+  const sad = runSelector("나 너무 슬퍼 심심해");
+  assert.equal(sad, "EMPATHY");
+
+  // 3. 신체 상태 + 심심해
+  const hungry = runSelector("배고파 심심해");
+  assert.equal(hungry, "EMPATHY");
+
+  // 4. 성취 + 심심해
+  const achieve = runSelector("오늘 100점 맞았어 심심해");
+  assert.equal(achieve, "CELEBRATION");
+});
+
+test("PLAY_PROPOSAL: boredom high 상태에서 비결정론 액션 중 PLAY_PROPOSAL이 선택될 수 있다", () => {
+  const highBoredom: BoredomAssessment = { level: "high" };
+  const action = runSelector("그냥", { boredom: highBoredom, rand: () => 0 });
+  assert.equal(action, "PLAY_PROPOSAL");
+});

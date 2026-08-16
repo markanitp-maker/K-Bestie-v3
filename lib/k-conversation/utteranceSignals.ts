@@ -19,6 +19,8 @@ export interface UtteranceSignals {
   hasChosungAnswerAttempt: boolean; // 초성 게임 답변 시도로 보이는 발화 ("사과", "정답 사과", "바나나인가?")
   hasChosungHintRequest: boolean; // 초성 게임 힌트 요청 ("힌트 줘", "모르겠어", "어려워" 등)
   hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
+  hasPlayRequestWithoutTarget: boolean; // 심심해/놀아줘/뭐 하고 놀까 등 게임 미지정 놀이 요청
+  hasPlayRejection: boolean; // 싫어/안 할래/하기 싫어/됐어 등 제안 거절 (단독 부정)
 }
 
 const ACHIEVEMENT_KWS = ["1등", "100점", "맞았어", "해냈", "성공했", "이겼", "합격", "칭찬받"];
@@ -132,6 +134,59 @@ function detectWordChainGameStart(text: string): boolean {
   return WORD_CHAIN_START_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+// 게임 미지정 놀이 요청 신호 ("심심해", "놀아줘", "뭐 하고 놀까", "재미없어" 등)
+const PLAY_REQUEST_WITHOUT_TARGET_PATTERNS = [
+  /심심(?:해|하다|해요|하네|한데|해용|당)?/,
+  /지루(?:해|하다|해요|하네|한데)?/,
+  /재미\s*(?:없어|없다|없네|없는데|없당)/,
+  /놀아\s*(?:줘|줄래|주라|줘요|주세요)/,
+  /놀고\s*(?:싶어|싶다|싶은데|싶어요)/,
+  /뭐\s*(?:하고|할까|하지|하면서)\s*(?:놀까|놀아|놀지|놀래|할래|할까|하지)/,
+  /(?:같이\s*|나랑\s*)?놀자/,
+  /(?:게임|놀이|퀴즈)\s*(?:하자|할래|할까|할래\?|해줘|해봐|하고\s*싶어)/,
+];
+const PLAY_REQUEST_NEGATION_KWS = [
+  "안 놀", "안놀", "놀기 싫", "안 해", "안해", "안 할", "안할", "하기 싫", "하지 마", "하지마", "그만", "안 심심",
+];
+const SPECIFIC_GAME_NAME_PATTERN = /(?:초성|ㅊㅅ|끝말|단어\s*잇기|단어잇기|스무고개|밸런스|수수께끼|보드게임|마피아)/;
+
+function detectPlayRequestWithoutTarget(
+  text: string,
+  hasChosungGameStart: boolean,
+  hasWordChainGameStart: boolean,
+): boolean {
+  if (hasChosungGameStart || hasWordChainGameStart) return false;
+  if (SPECIFIC_GAME_NAME_PATTERN.test(text)) return false;
+  if (includesAny(text, PLAY_REQUEST_NEGATION_KWS)) return false;
+  return PLAY_REQUEST_WITHOUT_TARGET_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+// 놀이 제안 거절 신호 ("싫어", "안 할래", "하기 싫어", "됐어" 등 단독 부정)
+const STANDALONE_REJECTION_PATTERN =
+  /^(?:아니|아냐|음|그냥|그건|난|나는|지금은)?\s*(?:싫어|싫은데|싫다|안\s*할래|안해|안\s*해|하기\s*싫어|하기\s*싫은데|하기\s*싫다|됐어|됐거든|별로|별론데|그건\s*별로|그건\s*싫어|안\s*놀래|안\s*놀아|그만|그만할래|그만\s*해)[!?.~ㅋㅎ\s]*$/;
+
+const REJECTION_EXCLUSION_PATTERNS = [
+  /(?:말고|대신|싫고|말구)\s*.*(?:할래|하자|할까|하고\s*싶어|해줘)/,
+  /(?:초성|끝말|단어|게임|놀이|스무고개).*할래/,
+];
+
+function detectPlayRejection(
+  text: string,
+  hasChosungGameStart: boolean,
+  hasWordChainGameStart: boolean,
+  hasPlayRequestWithoutTarget: boolean,
+): boolean {
+  if (hasChosungGameStart || hasWordChainGameStart || hasPlayRequestWithoutTarget) {
+    return false;
+  }
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  for (const exclusion of REJECTION_EXCLUSION_PATTERNS) {
+    if (exclusion.test(trimmed)) return false;
+  }
+  return STANDALONE_REJECTION_PATTERN.test(trimmed);
+}
+
 export function extractUtteranceSignals(text: string): UtteranceSignals {
   const trimmed = text.trim();
   const isQuestion = /[?？]/.test(trimmed) || includesAny(trimmed, QUESTION_WORDS);
@@ -151,6 +206,17 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasAchievement || hasConflict || hasNegativeEmotion || hasPhysicalNeed,
   );
   const hasWordChainGameStart = detectWordChainGameStart(trimmed);
+  const hasPlayRequestWithoutTarget = detectPlayRequestWithoutTarget(
+    trimmed,
+    hasChosungGameStart,
+    Boolean(hasWordChainGameStart),
+  );
+  const hasPlayRejection = detectPlayRejection(
+    trimmed,
+    hasChosungGameStart,
+    Boolean(hasWordChainGameStart),
+    hasPlayRequestWithoutTarget,
+  );
 
   return {
     hasAchievement,
@@ -167,6 +233,8 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasChosungAnswerAttempt,
     hasChosungHintRequest,
     hasWordChainGameStart,
+    hasPlayRequestWithoutTarget,
+    hasPlayRejection,
   };
 }
 
@@ -176,6 +244,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
 export function estimateSemanticGroup(signals: UtteranceSignals): string {
   if (signals.hasChosungGameStart) return "PLAYFUL_GAME_CHOSUNG";
   if (signals.hasWordChainGameStart) return "PLAYFUL_GAME_WORD_CHAIN";
+  if (signals.hasPlayRequestWithoutTarget) return "PLAY_PROPOSAL";
   if (signals.hasAchievement) return "ACHIEVEMENT";
   if (signals.hasConflict) return "FRIEND_CONFLICT";
   if (signals.hasNegativeEmotion) return "MOOD_CHECK";

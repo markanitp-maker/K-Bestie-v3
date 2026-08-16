@@ -18,6 +18,8 @@ import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { runChosungTurn } from "./chosungGame/gameOrchestrator";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
+import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
+import { PLAY_SKILL_REGISTRY, findSkillById } from "./play/skillRegistry";
 
 export type { EngineInput, EngineOutput, ConversationAction, ConversationMode } from "./types";
 export type { GenerateArgs } from "./responseGenerator";
@@ -242,15 +244,61 @@ export async function respond(
   // 남기고, cooldown 판단은 그 능동 선택 로직이 생길 때 붙인다.
   const signals = extractUtteranceSignals(input.currentUtterance);
   const semanticGroup = estimateSemanticGroup(signals);
+  const topicMode = input.mode === "MISSION" ? "mission" : "free_chat";
+
+  // 5-1) 놀이 제안 거절 기록 — 아이가 이번 턴에 명확히 거절했으면 쿨다운을 기록하여 반복 제안 차단
+  if (signals.hasPlayRejection && input.childId) {
+    await recordPlayRejection(deps.db, input.childId, topicMode);
+  }
+
+  // 5-2) 활성 게임 세션 존재 여부 확인
+  let hasActivePlaySession = false;
+  if (input.childId) {
+    for (const skill of PLAY_SKILL_REGISTRY) {
+      try {
+        const session = await skill.getActiveSession(deps.db, input.childId);
+        if (session) {
+          hasActivePlaySession = true;
+          break;
+        }
+      } catch {
+        // fail-open
+      }
+    }
+  }
 
   // 6) Action 선택 — 방향만 결정, 고정 문구 아님.
-  const action = selectAction({
+  let action = selectAction({
     signals,
     boredom,
     hasRecentEpisode: Boolean(memorySnapshot.recentEpisode),
     hasLongTermMemory: memorySnapshot.longTermFacts.length > 0,
     recentActions: deps.recentActions ?? [],
   });
+
+  // 6-0) PLAY_PROPOSAL 제안 결정 — Action Selector가 후보를 만들었거나 놀이 요청 신호가 있을 때
+  let playProposalInstruction: string | undefined;
+  if (action === "PLAY_PROPOSAL" || signals.hasPlayRequestWithoutTarget) {
+    const proposalDecision = await decidePlayProposal({
+      db: deps.db,
+      childId: input.childId,
+      signals,
+      boredom: boredom.level,
+      hasActivePlaySession,
+      sessionRejected: false,
+    });
+
+    if (proposalDecision.shouldPropose && proposalDecision.skillId) {
+      action = "PLAY_PROPOSAL";
+      const proposedSkill = findSkillById(proposalDecision.skillId);
+      if (proposedSkill) {
+        playProposalInstruction = `[놀이 제안 지침]\n아이에게 '${proposedSkill.proposal.label}'(${proposedSkill.proposal.shortDescription}) 놀이를 해보자고 친구처럼 자연스럽게 제안해줘. 규칙을 구구절절 설명하지 말고 같이 하자고 가볍게 권유해.`;
+      }
+      await recordPlayProposal(deps.db, input.childId, proposalDecision.skillId, topicMode);
+    } else if (action === "PLAY_PROPOSAL") {
+      action = "FOLLOW_UP";
+    }
+  }
 
   // 6-1) 초성게임 턴 처리 — 세션 상태 조회 및 deterministic 출제/판정.
   // runChosungTurn이 handled: true면 instruction을 adapterInstruction 앞에 결합하고,
@@ -286,6 +334,7 @@ export async function respond(
 
   const combinedAdapterInstruction = [
     chosungInstruction,
+    playProposalInstruction,
     deps.adapterInstruction,
   ]
     .filter(Boolean)
@@ -321,13 +370,14 @@ export async function respond(
   // 유일한 Action이므로, K-initiated 기록은 이때만 남긴다 — 나머지 Action은 전부 아이가
   // 꺼낸 주제에 반응하는 것이므로 child 기록만으로 충분하고, 대부분 서로 다른
   // semantic_group을 가리켜 행 경합도 자연히 사라진다.
-  const topicMode = input.mode === "MISSION" ? "mission" : "free_chat";
   await recordTopicUsage(deps.db, input.childId, semanticGroup, topicMode, "child");
   if (effectiveAction === "TOPIC_SHIFT") {
     const kResponseSemanticGroup = estimateSemanticGroup(extractUtteranceSignals(generated.text));
     if (kResponseSemanticGroup !== semanticGroup) {
       await recordTopicUsage(deps.db, input.childId, kResponseSemanticGroup, topicMode, "k");
     }
+  } else if (effectiveAction === "PLAY_PROPOSAL") {
+    await recordTopicUsage(deps.db, input.childId, "PLAY_PROPOSAL", topicMode, "k");
   }
 
   return {

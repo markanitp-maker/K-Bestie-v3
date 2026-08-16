@@ -20,7 +20,8 @@ export type ConversationAction =
   | "FOLLOW_UP"
   | "TOPIC_SHIFT"
   | "JUST_LISTEN"
-  | "PLAYFUL_GAME_CHOSUNG";
+  | "PLAYFUL_GAME_CHOSUNG"
+  | "PLAY_PROPOSAL";
 
 export interface EngineInput {
   childId: string;
