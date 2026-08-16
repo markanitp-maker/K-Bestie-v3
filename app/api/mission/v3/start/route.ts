@@ -20,6 +20,8 @@ import { getEffectiveContentGrade, parseGrade } from "@/lib/mission/selectQuesti
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { getVoiceModeForChild } from "@/lib/plan/voiceMode";
+import { evaluateRelationshipStage } from "@/lib/relationship/stageEvaluation";
+import { persistRelationshipStage } from "@/lib/relationship/persistStage";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -270,6 +272,15 @@ export async function POST(req: NextRequest) {
     console.error("[mission/v3/start] 세션 정책 스냅샷 확인 실패", progressError?.message);
     if (!resumed) await rollbackCreatedSession(service, sessionId);
     return NextResponse.json({ error: "미션 정책을 확인하지 못했어요." }, { status: 500 });
+  }
+
+  if (!resumed) {
+    try {
+      const evaluated = await evaluateRelationshipStage({ db: service, childId });
+      await persistRelationshipStage({ db: service, childId, sessionId, evaluated });
+    } catch (error) {
+      console.error("[mission/v3/start] 관계 판정/저장 실패:", error);
+    }
   }
 
   const { tier, voiceMode, liveVoiceName } = await getVoiceModeForChild(childId);

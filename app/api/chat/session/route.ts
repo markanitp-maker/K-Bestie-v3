@@ -3,6 +3,8 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
+import { evaluateRelationshipStage } from "@/lib/relationship/stageEvaluation";
+import { persistRelationshipStage } from "@/lib/relationship/persistStage";
 
 export const runtime = "nodejs";
 
@@ -71,6 +73,13 @@ export async function POST(req: NextRequest) {
       feature: "freechat",
       route: "/api/chat/session",
     }).catch(() => {});
+
+    try {
+      const evaluated = await evaluateRelationshipStage({ db: service, childId });
+      await persistRelationshipStage({ db: service, childId, sessionId: sessionData.id, evaluated });
+    } catch (error) {
+      console.error("[chat/session] 관계 판정/저장 실패:", error);
+    }
   }
 
   return NextResponse.json({

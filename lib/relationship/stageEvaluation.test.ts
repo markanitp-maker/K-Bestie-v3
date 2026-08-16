@@ -6,6 +6,7 @@ import {
   evaluateRelationshipStage,
   loadRelationshipStageMetrics,
 } from "./stageEvaluation";
+import { persistRelationshipStage } from "./persistStage";
 
 function createMockDb(options: {
   childProfile?: {
@@ -255,3 +256,84 @@ test("loadRelationshipStageMetrics는 DB 오류 시 0으로 안전하게 fallbac
     relationshipEventCount: 0,
   });
 });
+
+test("세션 시작 경로 배선 계약: evaluateRelationshipStage -> persistRelationshipStage 연쇄 호출이 안전하게 완료된다", async () => {
+  const updates: Record<string, unknown>[] = [];
+  const db = {
+    from(table: string) {
+      const builder: any = {
+        select() {
+          return builder;
+        },
+        eq() {
+          return builder;
+        },
+        gte() {
+          return builder;
+        },
+        update(payload: Record<string, unknown>) {
+          updates.push(payload);
+          return builder;
+        },
+        maybeSingle() {
+          if (table === "child_profiles") {
+            return Promise.resolve({
+              data: {
+                relationship_started_at: "2026-08-01T00:00:00Z",
+                relationship_effective_stage: null,
+                grade: 3,
+              },
+              error: null,
+            });
+          }
+          if (table === "chat_sessions") {
+            return Promise.resolve({
+              data: {
+                relationship_context: null,
+              },
+              error: null,
+            });
+          }
+          return Promise.resolve({ data: null, error: null });
+        },
+        then(resolve: (val: any) => void) {
+          if (table === "chat_sessions") {
+            resolve({ count: 1, data: [{ business_date: "2026-08-02" }], error: null });
+            return;
+          }
+          if (table === "memory_facts") {
+            resolve({ count: 1, data: null, error: null });
+            return;
+          }
+          if (table === "behavior_events") {
+            resolve({ count: 1, data: null, error: null });
+            return;
+          }
+          resolve({ data: null, error: null });
+        },
+      };
+      return builder;
+    },
+  } as unknown as SupabaseClient;
+
+  let failed = false;
+  try {
+    const evaluated = await evaluateRelationshipStage({
+      db,
+      childId: "child-1",
+      asOf: new Date("2026-08-16T00:00:00Z"),
+    });
+    await persistRelationshipStage({
+      db,
+      childId: "child-1",
+      sessionId: "session-1",
+      evaluated,
+    });
+  } catch {
+    failed = true;
+  }
+
+  assert.equal(failed, false);
+  assert.equal(updates.length > 0, true);
+});
+
