@@ -5,10 +5,6 @@
       "schedule": "0 20 * * *"
     },
     {
-      "path": "/api/batch/v3/collection/enqueue?phase=1",
-      "schedule": "55 8 * * *"
-    },
-    {
       "path": "/api/batch/v3/collection/enqueue?phase=2",
       "schedule": "55 14 * * *"
     },
