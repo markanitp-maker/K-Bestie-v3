@@ -17,8 +17,11 @@
   /* 014 신규: 브랜드/포인트 문구 전용(마스코트 말풍선, 환영 문구 등 짧은 곳에만 — 본문/데이터 금지) */
   --font-brand: 'Gaegu', var(--font-base);
 
-  /* ── 레이아웃(기존, 유지) ── */
+  /* ── 레이아웃(기존 유지 및 073 Phase 1 공통 레이아웃 토큰 확장) ── */
   --max-width-app: 480px;
+  --max-width-smartphone: 430px;
+  --max-width-tablet: 768px;
+  --max-width-demo-frame: 430px;
   --radius-base: 1rem;
   --radius-sm: 0.5rem;
 
@@ -143,6 +146,24 @@
   /* Semantic — 상태(기존 k-success/k-danger를 의미 이름으로도 노출) */
   --color-state-success: var(--color-k-success);
   --color-state-error: var(--color-k-danger);
+}
+
+/* ── 073 Phase 3: 반응형 콘텐츠 최대 폭 토큰
+   - 기본/스마트폰(<768px): 430px (--max-width-smartphone)
+   - 태블릿(>=768px): 768px (--max-width-tablet) ── */
+:root {
+  --content-max-width: var(--max-width-smartphone, 430px);
+  /* 대화 화면(미션·자유대화)은 스마트폰에서 480px 를 쓴다. 430 으로 좁히면
+     말풍선·마스코트가 다시 배치돼 디자인 변경이 된다(073 §3). 스마트폰 기준값만
+     다르고 태블릿 확장은 같은 규칙을 탄다. */
+  --content-max-width-wide: var(--max-width-app, 480px);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --content-max-width: var(--max-width-tablet, 768px);
+    --content-max-width-wide: var(--max-width-tablet, 768px);
+  }
 }
 
 /* ── 글로벌 기본값(026: --color-bg/-text-base/-hb-bg/-parent-bg가 위에서 제거된

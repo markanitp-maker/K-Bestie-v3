@@ -247,7 +247,7 @@ export function MissionConversationLayout({
       <div
         data-ui="mission-conversation-grid"
         data-keyboard-open={isKeyboardOpen}
-        className="w-full max-w-[480px] min-w-0 relative box-border grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]"
+        className="w-full max-w-[var(--content-max-width-wide,var(--max-width-app,480px))] min-w-0 relative box-border grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)_auto_auto]"
         style={{ height: conversationHeight, background: "linear-gradient(180deg, #D8EEFF 0%, #EAF6FB 46%, #FFF9EE 76%, #FFF4E6 100%)" }}
       >
         
@@ -273,20 +273,20 @@ export function MissionConversationLayout({
 
         {/* 공통 헤더 */}
         <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
-          <AppTopHeader title="미션" onBack={handleCloseClick} />
+          <AppTopHeader title="미션" maxWidth="var(--content-max-width-wide, var(--max-width-app, 480px))" onBack={handleCloseClick} />
         </div>
 
         {/* Grid Row 1: Top Area */}
         <div className="relative z-10 flex flex-col shrink-0 w-full min-w-0 max-w-full">
           {/* Star progress display: progress calculation remains owned by the mission page. */}
-          <div className="mt-[calc(61px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] min-w-0 h-[clamp(46px,6dvh,50px)] bg-white/90 rounded-full shadow-[0_3px_10px_rgba(75,85,99,0.10)] flex items-center px-[clamp(12px,3.5vw,16px)] relative z-10 shrink-0" aria-label={`미션 진행률 ${progressCurrent} / ${progressTotal}`}>
-            <div className="flex w-full justify-center gap-[clamp(2px,1vw,6px)] h-full items-center">
+          <div className="mt-[calc(61px+env(safe-area-inset-top))] mx-auto w-[90%] max-w-[400px] min-w-0 h-[clamp(46px,6dvh,50px)] bg-white/90 rounded-full shadow-[0_3px_10px_rgba(75,85,99,0.10)] flex items-center px-[clamp(12px,calc(var(--frame-w,100vw)*0.035),16px)] relative z-10 shrink-0" aria-label={`미션 진행률 ${progressCurrent} / ${progressTotal}`}>
+            <div className="flex w-full justify-center gap-[clamp(2px,calc(var(--frame-w,100vw)*0.01),6px)] h-full items-center">
               {Array.from({length: progressTotal}).map((_, i) => {
                 const isFilled = i < progressCurrent;
                 const isAnimating = i === scaleStar;
                 return (
                   <div key={i} className="relative flex items-center justify-center min-w-0" style={{ transform: isAnimating ? "scale(1.28)" : "scale(1)", transition: "transform 180ms ease-out" }}>
-                    <svg viewBox="0 0 24 24" className={`w-[clamp(20px,6.5vw,28px)] h-[clamp(20px,6.5vw,28px)] drop-shadow-[0_1px_1px_rgba(224,144,0,0.18)] transition-colors duration-300 ${isFilled ? "fill-[#F6A21A] stroke-[#E99000]" : "fill-[#DDE6EF] stroke-[#C8D5E1]"}`} strokeWidth="1.25" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" className={`w-[clamp(20px,calc(var(--frame-w,100vw)*0.065),28px)] h-[clamp(20px,calc(var(--frame-w,100vw)*0.065),28px)] drop-shadow-[0_1px_1px_rgba(224,144,0,0.18)] transition-colors duration-300 ${isFilled ? "fill-[#F6A21A] stroke-[#E99000]" : "fill-[#DDE6EF] stroke-[#C8D5E1]"}`} strokeWidth="1.25" aria-hidden="true">
                       <path d="m12 2.7 2.84 5.76 6.36.92-4.6 4.48 1.09 6.33L12 17.2l-5.69 2.99 1.09-6.33-4.6-4.48 6.36-.92L12 2.7Z" />
                     </svg>
                   </div>
@@ -301,19 +301,19 @@ export function MissionConversationLayout({
 
         {/* Grid Row 2: current question first; history is added only when its measured whole
             bubble fits. The 32px bottom padding minus the 12px tail keeps a 20px mascot gap. */}
-        <div ref={conversationAreaRef} className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(14px,4vw,22px)] pb-8 ${isTextMode ? 'overflow-y-auto overflow-x-hidden' : 'overflow-visible'}`}>
+        <div ref={conversationAreaRef} className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(14px,calc(var(--frame-w,100vw)*0.04),22px)] pb-8 ${isTextMode ? 'overflow-y-auto overflow-x-hidden' : 'overflow-visible'}`}>
 
           <div className="flex flex-col items-center w-full min-h-0 max-h-full">
             {visibleHistoryCount > 0 && (
               <div className="flex flex-col justify-start items-center w-full shrink-0 mb-[10px]">
                 {visibleHistoryCount === 2 && olderKText && (
-                  <div className="relative min-h-0 mb-[clamp(7px,1dvh,9px)] text-[#798896]/65 text-[clamp(13px,3.5vw,15px)] leading-[1.42] text-center max-w-[76%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  <div className="relative min-h-0 mb-[clamp(7px,1dvh,9px)] text-[#798896]/65 text-[clamp(13px,calc(var(--frame-w,100vw)*0.035),15px)] leading-[1.42] text-center max-w-[76%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     <span className="absolute -left-[18px] top-1/2 -translate-y-1/2 text-[11px] text-white/85" aria-hidden="true">✦</span>
                     {olderKText}
                   </div>
                 )}
                 {prevKText && (
-                  <div className="relative min-h-0 bg-white/86 backdrop-blur-[2px] px-[clamp(16px,4.5vw,19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,3.8vw,16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  <div className="relative min-h-0 bg-white/86 backdrop-blur-[2px] px-[clamp(16px,calc(var(--frame-w,100vw)*0.045),19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,calc(var(--frame-w,100vw)*0.038),16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     <span className="absolute -left-[27px] top-1/2 -translate-y-1/2 text-[21px] leading-none text-[#F6B33F]/65 -rotate-12" aria-hidden="true">☆</span>
                     {prevKText}
                   </div>
@@ -335,9 +335,9 @@ export function MissionConversationLayout({
                 label={entryStatus === "ready_to_start" ? "시작하기" : "이어하기"}
               />
             ) : (
-              <div ref={currentBubbleRef} data-ui="current-bubble" className="relative z-20 w-[86%] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2px] border-[#F58A34] shadow-[0_5px_15px_rgba(211,102,29,0.14)] px-[clamp(20px,5.5vw,23px)] py-[clamp(15px,2dvh,18px)] flex flex-col min-w-0">
+              <div ref={currentBubbleRef} data-ui="current-bubble" className="relative z-20 w-[86%] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2px] border-[#F58A34] shadow-[0_5px_15px_rgba(211,102,29,0.14)] px-[clamp(20px,calc(var(--frame-w,100vw)*0.055),23px)] py-[clamp(15px,2dvh,18px)] flex flex-col min-w-0">
                 <div className="w-full min-w-0">
-                  <p className="text-center text-[#211D1B] text-[clamp(18px,5vw,21px)] font-[800] tracking-[-0.015em] leading-[1.4] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  <p className="text-center text-[#211D1B] text-[clamp(18px,calc(var(--frame-w,100vw)*0.05),21px)] font-[800] tracking-[-0.015em] leading-[1.4] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     {currentQuestionText}
                   </p>
                 </div>
@@ -352,12 +352,12 @@ export function MissionConversationLayout({
                 their heights decide whether React renders each older message above. */}
             <div className="absolute invisible pointer-events-none w-full flex flex-col items-center" aria-hidden="true">
               {prevKText && (
-                <div ref={previousMeasureRef} className="relative bg-white/86 px-[clamp(16px,4.5vw,19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,3.8vw,16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                <div ref={previousMeasureRef} className="relative bg-white/86 px-[clamp(16px,calc(var(--frame-w,100vw)*0.045),19px)] py-[clamp(10px,1.35dvh,12px)] rounded-[17px] text-[clamp(14px,calc(var(--frame-w,100vw)*0.038),16px)] leading-[1.43] text-[#3F4A54] shadow-[0_3px_10px_rgba(63,83,98,0.08)] w-fit max-w-[77%] text-left" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                   {prevKText}
                 </div>
               )}
               {olderKText && (
-                <div ref={olderMeasureRef} className="relative mt-[10px] text-[#798896]/65 text-[clamp(13px,3.5vw,15px)] leading-[1.42] text-center max-w-[76%] font-medium" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                <div ref={olderMeasureRef} className="relative mt-[10px] text-[#798896]/65 text-[clamp(13px,calc(var(--frame-w,100vw)*0.035),15px)] leading-[1.42] text-center max-w-[76%] font-medium" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                   {olderKText}
                 </div>
               )}
@@ -381,7 +381,7 @@ export function MissionConversationLayout({
                  aria-live="polite"
                  aria-busy={entryStatus === "checking" || entryStatus === "starting" || entryStatus === "resuming"}
                >
-                 <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,10.5vw,46px)] w-[clamp(40px,10.5vw,46px)] items-center justify-center">
+                 <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] w-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] items-center justify-center">
                    {StateIcon}
                  </div>
                  <span className="text-[14px] font-bold leading-none">{stateText}</span>
@@ -403,27 +403,27 @@ export function MissionConversationLayout({
              /* isTextMode === false: 케이 마스코트 & Platform & lightweight states */
              <div data-ui="mascot-stage" className="relative z-10 w-full h-full min-w-0 max-w-full">
                {/* Left Mute Control */}
-               <button onClick={onToggleMute} disabled={isClosing} className="absolute z-30 left-[clamp(17px,6vw,30px)] top-[43%] -translate-y-1/2 flex w-[clamp(66px,18vw,78px)] flex-col items-center justify-center active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                 <div className="w-[clamp(40px,10.5vw,46px)] h-[clamp(40px,10.5vw,46px)] rounded-full bg-white/72 flex items-center justify-center text-[#637486] mb-[5px]">
+               <button onClick={onToggleMute} disabled={isClosing} className="absolute z-30 left-[clamp(17px,calc(var(--frame-w,100vw)*0.06),30px)] top-[43%] -translate-y-1/2 flex w-[clamp(66px,calc(var(--frame-w,100vw)*0.18),78px)] flex-col items-center justify-center active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                 <div className="w-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] h-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] rounded-full bg-white/72 flex items-center justify-center text-[#637486] mb-[5px]">
                    {isMuted ? (
                      <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
                    ) : (
                      <svg width="55%" height="55%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
                    )}
                  </div>
-                 <span className="text-[clamp(13px,3.55vw,15px)] leading-[1.15] font-bold text-[#5F7181] text-center break-keep">{isMuted ? '소리 꺼짐' : '소리 켜짐'}</span>
+                 <span className="text-[clamp(13px,calc(var(--frame-w,100vw)*0.0355),15px)] leading-[1.15] font-bold text-[#5F7181] text-center break-keep">{isMuted ? '소리 꺼짐' : '소리 켜짐'}</span>
                </button>
 
                {/* Mascot & Platform */}
                <div className="absolute inset-0 flex flex-col items-center justify-end">
                   {/* A quiet ring keeps the character readable without becoming the focal point. */}
-                  <div className="absolute left-1/2 top-[4px] -translate-x-1/2 w-[clamp(185px,51vw,214px)] h-[clamp(185px,51vw,214px)] rounded-full border border-[#F7C46B]/30 bg-[#FFF4D8]/16 pointer-events-none" />
+                  <div className="absolute left-1/2 top-[4px] -translate-x-1/2 w-[clamp(185px,calc(var(--frame-w,100vw)*0.51),214px)] h-[clamp(185px,calc(var(--frame-w,100vw)*0.51),214px)] rounded-full border border-[#F7C46B]/30 bg-[#FFF4D8]/16 pointer-events-none" />
                   {/* Mascot */}
                   <div data-ui="mascot" className="relative z-20 flex justify-center items-end pb-[clamp(37px,4.8dvh,43px)]">
-                    <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={202} className="!w-[clamp(188px,51.8vw,208px)] !h-auto object-contain drop-shadow-[0_7px_5px_rgba(109,74,39,0.13)]" />
+                    <KBestieMascotAnimation state={voiceState === "speaking" ? "talking" : "idle"} size={202} className="!w-[clamp(188px,calc(var(--frame-w,100vw)*0.518),208px)] !h-auto object-contain drop-shadow-[0_7px_5px_rgba(109,74,39,0.13)]" />
                   </div>
                   {/* Platform */}
-                  <div data-ui="platform" className="absolute z-10 bottom-0 w-[clamp(282px,82vw,340px)] h-[clamp(54px,7.8dvh,66px)] pointer-events-none drop-shadow-[0_8px_7px_rgba(142,91,48,0.14)]">
+                  <div data-ui="platform" className="absolute z-10 bottom-0 w-[clamp(282px,calc(var(--frame-w,100vw)*0.82),340px)] h-[clamp(54px,7.8dvh,66px)] pointer-events-none drop-shadow-[0_8px_7px_rgba(142,91,48,0.14)]">
                     {/* Top oval */}
                     <div className="absolute top-0 w-full h-[53%] bg-gradient-to-b from-[#FFFDF7] to-[#FFF3DF] rounded-[100%] border-[1.5px] border-[#EAB889] shadow-[inset_0_-4px_7px_rgba(211,154,98,0.12)] z-20" />
                     {/* Side cylinder */}
@@ -435,14 +435,14 @@ export function MissionConversationLayout({
 
                {/* Right Voice State */}
                <div
-                 className="absolute z-30 right-[clamp(17px,6vw,30px)] top-[43%] -translate-y-1/2 flex w-[clamp(66px,18vw,78px)] min-w-0 flex-col items-center justify-center"
+                 className="absolute z-30 right-[clamp(17px,calc(var(--frame-w,100vw)*0.06),30px)] top-[43%] -translate-y-1/2 flex w-[clamp(66px,calc(var(--frame-w,100vw)*0.18),78px)] min-w-0 flex-col items-center justify-center"
                  aria-live="polite"
                  aria-busy={entryStatus === "checking" || entryStatus === "starting" || entryStatus === "resuming"}
                >
-                  <div className="w-[clamp(40px,10.5vw,46px)] h-[clamp(40px,10.5vw,46px)] rounded-full bg-white/72 flex items-center justify-center text-[#637486] mb-[5px]">
+                  <div className="w-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] h-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] rounded-full bg-white/72 flex items-center justify-center text-[#637486] mb-[5px]">
                     {StateIcon}
                   </div>
-                  <span className="text-[clamp(13px,3.55vw,15px)] leading-[1.15] font-bold text-[#5F7181] text-center break-keep">{stateText}</span>
+                  <span className="text-[clamp(13px,calc(var(--frame-w,100vw)*0.0355),15px)] leading-[1.15] font-bold text-[#5F7181] text-center break-keep">{stateText}</span>
                </div>
              </div>
            )}
@@ -453,11 +453,11 @@ export function MissionConversationLayout({
           {/* Auto/Manual Mode Toggles */}
           {!isTextMode && !isKeyboardOpen && (
           <div className="flex justify-center -mt-[clamp(18px,2.4dvh,21px)] h-[clamp(38px,4.8dvh,42px)] shrink-0 relative z-40">
-            <div data-ui="mode-toggle" className="flex w-[clamp(136px,38vw,152px)] h-full p-[3px] rounded-full bg-white border border-[#E7C9A8] shadow-[0_4px_9px_rgba(133,86,42,0.15)]">
-             <button onClick={() => onChangeMode('auto')} disabled={isClosing || entryStatus !== "active"} aria-pressed={isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${isAuto ? 'bg-[#FFC84A] border border-[#E99B13] text-[#5C3B12] font-extrabold shadow-[0_2px_5px_rgba(191,122,15,0.22)]' : 'text-[#4E5965] font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+            <div data-ui="mode-toggle" className="flex w-[clamp(136px,calc(var(--frame-w,100vw)*0.38),152px)] h-full p-[3px] rounded-full bg-white border border-[#E7C9A8] shadow-[0_4px_9px_rgba(133,86,42,0.15)]">
+             <button onClick={() => onChangeMode('auto')} disabled={isClosing || entryStatus !== "active"} aria-pressed={isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${isAuto ? 'bg-[#FFC84A] border border-[#E99B13] text-[#5C3B12] font-extrabold shadow-[0_2px_5px_rgba(191,122,15,0.22)]' : 'text-[#4E5965] font-semibold'} text-[clamp(13px,calc(var(--frame-w,100vw)*0.035),15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
              </button>
-             <button onClick={() => onChangeMode('manual')} disabled={isClosing || entryStatus !== "active"} aria-pressed={!isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${!isAuto ? 'bg-[#FFC84A] border border-[#E99B13] text-[#5C3B12] font-extrabold shadow-[0_2px_5px_rgba(191,122,15,0.22)]' : 'text-[#4E5965] font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+             <button onClick={() => onChangeMode('manual')} disabled={isClosing || entryStatus !== "active"} aria-pressed={!isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${!isAuto ? 'bg-[#FFC84A] border border-[#E99B13] text-[#5C3B12] font-extrabold shadow-[0_2px_5px_rgba(191,122,15,0.22)]' : 'text-[#4E5965] font-semibold'} text-[clamp(13px,calc(var(--frame-w,100vw)*0.035),15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                수동
              </button>
             </div>
@@ -517,13 +517,13 @@ export function MissionConversationLayout({
                 </button>
               </div>
             ) : (
-              <div className="w-full flex items-center justify-center h-[clamp(92px,24vw,100px)] relative">
+              <div className="w-full flex items-center justify-center h-[clamp(92px,calc(var(--frame-w,100vw)*0.24),100px)] relative">
                 {/* Keyboard Button */}
-                <div className="absolute left-[clamp(8px,2vw,16px)] flex w-[clamp(112px,29vw,128px)] flex-col items-center gap-1">
+                <div className="absolute left-[clamp(8px,calc(var(--frame-w,100vw)*0.02),16px)] flex w-[clamp(112px,calc(var(--frame-w,100vw)*0.29),128px)] flex-col items-center gap-1">
                   <button
                     onClick={onToggleTextMode}
                     disabled={isClosing || entryStatus !== "active" || isRecording || !canEnterTextMode}
-                    className="w-[clamp(46px,12vw,50px)] h-[clamp(46px,12vw,50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-[clamp(46px,calc(var(--frame-w,100vw)*0.12),50px)] h-[clamp(46px,calc(var(--frame-w,100vw)*0.12),50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     aria-label="텍스트로 답하기"
                     aria-describedby={isRecording ? "keyboard-recording-hint" : undefined}
                   >
@@ -538,17 +538,17 @@ export function MissionConversationLayout({
 
                 {/* Main Mic Button */}
                 <div className="relative flex items-center justify-center">
-                  <div className="absolute w-[clamp(100px,27vw,108px)] h-[clamp(100px,27vw,108px)] rounded-full bg-[#FF9B3F]/13 border border-[#FFD2A6]/80" />
+                  <div className="absolute w-[clamp(100px,calc(var(--frame-w,100vw)*0.27),108px)] h-[clamp(100px,calc(var(--frame-w,100vw)*0.27),108px)] rounded-full bg-[#FF9B3F]/13 border border-[#FFD2A6]/80" />
                   {isRecording && (
                     <>
-                      <div className="absolute w-[clamp(102px,27vw,112px)] h-[clamp(102px,27vw,112px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
-                      <div className="absolute w-[clamp(116px,31vw,128px)] h-[clamp(116px,31vw,128px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
+                      <div className="absolute w-[clamp(102px,calc(var(--frame-w,100vw)*0.27),112px)] h-[clamp(102px,calc(var(--frame-w,100vw)*0.27),112px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
+                      <div className="absolute w-[clamp(116px,calc(var(--frame-w,100vw)*0.31),128px)] h-[clamp(116px,calc(var(--frame-w,100vw)*0.31),128px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
                     </>
                   )}
                   <button 
                     onClick={onMicClick} 
                     disabled={isMicDisabled || entryStatus !== "active"} 
-                    className={`w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[4px] border-[#FFF3DF] ring-2 ring-[#F6A35D] shadow-[0_7px_19px_rgba(211,81,24,0.38)] z-10 transition-all duration-200 ${(isMicDisabled || entryStatus !== "active") ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-gradient-to-b from-[#FF8A2A] to-[#F16A18]'}`}
+                    className={`w-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] h-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] rounded-full flex items-center justify-center text-white border-[4px] border-[#FFF3DF] ring-2 ring-[#F6A35D] shadow-[0_7px_19px_rgba(211,81,24,0.38)] z-10 transition-all duration-200 ${(isMicDisabled || entryStatus !== "active") ? 'opacity-60 cursor-not-allowed bg-gray-400' : 'cursor-pointer active:scale-95 bg-gradient-to-b from-[#FF8A2A] to-[#F16A18]'}`}
                     aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
                   >
                     {isRecording ? (

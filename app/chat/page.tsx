@@ -874,8 +874,8 @@ export default function ChatPage() {
   if (dailyLimitReached) {
     return (
       <DemoFrame>
-        <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]">
-          <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+        <div className="w-full h-[var(--frame-h,100dvh)] flex justify-center bg-[#D5ECFF]">
+          <div className="w-full max-w-[var(--content-max-width-wide,var(--max-width-app,480px))] min-h-[var(--frame-h,100dvh)] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
             <KBestieMascotAnimation state="idle" size={120} />
             <p className="text-[#3a2f2a] text-[19px] font-bold leading-relaxed">
               오늘 대화는 여기까지야!<br />
@@ -900,8 +900,8 @@ export default function ChatPage() {
     const ss = String(cooldownRemainingSec % 60).padStart(2, "0");
     return (
       <DemoFrame>
-        <div className="w-full h-[100dvh] flex justify-center bg-[#D5ECFF]">
-          <div className="w-full max-w-[480px] min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
+        <div className="w-full h-[var(--frame-h,100dvh)] flex justify-center bg-[#D5ECFF]">
+          <div className="w-full max-w-[var(--content-max-width-wide,var(--max-width-app,480px))] min-h-[var(--frame-h,100dvh)] flex flex-col items-center justify-center gap-4 px-8 text-center" style={{ background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)" }}>
             <KBestieMascotAnimation state="idle" size={120} />
             <p className="text-[#3a2f2a] text-[19px] font-bold leading-relaxed">
               지금은 잠깐 쉬는 시간이야.<br />
@@ -939,32 +939,32 @@ export default function ChatPage() {
         <div
           data-ui="freechat-conversation-grid"
           data-keyboard-open={isKeyboardOpen}
-          className="w-full max-w-[480px] min-w-0 box-border relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto_auto_auto]"
+          className="w-full max-w-[var(--content-max-width-wide,var(--max-width-app,480px))] min-w-0 box-border relative shrink-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto_auto_auto_auto]"
           style={{
             height: conversationHeight,
             background: "linear-gradient(to bottom, #D5ECFF 0%, #F4F7F5 50%, #FFF5E8 100%)",
             "--chat-bubble-bottom-padding": "clamp(20px, 2.6dvh, 24px)",
             "--chat-mascot-bottom-padding": "clamp(37px, 4.8dvh, 43px)",
-            "--chat-mascot-height": "clamp(145px, 42vw, 172px)",
+            "--chat-mascot-height": "clamp(145px, calc(var(--frame-w, 100vw) * 0.42), 172px)",
           } as React.CSSProperties}
         >
 
           {/* Decorations */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0" aria-hidden="true">
-            <div className="absolute top-[9%] left-[7%] w-[clamp(48px,15vw,64px)] h-[clamp(22px,7vw,30px)] bg-white/25 rounded-full blur-[2px]" />
-            <div className="absolute top-[18%] right-[9%] w-[clamp(40px,12vw,54px)] h-[clamp(18px,5vw,24px)] bg-white/30 rounded-full blur-[2px]" />
-            <div className="absolute top-[14%] left-[52%] w-[clamp(6px,2vw,10px)] h-[clamp(6px,2vw,10px)] bg-[#F6C85F]/45 rounded-full" />
-            <div className="absolute top-[37%] left-[8%] text-[clamp(14px,4vw,20px)] text-[#F6C85F]/40">✦</div>
-            <div className="absolute top-[51%] right-[8%] text-[clamp(12px,3.5vw,18px)] text-[#F6A21A]/35 rotate-12">✦</div>
-            <div className="absolute top-[68%] left-[12%] w-[clamp(16px,5vw,24px)] h-[clamp(16px,5vw,24px)] bg-white/20 rounded-full blur-[1px]" />
-            <div className="absolute top-[27%] right-[18%] w-[clamp(10px,3vw,14px)] h-[clamp(7px,2vw,10px)] rounded-[3px] bg-[#FF8A6B]/55 rotate-[24deg] shadow-[0_2px_4px_rgba(224,90,63,0.12)]" />
-            <div className="absolute top-[46%] left-[5%] w-[clamp(12px,3.4vw,16px)] h-[clamp(8px,2.2vw,11px)] rounded-[3px] bg-[#8ED7A8]/45 -rotate-[28deg] shadow-[0_2px_4px_rgba(68,130,90,0.10)]" />
-            <div className="absolute top-[62%] right-[16%] w-[clamp(28px,8vw,36px)] h-[clamp(12px,3.5vw,16px)] rounded-full bg-white/30 blur-[1px]" />
+            <div className="absolute top-[9%] left-[7%] w-[clamp(48px,calc(var(--frame-w,100vw)*0.15),64px)] h-[clamp(22px,calc(var(--frame-w,100vw)*0.07),30px)] bg-white/25 rounded-full blur-[2px]" />
+            <div className="absolute top-[18%] right-[9%] w-[clamp(40px,calc(var(--frame-w,100vw)*0.12),54px)] h-[clamp(18px,calc(var(--frame-w,100vw)*0.05),24px)] bg-white/30 rounded-full blur-[2px]" />
+            <div className="absolute top-[14%] left-[52%] w-[clamp(6px,calc(var(--frame-w,100vw)*0.02),10px)] h-[clamp(6px,calc(var(--frame-w,100vw)*0.02),10px)] bg-[#F6C85F]/45 rounded-full" />
+            <div className="absolute top-[37%] left-[8%] text-[clamp(14px,calc(var(--frame-w,100vw)*0.04),20px)] text-[#F6C85F]/40">✦</div>
+            <div className="absolute top-[51%] right-[8%] text-[clamp(12px,calc(var(--frame-w,100vw)*0.035),18px)] text-[#F6A21A]/35 rotate-12">✦</div>
+            <div className="absolute top-[68%] left-[12%] w-[clamp(16px,calc(var(--frame-w,100vw)*0.05),24px)] h-[clamp(16px,calc(var(--frame-w,100vw)*0.05),24px)] bg-white/20 rounded-full blur-[1px]" />
+            <div className="absolute top-[27%] right-[18%] w-[clamp(10px,calc(var(--frame-w,100vw)*0.03),14px)] h-[clamp(7px,calc(var(--frame-w,100vw)*0.02),10px)] rounded-[3px] bg-[#FF8A6B]/55 rotate-[24deg] shadow-[0_2px_4px_rgba(224,90,63,0.12)]" />
+            <div className="absolute top-[46%] left-[5%] w-[clamp(12px,calc(var(--frame-w,100vw)*0.034),16px)] h-[clamp(8px,calc(var(--frame-w,100vw)*0.022),11px)] rounded-[3px] bg-[#8ED7A8]/45 -rotate-[28deg] shadow-[0_2px_4px_rgba(68,130,90,0.10)]" />
+            <div className="absolute top-[62%] right-[16%] w-[clamp(28px,calc(var(--frame-w,100vw)*0.08),36px)] h-[clamp(12px,calc(var(--frame-w,100vw)*0.035),16px)] rounded-full bg-white/30 blur-[1px]" />
           </div>
 
           {/* 공통 헤더 */}
           <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
-            <AppTopHeader title="대화" onBack={() => {
+            <AppTopHeader title="대화" maxWidth="var(--content-max-width-wide, var(--max-width-app, 480px))" onBack={() => {
                   if (isLive) {
                     if (!sessionId) {
                       stopSession();
@@ -990,17 +990,17 @@ export default function ChatPage() {
           </div>
 
           {/* The mascot-area height is derived from the shared dimensions below, preserving a 20px tail-to-head gap as viewport dimensions change. */}
-          <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,4vw,24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[var(--chat-bubble-bottom-padding)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
+          <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,calc(var(--frame-w,100vw)*0.04),24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[var(--chat-bubble-bottom-padding)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
             <div className="absolute top-[calc(58px+env(safe-area-inset-top))] left-0 w-full h-[clamp(18px,3dvh,24px)] bg-gradient-to-b from-[#D5ECFF] to-transparent pointer-events-none z-10" />
             {(olderKText || prevKText) && (
               <div className="mt-auto flex flex-col justify-end items-center min-h-0 overflow-hidden w-full shrink mb-[clamp(10px,1.5dvh,14px)]">
                 {olderKText && (
-                  <div className="mb-[clamp(8px,1.2dvh,10px)] text-gray-400/70 text-[clamp(14px,3.7vw,15px)] leading-[1.45] text-center max-w-[82%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  <div className="mb-[clamp(8px,1.2dvh,10px)] text-gray-400/70 text-[clamp(14px,calc(var(--frame-w,100vw)*0.037),15px)] leading-[1.45] text-center max-w-[82%] font-medium shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     {olderKText}
                   </div>
                 )}
                 {prevKText && (
-                  <div className="bg-white/75 backdrop-blur-md px-[clamp(16px,4.5vw,18px)] py-[clamp(11px,1.7dvh,13px)] rounded-[18px] text-[clamp(15px,4vw,17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[80%] text-center shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                  <div className="bg-white/75 backdrop-blur-md px-[clamp(16px,calc(var(--frame-w,100vw)*0.045),18px)] py-[clamp(11px,1.7dvh,13px)] rounded-[18px] text-[clamp(15px,calc(var(--frame-w,100vw)*0.04),17px)] leading-[1.5] text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] w-fit max-w-[80%] text-center shrink-0" style={{ whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                     {prevKText}
                   </div>
                 )}
@@ -1014,9 +1014,9 @@ export default function ChatPage() {
                 className={!olderKText && !prevKText ? "mt-auto" : ""}
               />
             ) : (
-            <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 w-[clamp(84%,86%,88%)] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[clamp(20px,5.5vw,22px)] py-[clamp(16px,2.2dvh,18px)] flex flex-col min-w-0 shrink-0`}>
+            <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 w-[clamp(84%,86%,88%)] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[clamp(20px,calc(var(--frame-w,100vw)*0.055),22px)] py-[clamp(16px,2.2dvh,18px)] flex flex-col min-w-0 shrink-0`}>
               <div className="w-full">
-                <p className="text-left text-[#3a2f2a] text-[clamp(18px,5vw,21px)] font-[700] leading-[1.43] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
+                <p className="text-left text-[#3a2f2a] text-[clamp(18px,calc(var(--frame-w,100vw)*0.05),21px)] font-[700] leading-[1.43] whitespace-pre-wrap break-words" style={{ wordBreak: "keep-all", overflowWrap: "anywhere" }}>
                   {currentQuestionText}
                 </p>
               </div>
@@ -1043,7 +1043,7 @@ export default function ChatPage() {
                   className="flex items-center gap-2 rounded-full border border-white/80 bg-white/85 px-4 py-2 text-[#5F7181] shadow-[0_3px_10px_rgba(75,85,99,0.10)] backdrop-blur-md"
                   aria-live="polite"
                 >
-                  <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,10.5vw,46px)] w-[clamp(40px,10.5vw,46px)] items-center justify-center">
+                  <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] w-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] items-center justify-center">
                     {StateIcon}
                   </div>
                   <span className="text-[14px] font-bold leading-none">{stateText}</span>
@@ -1067,11 +1067,11 @@ export default function ChatPage() {
                 <div className="free-chat-mascot-group absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
                    {/* Soft dimensional halo: diffuse light rather than a visible ring */}
                    <div
-                     className="absolute top-[-4%] w-[clamp(205px,56vw,238px)] h-[clamp(205px,56vw,238px)] rounded-full blur-[18px] pointer-events-none"
+                     className="absolute top-[-4%] w-[clamp(205px,calc(var(--frame-w,100vw)*0.56),238px)] h-[clamp(205px,calc(var(--frame-w,100vw)*0.56),238px)] rounded-full blur-[18px] pointer-events-none"
                      style={{ background: "radial-gradient(circle, rgba(255,245,222,0.82) 0%, rgba(250,217,138,0.30) 42%, rgba(250,217,138,0.08) 63%, transparent 75%)" }}
                    />
                    <div
-                     className="absolute top-[6%] w-[clamp(175px,48vw,205px)] h-[clamp(175px,48vw,205px)] rounded-full blur-[9px] pointer-events-none"
+                     className="absolute top-[6%] w-[clamp(175px,calc(var(--frame-w,100vw)*0.48),205px)] h-[clamp(175px,calc(var(--frame-w,100vw)*0.48),205px)] rounded-full blur-[9px] pointer-events-none"
                      style={{ background: "radial-gradient(circle at 50% 42%, rgba(255,255,255,0.72) 0%, rgba(255,245,232,0.46) 47%, rgba(246,200,95,0.12) 72%, transparent 82%)" }}
                    />
 
@@ -1081,7 +1081,7 @@ export default function ChatPage() {
                    </div>
 
                    {/* Raised cylinder platform: distinct top plane, shaded side wall, and grounded shadow */}
-                   <div className="absolute bottom-0 w-[clamp(205px,57vw,238px)] h-[clamp(58px,8.2dvh,70px)] pointer-events-none">
+                   <div className="absolute bottom-0 w-[clamp(205px,calc(var(--frame-w,100vw)*0.57),238px)] h-[clamp(58px,8.2dvh,70px)] pointer-events-none">
                      <div className="absolute -bottom-[8%] left-[8%] w-[84%] h-[30%] rounded-[50%] bg-[#9B7047]/28 blur-[8px]" />
                      <div className="absolute top-[25%] w-full h-[60%] rounded-b-[50%] border-x border-b border-[#D7A87A]/70 bg-gradient-to-b from-[#F4CFAB] via-[#E8B98C] to-[#C98755] shadow-[0_9px_10px_rgba(125,79,37,0.24)]" />
                      <div className="absolute bottom-[3%] left-[3%] w-[94%] h-[30%] rounded-b-[50%] bg-[linear-gradient(90deg,rgba(168,99,48,0.28),transparent_18%,rgba(255,240,214,0.40)_50%,transparent_82%,rgba(147,78,33,0.32))]" />
@@ -1092,15 +1092,15 @@ export default function ChatPage() {
                 </div>
 
                 {/* Right State Card - Independent Absolute Overlay */}
-                <div className="absolute right-[clamp(16px,5vw,24px)] top-[clamp(36px,5.5dvh,48px)]">
+                <div className="absolute right-[clamp(16px,calc(var(--frame-w,100vw)*0.05),24px)] top-[clamp(36px,5.5dvh,48px)]">
                   <div
-                    className="relative z-20 bg-[#D5ECFF]/45 backdrop-blur-sm rounded-[18px] flex flex-col items-center justify-center w-[clamp(64px,18vw,72px)] min-h-[clamp(72px,18vw,80px)] py-[clamp(7px,1dvh,9px)] shadow-[0_2px_8px_rgba(75,85,99,0.06)] pointer-events-auto"
+                    className="relative z-20 bg-[#D5ECFF]/45 backdrop-blur-sm rounded-[18px] flex flex-col items-center justify-center w-[clamp(64px,calc(var(--frame-w,100vw)*0.18),72px)] min-h-[clamp(72px,calc(var(--frame-w,100vw)*0.18),80px)] py-[clamp(7px,1dvh,9px)] shadow-[0_2px_8px_rgba(75,85,99,0.06)] pointer-events-auto"
                     aria-live="polite"
                   >
-                     <div className="w-[clamp(36px,9.5vw,40px)] h-[clamp(36px,9.5vw,40px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1 shrink-0">
+                     <div className="w-[clamp(36px,calc(var(--frame-w,100vw)*0.095),40px)] h-[clamp(36px,calc(var(--frame-w,100vw)*0.095),40px)] rounded-full bg-white flex items-center justify-center text-gray-700 mb-1 shrink-0">
                        {StateIcon}
                      </div>
-                     <span className="text-[clamp(14px,3.8vw,16px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
+                     <span className="text-[clamp(14px,calc(var(--frame-w,100vw)*0.038),16px)] leading-[1.2] font-bold text-gray-600 text-center break-keep">{stateText}</span>
                   </div>
                 </div>
               </>
@@ -1111,12 +1111,12 @@ export default function ChatPage() {
           {/* Auto/Manual Mode Toggles */}
           {mode !== "text" && !isKeyboardOpen && (
           <div className="relative z-20 flex justify-center h-[clamp(38px,5dvh,42px)] shrink-0 pointer-events-none">
-            <div className="flex w-[clamp(130px,36vw,145px)] h-full p-1 rounded-full bg-white/95 border border-[#E6B77F] shadow-[0_4px_8px_rgba(117,68,28,0.22)] pointer-events-auto">
-             <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+            <div className="flex w-[clamp(130px,calc(var(--frame-w,100vw)*0.36),145px)] h-full p-1 rounded-full bg-white/95 border border-[#E6B77F] shadow-[0_4px_8px_rgba(117,68,28,0.22)] pointer-events-auto">
+             <button onClick={() => handleModeChange('auto')} disabled={isConnecting} aria-pressed={isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,calc(var(--frame-w,100vw)*0.035),15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                자동
                {isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
              </button>
-             <button onClick={() => handleModeChange('manual')} disabled={isConnecting} aria-pressed={!isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${!isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,3.5vw,15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
+             <button onClick={() => handleModeChange('manual')} disabled={isConnecting} aria-pressed={!isAuto} className={`relative flex-1 flex items-center justify-center rounded-full transition-colors cursor-pointer ${!isAuto ? 'bg-[#FFF0E6] border border-[var(--color-k-orange)] text-[var(--color-k-orange)] font-bold' : 'text-gray-500 font-semibold'} text-[clamp(13px,calc(var(--frame-w,100vw)*0.035),15px)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}>
                수동
                {!isAuto && <div className="absolute -bottom-[5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[5px] border-transparent border-t-[var(--color-k-orange)]" />}
              </button>
@@ -1177,12 +1177,12 @@ export default function ChatPage() {
                 </button>
               </div>
             ) : (
-              <div className="w-full flex items-center justify-center h-[clamp(88px,13vw,100px)] relative">
+              <div className="w-full flex items-center justify-center h-[clamp(88px,calc(var(--frame-w,100vw)*0.13),100px)] relative">
                 {/* Keyboard Button */}
                 <button
                   onClick={switchToText}
                   disabled={isConnecting}
-                  className="absolute left-[clamp(16px,5vw,24px)] w-[clamp(46px,12vw,50px)] h-[clamp(46px,12vw,50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="absolute left-[clamp(16px,calc(var(--frame-w,100vw)*0.05),24px)] w-[clamp(46px,calc(var(--frame-w,100vw)*0.12),50px)] h-[clamp(46px,calc(var(--frame-w,100vw)*0.12),50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="텍스트로 답하기"
                 >
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
@@ -1192,15 +1192,15 @@ export default function ChatPage() {
                 <div className="relative flex items-center justify-center">
                   {isRecording && (
                     <>
-                      <div className="absolute w-[clamp(102px,27vw,112px)] h-[clamp(102px,27vw,112px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
-                      <div className="absolute w-[clamp(116px,31vw,128px)] h-[clamp(116px,31vw,128px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
+                      <div className="absolute w-[clamp(102px,calc(var(--frame-w,100vw)*0.27),112px)] h-[clamp(102px,calc(var(--frame-w,100vw)*0.27),112px)] rounded-full bg-[var(--color-k-orange)] opacity-20 animate-ping motion-reduce:animate-none" />
+                      <div className="absolute w-[clamp(116px,calc(var(--frame-w,100vw)*0.31),128px)] h-[clamp(116px,calc(var(--frame-w,100vw)*0.31),128px)] rounded-full bg-[var(--color-k-orange)] opacity-10 animate-pulse motion-reduce:animate-none" />
                     </>
                   )}
 
                   {isLive && !isAuto ? (
                     <button
                       onClick={handleCentralButtonClick}
-                      className={`w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)] ${isRecording ? 'rounded-2xl' : 'rounded-full'}`}
+                      className={`w-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] h-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)] ${isRecording ? 'rounded-2xl' : 'rounded-full'}`}
                       aria-label={isRecording ? "녹음 종료" : "마이크 켜기"}
                     >
                       {isRecording ? (
@@ -1215,7 +1215,7 @@ export default function ChatPage() {
                     // 사용 불가" 회색 처리로 떨어지면 정상 자동 청취 중에도 고장난 것처럼
                     // 보이므로, 클릭 불가한 정적 활성 표시만 보여준다.
                     <div
-                      className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 bg-[var(--color-k-orange)]"
+                      className="w-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] h-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 bg-[var(--color-k-orange)]"
                       aria-label="자동으로 듣고 있어요"
                     >
                       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
@@ -1233,7 +1233,7 @@ export default function ChatPage() {
                     ) : (
                       <button
                         onClick={handleStart}
-                        className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)]"
+                        className="w-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] h-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 cursor-pointer active:scale-95 bg-[var(--color-k-orange)]"
                         aria-label="대화 시작하기"
                       >
                         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
@@ -1242,7 +1242,7 @@ export default function ChatPage() {
                   ) : (
                     <button
                       disabled
-                      className="w-[clamp(88px,24vw,96px)] h-[clamp(88px,24vw,96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 opacity-60 cursor-not-allowed bg-gray-400"
+                      className="w-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] h-[clamp(88px,calc(var(--frame-w,100vw)*0.24),96px)] rounded-full flex items-center justify-center text-white border-[3px] border-[#FFE0B5] shadow-[0_5px_18px_rgba(224,90,63,0.34)] z-10 transition-all duration-200 opacity-60 cursor-not-allowed bg-gray-400"
                       aria-label="마이크 사용 불가"
                     >
                       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>

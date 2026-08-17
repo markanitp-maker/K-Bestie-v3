@@ -45,6 +45,22 @@ export default defineConfig({
       },
     },
     {
+      name: "tablet-portrait-chrome",
+      testIgnore: /qa-078-pwa-safe-update\.spec\.ts/,
+      use: {
+        ...devices["iPad (gen 7)"],
+        defaultBrowserType: "chromium",
+      },
+    },
+    {
+      name: "tablet-landscape-chrome",
+      testIgnore: /qa-078-pwa-safe-update\.spec\.ts/,
+      use: {
+        ...devices["iPad (gen 7) landscape"],
+        defaultBrowserType: "chromium",
+      },
+    },
+    {
       name: "pwa-update-chromium",
       testMatch: /qa-078-pwa-safe-update\.spec\.ts/,
       use: {

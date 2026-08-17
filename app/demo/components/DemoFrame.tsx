@@ -44,10 +44,16 @@ const DEVICE_SPEC = {
   },
 };
 
+import {
+  PC_MEDIA_QUERY,
+  TOUCH_COARSE_MEDIA_QUERY,
+  TABLET_MIN_WIDTH_MEDIA_QUERY,
+} from "@/hooks/useIsPcDevice";
+
 function useDeviceMode(setView: (v: "tablet" | "mobile") => void) {
   const [isPc, setIsPc] = useState(false);
   // 2026-08-03: isPc는 초기값이 항상 false(서버 렌더와 맞추기 위함)라, 실제로는 PC인
-  // 뷰어(pointer:fine + min-width:900px)에서 마운트 직후 useEffect가 true로 뒤집는다.
+  // 뷰어(pointer:fine + min-width:900px + not coarse touch)에서 마운트 직후 useEffect가 true로 뒤집는다.
   // 이때 아래 두 분기(!isPc / isPc)는 children이 위치하는 JSX 트리 구조 자체가 달라서
   // React가 children의 DOM을 재사용하지 못하고 통째로 언마운트 후 재마운트한다 —
   // children 안에 iframe(MBTI/퀴즈마스터 등)이 있으면 이 재마운트가 진행 중이던 요청을
@@ -59,11 +65,12 @@ function useDeviceMode(setView: (v: "tablet" | "mobile") => void) {
   const [determined, setDetermined] = useState(false);
 
   useIsomorphicLayoutEffect(() => {
-    const pcMq = window.matchMedia("(pointer: fine) and (min-width: 900px)");
-    const sizeMq = window.matchMedia("(min-width: 768px)");
+    const pcMq = window.matchMedia(PC_MEDIA_QUERY);
+    const touchMq = window.matchMedia(TOUCH_COARSE_MEDIA_QUERY);
+    const sizeMq = window.matchMedia(TABLET_MIN_WIDTH_MEDIA_QUERY);
 
     const update = () => {
-      const pc = pcMq.matches;
+      const pc = pcMq.matches && !touchMq.matches;
       setIsPc(pc);
       if (!pc) {
         setView(sizeMq.matches ? "tablet" : "mobile");
@@ -73,9 +80,11 @@ function useDeviceMode(setView: (v: "tablet" | "mobile") => void) {
 
     update();
     pcMq.addEventListener("change", update);
+    touchMq.addEventListener("change", update);
     sizeMq.addEventListener("change", update);
     return () => {
       pcMq.removeEventListener("change", update);
+      touchMq.removeEventListener("change", update);
       sizeMq.removeEventListener("change", update);
     };
   }, [setView]);
@@ -93,6 +102,44 @@ export function DemoFrame({
   const { view, setView } = useDemoView();
   const { isPc, determined } = useDeviceMode(setView);
   const hasMobileViewportHeight = typeof mobileViewportHeight === "number" && mobileViewportHeight > 0;
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [frameWidth, setFrameWidth] = useState<number | null>(null);
+  const [frameHeight, setFrameHeight] = useState<number | null>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!isPc) return;
+    const el = contentRef.current;
+    if (!el) return;
+
+    const updateDimensions = () => {
+      if (el) {
+        setFrameWidth(el.clientWidth);
+        setFrameHeight(el.clientHeight);
+      }
+    };
+    updateDimensions();
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === el) {
+          const cr = entry.contentRect;
+          const w = cr.width || el.clientWidth;
+          const h = cr.height || el.clientHeight;
+          if (w > 0) {
+            setFrameWidth(w);
+          }
+          if (h > 0) {
+            setFrameHeight(h);
+          }
+        }
+      }
+    });
+    ro.observe(el);
+
+    return () => {
+      ro.disconnect();
+    };
+  }, [isPc, view]);
 
   if (!determined) {
     // 최초 디바이스 판정 전에는 children(내부에 iframe이 있을 수 있음)을 마운트하지
@@ -274,7 +321,12 @@ export function DemoFrame({
 
             {/* ==================== 3. 실제 앱 렌더링 뷰포트 ==================== */}
             <div
+              ref={contentRef}
               className={`w-full h-full overflow-y-auto ${spec.innerPaddingTop} ${spec.innerPaddingBottom}`}
+              style={{
+                "--frame-w": frameWidth ? `${frameWidth}px` : undefined,
+                "--frame-h": frameHeight ? `${frameHeight}px` : undefined,
+              } as React.CSSProperties}
             >
               {children}
             </div>

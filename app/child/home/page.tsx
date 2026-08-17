@@ -288,7 +288,7 @@ export default function ChildHomePage() {
   return (
     <DemoFrame>
       <PwaSafeRouteReady expectedPath="/child/home" />
-      <div className="relative h-full flex flex-col overflow-y-auto overflow-x-hidden w-full text-[var(--color-k-navy)]"
+      <div className="relative min-h-full flex flex-col overflow-x-hidden w-full text-[var(--color-k-navy)]"
            style={{ background: "linear-gradient(180deg, #BFE8FF 0%, #EAF7FF 38%, #FFF9F2 75%, #FFF7E9 100%)" }}>
         {child?.id && (
           <AttendanceRouletteLoginModal
@@ -308,7 +308,7 @@ export default function ChildHomePage() {
         </div>
 
         {/* Top Action Bar */}
-        <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top)] mt-4 relative z-10 w-full max-w-[430px] mx-auto child-home-content">
+        <div className="shrink-0 flex items-center justify-between px-4 pt-[env(safe-area-inset-top)] mt-4 relative z-10 w-full max-w-[var(--content-max-width,var(--max-width-smartphone,430px))] mx-auto child-home-content">
           <Link
             href="/child/notifications"
             className="relative flex h-[44px] w-[44px] items-center justify-center rounded-2xl bg-white/50 shadow-sm transition-transform active:scale-95"
@@ -333,7 +333,7 @@ export default function ChildHomePage() {
           </button>
         </div>
 
-        <div className="flex-1 w-full max-w-[430px] mx-auto px-4 pb-20 flex flex-col relative z-10 child-home-content">
+        <div className="flex-1 w-full max-w-[var(--content-max-width,var(--max-width-smartphone,430px))] mx-auto px-4 pb-20 flex flex-col relative z-10 child-home-content">
 
           {/* Mascot Area */}
           <div
@@ -348,7 +348,7 @@ export default function ChildHomePage() {
               width={205}
               height={205}
               className="relative z-10 mb-2 h-auto object-contain drop-shadow-[0_7px_5px_rgba(32,71,102,0.18)]"
-              style={{ width: "clamp(160px, 44vw, 178px)" }}
+              style={{ width: "clamp(160px, calc(var(--frame-w, 100vw) * 0.44), 178px)" }}
               priority
             />
           </div>

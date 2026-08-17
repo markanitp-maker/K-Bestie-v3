@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
+import { PC_MEDIA_QUERY, TOUCH_COARSE_MEDIA_QUERY, checkIsPcDevice } from "@/hooks/useIsPcDevice";
 
 export interface KChatbotWidgetProps {
   appSurface: "child" | "parent";
@@ -207,11 +208,19 @@ export default function KChatbotWidget({
   const { view } = useDemoView();
   const [pcMockupPaddingTopPx, setPcMockupPaddingTopPx] = useState(0);
   useEffect(() => {
-    const pcMq = window.matchMedia("(pointer: fine) and (min-width: 900px)");
-    const update = () => setPcMockupPaddingTopPx(pcMq.matches ? (view === "mobile" ? 40 : 32) : 0);
+    // 073: DemoFrame 과 같은 판정을 써야 한다. 조건이 갈리면 목업이 없는데 보정만
+    // 들어가거나 그 반대가 된다. 판정은 hooks/useIsPcDevice.ts 한 곳에만 둔다.
+    const pcMq = window.matchMedia(PC_MEDIA_QUERY);
+    const touchMq = window.matchMedia(TOUCH_COARSE_MEDIA_QUERY);
+    const update = () =>
+      setPcMockupPaddingTopPx(checkIsPcDevice() ? (view === "mobile" ? 40 : 32) : 0);
     update();
     pcMq.addEventListener("change", update);
-    return () => pcMq.removeEventListener("change", update);
+    touchMq.addEventListener("change", update);
+    return () => {
+      pcMq.removeEventListener("change", update);
+      touchMq.removeEventListener("change", update);
+    };
   }, [view]);
 
   // Focus trap & Escape key

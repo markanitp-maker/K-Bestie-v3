@@ -35,10 +35,10 @@ export const ConversationStartButton = React.forwardRef<
       {...props}
     >
       <Play
-        className="w-[clamp(20px,5.5vw,24px)] h-[clamp(20px,5.5vw,24px)] fill-white text-white shrink-0"
+        className="w-[clamp(20px,calc(var(--frame-w,100vw)*0.055),24px)] h-[clamp(20px,calc(var(--frame-w,100vw)*0.055),24px)] fill-white text-white shrink-0"
         aria-hidden="true"
       />
-      <span className="text-white text-[clamp(22px,6vw,26px)] font-[700] leading-none">
+      <span className="text-white text-[clamp(22px,calc(var(--frame-w,100vw)*0.06),26px)] font-[700] leading-none">
         {label}
       </span>
     </button>

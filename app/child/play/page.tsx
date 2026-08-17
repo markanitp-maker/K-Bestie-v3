@@ -470,7 +470,7 @@ export default function ChildPlayPage() {
         <AppTopHeader title="게임 참여" />
 
         {/* 메인 스크롤 영역 (046: 하단 CTA를 자연스러운 흐름 안으로 이동, 큰 고정 pb 제거) */}
-        <div className="flex-1 overflow-y-auto w-full max-w-[430px] mx-auto px-3 relative z-10">
+        <div className="flex-1 overflow-y-auto w-full max-w-[var(--content-max-width,var(--max-width-smartphone,430px))] mx-auto px-3 relative z-10">
 
           {/* 황금열쇠 보유 현황 카드 (046: 한 줄형 소형 카드) */}
           <div className="mt-3">
@@ -616,7 +616,7 @@ export default function ChildPlayPage() {
                 width={120}
                 height={120}
                 className="object-contain drop-shadow-md"
-                style={{ width: "clamp(90px, 28vw, 120px)", height: "auto", filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.1))" }}
+                style={{ width: "clamp(90px, calc(var(--frame-w, 100vw) * 0.28), 120px)", height: "auto", filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.1))" }}
                 priority
               />
             </div>

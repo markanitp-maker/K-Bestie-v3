@@ -115,7 +115,7 @@ export function PlayFrame({
 
   return (
     <DemoFrame>
-      <div className="h-[100dvh] flex flex-col relative bg-white">
+      <div className="h-[var(--frame-h,100dvh)] flex flex-col relative bg-white">
         <div className="shrink-0 z-50 pointer-events-auto">
           <AppTopHeader title={title} onBack={closePlay} backVariant="close" />
         </div>
