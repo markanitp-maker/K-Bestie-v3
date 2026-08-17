@@ -232,8 +232,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     respondingRef.current = false;
     setIsResponding(false);
     lastAsrConfidenceRef.current = undefined;
-    inFlightRespondTurnsRef.current.clear();
-    completedRespondTurnsRef.current.clear();
   }
 
   const stopSession = useCallback(() => {
@@ -435,8 +433,6 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
 
 
-  const inFlightRespondTurnsRef = useRef<Set<string>>(new Set());
-  const completedRespondTurnsRef = useRef<Set<string>>(new Set());
 
   /** 자유대화용 — 현재까지의 대화 기록으로 Gemini 텍스트 응답을 생성해 말풍선에만 표시.
    *  케이는 자유대화에서 음성으로 말하지 않는다 — TTS 호출 없음(텍스트 전용). */
@@ -444,18 +440,25 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     const lastChild = [...transcriptRef.current].reverse().find((t) => t.role === "child");
     const childTurnId = targetChildTurnId || lastChild?.id;
 
-    // 1. targetChildTurnId가 명시된 경우에만 완료 가드 적용 (추정 턴에는 완료 가드를 걸지 않아 새 발화 응답 유실 방지)
-    if (targetChildTurnId && completedRespondTurnsRef.current.has(targetChildTurnId)) {
-      return;
-    }
-
-    // 2. inFlight 가드는 동시 진입 방지를 위해 유지
-    if (childTurnId) {
-      if (inFlightRespondTurnsRef.current.has(childTurnId)) {
-        return;
-      }
-      inFlightRespondTurnsRef.current.add(childTurnId);
-    }
+    // 2026-08-17: 009 가 넣은 클라이언트 측 완료/inFlight 가드를 전부 제거한다.
+    //
+    // Production 에서 케이가 아이 말에 아무 대답도 안 하는 사고가 났다.
+    // 박서아·박서현 계정에서 아이가 "안녕" 을 네 번 반복했는데 한 번도 응답이
+    // 없었고, 아이가 "도대체 인사 받는 게 왜 이렇게 힘드니" 라고 했다.
+    //
+    // 원인: 턴 id 를 못 받으면 `lastChild` 로 추정하는데, 아이가 같은 말을
+    // 반복하거나 전사 타이밍이 어긋나면 그 추정이 **이미 처리한 턴**을 가리킨다.
+    // 그러면 완료 가드든 inFlight 가드든 걸려서 조용히 return 하고,
+    // 아이는 침묵을 겪는다.
+    //
+    // 완료 가드만 좁혀 봤으나(baab09d) inFlight 가드에서 같은 일이 계속 났다.
+    // 추정 턴에 어떤 형태로든 가드를 걸면 같은 사고가 반복된다.
+    //
+    // 중복 응답은 서버 멱등성(/api/voice/respond 의 DB 사전 조회)과
+    // chat_messages 의 UNIQUE(session_id, turn_id) 가 막는다. 그쪽은 턴 id 가
+    // 확실할 때만 동작하므로 아이 말을 삼키지 않는다.
+    //
+    // **아이가 말했는데 케이가 침묵하는 것은 중복 응답보다 훨씬 나쁘다.**
 
     respondingRef.current = true;
     setIsResponding(true);
@@ -482,18 +485,12 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         console.warn("[VoiceChat] /api/voice/respond returned empty text response");
         return;
       }
-      if (childTurnId) {
-        completedRespondTurnsRef.current.add(childTurnId);
-      }
       const kTurnId = childTurnId ? `${childTurnId}:k` : nextTurnId();
       appendTurn({ role: "k", text, id: kTurnId });
       onTurnCompleteRef.current?.({ role: "k", text, id: kTurnId });
     } catch (err) {
       console.warn("[VoiceChat] respondText error:", err);
     } finally {
-      if (childTurnId) {
-        inFlightRespondTurnsRef.current.delete(childTurnId);
-      }
       respondingRef.current = false;
       setIsResponding(false);
       setCaptureBlocked(speakingRef.current);
