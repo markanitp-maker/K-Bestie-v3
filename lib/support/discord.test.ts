@@ -35,20 +35,31 @@ test("카테고리 3종이 각각 버그/건의/문의로 매핑되고 수식어
   }
 });
 
-test("20글자 이하 본문은 그대로 유지되고 초과 본문은 코드포인트 20글자 + … 로 잘린다", () => {
-  assert.equal(truncateContent("12345678901234567890"), "12345678901234567890");
+test("본문은 1024자까지 원문 그대로 두고, 넘으면 1023자 + … 로 정확히 1024자를 맞춘다", () => {
+  // 074 §3-2: 1024자 **이하**는 원문 그대로. 말줄임을 붙이면 한 글자를 잃는다.
+  assert.equal(truncateContent("A".repeat(1023)), "A".repeat(1023));
+  const at1024 = truncateContent("A".repeat(1024));
+  assert.equal(at1024, "A".repeat(1024));
+  assert.equal(Array.from(at1024).length, 1024);
+
+  // 074 §3-3: 초과하면 앞 1023자 + … = 정확히 1024 코드포인트
+  const at1025 = truncateContent("A".repeat(1025));
+  assert.equal(Array.from(at1025).length, 1024);
+  assert.equal(at1025, "A".repeat(1023) + "…");
+
   assert.equal(truncateContent("짧은 문의 내용"), "짧은 문의 내용");
-  assert.equal(truncateContent("123456789012345678901"), "12345678901234567890…");
 
-  const koreanLong = "동해물과 백두산이 마르고 닳도록 하느님이 보우하사 우리나라 만세";
-  const koreanTruncated = truncateContent(koreanLong);
-  assert.equal(Array.from(koreanTruncated).length, 21); // 20자 + …
-  assert.equal(koreanTruncated, Array.from(koreanLong).slice(0, 20).join("") + "…");
+  // 한글 경계값 (§7-4)
+  assert.equal(truncateContent("가".repeat(1024)), "가".repeat(1024));
+  const korean1025 = truncateContent("가".repeat(1025));
+  assert.equal(Array.from(korean1025).length, 1024);
+  assert.equal(korean1025, "가".repeat(1023) + "…");
 
-  const emojiLong = "😀".repeat(25);
-  const emojiTruncated = truncateContent(emojiLong);
-  assert.equal(Array.from(emojiTruncated).length, 21);
-  assert.equal(emojiTruncated, "😀".repeat(20) + "…");
+  // 이모지 경계값 (§7-5) — 이모지도 코드포인트 1개로 센다
+  assert.equal(truncateContent("😀".repeat(1024)), "😀".repeat(1024));
+  const emoji1025 = truncateContent("😀".repeat(1025));
+  assert.equal(Array.from(emoji1025).length, 1024);
+  assert.equal(emoji1025, "😀".repeat(1023) + "…");
 });
 
 test("Discord payload는 유형, 제목, 내용 3개 항목만 포함하고 접수번호/출처/접수시각은 제외한다", () => {
@@ -69,7 +80,8 @@ test("Discord payload는 유형, 제목, 내용 3개 항목만 포함하고 접�
   const titleField = embed.fields.find((f) => f.name === "제목");
   const contentField = embed.fields.find((f) => f.name === "내용");
   assert.equal(titleField?.value, "로그인 오류가 발생합니다");
-  assert.equal(contentField?.value, "모바일 화면에서 로그인 버튼을 눌렀을…");
+  assert.equal(contentField?.value, "모바일 화면에서 로그인 버튼을 눌렀을 때 응답이 없습니다. 확인 부탁드립니다.");
+
 
   const serialized = JSON.stringify(payload);
   assert.doesNotMatch(serialized, /접수번호/);
