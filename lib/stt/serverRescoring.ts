@@ -130,7 +130,11 @@ export async function resolveChildUtterance(
   // 097 §5-3 킬 스위치. 이 레이어는 아이가 한 말을 바꿔 쓰므로 즉시 끌 수단이 있어야 한다.
   // 미설정이 기본 ON 이다 — 이미 배포돼 동작 중이라 기본값을 OFF 로 두면 조용히 기능이 죽는다.
   // 끄려면 Vercel 환경변수에 STT_RESCORING_DISABLED=true 를 넣고 재배포한다.
-  if (process.env.STT_RESCORING_DISABLED === "true") {
+  //
+  // 대소문자·앞뒤 공백을 받아준다. 급할 때 "TRUE" 로 넣었는데 안 먹으면
+  // 킬 스위치가 없는 것과 같다(리뷰 지적, 2026-08-17).
+  // 여전히 "true" 계열일 때만 끈다 — "1"·"yes"·"on" 은 켜진 것으로 본다.
+  if (process.env.STT_RESCORING_DISABLED?.trim().toLowerCase() === "true") {
     return { text: original, raw: original, changed: false };
   }
 

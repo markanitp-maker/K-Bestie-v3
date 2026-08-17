@@ -434,7 +434,35 @@ test("097-12: STT_RESCORING_DISABLED 가 미설정이면 기존대로 동작한�
   }
 });
 
-test("097-13: 'false'·'1'·'' 같은 값은 켜진 것으로 본다 ('true' 일 때만 끈다)", async () => {
+test("097-14: 'TRUE'·' true ' 처럼 대소문자·공백이 섞여도 꺼진다 — 급할 때 안 먹으면 킬 스위치가 아니다", async () => {
+  const originalEnv = process.env.STT_RESCORING_DISABLED;
+  const wordChainDb = createMockSupabase({
+    activeWordChain: { current_word: "사과" },
+  });
+
+  try {
+    for (const val of ["TRUE", "True", " true ", "\ttrue\n", "  TRUE  "]) {
+      process.env.STT_RESCORING_DISABLED = val;
+      const res = await resolveChildUtterance(
+        wordChainDb,
+        "child-1",
+        "session-1",
+        "콰자",
+        "free_chat"
+      );
+      assert.equal(res.text, "콰자", `환경변수 ${JSON.stringify(val)} 일 때 꺼져 있어야 함`);
+      assert.equal(res.changed, false, `환경변수 ${JSON.stringify(val)} 일 때 changed 는 false 여야 함`);
+    }
+  } finally {
+    if (originalEnv === undefined) {
+      delete process.env.STT_RESCORING_DISABLED;
+    } else {
+      process.env.STT_RESCORING_DISABLED = originalEnv;
+    }
+  }
+});
+
+test("097-13: 'false'·'1'·'' 같은 값은 켜진 것으로 본다 ('true' 계열일 때만 끈다)", async () => {
   const originalEnv = process.env.STT_RESCORING_DISABLED;
   const wordChainDb = createMockSupabase({
     activeWordChain: { current_word: "사과" },
