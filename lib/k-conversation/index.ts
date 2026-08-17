@@ -5,7 +5,7 @@
 // 그대로 전달된다.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ConversationAction, EngineInput, EngineOutput } from "./types";
-import { pickReaction } from "./safety";
+import { pickReaction, insertSafetyEventWithDedupe } from "./safety";
 import { loadCorePersonaContext, buildCorePersonaFragment, type CorePersonaContext } from "./corePersona";
 import { resolveGradePersona, buildGradePersonaFragment } from "./gradePersonas";
 import { loadRelationshipMemory, formatRelationshipMemory, type RelationshipMemorySnapshot } from "./memory";
@@ -20,6 +20,7 @@ import { routePlaySkillTurn } from "./play/skillRouter";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
+import { setPendingPlayProposal, clearPendingPlayProposal } from "./play/pendingProposalStore";
 
 export type { EngineInput, EngineOutput, ConversationAction, ConversationMode } from "./types";
 export type { GenerateArgs } from "./responseGenerator";
@@ -48,17 +49,15 @@ async function logSafetyEvent(
   subcategory: string | undefined,
 ): Promise<void> {
   try {
-    const { error } = await db.from("safety_events").insert({
-      session_id: input.sessionId,
+    const res = await insertSafetyEventWithDedupe(db, {
+      sessionId: input.sessionId,
+      childId: input.childId || null,
       subcategory,
-      child_text: input.currentUtterance,
-      child_id: input.childId || null,
-      // Legacy and v3 mission RPCs already classify engine-originated safety
-      // events as QUESTION_ENGINE; keep the shared engine on that taxonomy.
+      childText: input.currentUtterance,
       source: "QUESTION_ENGINE",
     });
-    if (error) {
-      console.error("[k-conversation/index] safety_events insert failed", error.message);
+    if (res.error) {
+      console.error("[k-conversation/index] safety_events insert failed", (res.error as { message?: string }).message ?? res.error);
     }
   } catch (error) {
     console.error("[k-conversation/index] safety_events insert threw", (error as Error).message);
@@ -133,6 +132,9 @@ export async function respond(
   // 1) Safety — 항상 최우선. 걸리면 Persona/Memory/Action 전부 스킵.
   const safety = pickReaction(input.currentUtterance);
   if (safety.flaggedForParent || safety.category === "safety") {
+    if (input.sessionId) {
+      await clearPendingPlayProposal(input.sessionId, deps.db);
+    }
     if (safety.flaggedForParent) {
       await logSafetyEvent(deps.db, input, safety.safetySubcategory);
     }
@@ -167,7 +169,8 @@ export async function respond(
     };
   }
   if (utteranceCategory === "unclear_audio") {
-    const reflective = generateReflectiveReaction(input.currentUtterance, [], { isLowConfidenceAsr });
+    const recentKTexts = input.recentKTexts ?? [];
+    const reflective = generateReflectiveReaction(input.currentUtterance, recentKTexts, { isLowConfidenceAsr });
     return {
       text: reflective.text,
       action: "JUST_LISTEN",
@@ -248,6 +251,9 @@ export async function respond(
 
   // 5-1) 놀이 제안 거절 기록 — 아이가 이번 턴에 명확히 거절했으면 쿨다운을 기록하여 반복 제안 차단
   if (signals.hasPlayRejection && input.childId) {
+    if (input.sessionId) {
+      await clearPendingPlayProposal(input.sessionId, deps.db);
+    }
     try {
       await recordPlayRejection(deps.db, input.childId, topicMode);
     } catch (err) {
@@ -312,6 +318,18 @@ export async function respond(
     recentActions: deps.recentActions ?? [],
   });
 
+  // Hard Guard (§3-5): 활성 세션이 없고 Router가 처리하지 않았으면 gameplay action 차단
+  if (!hasActivePlaySession && !playSkillHandled) {
+    if (action === "PLAYFUL_GAME_CHOSUNG" || (action as string) === "PLAYFUL_GAME_WORD_CHAIN") {
+      action = "FOLLOW_UP";
+    }
+  }
+
+  // Topic Shift 시 Pending Proposal 정리
+  if (action === "TOPIC_SHIFT" && input.sessionId) {
+    await clearPendingPlayProposal(input.sessionId, deps.db);
+  }
+
   // 6-2) PLAY_PROPOSAL 제안 결정 — 게임이 처리되지 않은 턴에만 제안 가능
   let playProposalInstruction: string | undefined;
   if (!playSkillHandled && (action === "PLAY_PROPOSAL" || signals.hasPlayRequestWithoutTarget)) {
@@ -325,12 +343,32 @@ export async function respond(
         sessionRejected: false,
       });
 
-      if (proposalDecision.shouldPropose && proposalDecision.skillId) {
+      if (proposalDecision.shouldPropose && proposalDecision.offeredSkills?.length) {
         action = "PLAY_PROPOSAL";
-        const proposedSkill = findSkillById(proposalDecision.skillId);
-        if (proposedSkill) {
-          playProposalInstruction = `[놀이 제안 지침]\n아이에게 '${proposedSkill.proposal.label}'(${proposedSkill.proposal.shortDescription}) 놀이를 해보자고 친구처럼 자연스럽게 제안해줘. 규칙을 구구절절 설명하지 말고 같이 하자고 가볍게 권유해.`;
+        const offeredSkills = proposalDecision.offeredSkills;
+
+        if (offeredSkills.length === 1) {
+          const proposedSkill = findSkillById(offeredSkills[0]);
+          if (proposedSkill) {
+            playProposalInstruction = `[놀이 제안 지침]\n아이에게 '${proposedSkill.proposal.label}'(${proposedSkill.proposal.shortDescription}) 놀이 하나만 해보자고 친구처럼 자연스럽게 제안해줘. 다른 놀이를 함께 제안하거나 임의로 덧붙이지 말고 같이 하자고 가볍게 권유해.`;
+          }
+        } else {
+          const skillLabels = offeredSkills
+            .map((id) => findSkillById(id)?.proposal.label)
+            .filter(Boolean);
+          playProposalInstruction = `[놀이 제안 지침]\n아이에게 '${skillLabels.join("이나 ")} 할래?'처럼 등록된 놀이(${skillLabels.join(", ")})를 제안해줘. 이 목록 외의 다른 놀이는 절대 언급하거나 임의로 덧붙이지 마.`;
         }
+
+        if (input.sessionId) {
+          await setPendingPlayProposal({
+            chatSessionId: input.sessionId,
+            childId: input.childId,
+            offeredSkills,
+            proposedAt: Date.now(),
+            initiatedBy: "k",
+          }, deps.db);
+        }
+
         try {
           await recordPlayProposal(deps.db, input.childId, proposalDecision.skillId, topicMode);
         } catch (err) {

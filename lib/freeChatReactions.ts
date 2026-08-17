@@ -69,12 +69,101 @@ const VIOLENCE_SCORING_CONTEXT_PATTERN =
 
 const THREAT_KEYWORDS = ["협박", "협박당했", "위협", "위협받았", "죽인다고 했", "가만 안 둔다고"];
 
-const INAPPROPRIATE_CONTACT_KEYWORDS = [
+// 부적절 접촉/노출/비밀 요구 등 문맥이 이미 명백한 고위험 표현 (단독으로 즉시 발동)
+const INAPPROPRIATE_CONTACT_EXPLICIT_KEYWORDS = [
   "만지려", "만졌", "몸을 만", "옷을 벗", "비밀로 하래", "비밀로 하자고",
   "아무한테도 말하지마", "아무한테도 말하지 말", "우리끼리만", "엄마아빠한테 말하지마",
-  "이상한 데 만", "이상한 데를 만", "사진 찍재", "사진 찍자고", "쉬하는 데", "가슴", "고추",
+  "이상한 데 만", "이상한 데를 만", "사진 찍재", "사진 찍자고", "쉬하는 데",
   "둘만의 비밀",
+  "만지라고", "만지라", "만지게", "더듬",
+  "속옷을 벗", "바지를 벗", "팬티를 벗",
+  "사진 찍으래", "사진 찍자래",
+  "옷을 벗으래", "옷 벗으래", "옷을 벗으라고", "옷 벗으라고",
+  "비밀로 하라고", "비밀로 해달래", "비밀로 하재",
 ];
+
+// 음식/식재료 및 넌센스 복합어 — "고추" 부분일치로 인한 오탐을 방지하기 위해 매칭 전 제외
+const FOOD_PEPPER_COMPOUND_EXCLUSIONS = [
+  "초고추장", "고추장아찌", "배추고추장", "고추장", "고춧가루", "고추가루",
+  "청양고추", "풋고추", "꽈리고추", "오이고추", "아삭이고추", "아삭고추",
+  "홍고추", "당조고추", "고추기름", "고추냉이", "고추전", "고추튀김",
+  "고추조림", "고추잡채", "고추씨", "고추피클", "고추절임", "고추부각",
+  "고추참치", "고추순", "고추잎", "고춧잎", "마르고추", "건고추",
+  "마른고추", "붉은고추",
+  "고추소박이", "고추된장무침", "풋고추된장무침", "오이고추된장무침",
+  "고추장떡", "고추지", "고추부침개", "고추순나물",
+];
+
+// 가슴 관련 일상 감정/신체 통증/운동 관용구 — "가슴" 부분일치로 인한 오탐 방지용 제외
+const CHEST_IDIOM_EXCLUSIONS = [
+  "달리기 하니까 가슴", "달리기해서 가슴", "운동하니까 가슴", "뛰고 나니 가슴",
+  "숨차서 가슴", "숨 차서 가슴",
+  "가슴이 두근두근", "가슴 두근두근", "가슴두근두근",
+  "가슴이 쿵쾅쿵쾅", "가슴 쿵쾅쿵쾅", "가슴쿵쾅쿵쾅",
+  "가슴이 아파", "가슴이 아팠", "가슴이 아프", "가슴 아파", "가슴 아팠", "가슴 아프", "가슴아파", "가슴아팠", "가슴아프", "가슴앓이",
+  "가슴이 답답", "가슴 답답", "가슴답답",
+  "가슴이 뛰어", "가슴이 뛰었", "가슴 뛰어", "가슴 뛰었", "가슴뛰어", "가슴뛰었",
+  "가슴이 두근", "가슴 두근", "가슴두근",
+  "가슴이 뭉클", "가슴 뭉클", "가슴뭉클",
+  "가슴이 벅차", "가슴 벅차", "가슴벅차",
+  "가슴이 찡", "가슴 찡", "가슴찡",
+  "가슴이 철렁", "가슴 철렁", "가슴철렁",
+  "가슴이 쿵", "가슴 쿵", "가슴쿵",
+  "가슴이 쓰려", "가슴 쓰려", "가슴이 저려", "가슴 저려", "가슴이 뻐근", "가슴 뻐근",
+  "가슴이 찢어", "가슴 찢어", "가슴이 미어", "가슴 미어",
+  "가슴팍", "가슴뼈", "가슴통증", "가슴 통증", "가슴 높이", "가슴 둘레",
+];
+
+// 단독으로는 위험을 확정할 수 없는 짧고 애매한 신체 단어
+const AMBIGUOUS_BODY_KEYWORDS = ["고추", "가슴"];
+
+// 애매 단어와 결합하여 부적절 접촉/노출/성적 강요를 판정하는 신호
+const AMBIGUOUS_CONTACT_RISK_SIGNALS = [
+  "만지", "만졌", "만져", "만지려", "만지고", "만지라", "만지게", "만지지", "더듬", "주물", "만짐", "손을 대", "손대",
+  "보여달", "보여줬", "보여주", "보여줘", "보여주라", "보여달래", "보여주래", "보여달라고", "보여주라고",
+  "벗기", "벗겼", "벗겨", "벗으", "벗어", "벗으래", "벗으라고", "벗겨서",
+  "바지 속", "팬티 속", "옷 속", "바지속", "팬티속", "옷속",
+  "사진", "촬영", "찍재", "찍자", "찍으래",
+  "비밀", "말하지", "이상한 짓", "뽀뽀", "핥", "빨아", "빨았",
+  "쓰다듬", "주무르", "손댔", "손대려", "손대고", "이상한 데", "이상한데",
+];
+
+function detectInappropriateContact(text: string): boolean {
+  // 1) 문맥이 이미 명백한 고위험 표현은 즉시 단독 발동
+  if (includesAny(text, INAPPROPRIATE_CONTACT_EXPLICIT_KEYWORDS)) {
+    return true;
+  }
+
+  // 2) 정상 음식 복합어 제외 (단어가 붙어 새로운 매칭이 생기지 않도록 공백으로 치환)
+  let textWithoutFood = text;
+  for (const food of FOOD_PEPPER_COMPOUND_EXCLUSIONS) {
+    textWithoutFood = textWithoutFood.split(food).join(" ");
+  }
+
+  // 3) 문장에 위험 접촉/노출/강요 신호가 존재하는지 확인
+  const hasRiskSignal = includesAny(textWithoutFood, AMBIGUOUS_CONTACT_RISK_SIGNALS);
+
+  // 4) 가슴 관용구 처리:
+  //    - 위험 접촉 신호("만져", "주물", "쓰다듬", "벗", "보여달", "사진", "비밀", "이상한 데" 등)가 문장에 있으면
+  //      관용구 치환을 건너뛴다 ("만져서 가슴이 아파", "주물러서 가슴이 아파" 등에서 "가슴"이 사전 제거되어
+  //      미탐이 발생하는 치명적 결함을 원천 방지).
+  //    - 위험 신호가 없을 때만 가슴 관용구("달리기 하니까 가슴이 아파", "가슴이 두근두근" 등)를 공백으로 치환한다.
+  let sanitized = textWithoutFood;
+  if (!hasRiskSignal) {
+    for (const idiom of CHEST_IDIOM_EXCLUSIONS) {
+      sanitized = sanitized.split(idiom).join(" ");
+    }
+  }
+
+  // 5) 제외 후 애매 단어("고추", "가슴")가 남아있는지 확인
+  const hasAmbiguousTerm = AMBIGUOUS_BODY_KEYWORDS.some((kw) => sanitized.includes(kw));
+  if (!hasAmbiguousTerm) {
+    return false;
+  }
+
+  // 6) 애매 단어 단독은 발동하지 않고, 위험 접촉/노출/강요 신호가 함께 있을 때만 발동
+  return hasRiskSignal;
+}
 
 // neglect(방임) — 세분화 검토 요청에 따라 추가. DB 마이그레이션 승인 전까지는 log-only 폴백될 수 있음.
 const NEGLECT_KEYWORDS = ["밥 안 줘", "밥을 안 줘", "굶", "집에 혼자", "아무도 없어", "며칠 혼자", "혼자 있으래"];
@@ -111,11 +200,11 @@ function includesAny(text: string, keywords: string[]): boolean {
 }
 
 function detectSafetySubcategory(text: string): SafetySubcategory | null {
-  // self_harm: 관용구("배고파 죽겠어" 등)만 있는 경우 제외하고 매칭
-  const strippedForSelfHarm = SELF_HARM_IDIOM_EXCLUSIONS.reduce((t, idiom) => t.split(idiom).join(""), text);
+  // self_harm: 관용구("배고파 죽겠어" 등)만 있는 경우 제외하고 매칭 (공백으로 치환)
+  const strippedForSelfHarm = SELF_HARM_IDIOM_EXCLUSIONS.reduce((t, idiom) => t.split(idiom).join(" "), text);
   if (includesAny(strippedForSelfHarm, SELF_HARM_KEYWORDS)) return "self_harm";
 
-  const strippedForViolence = text.replace(VIOLENCE_SCORING_CONTEXT_PATTERN, "");
+  const strippedForViolence = text.replace(VIOLENCE_SCORING_CONTEXT_PATTERN, " ");
   if (includesAny(strippedForViolence, VIOLENCE_KEYWORDS)) return "violence";
 
   // 폭력/괴롭힘 키워드가 있어도 명백히 제3자 얘기이고 본인 얘기라는 단서가 없으면 안전 카테고리에서 제외
@@ -125,7 +214,7 @@ function detectSafetySubcategory(text: string): SafetySubcategory | null {
   }
 
   if (includesAny(text, THREAT_KEYWORDS)) return "threat";
-  if (includesAny(text, INAPPROPRIATE_CONTACT_KEYWORDS)) return "inappropriate_contact";
+  if (detectInappropriateContact(text)) return "inappropriate_contact";
   if (includesAny(text, NEGLECT_KEYWORDS)) return "neglect";
 
   return null;
@@ -283,4 +372,98 @@ export function pickReaction(childText: string, lastKText?: string): ReactionRes
   const pool = poolFor(category);
   const text = pickRandomAvoiding(pool, lastKText);
   return { text, category, flaggedForParent: false };
+}
+
+// ── 6) safety_events 단시간 중복 방지 (DB-based Deduplication Guard) ──
+// 동일 childId + 동일 subcategory + 동일 발화 텍스트가 짧은 시간(60초) 내에 DB에 이미 존재할 때
+// 중복 insert 및 중복 이벤트 발생을 방지한다 (요청서 §3-8 요구사항).
+// Vercel 서버리스 환경에서 인스턴스 격리/재시작과 무관하게 DB 조회를 통해 중복을 차단한다.
+export const SAFETY_EVENT_DEDUPE_TTL_MS = 60_000; // 60초
+
+export interface InsertSafetyEventParams {
+  sessionId?: string | null;
+  childId?: string | null;
+  subcategory?: SafetySubcategory | string;
+  childText: string;
+  source?: string;
+}
+
+/**
+ * DB 조회를 통해 동일 child + 동일 subcategory + 동일 발화가 최근 TTL(60초) 내에 존재하는지 확인한다.
+ * DB 조회 실패 시에는 아동 안전 이벤트 누락을 방지하기 위해 fail-open(중복 아님으로 간주하여 insert 진행)한다.
+ */
+export async function isRecentDuplicateSafetyEvent(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: any,
+  params: InsertSafetyEventParams,
+  nowMs: number = Date.now()
+): Promise<boolean> {
+  try {
+    const trimmedText = params.childText?.trim();
+    if (!trimmedText || !params.subcategory) return false;
+
+    const sinceIso = new Date(nowMs - SAFETY_EVENT_DEDUPE_TTL_MS).toISOString();
+
+    let query = supabaseClient
+      .from("safety_events")
+      .select("id")
+      .eq("child_text", trimmedText)
+      .eq("subcategory", params.subcategory)
+      .gte("created_at", sinceIso);
+
+    if (params.childId) {
+      query = query.eq("child_id", params.childId);
+    } else if (params.sessionId) {
+      query = query.eq("session_id", params.sessionId);
+    }
+
+    const { data, error } = await query.limit(1);
+
+    if (error) {
+      console.warn("[safety_events] dedupe check query failed (failing open):", error.message);
+      return false; // fail-open: DB 조회 에러 시 insert 차단하지 않음
+    }
+
+    if (Array.isArray(data)) {
+      return data.length > 0;
+    }
+    return Boolean(data);
+  } catch (err) {
+    console.warn("[safety_events] dedupe check threw (failing open):", (err as Error).message);
+    return false; // fail-open
+  }
+}
+
+/**
+ * safety_events 테이블에 이벤트를 기록하되, 동일 child + 카테고리 + 발화의 단시간 중복 insert를 차단한다.
+ * DB 조회를 통해 중복 여부를 판별하며, 조회 실패 시 fail-open으로 insert를 진행한다.
+ */
+export async function insertSafetyEventWithDedupe(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: any,
+  params: InsertSafetyEventParams,
+  nowMs: number = Date.now()
+): Promise<{ inserted: boolean; duplicate: boolean; error?: unknown }> {
+  if (!params.childText || !params.subcategory) {
+    return { inserted: false, duplicate: false };
+  }
+
+  const isDup = await isRecentDuplicateSafetyEvent(supabaseClient, params, nowMs);
+  if (isDup) {
+    return { inserted: false, duplicate: true };
+  }
+
+  const { error } = await supabaseClient.from("safety_events").insert({
+    session_id: params.sessionId || null,
+    child_id: params.childId || null,
+    subcategory: params.subcategory,
+    child_text: params.childText,
+    source: params.source ?? "QUESTION_ENGINE",
+  });
+
+  if (error) {
+    console.error("[safety_events] insert failed:", error.message);
+  }
+
+  return { inserted: !error, duplicate: false, error };
 }
