@@ -90,11 +90,22 @@ const BUILD_ID = BUILD_STAMP;
 const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1_000; // 60 minutes
 const MIN_CHECK_THROTTLE_MS = 5_000; // 5 seconds between auto checks
 
+/** 프로덕션 도메인. 여기서만 진단 로그를 끈다. */
+const PRODUCTION_HOST = "app.k-bestie.com";
+
+/**
+ * 2026-08-17: 원래 `NODE_ENV !== "production"` 으로 막혀 있었다. 그런데 Dev 배포도
+ * Vercel 프로덕션 빌드라 NODE_ENV 가 production 이다. 그래서 **Dev 에서 로그가 하나도
+ * 안 나왔고**, "새 버전을 확인하지 못했어요" 모달의 원인을 현장에서 볼 수 없었다.
+ *
+ * 실제 사용자 도메인에서만 끄고, Dev·프리뷰·로컬에서는 남긴다.
+ * SSR 단계에서는 window 가 없으므로 로그를 남기지 않는다.
+ */
 function debugLog(event: string, extra?: unknown) {
-  if (process.env.NODE_ENV !== "production") {
-    if (extra !== undefined) console.info(`[PWA] ${event}`, extra);
-    else console.info(`[PWA] ${event}`);
-  }
+  if (typeof window === "undefined") return;
+  if (window.location.hostname === PRODUCTION_HOST) return;
+  if (extra !== undefined) console.info(`[PWA] ${event}`, extra);
+  else console.info(`[PWA] ${event}`);
 }
 
 export function PwaServiceWorker() {
