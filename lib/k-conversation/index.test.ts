@@ -93,20 +93,69 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { respond } from "./index";
 
 function createMockDbForRespond(options: {
-  activeChosungSession?: { id: string; current_word?: string } | null;
+  activeChosungSession?: { id: string; current_word?: string; current_chosung?: string } | null;
   activeWordChainSession?: { id: string; current_word?: string; used_words?: string[] } | null;
   throwOnActiveSession?: boolean;
 } = {}): SupabaseClient {
-  const chain: any = {
-    select: () => chain,
-    eq: () => chain,
-    is: () => chain,
-    order: () => chain,
-    limit: () => chain,
-    single: () => Promise.resolve({ data: null, error: null }),
-    maybeSingle: async () => ({ data: null, error: null }),
-    update: () => chain,
-    insert: () => chain,
+  const getChosungSessionData = () => options.activeChosungSession ?? null;
+  const getWordChainSessionData = () => options.activeWordChainSession ?? null;
+
+  const createTableChain = (table: string) => {
+    const tableChain: any = {
+      select: () => tableChain,
+      eq: () => tableChain,
+      is: () => tableChain,
+      order: () => tableChain,
+      limit: () => tableChain,
+      single: async () => {
+        if (table === "chosung_game_sessions") {
+          return {
+            data: options.activeChosungSession ?? {
+              id: "cs-session-1",
+              child_id: "child-1",
+              chat_session_id: "session-1",
+              state: "PLAYING_K_ASKS",
+              initiated_by: "CHILD",
+              current_word: "바나나",
+              current_chosung: "ㅂㄴㄴ",
+              current_category: "과일",
+              current_difficulty: 1,
+              hint_level: 0,
+              recent_words: ["바나나"],
+              started_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              ended_at: null,
+            },
+            error: null,
+          };
+        }
+        return { data: null, error: null };
+      },
+      maybeSingle: async () => {
+        if (table === "chosung_game_sessions") {
+          return { data: getChosungSessionData(), error: null };
+        }
+        if (table === "word_chain_game_sessions") {
+          return { data: getWordChainSessionData(), error: null };
+        }
+        if (table === "k_peer_personas") {
+          return {
+            data: {
+              given_name: "민준",
+              real_grade: 3,
+              grade_label: "3학년",
+              peer_age: 10,
+              current_stage: "STAGE_3_FRIEND",
+            },
+            error: null,
+          };
+        }
+        return { data: null, error: null };
+      },
+      update: () => tableChain,
+      insert: () => tableChain,
+    };
+    return tableChain;
   };
 
   const client = {
@@ -118,45 +167,13 @@ function createMockDbForRespond(options: {
       ) {
         throw new Error("DB crash in game session query");
       }
-      if (table === "chosung_game_sessions") {
-        return {
-          ...chain,
-          maybeSingle: async () => ({
-            data: options.activeChosungSession ?? null,
-            error: null,
-          }),
-        };
-      }
-      if (table === "word_chain_game_sessions") {
-        return {
-          ...chain,
-          maybeSingle: async () => ({
-            data: options.activeWordChainSession ?? null,
-            error: null,
-          }),
-        };
-      }
-      if (table === "k_peer_personas") {
-        return {
-          ...chain,
-          maybeSingle: async () => ({
-            data: {
-              given_name: "민준",
-              real_grade: 3,
-              grade_label: "3학년",
-              peer_age: 10,
-              current_stage: "STAGE_3_FRIEND",
-            },
-            error: null,
-          }),
-        };
-      }
-      return chain;
+      return createTableChain(table);
     },
   };
 
   return client as unknown as SupabaseClient;
 }
+
 
 test("Integration: Router가 handled=true면 지침(instruction)이 LLM 프롬프트에 실린다", async () => {
   let capturedSystemInstruction: string | undefined;
@@ -390,3 +407,208 @@ test("filterRecentHistory: 아이가 정말 같은 말을 두 번 하면 마지�
     ["child:응", "k:응?", "child:응"],
   );
 });
+
+// ============================================================================
+// 2026-08-17 Production 사고 방지 회귀 방어 테스트 (5종)
+// ============================================================================
+
+test("Guard Test 1: 활성 세션 없음 + Router 미처리 → 프롬프트에 게임 금지 지침이 들어간다", async () => {
+  let capturedInstruction: string | undefined;
+
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "오늘 날씨 맑아서 좋아!",
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 8 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "오늘 날씨 어때?",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.ok(capturedInstruction);
+  assert.match(capturedInstruction, /\[놀이 진행 금지 지침\]/);
+  assert.match(capturedInstruction, /지금은 게임\(초성게임, 끝말잇기 등\)이 진행 중이 아니야\./);
+  assert.match(capturedInstruction, /초성 문제\(ㄱㅊ 같은 자음\)를 내거나 끝말잇기 단어를 제시하지 마\./);
+  assert.match(capturedInstruction, /정답·힌트·글자 수를 말하지 마\./);
+  assert.match(capturedInstruction, /아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려\./);
+});
+
+test("Guard Test 2: 세션 없이 아이가 '초성게임 하자'고 발화해도 문제 출제 금지 지침이 포함된다", async () => {
+  let capturedInstruction: string | undefined;
+
+  // sessionId 없이 호출하여 Router가 처리하지 않는 턴 상황 시뮬레이션
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "좋아, 시작하자!",
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 6 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "초성게임 하자",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.notEqual(result.action, "PLAYFUL_GAME_CHOSUNG", "세션 없이는 게임 액션이 차단되어야 함");
+  assert.ok(capturedInstruction);
+  assert.match(capturedInstruction, /\[놀이 진행 금지 지침\]/);
+  assert.match(capturedInstruction, /초성 문제\(ㄱㅊ 같은 자음\)를 내거나 끝말잇기 단어를 제시하지 마\./);
+  assert.match(capturedInstruction, /아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려\./);
+});
+
+test("Guard Test 3: 활성 세션 있음 → 금지 지침이 들어가지 않는다", async () => {
+  let capturedInstruction: string | undefined;
+
+  const mockDb = createMockDbForRespond({
+    activeChosungSession: { id: "cs-session-1", current_word: "사과" },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "응 듣고 있어!",
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "안녕",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.ok(capturedInstruction);
+  assert.equal(
+    capturedInstruction.includes("[놀이 진행 금지 지침]"),
+    false,
+    "활성 세션이 있을 때는 금지 지침이 들어가지 않아야 함"
+  );
+});
+
+test("Guard Test 4: 스킬이 준 지침(문제·정답·힌트)이 프롬프트에 그대로 전달되고 놀이 진행 규칙이 적용된다", async () => {
+  let capturedInstruction: string | undefined;
+
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "초성 퀴즈 시작! 자음은 ㅂㄴㄴ야.",
+          usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 10 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "초성 퀴즈 내줘",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.ok(capturedInstruction);
+  assert.equal(capturedInstruction.includes("[놀이 진행 금지 지침]"), false);
+  assert.match(capturedInstruction, /\[놀이 진행 규칙\]/);
+  assert.match(capturedInstruction, /시스템이 제공한 놀이 지침\(문제 초성, 제시 단어, 정답, 힌트 등\)을 반드시 그대로 사용해\./);
+  assert.match(capturedInstruction, /시스템이 지정한 초성이나 제시 단어를 다른 것으로 바꾸거나, 새 문제를 임의로 지어내지 마\./);
+  assert.match(capturedInstruction, /글자 수나 힌트 내용을 임의로 바꾸지 말고/);
+  assert.ok(
+    capturedInstruction.includes("초성게임") ||
+    capturedInstruction.includes("문제"),
+    "스킬의 지침이 프롬프트에 실려야 함"
+  );
+});
+
+test("Guard Test 5: 기존 자유대화(게임 무관)에는 영향이 없다", async () => {
+  let capturedInstruction: string | undefined;
+
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "친구랑 축구해서 신났겠다!",
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 8 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "오늘 학교에서 친구랑 축구했어",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.equal(result.text, "친구랑 축구해서 신났겠다!");
+  assert.ok(capturedInstruction);
+  assert.match(capturedInstruction, /\[K Core Persona - 내부 지침\]/);
+  assert.match(capturedInstruction, /\[Grade Persona\]/);
+  assert.match(capturedInstruction, /\[출력 규칙\]/);
+});
+

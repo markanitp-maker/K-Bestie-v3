@@ -32,6 +32,10 @@ export interface ResponseGeneratorInput {
   isGeneralKnowledgeQuestion?: boolean;
   /** 케이가 함께할 수 있는 놀이 목록 및 놀이 안내 지침 프래그먼트. */
   playCatalogFragment?: string;
+  /** 활성 놀이 세션 존재 여부. */
+  hasActivePlaySession?: boolean;
+  /** 이번 턴에 놀이 스킬이 처리되었는지 여부. */
+  playSkillHandled?: boolean;
 }
 
 const PROMPT_LEAK_PATTERNS = [
@@ -68,12 +72,31 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       ? "지금은 자유대화야 — 정보를 확보하거나 목표를 달성하려 하지 마. 아이가 하고 싶은 이야기를 하도록 그냥 함께해."
       : "지금은 미션 대화야 — 하지만 질문지를 읽는 게 아니라 친구처럼 자연스럽게 대화하는 느낌을 유지해.";
 
+  let playGuardFragment = "";
+  if (input.playSkillHandled) {
+    playGuardFragment = [
+      "[놀이 진행 규칙]",
+      "- 시스템이 제공한 놀이 지침(문제 초성, 제시 단어, 정답, 힌트 등)을 반드시 그대로 사용해.",
+      "- 시스템이 지정한 초성이나 제시 단어를 다른 것으로 바꾸거나, 새 문제를 임의로 지어내지 마.",
+      "- 글자 수나 힌트 내용을 임의로 바꾸지 말고, 시스템 지침에 명시된 내용에만 기반해서 답해.",
+    ].join("\n");
+  } else if (input.hasActivePlaySession === false && input.playSkillHandled === false) {
+    playGuardFragment = [
+      "[놀이 진행 금지 지침]",
+      "- 지금은 게임(초성게임, 끝말잇기 등)이 진행 중이 아니야.",
+      "- 절대로 초성 문제(ㄱㅊ 같은 자음)를 내거나 끝말잇기 단어를 제시하지 마.",
+      "- 정답·힌트·글자 수를 말하지 마.",
+      '- 아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려.',
+    ].join("\n");
+  }
+
   const lines = [
     input.corePersonaFragment,
     input.gradePersonaFragment,
     input.relationshipFragment,
     input.memoryFragment,
     input.playCatalogFragment,
+    playGuardFragment,
     "[지금 이 턴의 방향 - Action]",
     ACTION_DIRECTIVES[input.action],
     input.isGeneralKnowledgeQuestion

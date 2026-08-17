@@ -432,6 +432,8 @@ export async function respond(
       adapterInstruction: combinedAdapterInstruction || undefined,
       isGeneralKnowledgeQuestion: signals.hasGeneralKnowledgeQuestion,
       playCatalogFragment,
+      hasActivePlaySession,
+      playSkillHandled,
     },
   });
 

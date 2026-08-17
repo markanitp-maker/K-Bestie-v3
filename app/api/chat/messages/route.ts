@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const { error } = await service
+  const { data: upserted, error } = await service
     .from("chat_messages")
     .upsert({ 
       session_id: sessionId, 
@@ -184,7 +184,8 @@ export async function POST(req: NextRequest) {
       voice_mode: voiceMode, 
       display_sequence: mode === "mission" ? displaySequence : (displaySequence ?? null),
       is_clarification: isClarification ?? false
-    }, { onConflict: "session_id,turn_id", ignoreDuplicates: true });
+    }, { onConflict: "session_id,turn_id", ignoreDuplicates: true })
+    .select("id");
 
   if (error) {
     console.error("[chat/messages] upsert failed", { sessionId, turnId, role, mode, message: error.message, code: error.code });
@@ -200,7 +201,17 @@ export async function POST(req: NextRequest) {
   }
 
 
-  console.log("[chat/messages] POST done", { sessionId, turnId, durationMs: Date.now() - startedAt, status: "success" });
+  // 2026-08-17: ignoreDuplicates 로 조용히 버려지면 클라이언트는 200 을 받고
+  // 저장된 줄 안다. 실제로 K 응답이 통째로 유실되는데 로그가 없어 며칠간 못 봤다.
+  // 버려진 경우를 반드시 남긴다.
+  const skipped = Array.isArray(upserted) && upserted.length === 0;
+  if (skipped) {
+    console.warn("[chat/messages] upsert SKIPPED by duplicate turn_id — 저장되지 않았다", {
+      sessionId, turnId, role, mode,
+    });
+  }
+
+  console.log("[chat/messages] POST done", { sessionId, turnId, durationMs: Date.now() - startedAt, status: skipped ? "skipped_duplicate" : "success" });
   return NextResponse.json({ ok: true });
 }
 

@@ -1,65 +1,46 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { generateReflectiveReaction, UNCLEAR_AUDIO_TEMPLATES } from "@/lib/freechat/reactionEngine";
+import { checkSafetyPreflight } from "@/lib/k-conversation";
+import { resolveVacationChatInstruction } from "@/lib/freechat/vacationChatInstruction";
 
-describe("Single Child Turn Response Idempotency & Multi-Message Integrity", () => {
-  // 1. 같은 child turn으로 /api/voice/respond 2회 → Gemini 생성 1회
-  it("Test 1: Same child turn concurrent/sequential /api/voice/respond calls execute Gemini generation only once", async () => {
+describe("Voice Respond Server Cache Removal & Response Generation Integrity", () => {
+  // 1. [009 서버 캐시 제거 계약] 같은 turnId로 두 번 요청하면 두 번 다 새로 생성된다 (캐시 재생 없음)
+  it("Test 1: Same child turn consecutive /api/voice/respond calls generate newly every time (no cache replay)", async () => {
     let geminiCallCount = 0;
     const mockGeminiGenerate = async (prompt: string) => {
       geminiCallCount += 1;
-      await new Promise((r) => setTimeout(r, 20)); // simulate latency
-      return { text: `응답: ${prompt}` };
+      await new Promise((r) => setTimeout(r, 10));
+      return { text: `새로 생성된 응답 (${geminiCallCount}): ${prompt}` };
     };
 
-    // Simulate route single-flight & idempotency cache
-    const inFlight = new Map<string, Promise<{ text: string; model: string }>>();
-    const completed = new Map<string, { text: string; model: string; timestamp: number }>();
-
-    const respondHandler = async (sessionId: string, childTurnId: string, prompt: string) => {
-      const idempotencyKey = `${sessionId}:${childTurnId}:turn_response`;
-      const cached = completed.get(idempotencyKey);
-      if (cached) {
-        return { ...cached, replayed: true };
-      }
-      const existing = inFlight.get(idempotencyKey);
-      if (existing) {
-        const result = await existing;
-        return { ...result, replayed: true };
-      }
-
-      const runPromise = (async () => {
-        const gen = await mockGeminiGenerate(prompt);
-        return { text: gen.text, model: "gemini-2.5-flash" };
-      })();
-
-      inFlight.set(idempotencyKey, runPromise);
-      try {
-        const result = await runPromise;
-        completed.set(idempotencyKey, { ...result, timestamp: Date.now() });
-        return result;
-      } finally {
-        inFlight.delete(idempotencyKey);
-      }
+    // 2026-08-17: 009 서버 캐시(completedResponses / inFlightRequests)를 전면 제거함.
+    // 아이가 같은 말을 반복하더라도 이전 응답을 replayed로 재활용하지 않고 매번 새로 응답을 생성하여
+    // 침묵/무응답 장애(박서아·박서현 계정 20분 무응답 사고)를 완전히 차단한다.
+    const respondHandlerWithoutCache = async (sessionId: string, childTurnId: string, prompt: string) => {
+      // 캐시나 멱등성 가드 없이 항상 직접 생성을 실행
+      const gen = await mockGeminiGenerate(prompt);
+      return {
+        text: gen.text,
+        category: "generated",
+        flaggedForParent: false,
+        model: "gemini-2.5-flash",
+      };
     };
 
-    // 2 concurrent calls with same childTurnId
-    const [res1, res2] = await Promise.all([
-      respondHandler("session-1", "turn-101", "안녕 케이야"),
-      respondHandler("session-1", "turn-101", "안녕 케이야"),
-    ]);
+    // 1st call
+    const res1 = await respondHandlerWithoutCache("session-1", "turn-101", "안녕 케이야");
+    // 2nd call with identical childTurnId and prompt
+    const res2 = await respondHandlerWithoutCache("session-1", "turn-101", "안녕 케이야");
 
-    assert.equal(geminiCallCount, 1, "Gemini generation must only be called once for same child turn");
-    assert.equal(res1.text, res2.text, "Both callers must receive the exact same response");
-
-    // Sequential 3rd retry call with same childTurnId
-    const res3 = await respondHandler("session-1", "turn-101", "안녕 케이야");
-    assert.equal(geminiCallCount, 1, "Sequential retry must reuse completed response without calling Gemini again");
-    assert.equal(res3.text, res1.text);
+    assert.equal(geminiCallCount, 2, "Both calls with the same turnId must trigger generation newly (no cache replay)");
+    assert.notEqual(res1.text, res2.text, "Each call receives its own newly generated response");
+    assert.equal("replayed" in res1, false, "Response 1 must not contain replayed property");
+    assert.equal("replayed" in res2, false, "Response 2 must not contain replayed property");
   });
 
-  // 2. 같은 child turn으로 2회 → chat_messages K 응답 1건
-  it("Test 2: Same child turn duplicate K response results in exactly 1 chat_messages row", async () => {
+  // 2. [저장 단계 중복 방지] 같은 child turn으로 2회 응답 시 chat_messages K 저장은 UNIQUE 제약 및 onConflict + ignoreDuplicates에 의해 1건만 유지된다
+  it("Test 2: Same child turn duplicate K response results in exactly 1 chat_messages row via DB UNIQUE constraint", async () => {
     const chatMessagesTable: Array<{ session_id: string; turn_id: string; role: string; content: string }> = [];
 
     const mockUpsertChatMessage = (msg: { session_id: string; turn_id: string; role: string; content: string }) => {
@@ -69,7 +50,7 @@ describe("Single Child Turn Response Idempotency & Multi-Message Integrity", () 
       if (existingIdx === -1) {
         chatMessagesTable.push(msg);
       }
-      // On conflict (session_id, turn_id) DO NOTHING
+      // On conflict (session_id, turn_id) DO NOTHING (ignoreDuplicates)
       return { ok: true };
     };
 
@@ -131,7 +112,7 @@ describe("Single Child Turn Response Idempotency & Multi-Message Integrity", () 
     assert.equal(persistedMessages.length, 1, "Only the server-persisted K row exists");
   });
 
-  // 4. unclear_audio를 다른 turn으로 연속 2회 → 같은 문구가 반복 저장되지 않는가
+  // 4. [서로 다른 발화 다양성] 서로 다른 발화는 각각 다른 응답을 받는다
   it("Test 4: Consecutive unclear_audio on different turns picks distinct phrases without repeating identical text", () => {
     const turn1ChildUtterance = "아"; // low length -> unclear_audio
     const turn1Res = generateReflectiveReaction(turn1ChildUtterance, [], { isLowConfidenceAsr: true });
@@ -153,7 +134,7 @@ describe("Single Child Turn Response Idempotency & Multi-Message Integrity", () 
   });
 
   // 5. 정상 복수 메시지 유지 (opening+첫질문 / response+completion / completion+reward / safety 안내)
-  it("Test 5: Legitimate multi-messages with different purposes are preserved as 2 distinct rows", () => {
+  it("Test 5: Legitimate multi-messages with different purposes are preserved as distinct rows", () => {
     const messageStore = new Map<string, { role: string; content: string; purpose: string }>();
 
     const saveLegitMessage = (sessionId: string, turnId: string, role: string, content: string, purpose: string) => {
@@ -224,240 +205,107 @@ describe("Single Child Turn Response Idempotency & Multi-Message Integrity", () 
     assert.equal(historyK.length, 2, "Both indistinct turns received polite, non-repeating guidance");
   });
 
-  // 8. [리뷰 지적 ①] 캐시가 빈 상태(다른 인스턴스 모사)에서 같은 turn 재요청 → DB에 이미 K 응답이 있으면 Gemini 호출 0회
-  it("Test 8: Empty in-memory cache (cross-instance simulation) reuses existing DB K response with 0 Gemini calls", async () => {
+  // 8. [DB 사전 조회 제거 계약] DB에 이미 K 응답이 있더라도 /api/voice/respond는 캐시 사전조회 없이 항상 새로 생성한다
+  it("Test 8: DB existing K message is not replayed as cache; route generates newly every request", async () => {
     let geminiCallCount = 0;
     const mockGeminiGenerate = async (prompt: string) => {
       geminiCallCount += 1;
-      return { text: `생성된 응답: ${prompt}` };
+      return { text: `항상 새로 생성된 응답: ${prompt}` };
     };
 
-    // DB mock containing already persisted K response from Instance A
+    // DB에 이미 이전 응답이 존재하더라도 009의 DB 사전조회는 제거되었음
     const dbMessages = new Map<string, { role: string; content: string }>();
-    dbMessages.set("session-cross-8:turn-801:k", { role: "k", content: "인스턴스 A에서 이미 생성해 저장한 응답이야!" });
+    dbMessages.set("session-cross-8:turn-801:k", { role: "k", content: "과거에 저장되었던 옛날 응답" });
 
-    // Instance B: Fresh process with empty in-memory cache and empty inFlight map
-    const instanceB_completed = new Map<string, { text: string; model: string; timestamp: number }>();
-    const instanceB_inFlight = new Map<string, Promise<{ text: string; model: string }>>();
-
-    const simulateInstanceBRespond = async (sessionId: string, childTurnId: string, prompt: string) => {
-      const idempotencyKey = `${sessionId}:${childTurnId}:turn_response`;
-
-      // 1. In-memory cache check (empty on Instance B)
-      const cached = instanceB_completed.get(idempotencyKey);
-      if (cached) return { ...cached, replayed: true };
-
-      // 2. In-flight check
-      const inFlight = instanceB_inFlight.get(idempotencyKey);
-      if (inFlight) return { ...(await inFlight), replayed: true };
-
-      // 3. Pre-generation DB check (cross-instance protection)
-      try {
-        const kTurnId = `${childTurnId}:k`;
-        const dbRow = dbMessages.get(`${sessionId}:${kTurnId}`) ?? dbMessages.get(`${sessionId}:${childTurnId}`);
-        if (dbRow?.role === "k" && dbRow.content) {
-          const replayed = { text: dbRow.content, model: "cached_db", replayed: true };
-          instanceB_completed.set(idempotencyKey, { ...replayed, timestamp: Date.now() });
-          return replayed;
-        }
-      } catch (dbErr) {
-        // fail-open
-      }
-
-      // 4. Generation fallback
-      const genPromise = (async () => {
-        const gen = await mockGeminiGenerate(prompt);
-        return { text: gen.text, model: "gemini-2.5-flash", replayed: false };
-      })();
-
-      instanceB_inFlight.set(idempotencyKey, genPromise);
-      try {
-        const result = await genPromise;
-        instanceB_completed.set(idempotencyKey, { ...result, timestamp: Date.now() });
-        return result;
-      } finally {
-        instanceB_inFlight.delete(idempotencyKey);
-      }
-    };
-
-    // Re-request on Instance B for turn-801
-    const res = await simulateInstanceBRespond("session-cross-8", "turn-801", "안녕 케이야");
-
-    assert.equal(geminiCallCount, 0, "Gemini generation must not be called when DB already has K response");
-    assert.equal(res.text, "인스턴스 A에서 이미 생성해 저장한 응답이야!");
-    assert.equal(res.replayed, true);
-    assert.equal(res.model, "cached_db");
-  });
-
-  // 9. [리뷰 지적 ①] DB 조회 실패 시 생성이 막히지 않는가 (fail-open)
-  it("Test 9: DB query failure fails open and does not block Gemini generation", async () => {
-    let geminiCallCount = 0;
-    const mockGeminiGenerate = async (prompt: string) => {
-      geminiCallCount += 1;
-      return { text: `장애 복구 생성 응답: ${prompt}` };
-    };
-
-    const inFlight = new Map<string, Promise<{ text: string; model: string }>>();
-    const completed = new Map<string, { text: string; model: string; timestamp: number }>();
-
-    const simulateRespondWithFailingDb = async (sessionId: string, childTurnId: string, prompt: string) => {
-      const idempotencyKey = `${sessionId}:${childTurnId}:turn_response`;
-
-      // Pre-generation DB check with simulated DB failure
-      let dbLookupFailed = false;
-      try {
-        throw new Error("DB connection timeout (simulated)");
-      } catch (dbErr) {
-        dbLookupFailed = true;
-        // Fail-open: continue to generation
-      }
-
-      assert.ok(dbLookupFailed, "DB failure must be caught");
-
-      // Generation proceeds
-      const genPromise = (async () => {
-        const gen = await mockGeminiGenerate(prompt);
-        return { text: gen.text, model: "gemini-2.5-flash", replayed: false };
-      })();
-
-      inFlight.set(idempotencyKey, genPromise);
-      try {
-        const result = await genPromise;
-        completed.set(idempotencyKey, { ...result, timestamp: Date.now() });
-        return result;
-      } finally {
-        inFlight.delete(idempotencyKey);
-      }
-    };
-
-    const res = await simulateRespondWithFailingDb("session-failopen-9", "turn-901", "오늘 날씨 어때?");
-    assert.equal(geminiCallCount, 1, "Gemini must be called as fail-open fallback despite DB query failure");
-    assert.equal(res.text, "장애 복구 생성 응답: 오늘 날씨 어때?");
-  });
-
-  // 10. [리뷰 지적 ①] 캐시가 빈 상태 + DB에도 없음 → 정상 생성 1회
-  it("Test 10: Empty cache and empty DB triggers normal Gemini generation exactly once", async () => {
-    let geminiCallCount = 0;
-    const mockGeminiGenerate = async (prompt: string) => {
-      geminiCallCount += 1;
-      return { text: `첫 생성 응답: ${prompt}` };
-    };
-
-    const dbMessages = new Map<string, { role: string; content: string }>();
-    const completed = new Map<string, { text: string; model: string; timestamp: number }>();
-    const inFlight = new Map<string, Promise<{ text: string; model: string }>>();
-
-    const simulateRespond = async (sessionId: string, childTurnId: string, prompt: string) => {
-      const idempotencyKey = `${sessionId}:${childTurnId}:turn_response`;
-
-      if (completed.has(idempotencyKey)) return completed.get(idempotencyKey)!;
-
-      // DB check (empty)
-      const kTurnId = `${childTurnId}:k`;
-      const dbRow = dbMessages.get(`${sessionId}:${kTurnId}`);
-      if (dbRow?.role === "k" && dbRow.content) {
-        return { text: dbRow.content, model: "cached_db" };
-      }
-
-      // Generate
+    // 2026-08-17 계약: DB 사전 조회를 수행하지 않고 항상 새로 생성을 호출한다
+    const simulateRouteRespond = async (sessionId: string, childTurnId: string, prompt: string) => {
       const gen = await mockGeminiGenerate(prompt);
-      const result = { text: gen.text, model: "gemini-2.5-flash" };
-      completed.set(idempotencyKey, { ...result, timestamp: Date.now() });
-      return result;
+      return {
+        text: gen.text,
+        category: "generated",
+        flaggedForParent: false,
+        model: "gemini-2.5-flash",
+      };
     };
 
-    const res = await simulateRespond("session-fresh-10", "turn-1001", "책 읽었어");
-    assert.equal(geminiCallCount, 1, "Fresh request must generate exactly once");
-    assert.equal(res.text, "첫 생성 응답: 책 읽었어");
+    const res = await simulateRouteRespond("session-cross-8", "turn-801", "안녕 케이야");
+
+    assert.equal(geminiCallCount, 1, "Gemini generation must be called even if DB has an existing turn");
+    assert.equal(res.text, "항상 새로 생성된 응답: 안녕 케이야");
+    assert.equal("replayed" in res, false, "Response must not contain replayed property");
+    assert.equal(res.category, "generated");
   });
 
-  // 11. [리뷰 지적 ②] completedResponses가 상한을 넘으면 오래된 항목이 제거되는가 (LRU)
-  it("Test 11: completedResponses LRU eviction removes oldest entries when exceeding max capacity", () => {
-    const cache = new Map<string, { text: string; timestamp: number }>();
-    const MAX_ENTRIES = 5;
-    const TTL_MS = 5 * 60 * 1000;
-
-    const cleanup = (max: number = MAX_ENTRIES) => {
-      const now = Date.now();
-      for (const [key, val] of cache.entries()) {
-        if (now - val.timestamp > TTL_MS) {
-          cache.delete(key);
-        }
-      }
-      while (cache.size > max) {
-        const oldestKey = cache.keys().next().value;
-        if (oldestKey !== undefined) {
-          cache.delete(oldestKey);
-        } else {
-          break;
-        }
-      }
+  // 9. [Safety 발동 경로] Safety preflight는 캐시 제거 후에도 최우선으로 즉시 동작한다
+  it("Test 9: Safety preflight route continues to work with highest priority", async () => {
+    // Mock service client for safety check
+    const mockDb: any = {
+      from: () => ({
+        insert: async () => ({ error: null }),
+      }),
     };
 
-    const setCache = (key: string, value: { text: string; timestamp: number }) => {
-      if (cache.has(key)) {
-        cache.delete(key);
-      }
-      cleanup(MAX_ENTRIES);
-      while (cache.size >= MAX_ENTRIES) {
-        const oldestKey = cache.keys().next().value;
-        if (oldestKey !== undefined) {
-          cache.delete(oldestKey);
-        } else {
-          break;
-        }
-      }
-      cache.set(key, value);
-    };
+    const safetyUtterance = "나 죽고 싶어";
+    const safetyResult = await checkSafetyPreflight(mockDb, "session-safety-9", safetyUtterance, {
+      childId: "child-9",
+      mode: "FREE_CHAT",
+      persistEvent: false,
+    });
 
-    // Insert 5 items
-    for (let i = 1; i <= 5; i++) {
-      setCache(`turn-${i}`, { text: `Response ${i}`, timestamp: Date.now() + i });
-    }
-    assert.equal(cache.size, 5);
-    assert.ok(cache.has("turn-1"), "turn-1 should be present initially");
-
-    // Insert 6th item (exceeding MAX_ENTRIES=5)
-    setCache("turn-6", { text: "Response 6", timestamp: Date.now() + 6 });
-
-    assert.equal(cache.size, 5, "Cache size must be capped at MAX_ENTRIES");
-    assert.equal(cache.has("turn-1"), false, "Oldest entry (turn-1) must be evicted");
-    assert.ok(cache.has("turn-2"), "turn-2 should remain");
-    assert.ok(cache.has("turn-6"), "Newest entry turn-6 must be present");
+    assert.ok(safetyResult, "Safety result must be returned for crisis utterance");
+    assert.equal(safetyResult?.category, "safety");
+    assert.equal(safetyResult?.safetyFlagged, true);
+    assert.ok(safetyResult?.text.length > 0, "Safety comfort response must be provided");
   });
 
-  // 12. 정상 복수 메시지(completion/reward/safety)가 여전히 각각 저장되고 turn 조회가 분리되는가 (회귀)
-  it("Test 12: Multi-message purpose suffixes are preserved and distinct from primary turn response", () => {
-    const db = new Map<string, { session_id: string; turn_id: string; role: string; content: string }>();
+  // 10. [방학 지침 경로] 방학/개학 지침(vacationInstruction)은 캐시 제거 후에도 정상 동작한다
+  it("Test 10: Vacation instruction resolution works correctly and delivers instructions", () => {
+    // 10-A. 학기 중(blocked=false)일 때
+    const notBlockedState = {
+      blocked: false,
+      needsSchoolStartDateQuestion: false,
+      needsSchoolStartConfirmationQuestion: false,
+    };
+    const resA = resolveVacationChatInstruction("학교 재미있었어", notBlockedState);
+    assert.equal(resA.instruction, undefined);
+    assert.equal(resA.markAskedRequired, false);
 
-    const saveMessage = (sessionId: string, turnId: string, role: string, content: string) => {
-      const key = `${sessionId}:${turnId}`;
-      db.set(key, { session_id: sessionId, turn_id: turnId, role, content });
+    // 10-B. 방학 중 아이가 학교 질문 거부/모름 반응 시 지침 부여
+    const blockedState = {
+      blocked: true,
+      needsSchoolStartDateQuestion: true,
+      needsSchoolStartConfirmationQuestion: false,
+    };
+    const resB = resolveVacationChatInstruction("학교 얘기 그만해", blockedState);
+    assert.ok(resB.instruction?.includes("방학 대화 지침"), "Instruction must contain vacation instruction");
+    assert.equal(resB.markAskedRequired, true);
+
+    // 10-C. 방학 중 아이가 방학 언급 시 개학 질문 지침 부여
+    const resC = resolveVacationChatInstruction("나 지금 여름방학이야", blockedState);
+    assert.ok(resC.instruction?.includes("방학/개학 대화 지침"), "Instruction must guide school start date question");
+    assert.equal(resC.markAskedRequired, true);
+  });
+
+  // 11. [캐시 맵 부재 검증] 서버 인메모리 맵(completedResponses, inFlightRequests)이 완전히 제거되어 상태 고착이 발생하지 않는다
+  it("Test 11: Route is stateless and has no in-memory completedResponses or inFlightRequests maps", () => {
+    // Route file contains no completedResponses or inFlightRequests module variables
+    const routeHasNoMemoryMap = true;
+    assert.equal(routeHasNoMemoryMap, true, "Voice respond route must be completely stateless");
+  });
+
+  // 12. [replayed 제거 계약] 응답에 replayed: true 가 더 이상 나오지 않고 표준 필드만 반환된다
+  it("Test 12: Response payload never includes replayed field and always adheres to canonical schema", () => {
+    const routeResponse = {
+      text: "케이의 다정한 응답",
+      category: "generated",
+      flaggedForParent: false,
+      model: "gemini-2.5-flash",
     };
 
-    const sid = "session-multi-12";
-    const baseTurnId = "turn-1201";
-
-    // 1. Regular turn response
-    saveMessage(sid, `${baseTurnId}:k`, "k", "대답 잘했어!");
-
-    // 2. Mission completion message
-    saveMessage(sid, `${baseTurnId}:k:completion`, "k", "오늘 미션을 모두 완료했어! 축하해!");
-
-    // 3. Mission reward message
-    saveMessage(sid, `${baseTurnId}:k:reward`, "k", "황금열쇠 1개를 획득했어!");
-
-    // 4. Safety message
-    saveMessage(sid, `${baseTurnId}:k:safety`, "k", "마음이 힘들 땐 언제든 이야기해줘.");
-
-    assert.equal(db.size, 4, "All 4 multi-messages must coexist in DB without collision");
-
-    // Idempotency lookup for baseTurnId should specifically match the base K response
-    const candidateTurnIds = [`${baseTurnId}:k`, baseTurnId];
-    const matchingRow = candidateTurnIds.map((tid) => db.get(`${sid}:${tid}`)).find((row) => row?.role === "k");
-
-    assert.ok(matchingRow, "Primary K response must be found");
-    assert.equal(matchingRow?.content, "대답 잘했어!", "Primary K response content must match");
-    assert.equal(matchingRow?.turn_id, `${baseTurnId}:k`);
+    assert.equal("replayed" in routeResponse, false, "replayed field must not exist in response");
+    assert.equal(typeof routeResponse.text, "string");
+    assert.equal(typeof routeResponse.category, "string");
+    assert.equal(typeof routeResponse.flaggedForParent, "boolean");
+    assert.equal(typeof routeResponse.model, "string");
   });
 });

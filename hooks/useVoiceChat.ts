@@ -95,7 +95,22 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const turnSeqRef = useRef(0);
   function nextTurnId(): string {
     turnSeqRef.current += 1;
-    return `t${turnSeqRef.current}`;
+    // 2026-08-17 Production 사고: 예전에는 `t${순번}` 이었다. 이 순번은 페이지를
+    // 새로 열면 t1 부터 다시 시작한다. 그런데 K 응답은 `${childTurnId}:k` 로 저장되고
+    // chat_messages 에는 UNIQUE(session_id, turn_id) + ignoreDuplicates 가 걸려 있다.
+    // 같은 세션을 새로고침 후 이어가면 t1:k, t2:k ... 가 이미 존재해 **새 응답이
+    // 조용히 버려졌다.** 200 을 돌려주므로 클라이언트는 저장된 줄 안다.
+    //
+    // 실제로 박서아 계정에서 끝말잇기 중 케이 응답이 한 건도 저장되지 않았고,
+    // 그 결과 다음 턴 대화 이력에 케이 말이 없어 케이가 맥락을 잃고
+    // "기로 시작하는 단어가 없다"(사전에 8개 있음) 같은 엉뚱한 말을 했다.
+    //
+    // 세션 간 충돌이 없도록 매번 고유한 값을 만든다.
+    const rand =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    return `t${turnSeqRef.current}-${rand}`;
   }
 
   // STT 라우터에 넘기는 턴 식별자 전용 순번 — turnSeqRef(메시지 id)와는 완전히 별개다.

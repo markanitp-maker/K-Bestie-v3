@@ -158,3 +158,58 @@ test("buildSystemInstruction — playCatalogFragment가 주어지면 초성게�
     `catalog (${catalogIndex}) must precede action (${actionIndex})`
   );
 });
+
+test("buildSystemInstruction — hasActivePlaySession=false, playSkillHandled=false 일 때 [놀이 진행 금지 지침]이 포함된다", () => {
+  const prompt = buildSystemInstruction({
+    ...baseInput,
+    hasActivePlaySession: false,
+    playSkillHandled: false,
+  });
+
+  assert.match(prompt, /\[놀이 진행 금지 지침\]/);
+  assert.match(prompt, /지금은 게임\(초성게임, 끝말잇기 등\)이 진행 중이 아니야\./);
+  assert.match(prompt, /초성 문제\(ㄱㅊ 같은 자음\)를 내거나 끝말잇기 단어를 제시하지 마\./);
+  assert.match(prompt, /정답·힌트·글자 수를 말하지 마\./);
+  assert.match(prompt, /아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려\./);
+});
+
+test("buildSystemInstruction — 세션 없이 아이가 '초성게임 하자'고 발화해도 문제 출제 금지 지침이 들어간다", () => {
+  const prompt = buildSystemInstruction({
+    ...baseInput,
+    currentUtterance: "초성게임 하자",
+    action: "FOLLOW_UP",
+    hasActivePlaySession: false,
+    playSkillHandled: false,
+  });
+
+  assert.match(prompt, /\[놀이 진행 금지 지침\]/);
+  assert.match(prompt, /초성 문제\(ㄱㅊ 같은 자음\)를 내거나 끝말잇기 단어를 제시하지 마/);
+});
+
+test("buildSystemInstruction — hasActivePlaySession=true 일 때는 [놀이 진행 금지 지침]이 들어가지 않는다", () => {
+  const prompt = buildSystemInstruction({
+    ...baseInput,
+    hasActivePlaySession: true,
+    playSkillHandled: false,
+  });
+
+  assert.equal(prompt.includes("[놀이 진행 금지 지침]"), false);
+});
+
+test("buildSystemInstruction — playSkillHandled=true 일 때 스킬 지침 보존 및 [놀이 진행 규칙]이 적용된다", () => {
+  const skillInstruction = '[초성게임] 지금 낸 문제의 초성은 "ㅂㄷㅁㅌ"야. 이 초성을 그대로 아이에게 문제로 내줘. 정답 단어는 절대 말하지 마.';
+  const prompt = buildSystemInstruction({
+    ...baseInput,
+    hasActivePlaySession: true,
+    playSkillHandled: true,
+    adapterInstruction: skillInstruction,
+  });
+
+  assert.equal(prompt.includes("[놀이 진행 금지 지침]"), false);
+  assert.match(prompt, /\[놀이 진행 규칙\]/);
+  assert.match(prompt, /시스템이 제공한 놀이 지침\(문제 초성, 제시 단어, 정답, 힌트 등\)을 반드시 그대로 사용해\./);
+  assert.match(prompt, /시스템이 지정한 초성이나 제시 단어를 다른 것으로 바꾸거나, 새 문제를 임의로 지어내지 마\./);
+  assert.match(prompt, /글자 수나 힌트 내용을 임의로 바꾸지 말고/);
+  assert.match(prompt, /\[초성게임\] 지금 낸 문제의 초성은 "ㅂㄷㅁㅌ"야\./);
+});
+
