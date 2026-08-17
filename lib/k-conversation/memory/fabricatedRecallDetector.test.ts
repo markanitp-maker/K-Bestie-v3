@@ -90,3 +90,49 @@ test("기억 목록이 비어 있어도 안전하게 동작한다", () => {
   assert.equal(detectFabricatedRecall("내가 강아지 키운다고 했잖아", "아 맞다 그랬지!", []).isFabricated, true);
   assert.equal(detectFabricatedRecall("", "", []).isFabricated, false);
 });
+
+// 2026-08-17 라이브 QA 추가 결함 검증: 누락된 차단 패턴 3종
+const NEW_FABRICATIONS: Array<[string, string]> = [
+  ["내가 태권도 학원 다닌다고 했잖아", "아, 태권도 학원 다닌다고 했던 거 기억해! 무슨 품띠야?"],
+  ["내가 지난주에 놀이공원 갔다고 했잖아", "앗, 내 정신 좀 봐! 놀이공원도 갔었구나. 기억할게!"],
+  ["내가 강아지 키운다고 했잖아", "아 강아지 키운다고 했던 거 기억하고 있어!"],
+];
+
+test("라이브 QA 누락 차단 패턴 3종 차단 검증 (기억해, 내 정신 좀 봐/갔었구나 중간 앵커, 기억하고 있어)", () => {
+  for (const [child, k] of NEW_FABRICATIONS) {
+    const verdict = detectFabricatedRecall(child, k, MEMORY);
+    assert.equal(verdict.isFabricated, true, `차단 실패: ${child} → ${k}`);
+  }
+});
+
+// 2026-08-17 라이브 QA 추가 결함 검증: 진짜 기억 통과 4종 (앵커 제거 후에도 진짜 기억 통과)
+const NEW_REAL_MEMORY_PASS: Array<{ memory: string[]; child: string; k: string }> = [
+  {
+    memory: ["로블록스 게임과 피구, 공놀이를 좋아한다."],
+    child: "내가 로블록스 좋아한다고 했잖아",
+    k: "아, 맞다! 로블록스 좋아한다고 했었지. 기억해!",
+  },
+  {
+    memory: ["민준, 지호, 서연이라는 친구들과 함께 노는 것을 좋아한다."],
+    child: "내가 민준이랑 논다고 했잖아",
+    k: "아, 민준이랑 같이 논다고 했었지! 재밌었겠다.",
+  },
+  {
+    memory: ["종이로 큰 로봇을 만들어 보고 싶어 한다."],
+    child: "내가 종이로 로봇 만들고 싶다고 했잖아",
+    k: "맞아! 종이 로봇 만들고 싶다고 했었지. 재밌겠다!",
+  },
+  {
+    memory: ["주말에 가족들과 함께 떡볶이, 김밥, 치킨을 먹으며 즐거운 시간을 보냈다."],
+    child: "내가 떡볶이 먹었다고 했잖아",
+    k: "아, 떡볶이 먹었다고 했었지! 기억하고 있었어.",
+  },
+];
+
+test("라이브 QA 진짜 기억 4종 통과 검증 (재밌었겠다/재밌겠다 등 단정 어미 포함되어도 진짜 기억은 통과)", () => {
+  for (const { memory, child, k } of NEW_REAL_MEMORY_PASS) {
+    const verdict = detectFabricatedRecall(child, k, memory);
+    assert.equal(verdict.isFabricated, false, `잘못 막힘: ${child} → ${k} (${verdict.reason})`);
+  }
+});
+
