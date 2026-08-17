@@ -327,6 +327,19 @@ export function DemoFrame({
               style={{
                 "--frame-w": frameWidth ? `${frameWidth}px` : undefined,
                 "--frame-h": frameHeight ? `${frameHeight}px` : undefined,
+                // 2026-08-18: 프레임 안에서는 콘텐츠 상한을 프레임 폭으로 덮어쓴다.
+                // 대표 지시 — 스마트폰/태블릿 프레임을 꽉 채워야 한다.
+                //
+                // globals.css 에서 var(--frame-w) 로 하려다 실패했다. :root 에 선언한
+                // custom property 안의 var() 는 **선언된 곳(:root) 기준으로 풀려서**
+                // --frame-w 를 못 보고 항상 fallback 으로 떨어진다(1141px 프레임에서
+                // 1000px 이 나왔다). 그래서 --frame-w 가 실제로 존재하는 이 요소에서
+                // 덮어쓴다. 여기서 선언하면 자손이 그대로 상속받는다.
+                //
+                // 프레임 밖(실기기·프레임 미표시 PC)에서는 이 스타일 자체가 없으므로
+                // globals.css 의 뷰포트 기반 값이 그대로 쓰인다.
+                "--content-max-width": frameWidth ? `${frameWidth}px` : undefined,
+                "--content-max-width-wide": frameWidth ? `${frameWidth}px` : undefined,
               } as React.CSSProperties}
             >
               {children}

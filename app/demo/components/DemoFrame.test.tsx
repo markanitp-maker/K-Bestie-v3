@@ -168,14 +168,23 @@ test("clamp CSS 변수 fallback 검증: --frame-w가 없을 때 100vw fallback �
   assert.match(clampSample, /var\(--frame-w,\s*100vw\)/, "fallback이 100vw로 설정되어 있어야 한다");
 });
 
-test("DemoFrame: 터치 가능 기기(any-pointer: coarse)는 마우스가 연결되어도 PC로 판정되지 않는다 (!isPc)", async () => {
+test("DemoFrame: 터치스크린 PC(마우스가 주 입력)는 PC로 판정돼 기기 프레임이 나온다", async () => {
   const origMatchMedia = dom.window.matchMedia;
   const setMatchMedia = (fn: unknown) =>
     Object.defineProperty(dom.window, "matchMedia", { configurable: true, writable: true, value: fn });
 
-  // iPad / Android tablet with mouse: (pointer: fine) is true, but (any-pointer: coarse) is ALSO true
+  // 2026-08-17: 원래 이 테스트는 "any-pointer: coarse 면 PC 가 아니다" 를 고정했다.
+  // 그 규칙 때문에 **터치스크린 PC·터치 노트북에서 기기 프레임이 통째로 사라졌다.**
+  // 마우스가 주 입력이면 PC 다. 폰·태블릿은 (pointer: fine) 에서 이미 걸러진다.
+  //
+  // 터치스크린 PC: pointer:fine + hover:hover + 넓은 화면, 그리고 터치도 있음(coarse).
   setMatchMedia((query: string) => ({
-    matches: query.includes("pointer: fine") || query.includes("any-pointer: coarse"),
+    matches:
+      query.includes("pointer: fine") ||
+      query.includes("hover: hover") ||
+      query.includes("min-width: 900px") ||
+      query.includes("min-width: 768px") ||
+      query.includes("any-pointer: coarse"),
     media: query,
     onchange: null,
     addEventListener: () => {},
@@ -199,7 +208,13 @@ test("DemoFrame: 터치 가능 기기(any-pointer: coarse)는 마우스가 연�
   });
 
   const mobileViewport = container.querySelector<HTMLElement>('[data-ui="demo-frame-mobile-viewport"]');
-  assert.ok(mobileViewport, "터치 기기에서는 목업 프레임 대신 mobile-viewport가 렌더되어야 한다");
+  assert.equal(
+    mobileViewport,
+    null,
+    "터치스크린 PC 는 실기기 경로가 아니라 기기 프레임으로 렌더돼야 한다",
+  );
+  const framed = container.querySelector<HTMLElement>('[style*="--frame-w"]');
+  assert.ok(framed, "터치스크린 PC 에서 기기 프레임(--frame-w)이 있어야 한다");
 
   await act(async () => root.unmount());
   setMatchMedia(origMatchMedia);
