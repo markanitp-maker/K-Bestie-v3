@@ -348,3 +348,37 @@ test("097-8: 활성 게임 세션이 있어도 아이가 감정/안전 이야기
     assert.equal(res.changed, false);
   }
 });
+
+// ── 리뷰 지적(2026-08-17): 아이 오답이 정답으로 둔갑하면 게임이 무의미해진다 ──
+
+test("097-9: 아이가 한 낱말로 낸 오답을 정답으로 고쳐 주지 않는다", async () => {
+  const mockDb = createMockSupabase({
+    activeNonsense: { current_question_id: "q-lion" },
+    nonsenseQuestions: {
+      "q-lion": { canonical_answer: "사자", accepted_answers: [] },
+    },
+  });
+
+  // 아이가 "타자"라고 답했으면 틀린 것이다. 정답으로 바꾸면 못 맞힌 문제를
+  // 맞힌 것으로 만들어 준다. 발음이 가깝다는 이유로 고쳐서는 안 된다.
+  for (const wrong of ["타자", "감자", "과자", "모자"]) {
+    const res = await resolveChildUtterance(mockDb, "child-1", "session-1", wrong, "free_chat");
+    assert.equal(res.text, wrong, `오답이 정답으로 둔갑했다: ${wrong} -> ${res.text}`);
+    assert.equal(res.changed, false);
+  }
+});
+
+test("097-10: 받침만 흘린 정답은 복원한다 — STT 오인식이지 오답이 아니다", async () => {
+  const mockDb = createMockSupabase({
+    activeNonsense: { current_question_id: "q-calf" },
+    nonsenseQuestions: {
+      "q-calf": { canonical_answer: "송아지", accepted_answers: [] },
+    },
+  });
+
+  // "소아지"는 아이가 송아지라고 말했는데 받침이 떨어진 것이다.
+  const res = await resolveChildUtterance(mockDb, "child-1", "session-1", "소아지", "free_chat");
+  assert.equal(res.text, "송아지");
+  assert.equal(res.changed, true);
+  assert.equal(res.raw, "소아지");
+});

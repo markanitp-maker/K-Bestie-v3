@@ -7,6 +7,69 @@ import {
 import { allowedNextInitials } from "@/lib/k-conversation/wordChain/dueum";
 import { BY_FIRST_SYLLABLE } from "@/lib/k-conversation/wordChain/dictionaryIndex";
 
+/**
+ * 이 출처의 후보는 "정답"이다. 잘못 치환하면 아이가 못 맞힌 문제를 맞힌 것으로
+ * 만들어 준다. 그래서 받침 차이만 복원한다.
+ */
+const ANSWER_CANDIDATE_SOURCES = new Set(["nonsense_quiz", "chosung_game"]);
+
+/**
+ * 재해석 전후에서 실제로 바뀐 어절 한 쌍을 찾는다.
+ * 어절 개수가 다르거나 두 곳 이상 바뀌었으면 null 을 돌려 보수적으로 막는다.
+ */
+function findChangedToken(before: string, after: string): { before: string; after: string } | null {
+  const b = before.trim().split(/\s+/);
+  const a = after.trim().split(/\s+/);
+  if (b.length !== a.length) return null;
+
+  let found: { before: string; after: string } | null = null;
+  for (let i = 0; i < b.length; i += 1) {
+    if (b[i] === a[i]) continue;
+    if (found) return null; // 두 군데 이상 바뀌었다 — 판단하지 않는다
+    found = { before: b[i], after: a[i] };
+  }
+  return found;
+}
+
+/**
+ * 정답 후보로 치환해도 안전한가.
+ *
+ * STT 가 실제로 망가뜨리는 방향은 둘이다.
+ *  - 없는 음절을 끼워 넣는다: "소" → "오수". 걷어내는 건 복원이다.
+ *  - 받침을 흘린다: "송아지" → "소아지". 되돌리는 건 복원이다.
+ *
+ * 반면 **길이가 같은데 초성·중성이 바뀌는 것**은 오인식이 아니라 다른 낱말이다.
+ * "타자"·"감자"를 정답 "사자"로 바꾸면 아이가 못 맞힌 문제를 맞힌 것으로 만들어 준다
+ * (2026-08-17 리뷰 실측). 그래서 그 방향만 막는다.
+ */
+function isSafeAnswerRestoration(before: string, after: string): boolean {
+  const b = before.replace(/\s+/g, "");
+  const a = after.replace(/\s+/g, "");
+  if (!b || !a) return false;
+  // STT 가 끼워 넣은 음절을 걷어내는 방향은 허용한다.
+  if (a.length < b.length) return true;
+  // 같은 길이면 받침 차이만 허용한다.
+  return differsOnlyByJongseong(b, a);
+}
+
+/** 두 문자열이 음절 수가 같고 받침(종성)만 다른가. */
+function differsOnlyByJongseong(a: string, b: string): boolean {
+  const x = a.replace(/\s+/g, "");
+  const y = b.replace(/\s+/g, "");
+  if (x.length !== y.length || x.length === 0) return false;
+
+  for (let i = 0; i < x.length; i += 1) {
+    if (x[i] === y[i]) continue;
+    const cx = x.charCodeAt(i) - 0xac00;
+    const cy = y.charCodeAt(i) - 0xac00;
+    // 한쪽이라도 완성형 한글이 아니면 받침 차이로 볼 수 없다.
+    if (cx < 0 || cx > 11171 || cy < 0 || cy > 11171) return false;
+    // 초성·중성이 같고 종성만 달라야 한다.
+    if (Math.floor(cx / 28) !== Math.floor(cy / 28)) return false;
+  }
+  return true;
+}
+
 export interface ResolveChildUtteranceResult {
   text: string;
   raw: string;
@@ -161,6 +224,37 @@ export async function resolveChildUtterance(
     const matchedSource = candidates.find(
       (c) => c.text === rescoreResult.matchedCandidate
     )?.source;
+
+    // 정답 후보로 치환할 때는 훨씬 엄격해야 한다.
+    // 2026-08-17 리뷰 실측: 정답이 "사자"일 때 아이가 말한 오답 "타자"·"감자"가
+    // 정답으로 둔갑해 맞힌 것으로 처리됐다. 게임이 통째로 무의미해진다.
+    //
+    // STT 가 실제로 망가뜨리는 건 받침이다("송아지"→"소아지"). 초성이 통째로
+    // 바뀌는 건("타자"→"사자") 오인식이 아니라 다른 낱말이다.
+    // 그래서 정답 후보는 **받침만 다른 경우**에만 복원한다.
+    if (matchedSource && ANSWER_CANDIDATE_SOURCES.has(matchedSource)) {
+      // 문장 전체가 아니라 **실제로 바뀐 어절**만 비교해야 한다.
+      // "오수 노래" → "소 노래" 처럼 한 어절만 고치는 정당한 복원까지 막으면
+      // 이 기능 자체가 무의미해진다.
+      // 아이가 **한 낱말만** 말했다면 그건 답안 제출이다. 그걸 정답으로 고쳐 주면
+      // 못 맞힌 문제를 맞힌 것으로 만든다("타자"→"사자", 2026-08-17 리뷰 실측).
+      // 반대로 "또 노래"처럼 다른 말이 섞여 있으면 답안 제출이 아니라 발화이고,
+      // 그 안의 한 어절을 되돌리는 건 정당한 복원이다(실제 사고 사례).
+      const isBareAnswerAttempt = original.trim().split(/\s+/).length === 1;
+      const changedPair = findChangedToken(original, rescoreResult.text);
+      if (
+        isBareAnswerAttempt &&
+        (!changedPair || !isSafeAnswerRestoration(changedPair.before, changedPair.after))
+      ) {
+        console.info("[STT_REINTERPRETATION] 정답 후보 치환을 막았다 — 받침 차이가 아니다", {
+          childId,
+          raw: original,
+          rejected: rescoreResult.text,
+          candidateSource: matchedSource,
+        });
+        return { text: original, raw: original, changed: false };
+      }
+    }
 
     // 계측 로깅 (§3-6)
     console.info("[STT_REINTERPRETATION]", {
