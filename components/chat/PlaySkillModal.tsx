@@ -7,7 +7,7 @@ export interface PlaySkillModalProps {
   isOpen: boolean;
   onClose: () => void;
   chatSessionId: string | null;
-  onSkillStarted?: (introText?: string) => void;
+  onSkillStarted?: () => void;
 }
 
 export function PlaySkillModal({
@@ -79,9 +79,7 @@ export function PlaySkillModal({
 
       if (res.ok && data.ok) {
         onClose();
-        if (data.text) {
-          onSkillStarted?.(data.text);
-        }
+        onSkillStarted?.();
       } else {
         setError(data.error || "놀이를 시작하지 못했어요. 다시 시도해주세요.");
       }

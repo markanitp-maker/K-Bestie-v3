@@ -1281,10 +1281,11 @@ export default function ChatPage() {
           isOpen={isPlayModalOpen}
           onClose={() => setIsPlayModalOpen(false)}
           chatSessionId={sessionId}
-          onSkillStarted={(introText) => {
-            if (introText) {
-              sayText(introText);
-            }
+          onSkillStarted={() => {
+            // 여기서 서버가 준 문자열을 그대로 말하게 하면 안 된다 — 그건 Gemini 용
+            // 내부 지시문이라 아이에게 시스템 프롬프트가 노출된다(2026-08-18 사고).
+            // 게임 시작 안내는 케이가 다음 턴에 직접 만든다.
+            setIsPlayModalOpen(false);
           }}
         />
       </div>

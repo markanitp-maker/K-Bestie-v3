@@ -205,7 +205,11 @@ test("executeSkillSelection: 다른 스킬이 활성이면 기존 스킬 end() �
   assert.equal(receivedSignals.hasWordChainGameStart, false, "빈 signals가 전달되어야 함");
   assert.equal(result.skillId, "WORD_CHAIN");
   assert.equal(result.sessionId, "session_WORD_CHAIN");
-  assert.equal(result.text, "[끝말잇기] 사과! 과로 시작해줘");
+  // 2026-08-18 프로덕션 사고: 이 테스트가 **유출을 정답으로 고정**하고 있었다.
+  // "[끝말잇기] 사과! 과로 시작해줘" 는 Gemini 용 내부 지시문이다. 응답에 담으면
+  // 모달이 그대로 말풍선에 띄워 아이가 시스템 프롬프트를 읽는다.
+  assert.equal((result as Record<string, unknown>).text, undefined,
+    "내부 지시문(instruction)이 응답에 실려 나가면 안 된다");
 });
 
 test("executeSkillSelection: Hard Guard - start 호출 후 getActiveSession 생성 검증 실패 시 에러 반환", async () => {
