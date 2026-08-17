@@ -4,6 +4,7 @@ import { checkConsentForChild } from "@/lib/plan/consentGuard";
 import { checkApprovalForChild } from "@/lib/plan/approvalGuard";
 import { assertMissionSessionActive } from "@/app/api/_lib/missionUtils";
 import { scheduleVacationEventDetection, processVacationEventDetection } from "@/lib/plan/vacationEventDetector";
+import { resolveChildUtterance } from "@/lib/stt/serverRescoring";
 
 
 export const runtime = "nodejs";
@@ -173,13 +174,29 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let finalContent = content.trim();
+  let rawTranscript: string | null = null;
+
+  if (role === "child") {
+    const resolution = await resolveChildUtterance(
+      service,
+      session.child_id,
+      sessionId,
+      finalContent,
+      mode
+    );
+    finalContent = resolution.text;
+    rawTranscript = resolution.changed ? resolution.raw : null;
+  }
+
   const { data: upserted, error } = await service
     .from("chat_messages")
     .upsert({ 
       session_id: sessionId, 
       turn_id: turnId ?? null,
       role, 
-      content: content.trim(), 
+      content: finalContent, 
+      raw_transcript: rawTranscript,
       mode, 
       voice_mode: voiceMode, 
       display_sequence: mode === "mission" ? displaySequence : (displaySequence ?? null),
@@ -194,7 +211,7 @@ export async function POST(req: NextRequest) {
 
   if (role === "child") {
     try {
-      await processVacationEventDetection(service, session.child_id, content.trim(), sessionId, turnId);
+      await processVacationEventDetection(service, session.child_id, finalContent, sessionId, turnId);
     } catch (err) {
       console.error("[chat/messages] vacation event detection failed (non-fatal):", err);
     }

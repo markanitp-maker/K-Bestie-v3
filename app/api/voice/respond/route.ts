@@ -17,6 +17,7 @@ import {
 } from "@/lib/plan/vacationSchoolContext";
 import { resolveVacationChatInstruction } from "@/lib/freechat/vacationChatInstruction";
 import { respond as respondWithEngine, checkSafetyPreflight, type GenerateArgs } from "@/lib/k-conversation";
+import { resolveChildUtterance } from "@/lib/stt/serverRescoring";
 
 export const runtime = "nodejs";
 
@@ -139,6 +140,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no child utterance in history" }, { status: 400 });
   }
   const childText = lastChild.text.trim();
+  const resolution = await resolveChildUtterance(
+    service,
+    session.child_id,
+    sessionId,
+    childText,
+    "free_chat"
+  );
+  const resolvedChildText = resolution.text;
+
   // 현재 child turn의 canonical ID. /api/chat/messages 저장이 먼저 끝난 경우에도
   // Same-session Memory가 이 turn을 다시 가져오지 않도록 Engine까지 전달한다(005 §3-2).
   const currentTurnId =
@@ -149,12 +159,18 @@ export async function POST(req: NextRequest) {
         : undefined;
 
   const executeGeneration = async () => {
-    // Safety preflight — 이 아래의 모든 조기 반환 경로(방학 규칙/기억회상)보다 반드시 먼저
-    // 실행한다. 걸리면 그 무엇보다 우선해 즉시 반환한다.
-    const safetyResult = await checkSafetyPreflight(service, sessionId, childText, {
+    // Safety preflight — 원문(childText)과 재해석본(resolvedChildText)을 둘 다 검사한다 (§3-7).
+    // 어느 쪽이든 걸리면 즉시 안전 응답을 반환한다. 바뀌지 않았으면 중복 호출하지 않는다.
+    let safetyResult = await checkSafetyPreflight(service, sessionId, childText, {
       childId: session.child_id,
       mode: "FREE_CHAT",
     });
+    if (!safetyResult && resolution.changed) {
+      safetyResult = await checkSafetyPreflight(service, sessionId, resolvedChildText, {
+        childId: session.child_id,
+        mode: "FREE_CHAT",
+      });
+    }
     if (safetyResult) {
       return {
         text: safetyResult.text,
@@ -170,7 +186,7 @@ export async function POST(req: NextRequest) {
     const vacationBlockState = resolveSchoolQuestionBlockState(activeVacationContext, businessDate);
 
     const { instruction: vacationInstruction, markAskedRequired } = resolveVacationChatInstruction(
-      childText,
+      resolvedChildText,
       vacationBlockState
     );
 
@@ -180,8 +196,8 @@ export async function POST(req: NextRequest) {
 
     // 기억 회상(Memory Recall) 질의 — 저장된 기억 밖 내용을 지어내면 안 되는 특수 경로라
     // 071 Engine에 흡수하지 않고 전용 하이-그라운딩 응답기를 그대로 유지한다.
-    if (isMemoryRecallQuery(childText)) {
-      const memoryRes = await generateMemoryRecallResponse(service, session.child_id, childText);
+    if (isMemoryRecallQuery(resolvedChildText)) {
+      const memoryRes = await generateMemoryRecallResponse(service, session.child_id, resolvedChildText);
       if (memoryRes && memoryRes.text) {
         recordLlmUsage(sessionId, memoryRes.tokenIn, memoryRes.tokenOut);
         return { text: memoryRes.text, category: "memory_recall", flaggedForParent: false, model: FREE_CHAT_MODEL_ID };
@@ -212,7 +228,7 @@ export async function POST(req: NextRequest) {
         childId: session.child_id,
         sessionId,
         mode: "FREE_CHAT",
-        currentUtterance: childText,
+        currentUtterance: resolvedChildText,
         currentTurnId,
         asrConfidence: isLowConfidenceAsr ? 0 : 1,
         appMode: body.appMode === "manual" ? "manual" : "auto",
