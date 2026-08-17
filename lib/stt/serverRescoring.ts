@@ -8,6 +8,17 @@ import { allowedNextInitials } from "@/lib/k-conversation/wordChain/dueum";
 import { BY_FIRST_SYLLABLE } from "@/lib/k-conversation/wordChain/dictionaryIndex";
 
 /**
+ * 재해석 지연 경고 임계값 (밀리초).
+ *
+ * 300ms 로 설정한 이유:
+ *   STT 완료 후 LLM/음성 응답 전까지의 체감 지연 예산(latency budget) 중
+ *   서버 재해석 레이어(DB 3개 쿼리 병렬 조회 + 자모 거리 계산)에 허용되는
+ *   최대 목표 지연이다. 확정값이 아니라 관측 시작값이며, 이를 초과할 때만
+ *   경고 로그를 남겨 지연 증가폭을 모니터링한다 (§3-6).
+ */
+const RESCORING_SLOW_MS = 300;
+
+/**
  * 이 출처의 후보는 **문제의 정답**이다. 재해석에 쓰지 않는다.
  *
  * 왜 뺐나 (2026-08-17 리뷰 2회):
@@ -116,6 +127,13 @@ export async function resolveChildUtterance(
     return { text: original, raw: original, changed: false };
   }
 
+  // 097 §5-3 킬 스위치. 이 레이어는 아이가 한 말을 바꿔 쓰므로 즉시 끌 수단이 있어야 한다.
+  // 미설정이 기본 ON 이다 — 이미 배포돼 동작 중이라 기본값을 OFF 로 두면 조용히 기능이 죽는다.
+  // 끄려면 Vercel 환경변수에 STT_RESCORING_DISABLED=true 를 넣고 재배포한다.
+  if (process.env.STT_RESCORING_DISABLED === "true") {
+    return { text: original, raw: original, changed: false };
+  }
+
   if (!db || !childId) {
     return { text: original, raw: original, changed: false };
   }
@@ -126,6 +144,7 @@ export async function resolveChildUtterance(
     return { text: original, raw: original, changed: false };
   }
 
+  const startedAt = Date.now();
   try {
     const candidates: RescoreCandidate[] = [];
     const seenTexts = new Set<string>();
@@ -229,12 +248,20 @@ export async function resolveChildUtterance(
 
     // 후보가 없으면 원문 그대로 반환 (§3-4)
     if (candidates.length === 0) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs > RESCORING_SLOW_MS) {
+        console.warn("[stt/serverRescoring] 재해석 지연", { elapsedMs, childId, changed: false });
+      }
       return { text: original, raw: original, changed: false };
     }
 
     // 발음 유사도 기반 결정론적 재해석 수행
     const rescoreResult: RescoreResult = rescoreTranscript(original, candidates);
     if (!rescoreResult.changed) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs > RESCORING_SLOW_MS) {
+        console.warn("[stt/serverRescoring] 재해석 지연", { elapsedMs, childId, changed: false });
+      }
       return { text: original, raw: original, changed: false };
     }
 
@@ -255,6 +282,11 @@ export async function resolveChildUtterance(
       score: rescoreResult.score,
     });
 
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs > RESCORING_SLOW_MS) {
+      console.warn("[stt/serverRescoring] 재해석 지연", { elapsedMs, childId, changed: true });
+    }
+
     return {
       text: rescoreResult.text,
       raw: original,
@@ -264,6 +296,10 @@ export async function resolveChildUtterance(
       candidateSource: matchedSource,
     };
   } catch (err) {
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs > RESCORING_SLOW_MS) {
+      console.warn("[stt/serverRescoring] 재해석 지연", { elapsedMs, childId, changed: false });
+    }
     // 예외 발생 시 원문으로 안전하게 진행 (§3-6)
     console.error("[resolveChildUtterance] candidate collection failed (fallback to raw):", err);
     return { text: original, raw: original, changed: false };

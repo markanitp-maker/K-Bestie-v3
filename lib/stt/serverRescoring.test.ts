@@ -378,3 +378,87 @@ test("097-10: 정답 후보는 재해석하지 않는다 — 오답 둔갑을 �
   assert.equal(res.text, "소아지");
   assert.equal(res.changed, false);
 });
+
+// ── 11 ~ 13. 기능 플래그 (킬 스위치 §5-3) 및 기본 ON 정합 ───────────────────
+
+test("097-11: STT_RESCORING_DISABLED=true 면 재해석하지 않고 원문·changed:false 를 반환한다", async () => {
+  const originalEnv = process.env.STT_RESCORING_DISABLED;
+  try {
+    process.env.STT_RESCORING_DISABLED = "true";
+    const wordChainDb = createMockSupabase({
+      activeWordChain: { current_word: "사과" },
+    });
+    const res = await resolveChildUtterance(
+      wordChainDb,
+      "child-1",
+      "session-1",
+      "콰자",
+      "free_chat"
+    );
+    assert.equal(res.text, "콰자");
+    assert.equal(res.raw, "콰자");
+    assert.equal(res.changed, false);
+  } finally {
+    if (originalEnv === undefined) {
+      delete process.env.STT_RESCORING_DISABLED;
+    } else {
+      process.env.STT_RESCORING_DISABLED = originalEnv;
+    }
+  }
+});
+
+test("097-12: STT_RESCORING_DISABLED 가 미설정이면 기존대로 동작한다 (기본 ON)", async () => {
+  const originalEnv = process.env.STT_RESCORING_DISABLED;
+  try {
+    delete process.env.STT_RESCORING_DISABLED;
+    const wordChainDb = createMockSupabase({
+      activeWordChain: { current_word: "사과" },
+    });
+    const res = await resolveChildUtterance(
+      wordChainDb,
+      "child-1",
+      "session-1",
+      "콰자",
+      "free_chat"
+    );
+    assert.equal(res.text, "과자");
+    assert.equal(res.raw, "콰자");
+    assert.equal(res.changed, true);
+    assert.equal(res.candidateSource, "word_chain");
+  } finally {
+    if (originalEnv === undefined) {
+      delete process.env.STT_RESCORING_DISABLED;
+    } else {
+      process.env.STT_RESCORING_DISABLED = originalEnv;
+    }
+  }
+});
+
+test("097-13: 'false'·'1'·'' 같은 값은 켜진 것으로 본다 ('true' 일 때만 끈다)", async () => {
+  const originalEnv = process.env.STT_RESCORING_DISABLED;
+  const wordChainDb = createMockSupabase({
+    activeWordChain: { current_word: "사과" },
+  });
+
+  try {
+    for (const val of ["false", "1", "", "0", "FALSE", "disabled"]) {
+      process.env.STT_RESCORING_DISABLED = val;
+      const res = await resolveChildUtterance(
+        wordChainDb,
+        "child-1",
+        "session-1",
+        "콰자",
+        "free_chat"
+      );
+      assert.equal(res.text, "과자", `환경변수 '${val}' 일 때 재해석이 켜져 있어야 함`);
+      assert.equal(res.raw, "콰자");
+      assert.equal(res.changed, true);
+    }
+  } finally {
+    if (originalEnv === undefined) {
+      delete process.env.STT_RESCORING_DISABLED;
+    } else {
+      process.env.STT_RESCORING_DISABLED = originalEnv;
+    }
+  }
+});
