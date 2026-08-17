@@ -444,11 +444,14 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     const lastChild = [...transcriptRef.current].reverse().find((t) => t.role === "child");
     const childTurnId = targetChildTurnId || lastChild?.id;
 
+    // 1. targetChildTurnId가 명시된 경우에만 완료 가드 적용 (추정 턴에는 완료 가드를 걸지 않아 새 발화 응답 유실 방지)
+    if (targetChildTurnId && completedRespondTurnsRef.current.has(targetChildTurnId)) {
+      return;
+    }
+
+    // 2. inFlight 가드는 동시 진입 방지를 위해 유지
     if (childTurnId) {
       if (inFlightRespondTurnsRef.current.has(childTurnId)) {
-        return;
-      }
-      if (completedRespondTurnsRef.current.has(childTurnId)) {
         return;
       }
       inFlightRespondTurnsRef.current.add(childTurnId);
@@ -469,18 +472,24 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
           childTurnId,
         }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn("[VoiceChat] /api/voice/respond returned non-ok status:", res.status);
+        return;
+      }
       const data = await res.json();
       const text = typeof data.text === "string" ? data.text.trim() : "";
-      if (!text) return;
+      if (!text) {
+        console.warn("[VoiceChat] /api/voice/respond returned empty text response");
+        return;
+      }
       if (childTurnId) {
         completedRespondTurnsRef.current.add(childTurnId);
       }
       const kTurnId = childTurnId ? `${childTurnId}:k` : nextTurnId();
       appendTurn({ role: "k", text, id: kTurnId });
       onTurnCompleteRef.current?.({ role: "k", text, id: kTurnId });
-    } catch {
-      // 무응답 시 침묵 — 재시도는 다음 아이 발화에서
+    } catch (err) {
+      console.warn("[VoiceChat] respondText error:", err);
     } finally {
       if (childTurnId) {
         inFlightRespondTurnsRef.current.delete(childTurnId);
