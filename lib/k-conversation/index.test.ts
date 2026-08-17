@@ -337,3 +337,56 @@ test("Integration: 초성게임 기존 동작이 회귀하지 않는다", async 
     "초성게임 시작 지침이 포함되어야 함"
   );
 });
+
+/** 2026-08-17 Production 사고 회귀 고정.
+ *
+ *  박서현 계정 자유대화에서 아이가 "나도 반가워" 라고 한 번 말했는데 케이가
+ *  "두 번 말할 정도로 반가웠나 봐" 라고 답했다. 아이는 "내가 말하는 거 두 번씩
+ *  들어가" 라고 했다.
+ *
+ *  원인: 아이 발화는 /api/chat/messages 로 먼저 저장된 뒤 응답 요청이 간다.
+ *  그래서 세션 이력의 마지막 턴이 곧 현재 발화인데, 거기에 currentUtterance 를
+ *  또 붙여 Gemini 에 넘겼다. filterRecentHistory 에 제거 로직이 있었지만
+ *  `currentUtteranceAlreadyInSession === true` 일 때만 동작했고
+ *  **자유대화·미션 어느 경로도 그 플래그를 넘기지 않았다.** */
+test("filterRecentHistory: 저장된 현재 발화가 이력 끝에 있으면 플래그 없이도 제거한다", () => {
+  const history = filterRecentHistory(
+    [
+      { role: "child", content: "안녕 케이야" },
+      { role: "k", content: "안녕 서현아!" },
+      { role: "child", content: "나도 반가워" },
+    ] as never,
+    "나도 반가워",
+  );
+  assert.deepEqual(
+    history.map((t) => `${t.role}:${t.text}`),
+    ["child:안녕 케이야", "k:안녕 서현아!"],
+  );
+});
+
+test("filterRecentHistory: 아직 저장 전이면(마지막이 K) 아무것도 제거하지 않는다", () => {
+  const history = filterRecentHistory(
+    [
+      { role: "child", content: "안녕 케이야" },
+      { role: "k", content: "안녕 서현아!" },
+    ] as never,
+    "나도 반가워",
+  );
+  assert.equal(history.length, 2);
+});
+
+test("filterRecentHistory: 아이가 정말 같은 말을 두 번 하면 마지막 하나만 제거한다", () => {
+  const history = filterRecentHistory(
+    [
+      { role: "child", content: "응" },
+      { role: "k", content: "응?" },
+      { role: "child", content: "응" },
+      { role: "child", content: "응" },
+    ] as never,
+    "응",
+  );
+  assert.deepEqual(
+    history.map((t) => `${t.role}:${t.text}`),
+    ["child:응", "k:응?", "child:응"],
+  );
+});

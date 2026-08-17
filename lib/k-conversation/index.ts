@@ -107,7 +107,20 @@ export function filterRecentHistory(
   currentUtteranceAlreadyInSession?: boolean,
 ): ResponseGeneratorHistoryTurn[] {
   let turns = sameSession;
-  if (currentUtteranceAlreadyInSession === true && turns.length > 0) {
+  // 2026-08-17: 원래 currentUtteranceAlreadyInSession === true 일 때만 제거했는데
+  // **자유대화·미션 어느 경로도 이 플래그를 넘기지 않았다.** 그래서 중복 제거가
+  // 한 번도 동작하지 않았다.
+  //
+  // 아이 발화는 /api/chat/messages 로 **먼저 저장된 뒤** 응답 요청이 간다. 그래서
+  // 세션 이력의 마지막 턴이 곧 현재 발화이고, 여기에 currentUtterance 를 또 붙이면
+  // Gemini 는 아이가 같은 말을 두 번 한 것으로 본다. 실제로 Production 에서
+  // 케이가 "두 번 말할 정도로 반가웠나 봐" 라고 답했다(박서현, 2026-08-17).
+  //
+  // 플래그에 의존하지 않고 **마지막 턴이 현재 발화와 같으면 항상 제거**한다.
+  // 아이가 같은 말을 정말 두 번 한 경우에도 마지막 하나만 제거되므로
+  // 앞선 발화는 이력에 그대로 남는다. 아직 저장 전이면 마지막 턴이 K 라서
+  // 아무것도 제거되지 않는다.
+  if (turns.length > 0) {
     const lastTurn = turns[turns.length - 1];
     if (
       lastTurn.role === "child" &&
@@ -116,6 +129,7 @@ export function filterRecentHistory(
       turns = turns.slice(0, -1);
     }
   }
+  void currentUtteranceAlreadyInSession;
   return turns.map((turn) => ({
     role: turn.role,
     text: turn.content,
