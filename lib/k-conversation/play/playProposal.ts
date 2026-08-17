@@ -7,6 +7,7 @@ import { isTopicOnCooldownForK, recordTopicUsage } from "../semanticTopicHistory
 export interface PlayProposalDecision {
   shouldPropose: boolean;
   skillId?: PlaySkillId;
+  offeredSkills?: PlaySkillId[];
   blockedReason?: string; // 관측용
 }
 
@@ -152,12 +153,13 @@ export async function decidePlayProposal(
     return { shouldPropose: false, blockedReason: "all_skills_on_cooldown" };
   }
 
-  // 사용 가능한 스킬 중 첫 번째 선택
+  // 사용 가능한 스킬 중 첫 번째 선택 및 전체 제안 가능 목록 포함
   const selectedSkill = availableSkills[0];
 
   return {
     shouldPropose: true,
     skillId: selectedSkill.id,
+    offeredSkills: availableSkills.map((s) => s.id),
   };
 }
 

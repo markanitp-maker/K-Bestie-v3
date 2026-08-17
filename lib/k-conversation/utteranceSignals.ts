@@ -21,6 +21,7 @@ export interface UtteranceSignals {
   hasChosungHintRequest: boolean; // 초성 게임 힌트 요청 ("힌트 줘", "모르겠어", "어려워" 등)
   hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
   hasPlayRequestWithoutTarget: boolean; // 심심해/놀아줘/뭐 하고 놀까 등 게임 미지정 놀이 요청
+  hasGenericPlayAcceptance?: boolean; // 좋아/응/하자/게임부터 하자 등 놀이 포괄 수락
   hasPlayRejection: boolean; // 싫어/안 할래/하기 싫어/됐어 등 제안 거절 (단독 부정)
   hasPlayStop?: boolean; // 그만할래/안 할래/그만하자/그만 등 게임 명시적 종료 요청
 }
@@ -307,6 +308,34 @@ function detectPlayStop(
   return PLAY_STOP_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
+// 놀이 제안 포괄 수락 신호 ("좋아", "응", "하자", "게임부터 하자", "게임하자", "해볼래", "그래", "오케이", "콜" 등)
+const GENERIC_PLAY_ACCEPTANCE_PATTERNS = [
+  /^(?:응|어|웅|네|예|오냐|그래|좋아|조아|좋아요|하자|할래|해|해볼래|해보자|해보자고|해볼까|시작하자|시작해|시작|콜|오케이|ok|ㅇㅇ|ㅇㅋ|좋지|좋징|당연하지|게임\s*하자|게임하자|게임부터\s*하자|게임부터\s*해|게임부터\s*먼저\s*해\s*보자|놀자|놀래)[!?.~^ㅋㅎ\s]*$/i,
+  /(?:게임|놀이)\s*(?:부터|먼저)\s*(?:해\s*보자|하자|할래|해)/,
+];
+
+function detectGenericPlayAcceptance(
+  text: string,
+  hasChosungGameStart: boolean,
+  hasWordChainGameStart: boolean,
+  hasPlayRejection: boolean,
+  hasPlayStop: boolean,
+  hasNegativeEmotionOrConflict: boolean,
+): boolean {
+  if (
+    hasChosungGameStart ||
+    hasWordChainGameStart ||
+    hasPlayRejection ||
+    hasPlayStop ||
+    hasNegativeEmotionOrConflict
+  ) {
+    return false;
+  }
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return GENERIC_PLAY_ACCEPTANCE_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 export function extractUtteranceSignals(text: string): UtteranceSignals {
   const trimmed = text.trim();
   const isQuestion = /[?？]/.test(trimmed) || includesAny(trimmed, QUESTION_WORDS);
@@ -364,6 +393,14 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasChosungGameStart,
     Boolean(hasWordChainGameStart),
   );
+  const hasGenericPlayAcceptance = detectGenericPlayAcceptance(
+    trimmed,
+    hasChosungGameStart,
+    Boolean(hasWordChainGameStart),
+    hasPlayRejection,
+    Boolean(hasPlayStop),
+    hasNegativeEmotion || hasConflict || hasPhysicalNeed,
+  );
 
   return {
     hasAchievement,
@@ -381,6 +418,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasChosungHintRequest,
     hasWordChainGameStart,
     hasPlayRequestWithoutTarget,
+    hasGenericPlayAcceptance,
     hasPlayRejection,
     hasPlayStop,
   };
