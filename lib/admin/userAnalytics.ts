@@ -3,7 +3,18 @@ import { offsetCalendarDate, toKstCalendarDate } from "@/lib/admin/analyticsKst"
 
 export const PARENT_ROLES = new Set(["owner_parent", "parent"]);
 
-export const CHILD_CORE_EVENTS = new Set(["mission_start", "freechat_start", "play_start"]);
+// 2026-08-18 실측: `play_start` 는 프로덕션에 **한 건도 없다**. 놀이는 완료 시점에만
+// `play_complete` 를 남긴다(13건). 지시서 정의(play_start)를 그대로 쓰면 놀이 사용
+// 아이가 영원히 0명으로 나온다. 둘 다 인정한다 — 나중에 play_start 가 생겨도 그대로 동작한다.
+export const PLAY_EVENTS = new Set(["play_start", "play_complete"]);
+export const CHILD_CORE_EVENTS = new Set(["mission_start", "freechat_start", ...PLAY_EVENTS]);
+
+// 부모 리포트 열람 이벤트. report_views.viewer_id 는 2026-08-18 에 추가돼 그 이전
+// 열람이 없다(1건). 과거 열람은 behavior_events 에만 102건 남아 있으므로 둘을 합집합으로 센다.
+export const PARENT_REPORT_VIEW_EVENTS = new Set([
+  "parent_report_view",
+  "daily_report_view",
+]);
 export const PARENT_CORE_EVENTS = new Set(["parent_report_view", "parent_conversation_topic_view"]);
 
 export interface MetricWithRate {
@@ -354,7 +365,7 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
     const events = childEventsMap.get(c.id) ?? [];
     const hasMission = events.some((e) => e.event_name === "mission_start");
     const hasFreechat = events.some((e) => e.event_name === "freechat_start");
-    const hasPlay = events.some((e) => e.event_name === "play_start");
+    const hasPlay = events.some((e) => PLAY_EVENTS.has(e.event_name));
 
     if (hasMission) missionChildCount += 1;
     if (hasFreechat) freechatChildCount += 1;
@@ -381,19 +392,32 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
     }
   }
 
-  // Report views per parent
+  // Report views per parent.
+  //
+  // 2026-08-18: report_views.viewer_id 는 이 날 추가돼 그 이전 열람에는 누가 봤는지가
+  // 없다(실측 1건). 반면 behavior_events 에는 과거 열람이 102건 남아 있다.
+  // 한쪽만 보면 "열람 부모 1명" 이라는 틀린 숫자가 나온다 — 실제는 8명이다.
+  // 두 소스를 **합집합**으로 센다. 같은 부모가 양쪽에 있어도 Set 이라 1명이다.
   const reportViewCountByParent = new Map<string, number>();
   const viewingParents = new Set<string>();
   let totalReportViewsCount = 0;
 
   for (const v of reportViews) {
+    totalReportViewsCount += 1;
     if (v.viewer_id && validParentUserIds.has(v.viewer_id)) {
       viewingParents.add(v.viewer_id);
       reportViewCountByParent.set(v.viewer_id, (reportViewCountByParent.get(v.viewer_id) ?? 0) + 1);
-      totalReportViewsCount += 1;
-    } else {
-      totalReportViewsCount += 1;
     }
+  }
+
+  // behavior_events 쪽 열람(과거분 포함). report_views 에 이미 잡힌 부모는 Set 이 흡수한다.
+  for (const e of behaviorEvents) {
+    if (!PARENT_REPORT_VIEW_EVENTS.has(e.event_name)) continue;
+    if (e.actor_type !== "parent" || !e.actor_id) continue;
+    if (!validParentUserIds.has(e.actor_id)) continue;
+    viewingParents.add(e.actor_id);
+    reportViewCountByParent.set(e.actor_id, (reportViewCountByParent.get(e.actor_id) ?? 0) + 1);
+    totalReportViewsCount += 1;
   }
 
   const parentViewedCount = viewingParents.size;
