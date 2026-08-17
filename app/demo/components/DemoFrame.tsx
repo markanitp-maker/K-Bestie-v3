@@ -112,10 +112,15 @@ export function DemoFrame({
     if (!el) return;
 
     const updateDimensions = () => {
-      if (el) {
-        setFrameWidth(el.clientWidth);
-        setFrameHeight(el.clientHeight);
-      }
+      if (!el) return;
+      // clientWidth/Height 는 padding 을 포함한다. 자식은 그 padding 안쪽에 놓이므로
+      // 그대로 내려주면 자식이 프레임보다 pt+pb 만큼 커진다(태블릿 pt-8 pb-4 = 48px).
+      // ResizeObserver 의 contentRect 는 padding 을 뺀 값이라, 초기 측정도 같은 기준으로 맞춘다.
+      const cs = window.getComputedStyle(el);
+      const padX = parseFloat(cs.paddingLeft || "0") + parseFloat(cs.paddingRight || "0");
+      const padY = parseFloat(cs.paddingTop || "0") + parseFloat(cs.paddingBottom || "0");
+      setFrameWidth(Math.max(0, el.clientWidth - padX));
+      setFrameHeight(Math.max(0, el.clientHeight - padY));
     };
     updateDimensions();
 
