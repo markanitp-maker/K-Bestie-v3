@@ -8,9 +8,10 @@ import {
   selectInitialKWord,
 } from "./wordChainSkill";
 import type { UtteranceSignals } from "../utteranceSignals";
-import type {
-  WordChainSessionRow,
-  WordChainRoundRow,
+import {
+  type WordChainSessionRow,
+  type WordChainRoundRow,
+  getActiveWordChainSession,
 } from "./sessionManager";
 import { lookupWord } from "./dictionaryIndex";
 
@@ -418,6 +419,14 @@ describe("WORD_CHAIN_SKILL Adapter", () => {
     assert.ok(result.instruction.includes("방학"));
     // K가 '학'으로 시작하는 단어로 응답했는지 확인
     assert.ok(result.instruction.includes("케이는"));
+
+    // [중요 검증] 아이 단어('방학')와 케이 단어 둘 다 used_words 및 current_word에 반영되어야 함
+    const afterSession = await getActiveWordChainSession(db, "child-1");
+    assert.ok(afterSession);
+    assert.ok(afterSession.used_words.includes("가방"));
+    assert.ok(afterSession.used_words.includes("방학"));
+    assert.equal(afterSession.used_words.length, 3);
+    assert.equal(afterSession.current_word, afterSession.used_words[2]);
   });
 
   test("handleTurn: 두음법칙 적용 정상 연결 통과 ('개나리' -> '이슬')", async () => {

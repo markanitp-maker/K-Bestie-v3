@@ -436,6 +436,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         result: "ACCEPTED",
         difficulty: childEntry.difficulty,
         nextState: "K_TURN",
+        currentSession: activeSession,
       });
 
       // 6. K의 다음 단어 결정론적 선택 (§3-17, §3-18)
@@ -464,6 +465,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
           result: "GIVE_UP",
           difficulty: diffRange.min,
           nextState: "ENDED",
+          currentSession: updatedSession,
         });
 
         return {
@@ -482,6 +484,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         result: "ACCEPTED",
         difficulty: kNextEntry.difficulty,
         nextState: "CHILD_TURN",
+        currentSession: updatedSession,
       });
 
       const nextReqSyllable = kNextEntry.lastSyllable;

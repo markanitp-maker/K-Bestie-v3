@@ -1,0 +1,184 @@
+/**
+ * 활성 놀이 세션이 없는데 케이 응답이 게임을 진행하고 있는지 판정한다.
+ *
+ * 왜 필요한가 — 2026-08-17 Dev 실측(김서아):
+ *   케이: "'ㄸㄱ'야! 빨갛고 달콤한 과일인데 뭘까?"   → DB 게임 세션 없음
+ *   케이: "내가 먼저 시작할게, '사과'!"              → DB 게임 세션 없음
+ *   케이: "일마루! 내 차례네, 그럼 '루브르 박물관'!"  → DB 게임 세션 없음
+ *   아이: "말같지도 않은 단어를 갖다 붙여 내면 어떡하냐"
+ *
+ * 프롬프트에는 이미 [놀이 진행 금지 지침]이 들어가 있었다. 그런데도 케이가 지어냈다.
+ * 지침은 강제력이 없다. 그래서 출력을 직접 검사한다.
+ *
+ * 오탐이 미탐보다 위험하다. 정상 대화를 막으면 아이가 무시당했다고 느낀다.
+ * 그래서 **확신이 높은 형태만** 잡는다.
+ */
+
+export type FakeGameplayKind = "CHOSUNG" | "WORD_CHAIN" | "QUIZ";
+
+export interface FakeGameplayVerdict {
+  /** 활성 세션 없이 게임을 진행하는 응답인가. */
+  isFake: boolean;
+  /** 무엇으로 잡혔는지 — 로그·디버깅용. */
+  kinds: FakeGameplayKind[];
+}
+
+/** 초성 게임 출제로 볼 수 있는 자음 나열인지. */
+function hasChosungPuzzle(text: string): boolean {
+  // 한글 자음(호환 자모)만 2자 이상 연속된 덩어리를 찾는다.
+  const runs = text.match(/[ㄱ-ㅎ]{2,}/g);
+  if (!runs) return false;
+
+  for (const run of runs) {
+    // ㅋㅋ, ㅎㅎ, ㄴㄴ, ㅇㅇ 처럼 같은 글자 반복은 웃음·대답이지 문제가 아니다.
+    if (new Set(run).size === 1) continue;
+    // 아이들이 쓰는 초성 줄임말은 문제가 아니다.
+    if (CHOSUNG_ABBREVIATIONS.has(run)) continue;
+    return true;
+  }
+  return false;
+}
+
+/** 게임이 아니라 일상에서 쓰는 초성 줄임말. */
+const CHOSUNG_ABBREVIATIONS = new Set([
+  "ㅇㅋ", // 오케이
+  "ㄱㅅ", // 감사
+  "ㅈㅅ", // 죄송
+  "ㅊㅋ", // 축하
+  "ㅅㄱ", // 수고
+  "ㅎㅇ", // 하이
+  "ㅂㅇ", // 바이
+  "ㄷㄷ", // 덜덜
+  "ㅁㅊ",
+  "ㅇㅈ", // 인정
+]);
+
+/**
+ * 케이가 끝말잇기 단어를 제시하고 있는지.
+ * 따옴표로 묶인 단어 + 자기 차례/이어가기를 알리는 표현이 함께 있을 때 잡는다.
+ */
+const WORD_CHAIN_TURN_MARKERS = [
+  "내가 먼저",
+  "케이가 먼저",
+  "내 차례",
+  "내차례",
+  "나는",
+  "케이는",
+  "나부터",
+  "시작할게",
+  "이어서 할게",
+  "받을게",
+  "로 시작하는",
+  "으로 시작하는",
+  "로 이어",
+  "으로 이어",
+];
+
+function hasWordChainMove(text: string): boolean {
+  // 1. 따옴표로 묶인 1글자 이상 한글 단어 (공백 허용: 예 '차', '루브르 박물관')
+  const quoted = /['"‘“]([가-힣\s]{1,15})['"’”]/g.test(text);
+  if (quoted && WORD_CHAIN_TURN_MARKERS.some((m) => text.includes(m))) {
+    return true;
+  }
+
+  // 2. 따옴표 없이도 "내가 먼저 시작할게, 사과!" 같은 형태
+  if (/(?:내가|케이가)\s*먼저\s*시작할게[\s,!:~]*[가-힣]{2,}/.test(text)) {
+    return true;
+  }
+
+  // 3. "이제 '차'로 시작하는 단어", "'표'로 시작하는 단어를 말해줘"
+  if (/['"‘“]?[가-힣]['"’”]?(?:으?로\s*시작하는\s*단어)/.test(text)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 케이가 넌센스/수수께끼 문제를 내고 있는지.
+ * 물음표만으로는 못 잡는다 — 일반 대화도 물음표를 쓴다.
+ * 출제를 알리는 표현이나 전형적 수수께끼 문형이 함께 있을 때만 잡는다.
+ */
+const QUIZ_FRAMING_MARKERS = [
+  "문제 나간다",
+  "문제 낼게",
+  "문제 내줄게",
+  "첫 번째 문제",
+  "다음 문제",
+  "맞혀봐",
+  "맞춰봐",
+  "뭘까",
+  "무엇일까",
+  "정답은",
+  "글자 안팎",
+  "로 시작해",
+  "으로 시작해",
+];
+
+function hasQuizMove(text: string): boolean {
+  // 1. 전형적인 수수께끼 문형 (예: "왕이 넘어지면?", "자동차가 울면?")
+  if (/[가-힣]{2,10}(?:이|가|을|를)?\s*(?:넘어지면|웃으면|울면|빠지면|죽으면|만나면|타면|얼면)\s*\?/.test(text)) {
+    return true;
+  }
+
+  // 2. 수수께끼 힌트/설명 + 질문형 (예: "빨갛고 달콤한 과일인데 뭘까?", "세상에서 가장 가난한 왕은 뭘까?")
+  if (
+    /(?:빨갛고|노랗고|하얗고|달콤하고|세상에서|왕이|자동차가|물이|불이|소나무가|오리가|신발이|비가|눈이|[가-힣]{2,15}(?:인데|이지만|하는|있는)\s*(?:것은|사람은|음식은|동물은|물건은|과일은|나라는)?).*(?:뭘까|무엇일까|누굴까|어딜까)\s*\?/.test(
+      text
+    )
+  ) {
+    return true;
+  }
+
+  // 3. 넌센스/수수께끼 출제 선언과 함께 오는 마커
+  if (/(?:넌센스|수수께끼|퀴즈)/.test(text)) {
+    return QUIZ_FRAMING_MARKERS.some((m) => text.includes(m));
+  }
+
+  // 4. "문제 낼게: ...", "맞혀봐: ..." 같은 직접 출제 프레임
+  if (/(?:문제\s*(?:하나\s*)?(?:낼게|나간다)|맞혀봐|맞춰봐)/.test(text)) {
+    return true;
+  }
+
+  // 5. 정답·힌트 공개.
+  // 세션이 없는데 정답을 말한다는 건 케이가 혼자 문제를 내고 혼자 답한 것이다.
+  // 2026-08-17 실측에서 케이가 "정답은 '다이아몬드'였어"까지 말했다.
+  if (/정답은\s*['"‘“]?[가-힣]{2,}/.test(text)) {
+    return true;
+  }
+  if (/첫\s*글자는\s*['"‘“]?[가-힣]/.test(text)) {
+    return true;
+  }
+  if (/\d+\s*글자\s*(?:안팎|야|이야|짜리)/.test(text)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 케이 응답이 게임 진행 내용을 담고 있는지 판정한다.
+ * **활성 세션이 없을 때만** 호출해야 한다. 세션이 있으면 게임 내용이 정상이다.
+ */
+export function detectFakeGameplay(text: string): FakeGameplayVerdict {
+  if (!text || typeof text !== "string") {
+    return { isFake: false, kinds: [] };
+  }
+
+  const kinds: FakeGameplayKind[] = [];
+  if (hasChosungPuzzle(text)) kinds.push("CHOSUNG");
+  if (hasWordChainMove(text)) kinds.push("WORD_CHAIN");
+  if (hasQuizMove(text)) kinds.push("QUIZ");
+
+  return { isFake: kinds.length > 0, kinds };
+}
+
+/**
+ * 차단됐을 때 대신 내보낼 문구.
+ *
+ * 침묵은 절대 안 된다. 아이가 말했는데 응답이 없으면 무시당했다고 느낀다.
+ * 이 저장소에서 실제로 사고가 났던 지점이다.
+ *
+ * 게임을 시작하려던 맥락이므로, 거절이 아니라 "준비 중"으로 받아준다.
+ */
+export const FAKE_GAMEPLAY_FALLBACK_TEXT = "좋아, 같이 하자! 잠깐만 준비할게.";

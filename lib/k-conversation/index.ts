@@ -17,6 +17,7 @@ import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn 
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
+import { detectFakeGameplay, FAKE_GAMEPLAY_FALLBACK_TEXT } from "./play/fakeGameplayDetector";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
@@ -510,8 +511,27 @@ export async function respond(
     console.error("[k-conversation/index] recordTopicUsage failed:", err);
   }
 
+  // 9) 가짜 게임 출력 차단.
+  // 활성 세션이 없고 Router 도 처리하지 않았는데 케이가 게임을 진행하는 응답을 만들면
+  // 내보내지 않는다. 프롬프트의 [놀이 진행 금지 지침]은 이미 있었지만 케이가 무시했다
+  // (2026-08-17 Dev 실측: 세션 없이 'ㄸㄱ' 출제, '사과'로 끝말잇기 시작).
+  // 지침은 강제력이 없으므로 출력을 직접 본다.
+  let finalText = generated.text;
+  if (input.mode !== "MISSION" && !hasActivePlaySession && !playSkillHandled) {
+    const verdict = detectFakeGameplay(finalText);
+    if (verdict.isFake) {
+      console.warn("[k-conversation/index] 활성 세션 없이 게임을 진행하는 응답을 차단했다", {
+        childId: input.childId,
+        sessionId: input.sessionId,
+        kinds: verdict.kinds,
+        blockedPreview: finalText.slice(0, 60),
+      });
+      finalText = FAKE_GAMEPLAY_FALLBACK_TEXT;
+    }
+  }
+
   return {
-    text: generated.text,
+    text: finalText,
     action,
     category: "generated",
     boredom,

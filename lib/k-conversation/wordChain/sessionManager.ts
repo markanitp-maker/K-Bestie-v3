@@ -74,6 +74,7 @@ export interface RecordWordChainTurnParams {
   result: WordChainTurnResult;
   difficulty?: number;
   nextState?: WordChainSessionState;
+  currentSession?: WordChainSessionRow;
 }
 
 /**
@@ -262,46 +263,52 @@ export async function recordWordChainTurn(
   db: SupabaseClient,
   params: RecordWordChainTurnParams
 ): Promise<WordChainSessionRow> {
-  const { sessionId, childId, word, by, result, difficulty, nextState } =
+  const { sessionId, childId, word, by, result, difficulty, nextState, currentSession } =
     params;
   const nowStr = new Date().toISOString();
 
   try {
-    // 1) 세션 조회
-    let sessionQuery = db
-      .from("word_chain_game_sessions")
-      .select("*")
-      .eq("id", sessionId);
+    let session: WordChainSessionRow;
 
-    if (childId) {
-      sessionQuery = sessionQuery.eq("child_id", childId);
+    if (currentSession && currentSession.id === sessionId) {
+      session = currentSession;
+    } else {
+      // 1) 세션 조회
+      let sessionQuery = db
+        .from("word_chain_game_sessions")
+        .select("*")
+        .eq("id", sessionId);
+
+      if (childId) {
+        sessionQuery = sessionQuery.eq("child_id", childId);
+      }
+
+      const { data: sessionData, error: sessionErr } = await sessionQuery
+        .is("ended_at", null)
+        .single();
+
+      if (sessionErr || !sessionData) {
+        console.error(
+          "[recordWordChainTurn] active session not found:",
+          sessionErr?.message
+        );
+        return {
+          id: sessionId,
+          child_id: childId ?? "",
+          chat_session_id: "",
+          initiated_by: "K",
+          state: "CHILD_TURN",
+          current_word: word,
+          current_difficulty: difficulty ?? 1,
+          used_words: word ? [word] : [],
+          started_at: nowStr,
+          updated_at: nowStr,
+          ended_at: null,
+        };
+      }
+
+      session = sessionData as WordChainSessionRow;
     }
-
-    const { data: sessionData, error: sessionErr } = await sessionQuery
-      .is("ended_at", null)
-      .single();
-
-    if (sessionErr || !sessionData) {
-      console.error(
-        "[recordWordChainTurn] active session not found:",
-        sessionErr?.message
-      );
-      return {
-        id: sessionId,
-        child_id: childId ?? "",
-        chat_session_id: "",
-        initiated_by: "K",
-        state: "CHILD_TURN",
-        current_word: word,
-        current_difficulty: difficulty ?? 1,
-        used_words: word ? [word] : [],
-        started_at: nowStr,
-        updated_at: nowStr,
-        ended_at: null,
-      };
-    }
-
-    const session = sessionData as WordChainSessionRow;
 
     // 2) 라운드 기록 삽입
     const turnDifficulty = difficulty ?? session.current_difficulty;

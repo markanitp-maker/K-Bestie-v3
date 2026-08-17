@@ -856,4 +856,109 @@ test("Mission Block Test 5: mode=FREE_CHAT에서는 기존 놀이 동작이 그�
   );
 });
 
+// ============================================================================
+// 가짜 게임 출력 차단 가드 테스트 (Fake Gameplay Output Guard Tests)
+// ============================================================================
+
+test("Output Guard Test 1: 활성 세션 없이 게임 콘텐츠가 생성되면 차단되고 대체 문구가 나간다", async () => {
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        // 활성 세션이 없는데 LLM이 지침을 무시하고 가짜 초성+넌센스 출제
+        text: "'ㄸㄱ'야! 빨갛고 달콤한 과일인데 뭘까?",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "오늘 뭐해?",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  // 차단되어 대체 문구로 변경되어야 함
+  assert.equal(result.text, "좋아, 같이 하자! 잠깐만 준비할게.");
+});
+
+test("Output Guard Test 2: 활성 세션이 있으면 정상 게임 출력이 차단되지 않는다 (회귀 방지)", async () => {
+  // 활성 초성 세션이 있는 상태 모킹
+  const mockDb = createMockDbForRespond({
+    activeChosungSession: {
+      id: "chosung-1",
+      current_chosung: "ㅂㄴㄴ",
+      current_word: "바나나",
+    },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        text: "초성 퀴즈 시작! 문제는 'ㅂㄴㄴ'야. 맞혀봐!",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "바나나",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  // 활성 세션이 있으므로 차단되지 않고 그대로 전달되어야 함
+  assert.ok(result.text.includes("ㅂㄴㄴ"));
+});
+
+test("Output Guard Test 3: 미션 모드에서는 이 가드가 개입하지 않는다", async () => {
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        text: "오늘 미션 질문이야! 학교에서 가장 재밌었던 일은 뭘까?",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "MISSION",
+      currentUtterance: "안녕",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+      adapterInstruction: "학교 생활을 질문해줘.",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.equal(
+    result.text,
+    "오늘 미션 질문이야! 학교에서 가장 재밌었던 일은 뭘까?"
+  );
+});
+
 

@@ -129,36 +129,34 @@ function createMockDb(initialQuestions: NonsenseQuestionRow[] = [mockQuestion]):
             eq: (col: string, val: any) =>
               Promise.resolve({ data: histories.filter((h) => h.child_id === val), error: null }),
           }),
-          insert: (data: any) => ({
-            select: () => ({
-              single: async () => {
-                const row = { id: `history-${histories.length + 1}`, ...data };
-                histories.push(row);
-                return { data: row, error: null };
-              },
+          insert: (data: any) => {
+            const row = { id: `history-${histories.length + 1}`, ...data };
+            histories.push(row);
+            return {
+              select: () => ({
+                single: async () => ({ data: row, error: null }),
+              }),
+              then: (resolve: any) => resolve({ data: [row], error: null }),
+            };
+          },
+          update: (updates: any) => ({
+            eq: (col: string, val: any) => ({
+              eq: (col2: string, val2: any) => ({
+                eq: (col3: string, val3: any) => {
+                  for (const h of histories) {
+                    if (
+                      (h as any)[col] === val &&
+                      (h as any)[col2] === val2 &&
+                      (h as any)[col3] === val3
+                    ) {
+                      Object.assign(h, updates);
+                    }
+                  }
+                  return Promise.resolve({ data: null, error: null });
+                },
+              }),
             }),
           }),
-          update: (updates: any) => {
-            const filters: { col: string; val: any }[] = [];
-            const builder = {
-              eq: (col: string, val: any) => {
-                filters.push({ col, val });
-                return builder;
-              },
-              then: (resolve: any) => {
-                for (const h of histories) {
-                  const match = filters.every(
-                    (f) => h[f.col as keyof NonsenseQuestionHistoryRow] === f.val
-                  );
-                  if (match) {
-                    Object.assign(h, updates);
-                  }
-                }
-                resolve({ data: null, error: null });
-              },
-            };
-            return builder;
-          },
         };
       }
       return {};
@@ -246,7 +244,7 @@ test("NonsenseQuizSkill: 후보 문제 0건일 때 임의 생성 없이 자연�
   assert.ok(result.instruction?.includes("절대로 문제를 임의로 만들어내지 마"));
 });
 
-test("NonsenseQuizSkill: handleTurn 정답 시 세션 종료 및 정답/설명 포함", async () => {
+test("NonsenseQuizSkill: handleTurn 정답 시 정답/설명 포함 및 세션 유지(다음 문제 출제 준비)", async () => {
   const { db } = createMockDb([mockQuestion]);
 
   await NONSENSE_QUIZ_SKILL.start({
@@ -268,7 +266,7 @@ test("NonsenseQuizSkill: handleTurn 정답 시 세션 종료 및 정답/설명 �
   });
 
   assert.equal(turnResult.handled, true);
-  assert.equal(turnResult.ended, true);
+  assert.equal(turnResult.ended, false);
   assert.ok(turnResult.instruction?.includes("정답 맞힘"));
   assert.ok(turnResult.instruction?.includes(mockQuestion.canonical_answer));
   assert.ok(turnResult.instruction?.includes(mockQuestion.explanation!));
@@ -419,7 +417,7 @@ test("NonsenseQuizSkill [결함 1]: hint_level=2에서 오답 시 정답 공개 
   });
 
   assert.equal(turnResult3.handled, true);
-  assert.equal(turnResult3.ended, true);
+  assert.equal(turnResult3.ended, false);
   assert.ok(turnResult3.instruction?.includes("[넌센스 퀴즈 정답 공개]"));
   assert.ok(turnResult3.instruction?.includes(`[정답]: ${mockQuestion.canonical_answer}`));
   assert.ok(turnResult3.instruction?.includes(`[설명]: ${mockQuestion.explanation}`));
@@ -490,7 +488,7 @@ test("NonsenseQuizSkill [결함 1]: hint_1, hint_2가 없는 문제에서 오답
   });
 
   assert.equal(turnResult.handled, true);
-  assert.equal(turnResult.ended, true);
+  assert.equal(turnResult.ended, false);
   assert.ok(turnResult.instruction?.includes("[넌센스 퀴즈 정답 공개]"));
   assert.ok(turnResult.instruction?.includes(`[정답]: ${noHintQuestion.canonical_answer}`));
   assert.equal(histories[0].outcome, "ANSWERED_INCORRECT");
@@ -523,7 +521,7 @@ test("NonsenseQuizSkill: handleTurn 힌트 요청 시 힌트 제공 및 정답 �
   assert.equal(turnResult.instruction?.includes(mockQuestion.canonical_answer), false);
 });
 
-test("NonsenseQuizSkill: handleTurn 정답 공개 요청 시 정답 공개 및 세션 종료", async () => {
+test("NonsenseQuizSkill: handleTurn 정답 공개 요청 시 정답 공개 및 다음 문제 준비", async () => {
   const { db } = createMockDb([mockQuestion]);
 
   await NONSENSE_QUIZ_SKILL.start({
@@ -545,7 +543,7 @@ test("NonsenseQuizSkill: handleTurn 정답 공개 요청 시 정답 공개 및 �
   });
 
   assert.equal(turnResult.handled, true);
-  assert.equal(turnResult.ended, true);
+  assert.equal(turnResult.ended, false);
   assert.ok(turnResult.instruction?.includes("정답 공개"));
   assert.ok(turnResult.instruction?.includes(mockQuestion.canonical_answer));
 });
@@ -607,4 +605,77 @@ test("NonsenseQuizSkill: 그만 요청 시 세션 종료 및 ended: true", async
   assert.equal(turnResult.ended, true);
   assert.ok(turnResult.instruction?.includes("그만하자고 했어"));
   assert.equal(histories[0].outcome, "SKIPPED");
+});
+
+test("NonsenseQuizSkill: 정답 후 '다음 문제' 요청 시 새 문제가 연속으로 출제된다", async () => {
+  const question2: NonsenseQuestionRow = {
+    ...mockQuestion,
+    id: "NQ002",
+    question: "세상에서 가장 가난한 왕은?",
+    canonical_answer: "옹달샘",
+  };
+  const { db, sessions, histories } = createMockDb([mockQuestion, question2]);
+
+  // 1. 퀴즈 시작 -> 1번 문제 출제
+  const startResult = await NONSENSE_QUIZ_SKILL.start({
+    db,
+    childId: "child-1",
+    chatSessionId: "chat-1",
+    gradeRaw: 2,
+    utterance: "넌센스 퀴즈 하자",
+    signals: defaultSignals,
+  });
+  assert.equal(startResult.handled, true);
+  assert.ok(startResult.instruction?.includes(mockQuestion.question));
+
+  // 2. 1번 문제 정답 맞힘 -> 세션은 ROUND_RESULT 상태로 유지
+  const turn1 = await NONSENSE_QUIZ_SKILL.handleTurn({
+    db,
+    childId: "child-1",
+    chatSessionId: "chat-1",
+    gradeRaw: 2,
+    utterance: "풋사과",
+    signals: defaultSignals,
+  });
+  assert.equal(turn1.handled, true);
+  assert.equal(turn1.ended, false);
+  assert.ok(turn1.instruction?.includes("풋사과"));
+
+  // 3. 아이가 '다음 문제 또 내라고' 발화 -> 2번 문제가 출제됨!
+  const turn2 = await NONSENSE_QUIZ_SKILL.handleTurn({
+    db,
+    childId: "child-1",
+    chatSessionId: "chat-1",
+    gradeRaw: 2,
+    utterance: "다음 문제 또 내라고",
+    signals: defaultSignals,
+  });
+  assert.equal(turn2.handled, true);
+  assert.equal(turn2.ended, false);
+  assert.ok(turn2.instruction?.includes(question2.question));
+  assert.equal(sessions[0].current_question_id, "NQ002");
+  assert.equal(histories.length, 2);
+  assert.equal(histories[1].question_id, "NQ002");
+  assert.equal(histories[1].outcome, "PRESENTED");
+
+  // 4. 2번 문제 정답 맞힌 후 '그만' 요청 -> 세션 종료
+  await NONSENSE_QUIZ_SKILL.handleTurn({
+    db,
+    childId: "child-1",
+    chatSessionId: "chat-1",
+    gradeRaw: 2,
+    utterance: "옹달샘",
+    signals: defaultSignals,
+  });
+
+  const turnStop = await NONSENSE_QUIZ_SKILL.handleTurn({
+    db,
+    childId: "child-1",
+    chatSessionId: "chat-1",
+    gradeRaw: 2,
+    utterance: "그만",
+    signals: { ...defaultSignals, hasPlayStop: true },
+  });
+  assert.equal(turnStop.handled, true);
+  assert.equal(turnStop.ended, true);
 });

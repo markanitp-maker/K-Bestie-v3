@@ -121,14 +121,14 @@ async function progressHintOrRevealAnswer(
     };
   }
 
-  // 힌트가 모두 소진되었거나 제공할 힌트가 없는 경우 -> 정답 공개 마무리
+  // 힌트가 모두 소진되었거나 제공할 힌트가 없는 경우 -> 정답 공개 마무리 (세션은 유지하여 다음 문제 진행 가능)
   await finishQuestionRound(db, {
     sessionId: activeSession.id,
     childId,
     questionId: question.id,
     outcome: "ANSWERED_INCORRECT",
     hintCount: currentHintLevel,
-    endSession: true,
+    endSession: false,
   });
 
   const revealContext = wrongAnswer
@@ -144,10 +144,10 @@ async function progressHintOrRevealAnswer(
       `[정답]: ${question.canonical_answer}`,
       question.explanation ? `[설명]: ${question.explanation}` : "",
       "[진행 규칙]:",
-      "- 위 [정답]과 [설명]을 친구 말투로 짧고 재미있게 알려주고, '어려웠지? 다음에 또 맞춰보자!'라고 격려해줘.",
+      "- 위 [정답]과 [설명]을 친구 말투로 짧고 재미있게 알려주고, '어려웠지? 다음 문제 또 풀어볼래?'라고 격려해줘.",
       "- 아이를 평가하거나 놀리지 마.",
     ].filter(Boolean).join("\n"),
-    ended: true,
+    ended: false,
   };
 }
 
@@ -331,7 +331,87 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
         return { handled: false };
       }
 
-      // 3-C. 정답 바로 공개 요청 / 포기 ("정답 알려줘", "답 뭐야", "포기") (§3-10)
+      // 3-C. 직전 라운드가 완료(ROUND_RESULT)된 상태이거나, 아이가 다음 문제를 요청한 경우 새 문제 이어서 출제
+      if (activeSession.state === "ROUND_RESULT" || intent === "NEXT_QUESTION") {
+        const persona = resolveGradePersona(input.gradeRaw);
+        const childGrade = persona?.grade ?? 3;
+        const diffRange = NONSENSE_GRADE_DIFFICULTY[childGrade] ?? { min: 2, max: 4 };
+        const recentIds = Array.isArray(activeSession.recent_question_ids)
+          ? activeSession.recent_question_ids
+          : [];
+
+        const nextQuestion = await fetchAndSelectNonsenseQuestion(
+          db,
+          childId,
+          childGrade,
+          {
+            currentDifficulty: activeSession.current_difficulty || diffRange.min,
+            // 방금 낸 문제는 제시 시점에 PRESENTED 로 기록되므로 180일 이력 필터가
+            // 이미 걸러낸다. 별도 제외 목록을 넘길 필요가 없다.
+            seed: activeSession.chat_session_id,
+          }
+        );
+
+        if (!nextQuestion) {
+          await endNonsenseSession(db, activeSession.id, childId, "NO_MORE_QUESTIONS");
+          return {
+            handled: true,
+            instruction: [
+              "[넌센스 퀴즈 안내]",
+              "준비된 수수께끼를 다 풀어서 더 이상 낼 새로운 문제가 없어! 아이에게 문제를 정말 많이 맞혔다고 칭찬해주고 다른 이야기를 하자고 다정하게 안내해줘.",
+              "절대로 문제를 임의로 만들어내지 마.",
+            ].join("\n"),
+            ended: true,
+          };
+        }
+
+        const nowStr = new Date().toISOString();
+        const updatedRecentIds = [...recentIds, nextQuestion.id];
+
+        await db
+          .from("nonsense_game_sessions")
+          .update({
+            current_question_id: nextQuestion.id,
+            current_difficulty: nextQuestion.difficulty,
+            hint_level: 0,
+            state: "WAITING_FOR_ANSWER",
+            recent_question_ids: updatedRecentIds,
+            updated_at: nowStr,
+          })
+          .eq("id", activeSession.id)
+          .eq("child_id", childId);
+
+        await db.from("nonsense_question_history").insert({
+          child_id: childId,
+          question_id: nextQuestion.id,
+          chat_session_id: activeSession.chat_session_id,
+          game_session_id: activeSession.id,
+          outcome: "PRESENTED",
+          presented_at: nowStr,
+          hint_count: 0,
+          created_at: nowStr,
+          updated_at: nowStr,
+        });
+
+        return {
+          handled: true,
+          instruction: [
+            "[넌센스 퀴즈 진행 지침]",
+            "케이가 다음 넌센스 퀴즈 문제를 낼 차례야! 아래의 [문제] 텍스트를 절대로 바꾸지 말고 그대로 아이에게 내줘.",
+            `[문제]: ${nextQuestion.question}`,
+            "[진행 규칙]:",
+            "- 위 [문제]에 적힌 문제를 정확히 그대로 말해줘. 다른 문제를 지어내거나 내용을 바꾸지 마.",
+            "- 절대 정답이나 힌트를 먼저 말하지 마.",
+            "- 너는 이 문제의 정답을 모르는 상태로 행동해라. 정답을 추측하거나 말하지 마.",
+            "- 아이가 스스로 맞히게 두는 것이 이 놀이의 전부야.",
+            "- 정답 공개는 시스템이 [정답]을 줄 때만 한다. [정답]이 없으면 절대 답을 말하지 마.",
+            "- 또래 친구처럼 신나고 재미있게 문제를 내줘.",
+          ].join("\n"),
+          ended: false,
+        };
+      }
+
+      // 3-D. 정답 바로 공개 요청 / 포기 ("정답 알려줘", "답 뭐야", "포기") (§3-10)
       if (intent === "REVEAL_ANSWER") {
         await finishQuestionRound(db, {
           sessionId: activeSession.id,
@@ -339,7 +419,7 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
           questionId: question.id,
           outcome: "ANSWERED_INCORRECT",
           hintCount: activeSession.hint_level,
-          endSession: true,
+          endSession: false,
         });
 
         // 공개 단계에서만 정답과 설명 포함!
@@ -353,13 +433,13 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
             question.explanation ? `[설명]: ${question.explanation}` : "",
             "[진행 규칙]:",
             "- 위 [정답]과 [설명]의 내용을 벗어나지 않고 친구 말투로 짧고 재미있게 알려줘.",
-            "- 아이를 놀리거나 평가하지 말고, '재밌지? 다음에 또 맞춰보자!'처럼 신나게 이어가.",
+            "- 아이를 놀리거나 평가하지 말고, '재밌지? 다음 문제 또 풀어볼래?'처럼 신나게 이어가.",
           ].filter(Boolean).join("\n"),
-          ended: true,
+          ended: false,
         };
       }
 
-      // 3-D. 힌트 요청 ("힌트 줘", "모르겠어") (§3-10)
+      // 3-E. 힌트 요청 ("힌트 줘", "모르겠어") (§3-10)
       if (intent === "REQUEST_HINT") {
         return await progressHintOrRevealAnswer(
           db,
@@ -369,18 +449,18 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
         );
       }
 
-      // 3-E. 정답 시도 (ANSWER_ATTEMPT) (§3-9)
+      // 3-F. 정답 시도 (ANSWER_ATTEMPT) (§3-9)
       const validation = validateNonsenseAnswer(utterance, question);
 
       if (validation.isCorrect) {
-        // 정답 맞힘 -> outcome: ANSWERED_CORRECT, 세션 종료
+        // 정답 맞힘 -> outcome: ANSWERED_CORRECT, 세션은 유지하여 다음 문제 진행 가능
         await finishQuestionRound(db, {
           sessionId: activeSession.id,
           childId,
           questionId: question.id,
           outcome: "ANSWERED_CORRECT",
           hintCount: activeSession.hint_level,
-          endSession: true,
+          endSession: false,
         });
 
         return {
@@ -392,9 +472,9 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
             "[진행 규칙]:",
             "- 친구로서 신나고 유쾌하게 칭찬해줘. 교사처럼 '정답입니다'라고 딱딱하게 말하지 마.",
             "- [설명]이 있으면 가볍게 덧붙여줘.",
-            "- '대단해! 하나 더 해볼래, 아니면 다른 이야기 할래?'라고 자연스럽게 이어가.",
+            "- '대단해! 다음 문제 또 풀어볼래, 아니면 다른 이야기 할래?'라고 자연스럽게 이어가.",
           ].filter(Boolean).join("\n"),
-          ended: true,
+          ended: false,
         };
       } else {
         // 오답 -> 결정론적으로 힌트 단계 진행 (1차 -> 2차 -> 소진 시 정답 공개)
