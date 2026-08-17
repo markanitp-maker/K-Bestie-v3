@@ -8,6 +8,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
+import { ConversationStartButton } from "@/components/ConversationStartButton";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
@@ -1006,17 +1007,12 @@ export default function ChatPage() {
               </div>
             )}
             {showStartButton ? (
-              <button
+              <ConversationStartButton
                 onClick={handleStart}
                 aria-label="케이와 대화 시작하기"
-                className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 w-[clamp(84%,86%,88%)] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[clamp(20px,5.5vw,22px)] flex flex-col justify-center items-center min-h-[88px] min-w-0 shrink-0 cursor-pointer active:scale-95`}
-              >
-                <div className="text-[var(--color-k-navy)] text-[clamp(22px,6vw,26px)] font-[700]">
-                  시작하기
-                </div>
-                <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
-                <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
-              </button>
+                label="시작하기"
+                className={!olderKText && !prevKText ? "mt-auto" : ""}
+              />
             ) : (
             <div className={`${!olderKText && !prevKText ? 'mt-auto' : ''} relative z-20 w-[clamp(84%,86%,88%)] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2.5px] border-[var(--color-k-orange)] shadow-[0_4px_16px_rgba(224,90,63,0.15)] px-[clamp(20px,5.5vw,22px)] py-[clamp(16px,2.2dvh,18px)] flex flex-col min-w-0 shrink-0`}>
               <div className="w-full">

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { KBestieMascotAnimation } from "@/components/KBestieMascotAnimation";
+import { ConversationStartButton } from "@/components/ConversationStartButton";
 import { getRecentKUtterances } from "@/lib/conversation/recentKUtterances";
 import { AppTopHeader } from "@/components/AppTopHeader";
 import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversationViewport";
@@ -323,7 +324,7 @@ export function MissionConversationLayout({
             {/* Current Bubble (never yields before the older history) */}
             <div className="relative z-20 flex flex-col items-center w-full min-w-0 max-w-full shrink-0">
             {entryStatus === "ready_to_start" || entryStatus === "ready_to_resume" ? (
-              <button
+              <ConversationStartButton
                 onClick={entryStatus === "ready_to_start" ? onStartMission : onResumeMission}
                 disabled={isClosing}
                 aria-label={
@@ -331,15 +332,8 @@ export function MissionConversationLayout({
                     ? "새 미션 시작하기"
                     : `진행 중인 미션 이어하기, 현재 진행률 ${progressCurrent}단계 중 ${progressTotal}단계`
                 }
-                className="relative z-20 w-[86%] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2px] border-[#F58A34] shadow-[0_5px_15px_rgba(211,102,29,0.14)] px-[20px] flex flex-col justify-center items-center min-h-[88px] shrink-0 cursor-pointer active:scale-95 disabled:opacity-50"
-              >
-                <div className="text-[var(--color-k-navy)] text-[clamp(22px,6vw,26px)] font-[700]">
-                  {entryStatus === "ready_to_start" ? "시작하기" : "이어하기"}
-                </div>
-                {/* Triangle tail */}
-                <div className="absolute -bottom-[12.5px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-r-[12px] border-t-[12px] border-transparent border-t-[var(--color-k-orange)]" />
-                <div className="absolute -bottom-[9px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[10px] border-r-[10px] border-t-[10px] border-transparent border-t-white" />
-              </button>
+                label={entryStatus === "ready_to_start" ? "시작하기" : "이어하기"}
+              />
             ) : (
               <div ref={currentBubbleRef} data-ui="current-bubble" className="relative z-20 w-[86%] max-w-[350px] mx-auto bg-white rounded-[20px] border-[2px] border-[#F58A34] shadow-[0_5px_15px_rgba(211,102,29,0.14)] px-[clamp(20px,5.5vw,23px)] py-[clamp(15px,2dvh,18px)] flex flex-col min-w-0">
                 <div className="w-full min-w-0">
