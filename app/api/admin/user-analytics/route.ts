@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
         .from("child_profiles")
         .select("id, family_id, member_id, name, given_name, family_name, is_internal_test, is_test_account, created_at"),
       fetchWithPagination(async (from, to) => {
-        return service.from("daily_reports").select("id, family_id, child_id, created_at").range(from, to);
+        return service.from("daily_reports").select("id, child_id, created_at").is("deleted_at", null).range(from, to);
       }),
       fetchWithPagination(async (from, to) => {
         return service.from("report_views").select("id, report_id, viewer_id, viewed_at").range(from, to);
