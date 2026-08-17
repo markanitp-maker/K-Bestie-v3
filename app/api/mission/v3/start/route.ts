@@ -6,7 +6,10 @@ import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import {
   CONVERSATION_GOAL_COUNT,
   initializeConversationGoals,
+  loadHighestPriorityParentQuestion,
+  selectConversationGoalDrafts,
   type ConversationGoal,
+  type ConversationGoalDraft,
 } from "@/lib/mission-v3/goalEngine";
 import { resolveMissionPolicyVersionForChild } from "@/lib/mission-v3/policyResolution";
 import { loadMissionQuestionGoalCandidates } from "@/lib/mission-v3/questionBank";
@@ -48,6 +51,13 @@ const rollbackCreatedSession = async (
   service: ReturnType<typeof createServiceClient>,
   sessionId: string,
 ): Promise<void> => {
+  const { error: goalsError } = await service
+    .from("conversation_goals")
+    .delete()
+    .eq("mission_session_id", sessionId);
+  if (goalsError) {
+    console.error("[mission/v3/start] 신규 대화 목표 롤백 실패", goalsError.message);
+  }
   const { error: progressError } = await service
     .from("mission_progress")
     .delete()
@@ -71,9 +81,11 @@ const ensureGoals = async (input: {
   contentGrade: number;
   now: Date;
   effectiveStage?: RelationshipCalendarStage | null;
-}): Promise<ConversationGoal[]> => {
+}): Promise<{ goals: ConversationGoal[]; questionIds: string[] }> => {
   const existingGoals = await fetchMissionGoals(input.service, input.sessionId);
-  if (existingGoals.length === CONVERSATION_GOAL_COUNT) return existingGoals;
+  if (existingGoals.length === CONVERSATION_GOAL_COUNT) {
+    return { goals: existingGoals, questionIds: [] };
+  }
 
   const candidates = await loadMissionQuestionGoalCandidates({
     db: input.service,
@@ -81,14 +93,27 @@ const ensureGoals = async (input: {
     grade: input.contentGrade,
     weekday: getMissionWeekday(input.now),
     effectiveStage: input.effectiveStage,
+    now: input.now,
   });
-  return initializeConversationGoals({
+
+  const parentQuestion = await loadHighestPriorityParentQuestion(input.service, input.childId);
+  const drafts = selectConversationGoalDrafts({
+    missionSessionId: input.sessionId,
+    childId: input.childId,
+    parentQuestion,
+    candidates,
+  });
+
+  const goals = await initializeConversationGoals({
     db: input.service,
     missionSessionId: input.sessionId,
     childId: input.childId,
     sessionKind: "daily_single",
     candidates,
   });
+
+  const questionIds = drafts.map((draft: ConversationGoalDraft) => draft.questionId || draft.parentQuestionId || randomUUID());
+  return { goals, questionIds };
 };
 
 export async function POST(req: NextRequest) {
@@ -195,6 +220,21 @@ export async function POST(req: NextRequest) {
 
   let sessionId = operation.action === "resume" ? operation.sessionId : randomUUID();
   let resumed = operation.action === "resume";
+  let goals: ConversationGoal[] = [];
+
+  let effectiveStage: RelationshipCalendarStage | null = null;
+  let evaluatedRelationship: EvaluatedRelationshipStage | null = null;
+  if (!resumed) {
+    try {
+      evaluatedRelationship = await evaluateRelationshipStage({ db: service, childId });
+      effectiveStage = evaluatedRelationship?.effectiveStage ?? null;
+    } catch (error) {
+      console.error("[mission/v3/start] 관계 단계 평가 실패 (평가 실패해도 Goal 선택 계속):", error);
+      effectiveStage = null;
+      evaluatedRelationship = null;
+    }
+  }
+
   if (operation.action === "create") {
     const { error: sessionError } = await service.from("chat_sessions").insert({
       id: sessionId,
@@ -210,6 +250,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "세션을 시작하지 못했어요." }, { status: 500 });
     }
 
+    let questionIds: string[] = [];
+    try {
+      const ensured = await ensureGoals({ service, sessionId, childId, contentGrade, now, effectiveStage });
+      goals = ensured.goals;
+      questionIds = ensured.questionIds;
+    } catch (error) {
+      console.error("[mission/v3/start] Conversation Goal 초기화 실패", error);
+      await rollbackCreatedSession(service, sessionId);
+      return NextResponse.json({ error: "미션 대화를 준비하지 못했어요." }, { status: 500 });
+    }
+
     const { error: progressError } = await service.from("mission_progress").insert({
       session_id: sessionId,
       child_id: childId,
@@ -217,7 +268,7 @@ export async function POST(req: NextRequest) {
       status: "IN_PROGRESS",
       valid_answer_count: 0,
       required_valid_count: 3,
-      question_ids: [],
+      question_ids: questionIds,
       question_states: {},
       round_type: "daily_single",
       engine_version: "v3",
@@ -262,26 +313,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let effectiveStage: RelationshipCalendarStage | null = null;
-  let evaluatedRelationship: EvaluatedRelationshipStage | null = null;
-  if (!resumed) {
+  if (resumed && goals.length === 0) {
     try {
-      evaluatedRelationship = await evaluateRelationshipStage({ db: service, childId });
-      effectiveStage = evaluatedRelationship?.effectiveStage ?? null;
+      const ensured = await ensureGoals({ service, sessionId, childId, contentGrade, now, effectiveStage });
+      goals = ensured.goals;
     } catch (error) {
-      console.error("[mission/v3/start] 관계 단계 평가 실패 (평가 실패해도 Goal 선택 계속):", error);
-      effectiveStage = null;
-      evaluatedRelationship = null;
+      console.error("[mission/v3/start] Conversation Goal 초기화 실패", error);
+      return NextResponse.json({ error: "미션 대화를 준비하지 못했어요." }, { status: 500 });
     }
-  }
-
-  let goals: ConversationGoal[];
-  try {
-    goals = await ensureGoals({ service, sessionId, childId, contentGrade, now, effectiveStage });
-  } catch (error) {
-    console.error("[mission/v3/start] Conversation Goal 초기화 실패", error);
-    if (!resumed) await rollbackCreatedSession(service, sessionId);
-    return NextResponse.json({ error: "미션 대화를 준비하지 못했어요." }, { status: 500 });
   }
 
   const { data: progress, error: progressError } = await service

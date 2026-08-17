@@ -24,7 +24,11 @@ import {
   type MissionQuestionMetadataRow,
 } from "./questionBank.js";
 import { loadMissionPromptGoals } from "./routeSupport";
-import type { ConversationGoal } from "./goalEngine";
+import {
+  selectConversationGoalDrafts,
+  type ConversationGoal,
+  type GoalCandidate,
+} from "./goalEngine";
 
 interface TopicState {
   child_id: string;
@@ -36,6 +40,15 @@ interface TopicState {
   k_frequency: number;
   parent_question_frequency: number;
   cooldown_until: string;
+}
+
+interface ProgressState {
+  session_id: string;
+  child_id: string;
+  question_ids: string[];
+  created_at: string;
+  business_date?: string;
+  status?: string;
 }
 
 interface QueryState {
@@ -64,7 +77,10 @@ const makeQuestionRow = (overrides: Partial<Record<string, unknown>> = {}) => ({
   ...overrides,
 });
 
-const makeDb = (questionRows: Array<Record<string, unknown>> = []) => {
+const makeDb = (
+  questionRows: Array<Record<string, unknown>> = [],
+  progressRows: ProgressState[] = [],
+) => {
   const topics = new Map<string, TopicState>();
   const topicKey = (childId: string, semanticGroup: string) => `${childId}:${semanticGroup}`;
 
@@ -80,6 +96,18 @@ const makeDb = (questionRows: Array<Record<string, unknown>> = []) => {
         }
         return true;
       });
+      if (state.limit !== null) rows = rows.slice(0, state.limit);
+      return rows;
+    }
+
+    if (table === "mission_progress") {
+      let rows = progressRows.filter((row) => {
+        for (const [column, value] of state.equals) {
+          if ((row as Record<string, unknown>)[column] !== value) return false;
+        }
+        return true;
+      });
+      rows.sort((left, right) => right.created_at.localeCompare(left.created_at));
       if (state.limit !== null) rows = rows.slice(0, state.limit);
       return rows;
     }
@@ -402,4 +430,277 @@ test("질문 metadata의 핵심 의미 키는 071 FREE_CHAT estimator namespace�
     assert.equal(estimateSemanticGroup(extractUtteranceSignals(utterance)), expected);
     assert.match(sql, new RegExp(`THEN '${expected}'`));
   });
+});
+
+test("078-B-1: 최근 7일에 쓴 question_id 가 후보에서 제외된다", async () => {
+  const questionRows = Array.from({ length: 15 }, (_, i) => makeQuestionRow({
+    id: `q-${i + 1}`,
+    question_text: `질문 ${i + 1}`,
+    semantic_group: `GROUP_${i + 1}`,
+    question_family: `FAMILY_${i + 1}`,
+  }));
+  const progressRows = [
+    {
+      session_id: "prev-session-1",
+      child_id: "child-test-1",
+      question_ids: ["q-1", "q-2"],
+      created_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    },
+  ];
+  const { db } = makeDb(questionRows, progressRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-test-1",
+    grade: 4,
+    weekday: "mon",
+  });
+
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-1",
+    childId: "child-test-1",
+    candidates,
+  });
+
+  assert.equal(goals.length, 10);
+  const selectedQuestionIds = candidates.slice(0, 10).map((c) => c.questionId);
+  assert.ok(!selectedQuestionIds.includes("q-1"), "최근 7일에 쓴 q-1은 제외되어야 함");
+  assert.ok(!selectedQuestionIds.includes("q-2"), "최근 7일에 쓴 q-2는 제외되어야 함");
+});
+
+test("078-B-2: 같은 family 가 감점된다 (제외가 아니라 감점)", async () => {
+  const questionRows = [
+    makeQuestionRow({
+      id: "q-fam-recent",
+      question_text: "최근 사용된 패밀리의 새 질문",
+      semantic_group: "GAME_TODAY_GROUP",
+      question_family: "GAME_TODAY",
+      weekday_affinity: ["wed"],
+    }),
+    makeQuestionRow({
+      id: "q-fam-fresh",
+      question_text: "미사용 패밀리의 질문",
+      semantic_group: "FRIEND_PLAY_GROUP",
+      question_family: "FRIEND_PLAY",
+      weekday_affinity: ["wed"],
+    }),
+  ];
+  const oldQuestionRow = makeQuestionRow({
+    id: "q-old-game",
+    question_text: "옛날 게임 질문",
+    semantic_group: "OLD_GAME_GROUP",
+    question_family: "GAME_TODAY",
+  });
+  const progressRows = [
+    {
+      session_id: "prev-session-fam",
+      child_id: "child-test-fam",
+      question_ids: ["q-old-game"],
+      created_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    },
+  ];
+  const { db } = makeDb([...questionRows, oldQuestionRow], progressRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-test-fam",
+    grade: 4,
+    weekday: "wed",
+  });
+
+  assert.equal(candidates[0].questionId, "q-fam-fresh");
+  const recentFamCandidate = candidates.find((c) => c.questionId === "q-fam-recent");
+  assert.ok(recentFamCandidate, "같은 family는 제외가 아니라 감점이어야 하므로 후보에 존재해야 함");
+});
+
+test("078-B-3: question_family 가 null 이거나 컬럼이 없어도 터지지 않는다", async () => {
+  const questionRows = Array.from({ length: 12 }, (_, i) => {
+    const row = makeQuestionRow({
+      id: `q-nofam-${i + 1}`,
+      question_text: `질문 ${i + 1}`,
+      semantic_group: `NOFAM_GROUP_${i + 1}`,
+    });
+    delete (row as Record<string, unknown>).question_family;
+    return row;
+  });
+  const { db } = makeDb(questionRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-nofam",
+    grade: 4,
+    weekday: "mon",
+  });
+
+  assert.ok(candidates.length >= 10);
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-nofam",
+    childId: "child-nofam",
+    candidates,
+  });
+  assert.equal(goals.length, 10);
+});
+
+test("078-B-4: 첫 질문 family 가 7일 내 반복되지 않는다", async () => {
+  const questionRows = [
+    makeQuestionRow({
+      id: "q-school-today",
+      question_text: "오늘 학교 어땠어?",
+      semantic_group: "SCHOOL_TODAY",
+      question_family: "SCHOOL_HIGHLIGHT",
+      weekday_affinity: ["mon"],
+    }),
+    makeQuestionRow({
+      id: "q-academy-today",
+      question_text: "오늘 학원 뭐 배웠어?",
+      semantic_group: "ACADEMY_TODAY",
+      question_family: "ACADEMY_TODAY",
+      weekday_affinity: ["mon"],
+    }),
+  ];
+  const oldFirstQ = makeQuestionRow({
+    id: "q-school-yesterday",
+    question_text: "어제 학교 어땠어?",
+    semantic_group: "SCHOOL_YESTERDAY",
+    question_family: "SCHOOL_HIGHLIGHT",
+  });
+  const progressRows = [
+    {
+      session_id: "prev-session-first",
+      child_id: "child-first-q",
+      question_ids: ["q-school-yesterday"],
+      created_at: new Date(Date.now() - 1 * 86_400_000).toISOString(),
+    },
+  ];
+  const { db } = makeDb([...questionRows, oldFirstQ], progressRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-first-q",
+    grade: 4,
+    weekday: "mon",
+  });
+
+  assert.equal(candidates[0].questionFamily, "ACADEMY_TODAY");
+  assert.equal(candidates[0].questionId, "q-academy-today");
+});
+
+test("078-B-5: 후보가 극단적으로 부족해도 정확히 10개를 반환한다", async () => {
+  const questionRows = Array.from({ length: 12 }, (_, i) => makeQuestionRow({
+    id: `q-scarce-${i + 1}`,
+    question_text: `질문 ${i + 1}`,
+    semantic_group: `SCARCE_GROUP_${i + 1}`,
+    question_family: `FAMILY_${i + 1}`,
+  }));
+  const usedIds = questionRows.slice(0, 10).map((q) => q.id);
+  const progressRows = [
+    {
+      session_id: "prev-session-scarce",
+      child_id: "child-scarce",
+      question_ids: usedIds,
+      created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    },
+  ];
+  const { db } = makeDb(questionRows, progressRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-scarce",
+    grade: 4,
+    weekday: "mon",
+  });
+
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-scarce",
+    childId: "child-scarce",
+    candidates,
+  });
+
+  assert.equal(goals.length, 10);
+  const uniqueGroups = new Set(goals.map((g) => g.semanticGroup));
+  assert.equal(uniqueGroups.size, 10);
+});
+
+test("078-B-6: 후보가 0에 가까워도 10개를 반환한다", async () => {
+  const questionRows = [
+    makeQuestionRow({
+      id: "q-zero-1",
+      question_text: "유일한 질문 1",
+      semantic_group: "ONLY_GROUP_1",
+    }),
+    makeQuestionRow({
+      id: "q-zero-2",
+      question_text: "유일한 질문 2",
+      semantic_group: "ONLY_GROUP_2",
+    }),
+  ];
+  const { db } = makeDb(questionRows, []);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-zero",
+    grade: 4,
+    weekday: "mon",
+  });
+
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-zero",
+    childId: "child-zero",
+    candidates,
+  });
+
+  assert.equal(goals.length, 10);
+  const uniqueGroups = new Set(goals.map((g) => g.semanticGroup));
+  assert.equal(uniqueGroups.size, 10);
+});
+
+test("078-B-7: P0 부모 질문이 있으면 1번 슬롯을 지킨다", () => {
+  const candidates: GoalCandidate[] = Array.from({ length: 15 }, (_, i) => ({
+    questionId: `q-cand-${i + 1}`,
+    semanticGroup: `CAND_GROUP_${i + 1}`,
+    priority: i < 3 ? "P1" : i < 6 ? "P2" : "P3",
+    promptInstruction: `지시 ${i + 1}`,
+  }));
+
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-p0",
+    childId: "child-p0",
+    parentQuestion: {
+      id: "parent-q-uuid-1",
+      semanticGroup: "PARENT_IMPORTANT_QUESTION",
+      promptInstruction: "부모님 질문을 물어봐.",
+    },
+    candidates,
+  });
+
+  assert.equal(goals.length, 10);
+  assert.equal(goals[0].goalOrder, 1);
+  assert.equal(goals[0].priority, "P0");
+  assert.equal(goals[0].parentQuestionId, "parent-q-uuid-1");
+  assert.equal(goals[0].questionId, "parent-q-uuid-1");
+});
+
+test("078-B-8: 이력이 전혀 없는 신규 아이도 정상 동작한다", async () => {
+  const questionRows = Array.from({ length: 15 }, (_, i) => makeQuestionRow({
+    id: `q-new-${i + 1}`,
+    question_text: `신규 질문 ${i + 1}`,
+    semantic_group: `NEW_GROUP_${i + 1}`,
+  }));
+  const { db } = makeDb(questionRows, []);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "brand-new-child",
+    grade: 4,
+    weekday: "mon",
+  });
+
+  assert.ok(candidates.length >= 10);
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-new",
+    childId: "brand-new-child",
+    candidates,
+  });
+  assert.equal(goals.length, 10);
+  assert.equal(goals[0].goalOrder, 1);
 });

@@ -27,6 +27,7 @@ export interface GoalCandidate {
   semanticGroup: string;
   priority: Exclude<GoalPriority, "P0">;
   promptInstruction: string;
+  questionId?: string;
 }
 
 export interface ParentQuestionCandidate {
@@ -44,6 +45,7 @@ export interface ConversationGoalDraft {
   status: "PENDING";
   parentQuestionId: string | null;
   promptInstruction: string;
+  questionId?: string | null;
 }
 
 export interface GoalAssessment {
@@ -171,6 +173,7 @@ export const selectConversationGoalDrafts = (input: {
       status: "PENDING",
       parentQuestionId: input.parentQuestion.id,
       promptInstruction: input.parentQuestion.promptInstruction.trim(),
+      questionId: input.parentQuestion.id,
     });
     usedSemanticGroups.add(semanticGroup);
   }
@@ -197,6 +200,7 @@ export const selectConversationGoalDrafts = (input: {
       status: "PENDING",
       parentQuestionId: null,
       promptInstruction: candidate.promptInstruction.trim(),
+      questionId: candidate.questionId ?? (candidate as { questionId?: string }).questionId ?? null,
     });
     usedSemanticGroups.add(semanticGroup);
   }
