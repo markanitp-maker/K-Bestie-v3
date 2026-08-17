@@ -399,6 +399,7 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
   // 한쪽만 보면 "열람 부모 1명" 이라는 틀린 숫자가 나온다 — 실제는 8명이다.
   // 두 소스를 **합집합**으로 센다. 같은 부모가 양쪽에 있어도 Set 이라 1명이다.
   const reportViewCountByParent = new Map<string, number>();
+  const eventOnlyViewCount = new Map<string, number>();
   const viewingParents = new Set<string>();
   let totalReportViewsCount = 0;
 
@@ -410,15 +411,21 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
     }
   }
 
-  // behavior_events 쪽 열람(과거분 포함). report_views 에 이미 잡힌 부모는 Set 이 흡수한다.
+  // behavior_events 쪽 열람(과거분 포함).
+  //
+  // **총 열람 횟수에는 더하지 않는다.** 같은 열람이 report_views 와 behavior_events
+  // 양쪽에 기록되므로 더하면 이중 계산이다(단위 테스트가 이걸 잡았다).
+  // report_views 가 열람의 Source of Truth 이고, 이벤트는 **누가 봤는지**만 보탠다.
+  // 이미 report_views 로 잡힌 부모는 per-parent 횟수도 건드리지 않는다.
   for (const e of behaviorEvents) {
     if (!PARENT_REPORT_VIEW_EVENTS.has(e.event_name)) continue;
     if (e.actor_type !== "parent" || !e.actor_id) continue;
     if (!validParentUserIds.has(e.actor_id)) continue;
+    if (reportViewCountByParent.has(e.actor_id)) continue;
     viewingParents.add(e.actor_id);
-    reportViewCountByParent.set(e.actor_id, (reportViewCountByParent.get(e.actor_id) ?? 0) + 1);
-    totalReportViewsCount += 1;
+    eventOnlyViewCount.set(e.actor_id, (eventOnlyViewCount.get(e.actor_id) ?? 0) + 1);
   }
+  for (const [pid, n] of eventOnlyViewCount) reportViewCountByParent.set(pid, n);
 
   const parentViewedCount = viewingParents.size;
   const reportViewAvgPerViewer =
