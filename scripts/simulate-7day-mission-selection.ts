@@ -102,7 +102,7 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
 
   const usedQuestionIds7d = new Set<string>();
   const firstQuestionFamilies7d = new Set<string>();
-  const pastProgressHistory: Array<{ session_id: string; question_ids: string[]; created_at: string }> = [];
+  const pastProgressHistory: Array<{ child_id: string; session_id: string; question_ids: string[]; created_at: string }> = [];
   const pastTopicUsage: Map<string, { last_used_at: string }> = new Map();
 
   let dailyGoal10Pass = true;
@@ -112,8 +112,30 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
 
   const dayResults: DayResult[] = [];
 
-  const createSimDb = (currentQuestions: any[], simTime: Date) => ({
+  const createSimDb = (currentQuestions: any[], simTime: Date, temporalContexts: any[] = []) => ({
     from: (table: string) => {
+      if (table === "child_temporal_context") {
+        return {
+          select: () => {
+            let rows = [...temporalContexts];
+            const query = {
+              eq: (col: string, val: any) => {
+                rows = rows.filter((r) => r[col] === val);
+                return query;
+              },
+              is: (col: string, val: any) => {
+                rows = rows.filter((r) => r[col] === val);
+                return query;
+              },
+              maybeSingle: async () => ({
+                data: rows[0] ?? null,
+                error: null,
+              }),
+            };
+            return query;
+          },
+        };
+      }
       if (table === "mission_questions") {
         return {
           select: () => ({
@@ -132,9 +154,14 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
       if (table === "mission_progress") {
         return {
           select: () => ({
-            eq: () => ({
+            eq: (col: string, val: any) => ({
               order: () => ({
-                limit: async () => ({ data: [...pastProgressHistory].reverse(), error: null }),
+                limit: async () => ({
+                  data: pastProgressHistory
+                    .filter((p) => p.child_id === val)
+                    .reverse(),
+                  error: null,
+                }),
               }),
             }),
           }),
@@ -146,7 +173,7 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
             eq: (col1: string, val1: any) => ({
               order: () => ({
                 limit: async () => ({
-                  data: Array.from(pastTopicUsage.entries()).map(([sg, val]) => ({
+                  data: (val1 === simChildId ? Array.from(pastTopicUsage.entries()) : []).map(([sg, val]) => ({
                     semantic_group: sg,
                     last_used_at: val.last_used_at,
                     last_initiated_by: "k",
@@ -156,6 +183,7 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
               }),
               eq: (col2: string, val2: any) => ({
                 maybeSingle: async () => {
+                  if (val1 !== simChildId) return { data: null, error: null };
                   const sg = val2;
                   const usage = pastTopicUsage.get(sg);
                   if (!usage) return { data: null, error: null };
@@ -182,7 +210,7 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
   // 1. 7-Day Simulation Loop
   for (const item of WEEKDAYS) {
     const simTime = new Date(baseDate.getTime() + item.dayOffset * 86400000);
-    const simDb = createSimDb(rawQuestions, simTime) as any;
+    const simDb = createSimDb(rawQuestions, simTime, []) as any;
 
     const candidates = await loadMissionQuestionGoalCandidates({
       db: simDb,
@@ -237,6 +265,7 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
     todayQids.forEach((qid) => usedQuestionIds7d.add(qid));
 
     pastProgressHistory.push({
+      child_id: simChildId,
       session_id: `session-day-${item.dayOffset}`,
       question_ids: todayQids,
       created_at: simTime.toISOString(),
@@ -260,8 +289,23 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
 
   // 2. Vacation Fixture Check
   // In vacation fixture: school_required questions MUST be 0
-  const vacationQuestions = rawQuestions.filter((q: any) => q.school_context_tag !== "TRUE");
-  const vacationDb = createSimDb(vacationQuestions, baseDate) as any;
+  // 전체 rawQuestions를 그대로 넣고 엔진이 child_temporal_context를 읽어 자체 필터링하는지 검증
+  const vacationContext = [
+    {
+      id: `vacation-ctx-${grade}`,
+      child_id: `vacation-child-${grade}`,
+      context_type: "vacation_school",
+      status: "VACATION_CONFIRMED",
+      expected_school_start_date: "2026-09-01",
+      school_question_block_until: "2026-08-31",
+      confirmation_status: null,
+      last_asked_business_date: null,
+      created_at: "2026-08-01T00:00:00.000Z",
+      updated_at: "2026-08-01T00:00:00.000Z",
+      expired_at: null,
+    },
+  ];
+  const vacationDb = createSimDb(rawQuestions, baseDate, vacationContext) as any;
   const vacationCandidates = await loadMissionQuestionGoalCandidates({
     db: vacationDb,
     childId: `vacation-child-${grade}`,
@@ -280,14 +324,14 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
   for (const d of vacationDrafts) {
     const qid = d.questionId;
     const match = rawQuestions.find((q: any) => q.id === qid);
-    if (match && match.school_context_tag === "TRUE") {
+    if (match && match.school_context_tag === "school_required") {
       vacationSchoolExposureCount++;
     }
   }
 
   // 3. Semester Fixture Check (Normal school term Thursday)
   const semesterTime = new Date("2026-08-20T19:00:00.000Z");
-  const semesterDb = createSimDb(rawQuestions, semesterTime) as any;
+  const semesterDb = createSimDb(rawQuestions, semesterTime, []) as any;
   const semesterCandidates = await loadMissionQuestionGoalCandidates({
     db: semesterDb,
     childId: `semester-child-${grade}`,
@@ -295,7 +339,7 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
     weekday: "thu",
     now: semesterTime,
   });
-  const schoolQids = new Set(rawQuestions.filter((q: any) => q.school_context_tag === "TRUE").map((q: any) => q.id));
+  const schoolQids = new Set(rawQuestions.filter((q: any) => q.school_context_tag === "school_required").map((q: any) => q.id));
   const semesterSchoolExposurePass = semesterCandidates.some((c) => schoolQids.has(c.questionId));
 
   // 4. Low Cooldown Stress Test (15+ semantic groups on cooldown)
@@ -315,6 +359,19 @@ async function simulateGradeBand(gradeBandName: string, grade: number): Promise<
   ];
   const stressDb = {
     from: (table: string) => {
+      if (table === "child_temporal_context") {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                is: () => ({
+                  maybeSingle: async () => ({ data: null, error: null }),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
       if (table === "mission_questions") {
         return {
           select: () => ({

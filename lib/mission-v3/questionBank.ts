@@ -7,8 +7,12 @@ import {
   type TopicInitiator,
 } from "@/lib/k-conversation/semanticTopicHistory";
 import type { GoalCandidate } from "@/lib/mission-v3/goalEngine";
-
+import {
+  getActiveVacationContext,
+  resolveSchoolQuestionBlockState,
+} from "@/lib/plan/vacationSchoolContext";
 import type { RelationshipCalendarStage } from "@/lib/relationship/calendarStage";
+import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
 
 export type MissionWeekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 export type QuestionPeriodicity = "onboarding_once" | "flexible" | "weekly" | "monthly" | "quarterly";
@@ -29,6 +33,7 @@ export interface MissionQuestionMetadataRow {
   answerMode: string;
   periodicity: QuestionPeriodicity;
   questionFamily?: string | null;
+  schoolContextTag?: string | null;
 }
 
 export interface MissionQuestionGoalCandidate extends GoalCandidate {
@@ -39,6 +44,7 @@ export interface MissionQuestionGoalCandidate extends GoalCandidate {
   memoryUsable: boolean;
   sensitivity: QuestionSensitivity;
   questionFamily?: string | null;
+  schoolContextTag?: string | null;
 }
 
 interface MissionQuestionDbRow {
@@ -56,6 +62,7 @@ interface MissionQuestionDbRow {
   answer_mode: string;
   periodicity: QuestionPeriodicity;
   question_family?: string | null;
+  school_context_tag?: string | null;
 }
 
 const PRIORITY_ORDER: Record<GoalCandidate["priority"], number> = {
@@ -95,6 +102,7 @@ export const toMetadataRow = (row: MissionQuestionDbRow): MissionQuestionMetadat
   answerMode: row.answer_mode,
   periodicity: row.periodicity,
   questionFamily: row.question_family ?? null,
+  schoolContextTag: row.school_context_tag ?? null,
 });
 
 const styleInstruction = (style: string): string => {
@@ -202,6 +210,7 @@ export const toGoalCandidate = (
     memoryUsable: question.memoryUsable,
     sensitivity: question.sensitivity,
     questionFamily: question.questionFamily ?? null,
+    schoolContextTag: question.schoolContextTag ?? null,
   };
 };
 
@@ -341,18 +350,19 @@ export const loadMissionQuestionGoalCandidates = async (input: {
   effectiveStage?: RelationshipCalendarStage | null;
   applyCooldown?: boolean;
   now?: Date;
+  vacationBlocked?: boolean;
 }): Promise<MissionQuestionGoalCandidate[]> => {
   if (!Number.isInteger(input.grade) || input.grade < 1 || input.grade > 6) {
     throw new Error("미션 질문은행 조회 학년은 1~6이어야 합니다.");
   }
 
-  // 1. mission_questions 조회 (question_family 컬럼 포함 시도, 없으면 폴백)
+  // 1. mission_questions 조회 (question_family, school_context_tag 컬럼 포함 시도, 없으면 폴백)
   let rawQuestions: MissionQuestionDbRow[] = [];
   try {
     const fullQuery = input.db
       .from("mission_questions")
       .select(
-        "id, question_text, applicable_grades, semantic_group, cooldown_days, weekday_affinity, topic, conversation_style, fun_type, memory_usable, sensitivity, answer_mode, periodicity, question_family",
+        "id, question_text, applicable_grades, semantic_group, cooldown_days, weekday_affinity, topic, conversation_style, fun_type, memory_usable, sensitivity, answer_mode, periodicity, question_family, school_context_tag",
       )
       .eq("is_active", true)
       .eq("clinical_status", "APPROVED")
@@ -362,22 +372,38 @@ export const loadMissionQuestionGoalCandidates = async (input: {
 
     const fullResult = await fullQuery;
     if (fullResult.error) {
-      // question_family 컬럼이 아직 없는 경우 폴백 쿼리
-      const fallbackQuery = input.db
+      // 1차 폴백: question_family만 포함 시도
+      const fallbackQuery1 = input.db
         .from("mission_questions")
         .select(
-          "id, question_text, applicable_grades, semantic_group, cooldown_days, weekday_affinity, topic, conversation_style, fun_type, memory_usable, sensitivity, answer_mode, periodicity",
+          "id, question_text, applicable_grades, semantic_group, cooldown_days, weekday_affinity, topic, conversation_style, fun_type, memory_usable, sensitivity, answer_mode, periodicity, question_family",
         )
         .eq("is_active", true)
         .eq("clinical_status", "APPROVED")
         .contains("applicable_grades", [input.grade])
         .order("created_at", { ascending: true })
         .limit(1000);
-      const fallbackResult = await fallbackQuery;
-      if (fallbackResult.error) {
-        throw new Error(`미션 질문은행 조회 실패: ${fallbackResult.error.message}`);
+      const fallbackResult1 = await fallbackQuery1;
+      if (fallbackResult1.error) {
+        // 2차 폴백: 기본 컬럼만 조회
+        const fallbackQuery2 = input.db
+          .from("mission_questions")
+          .select(
+            "id, question_text, applicable_grades, semantic_group, cooldown_days, weekday_affinity, topic, conversation_style, fun_type, memory_usable, sensitivity, answer_mode, periodicity",
+          )
+          .eq("is_active", true)
+          .eq("clinical_status", "APPROVED")
+          .contains("applicable_grades", [input.grade])
+          .order("created_at", { ascending: true })
+          .limit(1000);
+        const fallbackResult2 = await fallbackQuery2;
+        if (fallbackResult2.error) {
+          throw new Error(`미션 질문은행 조회 실패: ${fallbackResult2.error.message}`);
+        }
+        rawQuestions = (fallbackResult2.data ?? []) as MissionQuestionDbRow[];
+      } else {
+        rawQuestions = (fallbackResult1.data ?? []) as MissionQuestionDbRow[];
       }
-      rawQuestions = (fallbackResult.data ?? []) as MissionQuestionDbRow[];
     } else {
       rawQuestions = (fullResult.data ?? []) as MissionQuestionDbRow[];
     }
@@ -425,10 +451,11 @@ export const loadMissionQuestionGoalCandidates = async (input: {
 
   const now = input.now ?? new Date();
   const nowMs = now.getTime();
+  const businessDate = getKstBusinessDate(now);
 
-  // 2. 비동기 병렬 조회: 최근 토픽 이력, 쿨다운 상태, 최근 7일 mission_progress 이력
+  // 2. 비동기 병렬 조회: 최근 토픽 이력, 쿨다운 상태, 최근 7일 mission_progress 이력, 방학 컨텍스트
   const uniqueGroups = [...new Set(candidateItems.map((item) => item.candidate.semanticGroup))];
-  const [topicsResult, cooldownResult, progressResult] = await Promise.allSettled([
+  const [topicsResult, cooldownResult, progressResult, vacationResult] = await Promise.allSettled([
     fetchRecentTopics(input.db, input.childId, 100),
     Promise.allSettled(
       uniqueGroups.map((semanticGroup) => isTopicOnCooldownForK(input.db, input.childId, semanticGroup)),
@@ -439,7 +466,20 @@ export const loadMissionQuestionGoalCandidates = async (input: {
       .eq("child_id", input.childId)
       .order("created_at", { ascending: false })
       .limit(14),
+    input.vacationBlocked !== undefined
+      ? Promise.resolve(null)
+      : getActiveVacationContext(input.db, input.childId),
   ]);
+
+  let isVacationBlocked = false;
+  if (input.vacationBlocked !== undefined) {
+    isVacationBlocked = input.vacationBlocked;
+  } else if (vacationResult.status === "fulfilled" && vacationResult.value) {
+    const blockState = resolveSchoolQuestionBlockState(vacationResult.value, businessDate);
+    isVacationBlocked = blockState.blocked;
+  } else {
+    isVacationBlocked = false;
+  }
 
   const recentTopics = topicsResult.status === "fulfilled" ? topicsResult.value : [];
   const recentRank = new Map(
@@ -505,11 +545,15 @@ export const loadMissionQuestionGoalCandidates = async (input: {
   }
 
   // 4. 후보군 분류 (Pool A: 신규 후보, Pool B: 7일 중복 후보, Pool C: 쿨다운 후보)
+  // 방학 차단 활성화 시 school_required 질문은 Pool A/B/C 어디에도 포함되지 않는다 (완화 단계에서도 절대 부활 방지)
   const poolA: typeof candidateItems = [];
   const poolB: typeof candidateItems = [];
   const poolC: typeof candidateItems = [];
 
   for (const item of candidateItems) {
+    if (isVacationBlocked && item.rawQuestion.schoolContextTag === "school_required") {
+      continue;
+    }
     const is7DayRepeat = usedQuestionIds7dMap.has(item.candidate.questionId);
     const isOnCooldown = blockedGroups.has(item.candidate.semanticGroup);
 

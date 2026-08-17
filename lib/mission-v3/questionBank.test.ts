@@ -71,6 +71,7 @@ const makeQuestionRow = (overrides: Partial<Record<string, unknown>> = {}) => ({
   sensitivity: "low",
   answer_mode: "open",
   periodicity: "flexible",
+  school_context_tag: "universal",
   is_active: true,
   clinical_status: "APPROVED",
   created_at: "2026-08-03T00:00:00.000Z",
@@ -80,6 +81,8 @@ const makeQuestionRow = (overrides: Partial<Record<string, unknown>> = {}) => ({
 const makeDb = (
   questionRows: Array<Record<string, unknown>> = [],
   progressRows: ProgressState[] = [],
+  temporalRows: Array<Record<string, unknown>> = [],
+  options?: { errorOnTemporal?: boolean; errorOnSchoolContextTag?: boolean },
 ) => {
   const topics = new Map<string, TopicState>();
   const topicKey = (childId: string, semanticGroup: string) => `${childId}:${semanticGroup}`;
@@ -112,6 +115,17 @@ const makeDb = (
       return rows;
     }
 
+    if (table === "child_temporal_context") {
+      let rows = temporalRows.filter((row) => {
+        for (const [column, value] of state.equals) {
+          if ((row as Record<string, unknown>)[column] !== value) return false;
+        }
+        return true;
+      });
+      if (state.limit !== null) rows = rows.slice(0, state.limit);
+      return rows;
+    }
+
     let rows = [...topics.values()].filter((row) => {
       for (const [column, value] of state.equals) {
         if (row[column as keyof TopicState] !== value) return false;
@@ -125,9 +139,18 @@ const makeDb = (
 
   const from = (table: string) => {
     const state: QueryState = { equals: new Map(), contains: new Map(), limit: null };
+    let selectedColumns = "";
+
     const query = {
-      select: () => query,
+      select: (columns = "*") => {
+        selectedColumns = columns;
+        return query;
+      },
       eq: (column: string, value: unknown) => {
+        state.equals.set(column, value);
+        return query;
+      },
+      is: (column: string, value: unknown) => {
         state.equals.set(column, value);
         return query;
       },
@@ -140,11 +163,21 @@ const makeDb = (
         state.limit = value;
         return query;
       },
-      maybeSingle: async () => ({ data: resolveRows(table, state)[0] ?? null, error: null }),
+      maybeSingle: async () => {
+        if (table === "child_temporal_context" && options?.errorOnTemporal) {
+          return { data: null, error: { message: "child_temporal_context lookup error" } };
+        }
+        return { data: resolveRows(table, state)[0] ?? null, error: null };
+      },
       then: (
-        onFulfilled: (value: { data: unknown[]; error: null }) => unknown,
+        onFulfilled: (value: { data: unknown[]; error: any }) => unknown,
         onRejected?: (reason: unknown) => unknown,
-      ) => Promise.resolve({ data: resolveRows(table, state), error: null }).then(onFulfilled, onRejected),
+      ) => {
+        if (table === "mission_questions" && options?.errorOnSchoolContextTag && selectedColumns.includes("school_context_tag")) {
+          return Promise.resolve({ data: null, error: { message: "column school_context_tag does not exist" } }).then(onFulfilled, onRejected);
+        }
+        return Promise.resolve({ data: resolveRows(table, state), error: null }).then(onFulfilled, onRejected);
+      },
     };
     return query;
   };
@@ -703,4 +736,292 @@ test("078-B-8: 이력이 전혀 없는 신규 아이도 정상 동작한다", as
   });
   assert.equal(goals.length, 10);
   assert.equal(goals[0].goalOrder, 1);
+});
+
+test("078-C-1: 방학 상태에서 school_required 질문이 후보에 0건이다", async () => {
+  const questionRows = [
+    ...Array.from({ length: 10 }, (_, i) => makeQuestionRow({
+      id: `q-univ-${i + 1}`,
+      question_text: `일반 질문 ${i + 1}`,
+      semantic_group: `UNIV_GROUP_${i + 1}`,
+      school_context_tag: "universal",
+    })),
+    ...Array.from({ length: 5 }, (_, i) => makeQuestionRow({
+      id: `q-school-${i + 1}`,
+      question_text: `학교 질문 ${i + 1}`,
+      semantic_group: `SCHOOL_GROUP_${i + 1}`,
+      school_context_tag: "school_required",
+    })),
+  ];
+  const temporalRows = [
+    {
+      id: "ctx-1",
+      child_id: "child-vacation-1",
+      context_type: "vacation_school",
+      status: "VACATION_CONFIRMED",
+      expected_school_start_date: "2026-09-01",
+      school_question_block_until: "2026-08-31",
+      confirmation_status: null,
+      last_asked_business_date: null,
+      created_at: "2026-08-01T00:00:00.000Z",
+      updated_at: "2026-08-01T00:00:00.000Z",
+      expired_at: null,
+    },
+  ];
+  const { db } = makeDb(questionRows, [], temporalRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-vacation-1",
+    grade: 4,
+    weekday: "mon",
+    now: new Date("2026-08-17T10:00:00.000Z"),
+  });
+
+  const schoolCandidates = candidates.filter((c) => c.schoolContextTag === "school_required");
+  assert.equal(schoolCandidates.length, 0, "방학 중에는 school_required 질문이 0건이어야 함");
+  assert.ok(candidates.length >= 10);
+});
+
+test("078-C-2: 학기 상태에서 학교 질문이 정상 노출된다", async () => {
+  const questionRows = [
+    ...Array.from({ length: 10 }, (_, i) => makeQuestionRow({
+      id: `q-univ-${i + 1}`,
+      question_text: `일반 질문 ${i + 1}`,
+      semantic_group: `UNIV_GROUP_${i + 1}`,
+      school_context_tag: "universal",
+    })),
+    ...Array.from({ length: 5 }, (_, i) => makeQuestionRow({
+      id: `q-school-${i + 1}`,
+      question_text: `학교 질문 ${i + 1}`,
+      semantic_group: `SCHOOL_GROUP_${i + 1}`,
+      school_context_tag: "school_required",
+    })),
+  ];
+  const temporalRows = [
+    {
+      id: "ctx-2",
+      child_id: "child-semester-1",
+      context_type: "vacation_school",
+      status: "SEMESTER",
+      expected_school_start_date: null,
+      school_question_block_until: null,
+      confirmation_status: null,
+      last_asked_business_date: null,
+      created_at: "2026-08-01T00:00:00.000Z",
+      updated_at: "2026-08-01T00:00:00.000Z",
+      expired_at: null,
+    },
+  ];
+  const { db } = makeDb(questionRows, [], temporalRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-semester-1",
+    grade: 4,
+    weekday: "mon",
+    now: new Date("2026-08-17T10:00:00.000Z"),
+  });
+
+  const schoolCandidates = candidates.filter((c) => c.schoolContextTag === "school_required");
+  assert.ok(schoolCandidates.length > 0, "학기 중에는 school_required 질문이 노출되어야 함");
+});
+
+test("078-C-3: 컨텍스트 없음(신규 아이) 시 차단하지 않는다 (SEMESTER fail-safe)", async () => {
+  const questionRows = [
+    ...Array.from({ length: 10 }, (_, i) => makeQuestionRow({
+      id: `q-univ-${i + 1}`,
+      question_text: `일반 질문 ${i + 1}`,
+      semantic_group: `UNIV_GROUP_${i + 1}`,
+      school_context_tag: "universal",
+    })),
+    ...Array.from({ length: 5 }, (_, i) => makeQuestionRow({
+      id: `q-school-${i + 1}`,
+      question_text: `학교 질문 ${i + 1}`,
+      semantic_group: `SCHOOL_GROUP_${i + 1}`,
+      school_context_tag: "school_required",
+    })),
+  ];
+  const { db } = makeDb(questionRows, [], []); // 기록 없음
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-new-no-context",
+    grade: 4,
+    weekday: "mon",
+    now: new Date("2026-08-17T10:00:00.000Z"),
+  });
+
+  const schoolCandidates = candidates.filter((c) => c.schoolContextTag === "school_required");
+  assert.ok(schoolCandidates.length > 0, "기록이 없는 신규 아이는 기본 학기(SEMESTER)로 처리되어 차단되지 않아야 함");
+});
+
+test("078-C-4: 컨텍스트 조회 실패 시 차단하지 않고 대화를 계속한다 (fail-safe)", async () => {
+  const questionRows = [
+    ...Array.from({ length: 10 }, (_, i) => makeQuestionRow({
+      id: `q-univ-${i + 1}`,
+      question_text: `일반 질문 ${i + 1}`,
+      semantic_group: `UNIV_GROUP_${i + 1}`,
+      school_context_tag: "universal",
+    })),
+    ...Array.from({ length: 5 }, (_, i) => makeQuestionRow({
+      id: `q-school-${i + 1}`,
+      question_text: `학교 질문 ${i + 1}`,
+      semantic_group: `SCHOOL_GROUP_${i + 1}`,
+      school_context_tag: "school_required",
+    })),
+  ];
+  const { db } = makeDb(questionRows, [], [], { errorOnTemporal: true });
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-db-err",
+    grade: 4,
+    weekday: "mon",
+    now: new Date("2026-08-17T10:00:00.000Z"),
+  });
+
+  assert.ok(candidates.length >= 10, "DB 오류 시에도 대화가 죽지 않고 Goal 후보가 반환되어야 함");
+  const schoolCandidates = candidates.filter((c) => c.schoolContextTag === "school_required");
+  assert.ok(schoolCandidates.length > 0, "조회 실패 시 fail-safe로 학교 질문이 차단되지 않음");
+});
+
+test("078-C-5: 방학 차단으로 후보가 줄어도 Goal 은 정확히 10개다", async () => {
+  // universal 7개 + school_required 8개 -> 방학 차단 시 7개만 남음
+  const questionRows = [
+    ...Array.from({ length: 7 }, (_, i) => makeQuestionRow({
+      id: `q-univ-${i + 1}`,
+      question_text: `일반 질문 ${i + 1}`,
+      semantic_group: `UNIV_GROUP_${i + 1}`,
+      school_context_tag: "universal",
+    })),
+    ...Array.from({ length: 8 }, (_, i) => makeQuestionRow({
+      id: `q-school-${i + 1}`,
+      question_text: `학교 질문 ${i + 1}`,
+      semantic_group: `SCHOOL_GROUP_${i + 1}`,
+      school_context_tag: "school_required",
+    })),
+  ];
+  const temporalRows = [
+    {
+      id: "ctx-5",
+      child_id: "child-scarce-vacation",
+      context_type: "vacation_school",
+      status: "VACATION_CONFIRMED",
+      expected_school_start_date: "2026-09-01",
+      school_question_block_until: "2026-08-31",
+      confirmation_status: null,
+      last_asked_business_date: null,
+      created_at: "2026-08-01T00:00:00.000Z",
+      updated_at: "2026-08-01T00:00:00.000Z",
+      expired_at: null,
+    },
+  ];
+  const { db } = makeDb(questionRows, [], temporalRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-scarce-vacation",
+    grade: 4,
+    weekday: "mon",
+    now: new Date("2026-08-17T10:00:00.000Z"),
+  });
+
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-scarce-vacation",
+    childId: "child-scarce-vacation",
+    candidates,
+  });
+
+  assert.equal(goals.length, 10, "방학 차단으로 후보가 줄어도 완화(Step 4 fallback)를 거쳐 정확히 10개 Goal 보장");
+  const uniqueGroups = new Set(goals.map((g) => g.semanticGroup));
+  assert.equal(uniqueGroups.size, 10);
+});
+
+test("078-C-6: 완화 단계에서 school_required 가 되살아나지 않는다", async () => {
+  // 5개 universal 질문이 모두 7일 내 사용된 상태 + school_required 질문이 10개 있음
+  const questionRows = [
+    ...Array.from({ length: 5 }, (_, i) => makeQuestionRow({
+      id: `q-univ-${i + 1}`,
+      question_text: `일반 질문 ${i + 1}`,
+      semantic_group: `UNIV_GROUP_${i + 1}`,
+      school_context_tag: "universal",
+    })),
+    ...Array.from({ length: 10 }, (_, i) => makeQuestionRow({
+      id: `q-school-${i + 1}`,
+      question_text: `학교 질문 ${i + 1}`,
+      semantic_group: `SCHOOL_GROUP_${i + 1}`,
+      school_context_tag: "school_required",
+    })),
+  ];
+  const progressRows = [
+    {
+      session_id: "prev-sess-1",
+      child_id: "child-relax-test",
+      question_ids: ["q-univ-1", "q-univ-2", "q-univ-3", "q-univ-4", "q-univ-5"],
+      created_at: new Date("2026-08-15T00:00:00.000Z").toISOString(),
+    },
+  ];
+  const temporalRows = [
+    {
+      id: "ctx-6",
+      child_id: "child-relax-test",
+      context_type: "vacation_school",
+      status: "VACATION_CONFIRMED",
+      expected_school_start_date: "2026-09-01",
+      school_question_block_until: "2026-08-31",
+      confirmation_status: null,
+      last_asked_business_date: null,
+      created_at: "2026-08-01T00:00:00.000Z",
+      updated_at: "2026-08-01T00:00:00.000Z",
+      expired_at: null,
+    },
+  ];
+  const { db } = makeDb(questionRows, progressRows, temporalRows);
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-relax-test",
+    grade: 4,
+    weekday: "mon",
+    now: new Date("2026-08-17T10:00:00.000Z"),
+  });
+
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-relax-test",
+    childId: "child-relax-test",
+    candidates,
+  });
+
+  assert.equal(goals.length, 10, "Goal은 정확히 10개여야 함");
+  const schoolCandidatesInResult = candidates.filter((c) => c.schoolContextTag === "school_required");
+  assert.equal(schoolCandidatesInResult.length, 0, "Stepwise relaxation 단계에서도 school_required 질문은 절대 부활하지 않아야 함");
+});
+
+test("078-C-7: school_context_tag 컬럼이 없어도 터지지 않는다 (fallback 쿼리 동작)", async () => {
+  const questionRows = Array.from({ length: 12 }, (_, i) => {
+    const row = makeQuestionRow({
+      id: `q-notag-${i + 1}`,
+      question_text: `노태그 질문 ${i + 1}`,
+      semantic_group: `NOTAG_GROUP_${i + 1}`,
+    });
+    delete (row as Record<string, unknown>).school_context_tag;
+    return row;
+  });
+  const { db } = makeDb(questionRows, [], [], { errorOnSchoolContextTag: true });
+
+  const candidates = await loadMissionQuestionGoalCandidates({
+    db,
+    childId: "child-notag",
+    grade: 4,
+    weekday: "mon",
+  });
+
+  assert.ok(candidates.length >= 10, "school_context_tag 컬럼이 없어도 fallback 쿼리로 정상 조회되어야 함");
+  const goals = selectConversationGoalDrafts({
+    missionSessionId: "sess-notag",
+    childId: "child-notag",
+    candidates,
+  });
+  assert.equal(goals.length, 10);
 });
