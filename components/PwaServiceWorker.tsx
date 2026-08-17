@@ -6,6 +6,7 @@ import {
   PWA_ACTIVATION_DELAY_MS,
   RELOAD_PENDING_MARKER_TTL_MS,
   ReloadPendingMarkerV3,
+  canDismissPwaModal,
   pwaUpdateCopy,
   performRegistrationUpdate,
   saveReloadPendingMarker,
@@ -99,6 +100,7 @@ function debugLog(event: string, extra?: unknown) {
 export function PwaServiceWorker() {
   const router = useRouter();
   const [pwaState, setPwaState] = useState<PwaState>("idle");
+  const [dismissed, setDismissed] = useState(false);
   const [navigationBlockedNotice, setNavigationBlockedNotice] = useState(false);
   const pathname = usePathname() ?? "";
   const pathnameRef = useRef(pathname);
@@ -750,6 +752,7 @@ export function PwaServiceWorker() {
   ]);
 
   const triggerUpdate = useCallback(async () => {
+    setDismissed(false);
     if (manualUpdateInFlightRef.current) {
       debugLog("manual_update_skipped_in_flight");
       return;
@@ -766,15 +769,18 @@ export function PwaServiceWorker() {
   // -------------------------------------------------------------
   // History Lock / Sentinel & Capture Navigation Lock for Central Blocking Modal
   // -------------------------------------------------------------
-  const isModalOpen = [
-    "update_available",
-    "checking",
-    "activating",
-    "delayed",
-    "offline",
-    "error",
-    "verifying_latest",
-  ].includes(pwaState);
+  const isDismissed = dismissed && canDismissPwaModal(pwaState);
+  const isModalOpen =
+    !isDismissed &&
+    [
+      "update_available",
+      "checking",
+      "activating",
+      "delayed",
+      "offline",
+      "error",
+      "verifying_latest",
+    ].includes(pwaState);
 
   useEffect(() => {
     if (!isModalOpen || typeof window === "undefined") {
@@ -1174,7 +1180,10 @@ export function PwaServiceWorker() {
     }
   }, [consumeExternalControllerPendingIfSafe, pathname, pwaState]);
 
-  if (["idle", "up_to_date", "deferred_during_session", "reloading"].includes(pwaState)) {
+  if (
+    (dismissed && canDismissPwaModal(pwaState)) ||
+    ["idle", "up_to_date", "deferred_during_session", "reloading"].includes(pwaState)
+  ) {
     return null;
   }
 
@@ -1227,7 +1236,7 @@ export function PwaServiceWorker() {
           </div>
         )}
 
-        <div className="w-full mt-2">
+        <div className="w-full mt-2 flex flex-col gap-2">
           <button
             onClick={triggerUpdate}
             disabled={
@@ -1243,6 +1252,15 @@ export function PwaServiceWorker() {
               ? "확인 중..."
               : "다시 업데이트"}
           </button>
+          {canDismissPwaModal(pwaState) && (
+            <button
+              type="button"
+              onClick={() => setDismissed(true)}
+              className="w-full py-2.5 px-4 text-sm text-gray-500 hover:text-gray-700 font-medium cursor-pointer transition-colors"
+            >
+              계속 사용하기
+            </button>
+          )}
         </div>
       </div>
     </div>

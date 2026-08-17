@@ -56,6 +56,10 @@ export function decideUpdateWorkerAction(input: {
   return "refresh_registration";
 }
 
+export function canDismissPwaModal(pwaState: string): boolean {
+  return pwaState === "offline" || pwaState === "delayed" || pwaState === "error";
+}
+
 export function pwaUpdateCopy(state: "delayed" | "offline" | "error") {
   if (state === "offline") {
     return {

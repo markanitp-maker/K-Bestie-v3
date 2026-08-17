@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   PWA_ACTIVATION_DELAY_MS,
   PWA_DISMISS_COOLDOWN_MS,
+  canDismissPwaModal,
   decideUpdateWorkerAction,
   isPwaDismissCooldownActive,
   pwaUpdateCopy,
@@ -74,6 +75,21 @@ test("offline·activation 지연·update 실패 문구를 구분하고 현재 �
   for (const state of ["offline", "delayed", "error"] as const) {
     assert.match(pwaUpdateCopy(state).body, /현재 버전은 계속 사용할 수/);
   }
+});
+
+test("canDismissPwaModal - offline·delayed·error 세 상태에서만 닫기 허용되고 update_available 등은 불허된다", () => {
+  assert.equal(canDismissPwaModal("offline"), true);
+  assert.equal(canDismissPwaModal("delayed"), true);
+  assert.equal(canDismissPwaModal("error"), true);
+
+  assert.equal(canDismissPwaModal("update_available"), false);
+  assert.equal(canDismissPwaModal("checking"), false);
+  assert.equal(canDismissPwaModal("activating"), false);
+  assert.equal(canDismissPwaModal("verifying_latest"), false);
+  assert.equal(canDismissPwaModal("idle"), false);
+  assert.equal(canDismissPwaModal("up_to_date"), false);
+  assert.equal(canDismissPwaModal("deferred_during_session"), false);
+  assert.equal(canDismissPwaModal("reloading"), false);
 });
 
 // -------------------------------------------------------------
