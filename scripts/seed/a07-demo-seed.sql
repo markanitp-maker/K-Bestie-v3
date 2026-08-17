@@ -58,7 +58,7 @@ child_dates AS (
   FROM target_children tc
   CROSS JOIN LATERAL generate_series(
     tc.signup_date,
-    (now() AT TIME ZONE 'Asia/Seoul')::date,
+    ((now() AT TIME ZONE 'Asia/Seoul')::date - 1),  -- 오늘은 채우지 않는다: 미리 완료 처리하면 그날 미션을 못 한다
     '1 day'::interval
   ) AS d
 )
@@ -119,7 +119,7 @@ child_dates AS (
   FROM target_children tc
   CROSS JOIN LATERAL generate_series(
     tc.signup_date,
-    (now() AT TIME ZONE 'Asia/Seoul')::date,
+    ((now() AT TIME ZONE 'Asia/Seoul')::date - 1),  -- 오늘은 채우지 않는다: 미리 완료 처리하면 그날 미션을 못 한다
     '1 day'::interval
   ) AS d
 )
@@ -190,7 +190,7 @@ child_dates AS (
   FROM target_children tc
   CROSS JOIN LATERAL generate_series(
     tc.signup_date,
-    (now() AT TIME ZONE 'Asia/Seoul')::date,
+    ((now() AT TIME ZONE 'Asia/Seoul')::date - 1),  -- 오늘은 채우지 않는다: 미리 완료 처리하면 그날 미션을 못 한다
     '1 day'::interval
   ) AS d
 )
@@ -255,7 +255,7 @@ child_dates AS (
   FROM target_children tc
   CROSS JOIN LATERAL generate_series(
     tc.signup_date,
-    (now() AT TIME ZONE 'Asia/Seoul')::date,
+    ((now() AT TIME ZONE 'Asia/Seoul')::date - 1),  -- 오늘은 채우지 않는다: 미리 완료 처리하면 그날 미션을 못 한다
     '1 day'::interval
   ) AS d
 )
@@ -324,7 +324,7 @@ child_dates AS (
   FROM target_children tc
   CROSS JOIN LATERAL generate_series(
     tc.signup_date,
-    (now() AT TIME ZONE 'Asia/Seoul')::date,
+    ((now() AT TIME ZONE 'Asia/Seoul')::date - 1),  -- 오늘은 채우지 않는다: 미리 완료 처리하면 그날 미션을 못 한다
     '1 day'::interval
   ) AS d
 )
@@ -426,7 +426,7 @@ child_dates AS (
   FROM target_children tc
   CROSS JOIN LATERAL generate_series(
     tc.signup_date,
-    (now() AT TIME ZONE 'Asia/Seoul')::date,
+    ((now() AT TIME ZONE 'Asia/Seoul')::date - 1),  -- 오늘은 채우지 않는다: 미리 완료 처리하면 그날 미션을 못 한다
     '1 day'::interval
   ) AS d
 )
@@ -482,7 +482,7 @@ child_dates AS (
   FROM target_children tc
   CROSS JOIN LATERAL generate_series(
     tc.signup_date,
-    (now() AT TIME ZONE 'Asia/Seoul')::date,
+    ((now() AT TIME ZONE 'Asia/Seoul')::date - 1),  -- 오늘은 채우지 않는다: 미리 완료 처리하면 그날 미션을 못 한다
     '1 day'::interval
   ) AS d
 )
