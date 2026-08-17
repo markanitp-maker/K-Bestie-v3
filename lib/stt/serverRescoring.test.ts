@@ -73,7 +73,7 @@ function createMockSupabase(config: MockDbConfig = {}): SupabaseClient {
 
 // ── 1. 활성 넌센스 세션이 있고 오인식 발화가 오면 재해석된다 ───────────────────
 
-test("097-1: 활성 넌센스 세션이 있을 때 오인식 발화 재해석 ('오수 노래' -> '소 노래')", async () => {
+test("097-1: 넌센스 정답 후보는 재해석에 쓰지 않는다 — 오답 둔갑 원천 차단", async () => {
   const mockDb = createMockSupabase({
     activeNonsense: { current_question_id: "q-nonsense-cow" },
     nonsenseQuestions: {
@@ -91,11 +91,9 @@ test("097-1: 활성 넌센스 세션이 있을 때 오인식 발화 재해석 ('
     "오수 노래",
     "free_chat"
   );
-  assert.equal(res1.text, "소 노래");
+  assert.equal(res1.text, "오수 노래"); // 정답 후보는 재해석에서 제외한다
   assert.equal(res1.raw, "오수 노래");
-  assert.equal(res1.changed, true);
-  assert.equal(res1.matchedCandidate, "소");
-  assert.equal(res1.candidateSource, "nonsense_quiz");
+  assert.equal(res1.changed, false);
 
   const res2 = await resolveChildUtterance(
     mockDb,
@@ -104,9 +102,8 @@ test("097-1: 활성 넌센스 세션이 있을 때 오인식 발화 재해석 ('
     "손 노래",
     "free_chat"
   );
-  assert.equal(res2.text, "소 노래");
-  assert.equal(res2.raw, "손 노래");
-  assert.equal(res2.changed, true);
+  assert.equal(res2.text, "손 노래");
+  assert.equal(res2.changed, false);
 
   const res3 = await resolveChildUtterance(
     mockDb,
@@ -115,13 +112,12 @@ test("097-1: 활성 넌센스 세션이 있을 때 오인식 발화 재해석 ('
     "또 노래",
     "free_chat"
   );
-  assert.equal(res3.text, "소 노래");
-  assert.equal(res3.raw, "또 노래");
-  assert.equal(res3.changed, true);
+  assert.equal(res3.text, "또 노래");
+  assert.equal(res3.changed, false);
 });
 
 test("097-1b: 활성 초성게임 및 끝말잇기 세션 재해석", async () => {
-  // 초성게임: "파나나 먹을래" -> "바나나 먹을래"
+  // 초성게임 정답(current_word)도 재해석 후보에서 제외된다 — 오답 둔갑 방지
   const chosungDb = createMockSupabase({
     activeChosung: { current_word: "바나나" },
   });
@@ -132,10 +128,9 @@ test("097-1b: 활성 초성게임 및 끝말잇기 세션 재해석", async () =
     "파나나 먹을래",
     "free_chat"
   );
-  assert.equal(resChosung.text, "바나나 먹을래");
+  assert.equal(resChosung.text, "파나나 먹을래");
   assert.equal(resChosung.raw, "파나나 먹을래");
-  assert.equal(resChosung.changed, true);
-  assert.equal(resChosung.candidateSource, "chosung_game");
+  assert.equal(resChosung.changed, false);
 
   // 끝말잇기: 이전 단어 "사과" (끝음절 '과') -> 다음 단어 "과자" -> "콰자" 오인식 복원
   const wordChainDb = createMockSupabase({
@@ -368,7 +363,7 @@ test("097-9: 아이가 한 낱말로 낸 오답을 정답으로 고쳐 주지 �
   }
 });
 
-test("097-10: 받침만 흘린 정답은 복원한다 — STT 오인식이지 오답이 아니다", async () => {
+test("097-10: 정답 후보는 재해석하지 않는다 — 오답 둔갑을 원천 차단한다", async () => {
   const mockDb = createMockSupabase({
     activeNonsense: { current_question_id: "q-calf" },
     nonsenseQuestions: {
@@ -378,7 +373,8 @@ test("097-10: 받침만 흘린 정답은 복원한다 — STT 오인식이지 �
 
   // "소아지"는 아이가 송아지라고 말했는데 받침이 떨어진 것이다.
   const res = await resolveChildUtterance(mockDb, "child-1", "session-1", "소아지", "free_chat");
-  assert.equal(res.text, "송아지");
-  assert.equal(res.changed, true);
-  assert.equal(res.raw, "소아지");
+  // 정답 후보를 재해석에서 뺐으므로 복원하지 않는다. 맞혔는데 틀렸다고 처리되는
+  // 문제는 남지만, 틀렸는데 맞았다고 처리되는 쪽이 훨씬 나쁘다.
+  assert.equal(res.text, "소아지");
+  assert.equal(res.changed, false);
 });

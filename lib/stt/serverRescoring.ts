@@ -8,10 +8,25 @@ import { allowedNextInitials } from "@/lib/k-conversation/wordChain/dueum";
 import { BY_FIRST_SYLLABLE } from "@/lib/k-conversation/wordChain/dictionaryIndex";
 
 /**
- * 이 출처의 후보는 "정답"이다. 잘못 치환하면 아이가 못 맞힌 문제를 맞힌 것으로
- * 만들어 준다. 그래서 받침 차이만 복원한다.
+ * 이 출처의 후보는 **문제의 정답**이다. 재해석에 쓰지 않는다.
+ *
+ * 왜 뺐나 (2026-08-17 리뷰 2회):
+ *   아이가 "타자"라고 답했는데 정답 "사자"로 치환돼 맞힌 것으로 처리됐다.
+ *   막으려고 규칙을 조였더니 이번엔 "송아치"(아이가 송아지라고 맞게 말했는데
+ *   STT 가 흘린 것)까지 막혀 맞힌 걸 틀렸다고 처리했다.
+ *
+ * 두 경우는 형태가 같다 — 같은 길이, 초성 하나 차이다.
+ *   "타자" → "사자"  (막아야 함: 아이가 실제로 타자라고 말했다)
+ *   "송아치" → "송아지" (고쳐야 함: 송아치는 낱말이 아니다)
+ * 구분하려면 "그게 실제 낱말인가"를 알아야 하는데, 가진 사전은 1,404단어뿐이라
+ * 없다고 해서 낱말이 아니라고 단정할 수 없다.
+ *
+ * 못 고치는 쪽(맞혔는데 틀렸다고 처리)은 097 이전과 같은 상태다. 반면 잘못 고치는
+ * 쪽(틀렸는데 맞았다고 처리)은 게임을 통째로 무의미하게 만든다. 그래서 뺀다.
+ *
+ * 되살리려면 신뢰할 수 있는 낱말 존재 판정이 먼저 필요하다.
  */
-const ANSWER_CANDIDATE_SOURCES = new Set(["nonsense_quiz", "chosung_game"]);
+const EXCLUDED_CANDIDATE_SOURCES = new Set(["nonsense_quiz", "chosung_game"]);
 
 /**
  * 재해석 전후에서 실제로 바뀐 어절 한 쌍을 찾는다.
@@ -117,6 +132,8 @@ export async function resolveChildUtterance(
 
     const addCandidate = (text: string | null | undefined, source: string) => {
       if (!text || typeof text !== "string") return;
+      // 정답 후보는 아예 담지 않는다. 담아두고 나중에 거르면 규칙이 갈라져 관리가 안 된다.
+      if (EXCLUDED_CANDIDATE_SOURCES.has(source)) return;
       const trimmed = text.trim();
       if (!trimmed || seenTexts.has(trimmed)) return;
       seenTexts.add(trimmed);
@@ -224,37 +241,6 @@ export async function resolveChildUtterance(
     const matchedSource = candidates.find(
       (c) => c.text === rescoreResult.matchedCandidate
     )?.source;
-
-    // 정답 후보로 치환할 때는 훨씬 엄격해야 한다.
-    // 2026-08-17 리뷰 실측: 정답이 "사자"일 때 아이가 말한 오답 "타자"·"감자"가
-    // 정답으로 둔갑해 맞힌 것으로 처리됐다. 게임이 통째로 무의미해진다.
-    //
-    // STT 가 실제로 망가뜨리는 건 받침이다("송아지"→"소아지"). 초성이 통째로
-    // 바뀌는 건("타자"→"사자") 오인식이 아니라 다른 낱말이다.
-    // 그래서 정답 후보는 **받침만 다른 경우**에만 복원한다.
-    if (matchedSource && ANSWER_CANDIDATE_SOURCES.has(matchedSource)) {
-      // 문장 전체가 아니라 **실제로 바뀐 어절**만 비교해야 한다.
-      // "오수 노래" → "소 노래" 처럼 한 어절만 고치는 정당한 복원까지 막으면
-      // 이 기능 자체가 무의미해진다.
-      // 아이가 **한 낱말만** 말했다면 그건 답안 제출이다. 그걸 정답으로 고쳐 주면
-      // 못 맞힌 문제를 맞힌 것으로 만든다("타자"→"사자", 2026-08-17 리뷰 실측).
-      // 반대로 "또 노래"처럼 다른 말이 섞여 있으면 답안 제출이 아니라 발화이고,
-      // 그 안의 한 어절을 되돌리는 건 정당한 복원이다(실제 사고 사례).
-      const isBareAnswerAttempt = original.trim().split(/\s+/).length === 1;
-      const changedPair = findChangedToken(original, rescoreResult.text);
-      if (
-        isBareAnswerAttempt &&
-        (!changedPair || !isSafeAnswerRestoration(changedPair.before, changedPair.after))
-      ) {
-        console.info("[STT_REINTERPRETATION] 정답 후보 치환을 막았다 — 받침 차이가 아니다", {
-          childId,
-          raw: original,
-          rejected: rescoreResult.text,
-          candidateSource: matchedSource,
-        });
-        return { text: original, raw: original, changed: false };
-      }
-    }
 
     // 계측 로깅 (§3-6)
     console.info("[STT_REINTERPRETATION]", {
