@@ -46,7 +46,6 @@ const DEVICE_SPEC = {
 
 import {
   PC_MEDIA_QUERY,
-  TOUCH_COARSE_MEDIA_QUERY,
   TABLET_MIN_WIDTH_MEDIA_QUERY,
 } from "@/hooks/useIsPcDevice";
 
@@ -66,11 +65,10 @@ function useDeviceMode(setView: (v: "tablet" | "mobile") => void) {
 
   useIsomorphicLayoutEffect(() => {
     const pcMq = window.matchMedia(PC_MEDIA_QUERY);
-    const touchMq = window.matchMedia(TOUCH_COARSE_MEDIA_QUERY);
     const sizeMq = window.matchMedia(TABLET_MIN_WIDTH_MEDIA_QUERY);
 
     const update = () => {
-      const pc = pcMq.matches && !touchMq.matches;
+      const pc = pcMq.matches;
       setIsPc(pc);
       if (!pc) {
         setView(sizeMq.matches ? "tablet" : "mobile");
@@ -80,11 +78,9 @@ function useDeviceMode(setView: (v: "tablet" | "mobile") => void) {
 
     update();
     pcMq.addEventListener("change", update);
-    touchMq.addEventListener("change", update);
     sizeMq.addEventListener("change", update);
     return () => {
       pcMq.removeEventListener("change", update);
-      touchMq.removeEventListener("change", update);
       sizeMq.removeEventListener("change", update);
     };
   }, [setView]);
