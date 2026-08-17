@@ -10,7 +10,7 @@ description: >-
 license: MIT
 compatibility: Requires the `agy` CLI installed and authenticated, Node 18+, and git. The orchestrating agent must be able to run shell commands and read files. Shell examples assume bash/zsh (macOS/Linux, or Git Bash/WSL on Windows). Windows launch is not yet verified for this relay.
 metadata:
-  version: 0.4.2
+  version: 0.5.0
 ---
 
 # Antigravity Delegate
@@ -60,6 +60,48 @@ change, what to leave untouched, the project's **actual** gate commands, and a r
 Antigravity it will **not** commit (you will). Keep one task per brief. Full guidance and a template:
 [references/writing-the-brief.md](references/writing-the-brief.md).
 
+Every path you name in a brief must exist. Pointing at a setup doc that was deleted sends the
+implementer exploring instead of working; it has no way to know the path was stale rather than
+merely unread.
+
+#### Gates in the brief: the timeout trap
+
+**Run each gate yourself on a clean tree first and record its exit code.** A gate that already
+exits non-zero is the single most reliable way to burn an entire run.
+
+The implementer cannot tell "my change broke this" from "this was already broken." Told to reach a
+green gate that can never be green, it re-runs, waits, re-runs - and hits the timeout wall with the
+work already finished on disk.
+
+Measured on one repo (8 cores, `tsc` 30s, full suite 66s, 12-minute budget):
+
+| Brief's gate | Exit code | Outcome |
+|---|---|---|
+| none (review / fix-only briefs) | - | finished in 0.9-2.9 min |
+| `tsc --noEmit` + a dry-run script | 0 | finished in 2.3 min |
+| `tsc --noEmit` + `npm test` | **1** (4 long-standing failures) | **hit the 12-min wall, every time** |
+
+The failed runs' transcripts were almost entirely "waiting for tsc", "re-running npm test". Note
+that CPU contention does not explain this: 30s + 66s cannot become 12 minutes even with several
+runs in parallel. The unreachable gate does.
+
+So, in order of preference:
+
+1. **Leave slow or full-suite gates out of the brief.** Run them yourself, centrally, once, after
+   the run lands. Step 4 says re-verify anyway - the implementer running them too is duplicated
+   cost paid out of its budget.
+2. If the implementer must self-check, give it a **scoped** command over the files it touched
+   (`npx vitest run path/to/file.test.ts`), not the whole suite.
+3. If a gate has known failures and you still want it run, **name them in the brief** and say
+   "compare against this list; do not try to reach zero failures."
+
+#### Budget the timeout against the work, not against hope
+
+Real browser automation is the other way runs die - not hung, just genuinely longer than the
+budget. In the same repo, a QA brief with ten end-to-end scenarios hit the wall twice; split into
+four-item briefs it finished in 2.0 and 3.2 min. If a brief's scenario list would not fit in the
+budget when read aloud as actual steps, split it before dispatching, not after.
+
 ### 2. Dispatch
 
 Send the brief to Antigravity with the bundled helper. It wraps `agy --print`, captures the run, and
@@ -90,6 +132,12 @@ resume when it returns:
 Do not trust progress trackers over reality: a run is finished when `result.json` is written and the
 process has exited. Read the working tree, not a status line. The implementer's full report is
 the `finalMessage` field in `result.json` (also printed in full on stdout between the report markers).
+
+**`status: "failed"` does not mean nothing was produced.** A timeout kills the conversation, not the
+edits already written to disk. Before re-dispatching, check `touchedFiles` and `git status` - the
+change is often complete and only the self-verification never ran, in which case you finish it by
+running the gates yourself rather than paying for the whole task again. Re-dispatch only what is
+actually missing.
 
 ### 4. Review - do not trust the self-report
 

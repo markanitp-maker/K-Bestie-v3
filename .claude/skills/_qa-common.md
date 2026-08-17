@@ -1,6 +1,6 @@
-# 자유대화 계열 QA 공통 기준 (free-chat-qa / word-chain-qa / chosung-game-qa 공용)
+# 자유대화 계열 QA 공통 기준 (free-chat-qa / word-chain-qa / chosung-game-qa / nonsense-quiz-qa 공용)
 
-> 세 QA 스킬이 공유하는 원칙과 실측 정보. 각 SKILL.md 가 이 파일을 참조한다.
+> 네 QA 스킬이 공유하는 원칙과 실측 정보. 각 SKILL.md 가 이 파일을 참조한다.
 > **여기 적힌 테이블·컬럼·상태값은 2026-08-17 Production 실측이다. 추측이 아니다.**
 
 ## 0. 이 QA 가 존재하는 이유 — 2026-08-17 실제 사고들
@@ -81,6 +81,36 @@ current_difficulty, used_words, started_at, updated_at, ended_at
 - `state`: `K_TURN` | `CHILD_TURN` | `ENDED` | `SUSPENDED`
 - `used_words` — 사용된 단어 배열
 
+### nonsense_game_sessions (2026-08-17 신설)
+```
+id, child_id, chat_session_id, state, initiated_by, current_question_id,
+current_difficulty, hint_level, recent_question_ids, started_at, updated_at, ended_at
+```
+- `state`: `OFFERED` | `PLAYING_K_ASKS` | `PLAYING_CHILD_ASKS` | `WAITING_FOR_ANSWER`
+  | `HINT` | `ROUND_RESULT` | `SUSPENDED` | `ENDED`
+- **활성 판정은 `ended_at IS NULL` 이다.** `state='ENDED'` 로만 보지 마라.
+  라운드가 끝나면 `state` 가 `ROUND_RESULT` 인 채로 `ended_at` 이 채워진다.
+- child 당 활성 세션 1개만 허용하는 partial unique index 가 있다.
+
+### nonsense_question_history (2026-08-17 신설)
+```
+id, child_id, question_id, chat_session_id, game_session_id,
+outcome, presented_at, answered_at, hint_count
+```
+- `outcome`: `PRESENTED` | `ANSWERED` | `SKIPPED` | `ANSWERED_CORRECT`
+  | `ANSWERED_INCORRECT` | `TOPIC_SHIFT`
+- `presented_at` — **문제를 낸 시점**에 기록된다. 정답 시점이 아니다.
+  180일 재출제 방지가 이 값 기준이다.
+
+### nonsense_questions (2026-08-17 신설 · Dev/Prod 각 500건)
+```
+id, concept_key, question, canonical_answer, accepted_answers, hint_1, hint_2,
+explanation, category, pun_type, difficulty, min_grade, max_grade,
+primary_grade_band, status, child_safe, source_type, quality_score
+```
+- 출제 후보는 `status='ACTIVE'`(250건) + `child_safe` + `min_grade <= 학년 <= max_grade`
+- `concept_key` UNIQUE
+
 ### chat_sessions
 ```
 id, child_id, started_at, ended_at, turn_count, session_type, ...,
@@ -131,6 +161,17 @@ DB 에 중복이 없어도 FAIL 이다.
 ### 5-4. 가짜 게임
 케이가 문제·정답·힌트를 말하는데 **게임 세션 행이 없으면** FAIL 이다.
 세션이 있어도 **케이가 말한 정답과 `current_word` 가 다르면** FAIL 이다.
+
+### 5-5. 동시 활성 게임
+게임 QA 는 매번 확인한다. 둘 이상 1 이상이면 FAIL.
+```sql
+SELECT 'chosung' AS g, count(*) FROM chosung_game_sessions
+ WHERE child_id='<child_id>' AND ended_at IS NULL
+UNION ALL SELECT 'wordchain', count(*) FROM word_chain_game_sessions
+ WHERE child_id='<child_id>' AND ended_at IS NULL
+UNION ALL SELECT 'nonsense', count(*) FROM nonsense_game_sessions
+ WHERE child_id='<child_id>' AND ended_at IS NULL;
+```
 
 ## 6. 금지 사항
 
