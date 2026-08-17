@@ -148,7 +148,7 @@ function AdminAnalyticsContent() {
       </div>
 
       {analysisTab === "overview" ? (error ? <AdminErrorState error={error} onRetry={() => setReload((value) => value + 1)} /> : !data ? <div className="rounded-2xl border p-12 text-center text-[var(--admin-text-secondary)]">통합 지표를 불러오는 중입니다.</div> : <>
-        <div id="kpi"><AdminKpiGrid>{kpis.map((kpi) => <button key={kpi.key} className="text-left" onClick={() => document.getElementById(kpi.key.startsWith("d") ? "retention" : kpi.key.includes("report") || kpi.key.includes("mission") ? "funnel" : "dau")?.scrollIntoView({ behavior: "smooth" })}><AdminKpiCard title={kpi.label} value={kpi.unit === "percent" ? percent(kpi.value) : (kpi.value ?? "-").toLocaleString()} description={kpi.denominator == null ? undefined : `완료 ${kpi.numerator ?? 0} / 대상 ${kpi.denominator}`} /></button>)}</AdminKpiGrid></div>
+        <div id="kpi"><AdminKpiGrid>{kpis.map((kpi) => <button key={kpi.key} className="text-left" onClick={() => document.getElementById(kpi.key.startsWith("d") ? "retention" : kpi.key.includes("report") || kpi.key.includes("mission") ? "funnel" : "dau")?.scrollIntoView({ behavior: "smooth" })}><AdminKpiCard title={kpi.label} value={kpi.unit === "percent" ? percent(kpi.value) : (kpi.value ?? "-").toLocaleString()} description={kpi.denominator == null ? undefined : kpi.denominator === 0 ? "- (측정 중)" : `성공 ${kpi.numerator ?? 0} / 대상 ${kpi.denominator}`} /></button>)}</AdminKpiGrid></div>
 
         <Section id="funnel" title="행동 퍼널 / 리포팅 파이프라인" description="각 단계는 현재 기간·대상·내부 테스트 필터를 공유합니다.">
           {data.errors?.reporting ? <AdminErrorState error={data.errors.reporting} onRetry={() => setReload((value) => value + 1)} /> : <div className="space-y-6">
@@ -169,8 +169,17 @@ function AdminAnalyticsContent() {
             {data.errors?.overview ? <AdminErrorState error={data.errors.overview} onRetry={() => setReload((value) => value + 1)} /> : daily.length === 0 ? <p className="py-12 text-center text-sm text-[var(--admin-text-secondary)]">기간 내 활성 데이터가 없습니다.</p> : <div className="h-72"><ResponsiveContainer width="100%" height="100%"><LineChart data={daily}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" tick={{ fontSize: 11 }}/><YAxis allowDecimals={false}/><Tooltip/><Legend/>{series.parent && <Line type="monotone" dataKey="activeParents" name="부모 활성" stroke="#7c3aed" strokeWidth={2}/>} {series.child && <Line type="monotone" dataKey="activeChildren" name="아이 활성" stroke="#0891b2" strokeWidth={2}/>} {series.total && <Line type="monotone" dataKey="totalActive" name="전체 활성" stroke="#ea580c" strokeWidth={2}/>}</LineChart></ResponsiveContainer></div>}
           </Section>
 
-          <Section id="retention" title="가입 코호트 리텐션" description="아직 도래하지 않은 D1·D3·D7·D14·W2는 0%가 아닌 '-'로 표시합니다.">
-            {data.errors?.cohort ? <AdminErrorState error={data.errors.cohort} onRetry={() => setReload((value) => value + 1)} /> : <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">가입 주차</th><th className="p-2">모수</th>{["D1", "D3", "D7", "D14", "W2"].map((label) => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{cohorts.map((row) => <tr key={row.cohortWeekStart} className="border-b"><td className="p-2 font-bold">{row.cohortLabel}</td><td className="p-2">{row.size || "-"}</td>{["d1", "d3", "d7", "d14", "w2"].map((key) => <td key={key} className="p-2" style={{ background: row[key]?.rate == null ? undefined : `rgba(8,145,178,${0.08 + row[key].rate * 0.32})` }}>{row[key]?.rate == null ? "-" : percent(row[key].rate * 100)}</td>)}</tr>)}</tbody></table>{cohorts.length === 0 && <p className="py-12 text-center text-[var(--admin-text-secondary)]">완료된 코호트가 없습니다.</p>}</div>}
+          <Section id="retention" title="가입 코호트 리텐션" description="아직 도래하지 않은 D1·D3·D7·D14·D30·W2는 0%가 아닌 '-'로 표시합니다.">
+            {data.errors?.cohort ? <AdminErrorState error={data.errors.cohort} onRetry={() => setReload((value) => value + 1)} /> : <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">가입 주차</th><th className="p-2">모수</th>{[
+              { key: "d1", label: "D1" },
+              { key: "d3", label: "D3" },
+              { key: "d7", label: "D7" },
+              { key: "d14", label: "D14" },
+              { key: "d30", label: "D30" },
+              { key: "w2", label: "W2 (D1~D14 누적)" },
+            ].map((col) => <th key={col.key} className="p-2">{col.label}</th>)}</tr></thead><tbody>{cohorts.map((row) => <tr key={row.cohortWeekStart} className="border-b"><td className="p-2 font-bold">{row.cohortLabel}</td><td className="p-2">{row.size || "-"}</td>{[
+              "d1", "d3", "d7", "d14", "d30", "w2"
+            ].map((key) => <td key={key} className="p-2" style={{ background: row[key]?.rate == null ? undefined : `rgba(8,145,178,${0.08 + row[key].rate * 0.32})` }}>{row[key]?.rate == null ? "-" : percent(row[key].rate * 100)}</td>)}</tr>)}</tbody></table>{cohorts.length === 0 && <p className="py-12 text-center text-[var(--admin-text-secondary)]">완료된 코호트가 없습니다.</p>}</div>}
           </Section>
         </div>
 

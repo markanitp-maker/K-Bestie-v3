@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { toKSTDateStr, getOffsetDateStr } from "@/lib/analytics/kstDate";
+import { isCohortDateInRange } from "@/lib/admin/analytics";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,8 @@ export async function GET(req: NextRequest) {
   const unit = (req.nextUrl.searchParams.get("unit") || "child") as "family" | "parent" | "child" | "all";
   const cohortBasis = (req.nextUrl.searchParams.get("cohortBasis") || "first_use") as "registration" | "first_use";
   const includeTestAccounts = req.nextUrl.searchParams.get("includeTestAccounts") === "true";
+  const from = req.nextUrl.searchParams.get("from") || "";
+  const to = req.nextUrl.searchParams.get("to") || "";
 
   const nowKST = new Date();
   nowKST.setHours(nowKST.getHours() + 9);
@@ -256,6 +259,7 @@ export async function GET(req: NextRequest) {
   };
 
   for (const [uId, uData] of units.entries()) {
+    if (!isCohortDateInRange(uData.cohortDateStr, from, to)) continue;
     const weekStart = getWeekStart(uData.cohortDateStr);
     if (!cohortsMap.has(weekStart)) {
       cohortsMap.set(weekStart, initCohort(weekStart));

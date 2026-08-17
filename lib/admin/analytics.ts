@@ -77,7 +77,14 @@ function subtractMetric(include: any, exclude: any): RetentionMetric {
   return { numerator, denominator, rate: denominator > 0 ? numerator / denominator : null };
 }
 
-const RETENTION_KEYS = ["d1", "d3", "d7", "d14", "w2"] as const;
+export const RETENTION_KEYS = ["d1", "d3", "d7", "d14", "d30", "w1", "w2", "w4"] as const;
+
+export function isCohortDateInRange(cohortDateStr: string, from?: string | null, to?: string | null): boolean {
+  if (!cohortDateStr) return false;
+  if (from && cohortDateStr < from) return false;
+  if (to && cohortDateStr > to) return false;
+  return true;
+}
 
 export function summarizeCohorts(cohorts: any[]): Record<string, RetentionMetric> {
   const summary: Record<string, RetentionMetric> = {};
@@ -93,11 +100,10 @@ export function summarizeCohorts(cohorts: any[]): Record<string, RetentionMetric
   return summary;
 }
 
-export function filterCohortsByRange(payload: any, from: string, to: string) {
-  const cohorts = (Array.isArray(payload?.cohorts) ? payload.cohorts : []).filter((row: any) => {
-    const date = String(row?.cohortWeekStart ?? "");
-    return date >= from && date <= to;
-  });
+export function filterCohortsByRange(payload: any, _from?: string, _to?: string) {
+  // cohort route에서 개별 사용자 가입일(cohortDateStr) 기준으로 필터링하므로
+  // 주차(cohortWeekStart)로 자르지 않고 payload를 통과시키며 summary 정합성을 유지합니다.
+  const cohorts = Array.isArray(payload?.cohorts) ? payload.cohorts : [];
   return { ...payload, cohorts, summary: summarizeCohorts(cohorts) };
 }
 
@@ -150,8 +156,8 @@ export function buildAnalyticsKpis(payload: any): AnalyticsKpi[] {
     { key: "missionCompletionRate", label: "미션 완료율", value: reporting.missionCompletionRate ?? null, unit: "percent", numerator: reporting.missionCompletes, denominator: reporting.missionStarts },
     { key: "reportGenerationRate", label: "리포트 생성률", value: reporting.reportGenerationRate ?? null, unit: "percent", numerator: reporting.reportGeneratedUsers, denominator: reporting.reportTargetUsers },
     { key: "d1", label: "D1 리텐션", value: cohort.d1?.rate == null ? null : Math.round(cohort.d1.rate * 1000) / 10, unit: "percent", numerator: cohort.d1?.numerator, denominator: cohort.d1?.denominator },
-    { key: "d3", label: "D3 리텐션", value: cohort.d3?.rate == null ? null : Math.round(cohort.d3.rate * 1000) / 10, unit: "percent", numerator: cohort.d3?.numerator, denominator: cohort.d3?.denominator },
     { key: "d7", label: "D7 리텐션", value: cohort.d7?.rate == null ? null : Math.round(cohort.d7.rate * 1000) / 10, unit: "percent", numerator: cohort.d7?.numerator, denominator: cohort.d7?.denominator },
+    { key: "d30", label: "D30 리텐션", value: cohort.d30?.rate == null ? null : Math.round(cohort.d30.rate * 1000) / 10, unit: "percent", numerator: cohort.d30?.numerator, denominator: cohort.d30?.denominator },
     { key: "dualFamilies", label: "부모 동시 활성 가족", value: Number(overview.dualActivationFamilies?.value ?? 0), unit: "count" },
   ];
 }
