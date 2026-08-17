@@ -18,6 +18,7 @@ import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
 import { detectFakeGameplay, FAKE_GAMEPLAY_FALLBACK_TEXT } from "./play/fakeGameplayDetector";
+import { detectFabricatedRecall, FABRICATED_RECALL_FALLBACK_TEXT } from "./memory/fabricatedRecallDetector";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
@@ -527,6 +528,36 @@ export async function respond(
         blockedPreview: finalText.slice(0, 60),
       });
       finalText = FAKE_GAMEPLAY_FALLBACK_TEXT;
+    }
+  }
+
+  // 10) 없는 기억에 맞장구치는 응답 차단.
+  // 아이가 "내가 ~라고 했잖아"라고 단정했는데 그 내용이 기억에 없으면, 케이가
+  // 동의하거나 그 낱말을 그대로 받아 말하는 것을 막는다.
+  // 프롬프트 지침으로 두 번 시도했으나 두 번 다 뚫렸다(2026-08-17 Dev QA).
+  // 기억 못 하는 건 아쉬운 정도지만, 안 한 얘기를 맞다고 하는 건 아이를 속이는 것이다.
+  {
+    const knownMemoryTexts = [
+      ...memorySnapshot.longTermFacts.map((f) => f.content),
+      ...(memorySnapshot.recentEpisode ? [memorySnapshot.recentEpisode.content] : []),
+      ...memorySnapshot.sameSession.map((t) => t.content),
+      ...memorySnapshot.sameDay.map((t) => t.content),
+    ].filter((t): t is string => typeof t === "string" && t.length > 0);
+
+    const recallVerdict = detectFabricatedRecall(
+      input.currentUtterance,
+      finalText,
+      knownMemoryTexts,
+    );
+    if (recallVerdict.isFabricated) {
+      console.warn("[k-conversation/index] 없는 기억에 맞장구치는 응답을 차단했다", {
+        childId: input.childId,
+        sessionId: input.sessionId,
+        reason: recallVerdict.reason,
+        childUtterance: input.currentUtterance.slice(0, 60),
+        blockedPreview: finalText.slice(0, 60),
+      });
+      finalText = FABRICATED_RECALL_FALLBACK_TEXT;
     }
   }
 

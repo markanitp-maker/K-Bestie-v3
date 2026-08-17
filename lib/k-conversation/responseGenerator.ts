@@ -99,7 +99,23 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
     ].join("\n");
   }
 
+  // 2026-08-17 Dev QA 실측: 아이가 "오늘 무슨 요일이야"라고 묻자 케이가 "목요일",
+  // "11월 14일"이라고 답했다. 실제로는 8월 17일 월요일이었다.
+  // 프롬프트에 오늘이 언제인지가 아예 없어서 케이가 학습 데이터로 지어낸 것이다.
+  // 절친이 오늘 날짜를 틀리면 그날 대화 전체의 신뢰가 흔들린다.
+  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const y = nowKst.getUTCFullYear();
+  const m = nowKst.getUTCMonth() + 1;
+  const d = nowKst.getUTCDate();
+  const weekdayKo = ["일", "월", "화", "수", "목", "금", "토"][nowKst.getUTCDay()];
+  const todayFragment = [
+    "[오늘]",
+    `- 오늘은 ${y}년 ${m}월 ${d}일 ${weekdayKo}요일이야(한국 시간).`,
+    "- 날짜·요일을 물으면 이 값으로만 답해. 절대 다른 날짜를 지어내지 마.",
+  ].join("\n");
+
   const lines = [
+    todayFragment,
     input.corePersonaFragment,
     input.gradePersonaFragment,
     input.relationshipFragment,

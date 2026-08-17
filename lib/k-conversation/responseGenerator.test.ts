@@ -19,7 +19,18 @@ test("buildSystemInstruction — relationshipFragment가 없을 때 기존 출�
 
   assert.equal(resultUndefined, resultOmitted);
 
+  // 프롬프트 맨 앞에 오늘 날짜가 붙는다. 케이가 날짜·요일을 지어내던 문제를 막기
+  // 위한 것이다(2026-08-17 Dev QA: 8월 17일 월요일인데 "목요일", "11월 14일"이라고 답함).
+  // 날짜는 매일 바뀌므로 실제 KST 값을 계산해 비교한다.
+  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const todayFragment = [
+    "[오늘]",
+    `- 오늘은 ${nowKst.getUTCFullYear()}년 ${nowKst.getUTCMonth() + 1}월 ${nowKst.getUTCDate()}일 ${["일", "월", "화", "수", "목", "금", "토"][nowKst.getUTCDay()]}요일이야(한국 시간).`,
+    "- 날짜·요일을 물으면 이 값으로만 답해. 절대 다른 날짜를 지어내지 마.",
+  ].join("\n");
+
   const expectedExact = [
+    todayFragment,
     "[K Core Persona - 내부 지침]\n너는 케이(K), 동갑내기 친구야.",
     "[Grade Persona]\n초등학교 3학년 또래 말투.",
     "[Memory]\n관련 기억 없음.",
