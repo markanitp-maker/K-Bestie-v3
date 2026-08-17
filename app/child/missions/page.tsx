@@ -24,6 +24,10 @@ import { fetchPersonalizedReaction } from "@/lib/mission/personalizedReaction";
 import { pickTransitionConnector } from "@/lib/mission/eReactionPool";
 import { ChildConversationContext } from "@/lib/mission/ChildConversationContext";
 import { getKstHour, currentRound } from "@/lib/mission/missionTimeGate";
+import {
+  MISSION_DAILY_LIMIT_TEXT,
+  MISSION_HOURS_TEXT,
+} from "@/components/child/MissionTimeModal";
 import { useScreenWakeLock } from "@/hooks/useScreenWakeLock";
 import { logVoiceEvent } from "@/lib/voiceTimelineLog";
 import { appendVocative } from "@/lib/utils/koreanParticle";
@@ -3527,9 +3531,9 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         <p className="text-5xl">⏰</p>
         <p className="text-base font-bold text-gray-800">{errorMsg || "미션 시간이 아니에요"}</p>
         <p className="text-xs text-gray-500 leading-relaxed">
-          미션은 하루에 딱 한 번만 할 수 있어요.
+          {MISSION_DAILY_LIMIT_TEXT}
           <br />
-          오전 9시~밤 11시 50분 전까지 만나요!
+          {MISSION_HOURS_TEXT} 전까지 만나요!
         </p>
         <button
           onClick={() => {

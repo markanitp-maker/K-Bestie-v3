@@ -548,7 +548,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   return {
     status, error, transcript, interimChildText, isSpeaking, isResponding,
     startSession, stopSession, reset, getTranscript, getLastAsrConfidence, seedTranscript,
-    speak, respondText, sendTypedText, sayText, stopSpeaking, setMicEnabled, setInputMode, manualFinalize, cancelFinalize,
+    speak, respondText, sendTypedText, sayText, speakAsK: sayText, stopSpeaking, setMicEnabled, setInputMode, manualFinalize, cancelFinalize,
     releaseMicrophone, reacquireMicrophone,
   };
 }

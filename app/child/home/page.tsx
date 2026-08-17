@@ -21,6 +21,7 @@ import {
 } from "@/lib/mission-v3/clientEntry";
 import type { MissionEntrySnapshot } from "@/lib/mission-v3/entryContract";
 import { PwaSafeRouteReady } from "@/components/pwa/PwaSafeRouteReady";
+import MissionTimeModal, { type MissionBlockReason } from "@/components/child/MissionTimeModal";
 
 // 이 프로젝트는 아이콘 라이브러리(lucide-react/heroicons)를 설치하지 않고 인라인
 // SVG·이모지만 사용하는 관례라(package.json에 둘 다 없음), 로그아웃/닫기 아이콘 2개만
@@ -63,6 +64,8 @@ export default function ChildHomePage() {
 
   // Mission snapshot state
   const [missionSnapshot, setMissionSnapshot] = useState<MissionEntrySnapshot | null>(null);
+  const [isTimeModalOpen, setIsTimeModalOpen] = useState(false);
+  const [timeModalReason, setTimeModalReason] = useState<MissionBlockReason>("unavailable");
 
   // PWA install banner state
   const {
@@ -248,6 +251,7 @@ export default function ChildHomePage() {
 
   let missionUrl = "/child/missions";
   let isClickBlocked = false;
+  let blockedReason: MissionBlockReason = "unavailable";
 
   if (missionSnapshot) {
     const display = resolveMissionDisplay(missionSnapshot);
@@ -267,6 +271,7 @@ export default function ChildHomePage() {
         if (reason === "before_open" || reason === "closed" || reason === "unavailable") {
           missionUrl = "#";
           isClickBlocked = true;
+          blockedReason = reason;
         } else {
           // completed, safety_paused, force_ended -> 종료 화면 확인을 위해 진입 허용
           missionUrl = "/child/missions";
@@ -282,6 +287,8 @@ export default function ChildHomePage() {
   const handleMissionClick = (e: React.MouseEvent) => {
     if (isClickBlocked) {
       e.preventDefault();
+      setTimeModalReason(blockedReason);
+      setIsTimeModalOpen(true);
     }
   };
 
@@ -474,6 +481,11 @@ export default function ChildHomePage() {
         isOpen={activeGuide !== null}
         context={guideContext ?? context}
         onClose={closeGuide}
+      />
+      <MissionTimeModal
+        open={isTimeModalOpen}
+        reason={timeModalReason}
+        onClose={() => setIsTimeModalOpen(false)}
       />
     </DemoFrame>
   );

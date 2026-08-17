@@ -281,10 +281,12 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         const reqSyllable =
           getRequiredStartSyllable(existingSession) ??
           existingSession.current_word.slice(-1);
+        const openingLine = `우리 아까 하던 거 이어서 하자! "${existingSession.current_word}" 다음으로 "${reqSyllable}"(으)로 시작해줘!`;
         return {
           handled: true,
           instruction: `[끝말잇기] 이미 진행 중인 끝말잇기 게임이 있어! 지금 단어는 "${existingSession.current_word}"야. "${reqSyllable}"(으)로 시작하는 단어를 말해줘.`,
           ended: false,
+          openingLine,
         };
       }
 
@@ -310,10 +312,12 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
 
       // 4. K가 낸 첫 단어를 포함하는 instruction 생성
       const reqSyllable = initialWordEntry.lastSyllable;
+      const openingLine = `좋아, 끝말잇기 하자! 내가 먼저 할게. ${initialWordEntry.word}!`;
       return {
         handled: true,
         instruction: `[끝말잇기] 케이가 먼저 시작할게! 첫 번째 단어는 "${initialWordEntry.word}"야. "${reqSyllable}"(으)로 시작하는 단어를 이어 말해줘.`,
         ended: false,
+        openingLine,
       };
     } catch (err) {
       console.error("[wordChainSkill] start error:", err);

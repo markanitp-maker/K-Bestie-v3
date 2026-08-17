@@ -205,6 +205,11 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
       if (existingSession && existingSession.current_question_id) {
         const existingQuestion = await fetchQuestionById(db, existingSession.current_question_id);
         if (existingQuestion) {
+          let openingLine: string | undefined = `우리 아까 하던 거 이어서 하자! ${existingQuestion.question}`;
+          // 정답 유출 방어
+          if (existingQuestion.canonical_answer && openingLine.includes(existingQuestion.canonical_answer)) {
+            openingLine = undefined;
+          }
           return {
             handled: true,
             instruction: [
@@ -219,6 +224,7 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
               "- 정답 공개는 시스템이 [정답]을 줄 때만 한다. [정답]이 없으면 절대 답을 말하지 마.",
             ].join("\n"),
             ended: false,
+            openingLine,
           };
         }
       }
@@ -275,10 +281,17 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
         "- 또래 친구처럼 신나고 재미있게 문제를 내줘.",
       ].join("\n");
 
+      let openingLine: string | undefined = `좋아, 넌센스 퀴즈야! ${selectedQuestion.question}`;
+      // 정답 유출 방어
+      if (selectedQuestion.canonical_answer && openingLine.includes(selectedQuestion.canonical_answer)) {
+        openingLine = undefined;
+      }
+
       return {
         handled: true,
         instruction,
         ended: false,
+        openingLine,
       };
     } catch (err) {
       console.error("[nonsenseQuizSkill] start error:", err);

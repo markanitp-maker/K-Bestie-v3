@@ -10,6 +10,12 @@ export interface PlaySkillTurnResult {
   instruction?: string;
   /** 이 턴으로 게임이 끝났는가. */
   ended?: boolean;
+  /**
+   * 아이에게 그대로 들려줄 케이의 첫 마디. `start()` 에서만 채운다.
+   * `instruction` 과 달리 **아이가 직접 듣는 문장**이므로 내부 지시문·정답을
+   * 절대 담지 않는다. 2026-08-18 프롬프트 유출 사고 참고.
+   */
+  openingLine?: string;
 }
 
 export interface PlaySkillStartInput {

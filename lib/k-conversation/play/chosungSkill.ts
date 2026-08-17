@@ -40,6 +40,9 @@ export const CHOSUNG_SKILL: PlaySkillModule = {
       : null;
   },
   async start(input: PlaySkillStartInput): Promise<PlaySkillTurnResult> {
+    const existing = await getActiveChosungGameSession(input.db, input.childId);
+    const isResume = Boolean(existing);
+
     const result = await runChosungTurn({
       db: input.db,
       childId: input.childId,
@@ -51,10 +54,28 @@ export const CHOSUNG_SKILL: PlaySkillModule = {
         hasChosungGameStart: true,
       },
     });
+
+    let openingLine: string | undefined;
+    if (result.handled) {
+      const activeSession = await getActiveChosungGameSession(input.db, input.childId);
+      if (activeSession && activeSession.current_chosung) {
+        const line = isResume
+          ? `우리 아까 하던 거 이어서 하자! ${activeSession.current_chosung}, 뭘까?`
+          : `좋아, 초성게임 하자! ${activeSession.current_chosung}, 뭘까?`;
+        // 정답 낱말 유출 절대 방어: 정답 문자열이 포함되어 있으면 openingLine을 비운다.
+        if (activeSession.current_word && line.includes(activeSession.current_word)) {
+          openingLine = undefined;
+        } else {
+          openingLine = line;
+        }
+      }
+    }
+
     return {
       handled: result.handled,
       instruction: result.instruction,
       ended: false,
+      openingLine,
     };
   },
   async handleTurn(input: PlaySkillTurnInput): Promise<PlaySkillTurnResult> {

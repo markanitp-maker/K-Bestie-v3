@@ -34,6 +34,7 @@ export interface ExecuteSkillSelectionResult {
   /** 아이에게 보일 문구는 여기 담지 않는다. 내부 지시문 유출을 구조적으로 막는다.
    *  게임 시작 안내는 케이가 다음 턴에 직접 말한다. */
   resumed?: boolean;
+  openingLine?: string;
   error?: string;
 }
 
@@ -182,17 +183,28 @@ export async function executeSkillSelection(
     };
   }
 
-  // 9. 결과 반환 { ok, skillId, sessionId }
+  // 9. 결과 반환 { ok, skillId, sessionId, openingLine }
   //
   // ★ `startResult.instruction` 을 **절대 밖으로 내보내지 않는다.**
   // 그것은 Gemini 에게 주는 내부 지시문이다(PlaySkillTurnResult 주석 참고).
   // 2026-08-18 프로덕션 사고: 이 값을 text 로 돌려줬더니 모달이 그대로 말풍선에
   // 띄워, 아이가 "- 너는 이 문제의 정답을 모르는 상태로 행동해라..." 같은
   // 시스템 프롬프트를 읽었다. 아이에게 보일 문구는 지시문이 아니라 케이가 만든
-  // 응답이어야 하고, 그건 다음 대화 턴에서 나온다.
+  // 응답이어야 하고, 그건 다음 대화 턴에서 나온다. 대신 openingLine 을 내보낸다.
+  let safeOpeningLine: string | undefined = startResult.openingLine;
+  if (
+    safeOpeningLine &&
+    (safeOpeningLine === startResult.instruction ||
+      safeOpeningLine.startsWith("[") ||
+      safeOpeningLine.includes("\n- "))
+  ) {
+    safeOpeningLine = undefined;
+  }
+
   return {
     ok: true,
     skillId: targetSkill.id,
     sessionId: verifiedSession.id,
+    openingLine: safeOpeningLine,
   };
 }
