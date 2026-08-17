@@ -6,6 +6,10 @@ import {
   PWA_ACTIVATION_DELAY_MS,
   RELOAD_PENDING_MARKER_TTL_MS,
   ReloadPendingMarkerV3,
+  TRANSIENT_FAILURE_TOLERANCE,
+  RETRY_BACKOFF_MS,
+  shouldSurfaceCheckFailure,
+  getCheckRetryDelayMs,
   canDismissPwaModal,
   pwaUpdateCopy,
   performRegistrationUpdate,
@@ -90,6 +94,11 @@ const BUILD_ID = BUILD_STAMP;
 const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1_000; // 60 minutes
 const MIN_CHECK_THROTTLE_MS = 5_000; // 5 seconds between auto checks
 
+// 일시적 네트워크·서비스워커 지연 한 번에 화면 전체를 막지 않는다 (최대 3회 허용)
+const CHECK_TRANSIENT_FAILURE_TOLERANCE = TRANSIENT_FAILURE_TOLERANCE;
+// 1·2회 점검 실패 후 재시도 백오프 간격 [15초, 45초] (60분 주기 타이머 대비 빠른 복구)
+const CHECK_RETRY_BACKOFF_MS = RETRY_BACKOFF_MS;
+
 /** 프로덕션 도메인. 여기서만 진단 로그를 끈다. */
 const PRODUCTION_HOST = "app.k-bestie.com";
 
@@ -132,6 +141,11 @@ export function PwaServiceWorker() {
   const modalTargetRef = useRef<Readonly<LatestVersionMetadataV1> | null>(null);
   const reportedSuccessEventIdsRef = useRef<Set<string>>(new Set());
 
+  // Check failure & retry backoff tracking refs
+  const consecutiveFailuresRef = useRef<number>(0);
+  const checkRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maybeScheduleSafeCheckRef = useRef<((trigger: SafeCheckTrigger, routeRevision?: number) => Promise<boolean>) | null>(null);
+
   // Expected activation tracking refs
   const expectedWorkerNonceRef = useRef<string | null>(null);
   const expectedProposalIdRef = useRef<string | null>(null);
@@ -159,6 +173,48 @@ export function PwaServiceWorker() {
       activationTimerRef.current = null;
     }
   }, []);
+
+  const clearCheckRetryTimer = useCallback(() => {
+    if (checkRetryTimerRef.current) {
+      clearTimeout(checkRetryTimerRef.current);
+      checkRetryTimerRef.current = null;
+    }
+  }, []);
+
+  const noteCheckFailure = useCallback(
+    (nextState: "error" | "offline", manual = false) => {
+      clearCheckRetryTimer();
+      const nextFailures = manual
+        ? CHECK_TRANSIENT_FAILURE_TOLERANCE
+        : consecutiveFailuresRef.current + 1;
+      consecutiveFailuresRef.current = nextFailures;
+
+      const surface = shouldSurfaceCheckFailure(nextFailures, manual);
+      debugLog("note_check_failure", {
+        nextState,
+        manual,
+        consecutiveFailures: nextFailures,
+        surface,
+      });
+
+      if (surface) {
+        setPwaState(nextState);
+        return;
+      }
+
+      const retryDelay = getCheckRetryDelayMs(nextFailures);
+      if (retryDelay !== null) {
+        checkRetryTimerRef.current = setTimeout(() => {
+          checkRetryTimerRef.current = null;
+          debugLog("executing_check_retry_backoff", {
+            consecutiveFailures: consecutiveFailuresRef.current,
+          });
+          void maybeScheduleSafeCheckRef.current?.("periodic_timer");
+        }, retryDelay);
+      }
+    },
+    [clearCheckRetryTimer]
+  );
 
   const reloadPageOnce = useCallback(() => {
     if (reloadIssuedRef.current) return;
@@ -201,11 +257,12 @@ export function PwaServiceWorker() {
 
       if (!latestResult.ok) {
         if (isAborted()) return;
-        setPwaState(
+        noteCheckFailure(
           (latestResult.code === "network" || latestResult.code === "timeout") &&
             !navigator.onLine
             ? "offline"
             : "error",
+          true,
         );
         return;
       }
@@ -236,6 +293,8 @@ export function PwaServiceWorker() {
         try {
           if (reportedSuccessEventIdsRef.current.has(marker.successEventId)) {
             if (isAborted()) return;
+            consecutiveFailuresRef.current = 0;
+            clearCheckRetryTimer();
             clearReloadPendingMarker();
             setPwaState("up_to_date");
             return;
@@ -265,19 +324,21 @@ export function PwaServiceWorker() {
         if (isAborted()) return;
 
         // Clear local marker and unlock gate
+        consecutiveFailuresRef.current = 0;
+        clearCheckRetryTimer();
         clearReloadPendingMarker();
         setPwaState("up_to_date");
       } else {
         if (isAborted()) return;
         // Retain marker & gate; allow retry
         if (handshakeResult.status === "network_error") {
-          setPwaState("offline");
+          noteCheckFailure("offline", true);
         } else {
-          setPwaState("error");
+          noteCheckFailure("error", true);
         }
       }
     },
-    []
+    [clearCheckRetryTimer, noteCheckFailure]
   );
 
   // -------------------------------------------------------------
@@ -313,11 +374,12 @@ export function PwaServiceWorker() {
       if (!latestResult.ok) {
         debugLog("consume_pending_network_error");
         clearActivationBarrier();
-        setPwaState(
+        noteCheckFailure(
           (latestResult.code === "network" || latestResult.code === "timeout") &&
             !navigator.onLine
             ? "offline"
             : "error",
+          true,
         );
         return true;
       }
@@ -340,6 +402,8 @@ export function PwaServiceWorker() {
 
       if (isExactMatch) {
         debugLog("consume_pending_complete_match");
+        consecutiveFailuresRef.current = 0;
+        clearCheckRetryTimer();
         clearExternalControllerPending();
         clearActivationBarrier();
         setPwaState("up_to_date");
@@ -350,13 +414,13 @@ export function PwaServiceWorker() {
           controllerIdentity,
         });
         clearActivationBarrier();
-        setPwaState("error");
+        noteCheckFailure("error", true);
       }
       return true;
     } finally {
       clearActivationBarrier();
     }
-  }, []);
+  }, [clearCheckRetryTimer, noteCheckFailure]);
 
   // -------------------------------------------------------------
   // Safe Check Scheduler
@@ -437,13 +501,12 @@ export function PwaServiceWorker() {
         const latestResult = await fetchLatestVersionMetadataV1();
         if (!latestResult.ok) {
           debugLog("safe_check_latest_failed", latestResult.code);
-          setPwaState(
-            latestResult.code === "network" || latestResult.code === "timeout"
-              ? navigator.onLine
-                ? "error"
-                : "offline"
-              : "error",
-          );
+          const nextState =
+            (latestResult.code === "network" || latestResult.code === "timeout") &&
+            !navigator.onLine
+              ? "offline"
+              : "error";
+          noteCheckFailure(nextState, false);
           return true;
         }
 
@@ -467,6 +530,8 @@ export function PwaServiceWorker() {
               latestResult.snapshot.serviceWorkerScriptUrl,
         );
         if (currentDeploymentMatches && !registration.waiting) {
+          consecutiveFailuresRef.current = 0;
+          clearCheckRetryTimer();
           installedTargetRef.current = null;
           modalTargetRef.current = null;
           setPwaState("idle");
@@ -511,6 +576,8 @@ export function PwaServiceWorker() {
           updateOutcome.identity &&
           updateOutcome.targetSnapshot
         ) {
+          consecutiveFailuresRef.current = 0;
+          clearCheckRetryTimer();
           waitingWorkerRef.current = updateOutcome.worker;
           installedTargetRef.current = {
             worker: updateOutcome.worker,
@@ -520,16 +587,18 @@ export function PwaServiceWorker() {
           modalTargetRef.current = updateOutcome.targetSnapshot;
           setPwaState("update_available");
         } else if (updateOutcome.result === "no-update") {
+          consecutiveFailuresRef.current = 0;
+          clearCheckRetryTimer();
           installedTargetRef.current = null;
           modalTargetRef.current = null;
           setPwaState("idle");
         } else {
           installedTargetRef.current = null;
-          setPwaState(
+          const nextState =
             updateOutcome.result === "network-error" && !navigator.onLine
               ? "offline"
-              : "error",
-          );
+              : "error";
+          noteCheckFailure(nextState, false);
         }
 
         return true;
@@ -540,8 +609,12 @@ export function PwaServiceWorker() {
         checkInFlightRef.current = false;
       }
     },
-    [consumeExternalControllerPendingIfSafe]
+    [clearCheckRetryTimer, consumeExternalControllerPendingIfSafe, noteCheckFailure]
   );
+
+  useEffect(() => {
+    maybeScheduleSafeCheckRef.current = maybeScheduleSafeCheck;
+  }, [maybeScheduleSafeCheck]);
 
   // -------------------------------------------------------------
   // Trigger Update / Consensus / Activation Orchestration
@@ -549,14 +622,14 @@ export function PwaServiceWorker() {
   const runTriggeredUpdate = useCallback(async () => {
     clearActivationTimer();
     if (!navigator.onLine) {
-      setPwaState("offline");
+      noteCheckFailure("offline", true);
       return;
     }
 
     const registration =
       registrationRef.current ?? (await navigator.serviceWorker?.getRegistration());
     if (!registration) {
-      setPwaState("error");
+      noteCheckFailure("error", true);
       return;
     }
     registrationRef.current = registration;
@@ -581,11 +654,12 @@ export function PwaServiceWorker() {
 
     const latestResult = await fetchLatestVersionMetadataV1();
     if (!latestResult.ok) {
-      setPwaState(
+      noteCheckFailure(
         (latestResult.code === "network" || latestResult.code === "timeout") &&
           !navigator.onLine
           ? "offline"
           : "error",
+        true,
       );
       return;
     }
@@ -606,7 +680,7 @@ export function PwaServiceWorker() {
     });
 
     if (updateOutcome.result === "network-error") {
-      setPwaState(navigator.onLine ? "error" : "offline");
+      noteCheckFailure(navigator.onLine ? "error" : "offline", true);
       return;
     }
 
@@ -616,11 +690,13 @@ export function PwaServiceWorker() {
       updateOutcome.result === "target-replaced" ||
       updateOutcome.result === "identity-mismatch"
     ) {
-      setPwaState("error");
+      noteCheckFailure("error", true);
       return;
     }
 
     if (updateOutcome.result === "no-update") {
+      consecutiveFailuresRef.current = 0;
+      clearCheckRetryTimer();
       setPwaState("idle");
       return;
     }
@@ -636,10 +712,12 @@ export function PwaServiceWorker() {
       registration.waiting !== updateOutcome.worker ||
       !areLatestVersionMetadataEqual(updateOutcome.targetSnapshot, clickSnapshot)
     ) {
-      setPwaState("error");
+      noteCheckFailure("error", true);
       return;
     }
 
+    consecutiveFailuresRef.current = 0;
+    clearCheckRetryTimer();
     const targetWorker = updateOutcome.worker;
     waitingWorkerRef.current = targetWorker;
     installedTargetRef.current = {
@@ -669,7 +747,7 @@ export function PwaServiceWorker() {
     });
 
     if (!proposal) {
-      setPwaState("error");
+      noteCheckFailure("error", true);
       return;
     }
 
@@ -681,7 +759,7 @@ export function PwaServiceWorker() {
         : "";
     if (!successEventId) {
       abortActivationBarrier(proposal.proposalId);
-      setPwaState("error");
+      noteCheckFailure("error", true);
       return;
     }
 
@@ -715,7 +793,7 @@ export function PwaServiceWorker() {
       abortActivationBarrier(proposal.proposalId);
       expectedWorkerNonceRef.current = null;
       expectedProposalIdRef.current = null;
-      setPwaState("error");
+      noteCheckFailure("error", true);
       return;
     }
 
@@ -742,7 +820,7 @@ export function PwaServiceWorker() {
         abortActivationBarrier(proposal.proposalId);
         expectedWorkerNonceRef.current = null;
         expectedProposalIdRef.current = null;
-        setPwaState("error");
+        noteCheckFailure("error", true);
       }
     } catch {
       const currentMarker = getReloadPendingMarker();
@@ -752,11 +830,13 @@ export function PwaServiceWorker() {
       abortActivationBarrier(proposal.proposalId);
       expectedWorkerNonceRef.current = null;
       expectedProposalIdRef.current = null;
-      setPwaState("error");
+      noteCheckFailure("error", true);
     }
   }, [
     clearActivationTimer,
+    clearCheckRetryTimer,
     consumeExternalControllerPendingIfSafe,
+    noteCheckFailure,
     performPostReloadVerification,
     reloadPageOnce,
     scheduleDelayedState,
@@ -996,7 +1076,7 @@ export function PwaServiceWorker() {
             clearReloadPendingMarker();
           }
           if (expectedProposal) abortActivationBarrier(expectedProposal);
-          setPwaState("error");
+          noteCheckFailure("error", true);
           return;
         }
       }
@@ -1149,6 +1229,7 @@ export function PwaServiceWorker() {
       abortController.abort();
       lifecycleAbortControllerRef.current = null;
       clearActivationTimer();
+      clearCheckRetryTimer();
       clearInterval(periodicTimer);
       unsubscribeRoute();
       unsubscribeStale();
@@ -1161,8 +1242,10 @@ export function PwaServiceWorker() {
     };
   }, [
     clearActivationTimer,
+    clearCheckRetryTimer,
     consumeExternalControllerPendingIfSafe,
     maybeScheduleSafeCheck,
+    noteCheckFailure,
     performPostReloadVerification,
     reloadPageOnce,
     triggerUpdate,

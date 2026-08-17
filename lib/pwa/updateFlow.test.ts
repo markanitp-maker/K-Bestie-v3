@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import {
   PWA_ACTIVATION_DELAY_MS,
   PWA_DISMISS_COOLDOWN_MS,
+  TRANSIENT_FAILURE_TOLERANCE,
+  RETRY_BACKOFF_MS,
+  shouldSurfaceCheckFailure,
+  getCheckRetryDelayMs,
   canDismissPwaModal,
   decideUpdateWorkerAction,
   isPwaDismissCooldownActive,
@@ -18,6 +22,42 @@ import {
 import { LatestVersionMetadataV1 } from "./clientVersion";
 import { DocumentDeploymentMarkerV1 } from "./documentDeployment";
 import { ServiceWorkerIdentity } from "./swProtocol";
+
+test("일시적 실패 허용 횟수는 3이고 재시도 간격은 15초·45초다", () => {
+  assert.equal(TRANSIENT_FAILURE_TOLERANCE, 3);
+  assert.deepEqual(RETRY_BACKOFF_MS, [15_000, 45_000]);
+});
+
+test("shouldSurfaceCheckFailure - 자동 점검 1·2회는 조용히 재시도하고 3회째에 알린다", () => {
+  let consecutiveFailures = 0;
+  const manual = false;
+
+  // 1회 실패: 조용히 재시도
+  consecutiveFailures += 1;
+  assert.equal(shouldSurfaceCheckFailure(consecutiveFailures, manual), false);
+  assert.equal(getCheckRetryDelayMs(consecutiveFailures), 15_000);
+
+  // 2회 실패: 조용히 재시도
+  consecutiveFailures += 1;
+  assert.equal(shouldSurfaceCheckFailure(consecutiveFailures, manual), false);
+  assert.equal(getCheckRetryDelayMs(consecutiveFailures), 45_000);
+
+  // 3회 실패: 화면에 표시
+  consecutiveFailures += 1;
+  assert.equal(shouldSurfaceCheckFailure(consecutiveFailures, manual), true);
+  assert.equal(getCheckRetryDelayMs(consecutiveFailures), null);
+
+  // 성공 후 카운터 초기화 -> 다시 1회 실패는 false
+  consecutiveFailures = 0;
+  consecutiveFailures += 1;
+  assert.equal(shouldSurfaceCheckFailure(consecutiveFailures, manual), false);
+  assert.equal(getCheckRetryDelayMs(consecutiveFailures), 15_000);
+});
+
+test("shouldSurfaceCheckFailure - 수동 시도는 1회 실패에도 즉시 알린다", () => {
+  assert.equal(shouldSurfaceCheckFailure(1, true), true);
+  assert.equal(shouldSurfaceCheckFailure(0, true), true);
+});
 
 test("3초는 hard error가 아니고 activation 지연 기준은 8초다", () => {
   assert.equal(PWA_ACTIVATION_DELAY_MS, 8_000);

@@ -19,6 +19,34 @@ export const PWA_DISMISS_COOLDOWN_MS = 10 * 60 * 1_000;
 export const RELOAD_PENDING_MARKER_KEY = "k_pwa_reload_pending_v3";
 export const RELOAD_PENDING_MARKER_TTL_MS = 60_000;
 
+export const TRANSIENT_FAILURE_TOLERANCE = 3; // 일시적 지연 한 번에 화면을 막지 않는다
+export const RETRY_BACKOFF_MS = [15_000, 45_000] as const; // 1·2회 실패 후 재시도 간격
+
+/**
+ * Pure evaluation for whether a check failure should be surfaced to the user.
+ * - Auto checks: 1st and 2nd failures return false (retry quietly).
+ * - Auto checks: 3rd failure returns true (surface error/offline).
+ * - Manual checks: 1st failure returns true immediately (user-initiated action).
+ */
+export function shouldSurfaceCheckFailure(
+  consecutiveFailures: number,
+  manual: boolean,
+): boolean {
+  if (manual) return true;
+  return consecutiveFailures >= TRANSIENT_FAILURE_TOLERANCE;
+}
+
+export function getCheckRetryDelayMs(
+  consecutiveFailures: number,
+): number | null {
+  if (consecutiveFailures <= 0) return null;
+  const index = consecutiveFailures - 1;
+  if (index < RETRY_BACKOFF_MS.length) {
+    return RETRY_BACKOFF_MS[index];
+  }
+  return null;
+}
+
 export type UpdateWorkerAction =
   | "message_waiting"
   | "wait_for_transition"
