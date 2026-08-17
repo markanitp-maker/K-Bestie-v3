@@ -178,8 +178,11 @@ export async function POST(req: NextRequest) {
   // sessionId로만 서버가 해석한다(server-trust).
   const usageContext = await resolveUsageContext(body.sessionId);
 
-  try {
-    const gcpRes = await fetch(
+  const PRIMARY_MODEL = "latest_short";
+  const FALLBACK_MODEL = "default";
+
+  const callGoogleStt = async (modelName: string) => {
+    return fetch(
       `https://speech.googleapis.com/v1/speech:recognize?key=${apiKey}`,
       {
         method: "POST",
@@ -189,7 +192,7 @@ export async function POST(req: NextRequest) {
             encoding: "LINEAR16",
             sampleRateHertz: effectiveSampleRateHertz,
             languageCode: "ko-KR",
-            model: "default",
+            model: modelName,
             audioChannelCount: 1,
             enableAutomaticPunctuation: true,
             speechContexts: [{ phrases: CHILD_SPEECH_HINTS, boost: CHILD_SPEECH_HINT_BOOST }],
@@ -198,10 +201,46 @@ export async function POST(req: NextRequest) {
         }),
       }
     );
+  };
+
+  try {
+    let gcpRes: Response;
+    let usedModel = PRIMARY_MODEL;
+
+    try {
+      gcpRes = await callGoogleStt(PRIMARY_MODEL);
+      if (!gcpRes.ok) {
+        // 응답 바디에 API 키가 섞일 수 있으므로 상태 코드와 메타데이터만 안전하게 로깅
+        console.warn("[mission/stt] Primary STT model failed, falling back to default", {
+          primaryModel: PRIMARY_MODEL,
+          fallbackModel: FALLBACK_MODEL,
+          status: gcpRes.status,
+          sessionId: body.sessionId,
+          childTurnId: body.childTurnId,
+        });
+        usedModel = FALLBACK_MODEL;
+        gcpRes = await callGoogleStt(FALLBACK_MODEL);
+      }
+    } catch (primaryErr) {
+      console.warn("[mission/stt] Primary STT request exception, retrying with default model", {
+        primaryModel: PRIMARY_MODEL,
+        fallbackModel: FALLBACK_MODEL,
+        error: (primaryErr as Error).message,
+        sessionId: body.sessionId,
+        childTurnId: body.childTurnId,
+      });
+      usedModel = FALLBACK_MODEL;
+      gcpRes = await callGoogleStt(FALLBACK_MODEL);
+    }
 
     if (!gcpRes.ok) {
       // 응답 바디에 API 키가 섞여있을 수 있으므로 그대로 노출하지 않음
-      console.error("[mission/stt] gcp call failed", { status: gcpRes.status, sessionId: body.sessionId, childTurnId: body.childTurnId });
+      console.error("[mission/stt] gcp call failed", {
+        status: gcpRes.status,
+        usedModel,
+        sessionId: body.sessionId,
+        childTurnId: body.childTurnId,
+      });
       return NextResponse.json({ error: "STT request failed" }, { status: 500 });
     }
 

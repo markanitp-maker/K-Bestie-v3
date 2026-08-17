@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isDiscardableTranscript } from "@/lib/stt/transcriptFilter";
+import { logVoiceEvent, maskText } from "@/lib/voiceTimelineLog";
 
 // Window after endTurn() (recognition.stop() requested) for Chrome/Edge to
 // deliver the final SpeechRecognition result before falling back to GCP.
@@ -181,7 +183,8 @@ export type SttRouterState =
 
 export type SttFailureReason =
   | "browser_and_gcp_failed"
-  | "unsupported_and_gcp_failed";
+  | "unsupported_and_gcp_failed"
+  | "unintelligible";
 
 export interface SttRouterMeta {
   provider: "browser" | "gcp";
@@ -685,6 +688,30 @@ export class SttRouterController implements SttRouter {
     const browserLatencyMs = now - this.turnStartedAt;
     const transcript = this.pendingBrowserTranscript;
     const confidence = this.pendingBrowserConfidence;
+
+    if (isDiscardableTranscript(transcript)) {
+      logVoiceEvent({
+        ts: now,
+        eventType: "stt_discarded_unintelligible",
+        childTurnId: this.turnContext.childTurnId,
+        textPreview: maskText(transcript),
+        extra: { provider: "browser" },
+      });
+      this.terminalDelivered = true;
+      this.releaseTurnResources(true);
+      this.transition("FAILED");
+      this.options.onInterimTranscript?.("");
+      this.options.onFailure("unintelligible");
+      this.emitTurnMetrics({
+        browserSuccess: false,
+        gcpSuccess: false,
+        gcpError: false,
+        provider: "browser",
+        browserLatencyMs,
+      });
+      return;
+    }
+
     this.transition("BROWSER_SUCCESS");
     this.terminalDelivered = true;
     this.releaseTurnResources(true);
@@ -741,6 +768,30 @@ export class SttRouterController implements SttRouter {
       : undefined;
     if (!text) {
       this.failTurn(turnId, true, fallbackLatencyMs, browserLatencyMs);
+      return;
+    }
+
+    if (isDiscardableTranscript(text)) {
+      logVoiceEvent({
+        ts: this.now(),
+        eventType: "stt_discarded_unintelligible",
+        childTurnId: this.turnContext.childTurnId,
+        textPreview: maskText(text),
+        extra: { provider: "gcp" },
+      });
+      this.terminalDelivered = true;
+      this.releaseTurnResources(false);
+      this.transition("FAILED");
+      this.options.onInterimTranscript?.("");
+      this.options.onFailure("unintelligible");
+      this.emitTurnMetrics({
+        browserSuccess: false,
+        gcpSuccess: false,
+        gcpError: false,
+        provider: "gcp",
+        browserLatencyMs,
+        fallbackLatencyMs,
+      });
       return;
     }
 

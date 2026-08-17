@@ -909,3 +909,57 @@ test("침묵 임계 도달 시점: 48kHz에서 900ms가 실제 900ms 근처여�
   const brokenChunks = Math.ceil(STT_SILENCE_MS_TO_FINALIZE / STT_CHUNK_DURATION_MS);
   assert.ok(brokenChunks * perChunk < 400, "기존 버그 재현 전제가 틀림");
 });
+
+test("Browser 인식 결과가 한글 자모(ㅍ, ㅠㅠ 등)일 때 onFinalTranscript 대신 onFailure('unintelligible') 호출", () => {
+  const harness = createHarness();
+  startAndBuffer(harness.controller);
+  harness.recognition.emitFinal("ㅍ");
+  harness.controller.endTurn();
+
+  assert.equal(harness.finals.length, 0, "onFinalTranscript가 호출되면 안 됨");
+  assert.deepEqual(harness.failures, ["unintelligible"], "onFailure('unintelligible') 호출되어야 함");
+  assert.equal(harness.controller.state, "FAILED");
+});
+
+test("Browser 인식 결과가 유효한 한 글자 대답(응)일 때 정상 완료", () => {
+  const harness = createHarness();
+  startAndBuffer(harness.controller);
+  harness.recognition.emitFinal("응");
+  harness.controller.endTurn();
+
+  assert.equal(harness.finals.length, 1);
+  assert.equal(harness.finals[0]?.transcript, "응");
+  assert.equal(harness.failures.length, 0);
+  assert.equal(harness.controller.state, "COMPLETED");
+});
+
+test("GCP fallback 전사 결과가 한글 자모(ㅠㅠ, ㄱ ㄴ 등)일 때 onFinalTranscript 대신 onFailure('unintelligible') 호출", async () => {
+  const harness = createHarness({
+    gcpResult: { text: "ㅠㅠ" },
+  });
+  startAndBuffer(harness.controller);
+  harness.recognition.emitError("audio-capture");
+  harness.controller.endTurn();
+  await flushAsync();
+
+  assert.equal(harness.getGcpCalls(), 1);
+  assert.equal(harness.finals.length, 0, "onFinalTranscript가 호출되면 안 됨");
+  assert.deepEqual(harness.failures, ["unintelligible"], "onFailure('unintelligible') 호출되어야 함");
+  assert.equal(harness.controller.state, "FAILED");
+});
+
+test("GCP fallback 전사 결과가 유효한 한 글자/단문(네, 123, ok)일 때 정상 완료", async () => {
+  const harness = createHarness({
+    gcpResult: { text: "네" },
+  });
+  startAndBuffer(harness.controller);
+  harness.recognition.emitError("audio-capture");
+  harness.controller.endTurn();
+  await flushAsync();
+
+  assert.equal(harness.getGcpCalls(), 1);
+  assert.equal(harness.finals.length, 1);
+  assert.equal(harness.finals[0]?.transcript, "네");
+  assert.equal(harness.failures.length, 0);
+  assert.equal(harness.controller.state, "COMPLETED");
+});
