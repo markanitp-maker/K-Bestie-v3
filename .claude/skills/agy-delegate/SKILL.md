@@ -10,7 +10,7 @@ description: >-
 license: MIT
 compatibility: Requires the `agy` CLI installed and authenticated, Node 18+, and git. The orchestrating agent must be able to run shell commands and read files. Shell examples assume bash/zsh (macOS/Linux, or Git Bash/WSL on Windows). Windows launch is not yet verified for this relay.
 metadata:
-  version: 0.5.0
+  version: 0.6.0
 ---
 
 # Antigravity Delegate
@@ -94,6 +94,31 @@ So, in order of preference:
    (`npx vitest run path/to/file.test.ts`), not the whole suite.
 3. If a gate has known failures and you still want it run, **name them in the brief** and say
    "compare against this list; do not try to reach zero failures."
+
+#### But never ban the compile check
+
+Banning the whole gate block is the obvious overcorrection, and it costs you the only thing
+standing between a malformed write and your working tree.
+
+A type/compile check (`tsc --noEmit`, `cargo check`, `go build`) is not in the same class as a
+test suite: it is fast, it exits 0 when clean, and it is the implementer's **only** way to notice
+it just corrupted a file. Ban the suite; require the compile check.
+
+What a missing compile check actually looks like, from two runs on one repo:
+
+| File | Size | Damage |
+|---|---|---|
+| a component | 79 lines | replacement text silently dropped the `return (` |
+| a widget | 818 lines | full-file rewrite truncated mid-output, file left unterminated |
+
+Neither implementer noticed. Both reported success. The first chunks of the same session, which
+*were* allowed to run `tsc`, produced no such breakage — the check was catching this all along.
+
+Large files are the sharper edge: an implementer that regenerates a whole file rather than
+editing it in place can run out of output budget partway and leave you a truncated source file
+that still looks plausible in a diff. Say so in the brief: **edit in place, do not regenerate
+whole files**, and keep the compile check mandatory so a truncated write cannot be reported as
+done.
 
 #### Budget the timeout against the work, not against hope
 
