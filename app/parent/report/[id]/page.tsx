@@ -172,7 +172,6 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           .filter((s) => s.length > 5 && (s.includes("?") || s.endsWith("요") || s.endsWith("까")))
       : [];
 
-    const watchOut = report.recurring_stories || "아이가 대화 중 반복하여 꺼낸 특별한 주말/기타 일정 이야기가 확인되지 않았습니다.";
     const comment = `오늘 아이는 ${report.interests_preferences || "케이와의 소소한 일상"} 이야기에 가장 밝게 마음을 열고 대답했습니다.`;
 
     return (
@@ -202,15 +201,6 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           ) : (
             <p className="text-xs text-gray-400">생성된 질문 가이드가 아직 없습니다.</p>
           )}
-        </div>
-
-        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "#3b82f6" }}>
-            👁️ 부모가 주의 깊게 볼 변화
-          </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
-            {watchOut}
-          </p>
         </div>
 
         <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">

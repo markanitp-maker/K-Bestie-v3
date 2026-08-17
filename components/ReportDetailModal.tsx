@@ -89,6 +89,73 @@ export interface ReportDetailModalProps {
   returnFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
+export function DailyReportRecommendationGuide({ report }: { report: DailyReport }) {
+  // requests/024 §12 — parent_conversation_clue가 없는 과거 리포트는 기존 parent_guide를
+  // 부모 대화 실마리로만 표시한다(질문을 임의로 추출하지 않음).
+  const clue = meaningfulReportSectionContent(report.parent_conversation_clue ?? report.parent_guide);
+  const questions = Array.isArray(report.recommended_questions)
+    ? report.recommended_questions
+        .map((q) => (typeof q === "string" ? q.trim() : ""))
+        .filter((q) => meaningfulReportSectionContent(q) !== null)
+    : [];
+
+  const interests = meaningfulReportSectionContent(report.interests_preferences);
+
+  const hasAnySection = Boolean(clue || questions.length > 0 || interests);
+
+  if (!hasAnySection) {
+    return (
+      <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+        <p className={`${REPORT_BODY_CLASS} text-gray-500`}>
+          이번 리포트에서 제공할 추천 가이드가 없어요.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {clue && (
+        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
+            💬 부모 대화 실마리
+          </h3>
+          <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
+            {clue}
+          </p>
+        </div>
+      )}
+
+      {questions.length > 0 && (
+        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-3`} style={{ color: "var(--color-k-text-primary)" }}>
+            ❓ 부모용 추천 질문
+          </h3>
+          <ul className="flex flex-col gap-2.5">
+            {questions.map((q, i) => (
+              <li key={i} className={`flex gap-2 ${REPORT_BODY_CLASS}`} style={{ color: "var(--color-k-text-primary)" }}>
+                <span style={{ color: "#22c55e" }}>✓</span>
+                <span>{q}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {interests && (
+        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+          <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
+            ✨ 오늘의 케이 코멘트
+          </h3>
+          <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
+            {`오늘 아이는 ${interests} 이야기에 가장 밝게 마음을 열고 대답했습니다.`}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ReportDetailModal({ isOpen, onClose, reportId, reportType, childId, businessDate, returnFocusRef }: ReportDetailModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -372,82 +439,7 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   };
 
   const renderDailyTab3 = (report: DailyReport) => {
-    // requests/024 §12 — parent_conversation_clue가 없는 과거 리포트는 기존 parent_guide를
-    // 부모 대화 실마리로만 표시한다(질문을 임의로 추출하지 않음).
-    const clue = meaningfulReportSectionContent(report.parent_conversation_clue ?? report.parent_guide);
-    const questions = Array.isArray(report.recommended_questions)
-      ? report.recommended_questions
-          .map((q) => (typeof q === "string" ? q.trim() : ""))
-          .filter((q) => meaningfulReportSectionContent(q) !== null)
-      : [];
-
-    const watchOut = meaningfulReportSectionContent(report.recurring_stories);
-    const interests = meaningfulReportSectionContent(report.interests_preferences);
-
-    const hasAnySection = Boolean(clue || questions.length > 0 || watchOut || interests);
-
-    if (!hasAnySection) {
-      return (
-        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <p className={`${REPORT_BODY_CLASS} text-gray-500`}>
-            이번 리포트에서 제공할 추천 가이드가 없어요.
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex flex-col gap-4">
-        {clue && (
-          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-            <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
-              💬 부모 대화 실마리
-            </h3>
-            <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
-              {clue}
-            </p>
-          </div>
-        )}
-
-        {questions.length > 0 && (
-          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-            <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-3`} style={{ color: "var(--color-k-text-primary)" }}>
-              ❓ 부모용 추천 질문
-            </h3>
-            <ul className="flex flex-col gap-2.5">
-              {questions.map((q, i) => (
-                <li key={i} className={`flex gap-2 ${REPORT_BODY_CLASS}`} style={{ color: "var(--color-k-text-primary)" }}>
-                  <span style={{ color: "#22c55e" }}>✓</span>
-                  <span>{q}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {watchOut && (
-          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-            <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "#3b82f6" }}>
-              👁️ 부모가 주의 깊게 볼 변화
-            </h3>
-            <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
-              {watchOut}
-            </p>
-          </div>
-        )}
-
-        {interests && (
-          <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-            <h3 className={`${REPORT_CARD_TITLE_CLASS} mb-2`} style={{ color: "var(--color-k-text-primary)" }}>
-              ✨ 오늘의 케이 코멘트
-            </h3>
-            <p className={REPORT_BODY_CLASS} style={{ color: "var(--color-k-text-primary)" }}>
-              {`오늘 아이는 ${interests} 이야기에 가장 밝게 마음을 열고 대답했습니다.`}
-            </p>
-          </div>
-        )}
-      </div>
-    );
+    return <DailyReportRecommendationGuide report={report} />;
   };
 
   const renderWeeklyTab1 = (report: WeeklySummary) => {
