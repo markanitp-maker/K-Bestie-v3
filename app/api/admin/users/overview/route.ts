@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import {
+  isActionableApprovalRequest,
   isCreatedInKstDateRange,
   matchesInternalTestFilter,
   sortAdminUserRows,
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
       service.from("parent_attributions").select("parent_user_id,signup_link_id,first_touch_link_id,signup_touch_at,first_touch_at"),
       service.from("acquisition_links").select("link_id,channel_name,utm_source,utm_medium,utm_campaign").is("deleted_at", null),
       service.from("plan_change_requests").select("id,status,parent_user_id,child_id").is("deleted_at", null),
-      service.from("child_approval_requests").select("id,status").is("deleted_at", null),
+      service.from("child_approval_requests").select("id,status,family_id,given_name,created_child_id").is("deleted_at", null),
       listAuthUsers(service),
     ]);
 
@@ -194,7 +195,7 @@ export async function GET(request: NextRequest) {
       children: childRows.filter((row) => matchesInternalTestFilter(Boolean(row.isTest), internalTest)).length,
       pending: parents.filter((parent) => parent.account_status === "RESTORE_REQUESTED").length
         + (planRequestsResult.data ?? []).filter((row) => row.status === "pending").length
-        + (childRequestsResult.data ?? []).filter((row) => ["pending", "creation_failed", "PENDING_PAYMENT"].includes(row.status)).length,
+        + (childRequestsResult.data ?? []).filter((row) => isActionableApprovalRequest(row, children)).length,
     };
     const searched = filterable.filter((row) => {
       if (status !== "all" && String(row.status ?? row.approval ?? "") !== status) return false;

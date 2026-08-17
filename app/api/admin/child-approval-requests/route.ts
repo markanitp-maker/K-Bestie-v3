@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
+import { isActionableApprovalRequest } from "@/lib/admin/userManagement";
 
 export const runtime = "nodejs";
 
@@ -37,8 +38,46 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Database error" }, { status: 500 });
   }
 
+  const rawRows = data ?? [];
+  const familyIds = Array.from(
+    new Set(rawRows.map((r: any) => r.family_id).filter((id): id is string => Boolean(id)))
+  );
+
+  let liveChildren: Array<{ family_id: string; given_name: string | null }> = [];
+  if (familyIds.length > 0) {
+    const { data: cpData, error: cpError } = await service
+      .from("child_profiles")
+      .select("family_id, given_name")
+      .in("family_id", familyIds);
+
+    if (cpError) {
+      console.error("[api/admin/child-approval-requests] child_profiles query error:", cpError);
+    } else if (cpData) {
+      liveChildren = cpData;
+    }
+  }
+
+  const enriched = rawRows.map((row: any) => {
+    const isActionable = isActionableApprovalRequest(
+      {
+        status: row.status,
+        family_id: row.family_id,
+        given_name: row.given_name,
+        created_child_id: row.created_child_id,
+      },
+      liveChildren
+    );
+    const alreadyResolved =
+      ["pending", "creation_failed", "PENDING_PAYMENT"].includes(row.status) && !isActionable;
+
+    return {
+      ...row,
+      alreadyResolved,
+    };
+  });
+
   const priority = (s: string) => (s === "pending" || s === "creation_failed" ? 0 : 1);
-  const sorted = [...(data ?? [])].sort((a: any, b: any) => priority(a.status) - priority(b.status));
+  const sorted = [...enriched].sort((a: any, b: any) => priority(a.status) - priority(b.status));
 
   return NextResponse.json(sorted);
 }

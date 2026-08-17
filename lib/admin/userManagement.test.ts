@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   asArray,
+  isActionableApprovalRequest,
   isCreatedInKstDateRange,
   matchesInternalTestFilter,
   parseAdminUsersOverviewResponse,
@@ -71,3 +72,79 @@ test("성공 응답처럼 보여도 items가 없으면 렌더링 전에 명시�
     pagination: { page: 1, pageSize: 25, total: 0, totalPages: 1 },
   }), /응답 형식/);
 });
+
+test("실제 stale 케이스(영후, created_child_id=null, live child 있음)는 처리 대기에서 제외한다", () => {
+  const request = {
+    status: "creation_failed",
+    family_id: "abb3e9da-04f9-4de6-aad6-71b07899c0a3",
+    given_name: "영후",
+    created_child_id: null,
+  };
+  const liveChildren = [
+    { family_id: "abb3e9da-04f9-4de6-aad6-71b07899c0a3", given_name: "영후" },
+  ];
+  assert.equal(isActionableApprovalRequest(request, liveChildren), false);
+});
+
+test("creation_failed이지만 같은 가족에 동일 이름의 live child가 없으면 처리 대기에 포함한다", () => {
+  const request = {
+    status: "creation_failed",
+    family_id: "fam1",
+    given_name: "영후",
+    created_child_id: null,
+  };
+  const liveChildren = [
+    { family_id: "fam2", given_name: "영후" },
+    { family_id: "fam1", given_name: "민서" },
+  ];
+  assert.equal(isActionableApprovalRequest(request, liveChildren), true);
+});
+
+test("pending 상태는 같은 이름의 live child가 있어도 항상 처리 대기에 포함한다", () => {
+  const request = {
+    status: "pending",
+    family_id: "fam1",
+    given_name: "영후",
+    created_child_id: null,
+  };
+  const liveChildren = [
+    { family_id: "fam1", given_name: "영후" },
+  ];
+  assert.equal(isActionableApprovalRequest(request, liveChildren), true);
+});
+
+test("PENDING_PAYMENT 상태는 항상 처리 대기에 포함한다", () => {
+  const request = {
+    status: "PENDING_PAYMENT",
+    family_id: "fam1",
+    given_name: "영후",
+    created_child_id: null,
+  };
+  const liveChildren = [
+    { family_id: "fam1", given_name: "영후" },
+  ];
+  assert.equal(isActionableApprovalRequest(request, liveChildren), true);
+});
+
+test("given_name이 null이면 매칭하지 않고 처리 대기를 유지한다", () => {
+  const request = {
+    status: "creation_failed",
+    family_id: "fam1",
+    given_name: null,
+    created_child_id: null,
+  };
+  const liveChildren = [
+    { family_id: "fam1", given_name: null },
+    { family_id: "fam1", given_name: "영후" },
+  ];
+  assert.equal(isActionableApprovalRequest(request, liveChildren), true);
+});
+
+test("approved 또는 rejected 상태는 처리 대기 대상이 아니다", () => {
+  const liveChildren = [
+    { family_id: "fam1", given_name: "영후" },
+  ];
+  assert.equal(isActionableApprovalRequest({ status: "approved", family_id: "fam1", given_name: "영후", created_child_id: "child1" }, liveChildren), false);
+  assert.equal(isActionableApprovalRequest({ status: "rejected", family_id: "fam1", given_name: "영후", created_child_id: null }, liveChildren), false);
+});
+

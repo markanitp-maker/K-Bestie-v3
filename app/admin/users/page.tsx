@@ -15,7 +15,9 @@ import {
 
 type Tab = "families" | "parents" | "children";
 type SubTab = "all" | "restorations" | "plan-change" | "approval";
-type Row = Record<string, any>;
+type Row = Record<string, any> & {
+  alreadyResolved?: boolean;
+};
 
 const TAB_LABELS: Record<Tab, string> = { families: "가족", parents: "부모", children: "아이" };
 
@@ -135,7 +137,7 @@ function ExistingRequestPanel({ kind }: { kind: "restorations" | "approval" }) {
     setBusy(null); load();
   };
 
-  const visible = kind === "approval" ? rows.filter((row) => ["pending", "creation_failed", "PENDING_PAYMENT"].includes(row.status)) : rows;
+  const visible = kind === "approval" ? rows.filter((row) => ["pending", "creation_failed", "PENDING_PAYMENT"].includes(row.status) && !row.alreadyResolved) : rows;
   return <AdminResponsiveTable mobileStrategy="card" columns={kind === "restorations" ? [
     { key: "name", header: "부모", render: (row: Row) => <><b>{row.name || "이름 미등록"}</b><span className="block text-xs text-gray-500">{row.email}</span></> },
     { key: "family", header: "가족", render: (row: Row) => row.memberships?.map((membership: Row) => membership.families?.name || "이름 없는 가족").join(" / ") || "-" },

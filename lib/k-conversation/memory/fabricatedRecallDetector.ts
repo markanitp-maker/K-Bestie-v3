@@ -112,37 +112,43 @@ export interface FabricatedRecallVerdict {
   reason?: string;
 }
 
-/** 조사·어미를 떼고 내용어와 원형을 모두 생성한다. 기억과 대조할 때 쓴다. */
-export function contentTokens(text: string): string[] {
+/**
+ * 낱말마다 대조에 쓸 표기 후보를 묶어서 돌려준다.
+ *
+ * 한 낱말이 원형·조사제거형·어미제거형으로 여러 개가 나오므로 **반드시 낱말 단위로
+ * 묶어야** 한다. 평평한 목록으로 세면 "키운다고"가 표기 3개로 부풀어 기억 일치
+ * 비율이 낮게 계산되고, 진짜 회상이 차단된다(2026-08-17 실측).
+ */
+export function contentWordVariants(text: string): string[][] {
   const rawWords = text
     .replace(/[^가-힣\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length > 0);
 
-  const tokens = new Set<string>();
-
-  for (const word of rawWords) {
-    tokens.add(word); // 원형 (예: "포도", "형이", "돈", "밥")
+  return rawWords.map((word) => {
+    const variants = new Set<string>();
+    variants.add(word); // 원형 (예: "포도", "형이", "돈", "밥")
 
     // 1) 일반 조사 및 어미 제거형 (예: "형이" -> "형", "포도를" -> "포도")
     const stripped = word.replace(
       /(?:이라고|라고|이라는|라는|했잖아|했지|한다고|이다|에서|에게|한테|으로|로|이랑|랑|과|와|은|는|이|가|을|를|도|만|의|에|요)$/,
       "",
     );
-    if (stripped.length > 0) {
-      tokens.add(stripped);
-    }
+    if (stripped.length > 0) variants.add(stripped);
 
-    // 2) 용언 어미 활용 (예: "키운다고" -> "키운다", "모은다고" -> "모은다", "먹는다고" -> "먹는다")
+    // 2) 용언 어미 활용 (예: "키운다고" -> "키운다", "모은다고" -> "모은다")
     if (word.endsWith("다고")) {
       const strippedGo = word.slice(0, -1);
-      if (strippedGo.length > 0) {
-        tokens.add(strippedGo);
-      }
+      if (strippedGo.length > 0) variants.add(strippedGo);
     }
-  }
 
-  return Array.from(tokens);
+    return Array.from(variants);
+  });
+}
+
+/** 표기를 평평하게 편 목록. 케이 응답 되받기 검사처럼 낱말 묶음이 필요 없을 때 쓴다. */
+export function contentTokens(text: string): string[] {
+  return Array.from(new Set(contentWordVariants(text).flat()));
 }
 
 /**
@@ -164,12 +170,30 @@ export function detectFabricatedRecall(
     return { isFabricated: false };
   }
 
-  // 2) 기억 대조 (Grounded check): 관대하게 판정 (원형 또는 조사제거형이 기억에 1글자 이상 포함 시 통과)
+  // 2) 기억 대조 (Grounded check).
+  //
+  // 낱말 **하나만** 맞아도 통과시키면 흔한 동사 하나에 거짓말이 얹혀 통과한다.
+  // 2026-08-17 실측: 같은 세션에 "오늘 학교 갔다 왔어"가 있으면
+  // "내가 지난주에 놀이공원 갔다고 했잖아"의 "갔다"가 걸려 grounded 가 되고,
+  // 케이가 "아 맞다, 놀이공원 갔다고 했었지!"라고 해도 가드가 안 걸렸다.
+  //
+  // 그래서 **낱말의 절반 이상**이 기억에 있어야 회상으로 인정한다.
+  //   "형(O) 있다(O)"            2/2 → 회상
+  //   "돈(O) 모은다(X)"          1/2 → 회상 (절반은 채운다)
+  //   "지난주(X) 놀이공원(X) 갔다(O)" 1/3 → 회상 아님 → 차단 대상
+  // 단어 단위 단순 비교라 형태소 분석만큼 정확하진 않지만, 양방향 실측으로
+  // 진짜 회상 7종 통과 / 실측 날조 5종 차단을 확인한 기준이다.
   const memoryBlob = knownMemoryTexts.join(" ");
-  const tokens = contentTokens(childUtterance);
-  const candidateTokens = tokens.filter((t) => !GROUNDING_EXCLUDED_WORDS.has(t));
-  const grounded = candidateTokens.some((t) => t.length >= 1 && memoryBlob.includes(t));
+  // 낱말 단위로 센다. 한 낱말의 표기 중 **하나라도** 기억에 있으면 그 낱말은 맞은 것이다.
+  const candidateWords = contentWordVariants(childUtterance).filter(
+    (variants) => !variants.some((v) => GROUNDING_EXCLUDED_WORDS.has(v)),
+  );
+  const groundedCount = candidateWords.filter((variants) =>
+    variants.some((v) => v.length >= 1 && memoryBlob.includes(v)),
+  ).length;
+  const grounded = candidateWords.length > 0 && groundedCount * 2 >= candidateWords.length;
   if (grounded) return { isFabricated: false };
+  const candidateTokens = candidateWords.flat();
 
   // 3) 차단 목록 1 — 명시적 동의어가 있으면 날조다 (면책 표현이 섞여 있어도 동의가 우선).
   if (K_AGREEMENT_PATTERNS.some((p) => p.test(kResponse))) {

@@ -122,3 +122,47 @@ export function sortAdminUserRows<T extends AdminUserRow>(rows: T[], sort: strin
   }
   return copy.sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
 }
+
+export interface ApprovalRequestLike {
+  status: string;
+  family_id: string | null;
+  given_name: string | null;
+  created_child_id: string | null;
+}
+
+export interface LiveChildLike {
+  family_id: string;
+  given_name: string | null;
+}
+
+/** 관리자가 실제로 조치해야 하는 요청인가. */
+export function isActionableApprovalRequest(
+  request: ApprovalRequestLike,
+  liveChildren: readonly LiveChildLike[],
+): boolean {
+  if (
+    request.status !== "pending" &&
+    request.status !== "creation_failed" &&
+    request.status !== "PENDING_PAYMENT"
+  ) {
+    return false;
+  }
+
+  if (request.status === "creation_failed") {
+    const familyId = request.family_id;
+    const reqGivenName = request.given_name?.trim() ?? "";
+    if (familyId && reqGivenName.length > 0) {
+      const alreadyResolved = liveChildren.some((child) => {
+        if (child.family_id !== familyId) return false;
+        const childGivenName = child.given_name?.trim() ?? "";
+        return childGivenName.length > 0 && childGivenName === reqGivenName;
+      });
+      if (alreadyResolved) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+

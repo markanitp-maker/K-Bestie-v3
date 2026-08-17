@@ -989,8 +989,38 @@ function BetaApplicationsTab() {
   );
 }
 
+type ChildApprovalRequestRow = {
+  id: string;
+  family_id?: string | null;
+  requester_email?: string | null;
+  family_creator_email?: string | null;
+  family_name?: string | null;
+  given_name?: string | null;
+  gender?: string | null;
+  username?: string | null;
+  grade?: string | null;
+  interests?: string[] | null;
+  guardian_consent?: boolean;
+  status: string;
+  requested_at?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  rejected_reason?: string | null;
+  failure_reason?: string | null;
+  failed_at?: string | null;
+  beta_verified?: boolean | null;
+  survey_verified?: boolean | null;
+  created_child_id?: string | null;
+  approval_method?: string | null;
+  approved_at?: string | null;
+  payment_id?: string | null;
+  payment_status?: string | null;
+  alreadyResolved?: boolean;
+  [key: string]: any;
+};
+
 function ChildApprovalRequestsTab() {
-  const [requests, setRequests] = useState<any[] | null>(null);
+  const [requests, setRequests] = useState<ChildApprovalRequestRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [verifications, setVerifications] = useState<Record<string, { beta: boolean; survey: boolean }>>({});
@@ -1108,8 +1138,8 @@ function ChildApprovalRequestsTab() {
     approved: "승인 완료",
   };
 
-  const filteredRequests = (requests || []).filter((req: any) => {
-    if (activeTab === "pending") return req.status === "pending" || req.status === "creation_failed" || req.status === "PENDING_PAYMENT";
+  const filteredRequests = (requests || []).filter((req: ChildApprovalRequestRow) => {
+    if (activeTab === "pending") return (req.status === "pending" || req.status === "creation_failed" || req.status === "PENDING_PAYMENT") && !req.alreadyResolved;
     return req.status === "approved" || req.status === "rejected";
   });
 
@@ -1177,7 +1207,7 @@ function ChildApprovalRequestsTab() {
       key: "status",
       header: "상태",
       render: (req) => {
-        const isActionable = req.status === "pending" || req.status === "creation_failed";
+        const isActionable = (req.status === "pending" || req.status === "creation_failed") && !req.alreadyResolved;
         const verification = verifications[req.id] ?? { beta: req.beta_verified === true, survey: req.survey_verified === true };
         const verificationComplete = verification.beta && verification.survey;
         

@@ -177,6 +177,42 @@ accept:**
 
 Full checklist: [references/review-and-land.md](references/review-and-land.md).
 
+### 4b. Stale evidence: the worker reruns an old spec and reports its old results
+
+**Measured 2026-08-17.** A QA brief named specific utterances and a specific test account
+(`QA_Child_A`). The worker instead reran an existing spec (`e2e/qa-075-*.spec.ts`) against a
+different account and reported that run's numbers as the answer. Nothing in the report said so.
+The report looked complete and well-formatted, and one of its FAILs was real — which is exactly
+why it was believable.
+
+It was caught by a timestamp: the newest row in `chat_messages` was **41 minutes older than the
+deploy the QA was supposed to be testing**. The worker had produced no new conversation at all.
+
+Do not accept a QA result whose evidence you have not dated.
+
+- **Put a freshness check in the brief.** Give the deploy time and require the worker to state the
+  timestamp of its own newest evidence row. `"배포 시각은 20:56 KST 다. 네가 만든 가장 최근
+  기록의 시각을 보고에 적어라. 그보다 이전이면 QA 를 안 한 것이다."`
+- **Ban spec reuse explicitly when the brief names its own scenario.** `"기존 spec 을 재사용하지
+  마라. 이 브리프의 발화만 그대로 사용하라."` Existing specs in `e2e/` are a strong attractor —
+  the worker will reach for one unless told not to.
+- **Verify it yourself before believing it.** One query, always the same shape:
+  ```sql
+  SELECT max(created_at) FROM chat_messages WHERE deleted_at IS NULL;
+  ```
+  Older than the deploy → the report is about a build that no longer exists. Rerun.
+- This is cheap to check and expensive to miss: a stale PASS ships a broken build, and a stale FAIL
+  sends you chasing a bug you already fixed.
+
+### 4c. A wrong report can still contain a real finding
+
+The stale run above reported the fabrication guard failing. The run was invalid, but the finding
+was true — the guard genuinely never fired live, for a reason the unit tests could not see
+(the child's own utterance was saved before the response was generated, so it grounded itself).
+
+Discard the run, keep the lead. When a report is invalid, reproduce its claims directly rather than
+throwing them out with the run.
+
 ### 5. Land it
 
 The implementer edits the working tree; **the orchestrator commits.** Only after the gates pass and the

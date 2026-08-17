@@ -537,11 +537,26 @@ export async function respond(
   // 프롬프트 지침으로 두 번 시도했으나 두 번 다 뚫렸다(2026-08-17 Dev QA).
   // 기억 못 하는 건 아쉬운 정도지만, 안 한 얘기를 맞다고 하는 건 아이를 속이는 것이다.
   {
+    // 아이 발화는 /api/chat/messages 로 **먼저 저장된 뒤** 응답 요청이 간다.
+    // 그래서 sameSession 의 마지막 턴이 곧 지금 아이가 한 말이다. 이걸 기억으로
+    // 세면 **아이가 방금 지어낸 말이 스스로를 근거로 만들어** 가드가 통째로
+    // 무력화된다(2026-08-17 실측: "놀이공원 갔다고 했잖아" → grounded → 통과 →
+    // 케이가 "아 맞다, 놀이공원 갔다고 했었지!").
+    //
+    // 현재 발화와 같은 텍스트만 뺀다. 아이가 정말 같은 말을 두 번 했더라도
+    // 앞선 발화 역시 "지금 이 주장"의 근거가 될 수 없으므로 전부 제외한다.
+    // "내가 아까 게임하자고 했잖아" 처럼 **다른 문장**으로 앞을 가리키는 경우는
+    // 그대로 남아 정상 회상으로 통과한다.
+    const currentUtteranceKey = normalizeSameSessionText(input.currentUtterance);
     const knownMemoryTexts = [
       ...memorySnapshot.longTermFacts.map((f) => f.content),
       ...(memorySnapshot.recentEpisode ? [memorySnapshot.recentEpisode.content] : []),
-      ...memorySnapshot.sameSession.map((t) => t.content),
-      ...memorySnapshot.sameDay.map((t) => t.content),
+      ...memorySnapshot.sameSession
+        .filter((t) => normalizeSameSessionText(t.content) !== currentUtteranceKey)
+        .map((t) => t.content),
+      ...memorySnapshot.sameDay
+        .filter((t) => normalizeSameSessionText(t.content) !== currentUtteranceKey)
+        .map((t) => t.content),
     ].filter((t): t is string => typeof t === "string" && t.length > 0);
 
     const recallVerdict = detectFabricatedRecall(
