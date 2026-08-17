@@ -182,7 +182,10 @@
 @media (min-width: 1024px) {
   :root {
     --content-max-width: var(--frame-w, var(--max-width-tablet-desktop, 1000px));
-    --content-max-width-wide: var(--max-width-tablet-wide, 840px);
+    /* 미션·자유대화도 태블릿 프레임을 꽉 채운다(대표 지시 2026-08-18).
+       840px 로 묶어 두니 프레임 1235px 안에서 양옆이 크게 비었다.
+       1열 대화 UI 라 말풍선이 가로로 길어지는 것은 감수한다 — 대표가 두 번 요청했다. */
+    --content-max-width-wide: var(--frame-w, var(--max-width-tablet-wide, 840px));
   }
 }
 
