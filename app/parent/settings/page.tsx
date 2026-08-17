@@ -814,7 +814,7 @@ export default function ParentSettingsPage() {
       <DemoFrame>
         <div className="h-full flex flex-col overflow-hidden md:h-auto md:overflow-visible" style={{ background: "#f3f4f6" }}>
           <ParentHeader />
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3 md:flex-none md:h-auto md:overflow-visible md:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+          <div className="w-full max-w-[var(--content-max-width,var(--max-width-app,480px))] mx-auto flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3 md:flex-none md:h-auto md:overflow-visible md:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
             {Array.from({ length: 3 }).map((_, i) => (
               <SkeletonBox key={i} className="h-16" />
             ))}
@@ -837,7 +837,7 @@ export default function ParentSettingsPage() {
       <div className="h-full flex flex-col overflow-hidden md:h-auto md:overflow-visible" style={{ background: "#f3f4f6" }}>
         <ParentHeader />
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3 md:flex-none md:h-auto md:overflow-visible md:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+        <div className="w-full max-w-[var(--content-max-width,var(--max-width-app,480px))] mx-auto flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3 md:flex-none md:h-auto md:overflow-visible md:pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
           {/* 1. 아이 추가 메뉴 카드 */}
           <div
             id="add-child-section"
