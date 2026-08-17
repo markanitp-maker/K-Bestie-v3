@@ -390,6 +390,10 @@ test("PLAY_PROPOSAL: 모든 Skill이 쿨다운 중이면 제안하지 않는다"
         cooldown_until: tomorrow,
         last_initiated_by: "k",
       },
+      PLAYFUL_GAME_NONSENSE_QUIZ: {
+        cooldown_until: tomorrow,
+        last_initiated_by: "k",
+      },
     },
   });
 

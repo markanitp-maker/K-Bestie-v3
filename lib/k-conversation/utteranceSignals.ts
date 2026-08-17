@@ -20,6 +20,9 @@ export interface UtteranceSignals {
   hasChosungAnswerAttempt: boolean; // 초성 게임 답변 시도로 보이는 발화 ("사과", "정답 사과", "바나나인가?")
   hasChosungHintRequest: boolean; // 초성 게임 힌트 요청 ("힌트 줘", "모르겠어", "어려워" 등)
   hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
+  hasNonsenseGameStart?: boolean; // 넌센스 퀴즈 / 수수께끼 시작 요청 ("넌센스 퀴즈 하자", "수수께끼 하자" 등)
+  hasNonsenseAnswerAttempt?: boolean;
+  hasNonsenseHintRequest?: boolean;
   hasPlayRequestWithoutTarget: boolean; // 심심해/놀아줘/뭐 하고 놀까 등 게임 미지정 놀이 요청
   hasGenericPlayAcceptance?: boolean; // 좋아/응/하자/게임부터 하자 등 놀이 포괄 수락
   hasPlayRejection: boolean; // 싫어/안 할래/하기 싫어/됐어 등 제안 거절 (단독 부정)
@@ -235,6 +238,30 @@ function detectWordChainGameStart(text: string): boolean {
   return WORD_CHAIN_START_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+// 넌센스 퀴즈 / 수수께끼 게임 시작 신호 (§3-1)
+const NONSENSE_START_PATTERNS = [
+  /(?:넌센스|수수께끼)\s*(?:게임|놀이|퀴즈|맞추기|맞히기|배틀|대결)/,
+  // 단독 "내"를 넣으면 안 된다. "내면 안 돼", "내달라고 한 적 없어", "내줬어"가 전부 걸린다.
+  // 명령형 어미만 받고, 뒤에 다른 한글이 붙으면(내줘서·내줬던) 요청이 아니므로 제외한다.
+  /(?:넌센스|수수께끼)\s*(?:퀴즈\s*)?(?:문제\s*)?(?:내줘|내봐|내주라|줘)(?:요)?(?![가-힣])/,
+  /(?:넌센스|수수께끼)\s*(?:맞춰|맞혀)\s*(?:볼래|보자|봐)/,
+  /(?:넌센스|수수께끼)(?:으로|\s*)\s*(?:놀|하|해|게임|퀴즈)/,
+  /(?:수수께끼|넌센스\s*퀴즈|넌센스퀴즈|넌센스)\s*(?:하자|할래|할까|해줘|해봐|하고\s*싶어)/,
+];
+// "내지 마"는 반드시 "하지 마"와 함께 둔다 — 출제 요청 패턴이 "내"를 잡기 때문에
+// 이게 없으면 "수수께끼 내지 마"가 시작 신호가 된다(2026-08-17 실측).
+const NONSENSE_START_NEGATION_KWS = ["안 해", "안해", "안 할", "안할", "싫어", "하기 싫", "하지 마", "하지마", "내지 마", "내지마", "주지 마", "주지마", "그만", "재미없", "안 놀"];
+const NONSENSE_START_DEFINITION_KWS = ["뭐야", "뭔데", "무슨 뜻", "무슨 말", "어떤 뜻", "의미", "알아?", "알려줘", "규칙이 뭐야", "어떻게 하는"];
+
+function detectNonsenseGameStart(text: string): boolean {
+  if (includesAny(text, NONSENSE_START_NEGATION_KWS)) return false;
+  if (includesAny(text, NONSENSE_START_DEFINITION_KWS) && !hasExplicitStartIntent(text)) return false;
+  if (isPlayReferenceOnly(text)) return false;
+  if (isBlockedByCapabilityOrEvaluation(text)) return false;
+  if (isQuotedPlayRequest(text)) return false;
+  return NONSENSE_START_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 // 게임 미지정 놀이 요청 신호 ("심심해", "놀아줘", "뭐 하고 놀까", "재미없어" 등)
 const PLAY_REQUEST_WITHOUT_TARGET_PATTERNS = [
   /심심(?:해|하다|해요|하네|한데|해용|당)?/,
@@ -249,14 +276,15 @@ const PLAY_REQUEST_WITHOUT_TARGET_PATTERNS = [
 const PLAY_REQUEST_NEGATION_KWS = [
   "안 놀", "안놀", "놀기 싫", "안 해", "안해", "안 할", "안할", "하기 싫", "하지 마", "하지마", "그만", "안 심심",
 ];
-const SPECIFIC_GAME_NAME_PATTERN = /(?:초성|ㅊㅅ|끝말|단어\s*잇기|단어잇기|스무고개|밸런스|수수께끼|보드게임|마피아)/;
+const SPECIFIC_GAME_NAME_PATTERN = /(?:초성|ㅊㅅ|끝말|단어\s*잇기|단어잇기|스무고개|밸런스|수수께끼|넌센스|보드게임|마피아)/;
 
 function detectPlayRequestWithoutTarget(
   text: string,
   hasChosungGameStart: boolean,
   hasWordChainGameStart: boolean,
+  hasNonsenseGameStart: boolean = false,
 ): boolean {
-  if (hasChosungGameStart || hasWordChainGameStart) return false;
+  if (hasChosungGameStart || hasWordChainGameStart || hasNonsenseGameStart) return false;
   if (SPECIFIC_GAME_NAME_PATTERN.test(text)) return false;
   if (includesAny(text, PLAY_REQUEST_NEGATION_KWS)) return false;
   return PLAY_REQUEST_WITHOUT_TARGET_PATTERNS.some((pattern) => pattern.test(text));
@@ -276,8 +304,9 @@ function detectPlayRejection(
   hasChosungGameStart: boolean,
   hasWordChainGameStart: boolean,
   hasPlayRequestWithoutTarget: boolean,
+  hasNonsenseGameStart: boolean = false,
 ): boolean {
-  if (hasChosungGameStart || hasWordChainGameStart || hasPlayRequestWithoutTarget) {
+  if (hasChosungGameStart || hasWordChainGameStart || hasNonsenseGameStart || hasPlayRequestWithoutTarget) {
     return false;
   }
   const trimmed = text.trim();
@@ -290,7 +319,7 @@ function detectPlayRejection(
 
 // 게임 명시적 종료 신호 ("그만할래", "안 할래", "그만하자", "그만", "안해" 등)
 const PLAY_STOP_PATTERNS = [
-  /(?:끝말잇기|초성|게임|놀이|퀴즈)?\s*(?:그만|그만하자|그만할래|그만해|그만둘래|안\s*할래|안해|안\s*해|하기\s*싫어|끝낼래|안\s*놀래|포기|항복|너\s*이겼어)/,
+  /(?:끝말잇기|초성|넌센스|수수께끼|게임|놀이|퀴즈)?\s*(?:그만|그만하자|그만할래|그만해|그만둘래|안\s*할래|안해|안\s*해|하기\s*싫어|끝낼래|안\s*놀래|포기|항복|너\s*이겼어)/,
   /^(?:그만|그만해|그만하자|그만할래|끝|안해|안\s*해|싫어|포기|항복|이제\s*그만|다음에\s*할래)$/,
 ];
 
@@ -298,8 +327,9 @@ function detectPlayStop(
   text: string,
   hasChosungGameStart: boolean,
   hasWordChainGameStart: boolean,
+  hasNonsenseGameStart: boolean = false,
 ): boolean {
-  if (hasChosungGameStart || hasWordChainGameStart) return false;
+  if (hasChosungGameStart || hasWordChainGameStart || hasNonsenseGameStart) return false;
   const trimmed = text.trim();
   if (!trimmed) return false;
   for (const exclusion of REJECTION_EXCLUSION_PATTERNS) {
@@ -321,10 +351,12 @@ function detectGenericPlayAcceptance(
   hasPlayRejection: boolean,
   hasPlayStop: boolean,
   hasNegativeEmotionOrConflict: boolean,
+  hasNonsenseGameStart: boolean = false,
 ): boolean {
   if (
     hasChosungGameStart ||
     hasWordChainGameStart ||
+    hasNonsenseGameStart ||
     hasPlayRejection ||
     hasPlayStop ||
     hasNegativeEmotionOrConflict
@@ -347,8 +379,6 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
   const hasPhysicalNeed = includesAny(trimmed, PHYSICAL_KWS);
 
   // 정확 매칭이 먼저다. 실패했을 때만 STT 오인식 복구를 시도한다(2026-08-17).
-  // 브라우저 STT가 "초성"을 "호성"으로, "퀴즈"를 "키즈"로 뭉개는 사례가 실제로 있었고
-  // 그 탓에 초성게임이 한 번도 시작되지 않았다(박말똥 Production).
   let hasChosungGameStart = detectChosungGameStart(trimmed);
   const hasChosungHintRequest = detectChosungHintRequest(trimmed);
   const hasChosungAnswerAttempt = detectChosungAnswerAttempt(
@@ -358,11 +388,8 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasAchievement || hasConflict || hasNegativeEmotion || hasPhysicalNeed,
   );
   let hasWordChainGameStart = detectWordChainGameStart(trimmed);
-  // 복구 계층도 비교·회상 차단을 똑같이 거쳐야 한다. 안 그러면 정확 매칭에서 막은
-  // "이거 초성게임보다 재밌다"가 복구로 되살아난다(2026-08-17 실측).
-  // 복구 계층도 정확 매칭과 같은 가드를 전부 거쳐야 한다. 안 그러면 정확 매칭에서
-  // 막은 발화가 복구로 되살아난다 — "이거 초성게임보다 재밌다"(비교),
-  // "초성게임 안 할래"(거절), "초성이 뭐야?"(정의 질문) 모두 실측으로 확인됐다.
+  let hasNonsenseGameStart = detectNonsenseGameStart(trimmed);
+
   const blockedFromRecovery =
     isPlayReferenceOnly(trimmed)
     || isBlockedByCapabilityOrEvaluation(trimmed)
@@ -370,28 +397,34 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     || includesAny(trimmed, CHOSUNG_START_NEGATION_KWS)
     || (includesAny(trimmed, CHOSUNG_START_DEFINITION_KWS) && !hasExplicitStartIntent(trimmed))
     || includesAny(trimmed, WORD_CHAIN_START_NEGATION_KWS)
-    || (includesAny(trimmed, WORD_CHAIN_START_DEFINITION_KWS) && !hasExplicitStartIntent(trimmed));
+    || (includesAny(trimmed, WORD_CHAIN_START_DEFINITION_KWS) && !hasExplicitStartIntent(trimmed))
+    || includesAny(trimmed, NONSENSE_START_NEGATION_KWS)
+    || (includesAny(trimmed, NONSENSE_START_DEFINITION_KWS) && !hasExplicitStartIntent(trimmed));
 
-  if (!hasChosungGameStart && !hasWordChainGameStart && !blockedFromRecovery) {
+  if (!hasChosungGameStart && !hasWordChainGameStart && !hasNonsenseGameStart && !blockedFromRecovery) {
     const recovered = recoverGameCommand(trimmed);
     if (recovered === "CHOSUNG") hasChosungGameStart = true;
     else if (recovered === "WORD_CHAIN") hasWordChainGameStart = true;
+    else if (recovered === "NONSENSE_QUIZ") hasNonsenseGameStart = true;
   }
   const hasPlayRequestWithoutTarget = detectPlayRequestWithoutTarget(
     trimmed,
     hasChosungGameStart,
     Boolean(hasWordChainGameStart),
+    Boolean(hasNonsenseGameStart),
   );
   const hasPlayRejection = detectPlayRejection(
     trimmed,
     hasChosungGameStart,
     Boolean(hasWordChainGameStart),
     hasPlayRequestWithoutTarget,
+    Boolean(hasNonsenseGameStart),
   );
   const hasPlayStop = detectPlayStop(
     trimmed,
     hasChosungGameStart,
     Boolean(hasWordChainGameStart),
+    Boolean(hasNonsenseGameStart),
   );
   const hasGenericPlayAcceptance = detectGenericPlayAcceptance(
     trimmed,
@@ -400,6 +433,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasPlayRejection,
     Boolean(hasPlayStop),
     hasNegativeEmotion || hasConflict || hasPhysicalNeed,
+    Boolean(hasNonsenseGameStart),
   );
 
   return {
@@ -417,6 +451,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasChosungAnswerAttempt,
     hasChosungHintRequest,
     hasWordChainGameStart,
+    hasNonsenseGameStart,
     hasPlayRequestWithoutTarget,
     hasGenericPlayAcceptance,
     hasPlayRejection,
@@ -424,12 +459,11 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
   };
 }
 
-/** semantic_group 추정 — Semantic Topic History 기록/조회에 쓸 대략적인 주제 그룹.
- * 071 §9의 MOOD_CHECK류 예시처럼 "의미가 같으면 같은 그룹"을 지향하되, 071 단계에서는
- * 질문은행 metadata(073에서 정식 도입)가 없으므로 신호 기반 근사치를 쓴다. */
+/** semantic_group 추정 — Semantic Topic History 기록/조회에 쓸 대략적인 주제 그룹. */
 export function estimateSemanticGroup(signals: UtteranceSignals): string {
   if (signals.hasChosungGameStart) return "PLAYFUL_GAME_CHOSUNG";
   if (signals.hasWordChainGameStart) return "PLAYFUL_GAME_WORD_CHAIN";
+  if (signals.hasNonsenseGameStart) return "PLAYFUL_GAME_NONSENSE_QUIZ";
   if (signals.hasPlayRequestWithoutTarget) return "PLAY_PROPOSAL";
   if (signals.hasAchievement) return "ACHIEVEMENT";
   if (signals.hasConflict) return "FRIEND_CONFLICT";

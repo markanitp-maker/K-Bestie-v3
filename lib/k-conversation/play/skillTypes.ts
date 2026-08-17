@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UtteranceSignals } from "../utteranceSignals";
 
-export type PlaySkillId = "CHOSUNG" | "WORD_CHAIN";
+export type PlaySkillId = "CHOSUNG" | "WORD_CHAIN" | "NONSENSE_QUIZ";
 
 /** Router가 게임 규칙을 모르도록 하는 최소 계약(§3-3). */
 export interface PlaySkillTurnResult {

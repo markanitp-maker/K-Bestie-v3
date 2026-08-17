@@ -96,7 +96,7 @@ export async function decidePlayProposal(
   }
 
   // 6) 특정 게임 직접 요청인 경우 (PLAY_PROPOSAL을 거치지 않고 바로 Skill로 진입)
-  if (signals.hasChosungGameStart || signals.hasWordChainGameStart) {
+  if (signals.hasChosungGameStart || signals.hasWordChainGameStart || signals.hasNonsenseGameStart) {
     return { shouldPropose: false, blockedReason: "direct_game_request" };
   }
 

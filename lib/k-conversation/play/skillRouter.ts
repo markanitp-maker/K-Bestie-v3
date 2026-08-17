@@ -121,7 +121,8 @@ export async function routePlaySkillTurn(
           trimmed.includes(skill.displayName) ||
           trimmed.includes(skill.proposal.label) ||
           (skillId === "CHOSUNG" && (trimmed.includes("초성") || trimmed.includes("ㅊㅅ"))) ||
-          (skillId === "WORD_CHAIN" && (trimmed.includes("끝말") || trimmed.includes("말잇기")))
+          (skillId === "WORD_CHAIN" && (trimmed.includes("끝말") || trimmed.includes("말잇기"))) ||
+          (skillId === "NONSENSE_QUIZ" && (trimmed.includes("넌센스") || trimmed.includes("수수께끼")))
         ) {
           requestedSkill = skill;
           break;

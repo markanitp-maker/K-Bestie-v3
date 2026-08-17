@@ -85,8 +85,10 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       "[놀이 진행 금지 지침]",
       "- 지금은 게임(초성게임, 끝말잇기 등)이 진행 중이 아니야.",
       "- 절대로 초성 문제(ㄱㅊ 같은 자음)를 내거나 끝말잇기 단어를 제시하지 마.",
+      "- 넌센스 퀴즈/수수께끼 문제를 내거나 임의로 만들지 마.",
       "- 정답·힌트·글자 수를 말하지 마.",
       '- 아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려.',
+      "- NO ACTIVE NONSENSE SKILL SESSION -> NO NONSENSE GAMEPLAY GENERATION",
     ].join("\n");
   }
 

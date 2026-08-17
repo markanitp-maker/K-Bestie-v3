@@ -367,3 +367,63 @@ test("081 회귀: 시작 의사가 분명한 발화는 능력 표지가 섞여 �
     assert.equal(startsAnyGame(text), true, `[${text}]는 게임을 시작시켜야 한다`);
   }
 });
+
+test("008-B: 넌센스 퀴즈 / 수수께끼 시작 감지 (긍정 vs 부정·인용·회상·단순언급)", () => {
+  const positiveNonsense = [
+    "넌센스 퀴즈 하자",
+    "수수께끼 하자",
+    "수수께끼 문제 내줘",
+    "수수께끼 내줘",
+    "넌센스 내봐",
+    "수수께끼 내봐",
+    "수수께끼 줘",
+    "넌센스 퀴즈 내줘",
+    "넌센스 문제 줘",
+    "수수께끼 맞혀볼래",
+    "수수께끼 게임 할래",
+  ];
+  for (const text of positiveNonsense) {
+    const signals = extractUtteranceSignals(text);
+    assert.equal(
+      Boolean(signals.hasNonsenseGameStart),
+      true,
+      `[${text}]는 넌센스 퀴즈 시작이어야 함`
+    );
+  }
+
+  const negativeNonsense = [
+    "넌센스 안 해",
+    "수수께끼 안할래",
+    "수수께끼 하기 싫어",
+    "넌센스가 뭐야?",
+    "친구가 수수께끼 하자고 했어",
+    "너 수수께끼 잘 못하잖아",
+    "이거 수수께끼보다 재밌다",
+    "수수께끼 말고 다른 거 할래",
+    "수수께끼 안 내줄래?",
+    "수수께끼 내지 마",
+    "수수께끼 안 내줘",
+    // 아래는 출제 요청 패턴을 "수수께끼 내줘"까지 넓히다 실제로 오탐이 났던 발화다.
+    // 단독 "내"를 패턴에 넣으면 전부 게임이 시작된다 (2026-08-17 리뷰 지적).
+    "수수께끼 주지 마",
+    "수수께끼 그만 내",
+    "수수께끼 더는 내지 마",
+    "수수께끼 내면 안 돼",
+    "수수께끼 내달라고 한 적 없어",
+    "수수께끼 왜 내?",
+    "수수께끼 내기 싫어",
+    "엄마가 수수께끼 내줬어",
+    "수수께끼 내줬었지",
+    "엄마가 수수께끼 내줘서 재밌었어",
+    "어제 수수께끼 내줬던 거 기억나",
+  ];
+  for (const text of negativeNonsense) {
+    const signals = extractUtteranceSignals(text);
+    assert.equal(
+      Boolean(signals.hasNonsenseGameStart),
+      false,
+      `[${text}]는 넌센스 퀴즈 시작이 아니어야 함`
+    );
+  }
+});
+

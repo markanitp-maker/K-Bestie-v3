@@ -543,7 +543,7 @@ test("Test 10: Engine respond() 연동 - 복수 제안 후 되묻기 및 포괄 
   assert.equal(turn1Output.action, "PLAY_PROPOSAL");
   const proposal = await getPendingPlayProposal(chatSessionId, db);
   assert.ok(proposal, "엔진이 제안 후 Pending Proposal이 저장되어야 함");
-  assert.equal(proposal?.offeredSkills.length, 2, "복수 스킬이 제안되어야 함");
+  assert.ok(proposal?.offeredSkills && proposal.offeredSkills.length >= 2, "복수 스킬이 제안되어야 함");
 
   // 턴 2: 아이가 "게임부터 하자" -> 복수 제안 포괄 수락이므로 되묻기 처리
   const turn2Output = await respond(
@@ -560,7 +560,7 @@ test("Test 10: Engine respond() 연동 - 복수 제안 후 되묻기 및 포괄 
     }
   );
 
-  assert.match(generatedSystemInstruction, /초성게임이랑 끝말잇기 중 뭐 할래\?/);
+  assert.match(generatedSystemInstruction, /초성게임.*끝말잇기.*중 뭐 할래\?/);
   assert.match(generatedSystemInstruction, /절대 네가 먼저 특정 놀이를 시작하거나 문제를 내지 마/);
 });
 

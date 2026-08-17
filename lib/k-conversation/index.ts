@@ -334,7 +334,11 @@ export async function respond(
 
   // Hard Guard (§3-5): 활성 세션이 없고 Router가 처리하지 않았으면 gameplay action 차단
   if (!hasActivePlaySession && !playSkillHandled) {
-    if (action === "PLAYFUL_GAME_CHOSUNG" || (action as string) === "PLAYFUL_GAME_WORD_CHAIN") {
+    if (
+      action === "PLAYFUL_GAME_CHOSUNG" ||
+      (action as string) === "PLAYFUL_GAME_WORD_CHAIN" ||
+      (action as string) === "PLAYFUL_GAME_NONSENSE_QUIZ"
+    ) {
       action = "FOLLOW_UP";
     }
   }

@@ -14,6 +14,7 @@ import type {
 import { PLAY_SKILL_REGISTRY, findSkillById, findDirectlyRequestedSkill, buildPlayCatalogFragment } from "./skillRegistry";
 import { CHOSUNG_SKILL } from "./chosungSkill";
 import { WORD_CHAIN_SKILL } from "../wordChain/wordChainSkill";
+import { NONSENSE_QUIZ_SKILL } from "../nonsenseQuiz/nonsenseQuizSkill";
 import { routePlaySkillTurn } from "./skillRouter";
 
 const defaultSignals: UtteranceSignals = {
@@ -48,9 +49,10 @@ function createMockDb(): SupabaseClient {
 }
 
 test("SkillRegistry: 기본 등록된 Skill 목록 및 조회 함수 검증", () => {
-  assert.equal(PLAY_SKILL_REGISTRY.length, 2);
+  assert.equal(PLAY_SKILL_REGISTRY.length, 3);
   assert.equal(PLAY_SKILL_REGISTRY[0].id, "CHOSUNG");
   assert.equal(PLAY_SKILL_REGISTRY[1].id, "WORD_CHAIN");
+  assert.equal(PLAY_SKILL_REGISTRY[2].id, "NONSENSE_QUIZ");
 
   // findSkillById
   const chosung = findSkillById("CHOSUNG");
@@ -60,6 +62,10 @@ test("SkillRegistry: 기본 등록된 Skill 목록 및 조회 함수 검증", ()
   const wordChain = findSkillById("WORD_CHAIN");
   assert.ok(wordChain);
   assert.equal(wordChain?.id, "WORD_CHAIN");
+
+  const nonsense = findSkillById("NONSENSE_QUIZ");
+  assert.ok(nonsense);
+  assert.equal(nonsense?.id, "NONSENSE_QUIZ");
 
   const nonExistent = findSkillById("TWENTY_QUESTIONS" as any);
   assert.equal(nonExistent, null);
@@ -76,6 +82,14 @@ test("SkillRegistry: 기본 등록된 Skill 목록 및 조회 함수 검증", ()
   const wordChainMatched = findDirectlyRequestedSkill(defaultSignals, "끝말잇기 하자");
   assert.ok(wordChainMatched);
   assert.equal(wordChainMatched?.id, "WORD_CHAIN");
+
+  const nonsenseSignals: UtteranceSignals = {
+    ...defaultSignals,
+    hasNonsenseGameStart: true,
+  };
+  const nonsenseMatched = findDirectlyRequestedSkill(nonsenseSignals, "수수께끼 하자");
+  assert.ok(nonsenseMatched);
+  assert.equal(nonsenseMatched?.id, "NONSENSE_QUIZ");
 
   const unmatched = findDirectlyRequestedSkill(defaultSignals, "오늘 날씨 어때?");
   assert.equal(unmatched, null);
@@ -400,7 +414,7 @@ test("SkillRouter 확장성: Registry에 새로운 가짜 Skill을 추가해도 
   assert.equal(result.instruction, "새놀이 시작 완료: child-test");
 });
 
-test("PlaySkillModule 메타데이터: CHOSUNG_SKILL 및 WORD_CHAIN_SKILL의 displayName 및 childFacingDescription 검증", () => {
+test("PlaySkillModule 메타데이터: CHOSUNG_SKILL, WORD_CHAIN_SKILL, NONSENSE_QUIZ_SKILL의 displayName 및 childFacingDescription 검증", () => {
   assert.equal(CHOSUNG_SKILL.displayName, "초성게임");
   assert.equal(CHOSUNG_SKILL.childFacingDescription, "내가 초성을 주면 무슨 말인지 맞히는 놀이");
   assert.ok(CHOSUNG_SKILL.displayName.length <= 25);
@@ -410,13 +424,17 @@ test("PlaySkillModule 메타데이터: CHOSUNG_SKILL 및 WORD_CHAIN_SKILL의 dis
   assert.equal(WORD_CHAIN_SKILL.childFacingDescription, "앞 말의 끝 글자로 이어서 말하는 놀이");
   assert.ok(WORD_CHAIN_SKILL.displayName.length <= 25);
   assert.ok(WORD_CHAIN_SKILL.childFacingDescription.length <= 25);
+
+  assert.equal(NONSENSE_QUIZ_SKILL.displayName, "넌센스 퀴즈");
+  assert.ok(NONSENSE_QUIZ_SKILL.childFacingDescription.length <= 30);
 });
 
-test("buildPlayCatalogFragment: 기본 registry의 놀이 메타데이터(초성게임, 끝말잇기)가 모두 포함된다", () => {
+test("buildPlayCatalogFragment: 기본 registry의 놀이 메타데이터(초성게임, 끝말잇기, 넌센스 퀴즈)가 모두 포함된다", () => {
   const fragment = buildPlayCatalogFragment();
   assert.match(fragment, /\[네가 같이 할 수 있는 놀이\]/);
   assert.match(fragment, /- 초성게임: 내가 초성을 주면 무슨 말인지 맞히는 놀이/);
   assert.match(fragment, /- 끝말잇기: 앞 말의 끝 글자로 이어서 말하는 놀이/);
+  assert.match(fragment, /- 넌센스 퀴즈:/);
   assert.match(
     fragment,
     /- 아이가 무슨 놀이를 할 수 있냐고 물으면 이 목록에서 골라 네가 먼저 말해줘\. 아이에게 되묻지 마\./

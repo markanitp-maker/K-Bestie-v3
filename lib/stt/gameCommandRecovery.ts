@@ -9,11 +9,11 @@ import {
   jamoEditDistance,
 } from "./koreanPhonetic";
 
-export type RecoveredGameCommand = "CHOSUNG" | "WORD_CHAIN" | null;
+export type RecoveredGameCommand = "CHOSUNG" | "WORD_CHAIN" | "NONSENSE_QUIZ" | null;
 
 interface CommandTarget {
   target: string;
-  command: "CHOSUNG" | "WORD_CHAIN";
+  command: "CHOSUNG" | "WORD_CHAIN" | "NONSENSE_QUIZ";
   /** 2음절 단독 표현은 놀이 맥락이 있을 때만 인정한다. */
   needsContext?: boolean;
 }
@@ -39,6 +39,14 @@ const TARGET_COMMANDS: readonly CommandTarget[] = [
   { target: "끝말잇기", command: "WORD_CHAIN" },
   { target: "말잇기", command: "WORD_CHAIN" },
   { target: "단어잇기", command: "WORD_CHAIN" },
+
+  // NONSENSE_QUIZ 대상 표현
+  { target: "넌센스퀴즈", command: "NONSENSE_QUIZ" },
+  { target: "넌센스게임", command: "NONSENSE_QUIZ" },
+  { target: "수수께끼퀴즈", command: "NONSENSE_QUIZ" },
+  { target: "수수께끼놀이", command: "NONSENSE_QUIZ" },
+  { target: "수수께끼", command: "NONSENSE_QUIZ", needsContext: true },
+  { target: "넌센스", command: "NONSENSE_QUIZ", needsContext: true },
 ] as const;
 
 /**
@@ -60,7 +68,7 @@ function hasPlayContext(normalized: string): boolean {
 }
 
 interface MatchCandidate {
-  command: "CHOSUNG" | "WORD_CHAIN";
+  command: "CHOSUNG" | "WORD_CHAIN" | "NONSENSE_QUIZ";
   dist: number;
   targetJamoLen: number;
 }
