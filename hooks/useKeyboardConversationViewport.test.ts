@@ -41,3 +41,11 @@ test("키보드가 홈 인디케이터를 덮는 동안 safe-area 하단 여백�
 test("키보드가 닫히면 safe-area 하단 여백을 복원한다", () => {
   assert.equal(bottomSafeAreaInset(false), "env(safe-area-inset-bottom)");
 });
+
+test("바깥 래퍼와 안쪽 그리드가 같은 높이 기준을 쓴다 — 어긋나면 프레임에 스크롤바가 생기고 하단이 잘린다", () => {
+  // 2026-08-17 실측 사고: 안쪽만 --frame-h 로 고치고 바깥 래퍼를 100dvh 로 두었더니
+  // DemoFrame 안쪽 패딩까지 더해져 프레임을 넘어섰다.
+  const inner = computeConversationHeight(false, null);
+  const outerClosed = "var(--frame-h, 100dvh)";
+  assert.equal(inner, outerClosed);
+});

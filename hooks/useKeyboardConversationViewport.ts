@@ -108,7 +108,11 @@ export function useKeyboardConversationViewport() {
         right: 0,
         height: `${viewportHeight}px`,
       }
-    : { height: "100dvh" };
+    // 2026-08-17: 안쪽 그리드만 --frame-h 로 고치고 **이 바깥 래퍼를 놓쳤다.**
+    // 래퍼가 100dvh(브라우저 창 전체)로 남아 있어 DemoFrame 안쪽 패딩까지 더해지면
+    // 프레임을 넘어섰고, 결과적으로 **프레임에 스크롤바가 생기고 하단이 잘렸다.**
+    // 안팎이 같은 기준을 써야 한다.
+    : { height: computeConversationHeight(false, null) };
 
   // 키보드가 홈 인디케이터를 덮고 있는 동안 safe-area 하단 여백은 죽은 공간이다.
   // 그대로 두면 위 공백에 그만큼이 더해진다.
