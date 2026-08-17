@@ -1,5 +1,31 @@
 import { useState, useEffect, type CSSProperties } from "react";
 
+/**
+ * 대화 화면 컨테이너 높이를 정한다.
+ *
+ * 평소에는 px 를 상시 주입하지 않는다 — 주소창 접힘/펼침마다 화면이 튄다.
+ * 대신 `--frame-h` 를 쓰고 없으면 100dvh 로 떨어진다.
+ *
+ * 2026-08-17: 예전에는 `100dvh` 를 하드코딩했다. 그래서 PC 웹에서 스마트폰/태블릿
+ * 프레임으로 볼 때 컨테이너가 프레임 안쪽(--frame-h)보다 커져 **하단이 잘렸다**
+ * (자동/수동 토글·마이크가 프레임 밖으로 밀려남). `--frame-h` 는 프레임 안에서만
+ * 정의되고 실기기에서는 undefined 라 100dvh 로 떨어진다
+ * (DemoFrame.test.tsx "실기기 경로에서는 --frame-h 변수가 정의되지 않아 fallback" 참고).
+ *
+ * 키보드가 열린 동안에만 실측 px 를 쓴다 — iOS 에서 100dvh 는 키보드만큼 줄지 않아
+ * 컨테이너 아래쪽이 키보드 뒤에 남고 그 배경이 공백으로 보인다.
+ *
+ * 테스트가 이 식을 복제하지 않도록 export 한다. 복제하면 실제 코드와 어긋나도 못 잡는다.
+ */
+export function computeConversationHeight(
+  isKeyboardOpen: boolean,
+  viewportHeight: number | null,
+): string {
+  return isKeyboardOpen && viewportHeight
+    ? `${viewportHeight}px`
+    : "var(--frame-h, 100dvh)";
+}
+
 export function useKeyboardConversationViewport() {
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -62,9 +88,13 @@ export function useKeyboardConversationViewport() {
   // 반영하고 키보드는 반영하지 않는다). 그래서 키보드가 열리면 컨테이너 아래쪽이
   // 키보드 뒤에 남고, 그 배경이 입력창과 키보드 사이의 공백으로 보인다.
   // 키보드가 열린 동안에만 실제 visual viewport 높이를 쓴다.
-  const conversationHeight = isKeyboardOpen && viewportHeight
-    ? `${viewportHeight}px`
-    : "100dvh";
+  // 2026-08-17: PC 웹에서 스마트폰/태블릿 프레임으로 볼 때 **하단이 잘렸다**.
+  // 100dvh 는 브라우저 창 전체 높이라, DemoFrame 안쪽(--frame-h)보다 커서 컨테이너
+  // 아래쪽(자동/수동 토글·마이크)이 프레임 밖으로 밀려나 보이지 않았다.
+  // --frame-h 는 프레임 안에서만 정의되고 실기기에서는 undefined 라 100dvh 로 떨어진다
+  // (DemoFrame.test.tsx "실기기 경로에서는 --frame-h 변수가 정의되지 않아 fallback" 참고).
+  // 같은 파일의 로딩·오류 화면은 이미 이 방식을 쓰고 있었다(app/chat/page.tsx:877).
+  const conversationHeight = computeConversationHeight(isKeyboardOpen, viewportHeight);
 
   // iOS는 키보드가 열리면 높이만 줄이는 게 아니라 페이지 자체를 위로 밀어 올린다
   // (visualViewport.offsetTop > 0). 높이만 맞추면 컨테이너 윗부분이 보이는 영역
