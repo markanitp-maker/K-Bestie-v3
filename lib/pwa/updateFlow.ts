@@ -174,6 +174,9 @@ export async function performRegistrationUpdate(
     return { result: "network-error" };
   }
 
+  let staleWaitingWorker: ServiceWorker | null = null;
+  let staleWaitingIdentity: ServiceWorkerIdentity | undefined = undefined;
+
   // 1. If registration.waiting already exists and is installed
   if (registration.waiting && registration.waiting.state === "installed") {
     const worker = registration.waiting;
@@ -181,35 +184,36 @@ export async function performRegistrationUpdate(
       normalizeScriptUrl(worker.scriptURL) !==
       normalizeScriptUrl(validTarget.serviceWorkerScriptUrl)
     ) {
-      return { result: "identity-mismatch", worker };
+      staleWaitingWorker = worker;
+    } else {
+      const identity = await requestServiceWorkerIdentity(worker);
+      if (
+        !identity ||
+        identity.protocolVersion !== 1 ||
+        typeof identity.workerNonce !== "string" ||
+        !identity.workerNonce.trim()
+      ) {
+        staleWaitingWorker = worker;
+      } else if (
+        identity.buildId !== validTarget.buildId ||
+        identity.swVersion !== validTarget.swVersion
+      ) {
+        staleWaitingWorker = worker;
+        staleWaitingIdentity = identity;
+      } else if (
+        registration.waiting !== worker ||
+        worker.state !== "installed"
+      ) {
+        return { result: "target-replaced" };
+      } else {
+        return {
+          result: "installed-target",
+          worker,
+          identity,
+          targetSnapshot: validTarget,
+        };
+      }
     }
-
-    const identity = await requestServiceWorkerIdentity(worker);
-    if (
-      !identity ||
-      identity.protocolVersion !== 1 ||
-      typeof identity.workerNonce !== "string" ||
-      !identity.workerNonce.trim()
-    ) {
-      return { result: "identity-mismatch", worker };
-    }
-    if (
-      identity.buildId !== validTarget.buildId ||
-      identity.swVersion !== validTarget.swVersion
-    ) {
-      return { result: "identity-mismatch", worker, identity };
-    }
-
-    if (registration.waiting !== worker || worker.state !== "installed") {
-      return { result: "target-replaced" };
-    }
-
-    return {
-      result: "installed-target",
-      worker,
-      identity,
-      targetSnapshot: validTarget,
-    };
   }
 
   // 2. If registration.installing exists, wait for statechange to installed
@@ -317,6 +321,14 @@ export async function performRegistrationUpdate(
   }
 
   // 3. Neither waiting nor installing found
+  if (staleWaitingWorker) {
+    return {
+      result: "identity-mismatch",
+      worker: staleWaitingWorker,
+      ...(staleWaitingIdentity ? { identity: staleWaitingIdentity } : {}),
+    };
+  }
+
   return { result: "no-update" };
 }
 

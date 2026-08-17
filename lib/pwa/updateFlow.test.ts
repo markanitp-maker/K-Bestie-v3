@@ -569,6 +569,130 @@ test("performRegistrationUpdate - returns target-replaced when worker transition
   assert.equal(outcome.result, "target-replaced");
 });
 
+test("performRegistrationUpdate - 낡은 대기 워커가 있어도 새 installing 워커가 있으면 설치 완료 후 installed-target 반환 (무한 루프 방지)", async () => {
+  const staleWaitingWorker = createIdentityWorker({
+    buildId: "old-build-v1",
+    swVersion: "old-sw-v1",
+    workerNonce: "nonce-stale-waiting",
+  });
+
+  const listeners: Record<string, () => void> = {};
+  const mockInstalling = {
+    state: "installing",
+    scriptURL: "https://app.k-bestie.com/sw.js",
+    addEventListener: (event: string, cb: () => void) => {
+      listeners[event] = cb;
+    },
+    removeEventListener: (event: string) => {
+      delete listeners[event];
+    },
+    postMessage: (message: unknown, transfer?: Transferable[]) => {
+      if (!message || typeof message !== "object") return;
+      const requestNonce = (message as Record<string, unknown>).requestNonce;
+      const responsePort = transfer?.[0];
+      if (typeof requestNonce !== "string" || !(responsePort instanceof MessagePort)) return;
+      responsePort.postMessage({
+        protocol: 1,
+        type: "PWA_IDENTITY_RESPONSE",
+        requestNonce,
+        buildId: targetMetadataA.buildId,
+        swVersion: targetMetadataA.swVersion,
+        workerNonce: "nonce-new-installing",
+      });
+    },
+  };
+
+  const mockReg: {
+    update: () => Promise<void>;
+    waiting: ServiceWorker | null;
+    installing: typeof mockInstalling | null;
+  } = {
+    waiting: staleWaitingWorker,
+    installing: mockInstalling,
+    update: async () => {
+      setTimeout(() => {
+        mockInstalling.state = "installed";
+        mockReg.waiting = mockInstalling as unknown as ServiceWorker;
+        listeners["statechange"]?.();
+      }, 10);
+    },
+  };
+
+  const outcome = await performRegistrationUpdate({
+    registration: mockReg as unknown as ServiceWorkerRegistration,
+    targetSnapshot: targetMetadataA,
+    installTimeoutMs: 500,
+  });
+
+  assert.equal(outcome.result, "installed-target");
+  assert.equal(outcome.worker, mockInstalling as unknown as ServiceWorker);
+  assert.equal(outcome.identity?.buildId, targetMetadataA.buildId);
+  assert.equal(outcome.identity?.swVersion, targetMetadataA.swVersion);
+  assert.equal(outcome.identity?.workerNonce, "nonce-new-installing");
+});
+
+test("performRegistrationUpdate - 낡은 대기 워커만 있고 installing 워커가 없으면 identity-mismatch 반환", async () => {
+  const staleWaitingWorker = createIdentityWorker({
+    buildId: "old-build-v1",
+    swVersion: "old-sw-v1",
+    workerNonce: "nonce-stale-waiting",
+  });
+
+  const mockReg = {
+    waiting: staleWaitingWorker,
+    installing: null,
+    update: async () => {},
+  } as unknown as ServiceWorkerRegistration;
+
+  const outcome = await performRegistrationUpdate({
+    registration: mockReg,
+    targetSnapshot: targetMetadataA,
+  });
+
+  assert.equal(outcome.result, "identity-mismatch");
+  assert.equal(outcome.worker, staleWaitingWorker);
+  assert.equal(outcome.identity?.buildId, "old-build-v1");
+});
+
+test("performRegistrationUpdate - 일치하는 대기 워커가 있으면 installed-target 즉시 반환 (기존 동작 유지)", async () => {
+  const matchingWaitingWorker = createIdentityWorker({
+    buildId: targetMetadataA.buildId,
+    swVersion: targetMetadataA.swVersion,
+    workerNonce: "nonce-matching-waiting",
+  });
+
+  const mockReg = {
+    waiting: matchingWaitingWorker,
+    installing: null,
+    update: async () => {},
+  } as unknown as ServiceWorkerRegistration;
+
+  const outcome = await performRegistrationUpdate({
+    registration: mockReg,
+    targetSnapshot: targetMetadataA,
+  });
+
+  assert.equal(outcome.result, "installed-target");
+  assert.equal(outcome.worker, matchingWaitingWorker);
+  assert.equal(outcome.identity?.buildId, targetMetadataA.buildId);
+  assert.equal(outcome.identity?.workerNonce, "nonce-matching-waiting");
+});
+
+test("performRegistrationUpdate - 대기·설치 둘 다 없으면 no-update 반환 (기존 동작 유지)", async () => {
+  const mockReg = {
+    waiting: null,
+    installing: null,
+    update: async () => {},
+  } as unknown as ServiceWorkerRegistration;
+
+  const outcome = await performRegistrationUpdate({
+    registration: mockReg,
+    targetSnapshot: targetMetadataA,
+  });
+
+  assert.equal(outcome.result, "no-update");
+});
+
 // -------------------------------------------------------------
 // Strict Marker Schema v3 Tests
 // -------------------------------------------------------------
