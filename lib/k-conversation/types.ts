@@ -46,6 +46,8 @@ export interface EngineInput {
   adapterContext?: Record<string, unknown>;
   /** 아이 학년 정보 (초성게임 난이도 계산 등용). 미지정 시 corePersona에서 조회 */
   gradeRaw?: string | number | null;
+  /** 최근 K 응답 텍스트 목록 — unclear_audio/deterministic 템플릿의 연속 반복 방지용 */
+  recentKTexts?: string[];
 }
 
 export type EngineResponseCategory =

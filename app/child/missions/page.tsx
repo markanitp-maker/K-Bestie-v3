@@ -874,6 +874,14 @@ function MissionInner({ onTextModeChange }: { onTextModeChange?: (isTextMode: bo
         ...pastMessagesRef.current,
         { role: enrichedTurn.role, text: enrichedTurn.text, id: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence },
       ];
+    } else if (enrichedTurn.role === "k" && (isChildTurnDuringActiveMission || missionStateRef.current === "active" || missionStateRef.current === "completing")) {
+      // 활성 미션 중 케이 응답은 finalizeServerTurn(서버 RPC)이 단일 persistence owner다.
+      // TTS 재생(sayText/speak)으로 발생한 onTurnComplete가 /api/chat/messages를 호출해
+      // K 응답을 중복 저장하지 않도록 로컬 스크롤백에만 추가한다.
+      pastMessagesRef.current = [
+        ...pastMessagesRef.current,
+        { role: enrichedTurn.role, text: enrichedTurn.text, id: enrichedTurn.id, displaySequence: enrichedTurn.displaySequence },
+      ];
     } else if (!isGreetingChildTurn) {
       saveMessage(enrichedTurn.role, enrichedTurn.text, enrichedTurn.displaySequence, enrichedTurn.id, isClarification);
     }

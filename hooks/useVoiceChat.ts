@@ -232,6 +232,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     respondingRef.current = false;
     setIsResponding(false);
     lastAsrConfidenceRef.current = undefined;
+    inFlightRespondTurnsRef.current.clear();
+    completedRespondTurnsRef.current.clear();
   }
 
   const stopSession = useCallback(() => {
@@ -433,9 +435,25 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
 
 
 
+  const inFlightRespondTurnsRef = useRef<Set<string>>(new Set());
+  const completedRespondTurnsRef = useRef<Set<string>>(new Set());
+
   /** 자유대화용 — 현재까지의 대화 기록으로 Gemini 텍스트 응답을 생성해 말풍선에만 표시.
    *  케이는 자유대화에서 음성으로 말하지 않는다 — TTS 호출 없음(텍스트 전용). */
-  const respondText = useCallback(async () => {
+  const respondText = useCallback(async (targetChildTurnId?: string) => {
+    const lastChild = [...transcriptRef.current].reverse().find((t) => t.role === "child");
+    const childTurnId = targetChildTurnId || lastChild?.id;
+
+    if (childTurnId) {
+      if (inFlightRespondTurnsRef.current.has(childTurnId)) {
+        return;
+      }
+      if (completedRespondTurnsRef.current.has(childTurnId)) {
+        return;
+      }
+      inFlightRespondTurnsRef.current.add(childTurnId);
+    }
+
     respondingRef.current = true;
     setIsResponding(true);
     setCaptureBlocked(true);
@@ -448,17 +466,25 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
           sessionId: options?.getSessionId?.() ?? null,
           asrConfidence: lastAsrConfidenceRef.current,
           appMode: inputModeRef.current,
+          childTurnId,
         }),
       });
       if (!res.ok) return;
       const data = await res.json();
       const text = typeof data.text === "string" ? data.text.trim() : "";
       if (!text) return;
-      appendTurn({ role: "k", text });
-      onTurnCompleteRef.current?.({ role: "k", text });
+      if (childTurnId) {
+        completedRespondTurnsRef.current.add(childTurnId);
+      }
+      const kTurnId = childTurnId ? `${childTurnId}:k` : nextTurnId();
+      appendTurn({ role: "k", text, id: kTurnId });
+      onTurnCompleteRef.current?.({ role: "k", text, id: kTurnId });
     } catch {
       // 무응답 시 침묵 — 재시도는 다음 아이 발화에서
     } finally {
+      if (childTurnId) {
+        inFlightRespondTurnsRef.current.delete(childTurnId);
+      }
       respondingRef.current = false;
       setIsResponding(false);
       setCaptureBlocked(speakingRef.current);

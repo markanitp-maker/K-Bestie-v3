@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { filterRecentHistory } from "./index";
+import { filterRecentHistory, respond, checkSafetyPreflight } from "./index";
 import type { SessionTurn } from "./memory/sameSession";
 
 test("MISSION 첫 턴: currentUtteranceAlreadyInSession=true 일 때 sameSession의 유일한 아이 턴 제거", () => {
