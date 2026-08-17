@@ -4,6 +4,7 @@ import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 import { getAppEventEnvironment } from "@/lib/events/environment";
 import { FREECHAT_DAILY_REWARD_TYPE } from "@/lib/freechat/dailyEngagementReward";
 import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
+import { executeSkillEnd } from "@/lib/k-conversation/play/playEnd";
 
 export const runtime = "nodejs";
 
@@ -109,6 +110,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Database error" }, { status: 500 });
       }
       persistedEndedAt = concurrentSession.ended_at;
+    }
+
+    // 자유대화 종료 시 활성 Play Skill 및 Pending Proposal 자동 정리 (§3-13)
+    // ended_at이 새로 설정된 경우에만 호출하며, 실패가 pause 응답을 막지 않도록 격리
+    try {
+      await executeSkillEnd({
+        db: service,
+        childId: accessibleSession.child_id,
+        chatSessionId: sessionId,
+        reason: "CHAT_SESSION_ENDED",
+      });
+    } catch (cleanupErr) {
+      console.error(
+        "[chat/pause] Failed to cleanup active play skill on session completion:",
+        cleanupErr
+      );
     }
   }
 

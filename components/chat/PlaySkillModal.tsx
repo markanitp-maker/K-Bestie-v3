@@ -21,6 +21,7 @@ export function PlaySkillModal({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectingSkillId, setSelectingSkillId] = useState<string | null>(null);
+  const [isEnding, setIsEnding] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
 
   const fetchCatalog = useCallback(async () => {
@@ -47,13 +48,14 @@ export function PlaySkillModal({
   useEffect(() => {
     if (isOpen) {
       setSelectingSkillId(null);
+      setIsEnding(false);
       setError(null);
       void fetchCatalog();
     }
   }, [isOpen, fetchCatalog]);
 
   const handleSelectSkill = async (skill: PlaySkillDto) => {
-    if (!skill.available || selectingSkillId) return;
+    if (!skill.available || selectingSkillId || isEnding) return;
 
     if (!chatSessionId) {
       setError("대화 세션이 아직 준비되지 않았어요. 잠시 후 다시 시도해주세요.");
@@ -88,6 +90,45 @@ export function PlaySkillModal({
       setError(err instanceof Error ? err.message : "놀이 시작 중 오류가 발생했어요.");
     } finally {
       setSelectingSkillId(null);
+    }
+  };
+
+  const handleEndSkill = async () => {
+    if (isEnding || selectingSkillId) return;
+
+    if (!chatSessionId) {
+      setError("대화 세션이 아직 준비되지 않았어요. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+
+    setIsEnding(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/play/skill/end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatSessionId,
+        }),
+      });
+
+      const data: { ok: boolean; ended?: boolean; error?: string } = await res
+        .json()
+        .catch(() => ({ ok: false, error: "응답 처리 오류" }));
+
+      if (res.ok && data.ok) {
+        // 성공 시 모달 닫고 자유대화 복귀 (§3-9)
+        onClose();
+      } else {
+        // 실패 시 모달을 닫지 않고 오류 표시 (§3-9)
+        setError(data.error || "놀이를 종료하지 못했어요. 다시 시도해주세요.");
+      }
+    } catch (err) {
+      console.error("[PlaySkillModal] endSkill error:", err);
+      setError(err instanceof Error ? err.message : "놀이 종료 중 오류가 발생했어요.");
+    } finally {
+      setIsEnding(false);
     }
   };
 
@@ -214,6 +255,32 @@ export function PlaySkillModal({
                   </button>
                 );
               })}
+            </div>
+          )}
+
+          {/* Active Play End Section (§3-9: 활성 놀이가 있을 때만 표시, 목록과 명확히 구분) */}
+          {activeSkillId && !isLoading && (
+            <div className="pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                disabled={isEnding || !!selectingSkillId}
+                onClick={handleEndSkill}
+                className="w-full py-2.5 px-4 rounded-2xl bg-red-50/80 hover:bg-red-100/80 active:bg-red-200/80 border border-red-200/70 text-red-600 font-bold text-[clamp(13px,calc(var(--frame-w,100vw)*0.035),14px)] flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs active:scale-[0.98]"
+              >
+                {isEnding ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                    <span>놀이를 마치는 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="4" y="4" width="16" height="16" rx="2" />
+                    </svg>
+                    <span>지금 하는 놀이 그만하기</span>
+                  </>
+                )}
+              </button>
             </div>
           )}
         </div>
