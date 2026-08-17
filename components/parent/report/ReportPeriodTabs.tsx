@@ -12,7 +12,7 @@ const PERIOD_TABS: Array<{ period: ReportPeriod; label: string; href: string }> 
 ];
 
 export const ReportPeriodTabs = ({ activePeriod }: ReportPeriodTabsProps) => (
-  <nav className="mx-auto w-full max-w-[var(--max-width-app)] px-4 pb-2 pt-4" aria-label="리포트 기간">
+  <nav className="mx-auto w-full max-w-[var(--content-max-width,var(--max-width-app,480px))] px-4 pb-2 pt-4" aria-label="리포트 기간">
     <div className="grid h-16 grid-cols-2 overflow-hidden rounded-[18px] border border-[var(--color-k-border)] bg-white p-1 shadow-sm">
       {PERIOD_TABS.map((tab) => {
         const isActive = tab.period === activePeriod;

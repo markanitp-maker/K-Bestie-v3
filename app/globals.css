@@ -21,6 +21,7 @@
   --max-width-app: 480px;
   --max-width-smartphone: 430px;
   --max-width-tablet: 768px;
+  --max-width-tablet-wide: 840px;
   --max-width-demo-frame: 430px;
   --radius-base: 1rem;
   --radius-sm: 0.5rem;
@@ -163,6 +164,15 @@
   :root {
     --content-max-width: var(--max-width-tablet, 768px);
     --content-max-width-wide: var(--max-width-tablet, 768px);
+  }
+}
+
+/* 073-1: 태블릿 가로(1024~1100px)에서 대화 UI의 과도한 좌우 여백을 줄이기 위해 wide 상한 확장.
+   840px는 최종값이 아니라 QA 검증으로 결정할 시작값이며, 1열 세로 대화 UI의 가독성 상한을
+   넘지 않도록 잡은 값이다. 부모용(--content-max-width)은 변경하지 않는다. */
+@media (min-width: 1024px) {
+  :root {
+    --content-max-width-wide: var(--max-width-tablet-wide, 840px);
   }
 }
 

@@ -228,7 +228,7 @@ export function ReportHistoryCalendarSheet({
 
       <div
         ref={sheetRef}
-        className="relative bg-white w-full rounded-t-3xl pt-6 pb-10 px-5 flex flex-col shadow-2xl animate-slide-up max-w-[520px] mx-auto h-[60dvh]"
+        className="relative bg-white w-full rounded-t-3xl pt-6 pb-10 px-5 flex flex-col shadow-2xl animate-slide-up max-w-[var(--content-max-width,520px)] mx-auto h-[60dvh]"
         role="document"
       >
         {/* 헤더 */}

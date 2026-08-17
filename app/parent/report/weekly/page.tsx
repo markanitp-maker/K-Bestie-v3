@@ -85,7 +85,7 @@ export default function ParentWeeklyReportPage() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-8">
-          <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col">
+          <div className="w-full max-w-[var(--content-max-width,var(--max-width-app,480px))] mx-auto flex flex-col">
           {loading ? (
             <div className="flex flex-col gap-3">
               <SkeletonBox className="h-44 rounded-[24px]" />

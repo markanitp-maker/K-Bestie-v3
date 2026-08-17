@@ -122,7 +122,7 @@ export default function ParentReportPage() {
     if (loading) {
       return (
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
-          <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col gap-3">
+          <div className="w-full max-w-[var(--content-max-width,var(--max-width-app,480px))] mx-auto flex flex-col gap-3">
             <SkeletonBox className="h-44 rounded-[24px]" />
             <div className="py-2" />
             {Array.from({ length: 3 }).map((_, i) => (
@@ -136,7 +136,7 @@ export default function ParentReportPage() {
     if (error) {
       return (
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
-          <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col items-center justify-center">
+          <div className="w-full max-w-[var(--content-max-width,var(--max-width-app,480px))] mx-auto flex flex-col items-center justify-center">
             <p className="text-sm font-semibold text-gray-600 mb-2">일간 리포트를 불러오지 못했어요.</p>
             <p className="text-xs text-gray-400 mb-4">잠시 후 다시 시도해 주세요.</p>
             <button onClick={() => window.location.reload()} className="px-4 py-2 bg-gray-200 rounded-full text-xs font-bold text-gray-600 active:bg-gray-300">
@@ -153,7 +153,7 @@ export default function ParentReportPage() {
 
     return (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-8">
-        <div className="w-full max-w-[var(--max-width-app)] mx-auto flex flex-col">
+        <div className="w-full max-w-[var(--content-max-width,var(--max-width-app,480px))] mx-auto flex flex-col">
           <section className="mb-6 rounded-[24px] border border-gray-200 bg-white p-5 shadow-sm sm:p-6" aria-label="이번 주 리포트 요약">
             <h2 className="mb-6 text-xl font-extrabold text-[var(--color-k-navy)]">이번 주 리포트</h2>
             <div className="grid grid-cols-7 gap-1">
