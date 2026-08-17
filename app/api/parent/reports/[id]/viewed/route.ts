@@ -32,7 +32,7 @@ export async function POST(
   // 레거시 report_views RLS가 유효한 부모도 거부할 수 있다. 위에서 자녀 접근권한을
   // 명시적으로 검증한 뒤 service role로 열람 기록만 남긴다.
   const service = createServiceClient();
-  const { error } = await service.from("report_views").insert({ report_id: id });
+  const { error } = await service.from("report_views").insert({ report_id: id, viewer_id: user.id });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   try {

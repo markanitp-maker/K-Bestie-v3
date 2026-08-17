@@ -23,7 +23,7 @@ type PagePayload<T> = {
   totalPages: number;
   options: { grades?: string[]; families: FamilyOption[] };
   statusSummary: Record<string, number>;
-  meta: { reportViewIdentity?: "family"; reportViewIdentityReason?: string };
+  meta: { reportViewIdentity?: "family" | "individual"; reportViewIdentityReason?: string };
 };
 
 const CHILD_STATUS_LABELS: Record<ChildUsageStatus, string> = {

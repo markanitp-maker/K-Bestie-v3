@@ -7,6 +7,36 @@ import { offsetCalendarDate, toKstCalendarDate, type AnalyticsKstFilters } from 
 export const INACTIVE_RISK_DAYS = 3;
 export const LOW_USAGE_ACTIVE_DAYS = 1;
 export const LOW_PARENT_REPORT_RATE = 50;
+export const REPORT_VIEWER_TRACKING_START_DATE = "2026-08-18";
+
+export interface ParentReportViewSummary {
+  viewedCount: number;
+  latestViewedAt: string | null;
+}
+
+export function aggregateParentReportViews(
+  reportViews: Array<{ report_id: string; viewed_at: string; viewer_id?: string | null }>,
+  parentId: string,
+  familyReportIds?: Set<string>,
+): ParentReportViewSummary {
+  const viewedReportIds = new Set<string>();
+  let latestViewedAt: string | null = null;
+
+  for (const view of reportViews) {
+    if (!view.viewer_id || view.viewer_id !== parentId) continue;
+    if (familyReportIds && !familyReportIds.has(view.report_id)) continue;
+
+    viewedReportIds.add(view.report_id);
+    if (!latestViewedAt || Date.parse(view.viewed_at) > Date.parse(latestViewedAt)) {
+      latestViewedAt = view.viewed_at;
+    }
+  }
+
+  return {
+    viewedCount: viewedReportIds.size,
+    latestViewedAt,
+  };
+}
 
 export type ChildUsageStatus = "initial" | "healthy" | "low_usage" | "churn_risk" | "parent_unread";
 export type ParentUsageStatus = "active" | "low_engagement" | "report_unread";
@@ -172,7 +202,7 @@ interface FamilyMemberRow { id: string; family_id: string; user_id: string | nul
 interface ParentRow { id: string; name: string | null; email: string | null }
 interface MemberAccountRow { id: string; username: string }
 interface ReportRow { id: string; child_id: string; created_at: string }
-interface ReportViewRow { report_id: string; viewed_at: string }
+interface ReportViewRow { report_id: string; viewed_at: string; viewer_id?: string | null }
 interface ParentQuestionRow {
   id: string;
   child_id: string;
@@ -205,10 +235,17 @@ function isDelivered(question: ParentQuestionRow): boolean {
   return Number(question.delivered_count ?? 0) > 0 || Boolean(question.last_delivered_at);
 }
 
+export interface RetentionPeopleAnalyticsPayload {
+  children: ChildAnalyticsRow[];
+  parents: ParentAnalyticsRow[];
+  reportViewIdentity: "individual" | "family";
+  reportViewIdentityReason?: string | null;
+}
+
 export async function loadRetentionPeopleAnalytics(
   service: SupabaseClient,
   filters: AnalyticsKstFilters,
-): Promise<{ children: ChildAnalyticsRow[]; parents: ParentAnalyticsRow[]; reportViewIdentity: "family" }> {
+): Promise<RetentionPeopleAnalyticsPayload> {
   const identity = await loadAnalyticsIdentity(service, filters.internalTest, filters.channel);
   const childIds = [...identity.childIds];
   const parentIds = [...identity.parentIds];
@@ -273,7 +310,7 @@ export async function loadRetentionPeopleAnalytics(
 
   const reportById = new Map(reports.map((row) => [row.id, row]));
   const reportViews = reports.length === 0 ? [] : await fetchInChunks<ReportViewRow>(async (chunk, from, to) => await service
-    .from("report_views").select("report_id,viewed_at").in("report_id", chunk).order("viewed_at").range(from, to), [...reportById.keys()]);
+    .from("report_views").select("report_id,viewed_at,viewer_id").in("report_id", chunk).order("viewed_at").range(from, to), [...reportById.keys()]);
   const viewedReportIds = new Set(reportViews.map((row) => row.report_id));
   const reportsByChild = new Map<string, ReportRow[]>();
   for (const report of reports) {
@@ -358,23 +395,16 @@ export async function loadRetentionPeopleAnalytics(
     rows.push(child);
     childrenByFamily.set(child.familyId, rows);
   }
-  const viewsByReport = new Map<string, string[]>();
-  for (const view of reportViews) {
-    const rows = viewsByReport.get(view.report_id) ?? [];
-    rows.push(view.viewed_at);
-    viewsByReport.set(view.report_id, rows);
-  }
-
+  const hasLegacyNullViews = reportViews.some((view) => !view.viewer_id);
   const parents = parentIds.map((parentId): ParentAnalyticsRow => {
     const familyId = identity.parentFamily.get(parentId) as string;
     const familyChildren = childrenByFamily.get(familyId) ?? [];
     const familyReports = familyChildren.flatMap((child) => reportsByChild.get(child.childId) ?? []);
-    const viewed = familyReports.filter((report) => viewedReportIds.has(report.id)).length;
-    const latestView = familyReports.flatMap((report) => viewsByReport.get(report.id) ?? [])
-      .reduce<string | null>((current, value) => latest(current, value), null);
+    const familyReportIdSet = new Set(familyReports.map((report) => report.id));
+    const { viewedCount, latestViewedAt } = aggregateParentReportViews(reportViews, parentId, familyReportIdSet);
     const parentQuestions = questionsByParent.get(parentId) ?? [];
     const generated = familyReports.length;
-    const reportViewRate = percentage(viewed, generated);
+    const reportViewRate = percentage(viewedCount, generated);
     const profile = parentProfileById.get(parentId);
     return {
       parentId,
@@ -390,14 +420,21 @@ export async function loadRetentionPeopleAnalytics(
         statuses: child.statuses,
       })),
       reportGeneratedCount: generated,
-      reportViewedCount: viewed,
+      reportViewedCount: viewedCount,
       reportViewRate,
-      latestReportViewedAt: latestView,
+      latestReportViewedAt: latestViewedAt,
       parentQuestionCount: parentQuestions.length,
       parentQuestionDeliveredCount: parentQuestions.filter(isDelivered).length,
-      statuses: parentStatuses({ reportGeneratedCount: generated, reportViewedCount: viewed, reportViewRate }),
+      statuses: parentStatuses({ reportGeneratedCount: generated, reportViewedCount: viewedCount, reportViewRate }),
     };
   });
 
-  return { children, parents, reportViewIdentity: "family" };
+  return {
+    children,
+    parents,
+    reportViewIdentity: "individual",
+    reportViewIdentityReason: hasLegacyNullViews
+      ? `부모별 열람 추적은 ${REPORT_VIEWER_TRACKING_START_DATE}부터 제공됩니다. 그 이전 열람은 가족 단위 기록만 존재합니다.`
+      : null,
+  };
 }

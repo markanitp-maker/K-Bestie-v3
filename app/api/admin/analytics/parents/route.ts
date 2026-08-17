@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
       meta: {
         reportViewSource: "report_views",
         reportViewIdentity: payload.reportViewIdentity,
-        reportViewIdentityReason: "report_views에 viewer_id가 없어 부모 열람은 가족 단위로 표시합니다.",
+        reportViewIdentityReason: payload.reportViewIdentityReason ?? undefined,
         generatedAt: new Date().toISOString(),
       },
     }, { headers: { "Cache-Control": "private, max-age=30" } });
