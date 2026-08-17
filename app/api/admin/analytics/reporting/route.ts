@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { getTestFamilyIds } from "@/lib/admin/retentionFilter";
 import { rate, resolveAnalyticsFilters, type AnalyticsScope, type InternalTestMode } from "@/lib/admin/analytics";
-import { getOffsetDateStr } from "@/lib/analytics/kstDate";
+import { buildBehaviorFunnel, buildPipelineFunnel } from "@/lib/admin/analyticsFunnel";
 
 export const runtime = "nodejs";
 
@@ -93,8 +93,20 @@ export async function GET(req: NextRequest) {
     service.from("corrected_daily_conversations_v3").select("child_id,business_date,correction_status").gte("business_date", filters.from).lte("business_date", filters.to),
     service.from("pipeline_jobs").select("child_id,business_date,job_type,status,last_error_code,last_error_summary,updated_at").gte("business_date", filters.from).lte("business_date", filters.to),
     service.from("daily_reports").select("id,child_id,business_date,created_at").gte("business_date", filters.from).lte("business_date", filters.to).is("deleted_at", null),
+    service.from("mission_progress").select("child_id,business_date,round_type,status,updated_at").gte("business_date", filters.from).lte("business_date", filters.to),
+    service.from("report_views").select("report_id,viewed_at,viewer_id"),
   ]);
-  const labels = ["child_profiles", "family_members", "behavior_events", "raw_daily_conversations_v3", "corrected_daily_conversations_v3", "pipeline_jobs", "daily_reports"];
+  const labels = [
+    "child_profiles",
+    "family_members",
+    "behavior_events",
+    "raw_daily_conversations_v3",
+    "corrected_daily_conversations_v3",
+    "pipeline_jobs",
+    "daily_reports",
+    "mission_progress",
+    "report_views",
+  ];
   const values: any[] = [];
   for (let index = 0; index < settled.length; index += 1) {
     const result = settled[index];
@@ -103,7 +115,7 @@ export async function GET(req: NextRequest) {
     values.push(result.value.data ?? []);
   }
 
-  const [allChildren, allParents, allEvents, allRaw, allCorrected, allJobs, allReports] = values;
+  const [allChildren, allParents, allEvents, allRaw, allCorrected, allJobs, allReports, allMissionProgress, allReportViews] = values;
   const children = allChildren.filter((child: any) => matchesTestMode(child.family_id, filters.internalTest));
   const childFamily = new Map<string, string | null>(children.map((child: any) => [child.id, child.family_id]));
   const childName = new Map<string, string>(children.map((child: any) => [child.id, child.name || "이름 미등록"]));
@@ -119,6 +131,10 @@ export async function GET(req: NextRequest) {
   const corrected = allCorrected.filter((row: any) => validChildIds.has(row.child_id));
   const jobs = allJobs.filter((row: any) => validChildIds.has(row.child_id));
   const reports = allReports.filter((row: any) => validChildIds.has(row.child_id));
+  const missionProgress = allMissionProgress.filter((row: any) => validChildIds.has(row.child_id));
+  const generatedReportIds = new Set<string>(reports.map((row: any) => String(row.id)));
+  const reportViews = allReportViews.filter((row: any) => generatedReportIds.has(String(row.report_id)));
+  const viewedReportIds = new Set<string>(reportViews.map((row: any) => String(row.report_id)));
 
   const rawByKey = new Map<string, any>(raw.map((row: any) => [dateKey(row.child_id, row.business_date), row] as [string, any]));
   const correctedByKey = new Map<string, any>(corrected.map((row: any) => [dateKey(row.child_id, row.business_date), row] as [string, any]));
@@ -166,14 +182,14 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => b.businessDate.localeCompare(a.businessDate) || a.name.localeCompare(b.name, "ko"));
 
   const loginEvents = ["parent_login", "child_login"];
-  const missionStarts = events.filter((event: any) => event.event_name === "mission_start");
-  const missionCompletes = events.filter((event: any) => event.event_name === "mission_complete");
-  const socialActivity = events.filter((event: any) => ["freechat_start", "play_start"].includes(event.event_name));
-  const pipelineKeys = [...allTargets];
-  const correctedSuccess = pipelineKeys.filter((key) => stageStatus(key, "context_correction") === "success").length;
-  const memorySuccess = pipelineKeys.filter((key) => stageStatus(key, "memory_batch") === "success").length;
-  const reportSuccess = pipelineKeys.filter((key) => stageStatus(key, "daily_report") === "success").length;
-  const reportViewEvents = events.filter((event: any) => event.event_name === "parent_report_view");
+  const missionStartChildIds = new Set<string>(missionProgress.map((row: any) => String(row.child_id)));
+  const missionCompletedChildIds = new Set<string>(
+    missionProgress.filter((row: any) => row.status === "COMPLETED").map((row: any) => String(row.child_id))
+  );
+  const socialEvents = events.filter((event: any) => ["freechat_start", "play_start"].includes(event.event_name));
+  const socialChildIds = new Set<string>(
+    socialEvents.map((event: any) => String(event.child_id)).filter((id: string) => validChildIds.has(id))
+  );
 
   const eligibleUnits = filters.scope === "family"
     ? validFamilyIds.size
@@ -182,31 +198,58 @@ export async function GET(req: NextRequest) {
       : filters.scope === "child"
         ? validChildIds.size
         : parentFamily.size + validChildIds.size;
-  const funnel = [
-    { key: "access", label: "접속", target: eligibleUnits, completed: countUnits(events, loginEvents, filters.scope, childFamily, parentFamily) },
-    { key: "mission_start", label: "미션 시작", target: validChildIds.size, completed: countUnits(missionStarts, ["mission_start"], filters.scope, childFamily, parentFamily) },
-    { key: "mission_complete", label: "미션 완료", target: missionStarts.length, completed: missionCompletes.length },
-    { key: "social", label: "자유대화/놀이 활동", target: validChildIds.size, completed: new Set(socialActivity.map((event: any) => event.child_id).filter(Boolean)).size },
-    { key: "collection", label: "대화 수집", target: pipelineKeys.length, completed: rawByKey.size },
-    { key: "correction", label: "보정 완료", target: rawByKey.size, completed: correctedSuccess },
-    { key: "memory", label: "Memory Batch 완료", target: correctedSuccess, completed: memorySuccess },
-    { key: "report", label: "리포트 생성", target: Math.max(memorySuccess, rawByKey.size), completed: reportSuccess },
-    { key: "report_view", label: "부모 리포트 확인", target: reportSuccess, completed: Math.min(reportSuccess, reportViewEvents.length) },
-  ].map((row) => ({ ...row, failed: Math.max(0, row.target - row.completed), completionRate: rate(row.completed, row.target) }));
 
-  const reportTargetUsers = new Set(raw.map((row: any) => row.child_id));
+  const behaviorFunnel = buildBehaviorFunnel({
+    eligibleUnits,
+    loginUnits: countUnits(events, loginEvents, filters.scope, childFamily, parentFamily),
+    totalChildren: validChildIds.size,
+    missionStartChildIds,
+    missionCompletedChildIds,
+    socialChildIds,
+  });
+
+  const pipelineKeys = [...allTargets];
+  const correctionSuccessKeys = new Set<string>(
+    pipelineKeys.filter((key) => stageStatus(key, "context_correction") === "success")
+  );
+  const memorySuccessKeys = new Set<string>(
+    pipelineKeys.filter((key) => stageStatus(key, "memory_batch") === "success")
+  );
+  const reportSuccessKeys = new Set<string>(
+    pipelineKeys.filter((key) => stageStatus(key, "daily_report") === "success")
+  );
+
+  const pipelineFunnel = buildPipelineFunnel({
+    allTargetKeys: allTargets,
+    rawKeys: new Set(rawByKey.keys()),
+    correctionSuccessKeys,
+    memorySuccessKeys,
+    reportSuccessKeys,
+    generatedReportIds,
+    viewedReportIds,
+  });
+
+  const funnel = pipelineFunnel;
+
+  const reportTargetUsers = new Set([...raw.map((row: any) => row.child_id), ...reports.map((row: any) => row.child_id)]);
   const reportGeneratedUsers = new Set(reports.map((row: any) => row.child_id));
-  const reportViewingParents = new Set(reportViewEvents.map((event: any) => event.actor_id).filter(Boolean));
+  const reportViewingParents = new Set(
+    reportViews
+      .filter((row: any) => row.viewer_id && parentFamily.has(String(row.viewer_id)))
+      .map((row: any) => String(row.viewer_id))
+  );
 
   return NextResponse.json({
     filters,
     funnel,
+    behaviorFunnel,
+    pipelineFunnel,
     quality,
     reportDetails,
     kpis: {
-      missionStarts: missionStarts.length,
-      missionCompletes: missionCompletes.length,
-      missionCompletionRate: rate(missionCompletes.length, missionStarts.length),
+      missionStarts: missionStartChildIds.size,
+      missionCompletes: missionCompletedChildIds.size,
+      missionCompletionRate: rate(missionCompletedChildIds.size, missionStartChildIds.size),
       reportTargetUsers: reportTargetUsers.size,
       reportGeneratedUsers: reportGeneratedUsers.size,
       reportGenerationRate: rate(reportGeneratedUsers.size, reportTargetUsers.size),
@@ -215,8 +258,9 @@ export async function GET(req: NextRequest) {
     },
     meta: {
       timezone: "Asia/Seoul",
-      reportViewSource: "behavior_events.parent_report_view",
+      reportViewSource: "report_views",
       generatedAt: new Date().toISOString(),
     },
   }, { headers: { "Cache-Control": "private, max-age=30" } });
 }
+

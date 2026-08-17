@@ -98,6 +98,8 @@ function AdminAnalyticsContent() {
   const daily = safeArray<any>(data?.retention?.overview?.dailyTrend).map((row) => ({ ...row, totalActive: Number(row.activeParents ?? 0) + Number(row.activeChildren ?? 0) }));
   const cohorts = safeArray<any>(data?.retention?.cohort?.cohorts).slice().reverse();
   const funnel = safeArray<any>(data?.reporting?.funnel);
+  const behaviorFunnel = safeArray<any>(data?.reporting?.behaviorFunnel);
+  const pipelineFunnel = safeArray<any>(data?.reporting?.pipelineFunnel);
   const quality = safeArray<any>(data?.reporting?.quality);
   const reportByChild = new Map(safeArray<any>(data?.reporting?.reportDetails).map((row) => [row.childId, row]));
 
@@ -148,8 +150,17 @@ function AdminAnalyticsContent() {
       {analysisTab === "overview" ? (error ? <AdminErrorState error={error} onRetry={() => setReload((value) => value + 1)} /> : !data ? <div className="rounded-2xl border p-12 text-center text-[var(--admin-text-secondary)]">통합 지표를 불러오는 중입니다.</div> : <>
         <div id="kpi"><AdminKpiGrid>{kpis.map((kpi) => <button key={kpi.key} className="text-left" onClick={() => document.getElementById(kpi.key.startsWith("d") ? "retention" : kpi.key.includes("report") || kpi.key.includes("mission") ? "funnel" : "dau")?.scrollIntoView({ behavior: "smooth" })}><AdminKpiCard title={kpi.label} value={kpi.unit === "percent" ? percent(kpi.value) : (kpi.value ?? "-").toLocaleString()} description={kpi.denominator == null ? undefined : `완료 ${kpi.numerator ?? 0} / 대상 ${kpi.denominator}`} /></button>)}</AdminKpiGrid></div>
 
-        <Section id="funnel" title="행동 퍼널 / 리포트 생성 흐름" description="각 단계는 현재 기간·대상·내부 테스트 필터를 공유합니다.">
-          {data.errors?.reporting ? <AdminErrorState error={data.errors.reporting} onRetry={() => setReload((value) => value + 1)} /> : <div className="space-y-3">{funnel.map((row) => <div key={row.key} className="grid gap-2 md:grid-cols-[180px_1fr_220px] md:items-center"><strong className="text-sm">{row.label}</strong><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[var(--admin-primary)]" style={{ width: `${Math.min(100, row.completionRate ?? 0)}%` }} /></div><div className="text-sm text-[var(--admin-text-secondary)]">완료 {row.completed} / 대상 {row.target} · 실패 {row.failed} · {percent(row.completionRate)}</div></div>)}</div>}
+        <Section id="funnel" title="행동 퍼널 / 리포팅 파이프라인" description="각 단계는 현재 기간·대상·내부 테스트 필터를 공유합니다.">
+          {data.errors?.reporting ? <AdminErrorState error={data.errors.reporting} onRetry={() => setReload((value) => value + 1)} /> : <div className="space-y-6">
+            <div>
+              <h3 className="mb-3 text-sm font-bold text-[var(--admin-text-primary)]">사용자 행동 퍼널 (고유 사용자·아이 기준)</h3>
+              <div className="space-y-3">{(behaviorFunnel.length > 0 ? behaviorFunnel : funnel).map((row) => <div key={row.key} className="grid gap-2 md:grid-cols-[180px_1fr_220px] md:items-center"><strong className="text-sm">{row.label}</strong><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[var(--admin-primary)]" style={{ width: `${Math.min(100, row.completionRate ?? 0)}%` }} /></div><div className="text-sm text-[var(--admin-text-secondary)]">완료 {row.completed} / 대상 {row.target} · 실패 {row.failed} · {percent(row.completionRate)}</div></div>)}</div>
+            </div>
+            {pipelineFunnel.length > 0 && <div className="border-t border-[var(--admin-border)] pt-4">
+              <h3 className="mb-3 text-sm font-bold text-[var(--admin-text-primary)]">리포팅 파이프라인 (슬롯 기준)</h3>
+              <div className="space-y-3">{pipelineFunnel.map((row) => <div key={row.key} className="grid gap-2 md:grid-cols-[180px_1fr_220px] md:items-center"><strong className="text-sm">{row.label}</strong><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[var(--admin-primary)]" style={{ width: `${Math.min(100, row.completionRate ?? 0)}%` }} /></div><div className="text-sm text-[var(--admin-text-secondary)]">완료 {row.completed} / 대상 {row.target} · 실패 {row.failed} · {percent(row.completionRate)}</div></div>)}</div>
+            </div>}
+          </div>}
         </Section>
 
         <div className="grid gap-6 xl:grid-cols-2">
@@ -164,7 +175,6 @@ function AdminAnalyticsContent() {
         </div>
 
         <Section title="리포팅 품질 현황" description="실패 > 대기 > 성공 우선순위로 판정합니다.">
-          <div className="mb-4 flex items-center gap-2"><label className="text-sm font-bold">상태<select aria-label="리포팅 상태" value={reportStatus} onChange={(e) => setReportStatus(e.target.value)} className="ml-2 min-h-11 rounded-lg border px-3"><option value="all">전체</option><option value="success">성공</option><option value="failure">실패</option><option value="pending">대기</option></select></label><span className="text-xs text-[var(--admin-text-secondary)]">조회 원천: pipeline_jobs · raw/corrected V3 · daily_reports</span></div>
           {data.errors?.reporting ? <AdminErrorState error={data.errors.reporting} onRetry={() => setReload((value) => value + 1)} /> : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">{quality.map((row) => <div key={row.key} className="rounded-xl border p-4"><strong>{row.label}</strong><div className="mt-3 text-2xl font-black">{percent(row.successRate)}</div><div className="mt-2 text-xs text-[var(--admin-text-secondary)]">대상 {row.target} · 성공 {row.success} · 실패 {row.failure} · 대기 {row.pending}</div></div>)}</div>}
         </Section>
 
