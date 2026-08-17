@@ -37,6 +37,12 @@ export interface PlaySkillEndInput {
   reason?: string;
 }
 
+export interface ActivePlaySessionInfo {
+  id: string;
+  updatedAt?: string | null;
+  startedAt?: string | null;
+}
+
 export interface PlaySkillModule {
   id: PlaySkillId;
   /** 아이에게 말할 때 쓰는 놀이 이름 */
@@ -46,7 +52,7 @@ export interface PlaySkillModule {
   /** 아이가 이 Skill을 직접 지목했는가(예: "끝말잇기 하자"). */
   matchesDirectRequest(signals: UtteranceSignals, utterance: string): boolean;
   /** 이 아이에게 지금 활성 세션이 있는가. 없으면 null. */
-  getActiveSession(db: SupabaseClient, childId: string): Promise<{ id: string } | null>;
+  getActiveSession(db: SupabaseClient, childId: string): Promise<ActivePlaySessionInfo | null>;
   start(input: PlaySkillStartInput): Promise<PlaySkillTurnResult>;
   handleTurn(input: PlaySkillTurnInput): Promise<PlaySkillTurnResult>;
   end(input: PlaySkillEndInput): Promise<void>;

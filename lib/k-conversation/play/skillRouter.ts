@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlaySkillModule, PlaySkillTurnResult } from "./skillTypes";
 import type { UtteranceSignals } from "../utteranceSignals";
 import { PLAY_SKILL_REGISTRY, findDirectlyRequestedSkill, findSkillById } from "./skillRegistry";
+import { resolveActiveSkill } from "./activeSkillCoordinator";
 import {
   getPendingPlayProposal,
   clearPendingPlayProposal,
@@ -19,7 +20,7 @@ export interface RoutePlaySkillTurnInput {
 }
 
 /**
- * K Play Skill Router (§3-3, 007 Hard Guard).
+ * K Play Skill Router (§3-3, 007 Hard Guard, 009 Coordinator).
  *
  * Router는 게임 규칙을 전혀 알지 못하며, 오직 등록된 Skill들의 생명주기 계약
  * (getActiveSession, matchesDirectRequest, handleTurn, start, end)과
@@ -55,30 +56,12 @@ export async function routePlaySkillTurn(
     const registry = input.registry ?? PLAY_SKILL_REGISTRY;
     const pendingProposal = await getPendingPlayProposal(chatSessionId, db, childId);
 
-    // 1. 활성 Skill 확인 & Cross-game Active Guard (§3-23)
-    const activeSkills: { skill: PlaySkillModule; session: { id: string } }[] = [];
-
-    for (const skill of registry) {
-      try {
-        const session = await skill.getActiveSession(db, childId);
-        if (session) {
-          activeSkills.push({ skill, session });
-        }
-      } catch (err) {
-        console.error(
-          `[skillRouter] Failed checking active session for skill ${skill.id}:`,
-          err
-        );
-      }
-    }
-
-    if (activeSkills.length > 1) {
-      console.error(
-        `[skillRouter] Cross-game active guard: multiple active skills detected for child ${childId} (${activeSkills.map((s) => s.skill.id).join(", ")}). Proceeding with first active skill: ${activeSkills[0].skill.id}`
-      );
-    }
-
-    const activeSkill = activeSkills.length > 0 ? activeSkills[0].skill : null;
+    // 1. 활성 Skill 확인 & Single Active Skill Coordinator (§3-5, §3-6, §3-15, §3-16)
+    const activeSkillResolution = await resolveActiveSkill(db, childId, {
+      registry,
+      chatSessionId,
+    });
+    const activeSkill = activeSkillResolution.skill;
 
     // 2. 명시적 종료 / 거절 / 감정·안전 신호 확인 (Proposal 및 세션 정리)
     const isExplicitStop = Boolean(signals?.hasPlayStop || signals?.hasPlayRejection);
@@ -88,21 +71,19 @@ export async function routePlaySkillTurn(
 
     if (isExplicitStop || hasNegativeOrSafety) {
       await clearPendingPlayProposal(chatSessionId, db);
-      if (activeSkills.length > 0) {
-        for (const { skill } of activeSkills) {
-          try {
-            await skill.end({
-              db,
-              childId,
-              chatSessionId,
-              reason: isExplicitStop ? "EXPLICIT_STOP" : "SAFETY_OR_NEGATIVE_EMOTION",
-            });
-          } catch (endError) {
-            console.error(
-              `[skillRouter] Failed to end active skill ${skill.id}:`,
-              endError
-            );
-          }
+      if (activeSkill) {
+        try {
+          await activeSkill.end({
+            db,
+            childId,
+            chatSessionId,
+            reason: isExplicitStop ? "EXPLICIT_STOP" : "SAFETY_OR_NEGATIVE_EMOTION",
+          });
+        } catch (endError) {
+          console.error(
+            `[skillRouter] Failed to end active skill ${activeSkill.id}:`,
+            endError
+          );
         }
       }
       return { handled: false };
@@ -139,16 +120,12 @@ export async function routePlaySkillTurn(
         } else {
           // 요청된 Skill이 현재 활성 Skill과 다르면: 기존 활성 Skill.end() -> 요청된 Skill.start()
           try {
-            for (const { skill } of activeSkills) {
-              if (skill.id !== requestedSkill.id) {
-                await skill.end({
-                  db,
-                  childId,
-                  chatSessionId,
-                  reason: `SWITCH_TO_${requestedSkill.id}`,
-                });
-              }
-            }
+            await activeSkill.end({
+              db,
+              childId,
+              chatSessionId,
+              reason: `SWITCH_TO_${requestedSkill.id}`,
+            });
           } catch (endError) {
             console.error(
               `[skillRouter] Failed to end active skill during transition to ${requestedSkill.id}:`,

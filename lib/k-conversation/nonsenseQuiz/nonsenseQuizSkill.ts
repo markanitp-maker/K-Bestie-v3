@@ -176,11 +176,17 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
   async getActiveSession(
     db: SupabaseClient,
     childId: string
-  ): Promise<{ id: string } | null> {
+  ): Promise<{ id: string; updatedAt?: string | null; startedAt?: string | null } | null> {
     if (!db || !childId) return null;
     try {
       const session = await getActiveNonsenseSession(db, childId);
-      return session ? { id: session.id } : null;
+      return session
+        ? {
+            id: session.id,
+            updatedAt: session.updated_at,
+            startedAt: session.started_at,
+          }
+        : null;
     } catch (err) {
       console.error("[nonsenseQuizSkill] getActiveSession error:", err);
       return null;

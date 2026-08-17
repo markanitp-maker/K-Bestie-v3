@@ -28,10 +28,16 @@ export const CHOSUNG_SKILL: PlaySkillModule = {
   matchesDirectRequest(signals: UtteranceSignals, _utterance: string): boolean {
     return Boolean(signals?.hasChosungGameStart);
   },
-  async getActiveSession(db: SupabaseClient, childId: string): Promise<{ id: string } | null> {
+  async getActiveSession(db: SupabaseClient, childId: string): Promise<{ id: string; updatedAt?: string | null; startedAt?: string | null } | null> {
     if (!db || !childId) return null;
     const session = await getActiveChosungGameSession(db, childId);
-    return session ? { id: session.id } : null;
+    return session
+      ? {
+          id: session.id,
+          updatedAt: session.updated_at,
+          startedAt: session.started_at,
+        }
+      : null;
   },
   async start(input: PlaySkillStartInput): Promise<PlaySkillTurnResult> {
     const result = await runChosungTurn({
