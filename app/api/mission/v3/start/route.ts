@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireChildAccess } from "@/lib/auth/requireChildAccess";
 import {
   CONVERSATION_GOAL_COUNT,
+  TARGET_COMPLETION_COUNT,
   initializeConversationGoals,
   loadHighestPriorityParentQuestion,
   selectConversationGoalDrafts,
@@ -267,7 +268,7 @@ export async function POST(req: NextRequest) {
       business_date: operation.businessDate,
       status: "IN_PROGRESS",
       valid_answer_count: 0,
-      required_valid_count: 3,
+      required_valid_count: TARGET_COMPLETION_COUNT,
       question_ids: questionIds,
       question_states: {},
       round_type: "daily_single",

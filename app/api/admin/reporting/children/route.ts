@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/requireAdmin";
 import { isRealCalendarDate } from "@/lib/admin/reportingDateValidation";
+import {
+  countSatisfiedGoals,
+  getCompletionThreshold,
+  type ConversationGoal,
+} from "@/lib/mission-v3/goalEngine";
 
 export const runtime = "nodejs";
 
@@ -35,6 +40,11 @@ type MissionProgressRow = {
   status: string | null;
   valid_answer_count: number | null;
   required_valid_count: number | null;
+};
+
+type ConversationGoalRow = {
+  mission_session_id: string;
+  status: string;
 };
 
 type ChatMessageRow = {
@@ -245,8 +255,10 @@ export async function GET(req: NextRequest) {
       result.status === "fulfilled" ? result.value : []
     ) as [MissionProgressRow[], RawConversationRow[], Record<string, unknown>[], PipelineJobRow[]];
     const rawConversationIds = rawConversations.map((conversation) => conversation.id);
+    const v3ProgressRows = progressRows.filter((progress) => progress.round_type === "daily_single");
+    const v3SessionIds = Array.from(new Set(v3ProgressRows.map((progress) => progress.session_id).filter(Boolean)));
 
-    const detailResults = await Promise.allSettled([
+    const [messagesResult, rawMessagesResult, goalsResult] = await Promise.allSettled([
       fetchInChunks<ChatMessageRow>(
         missionSessionIds,
         (chunk, rangeFrom, rangeTo) => db
@@ -267,16 +279,39 @@ export async function GET(req: NextRequest) {
           .range(rangeFrom, rangeTo),
         "raw_daily_conversation_messages_v3"
       ),
+      fetchInChunks<ConversationGoalRow>(
+        v3SessionIds,
+        (chunk, rangeFrom, rangeTo) => db
+          .from("conversation_goals")
+          .select("mission_session_id, status")
+          .in("mission_session_id", chunk)
+          .order("mission_session_id")
+          .range(rangeFrom, rangeTo),
+        "conversation_goals"
+      ),
     ]);
 
-    if (detailResults.some((result) => result.status === "rejected")) {
-      console.error("[admin/reporting/children] detail query rejected", detailResults);
+    if (messagesResult.status === "rejected" || rawMessagesResult.status === "rejected") {
+      console.error("[admin/reporting/children] detail query rejected", { messagesResult, rawMessagesResult });
       return NextResponse.json({ error: "관리자 리포트 상세 데이터 조회 실패" }, { status: 500 });
     }
 
-    const [messages, rawMessages] = detailResults.map((result) =>
-      result.status === "fulfilled" ? result.value : []
-    ) as [ChatMessageRow[], RawMessageRow[]];
+    const messages = messagesResult.status === "fulfilled" ? messagesResult.value : [];
+    const rawMessages = rawMessagesResult.status === "fulfilled" ? rawMessagesResult.value : [];
+
+    let conversationGoalRows: ConversationGoalRow[] = [];
+    if (goalsResult.status === "fulfilled") {
+      conversationGoalRows = goalsResult.value;
+    } else {
+      console.error("[admin/reporting/children] conversation_goals 조회 실패, V2 계산식으로 대체:", goalsResult.reason);
+    }
+
+    const goalsBySession = new Map<string, ConversationGoalRow[]>();
+    for (const goal of conversationGoalRows) {
+      const sessionGoals = goalsBySession.get(goal.mission_session_id) ?? [];
+      sessionGoals.push(goal);
+      goalsBySession.set(goal.mission_session_id, sessionGoals);
+    }
 
     const sessionsByChild = new Map<string, ChatSessionRow[]>();
     const sessionsById = new Map<string, ChatSessionRow>();
@@ -295,15 +330,50 @@ export async function GET(req: NextRequest) {
     for (const progress of progressRows) {
       const phase = phaseForRoundType(progress.round_type) ?? phaseForSession(sessionsById.get(progress.session_id));
       if (!phase) continue;
-      const targetTurns = progress.required_valid_count && progress.required_valid_count > 0
-        ? progress.required_valid_count
-        : MISSION_TARGET_TURNS;
-      const rawValidTurns = Math.max(0, progress.valid_answer_count ?? 0);
-      const candidate = {
-        validTurns: Math.min(rawValidTurns, targetTurns),
-        targetTurns,
-        completed: progress.status === "COMPLETED" || rawValidTurns >= targetTurns,
+
+      let candidate: {
+        validTurns: number;
+        targetTurns: number;
+        completed: boolean;
       };
+
+      if (progress.round_type === "daily_single") {
+        const sessionGoals = goalsBySession.get(progress.session_id);
+        if (sessionGoals && sessionGoals.length > 0) {
+          const goals = sessionGoals as unknown as ConversationGoal[];
+          const targetTurns = getCompletionThreshold(goals);
+          const rawValidTurns = countSatisfiedGoals(goals);
+          candidate = {
+            validTurns: Math.min(rawValidTurns, targetTurns),
+            targetTurns,
+            completed: progress.status === "COMPLETED",
+          };
+        } else {
+          // Fail-safe: 조회 실패하거나 goals가 없으면 기존 V2 계산식으로 fallback
+          console.error(`[admin/reporting/children] V3 session(${progress.session_id}) goals 부재/조회실패 - V2 계산식으로 fallback`);
+          const targetTurns = progress.required_valid_count && progress.required_valid_count > 0
+            ? progress.required_valid_count
+            : MISSION_TARGET_TURNS;
+          const rawValidTurns = Math.max(0, progress.valid_answer_count ?? 0);
+          candidate = {
+            validTurns: Math.min(rawValidTurns, targetTurns),
+            targetTurns,
+            completed: progress.status === "COMPLETED" || rawValidTurns >= targetTurns,
+          };
+        }
+      } else {
+        // V2 (round1_day, round2_night 등): 기존 로직 유지
+        const targetTurns = progress.required_valid_count && progress.required_valid_count > 0
+          ? progress.required_valid_count
+          : MISSION_TARGET_TURNS;
+        const rawValidTurns = Math.max(0, progress.valid_answer_count ?? 0);
+        candidate = {
+          validTurns: Math.min(rawValidTurns, targetTurns),
+          targetTurns,
+          completed: progress.status === "COMPLETED" || rawValidTurns >= targetTurns,
+        };
+      }
+
       const key = `${progress.child_id}:${phase}`;
       const current = representativeProgress.get(key);
       if (
