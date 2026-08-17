@@ -99,18 +99,28 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
     ].join("\n");
   }
 
-  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const y = nowKst.getUTCFullYear();
-  const m = nowKst.getUTCMonth() + 1;
-  const d = nowKst.getUTCDate();
-  const weekdayKo = ["일", "월", "화", "수", "목", "금", "토"][nowKst.getUTCDay()];
-  const todayFragment = [
-    "[오늘]",
-    `- 오늘은 ${y}년 ${m}월 ${d}일 ${weekdayKo}요일이야(한국 시간).`,
-    "- 아이가 날짜·요일을 물었을 때만 이 값으로 답해.",
-    "- 아이가 묻지 않았으면 날짜를 먼저 꺼내지 마.",
-    "- 절대 다른 날짜를 지어내지 마.",
-  ].join("\n");
+  // 날짜는 **아이가 물었을 때만** 프롬프트에 넣는다.
+  //
+  // 처음에는 항상 넣고 "물었을 때만 답해"라고 지시했다. 지시는 안 먹혔다 —
+  // 2026-08-17 Dev 라이브에서 10턴 중 8턴이 "오늘은 2026년 8월 17일 월요일이야!"로
+  // 시작했다. 아이는 날짜를 물은 적이 없다. 문구를 고쳐도 그대로였다.
+  //
+  // 지침에는 강제력이 없다(오늘만 네 번째다). 그래서 아예 주지 않는다.
+  // 안 물었으면 값이 프롬프트에 없으니 말할 수가 없다.
+  const asksAboutDate = /오늘|며칠|몇\s*일|무슨\s*요일|요일|날짜|지금\s*몇/.test(input.currentUtterance);
+  let todayFragment = "";
+  if (asksAboutDate) {
+    const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const y = nowKst.getUTCFullYear();
+    const m = nowKst.getUTCMonth() + 1;
+    const d = nowKst.getUTCDate();
+    const weekdayKo = ["일", "월", "화", "수", "목", "금", "토"][nowKst.getUTCDay()];
+    todayFragment = [
+      "[오늘]",
+      `- 오늘은 ${y}년 ${m}월 ${d}일 ${weekdayKo}요일이야(한국 시간).`,
+      "- 날짜나 요일을 답할 때는 이 값만 쓰고, 다른 날짜를 지어내지 마.",
+    ].join("\n");
+  }
 
   const lines = [
     input.corePersonaFragment,
