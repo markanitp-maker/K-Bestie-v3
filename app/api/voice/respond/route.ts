@@ -8,17 +8,14 @@ import { generateMemoryRecallResponse } from "@/lib/freechat/memoryRecallRespond
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { after } from "next/server";
-import { fetchKPeerPersonaForChild } from "@/lib/persona/kPeerPersona";
 import { createGenAIClient, FREE_CHAT_MODEL_ID } from "@/app/api/_lib/ai";
 import { getKstBusinessDate } from "@/lib/utils/kstBusinessDate";
 import {
   getActiveVacationContext,
   resolveSchoolQuestionBlockState,
-  getVacationFollowUpQuestion,
-  getSchoolStartConfirmationQuestion,
   markVacationQuestionAsked,
 } from "@/lib/plan/vacationSchoolContext";
-import { parseGrade } from "@/lib/mission/selectQuestions";
+import { resolveVacationChatInstruction } from "@/lib/freechat/vacationChatInstruction";
 import { respond as respondWithEngine, checkSafetyPreflight, type GenerateArgs } from "@/lib/k-conversation";
 
 export const runtime = "nodejs";
@@ -285,21 +282,18 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // 068: 방학/개학일 후속 질문 및 개학 확인 질문 — Engine 범위 밖의 순수 캘린더 규칙.
-    const kPeerPersona = await fetchKPeerPersonaForChild(service, session.child_id);
+    // 068/082: 방학/개학일 후속 질문 및 개학 확인 질문 — 대화를 가로채지 않고 Engine 지침(adapterInstruction)으로 전달
     const businessDate = getKstBusinessDate();
     const activeVacationContext = await getActiveVacationContext(service, session.child_id);
     const vacationBlockState = resolveSchoolQuestionBlockState(activeVacationContext, businessDate);
-    const realGrade = parseGrade(kPeerPersona.gradeLabel) ?? 4;
 
-    if (vacationBlockState.needsSchoolStartDateQuestion) {
-      const followUpQ = getVacationFollowUpQuestion(realGrade);
+    const { instruction: vacationInstruction, markAskedRequired } = resolveVacationChatInstruction(
+      childText,
+      vacationBlockState
+    );
+
+    if (markAskedRequired) {
       await markVacationQuestionAsked(service, session.child_id, businessDate);
-      return { text: followUpQ, category: "vacation_followup", flaggedForParent: false, model: "vacation_rule" };
-    } else if (vacationBlockState.needsSchoolStartConfirmationQuestion) {
-      const confirmQ = getSchoolStartConfirmationQuestion(realGrade);
-      await markVacationQuestionAsked(service, session.child_id, businessDate);
-      return { text: confirmQ, category: "vacation_confirmation", flaggedForParent: false, model: "vacation_rule" };
     }
 
     // 기억 회상(Memory Recall) 질의 — 저장된 기억 밖 내용을 지어내면 안 되는 특수 경로라
@@ -346,6 +340,7 @@ export async function POST(req: NextRequest) {
         db: service,
         ai: lazyAi,
         modelId: FREE_CHAT_MODEL_ID,
+        adapterInstruction: vacationInstruction,
       },
     );
 
