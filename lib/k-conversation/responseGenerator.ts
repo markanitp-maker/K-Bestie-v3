@@ -73,7 +73,14 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       : "지금은 미션 대화야 — 하지만 질문지를 읽는 게 아니라 친구처럼 자연스럽게 대화하는 느낌을 유지해.";
 
   let playGuardFragment = "";
-  if (input.playSkillHandled) {
+  if (input.mode === "MISSION") {
+    playGuardFragment = [
+      "[미션 중 놀이 진행 및 제안 절대 금지]",
+      "- 지금은 미션 대화다. 놀이·게임을 진행하지도, 제안하지도 마라.",
+      "- 초성게임·끝말잇기·넌센스 퀴즈의 문제·정답·힌트·규칙을 절대 말하지 마라.",
+      '- 아이가 게임이나 놀이를 하자고 하면 "미션 끝나고 하자" 정도로 짧게 답하고 미션 질문이나 대화로 자연스럽게 돌아가라.',
+    ].join("\n");
+  } else if (input.playSkillHandled) {
     playGuardFragment = [
       "[놀이 진행 규칙]",
       "- 시스템이 제공한 놀이 지침(문제 초성, 제시 단어, 정답, 힌트 등)을 반드시 그대로 사용해.",

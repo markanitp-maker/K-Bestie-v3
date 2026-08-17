@@ -275,51 +275,89 @@ export async function respond(
     }
   }
 
-  // 5-2) 활성 놀이 세션 존재 여부 확인 (Registry 순회)
+  // 5-2) 놀이 세션 확인 및 턴 처리
   let hasActivePlaySession = false;
-  if (input.childId) {
-    for (const skill of PLAY_SKILL_REGISTRY) {
-      try {
-        const session = await skill.getActiveSession(deps.db, input.childId);
-        if (session) {
-          hasActivePlaySession = true;
-          break;
-        }
-      } catch (err) {
-        console.error("[k-conversation/index] getActiveSession failed:", err);
-      }
-    }
-  }
-
-  // 6) 놀이 스킬 턴 처리 (§3-3, §3-22) — Router를 통해 활성 세션 또는 직접 요청 dispatch.
-  // Router가 handled: true면 instruction을 adapterInstruction 앞에 결합하고,
-  // handled: false면 기존 자유대화 흐름을 그대로 유지한다.
   let playSkillInstruction: string | undefined;
   let playSkillHandled = false;
-  const gradeRaw =
-    input.gradeRaw ??
-    coreCtx.peerPersona.realGrade ??
-    coreCtx.peerPersona.gradeLabel;
 
-  if (input.childId && input.sessionId) {
-    try {
-      const playTurnResult = await routePlaySkillTurn({
-        db: deps.db,
-        childId: input.childId,
-        chatSessionId: input.sessionId,
-        gradeRaw,
-        utterance: input.currentUtterance,
-        signals,
+  if (input.mode === "MISSION") {
+    // 미션 모드: 놀이 스킬 진행 완전 차단.
+    // 이전 자유대화에서 닫히지 않고 남아있는 게임 세션이 있으면 조용히 종료한다.
+    if (input.childId) {
+      // allSettled 는 reject 하지 않는다. 결과를 안 보면 종료 실패가 조용히 묻히고,
+      // 안 닫힌 세션이 다음 미션 턴에도 그대로 남는다 — 이번 사고의 원인이 정확히 그것이다.
+      const cleanup = await Promise.allSettled(
+        PLAY_SKILL_REGISTRY.map((skill) =>
+          skill.end({
+            db: deps.db,
+            childId: input.childId!,
+            chatSessionId: input.sessionId,
+            reason: "mission_mode_cleanup",
+          })
+        )
+      );
+      cleanup.forEach((r, i) => {
+        if (r.status === "rejected") {
+          console.error("[k-conversation/index] 미션 진입 시 놀이 세션 종료 실패 — 다음 턴에도 남는다", {
+            skillId: PLAY_SKILL_REGISTRY[i]?.id,
+            childId: input.childId,
+            sessionId: input.sessionId,
+            reason: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          });
+        }
       });
-
-      if (playTurnResult.handled) {
-        playSkillHandled = true;
-        if (playTurnResult.instruction) {
-          playSkillInstruction = playTurnResult.instruction;
+    }
+    if (input.sessionId) {
+      try {
+        await clearPendingPlayProposal(input.sessionId, deps.db);
+      } catch (err) {
+        console.error("[k-conversation/index] clearPendingPlayProposal error:", err);
+      }
+    }
+  } else {
+    // 자유대화 모드: 활성 놀이 세션 존재 여부 확인 (Registry 순회)
+    if (input.childId) {
+      for (const skill of PLAY_SKILL_REGISTRY) {
+        try {
+          const session = await skill.getActiveSession(deps.db, input.childId);
+          if (session) {
+            hasActivePlaySession = true;
+            break;
+          }
+        } catch (err) {
+          console.error("[k-conversation/index] getActiveSession failed:", err);
         }
       }
-    } catch (error) {
-      console.error("[k-conversation/index] play turn failed:", error);
+    }
+
+    // 6) 놀이 스킬 턴 처리 (§3-3, §3-22) — Router를 통해 활성 세션 또는 직접 요청 dispatch.
+    // Router가 handled: true면 instruction을 adapterInstruction 앞에 결합하고,
+    // handled: false면 기존 자유대화 흐름을 그대로 유지한다.
+    const gradeRaw =
+      input.gradeRaw ??
+      coreCtx.peerPersona.realGrade ??
+      coreCtx.peerPersona.gradeLabel;
+
+    if (input.childId && input.sessionId) {
+      try {
+        const playTurnResult = await routePlaySkillTurn({
+          db: deps.db,
+          childId: input.childId,
+          chatSessionId: input.sessionId,
+          gradeRaw,
+          utterance: input.currentUtterance,
+          signals,
+        });
+
+        if (playTurnResult.handled) {
+          playSkillHandled = true;
+          if (playTurnResult.instruction) {
+            playSkillInstruction = playTurnResult.instruction;
+          }
+        }
+      } catch (error) {
+        console.error("[k-conversation/index] play turn failed:", error);
+      }
     }
   }
 
@@ -332,14 +370,26 @@ export async function respond(
     recentActions: deps.recentActions ?? [],
   });
 
-  // Hard Guard (§3-5): 활성 세션이 없고 Router가 처리하지 않았으면 gameplay action 차단
-  if (!hasActivePlaySession && !playSkillHandled) {
+  // 미션 모드 액션 가드: 미션 중에는 어떠한 놀이 액션이나 제안 액션도 허용되지 않음
+  if (input.mode === "MISSION") {
     if (
+      action === "PLAY_PROPOSAL" ||
       action === "PLAYFUL_GAME_CHOSUNG" ||
       (action as string) === "PLAYFUL_GAME_WORD_CHAIN" ||
       (action as string) === "PLAYFUL_GAME_NONSENSE_QUIZ"
     ) {
       action = "FOLLOW_UP";
+    }
+  } else {
+    // Hard Guard (§3-5): 활성 세션이 없고 Router가 처리하지 않았으면 gameplay action 차단
+    if (!hasActivePlaySession && !playSkillHandled) {
+      if (
+        action === "PLAYFUL_GAME_CHOSUNG" ||
+        (action as string) === "PLAYFUL_GAME_WORD_CHAIN" ||
+        (action as string) === "PLAYFUL_GAME_NONSENSE_QUIZ"
+      ) {
+        action = "FOLLOW_UP";
+      }
     }
   }
 
@@ -348,9 +398,13 @@ export async function respond(
     await clearPendingPlayProposal(input.sessionId, deps.db);
   }
 
-  // 6-2) PLAY_PROPOSAL 제안 결정 — 게임이 처리되지 않은 턴에만 제안 가능
+  // 6-2) PLAY_PROPOSAL 제안 결정 — 게임이 처리되지 않은 턴 & 미션이 아닐 때만 제안 가능
   let playProposalInstruction: string | undefined;
-  if (!playSkillHandled && (action === "PLAY_PROPOSAL" || signals.hasPlayRequestWithoutTarget)) {
+  if (
+    input.mode !== "MISSION" &&
+    !playSkillHandled &&
+    (action === "PLAY_PROPOSAL" || signals.hasPlayRequestWithoutTarget)
+  ) {
     try {
       const proposalDecision = await decidePlayProposal({
         db: deps.db,
@@ -401,7 +455,7 @@ export async function respond(
         action = "FOLLOW_UP";
       }
     }
-  } else if (playSkillHandled && action === "PLAY_PROPOSAL") {
+  } else if (action === "PLAY_PROPOSAL") {
     action = "FOLLOW_UP";
   }
 

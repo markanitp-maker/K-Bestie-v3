@@ -95,10 +95,13 @@ import { respond } from "./index";
 function createMockDbForRespond(options: {
   activeChosungSession?: { id: string; current_word?: string; current_chosung?: string } | null;
   activeWordChainSession?: { id: string; current_word?: string; used_words?: string[] } | null;
+  activeNonsenseSession?: { id: string; current_question_id?: string; hint_level?: number } | null;
   throwOnActiveSession?: boolean;
+  onUpdate?: (table: string, data: any) => void;
 } = {}): SupabaseClient {
   const getChosungSessionData = () => options.activeChosungSession ?? null;
   const getWordChainSessionData = () => options.activeWordChainSession ?? null;
+  const getNonsenseSessionData = () => options.activeNonsenseSession ?? null;
 
   const createTableChain = (table: string) => {
     const tableChain: any = {
@@ -138,6 +141,9 @@ function createMockDbForRespond(options: {
         if (table === "word_chain_game_sessions") {
           return { data: getWordChainSessionData(), error: null };
         }
+        if (table === "nonsense_game_sessions") {
+          return { data: getNonsenseSessionData(), error: null };
+        }
         if (table === "k_peer_personas") {
           return {
             data: {
@@ -152,7 +158,12 @@ function createMockDbForRespond(options: {
         }
         return { data: null, error: null };
       },
-      update: () => tableChain,
+      update: (data: any) => {
+        if (options.onUpdate) {
+          options.onUpdate(table, data);
+        }
+        return tableChain;
+      },
       insert: () => tableChain,
     };
     return tableChain;
@@ -163,7 +174,7 @@ function createMockDbForRespond(options: {
     from: (table: string) => {
       if (
         options.throwOnActiveSession &&
-        (table === "chosung_game_sessions" || table === "word_chain_game_sessions")
+        (table === "chosung_game_sessions" || table === "word_chain_game_sessions" || table === "nonsense_game_sessions")
       ) {
         throw new Error("DB crash in game session query");
       }
@@ -611,4 +622,238 @@ test("Guard Test 5: 기존 자유대화(게임 무관)에는 영향이 없다", 
   assert.match(capturedInstruction, /\[Grade Persona\]/);
   assert.match(capturedInstruction, /\[출력 규칙\]/);
 });
+
+// ============================================================================
+// 2026-08-17 미션 중 놀이(게임) 완전 차단 검증 테스트 (5종)
+// ============================================================================
+
+test("Mission Block Test 1: mode=MISSION이면 활성 게임 세션이 있어도 routePlaySkillTurn이 호출되지 않고 조용히 세션이 정리된다", async () => {
+  let capturedInstruction: string | undefined;
+  const updatedTables: string[] = [];
+
+  const mockDb = createMockDbForRespond({
+    activeWordChainSession: {
+      id: "wc-session-1",
+      current_word: "사과",
+      used_words: ["사과"],
+    },
+    onUpdate: (table) => {
+      updatedTables.push(table);
+    },
+  });
+
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "오늘 학교에서 무슨 과목 배웠어?",
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 8 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "MISSION",
+      currentUtterance: "이여서 진행 되니",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+      adapterInstruction: "오늘 수업에 대해 질문해줘.",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.notEqual(result.action, "PLAYFUL_GAME_WORD_CHAIN");
+  assert.ok(capturedInstruction);
+  assert.equal(
+    capturedInstruction.includes("[끝말잇기]"),
+    false,
+    "미션 중에는 끝말잇기 턴 지침이 실리지 않아야 함"
+  );
+  assert.match(capturedInstruction, /\[미션 중 놀이 진행 및 제안 절대 금지\]/);
+  // 남아있던 word_chain_game_sessions 종료 여부 확인
+  assert.ok(
+    updatedTables.includes("word_chain_game_sessions"),
+    "미션 진입 시 남아있던 활성 세션이 조용히 종료 처리되어야 함"
+  );
+});
+
+test("Mission Block Test 2: mode=MISSION이면 decidePlayProposal이 호출되지 않고 action이 PLAY_PROPOSAL이 되지 않는다", async () => {
+  let capturedInstruction: string | undefined;
+
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "심심했구나! 오늘 학교는 어땠어?",
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 8 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "MISSION",
+      currentUtterance: "너무 심심해 뭐 할 거 없어?", // 지루함/놀이 요청 신호
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+      adapterInstruction: "오늘 하루에 대해 물어봐줘.",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.notEqual(
+    result.action,
+    "PLAY_PROPOSAL",
+    "미션에서는 PLAY_PROPOSAL 액션이 발생하지 않아야 함"
+  );
+  assert.ok(capturedInstruction);
+  assert.equal(
+    capturedInstruction.includes("[놀이 제안 지침]"),
+    false,
+    "미션에서는 놀이 제안 지침이 프롬프트에 실리지 않아야 함"
+  );
+});
+
+test("Mission Block Test 3: mode=MISSION에서 아이가 '끝말잇기 하자'라고 해도 게임이 시작되지 않는다", async () => {
+  let capturedInstruction: string | undefined;
+
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "끝말잇기는 미션 끝나고 하자! 오늘 숙제는 다 했어?",
+          usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 10 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "MISSION",
+      currentUtterance: "끝말잇기 하자",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+      adapterInstruction: "오늘 숙제 여부를 확인해줘.",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.notEqual(result.action, "PLAYFUL_GAME_WORD_CHAIN");
+  assert.notEqual(result.action, "PLAY_PROPOSAL");
+  assert.ok(capturedInstruction);
+  assert.equal(
+    capturedInstruction.includes("[끝말잇기]"),
+    false,
+    "미션 중에는 끝말잇기 시작 지침이 실리지 않아야 함"
+  );
+  assert.match(capturedInstruction, /\[미션 중 놀이 진행 및 제안 절대 금지\]/);
+});
+
+test("Mission Block Test 4: mode=MISSION 프롬프트에 게임 금지 지침이 정확히 포함된다", async () => {
+  let capturedInstruction: string | undefined;
+
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "오늘 점심 맛있었어?",
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 6 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "MISSION",
+      currentUtterance: "안녕 케이야",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+      adapterInstruction: "오늘 점심 메뉴를 물어봐줘.",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.ok(capturedInstruction);
+  assert.match(capturedInstruction, /\[미션 중 놀이 진행 및 제안 절대 금지\]/);
+  assert.match(capturedInstruction, /지금은 미션 대화다\. 놀이·게임을 진행하지도, 제안하지도 마라\./);
+  assert.match(capturedInstruction, /초성게임·끝말잇기·넌센스 퀴즈의 문제·정답·힌트·규칙을 절대 말하지 마라\./);
+  assert.match(capturedInstruction, /아이가 게임이나 놀이를 하자고 하면 "미션 끝나고 하자" 정도로 짧게 답하고 미션 질문이나 대화로 자연스럽게 돌아가라\./);
+});
+
+test("Mission Block Test 5: mode=FREE_CHAT에서는 기존 놀이 동작이 그대로 유지된다 (회귀 방지)", async () => {
+  let capturedInstruction: string | undefined;
+
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        return {
+          text: "초성퀴즈 시작! 문제는 ㅂㄴㄴ야.",
+          usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "초성게임 하자",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.ok(capturedInstruction);
+  assert.equal(
+    capturedInstruction.includes("[미션 중 놀이 진행 및 제안 절대 금지]"),
+    false,
+    "자유대화에서는 미션 금지 지침이 없어야 함"
+  );
+  assert.ok(
+    capturedInstruction.includes("초성게임") ||
+    capturedInstruction.includes("문제"),
+    "자유대화에서는 초성게임 지침이 정상 반영되어야 함"
+  );
+});
+
 
