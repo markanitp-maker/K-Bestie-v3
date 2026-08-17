@@ -68,57 +68,6 @@ function recordLlmUsage(sessionId: string, tokenIn: number, tokenOut: number) {
   });
 }
 
-interface CachedResponse {
-  text: string;
-  category: string;
-  flaggedForParent: boolean;
-  model: string;
-  timestamp: number;
-}
-
-const inFlightRequests = new Map<string, Promise<{
-  text: string;
-  category: string;
-  flaggedForParent: boolean;
-  model: string;
-}>>();
-
-const completedResponses = new Map<string, CachedResponse>();
-const MAX_COMPLETED_RESPONSES = 1000;
-const RESPONSE_TTL_MS = 5 * 60 * 1000;
-
-function cleanupOldResponses(maxEntries: number = MAX_COMPLETED_RESPONSES) {
-  const now = Date.now();
-  for (const [key, val] of completedResponses.entries()) {
-    if (now - val.timestamp > RESPONSE_TTL_MS) {
-      completedResponses.delete(key);
-    }
-  }
-  while (completedResponses.size > maxEntries) {
-    const oldestKey = completedResponses.keys().next().value;
-    if (oldestKey !== undefined) {
-      completedResponses.delete(oldestKey);
-    } else {
-      break;
-    }
-  }
-}
-
-function setCompletedResponse(key: string, value: CachedResponse, maxEntries: number = MAX_COMPLETED_RESPONSES) {
-  if (completedResponses.has(key)) {
-    completedResponses.delete(key);
-  }
-  cleanupOldResponses(maxEntries);
-  while (completedResponses.size >= maxEntries) {
-    const oldestKey = completedResponses.keys().next().value;
-    if (oldestKey !== undefined) {
-      completedResponses.delete(oldestKey);
-    } else {
-      break;
-    }
-  }
-  completedResponses.set(key, value);
-}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -198,73 +147,6 @@ export async function POST(req: NextRequest) {
       : typeof lastChild.id === "string" && lastChild.id.trim() && lastChild.id.length <= 200
         ? lastChild.id.trim()
         : undefined;
-
-  const idempotencyKey = currentTurnId ? `${sessionId}:${currentTurnId}:turn_response` : null;
-
-  if (idempotencyKey) {
-    const cached = completedResponses.get(idempotencyKey);
-    if (cached && Date.now() - cached.timestamp <= RESPONSE_TTL_MS) {
-      return NextResponse.json({
-        text: cached.text,
-        category: cached.category,
-        flaggedForParent: cached.flaggedForParent,
-        model: cached.model,
-        replayed: true,
-      });
-    }
-
-    const inFlight = inFlightRequests.get(idempotencyKey);
-    if (inFlight) {
-      try {
-        const result = await inFlight;
-        return NextResponse.json({
-          text: result.text,
-          category: result.category,
-          flaggedForParent: result.flaggedForParent,
-          model: result.model,
-          replayed: true,
-        });
-      } catch (err) {
-        // In-flight request failed; fall through to retry
-      }
-    }
-  }
-
-  // 009 리뷰 지적 반영: 다른 서버 인스턴스(인메모리 캐시 비어있음)에서 동일 turn 재요청 시
-  // Gemini 중복 호출 방지를 위해 DB(chat_messages)에서 K 응답 존재 여부를 사전 조회한다.
-  if (currentTurnId) {
-    try {
-      const { data: existingKMsg } = await service
-        .from("chat_messages")
-        .select("content")
-        .eq("session_id", sessionId)
-        .eq("role", "k")
-        .in("turn_id", [`${currentTurnId}:k`, currentTurnId])
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (existingKMsg?.content && typeof existingKMsg.content === "string" && existingKMsg.content.trim()) {
-        const replayedResponse = {
-          text: existingKMsg.content.trim(),
-          category: "replayed",
-          flaggedForParent: false,
-          model: "cached_db",
-          replayed: true,
-        };
-        if (idempotencyKey) {
-          setCompletedResponse(idempotencyKey, {
-            ...replayedResponse,
-            timestamp: Date.now(),
-          });
-        }
-        return NextResponse.json(replayedResponse);
-      }
-    } catch (dbErr) {
-      // Fail-open: DB 조회 실패 시 생성을 막지 않고 계속 진행 (아이 응답 누락 방지)
-      console.warn("[voice/respond] DB idempotency pre-check failed (fail-open):", dbErr);
-    }
-  }
 
   const executeGeneration = async () => {
     // Safety preflight — 이 아래의 모든 조기 반환 경로(방학 규칙/기억회상)보다 반드시 먼저
@@ -356,23 +238,17 @@ export async function POST(req: NextRequest) {
     };
   };
 
-  if (idempotencyKey) {
-    const runPromise = executeGeneration();
-    inFlightRequests.set(idempotencyKey, runPromise);
-    try {
-      const generated = await runPromise;
-      setCompletedResponse(idempotencyKey, {
-        ...generated,
-        timestamp: Date.now(),
-      });
-      return NextResponse.json(generated);
-    } catch (err) {
-      throw err;
-    } finally {
-      inFlightRequests.delete(idempotencyKey);
-    }
-  } else {
-    const generated = await executeGeneration();
-    return NextResponse.json(generated);
-  }
+  // 2026-08-17: 009 가 넣은 서버 캐시(completedResponses / inFlightRequests / DB 사전 조회)를
+  // 전부 제거했다. 아이가 같은 말을 반복하면 같은 turnId 가 오는데, 캐시가 이전 응답을
+  // 그대로 되돌려주는 바람에 케이가 새 대답을 만들지 않았다.
+  // Production 에서 박서아·박서현 계정이 20분간 케이 응답 0건을 겪었고
+  // 아이가 "도대체 인사 받는 게 왜 이렇게 힘드니" 라고 했다.
+  //
+  // 중복 저장은 chat_messages 의 UNIQUE(session_id, turn_id) 와
+  // /api/chat/messages 의 onConflict + ignoreDuplicates 가 막는다.
+  // 화면에 말풍선이 두 개 뜨는 사고는 그쪽에서 방지된다.
+  //
+  // 중복 응답은 어색할 뿐이지만 침묵은 아이가 무시당했다고 느낀다.
+  const generated = await executeGeneration();
+  return NextResponse.json(generated);
 }
