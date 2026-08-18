@@ -47,17 +47,6 @@ function formatCountAndRate(metric?: MetricWithRate | null, unit = "명"): { val
   };
 }
 
-function formatRatioValue(metric?: MetricWithRate | null): { value: string; sub?: string } {
-  if (!metric) return { value: "-" };
-  if (metric.total === 0) {
-    return { value: "-", sub: "대상 없음" };
-  }
-  return {
-    value: `완료 ${metric.count.toLocaleString()} / 전체 ${metric.total.toLocaleString()} (${metric.rate.toFixed(1)}%)`,
-    sub: `완료율 ${metric.rate.toFixed(1)}%`,
-  };
-}
-
 function formatKstDateTime(isoString: string | null | undefined): string {
   if (!isoString) return "-";
   try {
@@ -379,11 +368,9 @@ function UserAnalyticsContent() {
   const repeat = data?.repeat;
 
   // Formatted KPI helper values
-  const activeChildrenFormatted = formatCountAndRate(signup?.activeChildren, "명");
   const missionFormatted = formatCountAndRate(usage?.mission, "명");
   const freechatFormatted = formatCountAndRate(usage?.freechat, "명");
   const playFormatted = formatCountAndRate(usage?.play, "명");
-  const missionCompletionFormatted = formatRatioValue(usage?.missionCompletionRate);
   const reportGenFormatted = formatCountAndRate(usage?.reportGenerated, "가족");
   const parentViewedFormatted = formatCountAndRate(usage?.parentViewed, "명");
   const familyRepeatFormatted = formatCountAndRate(repeat?.familyRepeatRate, "가족");
@@ -659,11 +646,6 @@ function UserAnalyticsContent() {
                   value={`${signup?.totalChildren.toLocaleString() ?? 0}명`}
                   description="등록된 누적 아이 프로필"
                 />
-                <AdminKpiCard
-                  title="선택기간 활성 아이"
-                  value={activeChildrenFormatted.value}
-                  description={activeChildrenFormatted.sub}
-                />
               </AdminKpiGrid>
             </Section>
 
@@ -689,11 +671,6 @@ function UserAnalyticsContent() {
                   description={playFormatted.sub}
                 />
                 <AdminKpiCard
-                  title="미션 완료율"
-                  value={missionCompletionFormatted.value}
-                  description={missionCompletionFormatted.sub}
-                />
-                <AdminKpiCard
                   title="리포트 생성 가족"
                   value={reportGenFormatted.value}
                   description={reportGenFormatted.sub}
@@ -707,15 +684,6 @@ function UserAnalyticsContent() {
                   title="총 열람 횟수"
                   value={`${usage?.reportViewTotal.toLocaleString() ?? 0}회`}
                   description="누적 리포트 조회 총계"
-                />
-                <AdminKpiCard
-                  title="열람 부모 기준 평균 횟수"
-                  value={
-                    usage?.reportViewAvgPerViewer != null
-                      ? `${usage.reportViewAvgPerViewer.toFixed(1)}회`
-                      : "-"
-                  }
-                  description="열람한 부모 1인당 평균 조회수"
                 />
               </AdminKpiGrid>
             </Section>

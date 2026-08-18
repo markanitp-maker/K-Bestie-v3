@@ -101,7 +101,13 @@ export function getWordChainHintsForSession(
   session: WordChainSessionRow | null,
   maxLimit: number = WORD_CHAIN_MAX_HINTS
 ): string[] {
-  if (!session || session.state === "ENDED" || session.ended_at) {
+  // SUSPENDED 는 주제 전환 등으로 게임이 멈춘 상태다. 아이는 끝말잇기가 아닌
+  // 다른 얘기를 하고 있으므로 낱말 300개를 boost 하면 일반 발화 인식이 나빠진다.
+  //
+  // K_TURN 은 배제하지 않는다. 게임이 살아 있는데 상태가 아직 안 넘어온 사이에
+  // 아이가 말하는 경우가 있고, 그때 힌트가 빠지면 정작 필요한 순간에 못 알아듣는다.
+  // 이 문제를 고치려고 넣은 힌트다.
+  if (!session || session.state === "ENDED" || session.state === "SUSPENDED" || session.ended_at) {
     return [];
   }
 
@@ -129,10 +135,13 @@ export async function resolveWordChainHints(
     return [];
   }
 
+  // 지금 이 대화 세션의 끝말잇기만 인정한다.
+  //
+  // childId 로 먼저 찾으면 **이전 대화에서 비정상 종료된**(ended_at 이 안 찍힌)
+  // 끝말잇기가 걸린다. 그러면 끝말잇기를 하지도 않는 새 대화에 낱말 300개가
+  // boost 되어 일반 발화 인식이 오히려 나빠진다.
+  // sessionId 가 없을 때만 childId 로 넘어간다.
   const lookupPromise = (async (): Promise<WordChainSessionRow | null> => {
-    if (childId) {
-      return getActiveWordChainSession(db, childId);
-    }
     if (sessionId) {
       const { data, error } = await db
         .from("word_chain_game_sessions")
@@ -147,11 +156,17 @@ export async function resolveWordChainHints(
       }
       return data as WordChainSessionRow | null;
     }
+    if (childId) {
+      return getActiveWordChainSession(db, childId);
+    }
     return null;
   })();
 
+  // 타임아웃이 이겨도 타이머는 남는다. STT 는 아이 발화마다 도는 경로라
+  // 매 요청에 타이머 하나씩 쌓이게 두면 안 된다.
+  let timerId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<null>((_, reject) => {
-    setTimeout(
+    timerId = setTimeout(
       () => reject(new Error(`Word chain session lookup timed out (${timeoutMs}ms)`)),
       timeoutMs
     );
@@ -170,5 +185,7 @@ export async function resolveWordChainHints(
       }
     );
     return [];
+  } finally {
+    if (timerId !== undefined) clearTimeout(timerId);
   }
 }

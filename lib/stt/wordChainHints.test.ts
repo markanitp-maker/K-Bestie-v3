@@ -160,3 +160,81 @@ test("6. 두음법칙 적용: '오리' -> '리'로 끝나면 '리' 및 '이'로 
   assert.ok(hasLi, "'리'로 시작하는 단어(리본 등)가 포함되어야 함");
   assert.ok(hasLee, "'이'로 시작하는 단어(이발 등)가 두음법칙으로 포함되어야 함");
 });
+
+// ── 코드 리뷰 지적 3건에 대한 회귀 방어 (2026-08-18) ──────────────────────────
+
+function makeActiveSession(
+  overrides: Partial<WordChainSessionRow> = {}
+): WordChainSessionRow {
+  return {
+    id: "session-x",
+    child_id: "child-1",
+    chat_session_id: "chat-1",
+    initiated_by: "K",
+    state: "CHILD_TURN",
+    current_word: "샤프",
+    current_difficulty: 1,
+    used_words: ["샤프"],
+    started_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ended_at: null,
+    ...overrides,
+  } as WordChainSessionRow;
+}
+
+test("7. sessionId 가 있으면 그 대화 세션의 끝말잇기만 본다 — 이전 세션의 미종료 게임이 새 대화로 새지 않는다", async () => {
+  // child_id 로 물으면 **이전 대화의** 미종료 게임이 나오고, 지금 대화의
+  // chat_session_id 로 물으면 아무것도 없는 DB. 예전 구현은 childId 를 먼저 봐서
+  // 끝말잇기를 하지도 않는 새 대화에 낱말 300개가 boost 됐다.
+  const stale = makeActiveSession({ chat_session_id: "chat-old" });
+  const db = {
+    from: () => {
+      const chain: any = {
+        _byChild: false,
+        select: () => chain,
+        eq: (col: string) => {
+          if (col === "child_id") chain._byChild = true;
+          return chain;
+        },
+        is: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        maybeSingle: async () => ({ data: chain._byChild ? stale : null, error: null }),
+      };
+      return chain;
+    },
+  } as unknown as SupabaseClient;
+
+  // 대조군: childId 만 주면 예전 경로가 살아 있어 힌트가 나온다 —
+  // 이게 나와야 아래 단언이 "그냥 빈 DB라서 비었다"가 아님이 증명된다.
+  const byChildOnly = await resolveWordChainHints(db, { childId: "child-1" });
+  assert.ok(byChildOnly.length > 0, "대조군: childId 경로로는 낡은 세션이 잡힌다");
+
+  const hints = await resolveWordChainHints(db, {
+    sessionId: "chat-new",
+    childId: "child-1",
+  });
+  assert.deepStrictEqual(hints, [], "이전 세션 힌트가 새 대화로 새면 안 된다");
+});
+
+test("8. SUSPENDED 상태면 힌트를 주지 않는다 — 아이는 다른 얘기를 하고 있다", () => {
+  const suspended = makeActiveSession({ state: "SUSPENDED" });
+  assert.deepStrictEqual(getWordChainHintsForSession(suspended), []);
+});
+
+test("9. K_TURN 상태에서는 힌트를 유지한다 — 게임이 살아 있는데 상태만 안 넘어온 사이를 놓치면 안 된다", () => {
+  const kTurn = makeActiveSession({ state: "K_TURN" });
+  const hints = getWordChainHintsForSession(kTurn);
+  assert.ok(hints.length > 0, "K_TURN 에서도 힌트가 있어야 한다");
+  assert.ok(hints.every((w) => w.startsWith("프")));
+});
+
+test("10. 타임아웃 타이머가 남지 않는다 — 조회가 빨리 끝나도 타이머를 정리한다", async () => {
+  // 타이머가 안 걷히면 Node 가 그 시간만큼 이벤트 루프를 붙잡는다.
+  // STT 는 아이 발화마다 도는 경로라 요청마다 쌓이면 안 된다.
+  const db = createMockDb({ activeWordChain: makeActiveSession() });
+  const before = process.getActiveResourcesInfo?.().filter((r) => r === "Timeout").length ?? 0;
+  await resolveWordChainHints(db, { sessionId: "chat-1" }, 30_000);
+  const after = process.getActiveResourcesInfo?.().filter((r) => r === "Timeout").length ?? 0;
+  assert.equal(after, before, "조회 후 타임아웃 타이머가 남아 있으면 안 된다");
+});
