@@ -14,6 +14,7 @@ import { selectAction } from "./actionSelector";
 import { extractUtteranceSignals, estimateSemanticGroup } from "./utteranceSignals";
 import { recordTopicUsage } from "./semanticTopicHistory";
 import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn } from "./responseGenerator";
+import { applyRelationshipSafety } from "./relationshipSafety";
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
@@ -745,6 +746,23 @@ export async function respond(
         blockedPreview: finalText.slice(0, 60),
       });
       finalText = FABRICATED_RECALL_FALLBACK_TEXT;
+    }
+  }
+
+  // 11) 관계 안전 가드 (요청서 013 §3-10).
+  // 독점·의존 유도, 부모·현실 친구 대체, 비밀 관계 유도, 사람 사칭을 케이 출력에서 막는다.
+  // 미션·자유대화 모두 적용한다 — 페르소나는 두 모드에서 동일해야 한다(§3-9).
+  // 프롬프트 지침(RELATIONSHIP_SAFETY_INSTRUCTION)과 이 출력 검사를 함께 둔다.
+  {
+    const relationshipVerdict = applyRelationshipSafety(finalText, input.recentKTexts ?? []);
+    if (relationshipVerdict.blocked) {
+      console.warn("[k-conversation/index] 관계 안전 위반 응답을 차단했다", {
+        childId: input.childId,
+        sessionId: input.sessionId,
+        violationId: relationshipVerdict.violationId,
+        blockedPreview: finalText.slice(0, 60),
+      });
+      finalText = relationshipVerdict.text;
     }
   }
 

@@ -7,6 +7,7 @@
 // (2026-08-13 대표 지시: 실사용 화면 말풍선 가독성을 위해 전체 학년 80자 이내 상한 복원).
 import type { GoogleGenAI } from "@google/genai";
 import type { ConversationAction, ConversationMode } from "./types";
+import { RELATIONSHIP_SAFETY_INSTRUCTION } from "./relationshipSafety";
 
 export interface ResponseGeneratorHistoryTurn {
   role: "child" | "k";
@@ -136,6 +137,8 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       ? "아이가 사실/지식형 질문을 했어. 아는 내용이면 또래 친구처럼 편하게 알려주고, 확실하지 않으면 지어내지 말고 모른다고 솔직하게 말하거나 같이 궁금해해."
       : "",
     modeFragment,
+    // 요청서 013 §3-10 — 관계 안전은 두 모드 공통 규칙이다.
+    RELATIONSHIP_SAFETY_INSTRUCTION,
     input.adapterInstruction ? `[추가 지시]\n${input.adapterInstruction}` : "",
     "[출력 규칙]",
     // 2026-08-13 대표 지시: 말풍선 가독성을 위해 전체 학년 80자 이내 상한 복원.
