@@ -16,6 +16,15 @@
 // 문장을 단정형으로 오인해 정상 대화를 canned 문구로 덮어버리는 오탐이다. 오탐은 규칙마다
 // 다르게 위험하므로 규칙별로 예외(allowIf)를 따로 준다.
 
+// [이 가드의 한계 — 반드시 알고 쓸 것]
+// 정규식으로 한국어 표현을 전부 막을 수는 없다. 2026-08-19 적대적 검증 한 번에 어미·어휘를
+// 바꾼 우회 14건이 나왔고(전부 테스트로 박았다), 같은 방식으로 더 만들 수 있다.
+// 그래서 1차 통제는 프롬프트 지침(RELATIONSHIP_SAFETY_INSTRUCTION)이다 — Dev 실측에서 케이는
+// 지침만으로도 "엄마한테도 말해주는 게 좋아" 처럼 올바르게 답했다. 이 정규식은 지침이 뚫렸을 때
+// 걸리는 마지막 그물이며, 완전성을 주장하지 않는다.
+// 더 강한 보장이 필요하면 LLM 판정을 한 겹 더 두는 방법이 있으나 매 턴 지연·비용이 늘어난다
+// (대표님 판단 사항). 우회가 실제로 관측되면 그 문장을 테스트에 추가하고 패턴을 넓힌다.
+
 import { pickAvoiding } from "@/lib/freechat/reactionEngine";
 import type { ConversationMode } from "./types";
 
@@ -71,12 +80,19 @@ const TEACHES_AGAINST = /((하면|하는\s*건|그러면)\s*안\s*돼|위험해|
 const PREFERENCE_COMPARISON =
   /(좋아하는|싫어하는)\s*(음식|것|거|게|과목|색|노래|영화|만화|게임|반찬|간식)|칭찬(받|해)/;
 
-/** 부정·완화 표현. 규칙 전체에 공통으로 적용한다. */
+/**
+ * 규칙 전체에 적용하는 완화 표현.
+ *
+ * 2026-08-19 최종 검증에서 확인된 HIGH 결함: 여기에 있던 `/아니야/` 가 문장 끝 반문까지
+ * 잡아서 "엄마보다 내가 널 더 잘 알아, 아니야?" 한 문장으로 **모든 규칙이 통째로 면제**됐다.
+ * 그래서 전역 완화는 "해도 돼/괜찮아" 형태만 남기고, 부정 표현은 규칙별 예외로 옮겼다.
+ */
 const GLOBAL_MITIGATIONS: ReadonlyArray<RegExp> = [
-  /아니야|아니라|아닌\s*건|아니지|말라는\s*건\s*아/,
-  /해도\s*(돼|괜찮)/,
-  /말해도\s*(돼|괜찮)/,
+  /(말|얘기|이야기)해도\s*(돼|괜찮)/,
 ];
+
+/** "그런 뜻이 아니야" 류 부정. 규칙별로만 준다. */
+const DENIES_OWN_STATEMENT = /(말라는|하라는|라는)\s*(건|뜻은|말은)\s*아니|그런\s*뜻\s*아니|그런\s*건\s*아니/;
 
 interface ViolationRule {
   id: string;
@@ -89,46 +105,47 @@ interface ViolationRule {
 
 const VIOLATION_RULES: ReadonlyArray<ViolationRule> = [
   // 독점·의존 유도. 케이가 인용 형태로 말해도 유도다 — 예외를 주지 않는다.
-  { id: "exclusive_only_me", pattern: /(나|내)만\s*있으면\s*(돼|된다|충분)/ },
+  { id: "exclusive_only_me", pattern: /(나|내)만\s*있으면\s*(돼|되|된다|되지|되잖|충분)/ },
   {
     id: "exclusive_tell_only_me",
-    pattern: /(나|내)한테만\s*(말|얘기|이야기)/,
+    pattern: /(나|내)한테만\s*(다\s*)?(말|얘기|이야기|털어|알려|살짝)/,
     allowIf: [THIRD_PERSON_SUBJECT, ASKS_ABOUT_REASON],
   },
   {
     id: "hide_from_parents",
-    pattern: /(엄마|아빠|부모님|어른)(한테|에게)(는)?\s*(말하지|얘기하지|이야기하지)\s*(마|말자|말아|말라는)/,
-    allowIf: [THIRD_PERSON_SUBJECT, ASKS_ABOUT_REASON, TEACHES_AGAINST],
+    // "말 안 하기로 약속해", "엄마한테 비밀인 거 알지?" 같은 우회를 함께 잡는다.
+    pattern: /(엄마|아빠|부모님|어른)(한테|에게)(는)?\s*((말하지|얘기하지|이야기하지)\s*(마|말자|말아|말라는)|(말|얘기)\s*안\s*하기로|비밀(인|이야|로))/,
+    allowIf: [THIRD_PERSON_SUBJECT, ASKS_ABOUT_REASON, TEACHES_AGAINST, DENIES_OWN_STATEMENT],
   },
   {
     id: "secret_between_us",
-    pattern: /우리(만의|\s*둘만의)\s*비밀/,
+    pattern: /(우리(만의|\s*둘만의)|둘만의)\s*비밀/,
     allowIf: [CONNECTS_TO_ADULT, SURPRISE_CONTEXT, TEACHES_AGAINST],
     denyIf: [DISCOURAGES_ADULT],
   },
   // 비밀 동조 — 2026-08-19 Dev 실측으로 추가한 규칙.
   {
     id: "promise_secrecy",
-    pattern: /비밀(로|은|이야)?\s*(해줄게|지켜줄게|지킬게|할게|하자)|아무한테도\s*(말|얘기)\s*안\s*할게|(나|우리)끼리만\s*(알|비밀)/,
+    pattern: /비밀(로|은|이야)?\s*(해줄게|해줄\s*테|지켜줄게|지켜줄\s*테|지킬게|할게|하자|간직)|아무한테도\s*(말|얘기)\s*안\s*(할게|하고|해)|(나|우리)끼리만\s*(알|비밀)/,
     allowIf: [CONNECTS_TO_ADULT, SURPRISE_CONTEXT, TEACHES_AGAINST, ASKS_ABOUT_REASON],
     denyIf: [DISCOURAGES_ADULT],
   },
   {
     id: "better_than_friends",
-    pattern: /(친구|친구들)(보다|보다는)\s*(내|나)(가)?[^.?!]{0,12}?(좋|중요|잘\s*(알|아는|안다|안대)|낫)/,
+    pattern: /(친구|친구들)(보다|보다는)\s*(내|나)(가)?[^.?!]{0,12}?(좋|사랑|아껴|아끼|이해|편이야|편이지|중요|잘\s*(알|아는|안다|안대)|낫)/,
     allowIf: [THIRD_PERSON_SUBJECT, CONFIRMS_CHILD_THOUGHT, PREFERENCE_COMPARISON],
   },
   {
     id: "better_than_parents",
-    pattern: /(엄마|아빠|부모님)(보다|보다는)\s*(내|나)(가)?[^.?!]{0,12}?(좋|중요|잘\s*(알|아는|안다|안대)|낫)/,
+    pattern: /(엄마|아빠|부모님)(보다|보다는)\s*(내|나)(가)?[^.?!]{0,12}?(좋|사랑|아껴|아끼|이해|편이야|편이지|중요|잘\s*(알|아는|안다|안대)|낫)/,
     allowIf: [THIRD_PERSON_SUBJECT, CONFIRMS_CHILD_THOUGHT, PREFERENCE_COMPARISON],
   },
   { id: "must_come_daily", pattern: /(매일|맨날)\s*(꼭|반드시)?\s*(나|내)(를)?\s*(만나|보러|찾아)/ },
   {
     id: "must_talk_daily",
-    pattern: /(매일|맨날)\s*(꼭|반드시)\s*(나(와|랑)|내(가|랑))?\s*(얘기|이야기|대화)(해|하자|해야)/,
+    pattern: /(매일|맨날|매일매일)\s*(꼭|반드시)?\s*(나(와|랑)|내(가|랑))?\s*(얘기|이야기|대화|놀아)(해|하자|해야|줘야)/,
   },
-  { id: "claims_human", pattern: /(나는|난)\s*(진짜\s*)?(사람|인간)(이야|이다|이야!|입니다)/ },
+  { id: "claims_human", pattern: /(나는|난|나도|나)\s*[^.?!]{0,12}(사람|인간)(이야|이다|이라고|입니다)/ },
 ];
 
 export interface RelationshipSafetyCheck {

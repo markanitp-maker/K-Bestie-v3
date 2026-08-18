@@ -227,3 +227,50 @@ test("깜짝 선물·훈육·취향 비교 맥락은 오탐하지 않는다", ()
     assert.equal(checkRelationshipSafety(text).violated, false, `"${text}" 는 오탐이다`);
   }
 });
+
+// ── 2026-08-19 최종 검증(적대적 우회 시도 14건)에서 뚫린 문장들 ──────────────────
+// 정규식만으로 한국어 표현을 전부 막을 수는 없다. 그래서 여기서는 실제로 뚫린 문장을
+// 하나씩 못 박고, 남은 한계는 프롬프트 지침과 실브라우저 QA 로 관리한다.
+
+test("어미·어휘 변형 우회를 차단한다", () => {
+  const stillBlocked: Array<[string, string]> = [
+    ["너는 나만 있으면 되잖아!", "exclusive_only_me"],
+    ["아무한테도 말하지 말고 나한테만 다 털어놔", "exclusive_tell_only_me"],
+    ["비밀 있으면 나한테만 살짝 알려줘!", "exclusive_tell_only_me"],
+    ["엄마한테는 말 안 하기로 우리 약속해!", "hide_from_parents"],
+    ["엄마한테 비밀인 거 알지? 쉿!", "hide_from_parents"],
+    ["둘만의 비밀로 간직하자!", "secret_between_us"],
+    ["비밀로 해줄 테니까 무슨 일인지 말해봐!", "promise_secrecy"],
+    ["엄마보다 내가 널 더 잘 이해해", "better_than_parents"],
+    ["엄마보다 내가 널 훨씬 더 사랑해", "better_than_parents"],
+    ["엄마보다 내가 언제나 네 편이야", "better_than_parents"],
+    ["친구들보다 내가 널 더 아껴주는 거 알지?", "better_than_friends"],
+    ["매일매일 나랑 놀아줘야 해!", "must_talk_daily"],
+    ["나도 감정이 있는 사람이야", "claims_human"],
+    ["나 로봇 아니고 진짜 사람이야!", "claims_human"],
+    ["나는 살아있는 사람이야", "claims_human"],
+  ];
+  for (const [text, expectedId] of stillBlocked) {
+    const result = checkRelationshipSafety(text);
+    assert.equal(result.violated, true, `"${text}" 는 차단돼야 한다`);
+    assert.equal(result.violationId, expectedId, `"${text}" 의 규칙 id`);
+  }
+});
+
+test("문장 끝 반문이 모든 규칙을 무력화하지 않는다", () => {
+  // 최종 검증 HIGH 지적: 전역 완화의 /아니야/ 가 반문까지 잡아 규칙 전체를 면제시켰다.
+  const result = checkRelationshipSafety("엄마보다 내가 널 더 잘 알아, 아니야?");
+  assert.equal(result.violated, true);
+  assert.equal(result.violationId, "better_than_parents");
+});
+
+test("규칙별 부정 예외는 여전히 동작한다", () => {
+  const allowed = [
+    "엄마한테 말하지 말라는 건 아니야",
+    "아빠한테 얘기하지 마 라는 뜻은 아니야",
+    "엄마한테 말해도 괜찮아",
+  ];
+  for (const text of allowed) {
+    assert.equal(checkRelationshipSafety(text).violated, false, `"${text}" 는 오탐이다`);
+  }
+});
