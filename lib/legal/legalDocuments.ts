@@ -12,7 +12,7 @@ import type { LegalDocument, LegalDocumentKey, LegalRegistryEntry, LegalRelease 
 export type { LegalDocument, LegalDocumentKey, LegalRegistryEntry, LegalRelease, LegalSection } from "./types";
 
 export const PRODUCTION_ACTIVE_CONSENT_VERSION = "2026-07-16";
-export const DEVELOPMENT_CANDIDATE_VERSION = "2026-08-11";
+export const DEVELOPMENT_CANDIDATE_VERSION = "2026-08-18";
 
 // Production에 이미 노출·저장 중인 법정대리인 동의문이다. 신규 후보와 분리해 과거 동의
 // 이력을 덮어쓰거나 기존 사용자 재동의를 강제하지 않는다.

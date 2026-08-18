@@ -12,6 +12,7 @@ import { SkeletonBox } from "@/components/Skeleton";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { TodayConversationGuide } from "./components/TodayConversationGuide";
 import { InsightGrid } from "./components/InsightGrid";
+import { GrowthCards } from "./components/GrowthCards";
 import AppEventAnnouncementModal from "@/components/events/AppEventAnnouncementModal";
 import { ParentMissionEventStatus } from "@/components/events/ParentMissionEventStatus";
 import { NotificationOnboarding } from "@/components/notifications/NotificationOnboarding";
@@ -330,6 +331,7 @@ export default function ParentHomePage() {
               <TodayConversationGuide guideText={todaysQuote ?? undefined} />
               <ParentMissionEventStatus childId={activeChild?.id ?? null} childName={activeChild?.name ?? ""} />
               <InsightGrid insights={insightsData} view={view} />
+              <GrowthCards childId={activeChild?.id ?? null} childName={activeChild?.name ?? ""} />
             </>
           )}
         </div>

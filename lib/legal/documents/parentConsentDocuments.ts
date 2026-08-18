@@ -8,8 +8,8 @@ export const LEGAL_COMMUNICATION_CHANNELS = {
 export const PARENT_PII_CANDIDATE: LegalDocument = {
   key: "parent_pii",
   title: "보호자 개인정보 수집·이용 안내",
-  version: "2026-08-11",
-  effectiveDate: "2026-08-11",
+  version: "2026-08-18",
+  effectiveDate: "2026-08-18",
   required: true,
   sections: [
     {
@@ -47,8 +47,8 @@ export const PARENT_PII_CANDIDATE: LegalDocument = {
 export const MARKETING_CANDIDATE: LegalDocument = {
   key: "marketing",
   title: "마케팅 정보 수신 동의",
-  version: "2026-08-11",
-  effectiveDate: "2026-08-11",
+  version: "2026-08-18",
+  effectiveDate: "2026-08-18",
   required: false,
   sections: [
     {
@@ -76,8 +76,8 @@ export const MARKETING_CANDIDATE: LegalDocument = {
 export const EVENT_NOTICE_CANDIDATE: LegalDocument = {
   key: "event_notice",
   title: "이벤트·혜택 알림 동의",
-  version: "2026-08-11",
-  effectiveDate: "2026-08-11",
+  version: "2026-08-18",
+  effectiveDate: "2026-08-18",
   required: false,
   sections: [
     {

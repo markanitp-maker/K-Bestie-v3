@@ -3,8 +3,8 @@ import type { LegalDocument } from "../types";
 export const GUARDIAN_U14_CANDIDATE: LegalDocument = {
   key: "guardian_u14",
   title: "만 14세 미만 아동 법정대리인 동의",
-  version: "2026-08-11",
-  effectiveDate: "2026-08-11",
+  version: "2026-08-18",
+  effectiveDate: "2026-08-18",
   required: true,
   sections: [
     {
@@ -46,8 +46,8 @@ export const GUARDIAN_U14_CANDIDATE: LegalDocument = {
 export const GUARDIAN_AUTHORITY_CANDIDATE: LegalDocument = {
   key: "guardian_authority",
   title: "법정대리인 또는 적법한 동의 권한 보유 확인",
-  version: "2026-08-11",
-  effectiveDate: "2026-08-11",
+  version: "2026-08-18",
+  effectiveDate: "2026-08-18",
   required: true,
   sections: [
     {

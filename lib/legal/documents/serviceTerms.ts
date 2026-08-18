@@ -3,8 +3,8 @@ import type { LegalDocument } from "../types";
 export const SERVICE_TERMS_CANDIDATE: LegalDocument = {
   key: "service_terms",
   title: "내친구 케이 서비스 이용약관",
-  version: "2026-08-11",
-  effectiveDate: "2026-08-11",
+  version: "2026-08-18",
+  effectiveDate: "2026-08-18",
   required: true,
   sections: [
     {
