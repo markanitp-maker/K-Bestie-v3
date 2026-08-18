@@ -1,0 +1,3569 @@
+[
+  {
+    "id": "0184e488-1562-4bbc-ab8b-45b96bc8c71f",
+    "question_text": "오늘 하루 중에 가장 기억에 남거나 재미있었던 순간이 있었어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_HIGHLIGHT",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_highlight",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "DAILY_EXCITEMENT_MOMENT",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "03c76644-1e0c-41a8-abf8-6a63951386c2",
+    "question_text": "오늘 집 밖으로 나가서 동네 한 바퀴 돌거나 어디 놀러 다녀왔어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "OUTING_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "05f37c66-d7d1-45f6-ac0f-5f7d4de1cc82",
+    "question_text": "오늘 학교 쉬는 시간에 친구랑 같이 놀았어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "RECESS_FRIEND_PLAY_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "073a7a4f-73da-4095-a03c-0323a0f837d7",
+    "question_text": "다음 주에 학교나 학원에서 특별히 기다려지는 날이나 재미있는 활동이 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "NEXT_WEEK_ACTIVITY_ANTICIPATION",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "07cc51e1-354c-40ef-a14a-4d910423e5ad",
+    "question_text": "요즘 학교에서 친구들이랑 같이 하는 모둠 활동이나 발표 준비 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "SCHOOL_EXPERIENCE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "school_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "CLASSROOM_GROUP_ACTIVITY_RECENT",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "09c88472-12db-4de0-ade6-11e437c3625f",
+    "question_text": "오늘 책을 읽거나 그림 그리며 놀았어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "HOBBY_AND_CREATION",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "hobby_and_creation",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "READING_DRAWING_PLAY_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "0e3660f7-4445-4639-a98e-d871255ef60d",
+    "question_text": "오늘 혹시 주말 학원이나 운동 다녀왔어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_ACADEMY_ATTENDANCE",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "0f7526e7-de62-4cc3-a8bd-998eac9ce3e2",
+    "question_text": "오늘 밖에 나가서 놀거나 어디 다녀왔어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "OUTING_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "154666b5-b114-4d20-adec-bb5cf72d899b",
+    "question_text": "오늘 학교 끝나고 학원 가거나 집에 올 때 친구랑 같이 이야기하면서 왔어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "AFTER_SCHOOL_FRIEND_COMMUTE_TALK",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "15e0eef4-f01d-486c-ae6c-0bec47331837",
+    "question_text": "내일 금요일인데 지금 기분 어때?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_ANTICIPATION_MOOD",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "17a464a1-4048-403e-a0b3-ff2705d316bf",
+    "question_text": "오늘 아침에 일어났을 때 기분은 어땠어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "MORNING_WAKEUP_REFRESHED",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "189f043c-db6a-4150-a237-68bc4470164e",
+    "question_text": "오늘 학교 끝나고 친구들이랑 놀거나 어디 들렀다 왔어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "AFTER_SCHOOL_FRIEND_HANG_OUT",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "1afd44bc-d9eb-48f8-ad5b-b375f3bfb19a",
+    "question_text": "지금 몸은 쌩쌩해, 아니면 조금 졸려?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "ENERGY_NOW_SLEEPY_CHECK",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "1bd90687-fdb3-45c2-ab7a-943b672f0b7d",
+    "question_text": "오늘 급식이나 간식에 맛있는 거 나왔어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SCHOOL_LUNCH_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "1bdf0805-889e-441c-aa21-979a38da89cf",
+    "question_text": "다음 주에 학교에서 기다려지는 수업 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "SCHOOL_EXPERIENCE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "school_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "NEXT_WEEK_FAVORITE_LESSON",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "1be7c871-d6c5-4307-a394-a05213de5b99",
+    "question_text": "오늘 내일 학교 갈 가방 챙기거나 주말 숙제는 미리 다 끝내 뒀어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "LEARNING_AND_STUDY",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "learning_and_study",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SCHOOL_PREP_TOMORROW",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "1d6ad429-be22-48d6-aa34-8567aa7a1be4",
+    "question_text": "이번 주말에 마음껏 해보고 싶은 게임이나 보고 싶었던 영상이 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_MEDIA_WISH",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "2560fea8-96ef-4ce8-a74a-037fe144f57a",
+    "question_text": "이번 주 학교나 학원에서 친구들이랑 배꼽 빠지게 웃었던 일 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_HIGHLIGHT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_highlight",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKLY_FRIEND_LAUGH_MOMENT",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "27d05a9d-f23e-410f-aa7d-30f4ae52c8e9",
+    "question_text": "오늘 학교 급식이나 방과후 간식 중에 특별히 마음에 들었던 메뉴가 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SCHOOL_LUNCH_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "28572266-a931-47d5-a69a-d3cf3d1e917c",
+    "question_text": "오늘 태권도나 수영, 미술처럼 주말 학원이나 운동 다녀왔어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "LEARNING_AND_STUDY",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "learning_and_study",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_ACADEMY_ATTENDANCE",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "2932b415-adcb-4061-a362-96bc5e949964",
+    "question_text": "오늘 가족이나 친구랑 같이 밖에서 맛있는 거 먹거나 바람 쐬고 왔어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "OUTING_WITH_FAMILY_OR_FRIENDS",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "2a59bce0-9941-49dc-af33-ec4ca78d2fd7",
+    "question_text": "이번 주말 동안 충분히 잘 쉴 수 있었어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "EMOTIONAL_EXPERIENCE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "emotional_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_REST_REVIEW",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "2f6a0acc-0054-49a5-a15a-1f0596418cde",
+    "question_text": "내일 토요일 아침에 늦잠 자거나 이불 속에서 뒹굴거릴 계획이야?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_SLEEP_IN_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "321c9119-012f-45fa-a5e9-028792160430",
+    "question_text": "이번 주에 학교나 학원에서 친구들이랑 배꼽 잡고 웃었던 재미있는 일 있었어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_HIGHLIGHT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_highlight",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKLY_FRIEND_LAUGH_MOMENT",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "32473b0f-51d1-420d-a8bf-9678d962d018",
+    "question_text": "이번 주말에 친구들이랑 같이 하거나 혼자 달리고 싶은 게임 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_GAME_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "361f898b-21a4-4f80-a9e7-46c2ab32e7a2",
+    "question_text": "오늘 레고 조립이나 그리기, 만들기 같은 거에 푹 빠져서 해봤어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "HOBBY_AND_CREATION",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "hobby_and_creation",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "HOBBY_MAKING_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "3f38f4f0-4cb5-426d-aaf1-145eea284de2",
+    "question_text": "오늘 나 혼자만의 취미나 좋아하는 거에 푹 빠져본 시간 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "HOBBY_AND_CREATION",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "hobby_and_creation",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SOLO_HOBBY_TIME_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "3f79e8fa-614f-435b-a6a2-9d5e38eb098f",
+    "question_text": "금요일 수업 끝나고 교문 딱 나설 때 기분이 어땠어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "EMOTIONAL_EXPERIENCE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "emotional_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_DISMISSAL_RELIEF",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "410eb186-d8d1-4c80-a2cb-074798fa0742",
+    "question_text": "오늘 아침에 알람 없이 푹 늦잠 자거나 이불 속에서 여유롭게 뒹굴거렸어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_MORNING_SLEEP_IN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "41cd8e9d-9bc3-4f04-a29a-2694aff412b2",
+    "question_text": "오늘 일요일에 가족이랑 산책 가거나 가까운 곳으로 드라이브 다녀왔어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FAMILY_OUTING_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "425400ba-9820-451c-a765-7d08b4fc55fb",
+    "question_text": "오늘 수업 시간에 책이나 공책에 재미있는 거 그렸어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "HOBBY_AND_CREATION",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "hobby_and_creation",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "CLASS_DRAWING_ACTIVITY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "444418f0-53b0-4124-a681-18b8243caacc",
+    "question_text": "오늘 금요일 밤에 자기 전에 여유롭게 하고 싶은 거 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_NIGHT_RELAX_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "4558ca16-ba94-44e4-ab6e-a81c2eedab9c",
+    "question_text": "오늘 학교 급식이나 간식 중에 맛있었던 메뉴 있었어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SCHOOL_LUNCH_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "47f7d43f-ef85-406f-a402-a8503156dc95",
+    "question_text": "오늘 동네나 놀이터에서 친구 만났어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIEND_MET_OUTSIDE_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "488540c2-ec73-4b5c-ab1f-5da16d3add49",
+    "question_text": "일요일 밤 자기 전에 오늘 꼭 하고 자고 싶은 나만의 힐링 타임이 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SUNDAY_NIGHT_HEALING_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "4a687731-0e69-4961-aefb-03aa9d01efce",
+    "question_text": "이번 주말에 꼭 먹고 싶다고 찜해둔 맛있는 음식 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_FOOD_WISH",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "53d304ca-5b13-494d-a4e1-7f7dd824f523",
+    "question_text": "오늘 체육이나 특별활동 시간에 재미있는 일 있었어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "SCHOOL_EXPERIENCE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "school_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "PE_SPECIAL_CLASS_HIGHLIGHT",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "54d58792-3123-4f7a-a9bc-537e49be4e66",
+    "question_text": "오늘 저녁에 재미있는 게임이나 만화 볼 계획 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "EVENING_MEDIA_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "5a06b931-e592-42b1-a84c-fad6fd4b2588",
+    "question_text": "오늘 달콤하거나 맛있는 주말 간식 먹었어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_SNACK_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "5aaa2932-c791-4a83-ac47-2f3296134c7d",
+    "question_text": "내일 월요일에 학교 갈 생각 하면 어떤 기분이 들어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "EMOTIONAL_EXPERIENCE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "emotional_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "MONDAY_SCHOOL_START_FEELING",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "5cc1725a-8ebc-498b-a5cf-4a430e9bef1b",
+    "question_text": "오늘 가족이랑 외식하거나 놀러 갔다 왔어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FAMILY_OUTING_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "5f80ad51-6f4f-4d17-a500-dfd7b0ec4562",
+    "question_text": "오늘 낮에 심심하지 않고 재미있게 보냈어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "DAYTIME_FUN_CHECK_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "60ef3fab-715f-454f-a183-2ae17e9d6fa7",
+    "question_text": "오늘 친구 만나서 놀거나 카톡, 전화로 수다 떤 일 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIEND_CONTACT_OR_HANG_OUT_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "616c7904-0527-4622-a275-2513f1d7c47a",
+    "question_text": "오늘 금요일 학교 수업 다 끝났을 때 기분이 어땠어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "EMOTIONAL_EXPERIENCE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "emotional_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_DISMISSAL_RELIEF",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "639ab57c-9ced-4424-a31a-ecd6032f5f1a",
+    "question_text": "오늘 친구 만나서 밖에서 뛰어놀거나 친구 집에 놀러 갔다 왔어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIEND_HANG_OUT_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "63d83d51-d300-4840-a233-0f6721752801",
+    "question_text": "오늘 낮에 낮잠을 자거나 소파에서 뒹굴거리면서 에너지 충전했어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "DAYTIME_REST_LAZING",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "64de8c97-b628-4df1-ae9f-f89f7dd6430e",
+    "question_text": "이번 주에 학교나 집에서 엄청 웃겼던 일 있었어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "EMOTIONAL_EXPERIENCE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "emotional_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKLY_LAUGH_MOMENT",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "67200300-7561-4669-a7b9-de014725dee8",
+    "question_text": "오늘 토요일 하루를 한마디나 세 글자로 표현하면 뭐야?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SATURDAY_ONE_WORD_EXPRESSION",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "6b34b61c-3165-4070-a492-218c43ae309f",
+    "question_text": "오늘 학교에서 모둠 활동이나 짝꿍이랑 같이 해결한 과제가 있었어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "SCHOOL_EXPERIENCE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "school_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "CLASSROOM_GROUP_ACTIVITY_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "6dc531c2-7b9b-4f7c-a317-a76f645cbe64",
+    "question_text": "내일 학교 끝나고 나서 하고 싶은 일이나 계획이 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "TOMORROW_AFTER_SCHOOL_ANTICIPATION",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "6f1231d0-a89c-469f-a6a7-681067c04464",
+    "question_text": "이번 주말에 친구랑 만나서 놀기로 약속했어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_FRIEND_PROMISE",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "74c85769-8192-41b9-a703-46bbbca3ccdb",
+    "question_text": "이번 주말에 가족이나 친구랑 나들이 가거나 외출하는 계획이 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_OUTING_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "754ea211-dc61-45d3-ad6c-287009e912d4",
+    "question_text": "오늘 집에서 가족이랑 보드게임 하거나 같이 영화 본 거 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "FAMILY_RELATIONSHIP",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "family_relationship",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FAMILY_INDOOR_ACTIVITY_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "760e11bb-4c1a-474c-afdc-a40078a480ef",
+    "question_text": "이번 주도 거의 다 지나갔는데, 오늘 몸은 쌩쌩해 아니면 조금 피곤해?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKDAY_PHYSICAL_FATIGUE",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "76c93cc7-7f53-4c82-a6d3-99a13cb77507",
+    "question_text": "내일 아침에는 알람 없이 늦잠 잘 수 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_SLEEP_IN_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "771fbf99-69ce-42bb-a7f2-2dabce47c0d7",
+    "question_text": "오늘 가족이랑 마트나 시장에 다녀왔어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "FAMILY_RELATIONSHIP",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "family_relationship",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FAMILY_ERRAND_OUTING_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "774139e3-bcc6-4c12-af04-b2879d7850aa",
+    "question_text": "주말 동안 알차게 잘 놀았다고 느껴져, 아니면 시간이 너무 순식간에 지나갔어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_TIME_PASSING_FEELING",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "790c030c-f142-4232-abb2-665cc22d6e51",
+    "question_text": "일요일인 오늘 주말 마지막으로 친구랑 게임하거나 영상 챙겨본 거 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SUNDAY_GAME_OR_VIDEO",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "79c028b0-0283-4e16-a9c6-7640bda9d067",
+    "question_text": "이번 주말(토·일)에 제일 신났던 순간이 언제야?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_HIGHLIGHT",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_highlight",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "HIGHLIGHT_WEEKEND",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "7bd681b8-4973-43b9-a714-5ba6f57e4a22",
+    "question_text": "오늘 유튜브나 OTT, 웹툰 중에서 시간 가는 줄 모르고 본 거 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "VIDEO_WATCHED_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "7c07452e-b3f0-4548-a42e-28ae8d8547dc",
+    "question_text": "이번 주말에 어디 놀러 가거나 외출할 계획 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_OUTING_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "7de57a1a-bb26-4a9f-acd4-f46f3306ad8d",
+    "question_text": "오늘 학교 끝나고 집에 올 때 기분이 어땠어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "EMOTIONAL_EXPERIENCE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "emotional_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "COMMUTE_HOME_FEELING",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "7eefdd98-a841-473e-aaba-1d693d5e77ca",
+    "question_text": "내일 주말을 위해 가방 정리는 미리 해뒀어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "LEARNING_AND_STUDY",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "learning_and_study",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_BAG_ORGANIZATION",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "804c165d-1b8f-4c8e-a890-d164005267a0",
+    "question_text": "내일 금요일 시간표 중에 기다려지거나 좋아하는 과목 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "SCHOOL_EXPERIENCE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "school_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_TIMETABLE_ANTICIPATION",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "818d5547-9add-4ddc-ad63-bb12442198fd",
+    "question_text": "이번 주말에 레고나 만들기, 그림 그리기처럼 뭔가 푹 빠져서 만들고 싶은 게 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "HOBBY_AND_CREATION",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "hobby_and_creation",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_CREATIVE_WISH",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "82c3f40e-86f3-42f1-ad0c-ddecbf9a1fc9",
+    "question_text": "일요일 밤인데 잠들기 전에 듣고 싶은 음악이나 생각나는 편안한 소리가 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SUNDAY_BEDTIME_COMFORT_SOUND",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "87138cda-407f-49a5-a013-2c000081ed59",
+    "question_text": "이번 주말(토·일) 통틀어서 제일 재미있었거나 신났던 순간이 언제야?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_HIGHLIGHT",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_highlight",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "HIGHLIGHT_WEEKEND",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "8947f0cc-fa7b-4596-a37f-a27c0588db43",
+    "question_text": "오늘 제일 크게 웃었던 일이 뭐야?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_HIGHLIGHT",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_highlight",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "LAUGH_MOMENT_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "896b99a3-eb6c-44e4-a389-75a8e8900477",
+    "question_text": "오늘 방과후나 학원에서 재미있는 활동 했어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "SCHOOL_EXPERIENCE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "school_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "ACADEMY_FUN_ACTIVITY_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "89a02684-a152-4786-acce-78142ae85f4b",
+    "question_text": "월요일부터 오늘까지 열심히 보냈는데, 오늘 스스로에게 주고 싶은 작은 보상이 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "ACHIEVEMENT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "achievement",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_SELF_REWARD",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "8a4f88ef-bf74-4027-a65a-4a7fac5901fd",
+    "question_text": "이번 주 월요일부터 오늘까지 열심히 보낸 스스로에게 점수를 준다면 100점 만점에 몇 점 주고 싶어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "ACHIEVEMENT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "achievement",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKLY_SELF_SCORE",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "8a561aa5-feee-4e3c-aa78-9304b7acca56",
+    "question_text": "오늘 점심이나 저녁으로 치킨, 피자나 외식처럼 특별히 맛있는 거 먹었어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_SPECIAL_MEAL_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "8ca13975-5382-456b-aeff-5c222d93d409",
+    "question_text": "오늘 친구들이랑 온라인에서 게임하거나 같이 플레이한 거 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "ONLINE_GAME_WITH_FRIENDS",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "8cde9cd7-fbce-4e70-a28d-a629964bb7c4",
+    "question_text": "주말에 몰아서 보고 싶은 유튜브 영상이나 드라마, 웹툰 같은 거 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_VIDEO_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "92a070bc-065a-425f-a56f-d6e2563a5f8d",
+    "question_text": "내일 학교 가면 제일 먼저 보고 싶은 친구가 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "TOMORROW_FRIEND_TO_SEE",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "95564e0c-0f7f-4b10-ad38-294402af0076",
+    "question_text": "오늘 게임이나 스마트폰 놀이 했어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "GAME_PLAYED_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "96a5edbd-42eb-4198-aa7a-113a3f3b3bdb",
+    "question_text": "오늘 밖에서 땀날 만큼 신나게 뛰어놀았어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "OUTDOOR_ACTIVE_PLAY_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "9adcf7e8-b2d9-4ddb-ab66-eb76981e5275",
+    "question_text": "오늘 새로 보거나 요즘 푹 빠져서 챙겨보는 영상이나 만화가 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FAVORITE_MEDIA_RECENT",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "9bbaa0d3-da36-434a-a086-43e7b79c1b22",
+    "question_text": "오늘 학교 쉬는 시간에 친구들이랑 재미있게 이야기하거나 논 거 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "RECESS_FRIEND_PLAY_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "9ced348f-013e-424b-a137-3caa080abd7d",
+    "question_text": "이번 주에 세웠던 목표나 꼭 하고 싶었던 일 중에 멋지게 성공한 게 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "ACHIEVEMENT",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "achievement",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKLY_GOAL_SUCCESS",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "9e2248aa-f7e5-4647-a9f2-3f59035e2aa8",
+    "question_text": "이번 주말에 친구랑 만나서 놀기로 약속한 거 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_FRIEND_PROMISE",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "9e778e3c-dbd4-443d-a25f-74c60b0e906f",
+    "question_text": "오늘 집에서 블록이나 장난감 가지고 놀았어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "HOBBY_AND_CREATION",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "hobby_and_creation",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "TOY_BLOCK_PLAY_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "9ec814ab-6b2a-4888-a07d-de720d6add49",
+    "question_text": "오늘 선생님이 재미있는 이야기나 수업을 해주셨어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "TEACHER_RELATIONSHIP",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "teacher_relationship",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "TEACHER_FUNNY_LESSON_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "a2c9a5d7-252e-4c7d-ad27-50a598b7c06c",
+    "question_text": "내일부터 주말인데, 이번 주말에 하고 싶은 놀이 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_PLAY_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "a46eaac4-d24e-42b8-a539-699082a31659",
+    "question_text": "오늘 가족이랑 같이 깔깔 웃었던 일이 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "FAMILY_RELATIONSHIP",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "family_relationship",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FAMILY_LAUGH_MOMENT_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "a55b4a73-51de-439d-a319-90beafb53f9f",
+    "question_text": "내일 학교 갈 생각 하면 어떤 기분이 들어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "MOOD_CHECK",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "mood_check",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "TOMORROW_SCHOOL_FEELING",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "a5874b35-e686-4f2d-aee2-8f44aaacba8b",
+    "question_text": "이번 주말 동안 새로 산 물건이나 선물 받은 게 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "INTEREST_AND_PREFERENCE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "interest_and_preference",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_NEW_ITEM_OR_GIFT",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "a90d006f-becf-49c6-a34e-e186e204c811",
+    "question_text": "오늘 일요일 저녁은 가족들이랑 다 같이 모여서 맛있는 밥 먹었어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FAMILY_DINNER_SUNDAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "abaa15c4-b016-40a9-a201-81146a285b68",
+    "question_text": "오늘 집에서 게임이나 유튜브 같은 재미있는 영상 본 거 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "DIGITAL_MEDIA_PLAYED_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "abb5ab6f-86e0-4d7b-a38e-f9ca7ff410a6",
+    "question_text": "내일 일요일에 꼭 하고 싶은 일이 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "INTEREST_AND_PREFERENCE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "interest_and_preference",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SUNDAY_WISH_ACTIVITY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "abec61b3-9577-4b5f-ad95-5ef07783d4b0",
+    "question_text": "내일 학교 끝나고 나서 제일 먼저 하고 싶은 게 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_AFTER_SCHOOL_WISH",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "b2704add-50da-4b78-aaf8-e546cfc6a231",
+    "question_text": "오늘 하루 보내면서 다리가 아프거나 힘들진 않았어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "PHYSICAL_LEGS_FATIGUE_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "b3b0b064-a1e5-4444-a59d-8471f6edc2fa",
+    "question_text": "주말 동안 푹 쉬면서 기운 충전 좀 됐어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_ENERGY_RECHARGE",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "b7531ffc-4afd-48e9-ad1b-12adaff63b84",
+    "question_text": "일요일 밤이 되었는데 주말 보내고 나니 지금 기분은 어때?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "EMOTIONAL_EXPERIENCE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "emotional_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SUNDAY_WEEKEND_END_FEELING",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "bc45012a-b367-4fe0-a691-fc96657f668a",
+    "question_text": "내일 학교 가면 제일 먼저 만나서 이야기 나누고 싶은 친구 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "TOMORROW_FRIEND_TO_SEE",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "be3e708a-5f23-4411-af7a-a245bd2ef283",
+    "question_text": "내일이면 드디어 금요일인데, 이번 주말에 꼭 하고 싶은 일이나 기대되는 게 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_ANTICIPATION_THU",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "bf0f25b5-3f7f-4d27-a88a-908a2eabf9ab",
+    "question_text": "오늘 금요일 저녁에 맛있는 거 먹을 계획 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_DINNER_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "c2fd870b-3d0c-4fe4-a128-06a3e00af9ef",
+    "question_text": "오늘 밤에 자기 전에 꼭 하고 싶은 나만의 자유 시간 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "BEDTIME_FREE_TIME_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "c41682e5-4ce0-4189-a7db-9285263b7424",
+    "question_text": "오늘 학교 체육 시간이나 쉬는 시간에 땀 흘리며 신나게 뛰어놀았어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "SCHOOL_EXPERIENCE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "school_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SCHOOL_PHYSICAL_PLAY_TODAY",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "c669a407-36c9-417d-a958-77cdd10c7970",
+    "question_text": "오늘 학원이나 방과후 수업 가기 전에 친구랑 잠깐이라도 이야기 나누거나 간식 먹었어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "ACADEMY_FRIEND_BEFORE_CLASS",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "c87176ee-8b51-4121-a45a-a2bd4c732497",
+    "question_text": "주말 동안 하고 싶었던 게임이나 보고 싶었던 영상은 원 없이 다 즐겼어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DIGITAL_CONTENT",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "digital_content",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_MEDIA_SATISFACTION",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "cbccf641-905a-4b65-a0de-38600eac1e68",
+    "question_text": "오늘 학교 끝날 때 친구들이랑 주말 인사했어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_DISMISSAL_FRIEND_GREETING",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "ceae1ab0-b1f1-4f35-a49e-d28ec338ac80",
+    "question_text": "이번 주말에 친구를 집에 초대하거나 친구 집에 놀러 가기로 약속한 거 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_FRIEND_PROMISE",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "d1010e36-cc57-4e0a-a1bc-140036303e34",
+    "question_text": "오늘 가족들이랑 마트나 공원처럼 어디 놀러 나갔다 왔어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 2,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "OUTING_WITH_FAMILY_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "d1be8b1c-b0f0-481c-a1eb-c547feaf668f",
+    "question_text": "이번 주 동안 학교나 집에서 가장 웃겼거나 재미있었던 순간이 떠오르는 게 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "DAILY_HIGHLIGHT",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_highlight",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKLY_LAUGH_MOMENT",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "d45b1cfc-4974-4b57-aa1c-3ec4ae121730",
+    "question_text": "한 주가 거의 다 지나갔는데, 이번 주 조금 피곤했어 아니면 아직 쌩쌩해?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "PHYSICAL_STATE",
+    "weekday_affinity": [
+      "thu"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "physical_state",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKLY_ENERGY_FATIGUE_CHECK",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "d913b2f7-d3de-4cf6-ada6-ea5082d6579d",
+    "question_text": "오늘 저녁에 제일 맛있게 먹은 반찬이나 음식은 뭐야?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "DINNER_MENU_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "d95f896a-7c60-45d9-afc4-801fe245e386",
+    "question_text": "이번 주에 새로 사귄 친구나 더 친해진 친구가 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKLY_NEW_FRIENDSHIP",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "dc0b3908-165c-4bc3-a661-ea4e8313b3ea",
+    "question_text": "오늘 토요일 아침에 늦잠 푹 자고 여유롭게 일어났어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_MORNING_SLEEP_IN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "dca64424-9d7f-43e8-aa69-0f6473c7fbbf",
+    "question_text": "내일 입을 옷이나 책가방 미리 챙겨뒀어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "CLOTHES_BAG_PREP_TOMORROW",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "dce3b9d5-037c-4b66-aaa6-2a27f574b941",
+    "question_text": "이번 주말에 가족이나 친구랑 어디 놀러 갈 계획 있어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_OUTING_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "dd7cff65-f212-42ee-ac78-bba62dd652eb",
+    "question_text": "이번 주말에 스스로 해보고 싶었던 계획이나 목표를 잘 해냈어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "ACHIEVEMENT",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "achievement",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_GOAL_ACHIEVEMENT",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "e0e21c98-040f-4092-a55f-f8e88286b2af",
+    "question_text": "오늘 집에서 혼자 조용히 만화책이나 재미있는 책 읽으며 시간 보낸 거 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "HOBBY_AND_CREATION",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "hobby_and_creation",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "READING_BOOK_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "e234ed54-a769-4615-a38d-8e8be9f0035b",
+    "question_text": "주말 동안 친구한테 문자나 전화해서 재미있게 수다 떨었어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_FRIEND_CHAT",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "e357de38-a0ac-47e1-a4dd-407f62820856",
+    "question_text": "오늘 가족 심부름을 돕거나 집안일을 스스로 도와드린 일이 있어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "FAMILY_RELATIONSHIP",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "family_relationship",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "HELP_FAMILY_CHORES_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "e8a7bf7c-32d8-4e24-aeee-7dbbf5f708ab",
+    "question_text": "오늘 주말인데 학원 가거나 운동/활동 다녀온 거 있어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_ACADEMY_ACTIVITY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "ea23fb74-7439-4f94-a387-8f6a1c041f84",
+    "question_text": "오늘 주말 맞아서 맛있는 배달음식이나 특별한 외식 먹었어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "WEEKEND_SPECIAL_MEAL_TODAY",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "ed9ac5ca-531b-4ebd-aa51-fba759ae025e",
+    "question_text": "내일 월요일인데 주말을 마무리하며 지금 기분 어때?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "EMOTIONAL_EXPERIENCE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 14,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "emotional_experience",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SUNDAY_WEEKEND_END_FEELING",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "edb4eb83-0846-4387-a8c9-d2b14b36ba83",
+    "question_text": "오늘 학교 끝나고 친구들이랑 밖에서 놀거나 떡볶이 같은 맛있는 간식 사 먹었어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "PEER_CONNECTION",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "peer_connection",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "AFTER_SCHOOL_FRIEND_PLAY_SNACK",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "f1c08082-e8c7-4909-ad1c-8bca72da7de5",
+    "question_text": "오늘 낮에 이불 속에서 뒹굴거리며 쉬었어?",
+    "applicable_grades": [
+      1,
+      2
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sat"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 5,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "DAYTIME_REST_LAZING",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "fcf0384f-14a6-4ce5-acfb-16fc070d724f",
+    "question_text": "오늘 금요일 저녁으로 가족들이랑 맛있는 걸 먹거나 외식하기로 했어?",
+    "applicable_grades": [
+      3,
+      4
+    ],
+    "semantic_group": "MEAL_AND_TASTE",
+    "weekday_affinity": [
+      "fri"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 3,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "meal_and_taste",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "FRIDAY_DINNER_PLAN",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "fd4988d4-2c8e-40ab-aafa-a3d07bf70749",
+    "question_text": "내일 학교 갈 준비(가방 챙기기나 숙제 확인)는 미리 끝내뒀어?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_LIFE",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_life",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "SCHOOL_PREP_TOMORROW",
+    "school_context_tag": "TRUE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  },
+  {
+    "id": "ffda10aa-6a7f-4f65-a6cc-893759b63e20",
+    "question_text": "이번 주말(토, 일) 통틀어서 제일 재미있었던 순간은 언제야?",
+    "applicable_grades": [
+      5,
+      6
+    ],
+    "semantic_group": "DAILY_HIGHLIGHT",
+    "weekday_affinity": [
+      "sun"
+    ],
+    "periodicity": "flexible",
+    "cooldown_days": 7,
+    "conversation_style": "reflective",
+    "answer_mode": "open",
+    "topic": "daily_highlight",
+    "sensitivity": "low",
+    "memory_usable": false,
+    "question_family": "HIGHLIGHT_WEEKEND",
+    "school_context_tag": "FALSE",
+    "clinical_status": "APPROVED",
+    "is_active": true,
+    "question_bank_version": "v3.0",
+    "round_type": "round2_night",
+    "cycle_type": "always",
+    "question_intent": null,
+    "conversation_stage": null,
+    "dashboard_area_tag": "daily_general"
+  }
+]
