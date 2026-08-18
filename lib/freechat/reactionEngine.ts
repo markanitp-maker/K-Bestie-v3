@@ -343,11 +343,11 @@ const VARIANTS = [
   (t: string) => `그랬구나... ${t}`
 ];
 
-function pickAvoiding<T>(
+export function pickAvoiding<T>(
   list: T[], 
   history: string[], 
   textOf: (item: T) => string, 
-  rand: () => number,
+  rand: () => number = Math.random,
   mutate?: (item: T, idx: number) => T
 ): T | null {
   if (list.length === 0) return null;

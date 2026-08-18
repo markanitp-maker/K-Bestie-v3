@@ -26,7 +26,7 @@ import { detectFabricatedRecall, FABRICATED_RECALL_FALLBACK_TEXT } from "./memor
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
-import { isKPlayEnabled } from "./play/playAvailability";
+import { isKPlayEnabled, getPlayDisabledResponse } from "./play/playAvailability";
 import { setPendingPlayProposal, clearPendingPlayProposal } from "./play/pendingProposalStore";
 import type { PlaySkillId } from "./play/skillTypes";
 
@@ -282,6 +282,35 @@ export async function respond(
   const signals = extractUtteranceSignals(input.currentUtterance);
   const semanticGroup = estimateSemanticGroup(signals);
   const topicMode = input.mode === "MISSION" ? "mission" : "free_chat";
+
+  // 5-0) 놀이 꺼짐 상태에서 놀이 요청 시 결정론 안내 반환
+  // hasGenericPlayAcceptance는 단독 수락("좋아", "응" 등)이므로 단독일 때는 제외하고
+  // 나머지 4개 신호 중 하나라도 true일 때만 결정론 분기를 탄다.
+  const hasDirectPlaySignal = Boolean(
+    signals.hasChosungGameStart ||
+    signals.hasWordChainGameStart ||
+    signals.hasNonsenseGameStart ||
+    signals.hasPlayRequestWithoutTarget
+  );
+
+  if (!isKPlayEnabled() && hasDirectPlaySignal) {
+    if (input.sessionId) {
+      try {
+        await clearPendingPlayProposal(input.sessionId, deps.db);
+      } catch (err) {
+        console.error("[k-conversation/index] clearPendingPlayProposal error:", err);
+      }
+    }
+    const recentKTexts = input.recentKTexts ?? [];
+    const text = getPlayDisabledResponse(recentKTexts);
+    return {
+      text,
+      action: "JUST_LISTEN",
+      category: "deterministic",
+      tokenIn: 0,
+      tokenOut: 0,
+    };
+  }
 
   // 5-1) 놀이 제안 거절 기록 — 아이가 이번 턴에 명확히 거절했으면 쿨다운을 기록하여 반복 제안 차단
   if (signals.hasPlayRejection && input.childId) {

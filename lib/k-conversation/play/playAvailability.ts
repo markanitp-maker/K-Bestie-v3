@@ -1,4 +1,5 @@
 import { getSupabaseTarget } from "@/lib/supabase/env";
+import { pickAvoiding } from "@/lib/freechat/reactionEngine";
 
 /**
  * 케이 놀이 전체 kill switch.
@@ -14,3 +15,32 @@ export function isKPlayEnabled(): boolean {
   }
   return getSupabaseTarget() !== "prod";
 }
+
+/**
+ * 놀이가 꺼져 있을 때 아이에게 그대로 들려줄 안내.
+ *
+ * 프롬프트 지침으로는 안 된다 — 케이가 "좋아, 신나게 해보자!" 라고 호응해
+ * 아이가 시작되지도 않을 게임을 기다렸다(2026-08-18 프로덕션 실측).
+ * 모델에게 맡기지 않고 이 문구를 그대로 말한다.
+ */
+export const K_PLAY_DISABLED_TEMPLATES = [
+  "놀이는 지금 준비 중이야! 우리 그냥 얘기하자 😊",
+  "놀이는 지금 열심히 준비하고 있어! 우리 재미있는 이야기 나누자.",
+  "지금은 놀이 준비 중이야! 우리 다른 이야기하면서 놀까?",
+  "놀이는 아직 준비 중이거든! 오늘은 우리 신나게 수다 떨자.",
+  "지금은 놀이를 준비하고 있어! 우리 무슨 이야기할까?",
+  "놀이는 지금 준비 중이야! 우리 재미있게 대화하자.",
+];
+
+/**
+ * 놀이가 꺼져 있을 때 아이 발화에 응답할 결정론 문구를 반환한다.
+ * 최근 케이 발화(recentKTexts)를 확인하여 동일 문구 반복을 회피한다.
+ */
+export function getPlayDisabledResponse(
+  recentKTexts: string[] = [],
+  rand: () => number = Math.random
+): string {
+  const selected = pickAvoiding(K_PLAY_DISABLED_TEMPLATES, recentKTexts, (t) => t, rand);
+  return selected ?? K_PLAY_DISABLED_TEMPLATES[0];
+}
+

@@ -305,3 +305,218 @@ test("8. executeSkillEnd 는 꺼져 있어도 동작한다", async () => {
     assert.equal(endCalled, true, "꺼져 있어도 executeSkillEnd 는 정상 호출되어야 한다");
   });
 });
+
+// --- 010 프로덕션 QA 반려: 놀이 요청 결정론 응답 6종 테스트 ---
+import { K_PLAY_DISABLED_TEMPLATES, getPlayDisabledResponse } from "./playAvailability";
+import { respond } from "../index";
+
+function createMockDbForIntegration(): SupabaseClient {
+  const chain: any = {
+    select: () => chain,
+    eq: () => chain,
+    is: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    single: async () => ({ data: null, error: null }),
+    maybeSingle: async () => ({ data: null, error: null }),
+    update: () => chain,
+    insert: () => chain,
+    delete: () => chain,
+  };
+  return {
+    rpc: async () => ({ data: null, error: null }),
+    from: () => chain,
+  } as unknown as SupabaseClient;
+}
+
+test("010-1. 꺼짐 + '초성게임 하자' -> category === 'deterministic', 준비 중 안내 및 초성·낱말·문제 없음", async () => {
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_K_PLAY_ENABLED: undefined }, async () => {
+    let aiCalled = false;
+    const mockAi = {
+      models: {
+        generateContent: async () => {
+          aiCalled = true;
+          return { text: "AI가 생성한 텍스트" };
+        },
+      },
+    } as any;
+
+    const result = await respond(
+      {
+        mode: "FREE_CHAT",
+        currentUtterance: "초성게임 하자",
+        childId: "child-1",
+        sessionId: "session-1",
+      },
+      {
+        db: createMockDbForIntegration(),
+        ai: mockAi,
+        modelId: "test-model",
+      }
+    );
+
+    assert.equal(aiCalled, false, "Gemini 호출 없이 결정론 응답이어야 함");
+    assert.equal(result.category, "deterministic");
+    assert.equal(result.action, "JUST_LISTEN");
+    assert.equal(result.tokenIn, 0);
+    assert.equal(result.tokenOut, 0);
+    assert.ok(result.text.includes("준비"), "문구에 준비 중 뜻이 포함되어야 함");
+    assert.ok(!/[ㄱ-ㅎ]{2,}/.test(result.text), "초성 자음이 없어야 함");
+    assert.ok(!result.text.includes("문제"), "문제가 없어야 함");
+  });
+});
+
+test("010-2. 꺼짐 + '끝말잇기 하자' / '넌센스 퀴즈 하자' / '우리 놀자' -> 모두 결정론 안내 반환", async () => {
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_K_PLAY_ENABLED: undefined }, async () => {
+    const utterances = ["끝말잇기 하자", "넌센스 퀴즈 하자", "우리 놀자"];
+
+    for (const utterance of utterances) {
+      let aiCalled = false;
+      const mockAi = {
+        models: {
+          generateContent: async () => {
+            aiCalled = true;
+            return { text: "AI 응답" };
+          },
+        },
+      } as any;
+
+      const result = await respond(
+        {
+          mode: "FREE_CHAT",
+          currentUtterance: utterance,
+          childId: "child-1",
+          sessionId: "session-1",
+        },
+        {
+          db: createMockDbForIntegration(),
+          ai: mockAi,
+          modelId: "test-model",
+        }
+      );
+
+      assert.equal(aiCalled, false, `${utterance}는 Gemini 호출 없이 결정론 응답이어야 함`);
+      assert.equal(result.category, "deterministic");
+      assert.equal(result.action, "JUST_LISTEN");
+      assert.equal(result.tokenIn, 0);
+      assert.ok(result.text.includes("준비"));
+    }
+  });
+});
+
+test("010-3. 꺼짐 + hasGenericPlayAcceptance 만 true ('좋아') -> 결정론 분기를 타지 않는다", async () => {
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_K_PLAY_ENABLED: undefined }, async () => {
+    let aiCalled = false;
+    const mockAi = {
+      models: {
+        generateContent: async () => {
+          aiCalled = true;
+          return { text: "응, 나도 좋아!" };
+        },
+      },
+    } as any;
+
+    const result = await respond(
+      {
+        mode: "FREE_CHAT",
+        currentUtterance: "좋아",
+        childId: "child-1",
+        sessionId: "session-1",
+      },
+      {
+        db: createMockDbForIntegration(),
+        ai: mockAi,
+        modelId: "test-model",
+      }
+    );
+
+    assert.equal(aiCalled, true, "단독 '좋아'는 결정론 놀이 분기를 타지 않고 AI를 호출해야 함");
+    assert.notEqual(result.category, "deterministic");
+  });
+});
+
+test("010-4. 꺼짐 + 놀이와 무관한 발화 -> 평소대로 (분기 안 탐)", async () => {
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_K_PLAY_ENABLED: undefined }, async () => {
+    let aiCalled = false;
+    const mockAi = {
+      models: {
+        generateContent: async () => {
+          aiCalled = true;
+          return { text: "축구 정말 재미있었겠다!" };
+        },
+      },
+    } as any;
+
+    const result = await respond(
+      {
+        mode: "FREE_CHAT",
+        currentUtterance: "오늘 학교에서 축구했어",
+        childId: "child-1",
+        sessionId: "session-1",
+      },
+      {
+        db: createMockDbForIntegration(),
+        ai: mockAi,
+        modelId: "test-model",
+      }
+    );
+
+    assert.equal(aiCalled, true, "놀이 무관 발화는 AI 호출로 진행되어야 함");
+    assert.notEqual(result.category, "deterministic");
+  });
+});
+
+test("010-5. 켜짐(dev) + '초성게임 하자' -> 기존대로 게임이 시작된다 (Dev 회귀 방어)", async () => {
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "dev", NEXT_PUBLIC_K_PLAY_ENABLED: undefined }, async () => {
+    let aiCalled = false;
+    let capturedInstruction = "";
+    const mockAi = {
+      models: {
+        generateContent: async (args: any) => {
+          aiCalled = true;
+          capturedInstruction = args.config?.systemInstruction ?? "";
+          return { text: "초성게임 시작할게! ㅂㄴㄴ 맞춰봐." };
+        },
+      },
+    } as any;
+
+    const result = await respond(
+      {
+        mode: "FREE_CHAT",
+        currentUtterance: "초성게임 하자",
+        childId: "child-1",
+        sessionId: "session-1",
+      },
+      {
+        db: createMockDbForIntegration(),
+        ai: mockAi,
+        modelId: "test-model",
+      }
+    );
+
+    assert.equal(aiCalled, true, "dev 환경에서는 초성게임 시작 시 AI가 호출되어야 함");
+    assert.notEqual(result.category, "deterministic", "dev에서는 결정론 차단 분기를 타지 않아야 함");
+    assert.ok(
+      capturedInstruction.includes("초성") || capturedInstruction.includes("놀이"),
+      "프롬프트에 초성게임 지침이 포함되어야 함"
+    );
+  });
+});
+
+test("010-6. 연속 호출 시 같은 문구만 반복되지 않는다", () => {
+  assert.ok(K_PLAY_DISABLED_TEMPLATES.length >= 5, "5개 이상의 템플릿 문구가 있어야 함");
+
+  const history: string[] = [];
+  const selectedList: string[] = [];
+
+  for (let i = 0; i < 5; i++) {
+    const selected = getPlayDisabledResponse(history);
+    assert.ok(!history.includes(selected), `최근 이력에 있는 문구가 반복되지 않아야 함 (선택: ${selected})`);
+    history.push(selected);
+    selectedList.push(selected);
+  }
+
+  const uniqueSelected = new Set(selectedList);
+  assert.equal(uniqueSelected.size, 5, "5회 연속 호출 시 5개의 서로 다른 문구가 선택되어야 함");
+});
+
