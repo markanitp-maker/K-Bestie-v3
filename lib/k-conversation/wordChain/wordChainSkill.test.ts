@@ -796,3 +796,17 @@ describe("WORD_CHAIN_SKILL Adapter", () => {
     });
   });
 });
+
+// ── 요청서 014: 2026-08-18 23:56 Dev 실측(김서아) 회귀 ────────────────────────
+// 아이가 문장 끝에 낱말을 붙여 말하면("… 귀찮냐 차표") 그 낱말을 낱말로 봐야 한다.
+// 문장 전체를 낱말로 넘겨 "차표" 를 유실했던 사고를 고정한다.
+test("문장 속 마지막 낱말을 끝말잇기 낱말로 뽑는다", async () => {
+  const { extractChildCandidateWordForTest } = await import("./wordChainSkill");
+  assert.equal(
+    extractChildCandidateWordForTest("아 진짜 한참 째 끝말잇기 하긴 하는 구나 귀찮냐 차표"),
+    "차표"
+  );
+  assert.equal(extractChildCandidateWordForTest("차표"), "차표");
+  assert.equal(extractChildCandidateWordForTest("정답은 기차야"), "기차");
+  assert.equal(extractChildCandidateWordForTest("음... 사과!"), "사과");
+});

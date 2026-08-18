@@ -182,15 +182,51 @@ function isTopicShift(text: string, signals: UtteranceSignals): boolean {
 /**
  * 아이의 발화에서 단어 후보를 추출합니다.
  */
+/**
+ * 아이 발화에서 끝말잇기 낱말 후보를 뽑는다.
+ *
+ * 2026-08-18 23:56 Dev 실측(김서아): 아이가
+ *   "아 진짜 한참 째 끝말잇기 하긴 하는 구나 귀찮냐 차표"
+ * 라고 말했는데, 문장 전체를 낱말로 넘겨서 "차표" 가 통째로 유실됐다. 아이는 곧바로
+ *   "내가 차표 라고 했잖아 왜 갑자기 메모지가 튀어 나오니"
+ * 라고 지적했다. 아이는 말끝에 낱말을 붙여 말한다 — 문장이면 마지막 한글 낱말을 낱말로 본다.
+ */
 function extractChildCandidateWord(utterance: string): string {
   const trimmed = utterance.trim();
   const prefixMatch = trimmed.match(
-    /^(?:정답|답은|답이|답|단어|단어는)\s*[:=!]?\s*([가-힣a-zA-Z0-9]+)/
+    /^(?:정답은|정답이|정답|답은|답이|답|단어는|단어)\s*[:=!]?\s*([가-힣a-zA-Z0-9]+)/
   );
   if (prefixMatch && prefixMatch[1]) {
-    return prefixMatch[1].trim();
+    return stripTrailingParticle(prefixMatch[1].trim());
   }
-  return trimmed.replace(/^[!?.~^,]+|[!?.~^,]+$/g, "").trim();
+
+  const stripped = trimmed.replace(/^[!?.~^,]+|[!?.~^,]+$/g, "").trim();
+  // 한 낱말이면 그대로 쓴다(기존 동작 유지).
+  if (!/\s/.test(stripped)) return stripped;
+
+  // 문장이면 마지막 한글 토큰을 낱말로 본다. 조사·감탄사만 남은 토큰은 건너뛴다.
+  const tokens = stripped
+    .split(/\s+/)
+    .map((token) => token.replace(/[^가-힣a-zA-Z0-9]/g, ""))
+    .filter((token) => token.length > 0);
+  for (let index = tokens.length - 1; index >= 0; index -= 1) {
+    const token = tokens[index];
+    if (token.length >= 2 && /^[가-힣]+$/.test(token)) return stripTrailingParticle(token);
+  }
+  return tokens[tokens.length - 1] ?? stripped;
+}
+
+/**
+ * "기차야", "사과요" 처럼 종결 조사가 붙은 낱말에서 조사를 뗀다.
+ * 뗀 형태가 사전에 있을 때만 뗀다 — "고야", "비야" 같은 실제 낱말을 망치지 않기 위해서다.
+ */
+function stripTrailingParticle(token: string): string {
+  for (const particle of ["이야", "야", "요", "이다"]) {
+    if (!token.endsWith(particle)) continue;
+    const base = token.slice(0, token.length - particle.length);
+    if (base.length >= 2 && lookupWord(base)) return base;
+  }
+  return token;
 }
 
 /**
@@ -524,3 +560,6 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
     }
   },
 };
+
+/** 테스트 전용 노출 — 문장 속 낱말 추출 규칙을 직접 검증한다(요청서 014). */
+export const extractChildCandidateWordForTest = extractChildCandidateWord;

@@ -3,6 +3,7 @@ import { CHOSUNG_SKILL } from "./chosungSkill";
 import { WORD_CHAIN_SKILL } from "../wordChain/wordChainSkill";
 import { NONSENSE_QUIZ_SKILL } from "../nonsenseQuiz/nonsenseQuizSkill";
 import type { UtteranceSignals } from "../utteranceSignals";
+import { resolveRequestedSkill } from "./skillRequestResolution";
 
 /**
  * 활성화된 모든 Play Skill의 등록부.
@@ -27,17 +28,38 @@ export function findSkillById(
 /**
  * 아이의 발화 및 신호에서 직접 요청된 Skill 모듈을 검색합니다.
  */
+/**
+ * 놀이별 이름·별칭. 아이가 한 문장에서 놀이를 여러 개 말했을 때 어느 것을 요청했는지
+ * 위치로 가려내기 위해 쓴다(요청서 014). 레지스트리와 함께 관리한다.
+ */
+const SKILL_ALIASES: Record<string, readonly string[]> = {
+  CHOSUNG: ["초성게임", "초성 게임", "초성"],
+  WORD_CHAIN: ["끝말잇기", "끝말 잇기", "끝말"],
+  NONSENSE_QUIZ: ["넌센스퀴즈", "넌센스 퀴즈", "넌센스", "수수께끼"],
+};
+
+/**
+ * 아이 발화가 직접 요청한 Skill 을 찾는다.
+ *
+ * 여러 Skill 이 동시에 매칭되면 **등록 순서로 첫 번째를 고르지 않는다**. 2026-08-18 Dev 실측에서
+ * 아이가 "초성 게임은 개판이야 끝말잇기나 하자" 라고 했는데 등록 순서 때문에 초성게임이 이겨서
+ * 끝말잇기 요청이 두 턴 연속 무시됐다. 사람이 말한 순서와 불만 맥락을 따른다
+ * (lib/k-conversation/play/skillRequestResolution.ts).
+ */
 export function findDirectlyRequestedSkill(
   signals: UtteranceSignals,
   utterance: string,
   registry: readonly PlaySkillModule[] = PLAY_SKILL_REGISTRY
 ): PlaySkillModule | null {
-  for (const skill of registry) {
-    if (skill.matchesDirectRequest(signals, utterance)) {
-      return skill;
-    }
-  }
-  return null;
+  const matched = registry.filter((skill) => skill.matchesDirectRequest(signals, utterance));
+  if (matched.length === 0) return null;
+  if (matched.length === 1) return matched[0];
+
+  const resolved = resolveRequestedSkill(
+    utterance,
+    matched.map((skill) => ({ skill, aliases: SKILL_ALIASES[skill.id] ?? [skill.displayName] }))
+  );
+  return resolved?.skill ?? matched[0];
 }
 
 /**
