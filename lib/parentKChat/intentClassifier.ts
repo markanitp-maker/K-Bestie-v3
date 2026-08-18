@@ -141,6 +141,7 @@ const FEEDBACK_PATTERNS = [
   /아니[,\s]/,
   /라고\s*했잖아|랬잖아/,
   /날짜가\s*왜|다른\s*날짜/,
+  /뭔\s*소리야|무슨\s*소리야/,
 ];
 
 // 일반 대화 — 인사·감사·연결확인·소소한 확인.
@@ -161,6 +162,34 @@ const IDENTITY_PATTERNS = [
   /너\s*누구야|넌\s*누구야|너는\s*누구야/,
   /케이(?:가|는)?\s*누구야/,
   /이름이\s*(?:뭐야|뭐니|어떻게\s*돼)/,
+];
+
+// 케이 자신·서비스·앱 기능에 대한 질문 (아이와 무관한 질문을 일반 대화로 인정)
+// "너 대화 저장 안되니?", "너 업데이트 되니?", "너 뭐 할 수 있어" 등은
+// 아이 정보 조회가 아니라 케이/서비스에 대한 일반 대화다.
+const SELF_OR_SERVICE_PATTERNS = [
+  // 1. 대화 저장 / 기억 / 업데이트 / 대화 불가 등 케이 동작
+  /너\s*(?:는|도)?\s*대화\s*저장/,
+  /대화\s*저장\s*(?:안\s*(?:되|돼|된|됩)|되|돼|된|됩|가능)/,
+  /너\s*(?:는|도)?\s*업데이트\s*(?:되|돼|된|됩|안\s*(?:되|돼|된|됩)|가능)/,
+  /업데이트\s*(?:되|돼|된|됩|안\s*(?:되|돼|된|됩)|가능)/,
+  /너(?:랑|하고|와)(?:는)?\s*대화가\s*(?:안\s*(?:되|돼|된|됩)|안돼|안된|안됩|힘들|어렵|불가)/,
+  /너\s*대화가\s*(?:안\s*(?:되|돼|된|됩)|안돼|안된|안됩)/,
+  /대화가\s*안\s*(?:되|돼|된|됩)/,
+  // 2. 능력 / 기능 / 사용법
+  /너\s*(?:는|도)?\s*(?:뭐|무엇|무얼)\s*(?:할\s*수\s*있|할줄\s*알|할\s*줄\s*알|해|하니|할수있)/,
+  /(?:무슨|어떤|무얼|뭐)\s*기능(?:이|은)?\s*(?:있|제공)/,
+  /기능(?:이|은)?\s*(?:뭐야|뭐니|무엇|어떤\s*게\s*있|알려)/,
+  /(?:어떻게|어찌)\s*(?:쓰는|사용하는|이용하는)(?:\s*거| 거야| 거니| 방법| 법)?/,
+  /(?:사용법|이용법|사용\s*방법)(?:이|은)?\s*(?:뭐|어떻게|알려)/,
+  // 3. 케이 호칭 + 케이 자신 주어 질문
+  /케이\s*너\b/,
+  /케이(?:는|가)?\s*(?:뭐|무엇|어떤\s*역할|어떤\s*앱|어떤\s*서비스|누가\s*만들)/,
+  // 4. 앱 / 서비스 / 리포트 / 알림 등 플랫폼 기능 질문
+  /(?:이|해당)\s*(?:앱|어플|서비스|프로그램)/,
+  /(?:앱|서비스)(?:이|은)?\s*(?:뭐야|무엇|어떤)/,
+  /(?:일일\s*리포트|주간\s*리포트|리포트)(?:가|는|이|은)?\s*(?:뭐야|무엇|어떻게\s*봐|어디서\s*봐)/,
+  /알림\s*(?:어떻게|어디서)?\s*(?:꺼|끄|켜|설정|해제)/,
 ];
 
 // 짧은 리액션 — 그렇구나 / 알겠어 / 그래 / 응 / 네 / 아하 (왜? 그래? 그건? 정말? 같은 후속 발화는 제외)
@@ -199,6 +228,12 @@ function isGeneralConversation(text: string): boolean {
   }
   if (
     DATE_TIME_PATTERNS.some((p) => p.test(text)) &&
+    !CHILD_REFERENCE_OR_ACTION_PATTERNS.some((p) => p.test(text))
+  ) {
+    return true;
+  }
+  if (
+    SELF_OR_SERVICE_PATTERNS.some((p) => p.test(text)) &&
     !CHILD_REFERENCE_OR_ACTION_PATTERNS.some((p) => p.test(text))
   ) {
     return true;
@@ -248,16 +283,13 @@ export function classifyParentKChatIntent(
       if (PENDING_FOLLOWUP_EDIT_PATTERNS.some((p) => p.test(text))) {
         return { intent: "PARENT_QUERY_REQUEST", confidence: 0.9, isFollowUpToPendingDraft: true };
       }
-      // 명백한 새 아이 정보 질문(날짜/기간 표현이 있거나 아이 정보 의문형)이면
-      // 초안 수정 catch-all로 삼키지 않고 통과시켜 아래쪽 기본 분기가 판정하게 한다.
-      if (NEW_QUERY_PATTERNS.some((p) => p.test(text))) {
-        // 통과: 아래쪽 기존 분기가 처리
-      } else if (!PARENT_QUERY_REQUEST_PATTERNS.some((p) => p.test(text))) {
-        // 명시적 후속 신호가 없어도, 새 "물어봐줘"류 요청(완전히 별개의 신규 제안)이
-        // 아니라면 애매한 입력은 여전히 "직전 제안에 대한 보충 설명"으로 취급한다
-        // (§5) — 어차피 부모가 모달에서 최종 확인해야만 실제 등록되므로 안전하다.
-        return { intent: "PARENT_QUERY_REQUEST", confidence: 0.6, isFollowUpToPendingDraft: true };
-      }
+      // 과거(request-parent-k-conversation-context-and-draft-edit-fix.md)에는
+      // "부모가 모달에서 최종 확인하므로 안전하다"며 애매한 입력을 catch-all로 전부
+      // 초안 수정(PARENT_QUERY_REQUEST, isFollowUpToPendingDraft: true)으로 삼켰다.
+      // 그러나 실제로는 일반 대화나 다른 질문이 모두 초안 수정으로 묶여 같은 안내 문구가
+      // 반복되고 대화가 영원히 갇히는 심각한 대화 단절 사고가 발생했다.
+      // 따라서 명시적 수정 신호(PENDING_FOLLOWUP_EDIT_PATTERNS)가 있을 때만 초안 수정으로 보고,
+      // 그 외에는 catch-all 없이 아래쪽 기본 분기로 통과시켜 정상 판정하게 한다.
     }
   }
 

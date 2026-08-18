@@ -277,4 +277,38 @@ test("시점 표현이 있어도 아이에 대한 질문은 아이 정보 조회
   }
 });
 
+test("2026-08-18 부모-케이 반복 사고 방지 및 케이/서비스 질문 의도 분류 테스트 7종", () => {
+  // 1) hasPendingDraft: true + "너 업데이트 되니?" -> PARENT_QUERY_REQUEST 가 아니다 (GENERAL_CONVERSATION)
+  const case1 = classifyParentKChatIntent("너 업데이트 되니?", true);
+  assert.notEqual(case1.intent, "PARENT_QUERY_REQUEST");
+  assert.equal(case1.intent, "GENERAL_CONVERSATION");
+
+  // 2) hasPendingDraft: true + "뭔 소리야? 너랑은 대화가 안 된다?" -> PARENT_QUERY_REQUEST 가 아니다
+  const case2 = classifyParentKChatIntent("뭔 소리야? 너랑은 대화가 안 된다?", true);
+  assert.notEqual(case2.intent, "PARENT_QUERY_REQUEST");
+  assert.ok(case2.intent === "GENERAL_CONVERSATION" || case2.intent === "FEEDBACK_OR_CORRECTION");
+
+  // 3) hasPendingDraft: true + "그 말 말고 학교 얘기로 바꿔줘" (명시적 수정 신호) -> isFollowUpToPendingDraft: true (회귀 방어)
+  const case3 = classifyParentKChatIntent("그 말 말고 학교 얘기로 바꿔줘", true);
+  assert.equal(case3.intent, "PARENT_QUERY_REQUEST");
+  assert.equal(case3.isFollowUpToPendingDraft, true);
+
+  // 4) "너 대화 저장 안되니?" -> GENERAL_CONVERSATION
+  const case4 = classifyParentKChatIntent("너 대화 저장 안되니?");
+  assert.equal(case4.intent, "GENERAL_CONVERSATION");
+
+  // 5) "이 앱 리포트가 뭐야?" -> GENERAL_CONVERSATION
+  const case5 = classifyParentKChatIntent("이 앱 리포트가 뭐야?");
+  assert.equal(case5.intent, "GENERAL_CONVERSATION");
+
+  // 6) "서현이 오늘 뭐 했어?" -> CHILD_INFORMATION_QUERY (아이 질문 오분류 방어)
+  const case6 = classifyParentKChatIntent("서현이 오늘 뭐 했어?");
+  assert.equal(case6.intent, "CHILD_INFORMATION_QUERY");
+
+  // 7) "서현이한테 학교 얘기 물어봐줘" -> PARENT_QUERY_REQUEST (기존 기능 회귀 방어)
+  const case7 = classifyParentKChatIntent("서현이한테 학교 얘기 물어봐줘");
+  assert.equal(case7.intent, "PARENT_QUERY_REQUEST");
+});
+
+
 

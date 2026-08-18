@@ -4,7 +4,9 @@ import { GoogleGenAI } from "@google/genai";
 import { getModelForGroup, createGenAIClient } from "@/app/api/_lib/ai";
 import { getLlmModel } from "@/lib/llm/modelRouter";
 import { retrieveParentKContext, type ParentConversationTurn } from "@/lib/parentKChat/parentKnowledgeRetrieval";
+import { recordParentKChatTurn } from "@/lib/parentKChat/messageStore";
 import { buildAskChildProposal, classifyParentKChatIntent } from "@/lib/parentKChat/intentClassifier";
+import { pickAvoiding } from "@/lib/freechat/reactionEngine";
 import {
   answerForClockFact,
   answerForDateFact,
@@ -207,8 +209,28 @@ export async function POST(request: Request) {
         Boolean(trimmedPriorAskChildProposal)
       );
 
+      // 2026-08-18 대표님 결정: 부모 질문 1행 저장 (fire-and-forget)
+      recordParentKChatTurn(serviceClient, {
+        parentId: user.id,
+        childId: child_id,
+        role: "parent",
+        content: trimmedQuestion,
+      });
+
+      const recordKTurn = (content: string, route?: string | null, answerable?: boolean | null) => {
+        recordParentKChatTurn(serviceClient, {
+          parentId: user.id,
+          childId: child_id,
+          role: "k",
+          content,
+          route,
+          answerable,
+        });
+      };
+
       const logTurn = (extra: Record<string, unknown>) => {
-        // 개인정보·대화 원문·전체 UUID는 남기지 않는다(§9) — child_id는 마스킹.
+        // 2026-08-18 대표님 결정으로 부모 대화 원문은 parent_k_chat_messages 에 저장한다.
+        // 이 로그 자체에는 여전히 개인정보·원문·전체 UUID는 남기지 않는다(로그는 접근통제가 다름) — child_id는 마스킹.
         console.log(JSON.stringify({
           route: "parent-k-chat",
           childId: `${String(child_id).slice(0, 4)}…`,
@@ -239,10 +261,12 @@ export async function POST(request: Request) {
           responseMode: "PARENT_QUERY_REQUEST_CANCELLED",
           fallbackReason: null,
         });
+        const kAnswer = "알겠어요, 그 질문은 취소할게요.";
+        recordKTurn(kAnswer, "PARENT_QUERY_REQUEST_CANCEL", true);
         return NextResponse.json({
           answerable: true,
           confidence: 1,
-          answer: "알겠어요, 그 질문은 취소할게요.",
+          answer: kAnswer,
           suggestedParentQuestion: null,
           evidenceIds: [],
           askChildProposal: null,
@@ -274,12 +298,28 @@ export async function POST(request: Request) {
           responseMode: isFollowUpToPendingDraft ? "PARENT_QUERY_REQUEST_FOLLOWUP_EDIT" : "PARENT_QUERY_REQUEST_DETECTED",
           fallbackReason: null,
         });
+        const DRAFT_EDIT_FOLLOWUP_TEMPLATES = [
+          "알겠어요. 말씀하신 대로 바꿔서 물어볼 내용을 다시 확인해 주세요.",
+          "네, 요청하신 내용으로 수정했어요. 아래에서 확인해 주세요.",
+          "바꿔서 준비했어요. 물어볼 내용이 맞는지 다시 한번 확인해 주세요.",
+        ];
+        const DRAFT_PROPOSAL_TEMPLATES = [
+          "그건 케이가 아이에게 직접 물어보는 게 더 정확할 것 같아요! 아래에서 물어볼 내용을 확인해 주세요.",
+          "아이에게 직접 물어보면 좋을 것 같아요. 아래 내용을 확인해 주세요.",
+        ];
+
+        const recentKTexts = conversationContext
+          .filter((turn) => turn.role === "k")
+          .map((turn) => turn.text);
+
+        const kAnswer = isFollowUpToPendingDraft
+          ? (pickAvoiding(DRAFT_EDIT_FOLLOWUP_TEMPLATES, recentKTexts, (t) => t) || DRAFT_EDIT_FOLLOWUP_TEMPLATES[0])
+          : (pickAvoiding(DRAFT_PROPOSAL_TEMPLATES, recentKTexts, (t) => t) || DRAFT_PROPOSAL_TEMPLATES[0]);
+        recordKTurn(kAnswer, isFollowUpToPendingDraft ? "PARENT_QUERY_REQUEST_FOLLOWUP_EDIT" : "PARENT_QUERY_REQUEST", false);
         return NextResponse.json({
           answerable: false,
           confidence: 1,
-          answer: isFollowUpToPendingDraft
-            ? "알겠어요. 말씀하신 대로 바꿔서 물어볼 내용을 다시 확인해 주세요."
-            : "그건 케이가 아이에게 직접 물어보는 게 더 정확할 것 같아요! 아래에서 물어볼 내용을 확인해 주세요.",
+          answer: kAnswer,
           suggestedParentQuestion: null,
           evidenceIds: [],
           askChildProposal: proposalContext.proposal,
@@ -310,6 +350,7 @@ export async function POST(request: Request) {
             responseMode: "GENERAL_CLOCK_FACT",
             fallbackReason: null,
           });
+          recordKTurn(clockAnswer, "GENERAL_CLOCK_FACT", true);
           return NextResponse.json({
             answerable: true,
             confidence: 1,
@@ -334,6 +375,7 @@ export async function POST(request: Request) {
               temporalKind: generalTemporal.kind,
               targetDate: generalTemporal.targetDate,
             });
+            recordKTurn(dateAnswer, "GENERAL_DATE_FACT", true);
             return NextResponse.json({
               answerable: true,
               confidence: 1,
@@ -382,6 +424,7 @@ export async function POST(request: Request) {
           fallbackReason,
         });
 
+        recordKTurn(answer, "GENERAL_CHAT", true);
         return NextResponse.json({
           answerable: true,
           confidence: 1,
@@ -415,6 +458,7 @@ export async function POST(request: Request) {
             temporalKind: resolvedTemporal.kind,
             targetDate: resolvedTemporal.targetDate,
           });
+          recordKTurn(dateFactAnswer, "DATE_FACT", true);
           return NextResponse.json({
             answerable: true,
             confidence: 1,
@@ -454,10 +498,12 @@ export async function POST(request: Request) {
           temporalKind: retrievalResult.temporal.kind,
           targetDate: retrievalResult.temporal.targetDate,
         });
+        const kAnswer = answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal);
+        recordKTurn(kAnswer, "RETRIEVAL_ERROR", false);
         return NextResponse.json({
           answerable: false,
           confidence: 0,
-          answer: answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal),
+          answer: kAnswer,
           suggestedParentQuestion: null,
           evidenceIds: [],
           askChildProposal: null,
@@ -496,6 +542,7 @@ export async function POST(request: Request) {
 
       if (retrievalResult.status === "no_data") {
         logTurn({ retrievalAttempted: true, retrievalSource: ["daily_report", "dashboard", "weekly_report", "detailed_report", "memory_fact"], retrievalResultCount: 0, responseMode: "NO_RESULT", fallbackReason: "NO_DATA", temporalKind: retrievalResult.temporal.kind, targetDate: retrievalResult.temporal.targetDate });
+        recordKTurn(noDataResponse.answer, "NO_DATA", false);
         return NextResponse.json(noDataResponse);
       }
 
@@ -508,10 +555,12 @@ export async function POST(request: Request) {
           targetDate: retrievalResult.temporal.targetDate,
           evidenceIds: evidence.map((item) => item.id),
         });
+        const kAnswer = answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal);
+        recordKTurn(kAnswer, "SYSTEM_ERROR", false);
         return NextResponse.json({
           answerable: false,
           confidence: 0,
-          answer: answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal),
+          answer: kAnswer,
           evidenceIds: [],
           askChildProposal: null,
           answerStatus: "SYSTEM_ERROR",
@@ -586,10 +635,12 @@ JSON 스키마:
       } catch (err) {
         console.error("LLM 호출 실패:", err);
         logTurn({ retrievalAttempted: true, retrievalSource: retrievalSources, retrievalResultCount: evidence.length, responseMode: "SYSTEM_ERROR", fallbackReason: "LLM_ERROR" });
+        const kAnswer = answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal);
+        recordKTurn(kAnswer, "SYSTEM_ERROR", false);
         return NextResponse.json({
           answerable: false,
           confidence: 0,
-          answer: answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal),
+          answer: kAnswer,
           evidenceIds: [],
           askChildProposal: null,
           answerStatus: "SYSTEM_ERROR",
@@ -607,10 +658,12 @@ JSON 스키마:
         parsed = extracted as Record<string, unknown>;
       } catch (e) {
         console.error("JSON 파싱 실패:", e);
+        const kAnswer = answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal);
+        recordKTurn(kAnswer, "SYSTEM_ERROR", false);
         return NextResponse.json({
           answerable: false,
           confidence: 0,
-          answer: answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal),
+          answer: kAnswer,
           evidenceIds: [],
           askChildProposal: null,
           answerStatus: "SYSTEM_ERROR",
@@ -632,10 +685,12 @@ JSON 스키마:
         (parsed.suggestedParentQuestion !== null && typeof parsed.suggestedParentQuestion !== "undefined" && typeof parsed.suggestedParentQuestion !== "string")
       ) {
         console.error("K-Chat: Invalid LLM schema", { parsed });
+        const kAnswer = answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal);
+        recordKTurn(kAnswer, "SYSTEM_ERROR", false);
         return NextResponse.json({
           answerable: false,
           confidence: 0,
-          answer: answerForUnavailable("SYSTEM_ERROR", retrievalResult.temporal),
+          answer: kAnswer,
           evidenceIds: [],
           askChildProposal: null,
           answerStatus: "SYSTEM_ERROR",
@@ -656,11 +711,13 @@ JSON 스키마:
         const partialAnswer = isForbiddenGenericEvidenceFallback(parsedAnswer)
           ? partialEvidenceFallback(partialAskContext)
           : parsedAnswer;
+        const kAnswer = correctionRecovery ? `맞아요. 제가 날짜를 잘못 확인했어요. ${partialAnswer}` : partialAnswer;
         logTurn({ retrievalAttempted: true, retrievalSource: retrievalSources, retrievalResultCount: evidence.length, responseMode: "PARTIAL_EVIDENCE", fallbackReason: null, temporalKind: retrievalResult.temporal.kind, targetDate: retrievalResult.temporal.targetDate });
+        recordKTurn(kAnswer, "PARTIAL_EVIDENCE", false);
         return NextResponse.json({
           answerable: false,
           confidence: parsed.confidence,
-          answer: correctionRecovery ? `맞아요. 제가 날짜를 잘못 확인했어요. ${partialAnswer}` : partialAnswer,
+          answer: kAnswer,
           suggestedParentQuestion: typeof parsed.suggestedParentQuestion === "string" ? parsed.suggestedParentQuestion : null,
           evidenceIds: evidence.map((item) => item.id),
           askChildProposal: partialAskContext.proposal,
@@ -685,10 +742,11 @@ JSON 스키마:
         to: dates[dates.length - 1],
       } : null;
 
+      const kFinalAnswer = correctionRecovery ? `맞아요. 제가 날짜를 잘못 확인했어요. ${String(parsed.answer).trim()}` : String(parsed.answer).trim();
       const finalResponse = {
         answerable: true,
         confidence: parsed.confidence,
-        answer: correctionRecovery ? `맞아요. 제가 날짜를 잘못 확인했어요. ${String(parsed.answer).trim()}` : String(parsed.answer).trim(),
+        answer: kFinalAnswer,
         suggestedParentQuestion: parsed.suggestedParentQuestion || null,
         evidenceIds: evidence.map((item) => item.id),
         askChildProposal: null,
@@ -714,6 +772,7 @@ JSON 스키마:
       };
 
       logTurn({ retrievalAttempted: true, retrievalSource: retrievalSources, retrievalResultCount: evidence.length, responseMode: correctionRecovery ? "CORRECTION_RECOVERED" : "HAS_RESULT", fallbackReason: null, temporalKind: retrievalResult.temporal.kind, targetDate: retrievalResult.temporal.targetDate });
+      recordKTurn(kFinalAnswer, "HAS_EVIDENCE", true);
       return NextResponse.json(finalResponse);
     }
     
@@ -751,7 +810,8 @@ JSON 스키마:
           latencyMs: Date.now() - pqrStartedAt,
         }));
 
-        // §14 관리자 통계용 감사 이벤트 — 질문 원문은 절대 저장하지 않는다(§13). GREEN이
+        // 2026-08-18 대표님 결정으로 부모 대화 원문은 parent_k_chat_messages 에 저장한다.
+        // §14 관리자 통계용 감사 이벤트 자체에는 질문 원문을 넣지 않는다. GREEN이
         // 아닌 RED/CRISIS/MULTI_QUESTION_SELECT/GENERATION_FAILED는 parent_questions에
         // 행이 전혀 생기지 않으므로, 이 이벤트가 유일한 관측 지점이다. 실패해도 본 요청
         // 흐름을 막지 않는다(best-effort).
@@ -890,7 +950,8 @@ JSON 스키마:
         trimmedQuestion,
       );
 
-      // §13 로깅 — 개인정보·원문은 남기지 않는다.
+      // 2026-08-18 대표님 결정으로 부모 대화 원문은 parent_k_chat_messages 에 저장한다.
+      // 이 로깅 자체에는 여전히 개인정보·원문은 남기지 않는다 — 로그는 접근통제가 다르다.
       console.log(JSON.stringify({
         route: "parent-question-draft",
         childId: `${String(child_id).slice(0, 4)}…`,
