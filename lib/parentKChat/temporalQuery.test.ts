@@ -48,3 +48,32 @@ test("source 우선순위는 temporal kind에 따라 semantic score보다 앞선
   assert.ok(parentSourcePriority("DATE_RANGE", "weekly_report") < parentSourcePriority("DATE_RANGE", "daily_report"));
   assert.ok(parentSourcePriority("LONG_TERM", "memory_fact") < parentSourcePriority("LONG_TERM", "daily_report"));
 });
+
+test("부정 구분자(말고/아니라/아니고/대신/이 아니라)를 통한 날짜 정정 테스트 4종", () => {
+  // 1. '아니, 어제 말고 오늘' + 직전 맥락이 어제 → 오늘 로 해석
+  const context = [
+    { role: "user" as const, text: "서현이 어제 뭐 했어?" },
+    { role: "k" as const, text: "2026년 8월 09일에 확인되는 기록이 없어요." },
+  ];
+  const correctionResult = resolveTemporalFromUserContext("아니, 어제 말고 오늘", context, NOW);
+  assert.equal(correctionResult.targetDate, "2026-08-10");
+  assert.equal(correctionResult.kind, "EXACT_DATE");
+
+  // 2. '오늘 말고 어제' → 어제
+  assert.equal(resolveParentTemporalQuery("오늘 말고 어제", { now: NOW }).targetDate, "2026-08-09");
+  assert.equal(resolveParentTemporalQuery("오늘 아니라 어제", { now: NOW }).targetDate, "2026-08-09");
+  assert.equal(resolveParentTemporalQuery("오늘 아니고 어제", { now: NOW }).targetDate, "2026-08-09");
+  assert.equal(resolveParentTemporalQuery("오늘 대신 어제", { now: NOW }).targetDate, "2026-08-09");
+  assert.equal(resolveParentTemporalQuery("오늘 이 아니라 어제", { now: NOW }).targetDate, "2026-08-09");
+  assert.equal(resolveParentTemporalQuery("주간 말고 오늘 하루", { now: NOW }).targetDate, "2026-08-10");
+
+  // 3. '어제 뭐 했어?'(구분자 없음) → 어제 (기존 동작 회귀 방어)
+  assert.equal(resolveParentTemporalQuery("어제 뭐 했어?", { now: NOW }).targetDate, "2026-08-09");
+
+  // 4. '말고' 만 있는 입력 → 예외 없이 기존 동작
+  assert.doesNotThrow(() => {
+    const result = resolveParentTemporalQuery("말고", { now: NOW });
+    assert.equal(result.kind, "NONE");
+  });
+});
+

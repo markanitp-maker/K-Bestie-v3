@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   answerForDateFact,
   answerForUnavailable,
+  applyRepeatAvoidancePrefix,
   buildAskChildContext,
   buildCorrectionRetrievalQuery,
   findPreviousParentInformationQuery,
@@ -10,6 +11,7 @@ import {
   isClockFactQuestion,
   isDateFactQuestion,
   latestAskChildContext,
+  REPEAT_ANSWER_PREFIXES,
 } from "./answerPolicy";
 import { resolveParentTemporalQuery } from "./temporalQuery";
 
@@ -113,11 +115,6 @@ test("날짜(며칠) 질문은 기존 경로가 계속 담당한다", () => {
 });
 
 test("정정 복구는 직전 발화가 아이 정보 질문일 때만 한다 — 케이 자신에 대한 질문을 되돌리면 안 된다", () => {
-  // 2026-08-18 Dev QA 실측 사고:
-  //   부모  너 업데이트 되니?        → 케이가 자기 얘기로 정상 응답
-  //   부모  뭔 소리야? 대화가 안 된다? → FEEDBACK 으로 분류되는 건 맞았는데,
-  //         직전 발화("너 업데이트 되니?")를 아이 정보 질문으로 착각해 기록을 재조회했다.
-  //         결과: "2026년 8월 18일에 확인되는 기록이 없어요" + 엉뚱한 질문 초안.
   const context = [
     { role: "user" as const, text: "너 대화 저장 안되니?" },
     { role: "k" as const, text: "저는 대화 내용이 따로 저장되지 않아요." },
@@ -141,3 +138,41 @@ test("정정 복구는 직전 발화가 아이 정보 질문일 때만 한다 �
   ];
   assert.equal(findPreviousParentInformationQuery(withChildQuery, isChildInfo), "서현이 오늘 뭐 했어?");
 });
+
+test("직전 케이 응답 반복 방지 접두 문구 테스트 3종", () => {
+  const baseAnswer = "누적 기억에 따르면, 아이는 가족과 함께 식사하는 시간을 가장 좋아한다고 해요.";
+
+  // 5. 직전 케이 응답과 같은 문장 → 접두 문구가 붙는다 (공백/문장부호 차이 허용)
+  const previousK = "누적기억에 따르면 아이는 가족과 함께 식사하는 시간을 가장 좋아한다고 해요!";
+  const contextWithSameResponse = [
+    { role: "user" as const, text: "최근에는 뭐했니?" },
+    { role: "k" as const, text: previousK },
+    { role: "user" as const, text: "그게 전부니?" },
+  ];
+  const modifiedAnswer = applyRepeatAvoidancePrefix(baseAnswer, contextWithSameResponse);
+  const matchedPrefix = REPEAT_ANSWER_PREFIXES.find((p) => modifiedAnswer.startsWith(p));
+  assert.ok(matchedPrefix, `Expected answer to start with one of REPEAT_ANSWER_PREFIXES, got: ${modifiedAnswer}`);
+  assert.ok(modifiedAnswer.includes(baseAnswer));
+
+  // 6. 다른 문장 → 그대로 나간다 (정상 응답을 건드리면 안 된다)
+  const previousKDifferent = "어제는 친구와 함께 놀이터에서 신나게 뛰어놀았어요.";
+  const contextWithDifferentResponse = [
+    { role: "user" as const, text: "어제 뭐 했어?" },
+    { role: "k" as const, text: previousKDifferent },
+    { role: "user" as const, text: "오늘 뭐 했어?" },
+  ];
+  const untouchedAnswer = applyRepeatAvoidancePrefix(baseAnswer, contextWithDifferentResponse);
+  assert.equal(untouchedAnswer, baseAnswer);
+
+  // 7. 접두 문구가 연속으로 같은 것만 나오지 않는다
+  const firstPrefix = REPEAT_ANSWER_PREFIXES[0];
+  const contextAfterFirstRepetition = [
+    { role: "user" as const, text: "최근에는 뭐했니?" },
+    { role: "k" as const, text: `${firstPrefix}${baseAnswer}` },
+    { role: "user" as const, text: "그게 전부니?" },
+  ];
+  const secondAnswer = applyRepeatAvoidancePrefix(baseAnswer, contextAfterFirstRepetition);
+  assert.ok(!secondAnswer.startsWith(firstPrefix), `Expected second answer to avoid ${firstPrefix}, got ${secondAnswer}`);
+  assert.ok(REPEAT_ANSWER_PREFIXES.some((p) => p !== firstPrefix && secondAnswer.startsWith(p)));
+});
+

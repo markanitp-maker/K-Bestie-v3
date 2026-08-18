@@ -11,6 +11,7 @@ import {
   answerForClockFact,
   answerForDateFact,
   answerForUnavailable,
+  applyRepeatAvoidancePrefix,
   buildAskChildContext,
   buildCorrectionRetrievalQuery,
   findPreviousParentInformationQuery,
@@ -717,7 +718,8 @@ JSON 스키마:
         const partialAnswer = isForbiddenGenericEvidenceFallback(parsedAnswer)
           ? partialEvidenceFallback(partialAskContext)
           : parsedAnswer;
-        const kAnswer = correctionRecovery ? `맞아요. 제가 날짜를 잘못 확인했어요. ${partialAnswer}` : partialAnswer;
+        const rawAnswer = correctionRecovery ? `맞아요. 제가 날짜를 잘못 확인했어요. ${partialAnswer}` : partialAnswer;
+        const kAnswer = applyRepeatAvoidancePrefix(rawAnswer, conversationContext);
         logTurn({ retrievalAttempted: true, retrievalSource: retrievalSources, retrievalResultCount: evidence.length, responseMode: "PARTIAL_EVIDENCE", fallbackReason: null, temporalKind: retrievalResult.temporal.kind, targetDate: retrievalResult.temporal.targetDate });
         recordKTurn(kAnswer, "PARTIAL_EVIDENCE", false);
         return NextResponse.json({
@@ -748,7 +750,8 @@ JSON 스키마:
         to: dates[dates.length - 1],
       } : null;
 
-      const kFinalAnswer = correctionRecovery ? `맞아요. 제가 날짜를 잘못 확인했어요. ${String(parsed.answer).trim()}` : String(parsed.answer).trim();
+      const rawFinalAnswer = correctionRecovery ? `맞아요. 제가 날짜를 잘못 확인했어요. ${String(parsed.answer).trim()}` : String(parsed.answer).trim();
+      const kFinalAnswer = applyRepeatAvoidancePrefix(rawFinalAnswer, conversationContext);
       const finalResponse = {
         answerable: true,
         confidence: parsed.confidence,

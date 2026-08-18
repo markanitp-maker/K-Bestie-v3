@@ -23,6 +23,24 @@ interface ResolveTemporalOptions {
 const KST_TIME_ZONE = "Asia/Seoul" as const;
 const DATE_TOKEN = /(?:\d{4}-\d{2}-\d{2}|\d{4}년\s*\d{1,2}월\s*\d{1,2}일|\d{1,2}월\s*\d{1,2}일|오늘|어제|그제|그저께|내일|이번\s*주|지난\s*주|저번\s*주|다음\s*주|이번\s*달|지난\s*달|저번\s*달|요즘|최근|평소|원래|예전부터|자주)/;
 const INHERIT_DATE_PATTERN = /그날|그\s*날|그때|그\s*때|그\s*주|그\s*달/;
+const NEGATION_SPLIT_PATTERN = /(?:이\s*아니라|아니라|아니고|말고|대신)/g;
+
+function extractNegationTarget(text: string): string {
+  let match: RegExpExecArray | null;
+  let lastMatch: RegExpExecArray | null = null;
+  while ((match = NEGATION_SPLIT_PATTERN.exec(text)) !== null) {
+    lastMatch = match;
+  }
+  if (!lastMatch) return text;
+
+  const before = text.slice(0, lastMatch.index).trim();
+  const after = text.slice(lastMatch.index + lastMatch[0].length).trim();
+
+  if (before.length > 0 && after.length > 0) {
+    return after;
+  }
+  return text;
+}
 
 function kstParts(now: Date): { year: number; month: number; day: number } {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -75,61 +93,62 @@ export function resolveParentTemporalQuery(query: string, options: ResolveTempor
   const { year, month, day } = kstParts(now);
   const today = calendarDate(year, month, day);
   const normalized = query.normalize("NFKC").replace(/\s+/g, " ").trim();
+  const target = extractNegationTarget(normalized);
 
-  const iso = normalized.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
+  const iso = target.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
   if (iso) return exact(formatDate(calendarDate(Number(iso[1]), Number(iso[2]), Number(iso[3]))), iso[0]);
 
-  const fullKorean = normalized.match(/(20\d{2})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  const fullKorean = target.match(/(20\d{2})년\s*(\d{1,2})월\s*(\d{1,2})일/);
   if (fullKorean) {
     return exact(formatDate(calendarDate(Number(fullKorean[1]), Number(fullKorean[2]), Number(fullKorean[3]))), fullKorean[0]);
   }
 
-  const monthDay = normalized.match(/(?<!\d)(\d{1,2})월\s*(\d{1,2})일/);
+  const monthDay = target.match(/(?<!\d)(\d{1,2})월\s*(\d{1,2})일/);
   if (monthDay) return exact(formatDate(calendarDate(year, Number(monthDay[1]), Number(monthDay[2]))), monthDay[0]);
 
-  if (/그저께|그제/.test(normalized)) return exact(formatDate(addDays(today, -2)), "그제");
-  if (/어제/.test(normalized)) return exact(formatDate(addDays(today, -1)), "어제");
-  if (/오늘/.test(normalized)) return exact(formatDate(today), "오늘");
-  if (/내일/.test(normalized)) return exact(formatDate(addDays(today, 1)), "내일");
+  if (/그저께|그제/.test(target)) return exact(formatDate(addDays(today, -2)), "그제");
+  if (/어제/.test(target)) return exact(formatDate(addDays(today, -1)), "어제");
+  if (/오늘/.test(target)) return exact(formatDate(today), "오늘");
+  if (/내일/.test(target)) return exact(formatDate(addDays(today, 1)), "내일");
 
   const weekStart = startOfWeek(today);
-  if (/지난\s*주|저번\s*주/.test(normalized)) {
+  if (/지난\s*주|저번\s*주/.test(target)) {
     const from = addDays(weekStart, -7);
     return range({ from: formatDate(from), to: formatDate(addDays(from, 6)) }, "지난주");
   }
-  if (/다음\s*주/.test(normalized)) {
+  if (/다음\s*주/.test(target)) {
     const from = addDays(weekStart, 7);
     return range({ from: formatDate(from), to: formatDate(addDays(from, 6)) }, "다음 주");
   }
-  if (/이번\s*주|이번주/.test(normalized)) {
+  if (/이번\s*주|이번주/.test(target)) {
     return range({ from: formatDate(weekStart), to: formatDate(addDays(weekStart, 6)) }, "이번 주");
   }
 
-  if (/지난\s*달|저번\s*달/.test(normalized)) {
+  if (/지난\s*달|저번\s*달/.test(target)) {
     const previousMonthEnd = new Date(Date.UTC(year, month - 1, 0));
     const previousMonthStart = calendarDate(previousMonthEnd.getUTCFullYear(), previousMonthEnd.getUTCMonth() + 1, 1);
     return range({ from: formatDate(previousMonthStart), to: formatDate(previousMonthEnd) }, "지난달");
   }
-  if (/이번\s*달|이번달/.test(normalized)) {
+  if (/이번\s*달|이번달/.test(target)) {
     return range({ from: formatDate(calendarDate(year, month, 1)), to: formatDate(endOfMonth(year, month)) }, "이번 달");
   }
 
-  if (/요즘|최근/.test(normalized)) {
+  if (/요즘|최근/.test(target)) {
     return {
       kind: "RECENT",
       timeZone: KST_TIME_ZONE,
       targetDate: null,
       dateRange: { from: formatDate(addDays(today, -13)), to: formatDate(today) },
-      label: /요즘/.test(normalized) ? "요즘" : "최근",
+      label: /요즘/.test(target) ? "요즘" : "최근",
       inherited: false,
     };
   }
 
-  if (/평소|원래|예전부터|자주/.test(normalized)) {
+  if (/평소|원래|예전부터|자주/.test(target)) {
     return { kind: "LONG_TERM", timeZone: KST_TIME_ZONE, targetDate: null, dateRange: null, label: "평소", inherited: false };
   }
 
-  if (options.inherited && (INHERIT_DATE_PATTERN.test(normalized) || !DATE_TOKEN.test(normalized))) {
+  if (options.inherited && (INHERIT_DATE_PATTERN.test(target) || !DATE_TOKEN.test(target))) {
     return cloneInherited(options.inherited);
   }
 

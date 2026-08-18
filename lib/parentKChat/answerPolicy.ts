@@ -1,5 +1,6 @@
 import type { ParentConversationTurn } from "@/lib/parentKChat/parentKnowledgeRetrieval";
 import type { ParentTemporalResolution } from "@/lib/parentKChat/temporalQuery";
+import { pickAvoiding } from "@/lib/freechat/reactionEngine";
 
 export type ParentAnswerStatus = "EVIDENCE_FOUND" | "PARTIAL_EVIDENCE" | "NO_DATA" | "SYSTEM_ERROR";
 
@@ -8,6 +9,71 @@ export interface ParentAskChildContext {
   requestedTopic: string;
   lastUnknownDetail: string;
   targetDate: string | null;
+}
+
+export const REPEAT_ANSWER_PREFIXES = [
+  "제가 아는 건 여기까지예요. ",
+  "기록에 남은 건 이게 전부예요. ",
+  "지금 확인되는 내용은 여기까지예요. ",
+] as const;
+
+export function normalizeForAnswerComparison(text: string): string {
+  return text.replace(/[\s\p{P}\p{S}]/gu, "");
+}
+
+function stripRepeatPrefix(text: string): string {
+  let result = text.trim();
+  for (const prefix of REPEAT_ANSWER_PREFIXES) {
+    if (result.startsWith(prefix.trim())) {
+      result = result.slice(prefix.trim().length).trim();
+    }
+  }
+  return result;
+}
+
+export function findLastKResponse(context: ParentConversationTurn[]): string | null {
+  const turn = [...context]
+    .reverse()
+    .find((t) => t.role === "k" && typeof t.text === "string" && t.text.trim().length > 0);
+  return turn ? turn.text.trim() : null;
+}
+
+export function applyRepeatAvoidancePrefix(
+  answer: string,
+  context: ParentConversationTurn[],
+  rand: () => number = Math.random,
+): string {
+  const lastKText = findLastKResponse(context);
+  if (!lastKText) return answer;
+
+  const cleanAnswer = stripRepeatPrefix(answer);
+  const cleanLast = stripRepeatPrefix(lastKText);
+
+  const normAnswer = normalizeForAnswerComparison(cleanAnswer);
+  const normLast = normalizeForAnswerComparison(cleanLast);
+
+  if (!normAnswer || normAnswer !== normLast) {
+    return answer;
+  }
+
+  const recentKPrefixes = context
+    .filter((turn) => turn.role === "k")
+    .map((turn) => turn.text)
+    .flatMap((text) => {
+      const matched = REPEAT_ANSWER_PREFIXES.find(
+        (p) => text.startsWith(p.trim()) || normalizeForAnswerComparison(text).startsWith(normalizeForAnswerComparison(p)),
+      );
+      return matched ? [matched] : [text];
+    });
+
+  const prefix = pickAvoiding(
+    [...REPEAT_ANSWER_PREFIXES],
+    recentKPrefixes,
+    (item) => item,
+    rand,
+  ) ?? REPEAT_ANSWER_PREFIXES[0];
+
+  return `${prefix}${cleanAnswer}`;
 }
 
 function koreanDate(value: string): string {
