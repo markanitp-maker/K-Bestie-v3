@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { CHILD_SPEECH_HINTS, CHILD_SPEECH_HINT_BOOST } from "@/lib/stt/childSpeechHints";
+import {
+  CHILD_SPEECH_HINTS,
+  CHILD_SPEECH_HINT_BOOST,
+  WORD_CHAIN_HINT_BOOST,
+} from "@/lib/stt/childSpeechHints";
+import { resolveWordChainHints } from "@/lib/stt/wordChainHints";
 import { resolveUsageContext } from "@/lib/plan/voiceMode";
 import { estimateCost } from "@/lib/plan/pricing";
 import { normalizeConversationMode } from "@/lib/plan/conversationMode";
@@ -176,7 +181,31 @@ export async function POST(req: NextRequest) {
 
   // 비용에 영향을 주는 child_id/tier/voice_mode는 클라이언트에서 직접 받지 않고
   // sessionId로만 서버가 해석한다(server-trust).
-  const usageContext = await resolveUsageContext(body.sessionId);
+  // 끝말잇기 활성 세션에 대한 단어 힌트 수집 (실패 내성: 타임아웃/에러 시 빈 배열).
+  //
+  // STT 는 아이가 지연을 즉시 체감하는 경로다. 그래서 두 가지를 지킨다.
+  // - 미션 세션에는 끝말잇기가 없다. 조회 자체를 건너뛴다.
+  // - 남은 경우에도 usageContext 조회와 **나란히** 돌린다. 줄세우면 왕복이 두 번이다.
+  const needsWordChainHints = session.session_type !== "mission";
+  const [usageContext, wordChainHints] = await Promise.all([
+    resolveUsageContext(body.sessionId),
+    needsWordChainHints
+      ? resolveWordChainHints(authService, {
+          sessionId: body.sessionId,
+          childId: session.child_id,
+        })
+      : Promise.resolve<string[]>([]),
+  ]);
+
+  const speechContexts: Array<{ phrases: string[]; boost: number }> = [
+    { phrases: CHILD_SPEECH_HINTS, boost: CHILD_SPEECH_HINT_BOOST },
+  ];
+  if (wordChainHints.length > 0) {
+    speechContexts.push({
+      phrases: wordChainHints,
+      boost: WORD_CHAIN_HINT_BOOST,
+    });
+  }
 
   const PRIMARY_MODEL = "latest_short";
   const FALLBACK_MODEL = "default";
@@ -195,7 +224,7 @@ export async function POST(req: NextRequest) {
             model: modelName,
             audioChannelCount: 1,
             enableAutomaticPunctuation: true,
-            speechContexts: [{ phrases: CHILD_SPEECH_HINTS, boost: CHILD_SPEECH_HINT_BOOST }],
+            speechContexts,
           },
           audio: { content: audioBase64 },
         }),
