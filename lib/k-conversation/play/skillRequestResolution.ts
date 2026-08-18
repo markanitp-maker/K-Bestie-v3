@@ -71,11 +71,16 @@ function isComplaintContext(
   aliasLength: number,
   hasRequestVerb: boolean
 ): boolean {
-  if (hasRequestVerb) return false;
   const from = Math.max(0, mentionIndex - 6);
   const to = Math.min(utterance.length, mentionIndex + aliasLength + 12);
   const window = utterance.slice(from, to);
+
+  // 제외 표현은 요청 동사보다 먼저 본다. "초성게임은 나중에 하자" 는 뒤에 "하자" 가 붙어도
+  // 지금 하자는 뜻이 아니다(2026-08-19 리뷰 지적).
   if (/말고/.test(window)) return true;
+  if (/(나중에|다음에|이따|끝나고)/.test(window)) return true;
+
+  if (hasRequestVerb) return false;
   return COMPLAINT_MARKERS.some((marker) => window.includes(marker));
 }
 
@@ -148,4 +153,21 @@ export function resolveRequestedSkill<T>(
 /** 아이가 지금 판을 새로 시작하자고 한 것인지("다시 시작", "처음부터"). */
 export function wantsRestart(utterance: string): boolean {
   return /(다시\s*시작|처음부터|새로\s*(하자|시작)|리셋)/.test(utterance);
+}
+
+/** 문장에 이름이 언급된 후보만 남긴다. 레지스트리 단계에서 다중 언급을 판별할 때 쓴다. */
+export function filterMentionedCandidates<T>(
+  utterance: string,
+  candidates: ReadonlyArray<SkillMentionCandidate<T>>
+): Array<SkillMentionCandidate<T>> {
+  const normalized = utterance.replace(/\s+/g, " ");
+  return candidates.filter((candidate) =>
+    candidate.aliases.some((alias) => normalized.includes(alias))
+  );
+}
+
+/** 아이가 지금 놀이를 하자고 한 것인지(요청 동사 존재). 단순 언급과 구분한다. */
+export function hasPlayRequestMarker(utterance: string): boolean {
+  const normalized = utterance.replace(/\s+/g, " ");
+  return REQUEST_MARKERS.some((marker) => normalized.includes(marker));
 }

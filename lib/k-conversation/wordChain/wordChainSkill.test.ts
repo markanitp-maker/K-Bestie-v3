@@ -810,3 +810,14 @@ test("문장 속 마지막 낱말을 끝말잇기 낱말로 뽑는다", async ()
   assert.equal(extractChildCandidateWordForTest("정답은 기차야"), "기차");
   assert.equal(extractChildCandidateWordForTest("음... 사과!"), "사과");
 });
+
+// 단독 단답에도 종결 조사를 뗀다(2026-08-19 리뷰 HIGH 지적: "기차야" 가 오답 처리됐다).
+test("단독 낱말 단답의 종결 조사를 뗀다", async () => {
+  const { extractChildCandidateWordForTest } = await import("./wordChainSkill");
+  assert.equal(extractChildCandidateWordForTest("기차야"), "기차");
+  assert.equal(extractChildCandidateWordForTest("사과요"), "사과");
+  assert.equal(extractChildCandidateWordForTest("사탕이다"), "사탕");
+  // 사전에 없는 형태는 그대로 둔다(아이 발화를 함부로 고치지 않는다).
+  assert.equal(extractChildCandidateWordForTest("몰라"), "몰라");
+  assert.equal(extractChildCandidateWordForTest("차표"), "차표");
+});

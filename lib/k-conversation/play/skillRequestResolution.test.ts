@@ -79,3 +79,30 @@ test("판을 새로 시작하자는 요청을 알아본다", () => {
     assert.equal(wantsRestart(text), false, text);
   }
 });
+
+// ── 2026-08-19 독립 리뷰가 직접 호출로 찾아낸 오작동 입력들 ─────────────────────
+// 레지스트리 경로까지 함께 검증한다 — resolver 만 맞아도 실제 경로에서 우회되면 의미가 없다.
+
+test("실제 경로: 놀이를 둘 이상 말한 문장에서 올바른 놀이를 고른다", async () => {
+  const { findDirectlyRequestedSkill } = await import("./skillRegistry");
+  const { extractUtteranceSignals } = await import("../utteranceSignals");
+
+  const expectations: Array<[string, string | null]> = [
+    // "말고" 가 있으면 utteranceSignals 가 게임 시작 신호를 전부 끈다. 그때 끝말잇기만
+    // 자체 패턴으로 남아 이기던 정반대 동작을 고정한다.
+    ["끝말잇기 말고 초성게임", "CHOSUNG"],
+    ["초성게임 말고 넌센스퀴즈 하고 싶어", "NONSENSE_QUIZ"],
+    ["초성게임은 싫어 끝말잇기 해줘", "WORD_CHAIN"],
+    ["끝말잇기 먼저 하고 초성게임은 나중에 하자", "WORD_CHAIN"],
+    ["너 초성 게임 못 하니까 초성 게임은 다시 개발 해 개판이야 끝말잇기나 하자", "WORD_CHAIN"],
+    // 단순 언급으로 판을 시작하면 안 된다.
+    ["초성게임 재밌었어", null],
+    ["초성게임 하자", "CHOSUNG"],
+  ];
+
+  for (const [utterance, expected] of expectations) {
+    const signals = extractUtteranceSignals(utterance);
+    const resolved = findDirectlyRequestedSkill(signals, utterance);
+    assert.equal(resolved?.id ?? null, expected, `"${utterance}"`);
+  }
+});

@@ -201,8 +201,9 @@ function extractChildCandidateWord(utterance: string): string {
   }
 
   const stripped = trimmed.replace(/^[!?.~^,]+|[!?.~^,]+$/g, "").trim();
-  // 한 낱말이면 그대로 쓴다(기존 동작 유지).
-  if (!/\s/.test(stripped)) return stripped;
+  // 한 낱말이면 조사만 떼고 쓴다. ("기차야" 단답이 사전에 없다고 오답 처리되던 것 —
+  // 2026-08-19 독립 리뷰 HIGH 지적)
+  if (!/\s/.test(stripped)) return stripTrailingParticle(stripped);
 
   // 문장이면 마지막 한글 토큰을 낱말로 본다. 조사·감탄사만 남은 토큰은 건너뛴다.
   const tokens = stripped

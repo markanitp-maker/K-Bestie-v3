@@ -3,7 +3,11 @@ import { CHOSUNG_SKILL } from "./chosungSkill";
 import { WORD_CHAIN_SKILL } from "../wordChain/wordChainSkill";
 import { NONSENSE_QUIZ_SKILL } from "../nonsenseQuiz/nonsenseQuizSkill";
 import type { UtteranceSignals } from "../utteranceSignals";
-import { resolveRequestedSkill } from "./skillRequestResolution";
+import {
+  filterMentionedCandidates,
+  hasPlayRequestMarker,
+  resolveRequestedSkill,
+} from "./skillRequestResolution";
 
 /**
  * 활성화된 모든 Play Skill의 등록부.
@@ -51,6 +55,25 @@ export function findDirectlyRequestedSkill(
   utterance: string,
   registry: readonly PlaySkillModule[] = PLAY_SKILL_REGISTRY
 ): PlaySkillModule | null {
+  const withAliases = registry.map((skill) => ({
+    skill,
+    aliases: SKILL_ALIASES[skill.id] ?? [skill.displayName],
+  }));
+
+  // 놀이를 둘 이상 말했고 요청 동사가 있으면, 스킬별 신호 매칭보다 이름 위치로 먼저 가린다.
+  //
+  // 2026-08-19 독립 리뷰 실측: "끝말잇기 말고 초성게임" 이 **끝말잇기를 시작**했다.
+  // utteranceSignals 는 "말고" 가 있으면 게임 시작 신호를 전부 끄는데, 끝말잇기 스킬만
+  // 자체 패턴으로 true 를 내서 혼자 남아 이긴 것이다. "초성게임 말고 넌센스퀴즈 하고 싶어" 는
+  // 후보가 0개가 되어 요청이 통째로 사라졌다.
+  // 단순 언급("초성게임 재밌었어")으로 판을 시작하지 않도록 요청 동사가 있을 때만 이 경로를 탄다.
+  const mentioned = filterMentionedCandidates(utterance, withAliases);
+  // "끝말잇기 말고 초성게임" 처럼 요청 동사 없이 고르기만 하는 문장도 이 경로를 탄다.
+  if (mentioned.length >= 2 && (hasPlayRequestMarker(utterance) || /말고/.test(utterance))) {
+    const resolvedByName = resolveRequestedSkill(utterance, mentioned);
+    if (resolvedByName) return resolvedByName.skill;
+  }
+
   const matched = registry.filter((skill) => skill.matchesDirectRequest(signals, utterance));
   if (matched.length === 0) return null;
   if (matched.length === 1) return matched[0];
