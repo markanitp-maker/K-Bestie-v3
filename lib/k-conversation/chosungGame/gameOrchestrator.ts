@@ -18,6 +18,7 @@ export interface ChosungTurnInput {
     hasChosungGameStart: boolean;
     hasChosungAnswerAttempt: boolean;
     hasChosungHintRequest: boolean;
+    hasChosungAnswerRequest?: boolean;
   };
 }
 
@@ -28,6 +29,12 @@ export interface ChosungTurnResult {
   instruction?: string;
   /** 이번 턴에서 응답에 나타나면 안 되는 정답 단어 (유출 방지 검증용) */
   answerMustNotAppear?: string;
+  /**
+   * 이번 턴 케이의 응답에 **반드시 들어 있어야 하는** 초성 문자열.
+   * 케이가 문제를 낼 때 스킬이 결정론적으로 고른 초성을 모델이 말하지 않고
+   * 지어내는 사고(2026-08-18)를 막기 위해 출력을 직접 검증한다.
+   */
+  requiredChosungInOutput?: string;
 }
 
 /**
@@ -69,6 +76,7 @@ async function revealAndAdvance(input: {
   return {
     handled: true,
     instruction: `[초성게임] ${lead}. 정답은 "${answer}"였어. 정답을 알려주고 아이가 민망하지 않게 격려한 뒤, 다음 문제 초성 "${nextChosung}"를 내줘. 새 문제의 정답은 말하지 마.`,
+    requiredChosungInOutput: nextChosung || undefined,
   };
 }
 
@@ -81,7 +89,8 @@ export async function runChosungTurn(
   if (
     !signals.hasChosungGameStart &&
     !signals.hasChosungAnswerAttempt &&
-    !signals.hasChosungHintRequest
+    !signals.hasChosungHintRequest &&
+    !signals.hasChosungAnswerRequest
   ) {
     return { handled: false };
   }
@@ -117,6 +126,7 @@ export async function runChosungTurn(
         return {
           handled: true,
           instruction: `[초성게임] 아이가 정답 "${correctWord}"를 맞혔어. 칭찬하고 다음 문제 초성 "${nextChosung}"를 내줘. 정답 단어는 절대 말하지 마.`,
+          requiredChosungInOutput: nextChosung || undefined,
         };
       } else {
         // 오답. 몇 번까지는 힌트로 붙잡아 주되, 계속 못 맞히면 정답을 알려주고
@@ -145,8 +155,20 @@ export async function runChosungTurn(
           handled: true,
           instruction: `[초성게임] 아이 답은 틀렸어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아직 정답은 말하지 말고 격려하면서 힌트를 줘.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야.`,
           answerMustNotAppear: currentWord || undefined,
+          requiredChosungInOutput: currentChosung || undefined,
         };
       }
+    }
+
+    // 1-b. 진행 중 세션이 있고 답 공개 요청인 경우 ("답이 뭐야", "정답 알려줘" 등)
+    if (activeSession && signals.hasChosungAnswerRequest) {
+      return revealAndAdvance({
+        db,
+        childId,
+        gradeRaw,
+        session: activeSession,
+        lead: "아이가 정답을 알려달라고 했어",
+      });
     }
 
     // 2. 진행 중 세션이 있고 힌트 요청인 경우
@@ -184,6 +206,7 @@ export async function runChosungTurn(
         handled: true,
         instruction: `[초성게임] 아이가 힌트를 요청했어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아이가 스스로 맞혀야 해.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야. ${categoryHint}글자 수나 뜻으로 힌트를 줘.`,
         answerMustNotAppear: currentWord || undefined,
+        requiredChosungInOutput: currentChosung || undefined,
       };
     }
 
@@ -202,6 +225,7 @@ export async function runChosungTurn(
         return {
           handled: true,
           instruction: `[초성게임] 지금 낸 문제의 초성은 "${currentChosung}"야. 이 초성을 그대로 아이에게 문제로 내줘. 정답 단어는 절대 말하지 마.`,
+          requiredChosungInOutput: currentChosung || undefined,
         };
       } else {
         // 이미 진행 중인 세션이 있는 경우 현재 문제 초성 제시
@@ -209,6 +233,7 @@ export async function runChosungTurn(
         return {
           handled: true,
           instruction: `[초성게임] 지금 낸 문제의 초성은 "${currentChosung}"야. 이 초성을 그대로 아이에게 문제로 내줘. 정답 단어는 절대 말하지 마.`,
+          requiredChosungInOutput: currentChosung || undefined,
         };
       }
     }

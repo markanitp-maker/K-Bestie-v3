@@ -61,10 +61,34 @@ test("classifyAndExtract: 복합 문장도 크래시 없이 유효한 카테고�
   assert.ok(reaction.text.length > 0);
 });
 
-// 저신뢰 ASR
+// 저신뢰 ASR 및 1글자 발화
 test("classifyAndExtract: 저신뢰 ASR이면 항상 unclear_audio", () => {
   const result = classifyAndExtract("asdf 잘안들려 mumble", { isLowConfidenceAsr: true });
   assert.equal(result.category, "unclear_audio");
+});
+
+test("classifyAndExtract: isLowConfidenceAsr: true이면 1글자든 아니든 unclear_audio (기존 동작 유지)", () => {
+  assert.equal(classifyAndExtract("응", { isLowConfidenceAsr: true }).category, "unclear_audio");
+  assert.equal(classifyAndExtract("어", { isLowConfidenceAsr: true }).category, "unclear_audio");
+  assert.equal(classifyAndExtract("네", { isLowConfidenceAsr: true }).category, "unclear_audio");
+});
+
+test("classifyAndExtract: '응'·'어'·'네' 등 의미 있는 1글자는 unclear_audio가 아니다 (2026-08-18 사고 수정)", () => {
+  assert.notEqual(classifyAndExtract("응").category, "unclear_audio");
+  assert.notEqual(classifyAndExtract("어").category, "unclear_audio");
+  assert.notEqual(classifyAndExtract("네").category, "unclear_audio");
+  assert.notEqual(classifyAndExtract("예").category, "unclear_audio");
+  assert.notEqual(classifyAndExtract("왜").category, "unclear_audio");
+  assert.notEqual(classifyAndExtract("뭐").category, "unclear_audio");
+  assert.notEqual(classifyAndExtract("음").category, "unclear_audio");
+});
+
+test("classifyAndExtract: 빈 문자열이나 의미 없는 1글자(ㅋ, 기호)는 여전히 unclear_audio", () => {
+  assert.equal(classifyAndExtract("").category, "unclear_audio");
+  assert.equal(classifyAndExtract("   ").category, "unclear_audio");
+  assert.equal(classifyAndExtract("ㅋ").category, "unclear_audio");
+  assert.equal(classifyAndExtract("ㅎ").category, "unclear_audio");
+  assert.equal(classifyAndExtract("?").category, "unclear_audio");
 });
 
 test("generateReflectiveReaction: 저신뢰 ASR이면 구체적 내용을 지어내지 않는다", () => {

@@ -985,7 +985,7 @@ test("Output Guard Test 4: 초성게임 힌트 턴에서 정답이 유출되면 
       childId: "child-1",
       sessionId: "session-1",
       mode: "FREE_CHAT",
-      currentUtterance: "알려 줘",
+      currentUtterance: "힌트 줘",
     },
     {
       db: mockDb,
@@ -1260,6 +1260,81 @@ test("WordChain Output Guard 5: 초성 검증(answerMustNotAppear)이 그대로 
   assert.equal(result.text.includes("딸기"), false);
   assert.equal(result.text, "음, 힌트 하나 더 줄게! 초성을 잘 생각해서 맞춰봐.");
 });
+
+test("Chosung Output Guard 1: 응답에 requiredChosung이 있으면 정상 통과", async () => {
+  const mockDb = createMockDbForRespond({
+    activeChosungSession: {
+      id: "cs-session-2",
+      current_chosung: "ㄴㅇㅌ",
+      current_word: "놀이터",
+      hint_level: 0,
+    },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        text: "좋아! 초성은 'ㄴㅇㅌ'야. 맞춰봐!",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "초성게임 하자",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.equal(result.text, "좋아! 초성은 'ㄴㅇㅌ'야. 맞춰봐!");
+});
+
+test("Chosung Output Guard 2: 사고 재현 — DB가 ㄴㅇㅌ인데 케이가 'ㅅㅇㅍ'로 지어내면 차단되고 대체 문구에 ㄴㅇㅌ가 들어간다 (2026-08-18 사고 수정)", async () => {
+  const mockDb = createMockDbForRespond({
+    activeChosungSession: {
+      id: "cs-session-3",
+      current_chosung: "ㄴㅇㅌ",
+      current_word: "놀이터",
+      hint_level: 0,
+    },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        text: "이번 문제는 ㅅㅇㅍ인데 맞혀봐!",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "초성게임 하자",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.equal(result.text, "자, 다시 낼게! 초성은 'ㄴㅇㅌ' 이야. 뭘까?");
+  assert.equal(result.text.includes("ㄴㅇㅌ"), true);
+  assert.equal(result.text.includes("ㅅㅇㅍ"), false);
+});
+
 
 
 

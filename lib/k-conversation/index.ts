@@ -18,7 +18,7 @@ import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
 import { detectFakeGameplay, FAKE_GAMEPLAY_FALLBACK_TEXT, type FakeGameplayKind } from "./play/fakeGameplayDetector";
-import { detectChosungAnswerLeak } from "./chosungGame/outputGuard";
+import { detectChosungAnswerLeak, detectChosungPuzzleMismatch } from "./chosungGame/outputGuard";
 import { detectWordChainOutputViolation } from "./wordChain/outputGuard";
 import { lookupWord } from "./wordChain/dictionaryIndex";
 import { deriveWordChainEntry } from "./wordChain/dictionaryTypes";
@@ -302,6 +302,7 @@ export async function respond(
   let handledPlaySkillId: PlaySkillId | undefined;
   let playSkillAnswerMustNotAppear: string | undefined;
   let playSkillRequiredWordInOutput: string | undefined;
+  let playSkillRequiredChosungInOutput: string | undefined;
 
   if (input.mode === "MISSION") {
     // 미션 모드: 놀이 스킬 진행 완전 차단.
@@ -384,6 +385,9 @@ export async function respond(
           }
           if (playTurnResult.requiredWordInOutput) {
             playSkillRequiredWordInOutput = playTurnResult.requiredWordInOutput;
+          }
+          if (playTurnResult.requiredChosungInOutput) {
+            playSkillRequiredChosungInOutput = playTurnResult.requiredChosungInOutput;
           }
         }
       } catch (error) {
@@ -579,10 +583,12 @@ export async function respond(
   // 9-1) 초성게임 정답 유출 차단.
   // 힌트·오답 턴 등 정답을 발설하면 안 되는 턴에서 케이가 정답 낱말을 말하면
   // 정답을 뺀 안전한 대체 문구로 바꾸고 경고를 남긴다.
+  let chosungAnswerLeaked = false;
   if (
     playSkillAnswerMustNotAppear &&
     detectChosungAnswerLeak(finalText, playSkillAnswerMustNotAppear)
   ) {
+    chosungAnswerLeaked = true;
     console.warn("[k-conversation/index] 초성게임 정답 유출을 감지하여 안전한 대체 문구로 변경했다", {
       childId: input.childId,
       sessionId: input.sessionId,
@@ -590,6 +596,22 @@ export async function respond(
       blockedPreview: finalText.slice(0, 60),
     });
     finalText = "음, 힌트 하나 더 줄게! 초성을 잘 생각해서 맞춰봐.";
+  }
+
+  // 9-1b) 초성게임 필수 초성 누락/불일치 차단.
+  // 스킬이 결정론적으로 고른 초성을 케이가 말하지 않고 임의로 지어내는 사고(2026-08-18)를 막는다.
+  if (
+    !chosungAnswerLeaked &&
+    playSkillRequiredChosungInOutput &&
+    detectChosungPuzzleMismatch(finalText, playSkillRequiredChosungInOutput)
+  ) {
+    console.warn("[k-conversation/index] 초성게임 필수 초성 누락/불일치를 감지하여 안전한 대체 문구로 변경했다", {
+      childId: input.childId,
+      sessionId: input.sessionId,
+      requiredChosung: playSkillRequiredChosungInOutput,
+      blockedPreview: finalText.slice(0, 60),
+    });
+    finalText = `자, 다시 낼게! 초성은 '${playSkillRequiredChosungInOutput}' 이야. 뭘까?`;
   }
 
   // 9-2) 끝말잇기 필수 낱말 누락 차단.

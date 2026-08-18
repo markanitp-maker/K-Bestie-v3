@@ -448,4 +448,26 @@ test("9. 힌트를 끝까지 요청하면 정답을 알려준다", async () => {
 
   assert.equal(result.handled, true);
   assert.match(String(result.instruction), /사과/, "힌트 마지막 단계는 정답 공개다");
+  assert.ok(result.requiredChosungInOutput, "다음 문제 초성이 requiredChosungInOutput에 있어야 한다");
 });
+
+test("10. '답이 뭐야' 같은 정답 요구 신호는 hint_level과 무관하게 즉시 정답을 공개한다 (2026-08-18 사고 수정)", async () => {
+  const db = createMockSupabase({
+    sessions: [makeSession({ hint_level: 0 })],
+  });
+  const result = await runChosungTurn(answerTurn(db, {
+    utterance: "답이 뭐야?",
+    signals: {
+      hasChosungGameStart: false,
+      hasChosungAnswerAttempt: false,
+      hasChosungHintRequest: false,
+      hasChosungAnswerRequest: true,
+    },
+  }));
+
+  assert.equal(result.handled, true);
+  assert.match(String(result.instruction), /사과/, "정답 요구 시 즉시 정답을 공개해야 한다");
+  assert.match(String(result.instruction), /다음 문제 초성/, "다음 문제를 내야 한다");
+  assert.ok(result.requiredChosungInOutput, "새 문제의 초성이 requiredChosungInOutput에 담겨야 한다");
+});
+

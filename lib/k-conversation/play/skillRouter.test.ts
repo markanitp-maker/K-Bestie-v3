@@ -42,6 +42,7 @@ const defaultSignals: UtteranceSignals = {
   hasChosungGameStart: false,
   hasChosungAnswerAttempt: false,
   hasChosungHintRequest: false,
+  hasChosungAnswerRequest: false,
   hasWordChainGameStart: false,
   hasNonsenseGameStart: false,
   hasNonsenseAnswerAttempt: false,

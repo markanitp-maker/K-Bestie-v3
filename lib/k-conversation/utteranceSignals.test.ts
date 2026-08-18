@@ -43,17 +43,14 @@ test("초성 게임 힌트 요청 긍정 케이스 및 답변시도 배제", () 
     "모르겠어",
     "너무 어려워",
     "못 맞추겠어",
-    "힌트 좀 알려줘",
-    "알려 줘",
-    "알려줘",
-    "알려 주라",
-    "가르쳐 줘",
-    "가르쳐줘",
-    "정답 뭐야",
-    "정답 뭐야?",
-    "답이 뭐야",
-    "답 뭐야",
+    "포기",
+    "패스",
+    "도저히 모르겠어",
     "뭔데",
+    // 2026-08-18 리뷰 지적: 답 공개 신호를 분리하면서 이 줄이 지워졌었다.
+    // "알려줘" 만 보고 정답을 공개하면 힌트를 원한 아이에게 답이 튀어나온다.
+    "힌트 좀 알려줘",
+    "힌트 알려줘",
   ];
 
   for (const text of hintUtterances) {
@@ -64,9 +61,49 @@ test("초성 게임 힌트 요청 긍정 케이스 및 답변시도 배제", () 
       `[${text}]는 힌트 요청 신호로 인식되어야 함`,
     );
     assert.equal(
+      signals.hasChosungAnswerRequest,
+      false,
+      `[${text}]는 답 공개 요청이 아니어야 함`,
+    );
+    assert.equal(
       signals.hasChosungAnswerAttempt,
       false,
       `[${text}]는 힌트 요청이므로 답변 시도가 아니어야 함`,
+    );
+  }
+});
+
+test("초성 게임 답 공개 요청 긍정 케이스 및 힌트/답변시도 배제", () => {
+  const answerRequestUtterances = [
+    "알려 줘",
+    "알려줘",
+    "알려 주라",
+    "가르쳐 줘",
+    "가르쳐줘",
+    "정답 뭐야",
+    "정답 뭐야?",
+    "답이 뭐야",
+    "답 뭐야",
+    "정답 알려줘",
+    "그냥 알려줘",
+  ];
+
+  for (const text of answerRequestUtterances) {
+    const signals = extractUtteranceSignals(text);
+    assert.equal(
+      signals.hasChosungAnswerRequest,
+      true,
+      `[${text}]는 답 공개 요청 신호로 인식되어야 함`,
+    );
+    assert.equal(
+      signals.hasChosungHintRequest,
+      false,
+      `[${text}]는 힌트 요청이 아니라 즉시 공개 요청이어야 함`,
+    );
+    assert.equal(
+      signals.hasChosungAnswerAttempt,
+      false,
+      `[${text}]는 답 요구이므로 답변 시도가 아니어야 함`,
     );
   }
 });

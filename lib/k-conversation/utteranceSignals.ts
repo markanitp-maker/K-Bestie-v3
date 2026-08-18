@@ -19,6 +19,7 @@ export interface UtteranceSignals {
   hasChosungGameStart: boolean; // 초성 게임 시작 요청 ("초성게임 하자", "ㅊㅅ게임", "초성 퀴즈" 등)
   hasChosungAnswerAttempt: boolean; // 초성 게임 답변 시도로 보이는 발화 ("사과", "정답 사과", "바나나인가?")
   hasChosungHintRequest: boolean; // 초성 게임 힌트 요청 ("힌트 줘", "모르겠어", "어려워" 등)
+  hasChosungAnswerRequest: boolean; // 초성 게임 정답 직접 공개 요청 ("답이 뭐야", "정답 알려줘", "그냥 알려줘" 등)
   hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
   hasNonsenseGameStart?: boolean; // 넌센스 퀴즈 / 수수께끼 시작 요청 ("넌센스 퀴즈 하자", "수수께끼 하자" 등)
   hasNonsenseAnswerAttempt?: boolean;
@@ -51,13 +52,18 @@ const CHOSUNG_START_PATTERNS = [
 const CHOSUNG_START_NEGATION_KWS = ["안 해", "안해", "안 할", "안할", "싫어", "하지 마", "하지마", "그만", "재미없"];
 const CHOSUNG_START_DEFINITION_KWS = ["뭐야", "뭔데", "무슨 뜻", "무슨 말", "어떤 뜻", "의미", "알아?", "알려줘"];
 
-// 초성 게임 힌트 요청 신호
-const CHOSUNG_HINT_KWS = [
-  "힌트", "모르겠", "어려워", "어렵다", "못 맞추겠", "못 맞히겠", "도저히 모르", "하나도 모르", "포기", "패스",
+// 초성 게임 정답 직접 공개 요청 신호 ("답이 뭐야", "정답 알려줘", "그냥 알려줘" 등)
+const CHOSUNG_ANSWER_REQUEST_KWS = [
   "알려 줘", "알려줘", "알려 주라", "알려주라", "알려 줘봐", "알려줘봐",
   "가르쳐 줘", "가르쳐줘", "가르쳐 주라", "가르쳐주라", "가르쳐 줘봐", "가르쳐줘봐",
   "정답 뭐", "정답이 뭐", "정답 뭐야", "정답이 뭐야", "정답 알려", "정답 말해",
-  "답이 뭐", "답 뭐야", "답이 뭐야", "답 알려", "답 말해",
+  "답이 뭐", "답 뭐야", "답이 뭐야", "답 알려", "답 말해", "답 뭔데", "정답 뭔데",
+  "그냥 알려", "그냥 가르쳐",
+];
+
+// 초성 게임 힌트 요청 신호
+const CHOSUNG_HINT_KWS = [
+  "힌트", "모르겠", "어려워", "어렵다", "못 맞추겠", "못 맞히겠", "도저히 모르", "하나도 모르", "포기", "패스",
   "뭔데",
 ];
 const CHOSUNG_HINT_NEGATION_KWS = ["필요 없어", "필요없어", "주지 마", "주지마", "안 어려", "안어려", "없이"];
@@ -177,6 +183,15 @@ function detectChosungGameStart(text: string): boolean {
   return CHOSUNG_START_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+function detectChosungAnswerRequest(text: string): boolean {
+  if (includesAny(text, CHOSUNG_HINT_NEGATION_KWS)) return false;
+  // "힌트 좀 알려줘" 는 답을 달라는 말이 아니다. "알려줘" 만 보고 정답을 공개하면
+  // 아이는 힌트를 원했는데 답이 튀어나와 게임이 그 자리에서 끝난다.
+  // 힌트를 말했으면 언제나 힌트 요청이다.
+  if (text.includes("힌트")) return false;
+  return includesAny(text, CHOSUNG_ANSWER_REQUEST_KWS);
+}
+
 function detectChosungHintRequest(text: string): boolean {
   if (includesAny(text, CHOSUNG_HINT_NEGATION_KWS)) return false;
   return includesAny(text, CHOSUNG_HINT_KWS);
@@ -187,8 +202,9 @@ function detectChosungAnswerAttempt(
   isStart: boolean,
   isHint: boolean,
   hasEmotionOrNeed: boolean,
+  isAnswerRequest: boolean = false,
 ): boolean {
-  if (isStart || isHint) return false;
+  if (isStart || isHint || isAnswerRequest) return false;
   const trimmed = text.trim();
   if (!trimmed) return false;
 
@@ -387,12 +403,14 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
 
   // 정확 매칭이 먼저다. 실패했을 때만 STT 오인식 복구를 시도한다(2026-08-17).
   let hasChosungGameStart = detectChosungGameStart(trimmed);
-  const hasChosungHintRequest = detectChosungHintRequest(trimmed);
+  const hasChosungAnswerRequest = detectChosungAnswerRequest(trimmed);
+  const hasChosungHintRequest = !hasChosungAnswerRequest && detectChosungHintRequest(trimmed);
   const hasChosungAnswerAttempt = detectChosungAnswerAttempt(
     trimmed,
     hasChosungGameStart,
     hasChosungHintRequest,
     hasAchievement || hasConflict || hasNegativeEmotion || hasPhysicalNeed,
+    hasChosungAnswerRequest,
   );
   let hasWordChainGameStart = detectWordChainGameStart(trimmed);
   let hasNonsenseGameStart = detectNonsenseGameStart(trimmed);
@@ -457,6 +475,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasChosungGameStart,
     hasChosungAnswerAttempt,
     hasChosungHintRequest,
+    hasChosungAnswerRequest,
     hasWordChainGameStart,
     hasNonsenseGameStart,
     hasPlayRequestWithoutTarget,

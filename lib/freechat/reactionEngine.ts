@@ -244,8 +244,17 @@ function conjugateVerb(word: string): string {
   return word;
 }
 
+/** 1글자여도 뜻이 분명한 대답. 이걸 "못 알아들었어"로 받으면 아이는
+ *  자기가 분명히 대답했는데 케이가 무시했다고 느낀다(2026-08-18 안서아 사고). */
+export const CLEAR_SINGLE_CHAR_UTTERANCES = new Set([
+  "응", "어", "네", "예", "왜", "뭐", "음", "아", "오", "흠", "그", "안", "헐", "짱", "굿",
+  "쉿", "콜", "얍", "엥", "꺅", "와", "야", "흥", "휴", "헉", "웅", "엉", "넵", "넹", "넴"
+]);
+
 export function classifyAndExtract(text: string, opts?: ReflectiveReactionOptions): { category: ReflectiveCategory, extracted: string | null } {
-  if (opts?.isLowConfidenceAsr || text.trim().length < 2) {
+  const trimmed = text.trim();
+  const isUnclearShort = trimmed.length === 0 || (trimmed.length === 1 && !CLEAR_SINGLE_CHAR_UTTERANCES.has(trimmed));
+  if (opts?.isLowConfidenceAsr || isUnclearShort) {
     return { category: "unclear_audio", extracted: null };
   }
 
@@ -291,7 +300,7 @@ export function classifyAndExtract(text: string, opts?: ReflectiveReactionOption
 
   // fallback if too vague
   const cleanText = text.replace(/[.?!,]/g, '').trim();
-  if (cleanText.length >= 2) {
+  if (cleanText.length >= 2 || CLEAR_SINGLE_CHAR_UTTERANCES.has(cleanText)) {
     const normText = cleanText.replace(/\s+/g, '');
     if (normText.includes("너무많이반복해")) return { category: "neutral_statement", extracted: "계속 반복돼서 답답했" };
     if (normText.includes("이제그만해")) return { category: "neutral_statement", extracted: "이제 그만했으면 좋겠" };

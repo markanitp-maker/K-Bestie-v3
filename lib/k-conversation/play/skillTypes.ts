@@ -26,6 +26,12 @@ export interface PlaySkillTurnResult {
    * 말하지 않으면 DB 상태와 아이가 들은 말이 어긋나 게임이 무너진다.
    */
   requiredWordInOutput?: string;
+  /**
+   * 이번 턴 케이의 응답에 **반드시 들어 있어야 하는** 초성 문자열.
+   * 케이가 문제를 낼 때 스킬이 결정론적으로 고른 초성을 모델이 말하지 않고
+   * 지어내는 사고(2026-08-18)를 막기 위해 출력을 직접 검증한다.
+   */
+  requiredChosungInOutput?: string;
 }
 
 export interface PlaySkillStartInput {
