@@ -19,6 +19,7 @@ import {
   todayInKst,
 } from "@/lib/growth";
 import type { GrowthStateResponse } from "@/lib/growth/types";
+import { BirthDateField } from "./BirthDateField";
 
 interface Props {
   childId: string;
@@ -96,17 +97,10 @@ export function GrowthSetupModal({ childId, childName, currentGender, onClose, o
           </button>
         </div>
 
-        <label className="block text-[14px] font-bold text-[#1F2937]" htmlFor="growth-birth-date">
-          생년월일
-        </label>
-        <input
-          id="growth-birth-date"
-          type="date"
-          value={birthDate}
-          max={today}
-          onChange={(event) => setBirthDate(event.target.value)}
-          className="mt-2 w-full rounded-2xl border border-[#10315B]/20 bg-white px-4 py-3 text-[16px] font-semibold text-[#1F2937] outline-none focus:border-[var(--color-k-orange)]"
-        />
+        <span className="block text-[14px] font-bold text-[#1F2937]">생년월일</span>
+        {/* iOS 의 날짜 피커가 년·월 휠로 열려 일자가 묻히던 문제(2026-08-19 대표님 실기기)로,
+            OS 피커 대신 년·월·일을 한 번에 고르고 직접 타이핑도 되는 입력으로 바꿨다. */}
+        <BirthDateField value={birthDate} onChange={setBirthDate} />
         {agePreview && (
           <p className="mt-2 text-[13px] font-semibold text-gray-600">
             측정 기준 나이: {agePreview.label}
