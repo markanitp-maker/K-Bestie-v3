@@ -7,7 +7,9 @@ import path from "path";
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || "https://k-bestie-v3-dev.vercel.app";
 const EVIDENCE_DIR = "/tmp/qa-a03";
-const PARENT_USERNAME = "qatesti-dev";
+// Dev 는 qatesti-dev, Production 은 qa-parent 다. BASE 로 자동 선택한다(계정 없는 서버에
+// 로그인하면 화면이 안 그려져 측정이 통째로 실패한다 — 2026-08-19 실측).
+const PARENT_USERNAME = BASE.includes("app.k-bestie.com") ? "qa-parent" : "qatesti-dev";
 
 function readQaPassword(): string {
   if (process.env.QA_TEST_PASSWORD) return process.env.QA_TEST_PASSWORD;
