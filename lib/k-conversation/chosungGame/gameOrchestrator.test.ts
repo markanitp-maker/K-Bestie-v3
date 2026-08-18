@@ -8,6 +8,7 @@ import {
   type ChosungTurnInput,
 } from "./gameOrchestrator";
 import type { ChosungGameSessionRow, ChosungGameRoundRow } from "./gameSessionManager";
+import { createEmptyUtteranceSignals as emptySignals } from "../play/playSelection";
 
 /**
  * gameOrchestrator 검증용 인메모리 Mock Supabase 팩토리
@@ -471,3 +472,37 @@ test("10. '답이 뭐야' 같은 정답 요구 신호는 hint_level과 무관하
   assert.ok(result.requiredChosungInOutput, "새 문제의 초성이 requiredChosungInOutput에 담겨야 한다");
 });
 
+
+test("힌트·오답 턴은 초성 반복을 강제하지 않는다 — 진짜 힌트가 대체 문구로 날아가면 안 된다", async () => {
+  // 2026-08-18 Dev QA 실측: 아이가 "힌트 좀 알려줘" 했는데 케이가
+  // "자, 다시 낼게! 초성은 'ㅃㄹㄹ' 이야. 뭘까?" 만 반복했다. 힌트 턴에까지
+  // requiredChosungInOutput 을 걸어, 초성 문자열을 다시 말하지 않은 정상 힌트
+  // ("미술 시간에 쓰는 거야")가 통째로 대체 문구로 바뀐 탓이다.
+  // 이 턴들은 문제를 내는 턴이 아니다. 방어는 정답 유출로 충분하다.
+  const session = {
+    id: "s-guard", child_id: "child-g", chat_session_id: "chat-g",
+    state: "PLAYING_CHILD_ASKS", current_word: "사과", current_chosung: "ㅅㄱ",
+    current_category: "음식", current_difficulty: 1, hint_level: 0,
+    recent_words: ["사과"], started_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(), ended_at: null,
+  };
+
+  const hint = await runChosungTurn({
+    db: createMockSupabase({ sessions: [session] }) as never,
+    childId: "child-g", chatSessionId: "chat-g", gradeRaw: 1,
+    utterance: "힌트 줘",
+    signals: { ...emptySignals(), hasChosungHintRequest: true },
+  } as never);
+  assert.equal(hint.handled, true);
+  assert.equal(hint.requiredChosungInOutput, undefined, "힌트 턴은 초성 강제 대상이 아니다");
+  assert.equal(hint.answerMustNotAppear, "사과", "정답 유출 방어는 그대로 있어야 한다");
+
+  const wrong = await runChosungTurn({
+    db: createMockSupabase({ sessions: [session] }) as never,
+    childId: "child-g", chatSessionId: "chat-g", gradeRaw: 1,
+    utterance: "바나나",
+    signals: { ...emptySignals(), hasChosungAnswerAttempt: true },
+  } as never);
+  assert.equal(wrong.requiredChosungInOutput, undefined, "오답 턴도 초성 강제 대상이 아니다");
+  assert.equal(wrong.answerMustNotAppear, "사과");
+});

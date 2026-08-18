@@ -154,8 +154,12 @@ export async function runChosungTurn(
         return {
           handled: true,
           instruction: `[초성게임] 아이 답은 틀렸어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아직 정답은 말하지 말고 격려하면서 힌트를 줘.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야.`,
+          // 오답·힌트 턴은 **문제를 내는 턴이 아니다.** 여기서 초성 반복을 강제하면
+          // 케이의 진짜 힌트("미술 시간에 쓰는 거야")가 "자, 다시 낼게! 초성은 …"
+          // 대체 문구로 통째로 날아간다(2026-08-18 Dev QA 실측: 아이가 힌트를
+          // 요청했는데 문제만 다시 읽어줬다). 이 턴의 방어는 정답 유출
+          // (answerMustNotAppear) 로 충분하다.
           answerMustNotAppear: currentWord || undefined,
-          requiredChosungInOutput: currentChosung || undefined,
         };
       }
     }
@@ -205,8 +209,12 @@ export async function runChosungTurn(
       return {
         handled: true,
         instruction: `[초성게임] 아이가 힌트를 요청했어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아이가 스스로 맞혀야 해.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야. ${categoryHint}글자 수나 뜻으로 힌트를 줘.`,
+        // 오답·힌트 턴은 **문제를 내는 턴이 아니다.** 여기서 초성 반복을 강제하면
+        // 케이의 진짜 힌트("미술 시간에 쓰는 거야")가 "자, 다시 낼게! 초성은 …"
+        // 대체 문구로 통째로 날아간다(2026-08-18 Dev QA 실측: 아이가 힌트를
+        // 요청했는데 문제만 다시 읽어줬다). 이 턴의 방어는 정답 유출
+        // (answerMustNotAppear) 로 충분하다.
         answerMustNotAppear: currentWord || undefined,
-        requiredChosungInOutput: currentChosung || undefined,
       };
     }
 
