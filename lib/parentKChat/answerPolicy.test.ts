@@ -111,3 +111,33 @@ test("날짜(며칠) 질문은 기존 경로가 계속 담당한다", () => {
   assert.equal(isClockFactQuestion("어제 날짜가 몇 일이야?"), false);
   assert.equal(isDateFactQuestion("어제 날짜가 몇 일이야?"), true);
 });
+
+test("정정 복구는 직전 발화가 아이 정보 질문일 때만 한다 — 케이 자신에 대한 질문을 되돌리면 안 된다", () => {
+  // 2026-08-18 Dev QA 실측 사고:
+  //   부모  너 업데이트 되니?        → 케이가 자기 얘기로 정상 응답
+  //   부모  뭔 소리야? 대화가 안 된다? → FEEDBACK 으로 분류되는 건 맞았는데,
+  //         직전 발화("너 업데이트 되니?")를 아이 정보 질문으로 착각해 기록을 재조회했다.
+  //         결과: "2026년 8월 18일에 확인되는 기록이 없어요" + 엉뚱한 질문 초안.
+  const context = [
+    { role: "user" as const, text: "너 대화 저장 안되니?" },
+    { role: "k" as const, text: "저는 대화 내용이 따로 저장되지 않아요." },
+    { role: "user" as const, text: "너 업데이트 되니?" },
+    { role: "k" as const, text: "네, 계속 좋아지고 있어요." },
+  ];
+
+  // 판별자를 넘기면 아이 정보 질문이 하나도 없으므로 복구 대상이 없다.
+  const isChildInfo = (text: string) => /서현|서아|아이|오늘\s*뭐/.test(text);
+  assert.equal(findPreviousParentInformationQuery(context, isChildInfo), null);
+
+  // 판별자를 안 넘기면 예전처럼 아무거나 집어온다 — 그게 사고의 원인이었다.
+  assert.equal(findPreviousParentInformationQuery(context), "너 업데이트 되니?");
+
+  // 아이 정보 질문이 실제로 있으면 그것을 복구한다(정상 기능 회귀 방어).
+  const withChildQuery = [
+    { role: "user" as const, text: "서현이 오늘 뭐 했어?" },
+    { role: "k" as const, text: "기록이 없어요." },
+    { role: "user" as const, text: "너 업데이트 되니?" },
+    { role: "k" as const, text: "네, 계속 좋아지고 있어요." },
+  ];
+  assert.equal(findPreviousParentInformationQuery(withChildQuery, isChildInfo), "서현이 오늘 뭐 했어?");
+});

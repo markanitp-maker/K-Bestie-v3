@@ -330,8 +330,14 @@ export async function POST(request: Request) {
         });
       }
 
+      // 직전 발화가 **실제로 아이 정보 질문일 때만** 정정 복구 대상이다.
+      // 아무거나 집어오면 "너 업데이트 되니?" 같은 케이 자신에 대한 질문을 아이 기록
+      // 조회로 되돌려 "기록이 없어요" 라고 답한다(2026-08-18 Dev QA 실측).
       const previousInformationQuery = intent === "FEEDBACK_OR_CORRECTION"
-        ? findPreviousParentInformationQuery(conversationContext)
+        ? findPreviousParentInformationQuery(
+            conversationContext,
+            (text) => classifyParentKChatIntent(text, false).intent === "CHILD_INFORMATION_QUERY",
+          )
         : null;
 
       // 일반 대화와 이전 정보 질문이 없는 단순 피드백만 Retrieval을 생략한다. 날짜나 사실을

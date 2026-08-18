@@ -121,10 +121,30 @@ export function buildAskChildContext(
   };
 }
 
-export function findPreviousParentInformationQuery(context: ParentConversationTurn[]): string | null {
+/**
+ * 부모가 직전 답변을 정정할 때, 무엇을 다시 조회해야 하는지 찾는다.
+ *
+ * `isInformationQuery` 를 반드시 넘겨라. 예전에는 인사말 몇 개만 빼고 **직전 부모
+ * 발화를 아무거나** 집어왔는데, 그 결과 "너 업데이트 되니?" 같은 케이 자신에 대한
+ * 질문을 아이 기록 조회로 되돌려 "2026년 8월 18일에 확인되는 기록이 없어요" 라고
+ * 답하고, "2026년 8월 18일에 너 업데이트 되니?" 라는 엉뚱한 질문 초안까지 만들었다
+ * (2026-08-18 Dev QA 실측). 부모는 대화가 안 통한다고 느낀다.
+ *
+ * 정정 복구는 **직전 발화가 실제로 아이 정보 질문일 때만** 의미가 있다.
+ */
+export function findPreviousParentInformationQuery(
+  context: ParentConversationTurn[],
+  isInformationQuery?: (text: string) => boolean,
+): string | null {
   const candidate = [...context]
     .reverse()
-    .find((turn) => turn.role === "user" && !/^(안녕|고마워|감사|물어\s*봐|여쭤\s*봐)/.test(turn.text.trim()));
+    .find((turn) => {
+      if (turn.role !== "user") return false;
+      const text = turn.text.trim();
+      if (/^(안녕|고마워|감사|물어\s*봐|여쭤\s*봐)/.test(text)) return false;
+      // 판별자가 없으면 기존 동작을 유지한다(호출부가 점진적으로 넘긴다).
+      return isInformationQuery ? isInformationQuery(text) : true;
+    });
   return candidate?.text.trim().slice(0, 300) || null;
 }
 
