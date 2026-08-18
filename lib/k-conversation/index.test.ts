@@ -100,7 +100,23 @@ function createMockDbForRespond(options: {
   onUpdate?: (table: string, data: any) => void;
 } = {}): SupabaseClient {
   const getChosungSessionData = () => options.activeChosungSession ?? null;
-  const getWordChainSessionData = () => options.activeWordChainSession ?? null;
+  const getWordChainSessionData = () => {
+    if (!options.activeWordChainSession) return null;
+    return {
+      id: "wc-session-1",
+      child_id: "child-1",
+      chat_session_id: "session-1",
+      state: "CHILD_TURN",
+      initiated_by: "K",
+      current_word: "사과",
+      current_difficulty: 1,
+      used_words: ["사과"],
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ended_at: null,
+      ...options.activeWordChainSession,
+    };
+  };
   const getNonsenseSessionData = () => options.activeNonsenseSession ?? null;
 
   const createTableChain = (table: string) => {
@@ -125,6 +141,24 @@ function createMockDbForRespond(options: {
               current_difficulty: 1,
               hint_level: 0,
               recent_words: ["바나나"],
+              started_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              ended_at: null,
+            },
+            error: null,
+          };
+        }
+        if (table === "word_chain_game_sessions") {
+          return {
+            data: getWordChainSessionData() ?? {
+              id: "wc-session-1",
+              child_id: "child-1",
+              chat_session_id: "session-1",
+              state: "CHILD_TURN",
+              initiated_by: "K",
+              current_word: "사과",
+              current_difficulty: 1,
+              used_words: ["사과"],
               started_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
               ended_at: null,
@@ -1034,6 +1068,199 @@ test("Output Guard Test 6: MISSION 모드에서는 가짜 게임 가드를 검�
   // MISSION 모드에서는 가짜 게임 출력 차단 가드가 동작하지 않으므로 텍스트가 유지됨
   assert.ok(result.text.includes("ㄸㄱ"));
 });
+
+test("WordChain Output Guard 1: 응답에 requiredWord가 있으면 정상 통과", async () => {
+  const mockDb = createMockDbForRespond({
+    activeWordChainSession: {
+      id: "wc-session-1",
+      current_word: "사과",
+      used_words: ["사과"],
+    },
+  });
+  let capturedInstruction: string | undefined;
+  const mockAi = {
+    models: {
+      generateContent: async (params: any) => {
+        capturedInstruction = params.config?.systemInstruction;
+        // instruction에서 케이가 낼 단어 추출 (예: 케이는 "과자"로 받을게)
+        const match = capturedInstruction?.match(/케이는\s*"([^"]+)"/);
+        const kWord = match ? match[1] : "과자";
+        return {
+          text: `좋아! 나는 '${kWord}' 할게! 다음 단어 이어줘.`,
+          usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+        };
+      },
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "과자",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.ok(result.text.includes("좋아! 나는 '"));
+});
+
+test("WordChain Output Guard 2: 응답에 requiredWord가 없으면 대체 문구로 바뀌고 requiredWord가 들어 있다", async () => {
+  const mockDb = createMockDbForRespond({
+    activeWordChainSession: {
+      id: "wc-session-1",
+      current_word: "사과",
+      used_words: ["사과"],
+    },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        // 모델이 requiredWord를 무시하고 엉뚱한 말을 함
+        text: "와 멋진 단어야! 근데 다음엔 뭐 할까?",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "과자",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  // requiredWord가 포함된 대체 문구로 치환됨
+  assert.ok(result.text.startsWith("좋아! 나는 '"));
+  assert.ok(result.text.includes("할게. 이제 '"));
+  assert.ok(result.text.includes("'로 시작하는 말 해줘!"));
+});
+
+test("WordChain Output Guard 3: 사고 재현 — 케이가 '그거로 시작하는 다음 단어는 뭘로 할래?' 라고만 하면 차단된다", async () => {
+  const mockDb = createMockDbForRespond({
+    activeWordChainSession: {
+      id: "wc-session-1",
+      current_word: "차표",
+      used_words: ["차표"],
+    },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        // 2026-08-17 사고 실제 발화
+        text: "오, 표창 짱 멋있지! 근데 그거로 시작하는 다음 단어는 뭘로 할래?",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "표범",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  // 케이가 자기가 단어를 안 내고 되던진 발화가 차단되고 대체 문구로 치환됨
+  assert.ok(result.text.startsWith("좋아! 나는 '"));
+  assert.ok(result.text.includes("할게. 이제 '"));
+  assert.equal(result.text.includes("그거로 시작하는 다음 단어는 뭘로 할래?"), false);
+});
+
+test("WordChain Output Guard 4: 그만하기 턴은 requiredWordInOutput이 없어 검사 대상이 아니다", async () => {
+  const mockDb = createMockDbForRespond({
+    activeWordChainSession: {
+      id: "wc-session-1",
+      current_word: "사과",
+      used_words: ["사과"],
+    },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        text: "그래, 끝말잇기 재미있었어! 다음에 또 같이 놀자.",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "끝말잇기 그만하자",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.equal(result.text, "그래, 끝말잇기 재미있었어! 다음에 또 같이 놀자.");
+});
+
+test("WordChain Output Guard 5: 초성 검증(answerMustNotAppear)이 그대로 동작한다 (회귀 방어)", async () => {
+  const mockDb = createMockDbForRespond({
+    activeChosungSession: {
+      id: "cs-session-1",
+      current_chosung: "ㄸㄱ",
+      current_word: "딸기",
+      hint_level: 1,
+    },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        text: "정답은 딸기잖아! 딸기인 걸 왜 몰라?",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "모르겠어",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  assert.equal(result.text.includes("딸기"), false);
+  assert.equal(result.text, "음, 힌트 하나 더 줄게! 초성을 잘 생각해서 맞춰봐.");
+});
+
 
 
 

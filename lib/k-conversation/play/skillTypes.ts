@@ -20,6 +20,12 @@ export interface PlaySkillTurnResult {
   openingLine?: string;
   /** 이번 턴에서 응답에 나타나면 안 되는 정답 단어 (유출 방지 검증용) */
   answerMustNotAppear?: string;
+  /**
+   * 이번 턴 케이의 응답에 **반드시 들어 있어야 하는** 낱말.
+   * 끝말잇기는 케이가 낼 낱말을 스킬이 결정론적으로 고른다. 모델이 그걸
+   * 말하지 않으면 DB 상태와 아이가 들은 말이 어긋나 게임이 무너진다.
+   */
+  requiredWordInOutput?: string;
 }
 
 export interface PlaySkillStartInput {

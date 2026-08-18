@@ -19,6 +19,9 @@ import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/r
 import { routePlaySkillTurn } from "./play/skillRouter";
 import { detectFakeGameplay, FAKE_GAMEPLAY_FALLBACK_TEXT, type FakeGameplayKind } from "./play/fakeGameplayDetector";
 import { detectChosungAnswerLeak } from "./chosungGame/outputGuard";
+import { detectWordChainOutputViolation } from "./wordChain/outputGuard";
+import { lookupWord } from "./wordChain/dictionaryIndex";
+import { deriveWordChainEntry } from "./wordChain/dictionaryTypes";
 import { detectFabricatedRecall, FABRICATED_RECALL_FALLBACK_TEXT } from "./memory/fabricatedRecallDetector";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
@@ -298,6 +301,7 @@ export async function respond(
   let playSkillHandled = false;
   let handledPlaySkillId: PlaySkillId | undefined;
   let playSkillAnswerMustNotAppear: string | undefined;
+  let playSkillRequiredWordInOutput: string | undefined;
 
   if (input.mode === "MISSION") {
     // 미션 모드: 놀이 스킬 진행 완전 차단.
@@ -377,6 +381,9 @@ export async function respond(
           }
           if (playTurnResult.answerMustNotAppear) {
             playSkillAnswerMustNotAppear = playTurnResult.answerMustNotAppear;
+          }
+          if (playTurnResult.requiredWordInOutput) {
+            playSkillRequiredWordInOutput = playTurnResult.requiredWordInOutput;
           }
         }
       } catch (error) {
@@ -583,6 +590,27 @@ export async function respond(
       blockedPreview: finalText.slice(0, 60),
     });
     finalText = "음, 힌트 하나 더 줄게! 초성을 잘 생각해서 맞춰봐.";
+  }
+
+  // 9-2) 끝말잇기 필수 낱말 누락 차단.
+  // 케이가 낼 낱말을 스킬이 결정론적으로 골랐는데 케이가 그 낱말을 말하지 않으면
+  // DB 상태와 아이가 들은 말이 어긋나 게임이 무너지므로, 케이가 낼 낱말이 포함된
+  // 안전한 대체 문구로 바꾸고 경고를 남긴다.
+  if (
+    playSkillRequiredWordInOutput &&
+    detectWordChainOutputViolation(finalText, playSkillRequiredWordInOutput)
+  ) {
+    const lastChar =
+      lookupWord(playSkillRequiredWordInOutput)?.lastSyllable ??
+      deriveWordChainEntry({ word: playSkillRequiredWordInOutput, difficulty: 1 }).lastSyllable;
+
+    console.warn("[k-conversation/index] 끝말잇기 필수 낱말 누락을 감지하여 안전한 대체 문구로 변경했다", {
+      childId: input.childId,
+      sessionId: input.sessionId,
+      requiredWord: playSkillRequiredWordInOutput,
+      blockedPreview: finalText.slice(0, 60),
+    });
+    finalText = `좋아! 나는 '${playSkillRequiredWordInOutput}' 할게. 이제 '${lastChar}'로 시작하는 말 해줘!`;
   }
 
   // 10) 없는 기억에 맞장구치는 응답 차단.

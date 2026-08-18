@@ -287,6 +287,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
           instruction: `[끝말잇기] 이미 진행 중인 끝말잇기 게임이 있어! 지금 단어는 "${existingSession.current_word}"야. "${reqSyllable}"(으)로 시작하는 단어를 말해줘.`,
           ended: false,
           openingLine,
+          requiredWordInOutput: existingSession.current_word,
         };
       }
 
@@ -318,6 +319,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         instruction: `[끝말잇기] 케이가 먼저 시작할게! 첫 번째 단어는 "${initialWordEntry.word}"야. "${reqSyllable}"(으)로 시작하는 단어를 이어 말해줘.`,
         ended: false,
         openingLine,
+        requiredWordInOutput: initialWordEntry.word,
       };
     } catch (err) {
       console.error("[wordChainSkill] start error:", err);
@@ -502,6 +504,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         handled: true,
         instruction: `[끝말잇기] 아이가 "${childEntry.word}"(으)로 멋지게 이어줬어! 케이는 "${kNextEntry.word}"(으)로 받을게. 이제 "${nextReqSyllable}"(으)로 시작하는 단어를 말해줘.`,
         ended: false,
+        requiredWordInOutput: kNextEntry.word,
       };
     } catch (err) {
       console.error("[wordChainSkill] handleTurn error:", err);
