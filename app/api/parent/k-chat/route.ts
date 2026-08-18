@@ -645,12 +645,27 @@ export async function POST(request: Request) {
       const retrievalSources = Array.from(new Set(evidence.map((item) => item.source)));
       const conversationContextText = formatConversationContextForPrompt(conversationContext);
       
+      // 프롬프트에 오늘 날짜가 없어서, 모델이 근거 본문의 "오늘"을 지금 오늘로 착각했다.
+      // 2026-08-18 프로덕션 실측: 8/17 리포트를 읽고 "오늘 학교에서…", "어제인 8월 16일"
+      // 이라고 답해 하루씩 밀렸다. 부모가 날짜를 오해한다.
+      const kstNow = new Date();
+      const kstTodayStr = new Intl.DateTimeFormat("ko-KR", {
+        timeZone: "Asia/Seoul",
+        year: "numeric", month: "long", day: "numeric", weekday: "long",
+      }).format(kstNow);
+      const kstTodayIso = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(kstNow);
+
       const systemPrompt = `
 당신은 부모용 케이(폐쇄형 RAG 챗봇)입니다.
 다음 검색된 근거만을 사용하여 부모의 질문에 답하세요.
 
 [검색된 근거]
 ${evidenceContext}
+
+[오늘]
+${kstTodayStr} (${kstTodayIso}, 한국 시간 기준)
 
 [시간 제약]
 kind: ${retrievalResult.temporal.kind}
@@ -673,7 +688,11 @@ ${conversationContextText ? `[현재 부모-케이 대화 맥락]\n${conversatio
 11. 미래 행동이나 경향을 묻는 질문은 관찰된 기록의 범위에서만 가능성을 설명하고, 매일 할지처럼 근거가 부족한 부분은 단정하지 마세요.
 12. EXACT_DATE이면 targetDate와 일치하는 근거만 답변에 사용하세요.
 13. PARTIAL_EVIDENCE이면 확인된 내용과 확인되지 않은 세부 내용을 각각 명시하고 아이에게 직접 물어볼지 제안하세요.
-14. 결과는 반드시 JSON 스키마를 준수하여 작성하세요.
+14. 근거 본문에 나오는 "오늘·어제·내일·이번 주" 같은 표현은 **그 근거가 작성된 날짜**를
+    기준으로 쓰인 말입니다. 지금 기준이 아닙니다. 부모에게 말할 때는 [오늘]을 기준으로
+    환산하거나, 헷갈릴 수 있으면 "8월 17일에는"처럼 실제 날짜를 밝혀 주세요.
+    근거의 상대 날짜 표현을 그대로 옮겨 쓰지 마세요.
+15. 결과는 반드시 JSON 스키마를 준수하여 작성하세요.
 
 JSON 스키마:
 {
