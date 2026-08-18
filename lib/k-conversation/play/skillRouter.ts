@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlaySkillModule, PlaySkillTurnResult } from "./skillTypes";
 import type { UtteranceSignals } from "../utteranceSignals";
 import { PLAY_SKILL_REGISTRY, findDirectlyRequestedSkill, findSkillById } from "./skillRegistry";
+import { isKPlayEnabled } from "./playAvailability";
 import { resolveActiveSkill } from "./activeSkillCoordinator";
 import { recordKPlayEvent } from "./kPlayAnalytics";
 import {
@@ -18,6 +19,7 @@ export interface RoutePlaySkillTurnInput {
   utterance: string;
   signals: UtteranceSignals;
   registry?: readonly PlaySkillModule[];
+  recordEvent?: typeof recordKPlayEvent;
 }
 
 /**
@@ -47,6 +49,10 @@ export interface RoutePlaySkillTurnInput {
 export async function routePlaySkillTurn(
   input: RoutePlaySkillTurnInput
 ): Promise<PlaySkillTurnResult> {
+  if (!isKPlayEnabled()) {
+    return { handled: false };
+  }
+
   try {
     const { db, childId, chatSessionId, utterance, signals } = input;
 
@@ -240,7 +246,8 @@ export async function routePlaySkillTurn(
  * 놀이가 통째로 안 잡힌다. 그쪽이 오히려 더 많다.
  */
 function recordKPlayStarted(input: RoutePlaySkillTurnInput, skillId: string): void {
-  recordKPlayEvent("k_play_start", {
+  const recorder = input.recordEvent ?? recordKPlayEvent;
+  recorder("k_play_start", {
     db: input.db,
     childId: input.childId,
     chatSessionId: input.chatSessionId,

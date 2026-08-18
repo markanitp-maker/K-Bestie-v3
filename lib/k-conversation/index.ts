@@ -26,6 +26,7 @@ import { detectFabricatedRecall, FABRICATED_RECALL_FALLBACK_TEXT } from "./memor
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
+import { isKPlayEnabled } from "./play/playAvailability";
 import { setPendingPlayProposal, clearPendingPlayProposal } from "./play/pendingProposalStore";
 import type { PlaySkillId } from "./play/skillTypes";
 
@@ -339,59 +340,88 @@ export async function respond(
       }
     }
   } else {
-    // 자유대화 모드: 활성 놀이 세션 존재 여부 확인 (Registry 순회)
-    if (input.childId) {
-      for (const skill of PLAY_SKILL_REGISTRY) {
-        try {
-          const session = await skill.getActiveSession(deps.db, input.childId);
-          if (session) {
-            hasActivePlaySession = true;
-            activePlaySkillId = skill.id;
-            break;
+    // 자유대화 모드: 놀이 활성화 여부에 따른 세션 확인 및 턴 처리
+    if (!isKPlayEnabled()) {
+      if (input.childId) {
+        for (const skill of PLAY_SKILL_REGISTRY) {
+          try {
+            const session = await skill.getActiveSession(deps.db, input.childId);
+            if (session) {
+              await skill.end({
+                db: deps.db,
+                childId: input.childId,
+                chatSessionId: input.sessionId,
+                reason: "K_PLAY_DISABLED",
+              });
+            }
+          } catch (err) {
+            console.error("[k-conversation/index] disabled k-play session cleanup failed:", err);
           }
-        } catch (err) {
-          console.error("[k-conversation/index] getActiveSession failed:", err);
         }
       }
-    }
-
-    // 6) 놀이 스킬 턴 처리 (§3-3, §3-22) — Router를 통해 활성 세션 또는 직접 요청 dispatch.
-    // Router가 handled: true면 instruction을 adapterInstruction 앞에 결합하고,
-    // handled: false면 기존 자유대화 흐름을 그대로 유지한다.
-    const gradeRaw =
-      input.gradeRaw ??
-      coreCtx.peerPersona.realGrade ??
-      coreCtx.peerPersona.gradeLabel;
-
-    if (input.childId && input.sessionId) {
-      try {
-        const playTurnResult = await routePlaySkillTurn({
-          db: deps.db,
-          childId: input.childId,
-          chatSessionId: input.sessionId,
-          gradeRaw,
-          utterance: input.currentUtterance,
-          signals,
-        });
-
-        if (playTurnResult.handled) {
-          playSkillHandled = true;
-          handledPlaySkillId = playTurnResult.skillId;
-          if (playTurnResult.instruction) {
-            playSkillInstruction = playTurnResult.instruction;
-          }
-          if (playTurnResult.answerMustNotAppear) {
-            playSkillAnswerMustNotAppear = playTurnResult.answerMustNotAppear;
-          }
-          if (playTurnResult.requiredWordInOutput) {
-            playSkillRequiredWordInOutput = playTurnResult.requiredWordInOutput;
-          }
-          if (playTurnResult.requiredChosungInOutput) {
-            playSkillRequiredChosungInOutput = playTurnResult.requiredChosungInOutput;
+      if (input.sessionId) {
+        try {
+          await clearPendingPlayProposal(input.sessionId, deps.db);
+        } catch (err) {
+          console.error("[k-conversation/index] clearPendingPlayProposal error:", err);
+        }
+      }
+      hasActivePlaySession = false;
+    } else {
+      // 자유대화 모드: 활성 놀이 세션 존재 여부 확인 (Registry 순회)
+      if (input.childId) {
+        for (const skill of PLAY_SKILL_REGISTRY) {
+          try {
+            const session = await skill.getActiveSession(deps.db, input.childId);
+            if (session) {
+              hasActivePlaySession = true;
+              activePlaySkillId = skill.id;
+              break;
+            }
+          } catch (err) {
+            console.error("[k-conversation/index] getActiveSession failed:", err);
           }
         }
-      } catch (error) {
-        console.error("[k-conversation/index] play turn failed:", error);
+      }
+
+      // 6) 놀이 스킬 턴 처리 (§3-3, §3-22) — Router를 통해 활성 세션 또는 직접 요청 dispatch.
+      // Router가 handled: true면 instruction을 adapterInstruction 앞에 결합하고,
+      // handled: false면 기존 자유대화 흐름을 그대로 유지한다.
+      const gradeRaw =
+        input.gradeRaw ??
+        coreCtx.peerPersona.realGrade ??
+        coreCtx.peerPersona.gradeLabel;
+
+      if (input.childId && input.sessionId) {
+        try {
+          const playTurnResult = await routePlaySkillTurn({
+            db: deps.db,
+            childId: input.childId,
+            chatSessionId: input.sessionId,
+            gradeRaw,
+            utterance: input.currentUtterance,
+            signals,
+          });
+
+          if (playTurnResult.handled) {
+            playSkillHandled = true;
+            handledPlaySkillId = playTurnResult.skillId;
+            if (playTurnResult.instruction) {
+              playSkillInstruction = playTurnResult.instruction;
+            }
+            if (playTurnResult.answerMustNotAppear) {
+              playSkillAnswerMustNotAppear = playTurnResult.answerMustNotAppear;
+            }
+            if (playTurnResult.requiredWordInOutput) {
+              playSkillRequiredWordInOutput = playTurnResult.requiredWordInOutput;
+            }
+            if (playTurnResult.requiredChosungInOutput) {
+              playSkillRequiredChosungInOutput = playTurnResult.requiredChosungInOutput;
+            }
+          }
+        } catch (error) {
+          console.error("[k-conversation/index] play turn failed:", error);
+        }
       }
     }
   }
@@ -509,7 +539,16 @@ export async function respond(
     input.currentUtteranceAlreadyInSession,
   );
   const playCatalogFragment =
-    input.mode === "FREE_CHAT" ? buildPlayCatalogFragment() : undefined;
+    input.mode === "FREE_CHAT"
+      ? isKPlayEnabled()
+        ? buildPlayCatalogFragment()
+        : `[놀이 안내]
+- 아이가 놀이·게임을 하자고 하면 "놀이는 지금 준비 중이야" 라는 뜻으로 짧고
+  다정하게 말하고 대화를 이어가.
+- 매번 똑같은 문장을 반복하지 말고 자연스럽게 표현해.
+- 다른 놀이를 대신 제안하지 마.
+- 초성 문제·끝말잇기·넌센스 퀴즈를 네가 직접 만들어 내지 마.`
+      : undefined;
   const generated = await generateResponse({
     ai: deps.ai,
     modelId: deps.modelId,

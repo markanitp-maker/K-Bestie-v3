@@ -16,6 +16,7 @@ import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversation
 import { getFreeChatConversationState } from "@/lib/freechat/conversationState";
 import { GoldKeyRewardModal } from "@/components/rewards/GoldKeyRewardModal";
 import { PlaySkillModal } from "@/components/chat/PlaySkillModal";
+import { isKPlayEnabled } from "@/lib/k-conversation/play/playAvailability";
 import {
   getFreechatRewardModalContent,
   parseFreechatPauseSuccess,
@@ -1096,18 +1097,34 @@ export default function ChatPage() {
 
                 {/* Left K-Play Button - Symmetrical Absolute Overlay */}
                 <div className="absolute left-[clamp(16px,calc(var(--frame-w,100vw)*0.05),24px)] top-[clamp(36px,5.5dvh,48px)]">
-                  <button
-                    onClick={() => setIsPlayModalOpen(true)}
-                    className="relative z-20 bg-white/85 hover:bg-white/95 backdrop-blur-sm rounded-[18px] flex flex-col items-center justify-center w-[clamp(64px,calc(var(--frame-w,100vw)*0.18),72px)] min-h-[clamp(72px,calc(var(--frame-w,100vw)*0.18),80px)] py-[clamp(7px,1dvh,9px)] shadow-[0_2px_8px_rgba(75,85,99,0.06)] border border-white/80 pointer-events-auto cursor-pointer active:scale-95 transition-all"
-                    aria-label="놀이 고르기"
-                  >
-                    <div className="w-[clamp(36px,calc(var(--frame-w,100vw)*0.095),40px)] h-[clamp(36px,calc(var(--frame-w,100vw)*0.095),40px)] rounded-full bg-[#FFF0E6] flex items-center justify-center text-[var(--color-k-orange)] mb-1 shrink-0 text-[18px]">
-                      🎲
-                    </div>
-                    <span className="text-[clamp(13px,calc(var(--frame-w,100vw)*0.038),15px)] leading-[1.2] font-bold text-gray-700 text-center break-keep">
-                      케이 놀이
-                    </span>
-                  </button>
+                  {isKPlayEnabled() ? (
+                    <button
+                      onClick={() => setIsPlayModalOpen(true)}
+                      className="relative z-20 bg-white/85 hover:bg-white/95 backdrop-blur-sm rounded-[18px] flex flex-col items-center justify-center w-[clamp(64px,calc(var(--frame-w,100vw)*0.18),72px)] min-h-[clamp(72px,calc(var(--frame-w,100vw)*0.18),80px)] py-[clamp(7px,1dvh,9px)] shadow-[0_2px_8px_rgba(75,85,99,0.06)] border border-white/80 pointer-events-auto cursor-pointer active:scale-95 transition-all"
+                      aria-label="놀이 고르기"
+                    >
+                      <div className="w-[clamp(36px,calc(var(--frame-w,100vw)*0.095),40px)] h-[clamp(36px,calc(var(--frame-w,100vw)*0.095),40px)] rounded-full bg-[#FFF0E6] flex items-center justify-center text-[var(--color-k-orange)] mb-1 shrink-0 text-[18px]">
+                        🎲
+                      </div>
+                      <span className="text-[clamp(13px,calc(var(--frame-w,100vw)*0.038),15px)] leading-[1.2] font-bold text-gray-700 text-center break-keep">
+                        케이 놀이
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      aria-disabled="true"
+                      aria-label="놀이 준비중"
+                      className="relative z-20 bg-white/60 backdrop-blur-sm rounded-[18px] flex flex-col items-center justify-center w-[clamp(64px,calc(var(--frame-w,100vw)*0.18),72px)] min-h-[clamp(72px,calc(var(--frame-w,100vw)*0.18),80px)] py-[clamp(7px,1dvh,9px)] shadow-[0_2px_8px_rgba(75,85,99,0.06)] border border-white/60 pointer-events-auto cursor-not-allowed opacity-60 transition-all"
+                    >
+                      <div className="w-[clamp(36px,calc(var(--frame-w,100vw)*0.095),40px)] h-[clamp(36px,calc(var(--frame-w,100vw)*0.095),40px)] rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-1 shrink-0 text-[18px]">
+                        🎲
+                      </div>
+                      <span className="text-[clamp(13px,calc(var(--frame-w,100vw)*0.038),15px)] leading-[1.2] font-bold text-gray-400 text-center break-keep">
+                        준비중
+                      </span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Right State Card - Independent Absolute Overlay */}

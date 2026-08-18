@@ -1,28 +1,16 @@
-import test, { mock } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { BehaviorEventInput } from "@/lib/analytics/logBehaviorEvent";
+import type { RecordKPlayEventInput, KPlayEventName } from "./kPlayAnalytics";
 import type { PlaySkillModule } from "./skillTypes";
 import type { UtteranceSignals } from "../utteranceSignals";
+import { routePlaySkillTurn } from "./skillRouter";
 
-let routePlaySkillTurn: typeof import("./skillRouter").routePlaySkillTurn;
+let capturedEvents: { eventName: KPlayEventName; input: RecordKPlayEventInput }[] = [];
 
-let capturedEvents: BehaviorEventInput[] = [];
-let mockLogBehaviorEvent = async (input: BehaviorEventInput) => {
-  capturedEvents.push(input);
-  return "inserted" as const;
+const mockRecordEvent = (eventName: KPlayEventName, input: RecordKPlayEventInput) => {
+  capturedEvents.push({ eventName, input });
 };
-
-mock.module("@/lib/analytics/logBehaviorEvent", {
-  exports: {
-    logBehaviorEvent: (input: BehaviorEventInput) => mockLogBehaviorEvent(input),
-  },
-});
-
-test.before(async () => {
-  const mod = await import("./skillRouter");
-  routePlaySkillTurn = mod.routePlaySkillTurn;
-});
 
 function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -94,6 +82,7 @@ test("7. 말로 시작한 경로 계측: 아이가 '끝말잇기 하자'로 시�
     utterance: "끝말잇기 하자",
     signals: { ...defaultSignals, hasWordChainGameStart: true },
     registry: [mockWordChainSkill],
+    recordEvent: mockRecordEvent,
   });
 
   assert.equal(result.handled, true);
@@ -102,14 +91,10 @@ test("7. 말로 시작한 경로 계측: 아이가 '끝말잇기 하자'로 시�
   assert.equal(capturedEvents.length, 1);
   const event = capturedEvents[0];
   assert.equal(event.eventName, "k_play_start", "이벤트명은 k_play_start 여야 한다");
-  assert.notEqual(event.eventName, "play_start", "게임참여 지표 play_start 와 달라야 한다");
-  assert.equal(event.eventKey, "WORD_CHAIN", "eventKey 에 스킬 id 가 담겨야 한다");
-  assert.equal(event.feature, "freechat", "feature 는 freechat 이어야 한다");
-  assert.equal(event.route, "utterance", "route 는 utterance 여야 한다");
-  assert.equal(event.childId, "child-100");
-  assert.equal(event.sessionId, "session-200");
-  assert.equal(event.familyId, "fam-777");
-  assert.equal(event.playType, undefined, "playType 은 비워져 있어야 한다 (CHECK 제약 방어)");
+  assert.equal(event.input.skillId, "WORD_CHAIN", "skillId 에 스킬 id 가 담겨야 한다");
+  assert.equal(event.input.route, "utterance", "route 는 utterance 여야 한다");
+  assert.equal(event.input.childId, "child-100");
+  assert.equal(event.input.chatSessionId, "session-200");
 });
 
 test("8. 미시작 방어: start() 가 실패해(handled:false) 게임이 시작되지 않으면 기록하지 않는다", async () => {
@@ -136,6 +121,7 @@ test("8. 미시작 방어: start() 가 실패해(handled:false) 게임이 시작
     utterance: "끝말잇기 하자",
     signals: { ...defaultSignals, hasWordChainGameStart: true },
     registry: [mockFailingSkill],
+    recordEvent: mockRecordEvent,
   });
 
   assert.equal(result.handled, false);

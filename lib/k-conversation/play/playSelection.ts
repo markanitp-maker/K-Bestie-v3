@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlaySkillId, PlaySkillModule } from "./skillTypes";
 import type { UtteranceSignals } from "../utteranceSignals";
 import { PLAY_SKILL_REGISTRY, findSkillById } from "./skillRegistry";
+import { isKPlayEnabled } from "./playAvailability";
 import { resolveActiveSkill } from "./activeSkillCoordinator";
 import { clearPendingPlayProposal } from "./pendingProposalStore";
 import { recordKPlayEvent } from "./kPlayAnalytics";
@@ -78,6 +79,13 @@ export function buildPlaySkillsCatalogDto(
   registry: readonly PlaySkillModule[] = PLAY_SKILL_REGISTRY,
   activeSkillId: string | null = null
 ): PlaySkillsCatalogResponse {
+  if (!isKPlayEnabled()) {
+    return {
+      skills: [],
+      activeSkillId: null,
+    };
+  }
+
   const skills: PlaySkillDto[] = registry.map((skill) => ({
     id: skill.id,
     name: skill.displayName,
@@ -107,6 +115,10 @@ export function buildPlaySkillsCatalogDto(
 export async function executeSkillSelection(
   params: ExecuteSkillSelectionParams
 ): Promise<ExecuteSkillSelectionResult> {
+  if (!isKPlayEnabled()) {
+    return { ok: false, error: "k_play_disabled" };
+  }
+
   const { db, childId, chatSessionId, skillId, gradeRaw } = params;
   const registry = params.registry ?? PLAY_SKILL_REGISTRY;
 

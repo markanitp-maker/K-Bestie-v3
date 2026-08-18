@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UtteranceSignals } from "../utteranceSignals";
 import type { PlaySkillId, PlaySkillModule } from "./skillTypes";
 import { PLAY_SKILL_REGISTRY } from "./skillRegistry";
+import { isKPlayEnabled } from "./playAvailability";
 import { isTopicOnCooldownForK, recordTopicUsage } from "../semanticTopicHistory";
 
 export interface PlayProposalDecision {
@@ -54,6 +55,10 @@ export interface DecidePlayProposalInput {
 export async function decidePlayProposal(
   input: DecidePlayProposalInput
 ): Promise<PlayProposalDecision> {
+  if (!isKPlayEnabled()) {
+    return { shouldPropose: false, blockedReason: "k_play_disabled" };
+  }
+
   const {
     db,
     childId,
