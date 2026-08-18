@@ -26,14 +26,14 @@ test("buildSystemInstruction — relationshipFragment가 없을 때 기존 출�
   const todayFragment = [
     "[오늘]",
     `- 오늘은 ${nowKst.getUTCFullYear()}년 ${nowKst.getUTCMonth() + 1}월 ${nowKst.getUTCDate()}일 ${["일", "월", "화", "수", "목", "금", "토"][nowKst.getUTCDay()]}요일이야(한국 시간).`,
-    "- 날짜·요일을 물으면 이 값으로만 답해. 절대 다른 날짜를 지어내지 마.",
+    "- 날짜나 요일을 답할 때는 이 값만 쓰고, 다른 날짜를 지어내지 마.",
   ].join("\n");
 
   const expectedExact = [
-    todayFragment,
     "[K Core Persona - 내부 지침]\n너는 케이(K), 동갑내기 친구야.",
     "[Grade Persona]\n초등학교 3학년 또래 말투.",
     "[Memory]\n관련 기억 없음.",
+    todayFragment,
     "[지금 이 턴의 방향 - Action]",
     "아이의 감정을 있는 그대로 알아주는 공감 반응을 해.",
     "지금은 자유대화야 — 정보를 확보하거나 목표를 달성하려 하지 마. 아이가 하고 싶은 이야기를 하도록 그냥 함께해.",

@@ -26,6 +26,8 @@ export interface ChosungTurnResult {
   handled: boolean;
   /** responseGenerator에 넘길 지시문. 정답·초성 등 결정론적 사실을 담는다. */
   instruction?: string;
+  /** 이번 턴에서 응답에 나타나면 안 되는 정답 단어 (유출 방지 검증용) */
+  answerMustNotAppear?: string;
 }
 
 /**
@@ -137,10 +139,12 @@ export async function runChosungTurn(
           });
         }
 
+        const currentWord = activeSession.current_word ?? "";
         const currentChosung = activeSession.current_chosung ?? "";
         return {
           handled: true,
-          instruction: `[초성게임] 아이 답은 틀렸어. 아직 정답은 말하지 말고 격려하면서 힌트를 줘. 초성은 "${currentChosung}"야.`,
+          instruction: `[초성게임] 아이 답은 틀렸어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아직 정답은 말하지 말고 격려하면서 힌트를 줘.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야.`,
+          answerMustNotAppear: currentWord || undefined,
         };
       }
     }
@@ -174,9 +178,12 @@ export async function runChosungTurn(
         });
       }
 
+      const currentWord =
+        updatedSession.current_word ?? activeSession.current_word ?? "";
       return {
         handled: true,
-        instruction: `[초성게임] 아이가 힌트를 요청했어. 정답 단어를 직접 말하지 말고 ${categoryHint}글자 수, 뜻에 대한 힌트를 줘. 초성은 "${currentChosung}"야.`,
+        instruction: `[초성게임] 아이가 힌트를 요청했어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아이가 스스로 맞혀야 해.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야. ${categoryHint}글자 수나 뜻으로 힌트를 줘.`,
+        answerMustNotAppear: currentWord || undefined,
       };
     }
 

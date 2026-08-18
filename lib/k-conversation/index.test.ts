@@ -928,12 +928,19 @@ test("Output Guard Test 2: 활성 세션이 있으면 정상 게임 출력이 �
   assert.ok(result.text.includes("ㅂㄴㄴ"));
 });
 
-test("Output Guard Test 3: 미션 모드에서는 이 가드가 개입하지 않는다", async () => {
-  const mockDb = createMockDbForRespond();
+test("Output Guard Test 4: 초성게임 힌트 턴에서 정답이 유출되면 안전한 대체 문구로 치환된다", async () => {
+  const mockDb = createMockDbForRespond({
+    activeChosungSession: {
+      id: "cs-session-1",
+      current_chosung: "ㄸㄱ",
+      current_word: "딸기",
+      hint_level: 1,
+    },
+  });
   const mockAi = {
     models: {
       generateContent: async () => ({
-        text: "오늘 미션 질문이야! 학교에서 가장 재밌었던 일은 뭘까?",
+        text: "정답은 딸기잖아! 딸기인 걸 왜 몰라?",
         usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
       }),
     },
@@ -943,22 +950,21 @@ test("Output Guard Test 3: 미션 모드에서는 이 가드가 개입하지 않
     {
       childId: "child-1",
       sessionId: "session-1",
-      mode: "MISSION",
-      currentUtterance: "안녕",
+      mode: "FREE_CHAT",
+      currentUtterance: "알려 줘",
     },
     {
       db: mockDb,
       ai: mockAi,
       modelId: "test-model",
-      adapterInstruction: "학교 생활을 질문해줘.",
     }
   );
 
   assert.equal(result.category, "generated");
-  assert.equal(
-    result.text,
-    "오늘 미션 질문이야! 학교에서 가장 재밌었던 일은 뭘까?"
-  );
+  // 정답 "딸기"가 유출되지 않고 안전한 대체 문구로 변경되어야 함
+  assert.equal(result.text.includes("딸기"), false);
+  assert.ok(result.text.includes("힌트 하나 더 줄게"));
 });
+
 
 

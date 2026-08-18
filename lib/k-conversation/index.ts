@@ -18,6 +18,7 @@ import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
 import { detectFakeGameplay, FAKE_GAMEPLAY_FALLBACK_TEXT } from "./play/fakeGameplayDetector";
+import { detectChosungAnswerLeak } from "./chosungGame/outputGuard";
 import { detectFabricatedRecall, FABRICATED_RECALL_FALLBACK_TEXT } from "./memory/fabricatedRecallDetector";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
@@ -281,6 +282,7 @@ export async function respond(
   let hasActivePlaySession = false;
   let playSkillInstruction: string | undefined;
   let playSkillHandled = false;
+  let playSkillAnswerMustNotAppear: string | undefined;
 
   if (input.mode === "MISSION") {
     // 미션 모드: 놀이 스킬 진행 완전 차단.
@@ -355,6 +357,9 @@ export async function respond(
           playSkillHandled = true;
           if (playTurnResult.instruction) {
             playSkillInstruction = playTurnResult.instruction;
+          }
+          if (playTurnResult.answerMustNotAppear) {
+            playSkillAnswerMustNotAppear = playTurnResult.answerMustNotAppear;
           }
         }
       } catch (error) {
@@ -529,6 +534,22 @@ export async function respond(
       });
       finalText = FAKE_GAMEPLAY_FALLBACK_TEXT;
     }
+  }
+
+  // 9-1) 초성게임 정답 유출 차단.
+  // 힌트·오답 턴 등 정답을 발설하면 안 되는 턴에서 케이가 정답 낱말을 말하면
+  // 정답을 뺀 안전한 대체 문구로 바꾸고 경고를 남긴다.
+  if (
+    playSkillAnswerMustNotAppear &&
+    detectChosungAnswerLeak(finalText, playSkillAnswerMustNotAppear)
+  ) {
+    console.warn("[k-conversation/index] 초성게임 정답 유출을 감지하여 안전한 대체 문구로 변경했다", {
+      childId: input.childId,
+      sessionId: input.sessionId,
+      answer: playSkillAnswerMustNotAppear,
+      blockedPreview: finalText.slice(0, 60),
+    });
+    finalText = "음, 힌트 하나 더 줄게! 초성을 잘 생각해서 맞춰봐.";
   }
 
   // 10) 없는 기억에 맞장구치는 응답 차단.

@@ -297,8 +297,9 @@ test("3. 진행 중 세션 있음 + 오답 제출: 지시문에 정답 단어가
   const result = await runChosungTurn(input);
   assert.equal(result.handled, true);
   assert.ok(result.instruction);
-  // 오답 시 지시문에 비밀 정답 "사과"가 노출되지 않는지 엄격 확인
-  assert.equal(result.instruction!.includes(secretWord), false);
+  // 오답 시 모델 지시문에 정답이 [정답]: 사과 형태로 제공되고, 유출 방지 필드가 설정됨
+  assert.ok(result.instruction!.includes(`[정답]: ${secretWord}`));
+  assert.equal(result.answerMustNotAppear, secretWord);
   assert.match(result.instruction!, /아이 답은 틀렸어/);
   assert.match(result.instruction!, /초성은 "ㅅㄱ"야/);
 });
@@ -339,7 +340,8 @@ test("4. 진행 중 세션 있음 + 힌트 요청: 힌트 레벨 상승 및 힌�
   const result = await runChosungTurn(input);
   assert.equal(result.handled, true);
   assert.ok(result.instruction);
-  assert.equal(result.instruction!.includes(secretWord), false);
+  assert.ok(result.instruction!.includes(`[정답]: ${secretWord}`));
+  assert.equal(result.answerMustNotAppear, secretWord);
   assert.match(result.instruction!, /아이가 힌트를 요청했어/);
   assert.match(result.instruction!, /초성은 "ㅎㄹㅇ"야/);
 });
@@ -425,12 +427,13 @@ test("7. 오답이 누적되면 정답을 알려주고 다음 문제로 넘어�
   assert.match(String(result.instruction), /다음 문제/, "다음 문제로 넘어가야 한다");
 });
 
-test("8. 오답이 아직 적으면 정답을 말하지 않고 힌트만 준다", async () => {
+test("8. 오답이 아직 적으면 지시문에 [정답]을 명시하여 올바른 힌트를 유도한다", async () => {
   const db = createMockSupabase({ sessions: [makeSession({ hint_level: 0 })] });
   const result = await runChosungTurn(answerTurn(db));
 
   assert.equal(result.handled, true);
-  assert.equal(String(result.instruction).includes("사과"), false, "아직은 정답을 감춰야 한다");
+  assert.ok(String(result.instruction).includes("[정답]: 사과"), "모델에게 정답을 주어 올바른 힌트를 유도해야 한다");
+  assert.equal(result.answerMustNotAppear, "사과");
   assert.match(String(result.instruction), /힌트/);
 });
 

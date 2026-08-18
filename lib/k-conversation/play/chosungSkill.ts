@@ -76,6 +76,7 @@ export const CHOSUNG_SKILL: PlaySkillModule = {
       instruction: result.instruction,
       ended: false,
       openingLine,
+      answerMustNotAppear: result.answerMustNotAppear,
     };
   },
   async handleTurn(input: PlaySkillTurnInput): Promise<PlaySkillTurnResult> {
@@ -91,6 +92,7 @@ export const CHOSUNG_SKILL: PlaySkillModule = {
       handled: result.handled,
       instruction: result.instruction,
       ended: false,
+      answerMustNotAppear: result.answerMustNotAppear,
     };
   },
   async end(input: PlaySkillEndInput): Promise<void> {

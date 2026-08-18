@@ -16,6 +16,8 @@ export interface PlaySkillTurnResult {
    * 절대 담지 않는다. 2026-08-18 프롬프트 유출 사고 참고.
    */
   openingLine?: string;
+  /** 이번 턴에서 응답에 나타나면 안 되는 정답 단어 (유출 방지 검증용) */
+  answerMustNotAppear?: string;
 }
 
 export interface PlaySkillStartInput {
