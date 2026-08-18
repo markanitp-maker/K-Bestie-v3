@@ -386,3 +386,57 @@ test("육아 상담은 기록 조회로 보내지 않는다 — 사실 조회 �
   // 기존 기능 회귀 방어
   assert.equal(classifyParentKChatIntent("서현이한테 학교 얘기 물어봐줘", false).intent, "PARENT_QUERY_REQUEST");
 });
+
+test("085 §3-7 및 §7-4 UNSUPPORTED_EXTERNAL — 외부 검색/뉴스/날씨/추천 질문 분류 및 기존 인텐트 회귀 방어", () => {
+  // 1. 외부 검색·뉴스·포털
+  const externalCases = [
+    "인터넷에서 찾아봐",
+    "오늘 뉴스 알려줘",
+    "네이버 검색해서 알려줘",
+    "구글에서 검색해봐",
+    "오늘 날씨 알려줘",
+    "날씨 어때",
+    "맛집 추천해줘",
+    "링크 좀 줘",
+  ];
+  for (const text of externalCases) {
+    assert.equal(
+      classifyParentKChatIntent(text).intent,
+      "UNSUPPORTED_EXTERNAL",
+      `[${text}] 는 UNSUPPORTED_EXTERNAL 이어야 합니다`,
+    );
+  }
+
+  // 2. 요청서 QA 7-4 원문: 아이 이름이 있어도 외부 검색이 이긴다
+  assert.equal(
+    classifyParentKChatIntent("인터넷에서 서현이가 좋아할 만한 신발 찾아봐.").intent,
+    "UNSUPPORTED_EXTERNAL",
+    "인터넷에서 서현이가 좋아할 만한 신발 찾아봐. -> UNSUPPORTED_EXTERNAL 이어야 합니다",
+  );
+
+  // 3. '아이에게 물어봐줘' 회귀 방어 (외부 검색보다 PARENT_QUERY_REQUEST 가 우선)
+  assert.equal(
+    classifyParentKChatIntent("서현이한테 학교 얘기 물어봐줘").intent,
+    "PARENT_QUERY_REQUEST",
+    "서현이한테 학교 얘기 물어봐줘 -> PARENT_QUERY_REQUEST",
+  );
+  assert.equal(
+    classifyParentKChatIntent("인터넷 말고 서현이한테 직접 물어봐줘").intent,
+    "PARENT_QUERY_REQUEST",
+    "인터넷 말고 서현이한테 직접 물어봐줘 -> PARENT_QUERY_REQUEST",
+  );
+
+  // 4. 아이 사실 질문 회귀 방어
+  assert.equal(
+    classifyParentKChatIntent("서현이 어제 뭐 했어?").intent,
+    "CHILD_INFORMATION_QUERY",
+    "서현이 어제 뭐 했어? -> CHILD_INFORMATION_QUERY",
+  );
+
+  // 5. 육아 상담/일반 대화 회귀 방어
+  assert.equal(
+    classifyParentKChatIntent("우리 애가 요즘 통 말이 없어요").intent,
+    "GENERAL_CONVERSATION",
+    "우리 애가 요즘 통 말이 없어요 -> GENERAL_CONVERSATION",
+  );
+});

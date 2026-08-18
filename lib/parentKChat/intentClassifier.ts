@@ -8,7 +8,8 @@ export type ParentKChatIntent =
   | "FEEDBACK_OR_CORRECTION"
   | "CHILD_INFORMATION_QUERY"
   | "PARENT_QUERY_REQUEST"
-  | "PARENT_QUERY_REQUEST_CANCEL";
+  | "PARENT_QUERY_REQUEST_CANCEL"
+  | "UNSUPPORTED_EXTERNAL";
 
 export interface IntentClassification {
   intent: ParentKChatIntent;
@@ -125,6 +126,36 @@ const PARENT_QUERY_REQUEST_PATTERNS = [
   /질문\s*해\s*줘/,
   /알아\s*봐\s*줘/,
   /캐물어\s*봐/, // Red 판정 대상 문장("캐물어봐줘")도 라우터로 보내야 한다 — 여기서 걸러내면 안 됨
+];
+
+// requests/085-parent-k-simple-chat-and-ask-child-e2e.md §3-7, §7-4 —
+// 외부 인터넷 검색 / 뉴스 / 날씨 / 시황 / 맛집·상품 추천 / 링크 요청 등은
+// 부모–K 지원 범위 밖(UNSUPPORTED_EXTERNAL)으로 분류한다.
+// 아이 기록 질문(CHILD_INFORMATION_QUERY)으로 떨어지기 전에 먼저 검사하여 RAG를 태우지 않는다.
+// "인터넷에서 서현이가 좋아할 만한 신발 찾아봐"처럼 아이 이름이 들어 있어도 외부 검색이 이긴다.
+// 단, "아이에게 물어봐줘"(PARENT_QUERY_REQUEST)보다는 뒤에 둔다.
+const EXTERNAL_SEARCH_PATTERNS = [
+  // 1. 인터넷 / 웹 검색
+  /인터넷(?:에서|으로)?.*(?:찾아|검색|알아|알려|봐)/,
+  /인터넷\s*(?:검색|조회)/,
+  /웹\s*검색/,
+  /검색\s*해(?:서)?\s*(?:줘|봐|주세요|줄래|달라|알려|보여|찾아)/,
+  /검색\s*(?:좀\s*)?(?:해\s*줘|해\s*봐|해\s*주세요|해\s*줄래)/,
+  // 2. 포털 / 검색 엔진 (구글, 네이버, 유튜브, 다음 등)
+  /(?:구글(?:링|에서)?|네이버(?:에서)?|유튜브(?:에서)?|다음(?:에서)?).*(?:찾아|검색|알아|알려|봐)/,
+  /구글링/,
+  // 3. 뉴스 / 날씨 / 시황 등 외부 정보
+  /뉴스.*(?:알려|보여|찾아|검색|브리핑|소식)/,
+  /(?:최신|실시간|오늘|주요)\s*뉴스/,
+  /(?:오늘|내일|주말|이번\s*주|지금)?\s*날씨\s*(?:알려|어때|어떨|어떠|어떻|예보|어때요)/,
+  /날씨\s*(?:어때|알려)/,
+  /(?:주가|환율|코스피|코스닥|나스닥|비트코인|증시|금리)/,
+  // 4. 맛집 / 상품 추천 등 외부 탐색
+  /(?:맛집|식당|카페|상품|선물|제품|신발|옷|장난감|교재)\s*(?:추천|검색|찾아)/,
+  /(?:추천\s*(?:좀\s*)?(?:해\s*줘|해\s*봐|해\s*주세요|해\s*줄래)|추천해(?:서)?\s*(?:줘|봐|주세요|줄래))/,
+  // 5. 링크 / URL 요청
+  /(?:링크|웹사이트|URL|url).*(?:좀\s*)?(?:줘|보내|알려|공유)/,
+  /(?:링크|url|URL|사이트)(?:를|도|좀)?\s*(?:보내|알려|줘|찾아)/,
 ];
 
 // 피드백·정정 — "방금 답변이 이상했다/다시 답해달라"는 신호를 먼저 확인한다
@@ -355,6 +386,14 @@ export function classifyParentKChatIntent(
 
   if (PARENT_QUERY_REQUEST_PATTERNS.some((p) => p.test(text))) {
     return { intent: "PARENT_QUERY_REQUEST", confidence: 0.9 };
+  }
+
+  // requests/085-parent-k-simple-chat-and-ask-child-e2e.md §3-7, §7-4 —
+  // 외부 인터넷 검색 / 뉴스 / 날씨 / 시황 / 맛집·상품 추천 / 링크 요청 등은
+  // 부모–K 지원 범위 밖(UNSUPPORTED_EXTERNAL)으로 분류한다.
+  // 아이 기록 질문(CHILD_INFORMATION_QUERY)으로 떨어지기 전에 먼저 검사하여 RAG를 타지 않는다.
+  if (EXTERNAL_SEARCH_PATTERNS.some((p) => p.test(text))) {
+    return { intent: "UNSUPPORTED_EXTERNAL", confidence: 0.9 };
   }
 
   if (FEEDBACK_PATTERNS.some((p) => p.test(text))) {

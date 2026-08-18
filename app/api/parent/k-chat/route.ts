@@ -341,6 +341,46 @@ export async function POST(request: Request) {
         });
       }
 
+      // requests/085-parent-k-simple-chat-and-ask-child-e2e.md §3-7, §7-4 —
+      // 외부 검색 / 뉴스 / 날씨 / 추천 등 지원 범위 밖 질문은 RAG를 수행하지 않고
+      // 결정론적 안내 문구를 반환한다.
+      if (intent === "UNSUPPORTED_EXTERNAL") {
+        logTurn({
+          retrievalAttempted: false,
+          retrievalSource: [],
+          retrievalResultCount: 0,
+          responseMode: "UNSUPPORTED_EXTERNAL",
+          fallbackReason: null,
+        });
+        const UNSUPPORTED_EXTERNAL_TEMPLATES = [
+          "인터넷 검색은 제가 할 수 없어요. 대신 아이 기록에서 찾을 수 있는 건 도와드릴게요!",
+          "외부 인터넷 검색은 지원하지 않아요. 아이의 활동이나 대화 기록에 대해 궁금한 점을 말씀해 주시면 도와드릴게요.",
+          "인터넷 검색 기능은 제공되지 않아요. 아이 기록과 관련된 내용은 언제든 찾아드릴 수 있어요!",
+        ];
+        const recentKTexts = conversationContext
+          .filter((turn) => turn.role === "k")
+          .map((turn) => turn.text);
+        const kAnswer =
+          pickAvoiding(UNSUPPORTED_EXTERNAL_TEMPLATES, recentKTexts, (t) => t) ||
+          UNSUPPORTED_EXTERNAL_TEMPLATES[0];
+
+        recordKTurn(kAnswer, "UNSUPPORTED_EXTERNAL", false);
+        return NextResponse.json({
+          answerable: false,
+          confidence: 1,
+          answer: kAnswer,
+          suggestedParentQuestion: null,
+          evidenceIds: [],
+          askChildProposal: null,
+          evidenceDateRange: null,
+          intent,
+          retrievalStatus: "NOT_ATTEMPTED",
+          answerStatus: "UNSUPPORTED_EXTERNAL",
+          requestedTopic: null,
+          requestedArea: null,
+        });
+      }
+
       // 직전 발화가 **실제로 아이 정보 질문일 때만** 정정 복구 대상이다.
       // 아무거나 집어오면 "너 업데이트 되니?" 같은 케이 자신에 대한 질문을 아이 기록
       // 조회로 되돌려 "기록이 없어요" 라고 답한다(2026-08-18 Dev QA 실측).
