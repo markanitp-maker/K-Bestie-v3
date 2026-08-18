@@ -146,6 +146,22 @@ node "<skill-dir>/scripts/relay.mjs" --brief brief.txt --cd /path/to/repo
 "파일 수정·커밋·배포 금지. 조사 결과만 보고한다." and then verify with `git status --short`
 when it returns. If the worker edited anything, that is the finding.
 
+**Without `--dangerously-skip-permissions`, headless runs die before producing anything.** Measured
+2026-08-19 on this repo, two dispatches, two different denials, both `status: "failed"` with an empty
+`finalMessage` (no partial work, no findings — the whole run is wasted):
+
+| Brief | Denial in `last stderr` |
+|---|---|
+| read-only code review (needed `git diff`, `tsc`) | `a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied` |
+| E2E QA (needed to write `e2e/*.spec.ts`) | `<repo>/e2e/qa-012-growth-setup.spec.ts is not a valid artifact path; artifacts must be in /home/home/.gemini/antigravity-cli/brain/<id>/` |
+
+Note the second one: it is **not** phrased as a permission error, and it names a plausible-looking
+sandbox path — easy to misread as "agy wants its artifacts elsewhere". It is the same auto-denial.
+So any brief that runs a command or writes a file — which is nearly all of them, review briefs
+included — needs the flag. Re-dispatch with `--dangerously-skip-permissions`; keep the scope narrow
+in the brief instead (name the exact output paths and forbid product-code edits), since the flag
+removes the CLI-side boundary.
+
 The helper starts a fresh Antigravity project by default and passes `--add-dir <repo>` (the `--cd`
 path, absolute) so `agy` has an explicit workspace. It does **not** pass `--dangerously-skip-permissions` by default.
 Mechanics, flags, and the `result.json` shape: [references/dispatch-and-poll.md](references/dispatch-and-poll.md).
