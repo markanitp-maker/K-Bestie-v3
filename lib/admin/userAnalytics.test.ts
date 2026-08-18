@@ -228,3 +228,192 @@ test("computeUserAnalytics 전체 집계 계약 및 지표 정합성", () => {
   assert.equal(child1.freechatCount, 1);
   assert.equal(child1.reportCount, 1);
 });
+
+test("게임 참여 집계: 1) play_complete만 있는 아이가 게임 참여로 잡힌다", () => {
+  const families = [{ id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const familyMembers = [{ id: "m-1", family_id: "fam-1", user_id: "p-1", role: "parent" }];
+  const parents = [{ id: "p-1", created_at: "2026-08-01T00:00:00Z" }];
+  const children = [{ id: "c-1", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const behaviorEvents = [
+    { id: "e-1", event_name: "play_complete", actor_type: "child", child_id: "c-1", family_id: "fam-1", occurred_at: "2026-08-17T01:00:00Z" },
+  ];
+
+  const result = computeUserAnalytics({
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents,
+    quizSessions: [],
+    testFamilyIds: new Set(),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  });
+
+  assert.equal(result.usage.play.count, 1);
+  assert.equal(result.usage.play.total, 1);
+  assert.equal(result.usage.play.rate, 100);
+  assert.equal(result.users.children[0].playCount, 1);
+});
+
+test("게임 참여 집계: 2) 퀴즈 세션만 있는 아이가 게임 참여로 잡힌다", () => {
+  const families = [{ id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const familyMembers = [{ id: "m-1", family_id: "fam-1", user_id: "p-1", role: "parent" }];
+  const parents = [{ id: "p-1", created_at: "2026-08-01T00:00:00Z" }];
+  const children = [{ id: "c-1", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const quizSessions = [
+    { child_id: "c-1", completed_at: "2026-08-17T05:00:00Z" },
+  ];
+
+  const result = computeUserAnalytics({
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents: [],
+    quizSessions,
+    testFamilyIds: new Set(),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  });
+
+  assert.equal(result.usage.play.count, 1);
+  assert.equal(result.usage.play.total, 1);
+  assert.equal(result.usage.play.rate, 100);
+  assert.equal(result.users.children[0].playCount, 1);
+});
+
+test("게임 참여 집계: 3) play_complete와 퀴즈 세션 둘 다 있는 아이가 중복으로 세지지 않는다", () => {
+  const families = [{ id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const familyMembers = [{ id: "m-1", family_id: "fam-1", user_id: "p-1", role: "parent" }];
+  const parents = [{ id: "p-1", created_at: "2026-08-01T00:00:00Z" }];
+  const children = [{ id: "c-1", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const behaviorEvents = [
+    { id: "e-1", event_name: "play_complete", actor_type: "child", child_id: "c-1", family_id: "fam-1", occurred_at: "2026-08-17T01:00:00Z" },
+  ];
+  const quizSessions = [
+    { child_id: "c-1", completed_at: "2026-08-17T05:00:00Z" },
+    { child_id: "c-1", completed_at: "2026-08-17T06:00:00Z" },
+  ];
+
+  const result = computeUserAnalytics({
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents,
+    quizSessions,
+    testFamilyIds: new Set(),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  });
+
+  assert.equal(result.usage.play.count, 1); // distinct 아이 수: 1명
+  assert.equal(result.usage.play.total, 1);
+  assert.equal(result.usage.play.rate, 100);
+  assert.equal(result.users.children[0].playCount, 3); // 1 play_complete + 2 quiz
+});
+
+test("게임 참여 집계: 4) 테스트 계정 아이는 퀴즈 세션이 있어도 제외된다", () => {
+  const families = [
+    { id: "fam-real", created_at: "2026-08-01T00:00:00Z" },
+    { id: "fam-test", created_at: "2026-08-01T00:00:00Z" },
+  ];
+  const familyMembers = [
+    { id: "m-real", family_id: "fam-real", user_id: "p-real", role: "parent" },
+    { id: "m-test", family_id: "fam-test", user_id: "p-test", role: "parent" },
+  ];
+  const parents = [
+    { id: "p-real", created_at: "2026-08-01T00:00:00Z" },
+    { id: "p-test", created_at: "2026-08-01T00:00:00Z" },
+  ];
+  const children = [
+    { id: "c-real", family_id: "fam-real", is_test_account: false, created_at: "2026-08-01T00:00:00Z" },
+    { id: "c-test-1", family_id: "fam-real", is_test_account: true, created_at: "2026-08-01T00:00:00Z" },
+    { id: "c-test-2", family_id: "fam-test", is_test_account: false, created_at: "2026-08-01T00:00:00Z" },
+  ];
+  const quizSessions = [
+    { child_id: "c-test-1", completed_at: "2026-08-17T05:00:00Z" },
+    { child_id: "c-test-2", completed_at: "2026-08-17T06:00:00Z" },
+  ];
+
+  const result = computeUserAnalytics({
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents: [],
+    quizSessions,
+    testFamilyIds: new Set(["fam-test"]),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  });
+
+  assert.equal(result.signup.totalChildren, 1);
+  assert.equal(result.usage.play.count, 0);
+  assert.equal(result.usage.play.total, 1);
+  assert.equal(result.usage.play.rate, 0);
+});
+
+test("게임 참여 집계: 5) 퀴즈 세션 추가가 활성 아이·리텐션 등 다른 지표를 왜곡하지 않는다 (회귀 방어)", () => {
+  const families = [{ id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const familyMembers = [{ id: "m-1", family_id: "fam-1", user_id: "p-1", role: "parent" }];
+  const parents = [{ id: "p-1", created_at: "2026-08-01T00:00:00Z" }];
+  const children = [{ id: "c-1", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const behaviorEvents = [
+    { id: "e-1", event_name: "mission_start", actor_type: "child", child_id: "c-1", family_id: "fam-1", occurred_at: "2026-08-17T01:00:00Z" },
+  ];
+
+  const baseInput = {
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents,
+    testFamilyIds: new Set<string>(),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  };
+
+  const beforeQuiz = computeUserAnalytics({ ...baseInput, quizSessions: [] });
+  const afterQuiz = computeUserAnalytics({
+    ...baseInput,
+    quizSessions: [{ child_id: "c-1", completed_at: "2026-08-17T05:00:00Z" }],
+  });
+
+  // 활성 아이 및 회원가입 지표 동일
+  assert.equal(beforeQuiz.signup.activeChildren.count, afterQuiz.signup.activeChildren.count);
+  assert.equal(beforeQuiz.signup.activeChildren.rate, afterQuiz.signup.activeChildren.rate);
+  assert.equal(beforeQuiz.signup.totalChildren, afterQuiz.signup.totalChildren);
+
+  // 미션, 자유대화 지표 동일
+  assert.equal(beforeQuiz.usage.mission.count, afterQuiz.usage.mission.count);
+  assert.equal(beforeQuiz.usage.freechat.count, afterQuiz.usage.freechat.count);
+
+  // 리텐션(가족 반복사용률, 분포) 동일
+  assert.deepEqual(beforeQuiz.repeat, afterQuiz.repeat);
+
+  // 게임 참여 지표만 0 -> 1 로 증가
+  assert.equal(beforeQuiz.usage.play.count, 0);
+  assert.equal(afterQuiz.usage.play.count, 1);
+});

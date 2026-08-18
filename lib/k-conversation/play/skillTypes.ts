@@ -6,6 +6,8 @@ export type PlaySkillId = "CHOSUNG" | "WORD_CHAIN" | "NONSENSE_QUIZ";
 /** Router가 게임 규칙을 모르도록 하는 최소 계약(§3-3). */
 export interface PlaySkillTurnResult {
   handled: boolean;
+  /** 이번 턴을 처리한 놀이 스킬 ID */
+  skillId?: PlaySkillId;
   /** Gemini에 얹을 결정론 지시문. handled=false면 없다. */
   instruction?: string;
   /** 이 턴으로 게임이 끝났는가. */

@@ -6,6 +6,8 @@ export const PARENT_ROLES = new Set(["owner_parent", "parent"]);
 // 2026-08-18 실측: `play_start` 는 프로덕션에 **한 건도 없다**. 게임 참여(별도 화면 게임)는 완료 시점에만
 // `play_complete` 를 남긴다(13건). 지시서 정의(play_start)를 그대로 쓰면 게임 참여
 // 아이가 영원히 0명으로 나온다. 둘 다 인정한다 — 나중에 play_start 가 생겨도 그대로 동작한다.
+// 또한 MBTI 는 behavior_events(play_complete), 퀴즈마스터는 별도 프로젝트라
+// quiz_monthly_leaderboard_sessions 에만 기록된다. 한쪽만 보면 0으로 나오므로 두 소스를 합집합으로 집계한다.
 export const PLAY_EVENTS = new Set(["play_start", "play_complete"]);
 export const CHILD_CORE_EVENTS = new Set(["mission_start", "freechat_start", ...PLAY_EVENTS]);
 
@@ -231,6 +233,10 @@ export interface RawAnalyticsInput {
     child_id?: string | null;
     occurred_at: string;
   }>;
+  quizSessions?: Array<{
+    child_id?: string | null;
+    completed_at?: string | null;
+  }>;
   testFamilyIds: Set<string>;
   includeTestAccounts: boolean;
   selectedFromDateStr: string;
@@ -249,6 +255,7 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
     reportViews,
     missionProgress,
     behaviorEvents,
+    quizSessions = [],
     testFamilyIds,
     includeTestAccounts,
     selectedFromDateStr,
@@ -276,6 +283,16 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
   });
   const validChildIds = new Set(validChildren.map((c) => c.id));
   const childFamilyMap = new Map(validChildren.map((c) => [c.id, c.family_id]));
+
+  // 1-1. Map quiz sessions by valid child ID
+  const quizSessionsByChild = new Map<string, Array<{ completed_at: string }>>();
+  for (const q of quizSessions) {
+    if (!q.child_id || !q.completed_at) continue;
+    if (!validChildIds.has(q.child_id)) continue;
+    const list = quizSessionsByChild.get(q.child_id) ?? [];
+    list.push({ completed_at: q.completed_at });
+    quizSessionsByChild.set(q.child_id, list);
+  }
 
   const parentById = new Map(parents.map((p) => [p.id, p]));
   const validParentMembers = familyMembers.filter((m) => {
@@ -363,9 +380,10 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
 
   for (const c of validChildren) {
     const events = childEventsMap.get(c.id) ?? [];
+    const quizList = quizSessionsByChild.get(c.id) ?? [];
     const hasMission = events.some((e) => e.event_name === "mission_start");
     const hasFreechat = events.some((e) => e.event_name === "freechat_start");
-    const hasPlay = events.some((e) => PLAY_EVENTS.has(e.event_name));
+    const hasPlay = events.some((e) => PLAY_EVENTS.has(e.event_name)) || quizList.length > 0;
 
     if (hasMission) missionChildCount += 1;
     if (hasFreechat) freechatChildCount += 1;
@@ -485,6 +503,7 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
     const name =
       c.name || [c.family_name, c.given_name].filter(Boolean).join("") || "이름 미등록";
     const events = childEventsMap.get(c.id) ?? [];
+    const quizList = quizSessionsByChild.get(c.id) ?? [];
 
     let lastUsedAt: string | null = null;
     let missionCount = 0;
@@ -497,8 +516,9 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
       }
       if (e.event_name === "mission_start") missionCount += 1;
       if (e.event_name === "freechat_start") freechatCount += 1;
-      if (e.event_name === "play_start") playCount += 1;
+      if (PLAY_EVENTS.has(e.event_name)) playCount += 1;
     }
+    playCount += quizList.length;
 
     const last7ActiveDays = dedupeActiveDates(events, from7d, to7d).size;
     const last30ActiveDays = dedupeActiveDates(events, from30d, to30d).size;

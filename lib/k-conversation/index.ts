@@ -17,13 +17,26 @@ import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn 
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
-import { detectFakeGameplay, FAKE_GAMEPLAY_FALLBACK_TEXT } from "./play/fakeGameplayDetector";
+import { detectFakeGameplay, FAKE_GAMEPLAY_FALLBACK_TEXT, type FakeGameplayKind } from "./play/fakeGameplayDetector";
 import { detectChosungAnswerLeak } from "./chosungGame/outputGuard";
 import { detectFabricatedRecall, FABRICATED_RECALL_FALLBACK_TEXT } from "./memory/fabricatedRecallDetector";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
 import { setPendingPlayProposal, clearPendingPlayProposal } from "./play/pendingProposalStore";
+import type { PlaySkillId } from "./play/skillTypes";
+
+/**
+ * PlaySkillId ↔ FakeGameplayKind 매핑 (§3)
+ * - CHOSUNG: 초성 퀴즈 특성상 초성 자음(CHOSUNG) 및 퀴즈 발화(QUIZ: "문제", "맞혀봐", "정답은")를 모두 포함
+ * - WORD_CHAIN: 끝말잇기 발화(WORD_CHAIN)
+ * - NONSENSE_QUIZ: 퀴즈 발화(QUIZ)
+ */
+const PLAY_SKILL_TO_FAKE_GAMEPLAY_KINDS: Record<PlaySkillId, FakeGameplayKind[]> = {
+  CHOSUNG: ["CHOSUNG", "QUIZ"],
+  WORD_CHAIN: ["WORD_CHAIN"],
+  NONSENSE_QUIZ: ["QUIZ"],
+};
 
 export type { EngineInput, EngineOutput, ConversationAction, ConversationMode } from "./types";
 export type { GenerateArgs } from "./responseGenerator";
@@ -280,8 +293,10 @@ export async function respond(
 
   // 5-2) 놀이 세션 확인 및 턴 처리
   let hasActivePlaySession = false;
+  let activePlaySkillId: PlaySkillId | undefined;
   let playSkillInstruction: string | undefined;
   let playSkillHandled = false;
+  let handledPlaySkillId: PlaySkillId | undefined;
   let playSkillAnswerMustNotAppear: string | undefined;
 
   if (input.mode === "MISSION") {
@@ -326,6 +341,7 @@ export async function respond(
           const session = await skill.getActiveSession(deps.db, input.childId);
           if (session) {
             hasActivePlaySession = true;
+            activePlaySkillId = skill.id;
             break;
           }
         } catch (err) {
@@ -355,6 +371,7 @@ export async function respond(
 
         if (playTurnResult.handled) {
           playSkillHandled = true;
+          handledPlaySkillId = playTurnResult.skillId;
           if (playTurnResult.instruction) {
             playSkillInstruction = playTurnResult.instruction;
           }
@@ -517,22 +534,38 @@ export async function respond(
     console.error("[k-conversation/index] recordTopicUsage failed:", err);
   }
 
-  // 9) 가짜 게임 출력 차단.
-  // 활성 세션이 없고 Router 도 처리하지 않았는데 케이가 게임을 진행하는 응답을 만들면
-  // 내보내지 않는다. 프롬프트의 [놀이 진행 금지 지침]은 이미 있었지만 케이가 무시했다
-  // (2026-08-17 Dev 실측: 세션 없이 'ㄸㄱ' 출제, '사과'로 끝말잇기 시작).
-  // 지침은 강제력이 없으므로 출력을 직접 본다.
+  // 9) 가짜 게임 출력 차단 (게임별 좁힘).
+  // 활성 세션이 있거나 이번 턴에 Router가 처리한 게임 외의 다른 게임을 케이가 진행하면 차단한다.
+  // (2026-08-17 사고 재발 방지: 초성 세션 활성 중 끝말잇기 환각 차단)
   let finalText = generated.text;
-  if (input.mode !== "MISSION" && !hasActivePlaySession && !playSkillHandled) {
+  if (input.mode !== "MISSION") {
     const verdict = detectFakeGameplay(finalText);
     if (verdict.isFake) {
-      console.warn("[k-conversation/index] 활성 세션 없이 게임을 진행하는 응답을 차단했다", {
-        childId: input.childId,
-        sessionId: input.sessionId,
-        kinds: verdict.kinds,
-        blockedPreview: finalText.slice(0, 60),
-      });
-      finalText = FAKE_GAMEPLAY_FALLBACK_TEXT;
+      const allowedKinds = new Set<FakeGameplayKind>();
+      if (activePlaySkillId && PLAY_SKILL_TO_FAKE_GAMEPLAY_KINDS[activePlaySkillId]) {
+        for (const kind of PLAY_SKILL_TO_FAKE_GAMEPLAY_KINDS[activePlaySkillId]) {
+          allowedKinds.add(kind);
+        }
+      }
+      if (handledPlaySkillId && PLAY_SKILL_TO_FAKE_GAMEPLAY_KINDS[handledPlaySkillId]) {
+        for (const kind of PLAY_SKILL_TO_FAKE_GAMEPLAY_KINDS[handledPlaySkillId]) {
+          allowedKinds.add(kind);
+        }
+      }
+
+      const blockedKinds = verdict.kinds.filter((kind) => !allowedKinds.has(kind));
+      if (blockedKinds.length > 0) {
+        console.warn("[k-conversation/index] 활성 세션/처리 스킬 외 게임을 진행하는 응답을 차단했다", {
+          childId: input.childId,
+          sessionId: input.sessionId,
+          activePlaySkillId,
+          handledPlaySkillId,
+          kinds: verdict.kinds,
+          blockedKinds,
+          blockedPreview: finalText.slice(0, 60),
+        });
+        finalText = FAKE_GAMEPLAY_FALLBACK_TEXT;
+      }
     }
   }
 

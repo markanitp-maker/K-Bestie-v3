@@ -966,5 +966,75 @@ test("Output Guard Test 4: 초성게임 힌트 턴에서 정답이 유출되면 
   assert.ok(result.text.includes("힌트 하나 더 줄게"));
 });
 
+test("Output Guard Test 5: 초성 세션 활성 상태에서 케이가 끝말잇기를 환각 진행하면 차단된다 (2026-08-17 사고 재현)", async () => {
+  // 초성 세션 활성 상태 모킹
+  const mockDb = createMockDbForRespond({
+    activeChosungSession: {
+      id: "chosung-1",
+      current_chosung: "ㅂㄴㄴ",
+      current_word: "바나나",
+    },
+  });
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        // 초성 세션인데 케이가 끝말잇기를 진행 (사고 상황 재현)
+        text: "일마루! 내 차례네, 그럼 '루브르 박물관'!",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "FREE_CHAT",
+      currentUtterance: "파일",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  // 활성 세션은 초성인데 끝말잇기(WORD_CHAIN)를 진행했으므로 차단되어 대체 문구로 변경되어야 함
+  assert.equal(result.text, "좋아, 같이 하자! 잠깐만 준비할게.");
+});
+
+test("Output Guard Test 6: MISSION 모드에서는 가짜 게임 가드를 검사하지 않는다", async () => {
+  const mockDb = createMockDbForRespond();
+  const mockAi = {
+    models: {
+      generateContent: async () => ({
+        text: "미션 중이지만 'ㄸㄱ' 같은 단어가 포함될 수 있어.",
+        usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 8 },
+      }),
+    },
+  };
+
+  const result = await respond(
+    {
+      childId: "child-1",
+      sessionId: "session-1",
+      mode: "MISSION",
+      currentUtterance: "미션 진행 중",
+    },
+    {
+      db: mockDb,
+      ai: mockAi,
+      modelId: "test-model",
+      adapterInstruction: "[미션 컨텍스트]",
+    }
+  );
+
+  assert.equal(result.category, "generated");
+  // MISSION 모드에서는 가짜 게임 출력 차단 가드가 동작하지 않으므로 텍스트가 유지됨
+  assert.ok(result.text.includes("ㄸㄱ"));
+});
+
+
 
 

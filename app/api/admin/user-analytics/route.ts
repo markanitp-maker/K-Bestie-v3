@@ -64,6 +64,7 @@ export async function GET(request: NextRequest) {
       reportViewsResult,
       missionProgressResult,
       behaviorEventsResult,
+      quizSessionsResult,
     ] = await Promise.allSettled([
       includeTestAccounts ? Promise.resolve(new Set<string>()) : getTestFamilyIds(service),
       service.from("families").select("id, name, created_at").is("deleted_at", null),
@@ -95,11 +96,18 @@ export async function GET(request: NextRequest) {
             "mission_start",
             "freechat_start",
             "play_start",
+            "play_complete",
             "parent_report_view",
             "parent_conversation_topic_view",
           ])
           .order("occurred_at")
           .order("id")
+          .range(from, to);
+      }),
+      fetchWithPagination(async (from, to) => {
+        return service
+          .from("quiz_monthly_leaderboard_sessions")
+          .select("child_id, completed_at")
           .range(from, to);
       }),
     ]);
@@ -121,6 +129,10 @@ export async function GET(request: NextRequest) {
     const reportViews = getSettledValue(reportViewsResult, "reportViews");
     const missionProgress = getSettledValue(missionProgressResult, "missionProgress");
     const behaviorEvents = getSettledValue(behaviorEventsResult, "behaviorEvents");
+    const quizSessions =
+      quizSessionsResult.status === "fulfilled"
+        ? quizSessionsResult.value
+        : (console.warn("[app/api/admin/user-analytics] quiz_monthly_leaderboard_sessions 조회 실패 (빈 배열로 처리):", quizSessionsResult.reason), []);
 
     const analytics = computeUserAnalytics({
       families: familiesDb.data ?? [],
@@ -131,6 +143,7 @@ export async function GET(request: NextRequest) {
       reportViews,
       missionProgress,
       behaviorEvents,
+      quizSessions,
       testFamilyIds,
       includeTestAccounts,
       selectedFromDateStr: filters.from,

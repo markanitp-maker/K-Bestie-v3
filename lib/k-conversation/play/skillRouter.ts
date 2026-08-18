@@ -116,7 +116,11 @@ export async function routePlaySkillTurn(
       if (activeSkill) {
         if (activeSkill.id === requestedSkill.id) {
           // 요청된 Skill이 현재 활성 Skill과 같으면 기존 판을 끊지 않고 handleTurn
-          return await activeSkill.handleTurn(input);
+          const turnResult = await activeSkill.handleTurn(input);
+          return {
+            ...turnResult,
+            skillId: turnResult.skillId ?? activeSkill.id,
+          };
         } else {
           // 요청된 Skill이 현재 활성 Skill과 다르면: 기존 활성 Skill.end() -> 요청된 Skill.start()
           try {
@@ -131,11 +135,18 @@ export async function routePlaySkillTurn(
               `[skillRouter] Failed to end active skill during transition to ${requestedSkill.id}:`,
               endError
             );
-            return await activeSkill.handleTurn(input);
+            const turnResult = await activeSkill.handleTurn(input);
+            return {
+              ...turnResult,
+              skillId: turnResult.skillId ?? activeSkill.id,
+            };
           }
           const startResult = await requestedSkill.start(input);
           if (startResult.handled && startResult.instruction) {
-            return startResult;
+            return {
+              ...startResult,
+              skillId: startResult.skillId ?? requestedSkill.id,
+            };
           }
           return { handled: false };
         }
@@ -143,7 +154,10 @@ export async function routePlaySkillTurn(
         // 활성 세션이 없으면 새 게임 start
         const startResult = await requestedSkill.start(input);
         if (startResult.handled && startResult.instruction) {
-          return startResult;
+          return {
+            ...startResult,
+            skillId: startResult.skillId ?? requestedSkill.id,
+          };
         }
         return { handled: false };
       }
@@ -154,7 +168,10 @@ export async function routePlaySkillTurn(
       await clearPendingPlayProposal(chatSessionId, db);
       const turnResult = await activeSkill.handleTurn(input);
       if (turnResult.handled && turnResult.instruction) {
-        return turnResult;
+        return {
+          ...turnResult,
+          skillId: turnResult.skillId ?? activeSkill.id,
+        };
       }
       return { handled: false };
     }
@@ -170,7 +187,10 @@ export async function routePlaySkillTurn(
             const startResult = await targetSkill.start(input);
             await clearPendingPlayProposal(chatSessionId, db);
             if (startResult.handled && startResult.instruction) {
-              return startResult;
+              return {
+                ...startResult,
+                skillId: startResult.skillId ?? targetSkill.id,
+              };
             }
             return { handled: false };
           }
