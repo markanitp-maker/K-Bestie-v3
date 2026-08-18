@@ -6,6 +6,10 @@ import { logBehaviorEvent } from "@/lib/analytics/logBehaviorEvent";
 import { evaluateRelationshipStage } from "@/lib/relationship/stageEvaluation";
 import { persistRelationshipStage } from "@/lib/relationship/persistStage";
 import { checkAndRecordReturnedAfterGap } from "@/lib/relationship/relationshipEvents";
+import {
+  FREECHAT_DAILY_KEY_REWARD_TYPE,
+  buildFreechatDailyKeyStatus,
+} from "@/lib/freechat/dailyKeyStatus";
 
 export const runtime = "nodejs";
 
@@ -90,10 +94,36 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 요청서 011 — 오늘 자유대화 황금열쇠 획득 여부를 함께 돌려준다.
+  // 별도 read endpoint 를 만들지 않고 이미 진입 때 호출되는 이 API 를 확장한다(§3-5).
+  // Source of Truth 는 gold_key_ledger 이며 판정 조건은
+  // child_id + reward_type='freechat_daily_engagement' + 같은 KST business_date 뿐이다.
+  // 조회가 실패해도 대화는 그대로 시작할 수 있어야 하므로 상태만 null 로 내려보낸다(§3-12).
+  let dailyKeyStatus = null;
+  try {
+    const { data: keyRow, error: keyErr } = await service
+      .from("gold_key_ledger")
+      .select("earned_at")
+      .eq("child_id", childId)
+      .eq("reward_type", FREECHAT_DAILY_KEY_REWARD_TYPE)
+      .eq("business_date", businessDate)
+      .order("earned_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (keyErr) {
+      console.error("[chat/session] 오늘 자유대화 황금열쇠 조회 실패:", keyErr);
+    } else {
+      dailyKeyStatus = buildFreechatDailyKeyStatus(keyRow, businessDate);
+    }
+  } catch (error) {
+    console.error("[chat/session] 오늘 자유대화 황금열쇠 조회 예외:", error);
+  }
+
   return NextResponse.json({
     resumed: !sessionData.created,
     sessionId: sessionData.id,
     businessDate,
     conversationWindow,
+    dailyKeyStatus,
   });
 }

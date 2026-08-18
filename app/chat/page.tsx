@@ -15,6 +15,7 @@ import { AppTopHeader } from "@/components/AppTopHeader";
 import { useKeyboardConversationViewport } from "@/hooks/useKeyboardConversationViewport";
 import { getFreeChatConversationState } from "@/lib/freechat/conversationState";
 import { GoldKeyRewardModal } from "@/components/rewards/GoldKeyRewardModal";
+import { DailyGoldenKeyStatus } from "@/components/freechat/DailyGoldenKeyStatus";
 import { PlaySkillModal } from "@/components/chat/PlaySkillModal";
 import { isKPlayEnabled } from "@/lib/k-conversation/play/playAvailability";
 import {
@@ -22,6 +23,11 @@ import {
   parseFreechatPauseSuccess,
   type FreechatDailyReward,
 } from "@/lib/freechat/dailyEngagementReward";
+import {
+  markFreechatDailyKeyEarned,
+  parseFreechatDailyKeyStatus,
+  type FreechatDailyKeyStatus,
+} from "@/lib/freechat/dailyKeyStatus";
 import {
   tryAcquireConversationHazard,
   type HazardTokenHandle,
@@ -52,6 +58,10 @@ export default function ChatPage() {
   const [reportDone, setReportDone] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [dailyReward, setDailyReward] = useState<FreechatDailyReward | null>(null);
+  // 요청서 011 — 오늘 자유대화 황금열쇠 획득 여부. null 은 "아직 모른다"(조회 중/실패)이며
+  // 그 상태에서 미획득으로 단정하지 않는다.
+  const [dailyKeyStatus, setDailyKeyStatus] = useState<FreechatDailyKeyStatus | null>(null);
+  const [dailyKeyStatusLoading, setDailyKeyStatusLoading] = useState(true);
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
   const [isPlayModalOpen, setIsPlayModalOpen] = useState(false);
@@ -478,6 +488,13 @@ export default function ChatPage() {
           }
 
           rewardFinalizedSessionsRef.current.add(sessionId);
+          if (parsed.reward.earned) {
+            // 요청서 011 §3-7 — 방금 지급됐으면 새로고침 없이 상태를 바로 갱신한다.
+            setDailyKeyStatus((prev) =>
+              markFreechatDailyKeyEarned(prev, parsed.reward.businessDate, new Date().toISOString())
+            );
+            setDailyKeyStatusLoading(false);
+          }
           if (getFreechatRewardModalContent(parsed.reward)) {
             setDailyReward(parsed.reward);
           } else {
@@ -532,6 +549,9 @@ export default function ChatPage() {
         body: JSON.stringify({ childId: cId }),
       });
       const data = await res.json();
+      // 요청서 011 — 진입 시 DB 기준 오늘 황금열쇠 상태를 복원한다(새로고침·재진입 포함).
+      setDailyKeyStatus(parseFreechatDailyKeyStatus(data?.dailyKeyStatus));
+      setDailyKeyStatusLoading(false);
       logVoiceEvent({ ts: Date.now(), eventType: "freechat_session_response", extra: { resumed: data.resumed, sessionId: data.sessionId, conversationWindow: data.conversationWindow } });
       console.log("[freechat] session response", { sessionId: data.sessionId, resumed: data.resumed, businessDate: data.businessDate, conversationWindow: data.conversationWindow });
 
@@ -577,6 +597,10 @@ export default function ChatPage() {
       }
     } catch (err) {
       console.error("Session restore error:", err);
+      // 요청서 011 §3-12 — 조회 실패를 "아직 안 받았어" 로 단정하지 않는다.
+      // 상태를 모르는 채로 두고(null) 표시만 감춘다. 대화 기능은 그대로 쓸 수 있다.
+      setDailyKeyStatus(null);
+      setDailyKeyStatusLoading(false);
     }
   }, []);
   const handleStart = useCallback(async () => {
@@ -991,6 +1015,11 @@ export default function ChatPage() {
                   }
                   router.replace("/child/home");
             }} />
+          </div>
+
+          {/* 요청서 011 — 오늘의 황금열쇠 상태. 대화를 시작하기 전에도 헤더 아래에서 바로 보인다. */}
+          <div className="pointer-events-none absolute left-0 right-0 top-[calc(58px+env(safe-area-inset-top)+6px)] z-40 flex justify-center">
+            <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
           </div>
 
           {/* The mascot-area height is derived from the shared dimensions below, preserving a 20px tail-to-head gap as viewport dimensions change. */}
