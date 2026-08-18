@@ -241,3 +241,40 @@ export function partialEvidenceFallback(context: ParentAskChildContext): string 
   const dateText = context.targetDate ? `${koreanDate(context.targetDate)} 기록에서 관련 내용은 확인했지만` : "관련 내용은 확인했지만";
   return `${dateText}, ${context.lastUnknownDetail}에 대한 세부 내용은 기록에 없어요. 아이에게 직접 물어볼까요?`;
 }
+
+/**
+ * 근거 기반 RAG 프롬프트에 주입할 부모-케이 대화 맥락을 조립한다.
+ * 부모(`user`)와 케이(`k`) 발화를 순서대로 포함한다.
+ */
+export function formatConversationContextForPrompt(
+  context: ParentConversationTurn[],
+): string {
+  if (!Array.isArray(context) || context.length === 0) return "";
+  return context
+    .filter((turn) => typeof turn.text === "string" && turn.text.trim().length > 0)
+    .map((turn) => `${turn.role === "k" ? "케이" : "부모"}: ${turn.text.trim()}`)
+    .join("\n");
+}
+
+export interface GenAIContentTurn {
+  role: "user" | "model";
+  parts: Array<{ text: string }>;
+}
+
+/**
+ * 일반 대화 경로에서 @google/genai SDK로 전달할 멀티턴 contents 배열을 조립한다.
+ * 최근 부모/케이 대화 이력을 user/model 역할로 순서대로 담고, 마지막에 이번 질문을 user 턴으로 추가한다.
+ */
+export function buildGeneralChatContents(
+  context: ParentConversationTurn[],
+  currentQuestion: string,
+): GenAIContentTurn[] {
+  const history: GenAIContentTurn[] = (Array.isArray(context) ? context : [])
+    .filter((turn) => typeof turn.text === "string" && turn.text.trim().length > 0)
+    .map((turn) => ({
+      role: turn.role === "k" ? ("model" as const) : ("user" as const),
+      parts: [{ text: turn.text.trim() }],
+    }));
+  return [...history, { role: "user" as const, parts: [{ text: currentQuestion.trim() }] }];
+}
+

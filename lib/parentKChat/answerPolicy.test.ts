@@ -6,7 +6,9 @@ import {
   applyRepeatAvoidancePrefix,
   buildAskChildContext,
   buildCorrectionRetrievalQuery,
+  buildGeneralChatContents,
   findPreviousParentInformationQuery,
+  formatConversationContextForPrompt,
   answerForClockFact,
   isClockFactQuestion,
   isDateFactQuestion,
@@ -175,4 +177,43 @@ test("직전 케이 응답 반복 방지 접두 문구 테스트 3종", () => {
   assert.ok(!secondAnswer.startsWith(firstPrefix), `Expected second answer to avoid ${firstPrefix}, got ${secondAnswer}`);
   assert.ok(REPEAT_ANSWER_PREFIXES.some((p) => p !== firstPrefix && secondAnswer.startsWith(p)));
 });
+
+test("근거 경로 대화 맥락: 케이 턴 포함 및 순서 유지, 빈 맥락 처리", () => {
+  // 1. 근거 경로의 대화 맥락 문자열에 케이 턴이 포함된다
+  // 2. 순서가 유지된다
+  const context = [
+    { role: "user" as const, text: "최근에는 뭐했니?" },
+    { role: "k" as const, text: "최근 리포트에 따르면 축구를 했어요." },
+    { role: "user" as const, text: "그게 전부니?" },
+  ];
+  const formatted = formatConversationContextForPrompt(context);
+  assert.equal(
+    formatted,
+    "부모: 최근에는 뭐했니?\n케이: 최근 리포트에 따르면 축구를 했어요.\n부모: 그게 전부니?",
+  );
+  assert.match(formatted, /^부모: 최근에는 뭐했니\?\n케이:/);
+
+  // 3. 맥락이 비면 예전처럼 빈 문자열이다
+  assert.equal(formatConversationContextForPrompt([]), "");
+});
+
+test("일반 대화 SDK contents: user/model 턴 변환 및 순서 유지, 현재 질문 추가", () => {
+  const context = [
+    { role: "user" as const, text: "안녕 케이야" },
+    { role: "k" as const, text: "안녕하세요! 오늘 어떤 하루를 보내셨나요?" },
+  ];
+  const currentQuestion = "너 오늘 기분 어때?";
+  const contents = buildGeneralChatContents(context, currentQuestion);
+
+  assert.deepEqual(contents, [
+    { role: "user", parts: [{ text: "안녕 케이야" }] },
+    { role: "model", parts: [{ text: "안녕하세요! 오늘 어떤 하루를 보내셨나요?" }] },
+    { role: "user", parts: [{ text: "너 오늘 기분 어때?" }] },
+  ]);
+
+  // 빈 맥락일 때는 현재 질문 1개만 user 턴으로 담긴다
+  const emptyContents = buildGeneralChatContents([], "안녕하세요");
+  assert.deepEqual(emptyContents, [{ role: "user", parts: [{ text: "안녕하세요" }] }]);
+});
+
 

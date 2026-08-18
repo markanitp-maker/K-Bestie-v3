@@ -14,7 +14,9 @@ import {
   applyRepeatAvoidancePrefix,
   buildAskChildContext,
   buildCorrectionRetrievalQuery,
+  buildGeneralChatContents,
   findPreviousParentInformationQuery,
+  formatConversationContextForPrompt,
   isDateFactQuestion,
   isForbiddenGenericEvidenceFallback,
   partialEvidenceFallback,
@@ -395,9 +397,13 @@ export async function POST(request: Request) {
             });
           }
         }
-        const conversationalSystemPrompt = `당신은 부모용 케이입니다. 부모의 일반적인 대화(인사, 감사, 연결 확인, 소소한 질문)에 자연스럽고
-짧게 답하세요. 아이 정보를 검색하지 말고, "알고 있는 내용이 없다"는 표현을 쓰지 마세요.
-한국어 1~2문장, 부드러운 말투로 답하세요. 다른 설명 없이 답변 문장만 출력하세요.`;
+        const conversationalSystemPrompt = `당신은 부모용 케이입니다. 부모와의 대화(인사, 감사, 연결 확인, 서비스 안내, 케이 자신에 대한 질문, 일반 상식, 감정 공감 등)에 자연스럽고 따뜻하게 대화하세요.
+
+[대화 지침]
+1. 일반 대화(인사, 케이/서비스 관련 질문, 일상 대화, 감정 공감 등)는 근거가 없다고 거절하지 말고 자연스럽고 친절하게 대화하세요.
+2. 아이의 기록이나 활동에 대한 질문이면 여기서 답을 지어내지 말고, 기록 조회가 필요하다고 자연스럽게 안내하세요.
+3. 아이에 대해 절대 아는 척 지어내거나 추측하여 답하지 마세요.
+4. 한국어 2~4문장 정도로 부드러운 말투로 답하세요(필요하면 조금 더 자세히 답해도 되며, 불필요하게 장황하지 않게 하세요). 다른 설명 없이 답변 문장만 출력하세요.`;
 
         const conversationalFallback = intent === "FEEDBACK_OR_CORRECTION"
           ? "맞아요, 방금 답변이 질문과 맞지 않았어요. 어떤 내용을 다시 확인할지 말씀해 주세요."
@@ -406,13 +412,14 @@ export async function POST(request: Request) {
         let answer = conversationalFallback;
         let fallbackReason: string | null = null;
         try {
+          const contents = buildGeneralChatContents(conversationContext, trimmedQuestion);
           const response = await ai.models.generateContent({
             model: getLlmModel("parentMemoryQuery"),
-            contents: trimmedQuestion,
+            contents,
             config: {
               systemInstruction: conversationalSystemPrompt,
               maxOutputTokens: 512,
-              thinkingConfig: { thinkingLevel: "MINIMAL" as any },
+              thinkingConfig: { thinkingLevel: "LOW" as any },
             },
           });
           const text = (response.text || "").trim();
@@ -584,10 +591,7 @@ export async function POST(request: Request) {
       }
       const evidenceContext = retrievalResult.contextText;
       const retrievalSources = Array.from(new Set(evidence.map((item) => item.source)));
-      const conversationContextText = conversationContext
-        .filter((turn) => turn.role === "user")
-        .map((turn) => `부모: ${turn.text}`)
-        .join("\n");
+      const conversationContextText = formatConversationContextForPrompt(conversationContext);
       
       const systemPrompt = `
 당신은 부모용 케이(폐쇄형 RAG 챗봇)입니다.
@@ -613,7 +617,7 @@ ${conversationContextText ? `[현재 부모-케이 대화 맥락]\n${conversatio
 7. 필요 시 부모가 아이에게 사용할 수 있는 부드러운 질문 1개를 제안하세요. (추궁, 검증, 통제, 비밀 확인을 유도하는 질문 금지)
 8. 최근 리포트 근거와 누적 기억을 구분하세요. 최근 관찰만 있고 장기 근거가 없으면 예전부터 그랬다고 단정하지 마세요.
 9. source와 날짜를 참고해 "최근 리포트", "이번 주", "누적 기억"처럼 자연스럽게 근거 시점을 밝혀 주세요.
-10. 현재 대화 맥락에는 부모 발화만 제공됩니다. 주제를 이해하는 데만 사용하고, 사실 근거는 검색된 근거에 한정하세요.
+10. 현재 대화 맥락은 직전 대화 흐름을 이해하는 데만 사용하고, 사실 근거는 검색된 근거에 한정하세요.
 11. 미래 행동이나 경향을 묻는 질문은 관찰된 기록의 범위에서만 가능성을 설명하고, 매일 할지처럼 근거가 부족한 부분은 단정하지 마세요.
 12. EXACT_DATE이면 targetDate와 일치하는 근거만 답변에 사용하세요.
 13. PARTIAL_EVIDENCE이면 확인된 내용과 확인되지 않은 세부 내용을 각각 명시하고 아이에게 직접 물어볼지 제안하세요.
@@ -640,7 +644,7 @@ JSON 스키마:
             // JSON 스키마 지시 + 아래 extractJSON 파싱으로 대체한다.
             systemInstruction: systemPrompt,
             maxOutputTokens: 1024,
-            thinkingConfig: { thinkingLevel: 'MINIMAL' as any }
+            thinkingConfig: { thinkingLevel: 'MEDIUM' as any }
           }
         });
         aiResponseText = response.text || "";
