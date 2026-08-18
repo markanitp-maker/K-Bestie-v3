@@ -1,5 +1,5 @@
--- 이 트리거는 케이 놀이("만화책", "퀴즈" 등)의 "완료" 이벤트(play_complete)를 behavior_events에 기록합니다.
--- 케이 놀이 세션의 완료 처리는 이 애플리케이션(Next.js) 외부에 있는 앱에서 k_play_sessions.status를 직접
+-- 이 트리거는 게임 참여("만화책", "퀴즈" 등)의 "완료" 이벤트(play_complete)를 behavior_events에 기록합니다.
+-- 게임 참여 세션의 완료 처리는 이 애플리케이션(Next.js) 외부에 있는 앱에서 k_play_sessions.status를 직접
 -- 업데이트하는 방식으로 일어날 수 있으므로, 애플리케이션 계측 코드만으로는 이를 모두 감지하기 어렵습니다.
 -- 따라서 k_play_sessions 테이블의 status 컬럼이 'completed'로 변경되는 시점을 DB 트리거로 캡처하여 이벤트를 기록합니다.
 --
