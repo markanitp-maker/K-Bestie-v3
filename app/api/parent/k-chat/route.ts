@@ -125,7 +125,15 @@ function extractJSON(text: string) {
     if (arrMatch) {
       try { return JSON.parse(arrMatch[0]); } catch {}
     }
-    console.error("[parent-k-chat] JSON 추출 실패. 원문(300자):", text.substring(0, 300));
+    // 잘림(truncation)과 진짜 형식 오류를 구분해 남긴다. 둘은 원인도 조치도 다르다.
+    // 잘림이면 maxOutputTokens 가 모자란 것이다 — thinkingLevel 을 올리면 사고가
+    // 같은 예산을 먹어 답변이 잘린다(2026-08-18 Dev 실측: '"answer": "아' 에서 끊김).
+    const looksTruncated = text.trimEnd().length > 0 && !text.trimEnd().endsWith("}");
+    console.error(
+      `[parent-k-chat] JSON 추출 실패(${looksTruncated ? "잘림 의심 — maxOutputTokens 확인" : "형식 오류"}). ` +
+        `길이=${text.length}, 원문(300자):`,
+      text.substring(0, 300),
+    );
     throw new Error("JSON 파싱 오류");
   }
 }
@@ -421,7 +429,8 @@ export async function POST(request: Request) {
             contents,
             config: {
               systemInstruction: conversationalSystemPrompt,
-              maxOutputTokens: 512,
+              // LOW thinking 도 이 예산을 나눠 쓴다. 512 는 답이 잘릴 여지가 있다.
+              maxOutputTokens: 1536,
               thinkingConfig: { thinkingLevel: "LOW" as any },
             },
           });
@@ -646,7 +655,10 @@ JSON 스키마:
             // 프로젝트 규칙(§5): responseMimeType 사용 금지 - 시스템 프롬프트의
             // JSON 스키마 지시 + 아래 extractJSON 파싱으로 대체한다.
             systemInstruction: systemPrompt,
-            maxOutputTokens: 1024,
+            // thinking 토큰은 maxOutputTokens 예산을 함께 쓴다. MEDIUM 으로 올린 뒤
+            // 1024 로는 JSON 이 "answer": "아 에서 잘려 파싱이 실패했다
+            // (2026-08-18 Dev 실측, SYSTEM_ERROR 로 부모에게 노출됨).
+            maxOutputTokens: 3072,
             thinkingConfig: { thinkingLevel: 'MEDIUM' as any }
           }
         });
