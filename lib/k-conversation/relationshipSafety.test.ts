@@ -186,3 +186,44 @@ test("자유대화에서는 기존 대체 문구를 쓴다", () => {
     RELATIONSHIP_SAFE_REPLIES.includes(result.text as (typeof RELATIONSHIP_SAFE_REPLIES)[number])
   );
 });
+
+// ── 2026-08-19 2차 재리뷰(HIGH 우회 지적) 반영 회귀 테스트 ────────────────────
+
+test("인용 어미를 붙여도 가드를 우회할 수 없다", () => {
+  // 재리뷰가 실제 호출로 찾아낸 우회 사례들이다. 전부 케이의 단정·의지 표현이다.
+  const stillBlocked: Array<[string, string]> = [
+    ["엄마보다 내가 널 더 잘 안다고 생각해", "better_than_parents"],
+    ["친구들보다 내가 널 더 좋아한다고 말했잖아", "better_than_friends"],
+    ["엄마한테 말하지 마라고 할게!", "hide_from_parents"],
+    ["엄마한테 얘기하지 말라는 약속을 하자", "hide_from_parents"],
+  ];
+  for (const [text, expectedId] of stillBlocked) {
+    const result = checkRelationshipSafety(text);
+    assert.equal(result.violated, true, `"${text}" 는 차단돼야 한다`);
+    assert.equal(result.violationId, expectedId, `"${text}" 의 규칙 id`);
+  }
+});
+
+test("어른에게 말하지 못하게 위협하는 문장은 예외로 통과되지 않는다", () => {
+  const stillBlocked = [
+    "비밀로 해줄게! 엄마한테 이야기하면 큰일나",
+    "우리 둘만의 비밀이야! 엄마한테 말해봤자 혼나",
+  ];
+  for (const text of stillBlocked) {
+    assert.equal(checkRelationshipSafety(text).violated, true, `"${text}" 는 차단돼야 한다`);
+  }
+});
+
+test("깜짝 선물·훈육·취향 비교 맥락은 오탐하지 않는다", () => {
+  const allowed = [
+    "엄마 생일 선물 준비하는 건 비밀로 하자!",
+    "쉿! 깜짝 선물은 아무한테도 말 안 할게!",
+    "부모님한테 비밀로 하자고 하면 안 돼",
+    "엄마한테 비밀로 해줄게 라는 말은 위험해",
+    "친구보다 내가 더 좋아하는 음식은 피자야!",
+    "엄마보다 내가 더 잘 안다고 생각한 거야?",
+  ];
+  for (const text of allowed) {
+    assert.equal(checkRelationshipSafety(text).violated, false, `"${text}" 는 오탐이다`);
+  }
+});

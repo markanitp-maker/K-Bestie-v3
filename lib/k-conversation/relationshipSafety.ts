@@ -30,15 +30,46 @@ export const RELATIONSHIP_SAFETY_INSTRUCTION = [
   "- 네가 사람이라고 말하지 마. 사람인 척하지도 마.",
 ].join("\n");
 
-/** 인용·전언 표현. 케이가 남의 말을 옮기는 문장은 단정이 아니다. */
-const QUOTED_SPEECH = /라고|다고|냐고|라는|라며|랬|그랬|하셨|했대|했다니/;
+/**
+ * 예외(allowIf) 설계.
+ *
+ * 2026-08-19 재리뷰에서 확인된 것: 인용 어미(라고/다고/라는)를 통째로 예외로 두면
+ * 가드가 그냥 뚫린다 — "엄마보다 내가 널 더 잘 안다고 생각해", "엄마한테 말하지 마라고 할게"
+ * 가 전부 통과했다. 오탐을 줄이려다 막아야 할 것을 놓친 것이다.
+ *
+ * 그래서 예외는 "케이가 스스로 주장하는 문장이 아님"이 문장 안에서 드러날 때만 준다:
+ *   (1) 제3자가 그 말을 했다고 옮기는 문장
+ *   (2) 아이가 왜 그랬는지 되묻는 문장
+ *   (3) 아이의 생각을 확인하는 의문문
+ * 미래·의지형("…할게", "…하자")은 예외가 아니다. 그건 케이의 주장이다.
+ */
 
-/** 제3자가 주어인 문장. "선생님이 나한테만 …" 은 케이의 유도가 아니다. */
-const THIRD_PERSON_SUBJECT = /(선생님|친구|친구들|동생|형|누나|언니|오빠|엄마|아빠|[가-힣]{1,4}이가|[가-힣]{1,4}가)\s*(나한테만|말하지|얘기하지)/;
+/** 제3자가 주어인 문장. "선생님이 나한테만 …", "동생이 그랬어" 는 케이의 유도가 아니다. */
+const THIRD_PERSON_SUBJECT =
+  /(선생님|친구|친구들|동생|형|누나|언니|오빠|엄마|아빠|[가-힣]{1,4}이)(이|가)\s*[^.?!]{0,16}(나한테만|말하지|얘기하지|그랬|하셨|말했|말해준|랬)/;
 
-/** 어른·부모에게 말해도 된다고 이어주는 문장. 비밀 동조가 아니다. */
+/** 아이가 왜 그랬는지 되묻는 문장. */
+const ASKS_ABOUT_REASON = /(라고|라는|다고|말자고)[^.?!]{0,14}(이유|왜|무슨\s*일|어떤\s*일|한\s*거야|하는\s*거야)/;
+
+/** 아이의 생각·감정을 확인하는 의문문("…생각한 거야?"). 단정형("…생각해")은 예외가 아니다. */
+const CONFIRMS_CHILD_THOUGHT = /(생각|느낌|기분)(한|하는|이)?\s*(거야|거니|거지|건가)\s*\?/;
+
+/** 어른에게 말해도 된다고 **권하는** 문장만 예외다. 말하면 혼난다는 위협은 예외가 아니다. */
 const CONNECTS_TO_ADULT =
-  /(어른|부모|엄마|아빠|선생님|가족)[^.?!]{0,14}(말|얘기|이야기)(해|하는\s*게|해보|해봐|하면)/;
+  /(어른|부모|부모님|엄마|아빠|선생님|가족)[^.?!]{0,16}(말|얘기|이야기|말씀)(해도\s*돼|해도\s*괜찮|하는\s*게\s*좋|해\s*봐|해봐|해보면|해보자|하면\s*(좋|나아|괜찮|도움|더)|해주는\s*게|드려|드리자)/;
+
+/** 어른에게 말하지 못하게 막는 위협. CONNECTS_TO_ADULT 예외를 무효화한다. */
+const DISCOURAGES_ADULT = /(혼나|큰일|봤자|소용없|말하면\s*안|들키면)/;
+
+/** 깜짝 선물·이벤트 맥락의 비밀. 부모에게 숨기는 비밀 관계가 아니다. */
+const SURPRISE_CONTEXT = /(선물|생일|파티|서프라이즈|깜짝|이벤트)/;
+
+/** 케이가 "그러면 안 된다"고 지도하는 문장. */
+const TEACHES_AGAINST = /((하면|하는\s*건|그러면)\s*안\s*돼|위험해|나쁜\s*거|좋지\s*않아|라는\s*말은)/;
+
+/** 취향 비교("친구보다 내가 더 좋아하는 음식") — 관계 우위 주장이 아니다. */
+const PREFERENCE_COMPARISON =
+  /(좋아하는|싫어하는)\s*(음식|것|거|게|과목|색|노래|영화|만화|게임|반찬|간식)|칭찬(받|해)/;
 
 /** 부정·완화 표현. 규칙 전체에 공통으로 적용한다. */
 const GLOBAL_MITIGATIONS: ReadonlyArray<RegExp> = [
@@ -52,41 +83,45 @@ interface ViolationRule {
   pattern: RegExp;
   /** 이 규칙에만 적용하는 예외. 오탐 위험이 큰 규칙에만 준다. */
   allowIf?: ReadonlyArray<RegExp>;
+  /** 예외를 무효화하는 조건. 위협·차단 문맥이 섞이면 예외를 취소한다. */
+  denyIf?: ReadonlyArray<RegExp>;
 }
 
 const VIOLATION_RULES: ReadonlyArray<ViolationRule> = [
-  // 독점·의존 유도. 인용 예외를 주지 않는다 — "나만 있으면 된다고 생각해" 도 유도다.
+  // 독점·의존 유도. 케이가 인용 형태로 말해도 유도다 — 예외를 주지 않는다.
   { id: "exclusive_only_me", pattern: /(나|내)만\s*있으면\s*(돼|된다|충분)/ },
   {
     id: "exclusive_tell_only_me",
     pattern: /(나|내)한테만\s*(말|얘기|이야기)/,
-    allowIf: [QUOTED_SPEECH, THIRD_PERSON_SUBJECT],
+    allowIf: [THIRD_PERSON_SUBJECT, ASKS_ABOUT_REASON],
   },
   {
     id: "hide_from_parents",
-    pattern: /(엄마|아빠|부모님|어른)(한테|에게)(는)?\s*(말하지|얘기하지|이야기하지)\s*(마|말자|말아)/,
-    allowIf: [QUOTED_SPEECH, THIRD_PERSON_SUBJECT],
+    pattern: /(엄마|아빠|부모님|어른)(한테|에게)(는)?\s*(말하지|얘기하지|이야기하지)\s*(마|말자|말아|말라는)/,
+    allowIf: [THIRD_PERSON_SUBJECT, ASKS_ABOUT_REASON, TEACHES_AGAINST],
   },
   {
     id: "secret_between_us",
     pattern: /우리(만의|\s*둘만의)\s*비밀/,
-    allowIf: [CONNECTS_TO_ADULT],
+    allowIf: [CONNECTS_TO_ADULT, SURPRISE_CONTEXT, TEACHES_AGAINST],
+    denyIf: [DISCOURAGES_ADULT],
   },
-  // 비밀 동조 — 2026-08-19 실측으로 추가한 규칙. 어른에게 이어주는 문장이 함께 있으면 허용한다.
+  // 비밀 동조 — 2026-08-19 Dev 실측으로 추가한 규칙.
   {
     id: "promise_secrecy",
     pattern: /비밀(로|은|이야)?\s*(해줄게|지켜줄게|지킬게|할게|하자)|아무한테도\s*(말|얘기)\s*안\s*할게|(나|우리)끼리만\s*(알|비밀)/,
-    allowIf: [CONNECTS_TO_ADULT],
+    allowIf: [CONNECTS_TO_ADULT, SURPRISE_CONTEXT, TEACHES_AGAINST, ASKS_ABOUT_REASON],
+    denyIf: [DISCOURAGES_ADULT],
   },
   {
     id: "better_than_friends",
-    pattern: /(친구|친구들)(보다|보다는)\s*(내|나)(가)?[^.?!]{0,12}?(좋|중요|잘\s*알|낫)/,
-    allowIf: [QUOTED_SPEECH],
+    pattern: /(친구|친구들)(보다|보다는)\s*(내|나)(가)?[^.?!]{0,12}?(좋|중요|잘\s*(알|아는|안다|안대)|낫)/,
+    allowIf: [THIRD_PERSON_SUBJECT, CONFIRMS_CHILD_THOUGHT, PREFERENCE_COMPARISON],
   },
   {
     id: "better_than_parents",
-    pattern: /(엄마|아빠|부모님)(보다|보다는)\s*(내|나)(가)?[^.?!]{0,12}?(좋|중요|잘\s*알|낫)/,
-    allowIf: [QUOTED_SPEECH],
+    pattern: /(엄마|아빠|부모님)(보다|보다는)\s*(내|나)(가)?[^.?!]{0,12}?(좋|중요|잘\s*(알|아는|안다|안대)|낫)/,
+    allowIf: [THIRD_PERSON_SUBJECT, CONFIRMS_CHILD_THOUGHT, PREFERENCE_COMPARISON],
   },
   { id: "must_come_daily", pattern: /(매일|맨날)\s*(꼭|반드시)?\s*(나|내)(를)?\s*(만나|보러|찾아)/ },
   {
@@ -110,7 +145,8 @@ export function checkRelationshipSafety(text: string): RelationshipSafetyCheck {
   }
   for (const rule of VIOLATION_RULES) {
     if (!rule.pattern.test(normalized)) continue;
-    if (rule.allowIf?.some((allowed) => allowed.test(normalized))) continue;
+    const denied = rule.denyIf?.some((deny) => deny.test(normalized)) ?? false;
+    if (!denied && rule.allowIf?.some((allowed) => allowed.test(normalized))) continue;
     return { violated: true, violationId: rule.id };
   }
   return { violated: false, violationId: null };
