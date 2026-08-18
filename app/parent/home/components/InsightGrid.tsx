@@ -25,7 +25,7 @@ export function InsightGrid({ insights, view }: { insights?: InsightMap | null, 
   ];
 
   return (
-    <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} mb-2.5 gap-x-3 gap-y-2.5 sm:gap-4`}>
+    <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} mb-2.5 gap-x-2 gap-y-2.5 sm:gap-4`}>
       {cards.map(c => {
         const data = getInsightData(c.field);
         const hasData = typeof data.value === "string" && data.value.trim() !== "";
@@ -35,7 +35,7 @@ export function InsightGrid({ insights, view }: { insights?: InsightMap | null, 
         return (
           <div 
             key={c.id} 
-            className="relative min-w-0 min-h-[76px] rounded-[18px] border border-[#10315B]/20 bg-white px-4 py-2.5 shadow-sm sm:min-h-[156px] sm:p-5"
+            className="relative min-w-0 min-h-[76px] rounded-[18px] border border-[#10315B]/20 bg-white px-3 py-2.5 shadow-sm sm:min-h-[156px] sm:p-5"
           >
             <div>
               <div className="mb-1.5 flex items-center gap-2">
