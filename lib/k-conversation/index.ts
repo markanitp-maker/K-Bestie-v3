@@ -754,7 +754,9 @@ export async function respond(
   // 미션·자유대화 모두 적용한다 — 페르소나는 두 모드에서 동일해야 한다(§3-9).
   // 프롬프트 지침(RELATIONSHIP_SAFETY_INSTRUCTION)과 이 출력 검사를 함께 둔다.
   {
-    const relationshipVerdict = applyRelationshipSafety(finalText, input.recentKTexts ?? []);
+    const relationshipVerdict = applyRelationshipSafety(finalText, input.recentKTexts ?? [], {
+      mode: input.mode,
+    });
     if (relationshipVerdict.blocked) {
       console.warn("[k-conversation/index] 관계 안전 위반 응답을 차단했다", {
         childId: input.childId,

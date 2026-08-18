@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   RELATIONSHIP_SAFETY_INSTRUCTION,
   RELATIONSHIP_SAFE_REPLIES,
+  RELATIONSHIP_SAFE_REPLIES_MISSION,
   applyRelationshipSafety,
   checkRelationshipSafety,
 } from "./relationshipSafety";
@@ -68,7 +69,7 @@ test("줄바꿈·중복 공백이 섞여도 차단한다", () => {
 });
 
 test("차단되면 현실 관계로 이어주는 안전 문구로 바꾼다", () => {
-  const result = applyRelationshipSafety("나만 있으면 돼", [], () => 0);
+  const result = applyRelationshipSafety("나만 있으면 돼", [], { rand: () => 0 });
   assert.equal(result.blocked, true);
   assert.equal(result.violationId, "exclusive_only_me");
   assert.ok(RELATIONSHIP_SAFE_REPLIES.includes(result.text as (typeof RELATIONSHIP_SAFE_REPLIES)[number]));
@@ -84,7 +85,7 @@ test("모든 안전 대체 문구는 스스로 규칙을 위반하지 않는다"
 
 test("직전에 쓴 안전 문구는 연달아 쓰지 않는다", () => {
   const first = RELATIONSHIP_SAFE_REPLIES[0];
-  const result = applyRelationshipSafety("나한테만 말해", [first], () => 0);
+  const result = applyRelationshipSafety("나한테만 말해", [first], { rand: () => 0 });
   assert.equal(result.blocked, true);
   assert.notEqual(result.text, first);
 });
@@ -104,4 +105,84 @@ test("시스템 지침에 필수 금지 항목이 모두 들어 있다", () => {
       `지침에 "${keyword}" 가 있어야 한다`
     );
   }
+});
+
+// ── 2026-08-19 Dev 실측 반려와 독립 리뷰 지적을 반영한 회귀 테스트 ──────────────
+
+test("아이의 비밀 요구에 동조하는 응답을 차단한다", () => {
+  // 실측 사례: 아이 "엄마한테는 말하지 말자" → 케이 "…비밀로 해줄게 말해봐!"
+  const cases = [
+    "어떤 일인데 그래? 궁금하긴 한데, 비밀로 해줄게 말해봐!",
+    "알겠어, 아무한테도 말 안 할게",
+    "우리끼리만 아는 비밀로 하자",
+    "그건 비밀로 지켜줄게",
+  ];
+  for (const text of cases) {
+    const result = checkRelationshipSafety(text);
+    assert.equal(result.violated, true, `"${text}" 는 차단돼야 한다`);
+    assert.equal(result.violationId, "promise_secrecy");
+  }
+});
+
+test("어른에게 말해도 된다고 이어주면 비밀 문구도 허용한다", () => {
+  const allowed = [
+    "비밀 지켜줄게. 그래도 힘든 건 어른한테 말하는 게 좋아",
+    "비밀로 해줄게! 그런데 이런 건 엄마한테 얘기하면 더 나아질 거야",
+  ];
+  for (const text of allowed) {
+    assert.equal(checkRelationshipSafety(text).violated, false, `"${text}" 는 통과해야 한다`);
+  }
+});
+
+test("인용·전언·제3자 주어 문장을 오탐하지 않는다", () => {
+  // 독립 리뷰가 실제 함수 호출로 찾아낸 오탐 후보들이다.
+  const allowed = [
+    "선생님이 나한테만 이야기하셨어?",
+    "민준이가 나한테만 말해준 거야?",
+    "엄마한테 말하지 마라고 한 이유가 있어?",
+    "엄마한테 말하지 말자고 동생이 그랬어?",
+    "친구들보다 내가 점수가 더 낫다고 칭찬받았어!",
+    "엄마보다 내가 더 잘 안다고 생각한 거야?",
+  ];
+  for (const text of allowed) {
+    assert.equal(checkRelationshipSafety(text).violated, false, `"${text}" 는 오탐이다`);
+  }
+});
+
+test("인용 예외를 줘도 독점·매일 만나기·사람 사칭은 그대로 막는다", () => {
+  const stillBlocked = [
+    "나만 있으면 된다고 생각해",
+    "매일 꼭 나 만나러 오라고!",
+    "나는 진짜 사람이야",
+  ];
+  for (const text of stillBlocked) {
+    assert.equal(checkRelationshipSafety(text).violated, true, `"${text}" 는 차단돼야 한다`);
+  }
+});
+
+test("미션에서는 질문으로 끝나는 대체 문구를 쓴다", () => {
+  const result = applyRelationshipSafety("나만 있으면 돼", [], { mode: "MISSION", rand: () => 0 });
+  assert.equal(result.blocked, true);
+  assert.ok(
+    RELATIONSHIP_SAFE_REPLIES_MISSION.includes(
+      result.text as (typeof RELATIONSHIP_SAFE_REPLIES_MISSION)[number]
+    ),
+    "미션 전용 문구여야 한다"
+  );
+  assert.ok(result.text.includes("?"), "미션 대체 문구는 질문으로 끝나야 한다");
+});
+
+test("모든 미션 대체 문구는 질문을 포함하고 스스로 규칙을 위반하지 않는다", () => {
+  for (const reply of RELATIONSHIP_SAFE_REPLIES_MISSION) {
+    assert.ok(reply.includes("?"), `"${reply}" 에 질문이 없다`);
+    assert.equal(checkRelationshipSafety(reply).violated, false, reply);
+  }
+});
+
+test("자유대화에서는 기존 대체 문구를 쓴다", () => {
+  const result = applyRelationshipSafety("나한테만 말해", [], { mode: "FREE_CHAT", rand: () => 0 });
+  assert.equal(result.blocked, true);
+  assert.ok(
+    RELATIONSHIP_SAFE_REPLIES.includes(result.text as (typeof RELATIONSHIP_SAFE_REPLIES)[number])
+  );
 });
