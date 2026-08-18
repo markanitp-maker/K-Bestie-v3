@@ -280,7 +280,20 @@ export function classifyParentKChatIntent(
     }
     // FEEDBACK/GENERAL 신호가 명확하면 그쪽을 우선한다(예: "안녕", "그 답변 이상해").
     if (!FEEDBACK_PATTERNS.some((p) => p.test(text)) && !isGeneralConversation(text)) {
-      if (PENDING_FOLLOWUP_EDIT_PATTERNS.some((p) => p.test(text))) {
+      // "말고" 는 초안 수정("학교 말고 학원으로")과 날짜 정정("오늘 말고 어제")에
+      // 둘 다 쓰인다. 아이 정보 질문이 기록 없음으로 끝나면 "아이에게 물어보기" 제안이
+      // 붙어 pending draft 가 생기는데, 그 뒤 부모가 날짜만 고쳐 말하면 초안 수정으로
+      // 빨려들어 날짜가 바뀌지 않았다(2026-08-18 Dev QA 실측).
+      //
+      // 편집 신호가 "말고" 뿐이고 시간 표현이 함께 있으면 조회 대상을 바꾸려는 것이다.
+      // "어제 말고 오늘 학원 얘기로 바꿔줘" 처럼 진짜 편집 신호가 더 있으면 초안 수정이 맞다.
+      const editSignals = PENDING_FOLLOWUP_EDIT_PATTERNS.filter((p) => p.test(text));
+      const isTemporalOnlyCorrection =
+        editSignals.length === 1 &&
+        editSignals[0].source === "말고" &&
+        NEW_QUERY_PATTERNS.some((p) => p.test(text));
+
+      if (editSignals.length > 0 && !isTemporalOnlyCorrection) {
         return { intent: "PARENT_QUERY_REQUEST", confidence: 0.9, isFollowUpToPendingDraft: true };
       }
       // 과거(request-parent-k-conversation-context-and-draft-edit-fix.md)에는

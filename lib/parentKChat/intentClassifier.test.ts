@@ -312,3 +312,34 @@ test("2026-08-18 부모-케이 반복 사고 방지 및 케이/서비스 질문 
 
 
 
+
+test("'말고' 가 날짜 정정일 때는 초안 수정으로 삼키지 않는다 (2026-08-18 Dev QA 반려)", () => {
+  // 아이 정보 질문이 기록 없음으로 끝나면 "아이에게 물어보기" 제안이 붙어 pending draft 가
+  // 생긴다. 그 뒤 부모가 날짜만 고쳐 말하면 "말고" 가 초안 수정 신호에 걸려
+  // 조회 날짜가 바뀌지 않았다.
+  const 날짜정정 = ["오늘 말고 어제", "아니, 어제 말고 오늘", "지난주 말고 이번주"];
+  for (const text of 날짜정정) {
+    const r = classifyParentKChatIntent(text, true);
+    assert.notEqual(
+      r.isFollowUpToPendingDraft,
+      true,
+      `[${text}] 는 날짜 정정이므로 초안 수정으로 삼키면 안 된다`,
+    );
+  }
+
+  // 진짜 초안 수정은 그대로 동작해야 한다 (회귀 방어).
+  const 초안수정 = [
+    "학교 말고 학원으로",
+    "그 말 말고 친구 얘기로 바꿔줘",
+    "어제 말고 오늘 학원 얘기로 바꿔줘", // 시간 표현이 있어도 편집 신호가 더 있으면 초안 수정
+    "조금 더 부드럽게 해줘",
+  ];
+  for (const text of 초안수정) {
+    const r = classifyParentKChatIntent(text, true);
+    assert.equal(
+      r.isFollowUpToPendingDraft,
+      true,
+      `[${text}] 는 초안 수정이어야 한다`,
+    );
+  }
+});

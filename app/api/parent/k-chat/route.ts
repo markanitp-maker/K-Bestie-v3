@@ -532,7 +532,12 @@ export async function POST(request: Request) {
       const noDataResponse = {
         answerable: false,
         confidence: 0,
-        answer: answerForUnavailable("NO_DATA", retrievalResult.temporal),
+        // 기록이 없다는 답도 그대로 반복하면 부모는 벽 보고 말하는 느낌을 받는다.
+        // "그게 전부니?" 에 똑같은 문장이 세 번 나왔다(2026-08-18 Dev QA 실측).
+        answer: applyRepeatAvoidancePrefix(
+          answerForUnavailable("NO_DATA", retrievalResult.temporal),
+          conversationContext,
+        ),
         suggestedParentQuestion: null,
         evidenceIds: [],
         askChildProposal: askChildContext.proposal,
