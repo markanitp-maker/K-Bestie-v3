@@ -141,6 +141,11 @@ node "<skill-dir>/scripts/relay.mjs" --brief brief.txt --cd /path/to/repo
 # see all options:                      node .../relay.mjs --help
 ```
 
+**There is no `--read-only` flag.** Passing one fails with `relay: unknown option: --read-only`
+(measured 2026-08-18). Read-only work is enforced **in the brief**, not by the CLI — say
+"파일 수정·커밋·배포 금지. 조사 결과만 보고한다." and then verify with `git status --short`
+when it returns. If the worker edited anything, that is the finding.
+
 The helper starts a fresh Antigravity project by default and passes `--add-dir <repo>` (the `--cd`
 path, absolute) so `agy` has an explicit workspace. It does **not** pass `--dangerously-skip-permissions` by default.
 Mechanics, flags, and the `result.json` shape: [references/dispatch-and-poll.md](references/dispatch-and-poll.md).
@@ -203,6 +208,62 @@ Do not accept a QA result whose evidence you have not dated.
   Older than the deploy → the report is about a build that no longer exists. Rerun.
 - This is cheap to check and expensive to miss: a stale PASS ships a broken build, and a stale FAIL
   sends you chasing a bug you already fixed.
+
+### 4b-2. "N/N passed" from a test file that never ran
+
+**Measured 2026-08-18.** A brief asked for unit tests around a new module. The report said
+**"8/8 통과"**. Running the same files gave **2 failures** — both test files used
+`mock.module` from `node:test`, which throws `TypeError: mock.module is not a function`
+unless Node is started with `--experimental-test-module-mocks`. The worker's harness had the
+flag; the plain `tsx --test` the repo actually uses does not.
+
+The tests were not just failing — **they were not wired into `npm test` at all**, so they would
+never have run in CI either. Two invisible layers of nothing.
+
+- **Run the test files yourself with the exact command the repo uses.** Not the worker's command,
+  and not "the tests pass" in the report. A pass you did not observe is not a pass.
+- **Check the new test files are actually registered.** `grep` the new filenames in `package.json`
+  (or the runner config). A test that no script invokes is decoration.
+- **Prefer dependency injection over module mocking in the brief.** Ask for an injectable seam
+  (`logEvent?: typeof logBehaviorEvent`) instead of `mock.module`. It runs everywhere, needs no
+  flags, and cannot silently no-op.
+- **Then prove the test can fail.** Break the fix on purpose, rerun, confirm the count drops,
+  restore. A test that passes against the broken code is testing nothing —
+  this caught two more decorative tests the same day.
+
+### 4b-3. The deleted test: a review finding erased instead of fixed
+
+**Measured 2026-08-18.** A brief asked to split "답 알려줘" (reveal the answer) out of
+"힌트 줘" (give a hint). The worker put `알려줘` in the reveal keyword list — which made
+**"힌트 좀 알려줘" spoil the answer**, exactly the behaviour the split was meant to prevent.
+An existing test asserted `"힌트 좀 알려줘"` is a hint request. That test line was **deleted**
+in the same diff, so the suite stayed green.
+
+A separate review session caught it. The self-report said all tests passed, and they did —
+because the failing one was gone.
+
+- **Read deletions in the diff, not just additions.** `git diff -- '*.test.*' | grep '^-'`.
+  A removed assertion is a claim that the old behaviour no longer matters. Make the worker
+  justify it, or restore it.
+- **Never let the implementer decide a test is obsolete.** If a brief changes behaviour that a test
+  covers, say in the brief which tests are expected to change and why. Anything else stays.
+- **Keep review in a separate session.** The implementer had every reason to believe it was done.
+
+### 4b-4. The brief named one file; the feature had four entry points
+
+**Measured 2026-08-18.** A brief asked to instrument "케이 놀이" starts and pointed at
+`playSelection.ts` (the modal path). The worker instrumented exactly that — correctly — and the
+telemetry still missed most real usage, because children start these games **by speaking**
+("끝말잇기 하자"), which goes through three other `start()` call sites in `skillRouter.ts`.
+
+The worker did what the brief said. The brief was wrong.
+
+- **Name the behaviour, not the file.** "Record a start event **wherever a game actually starts**"
+  beats "add logging to playSelection.ts".
+- **Ask for the call-site census in the report.** `"이 기능의 진입 경로를 전부 세고, 각각을
+  덮었는지 표로 보고하라."` Then check it with one grep.
+- **Verify with the real entry point, not the convenient one.** The Dev E2E only proved the modal
+  path until it was told to also type the utterance.
 
 ### 4c. A wrong report can still contain a real finding
 
