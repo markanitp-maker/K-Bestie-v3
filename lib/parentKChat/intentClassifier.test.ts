@@ -343,3 +343,46 @@ test("'말고' 가 날짜 정정일 때는 초안 수정으로 삼키지 않는�
     );
   }
 });
+
+test("육아 상담은 기록 조회로 보내지 않는다 — 사실 조회 경계는 지킨다 (2026-08-18 Dev 실측)", () => {
+  // 사고: "우리 애가 요즘 통 말이 없어요" / "왜 그럴까요?" / "어떻게 하면 좋을까요?" 가
+  // 전부 CHILD_INFORMATION_QUERY 로 분류돼 RAG 를 뒤졌고, 근거가 없으니
+  // "기록이 없어요" 만 세 번 반복했다. 부모는 상담하러 왔는데 검색 결과 없음만 받았다.
+  const 상담 = [
+    "우리 애가 요즘 통 말이 없어요",
+    "왜 그럴까요?",
+    "그럼 제가 어떻게 하면 좋을까요?",
+    "요즘 힘들어해요",
+    "제가 뭘 해줘야 할까요?",
+    "자꾸 짜증을 내요",
+    "학교에 가기 싫대요",
+    "괜찮을까요?",
+  ];
+  for (const text of 상담) {
+    assert.equal(
+      classifyParentKChatIntent(text, false).intent,
+      "GENERAL_CONVERSATION",
+      `[${text}] 는 상담이므로 기록 조회로 보내면 안 된다`,
+    );
+  }
+
+  // 경계 방어 — 특정 시점의 행동을 묻는 것은 여전히 조회다.
+  // 조회를 상담으로 잘못 보내면 케이가 아이에 대해 지어낸다. 그건 되돌릴 수 없다.
+  const 조회 = [
+    "서현이 어제 뭐 했어?",
+    "서현이 오늘 학교에서 뭐 했어요?",
+    "이번 주에 무슨 얘기 했어?",
+    "지난주에 뭐 먹었어?",
+    "오늘 리포트 보여줘",
+  ];
+  for (const text of 조회) {
+    assert.equal(
+      classifyParentKChatIntent(text, false).intent,
+      "CHILD_INFORMATION_QUERY",
+      `[${text}] 는 사실 조회이므로 근거 기반이어야 한다`,
+    );
+  }
+
+  // 기존 기능 회귀 방어
+  assert.equal(classifyParentKChatIntent("서현이한테 학교 얘기 물어봐줘", false).intent, "PARENT_QUERY_REQUEST");
+});
