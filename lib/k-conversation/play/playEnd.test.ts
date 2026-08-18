@@ -173,3 +173,42 @@ test("executeSkillEnd: end() 호출 중 예외 발생 시 격리 처리 (ok:fals
   assert.equal(result.skillId, "CHOSUNG");
   assert.match(result.error ?? "", /Failed while invoking skill end/);
 });
+
+test("executeSkillEnd: 계측 실패 격리 - 이벤트 로깅/가족 조회 중 예외가 발생해도 종료는 성공한다", async () => {
+  clearAllPendingProposalsForTest();
+  const throwingDb = {
+    from: (table: string) => {
+      if (table === "child_profiles") {
+        throw new Error("child_profiles DB connection crash");
+      }
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+            single: async () => ({ data: null, error: null }),
+          }),
+        }),
+        update: () => ({
+          eq: async () => ({ error: null }),
+        }),
+      };
+    },
+  } as unknown as SupabaseClient;
+
+  const mockSkill = createMockSkill({
+    id: "WORD_CHAIN",
+    displayName: "끝말잇기",
+    activeSessionId: "session_wc_555",
+  });
+
+  const result = await executeSkillEnd({
+    db: throwingDb,
+    childId: "child_123",
+    chatSessionId: "chat_456",
+    registry: [mockSkill],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ended, true);
+  assert.equal(result.skillId, "WORD_CHAIN");
+});

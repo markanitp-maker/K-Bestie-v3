@@ -475,3 +475,42 @@ test("스킬 3종: 4) openingLine 정답 누출 방어 검증 (초성·넌센스
     assert.equal(nonsenseRes.openingLine.includes("열바다"), false, "넌센스 정답(열바다)이 openingLine에 노출되면 안 됨");
   }
 });
+
+test("executeSkillSelection: 계측 실패 격리 - DB 에러나 이벤트 로깅 실패 시에도 스킬 선택은 성공한다", async () => {
+  const throwingDb = {
+    from: (table: string) => {
+      if (table === "child_profiles") {
+        throw new Error("child_profiles DB connection crash");
+      }
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+            single: async () => ({ data: null, error: null }),
+          }),
+        }),
+        update: () => ({
+          eq: async () => ({ error: null }),
+        }),
+      };
+    },
+  } as unknown as SupabaseClient;
+
+  const mockSkill = createMockSkill({
+    id: "WORD_CHAIN",
+    displayName: "끝말잇기",
+    childFacingDescription: "끝말잇기",
+  });
+
+  const result = await executeSkillSelection({
+    db: throwingDb,
+    childId: "child_123",
+    chatSessionId: "chat_456",
+    skillId: "WORD_CHAIN",
+    registry: [mockSkill],
+  });
+
+  assert.equal(result.ok, true, "이벤트 로깅/가족 조회 중 예외가 발생해도 스킬 선택은 성공해야 함");
+  assert.equal(result.skillId, "WORD_CHAIN");
+  assert.equal(result.sessionId, "session_WORD_CHAIN");
+});

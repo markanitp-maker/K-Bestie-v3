@@ -3,6 +3,7 @@ import type { PlaySkillModule } from "./skillTypes";
 import { PLAY_SKILL_REGISTRY } from "./skillRegistry";
 import { resolveActiveSkill } from "./activeSkillCoordinator";
 import { clearPendingPlayProposal } from "./pendingProposalStore";
+import { recordKPlayEvent } from "./kPlayAnalytics";
 
 export interface ExecuteSkillEndParams {
   db: SupabaseClient;
@@ -92,7 +93,16 @@ export async function executeSkillEnd(
   // 5. Pending Play Proposal 정리 (§3-12)
   await clearPendingPlayProposal(chatSessionId, db);
 
-  // 6. 정상 종료 결과 반환
+  // 6. 케이 놀이 종료 이벤트 계측 (실패 격리, fire-and-forget)
+  recordKPlayEvent("k_play_complete", {
+    db,
+    childId,
+    chatSessionId,
+    skillId: activeSkill.id,
+    route: "/api/play/skill/end",
+  });
+
+  // 7. 정상 종료 결과 반환
   return {
     ok: true,
     ended: true,

@@ -371,6 +371,7 @@ function UserAnalyticsContent() {
   const missionFormatted = formatCountAndRate(usage?.mission, "명");
   const freechatFormatted = formatCountAndRate(usage?.freechat, "명");
   const playFormatted = formatCountAndRate(usage?.play, "명");
+  const kPlayFormatted = formatCountAndRate(usage?.kPlay, "명");
   const reportGenFormatted = formatCountAndRate(usage?.reportGenerated, "가족");
   const parentViewedFormatted = formatCountAndRate(usage?.parentViewed, "명");
   const familyRepeatFormatted = formatCountAndRate(repeat?.familyRepeatRate, "가족");
@@ -652,7 +653,7 @@ function UserAnalyticsContent() {
             {/* ② 핵심 사용 현황 */}
             <Section
               title="② 핵심 사용 현황"
-              description="미션, 자유대화, 놀이 등 아이의 핵심 기능 이용률과 부모 리포트 열람 지표입니다."
+              description="미션, 자유대화, 게임 참여·케이 놀이 등 아이의 핵심 기능 이용률과 부모 리포트 열람 지표입니다."
             >
               <AdminKpiGrid>
                 <AdminKpiCard
@@ -669,6 +670,11 @@ function UserAnalyticsContent() {
                   title="게임 참여 아이"
                   value={playFormatted.value}
                   description={playFormatted.sub}
+                />
+                <AdminKpiCard
+                  title="케이 놀이 사용 아이"
+                  value={kPlayFormatted.value}
+                  description={kPlayFormatted.sub}
                 />
                 <AdminKpiCard
                   title="리포트 생성 가족"

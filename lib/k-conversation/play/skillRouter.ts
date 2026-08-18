@@ -3,6 +3,7 @@ import type { PlaySkillModule, PlaySkillTurnResult } from "./skillTypes";
 import type { UtteranceSignals } from "../utteranceSignals";
 import { PLAY_SKILL_REGISTRY, findDirectlyRequestedSkill, findSkillById } from "./skillRegistry";
 import { resolveActiveSkill } from "./activeSkillCoordinator";
+import { recordKPlayEvent } from "./kPlayAnalytics";
 import {
   getPendingPlayProposal,
   clearPendingPlayProposal,
@@ -143,6 +144,7 @@ export async function routePlaySkillTurn(
           }
           const startResult = await requestedSkill.start(input);
           if (startResult.handled && startResult.instruction) {
+            recordKPlayStarted(input, requestedSkill.id);
             return {
               ...startResult,
               skillId: startResult.skillId ?? requestedSkill.id,
@@ -154,6 +156,7 @@ export async function routePlaySkillTurn(
         // 활성 세션이 없으면 새 게임 start
         const startResult = await requestedSkill.start(input);
         if (startResult.handled && startResult.instruction) {
+          recordKPlayStarted(input, requestedSkill.id);
           return {
             ...startResult,
             skillId: startResult.skillId ?? requestedSkill.id,
@@ -187,6 +190,7 @@ export async function routePlaySkillTurn(
             const startResult = await targetSkill.start(input);
             await clearPendingPlayProposal(chatSessionId, db);
             if (startResult.handled && startResult.instruction) {
+              recordKPlayStarted(input, targetSkill.id);
               return {
                 ...startResult,
                 skillId: startResult.skillId ?? targetSkill.id,
@@ -227,4 +231,20 @@ export async function routePlaySkillTurn(
     console.error("[skillRouter] routePlaySkillTurn unhandled error:", error);
     return { handled: false };
   }
+}
+
+/**
+ * 아이가 **말로** 게임을 시작한 경로의 계측.
+ *
+ * 모달 선택(`executeSkillSelection`)만 계측하면 "끝말잇기 하자"처럼 말로 시작한
+ * 놀이가 통째로 안 잡힌다. 그쪽이 오히려 더 많다.
+ */
+function recordKPlayStarted(input: RoutePlaySkillTurnInput, skillId: string): void {
+  recordKPlayEvent("k_play_start", {
+    db: input.db,
+    childId: input.childId,
+    chatSessionId: input.chatSessionId,
+    skillId,
+    route: "utterance",
+  });
 }

@@ -9,6 +9,8 @@ import {
   roundAvg,
   roundRate,
   PARENT_ROLES,
+  PLAY_EVENTS,
+  K_PLAY_EVENTS,
 } from "./userAnalytics";
 
 test("같은 날 이벤트 3개 -> 활성일수 1 (KST dedupe)", () => {
@@ -416,4 +418,145 @@ test("게임 참여 집계: 5) 퀴즈 세션 추가가 활성 아이·리텐션 
   // 게임 참여 지표만 0 -> 1 로 증가
   assert.equal(beforeQuiz.usage.play.count, 0);
   assert.equal(afterQuiz.usage.play.count, 1);
+});
+
+test("K_PLAY_EVENTS 상수 정의: k_play_start와 k_play_complete 포함 및 기존 PLAY_EVENTS와 분리", () => {
+  assert.ok(K_PLAY_EVENTS.has("k_play_start"));
+  assert.ok(K_PLAY_EVENTS.has("k_play_complete"));
+  assert.equal(K_PLAY_EVENTS.size, 2);
+
+  // 기존 게임 참여 이벤트와 섞이지 않았는지 확인
+  assert.equal(PLAY_EVENTS.has("k_play_start"), false);
+  assert.equal(PLAY_EVENTS.has("k_play_complete"), false);
+  assert.equal(K_PLAY_EVENTS.has("play_start"), false);
+  assert.equal(K_PLAY_EVENTS.has("play_complete"), false);
+});
+
+test("케이 놀이 집계: 1) k_play_start만 있는 아이가 kPlay로 잡힌다", () => {
+  const families = [{ id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const familyMembers = [{ id: "m-1", family_id: "fam-1", user_id: "p-1", role: "parent" }];
+  const parents = [{ id: "p-1", created_at: "2026-08-01T00:00:00Z" }];
+  const children = [{ id: "c-1", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const behaviorEvents = [
+    { id: "e-1", event_name: "k_play_start", actor_type: "child", child_id: "c-1", family_id: "fam-1", occurred_at: "2026-08-17T01:00:00Z" },
+  ];
+
+  const result = computeUserAnalytics({
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents,
+    testFamilyIds: new Set(),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  });
+
+  assert.equal(result.usage.kPlay.count, 1);
+  assert.equal(result.usage.kPlay.total, 1);
+  assert.equal(result.usage.kPlay.rate, 100);
+});
+
+test("케이 놀이 집계: 2) k_play_complete만 있는 아이가 kPlay로 잡힌다", () => {
+  const families = [{ id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const familyMembers = [{ id: "m-1", family_id: "fam-1", user_id: "p-1", role: "parent" }];
+  const parents = [{ id: "p-1", created_at: "2026-08-01T00:00:00Z" }];
+  const children = [{ id: "c-1", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const behaviorEvents = [
+    { id: "e-1", event_name: "k_play_complete", actor_type: "child", child_id: "c-1", family_id: "fam-1", occurred_at: "2026-08-17T01:00:00Z" },
+  ];
+
+  const result = computeUserAnalytics({
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents,
+    testFamilyIds: new Set(),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  });
+
+  assert.equal(result.usage.kPlay.count, 1);
+  assert.equal(result.usage.kPlay.total, 1);
+  assert.equal(result.usage.kPlay.rate, 100);
+});
+
+test("케이 놀이 집계: 3) k_play_* 가 usage.play(게임 참여) 수치를 바꾸지 않는다 (오염 방어)", () => {
+  const families = [{ id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const familyMembers = [{ id: "m-1", family_id: "fam-1", user_id: "p-1", role: "parent" }];
+  const parents = [{ id: "p-1", created_at: "2026-08-01T00:00:00Z" }];
+  const children = [
+    { id: "c-play-only", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" },
+    { id: "c-kplay-only", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" },
+  ];
+  const behaviorEvents = [
+    { id: "e-1", event_name: "play_complete", actor_type: "child", child_id: "c-play-only", family_id: "fam-1", occurred_at: "2026-08-17T01:00:00Z" },
+    { id: "e-2", event_name: "k_play_start", actor_type: "child", child_id: "c-kplay-only", family_id: "fam-1", occurred_at: "2026-08-17T01:00:00Z" },
+    { id: "e-3", event_name: "k_play_complete", actor_type: "child", child_id: "c-kplay-only", family_id: "fam-1", occurred_at: "2026-08-17T01:30:00Z" },
+  ];
+
+  const result = computeUserAnalytics({
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents,
+    testFamilyIds: new Set(),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  });
+
+  // 게임 참여(usage.play)는 1명 (c-play-only)
+  assert.equal(result.usage.play.count, 1);
+  assert.equal(result.usage.play.total, 2);
+  assert.equal(result.usage.play.rate, 50);
+
+  // 케이 놀이(usage.kPlay)는 1명 (c-kplay-only)
+  assert.equal(result.usage.kPlay.count, 1);
+  assert.equal(result.usage.kPlay.total, 2);
+  assert.equal(result.usage.kPlay.rate, 50);
+});
+
+test("케이 놀이 집계: 4) 한 아이가 k_play_start와 k_play_complete를 둘 다 해도 1명(distinct)으로 집계된다", () => {
+  const families = [{ id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const familyMembers = [{ id: "m-1", family_id: "fam-1", user_id: "p-1", role: "parent" }];
+  const parents = [{ id: "p-1", created_at: "2026-08-01T00:00:00Z" }];
+  const children = [{ id: "c-1", family_id: "fam-1", created_at: "2026-08-01T00:00:00Z" }];
+  const behaviorEvents = [
+    { id: "e-1", event_name: "k_play_start", actor_type: "child", child_id: "c-1", family_id: "fam-1", occurred_at: "2026-08-17T01:00:00Z" },
+    { id: "e-2", event_name: "k_play_complete", actor_type: "child", child_id: "c-1", family_id: "fam-1", occurred_at: "2026-08-17T01:10:00Z" },
+    { id: "e-3", event_name: "k_play_start", actor_type: "child", child_id: "c-1", family_id: "fam-1", occurred_at: "2026-08-17T02:00:00Z" },
+  ];
+
+  const result = computeUserAnalytics({
+    families,
+    familyMembers,
+    parents,
+    children,
+    dailyReports: [],
+    reportViews: [],
+    missionProgress: [],
+    behaviorEvents,
+    testFamilyIds: new Set(),
+    includeTestAccounts: false,
+    selectedFromDateStr: "2026-08-11",
+    selectedToDateStr: "2026-08-17",
+  });
+
+  assert.equal(result.usage.kPlay.count, 1);
+  assert.equal(result.usage.kPlay.total, 1);
+  assert.equal(result.usage.kPlay.rate, 100);
 });

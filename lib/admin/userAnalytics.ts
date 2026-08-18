@@ -9,7 +9,8 @@ export const PARENT_ROLES = new Set(["owner_parent", "parent"]);
 // 또한 MBTI 는 behavior_events(play_complete), 퀴즈마스터는 별도 프로젝트라
 // quiz_monthly_leaderboard_sessions 에만 기록된다. 한쪽만 보면 0으로 나오므로 두 소스를 합집합으로 집계한다.
 export const PLAY_EVENTS = new Set(["play_start", "play_complete"]);
-export const CHILD_CORE_EVENTS = new Set(["mission_start", "freechat_start", ...PLAY_EVENTS]);
+export const K_PLAY_EVENTS = new Set(["k_play_start", "k_play_complete"]);
+export const CHILD_CORE_EVENTS = new Set(["mission_start", "freechat_start", ...PLAY_EVENTS, ...K_PLAY_EVENTS]);
 
 // 부모 리포트 열람 이벤트. report_views.viewer_id 는 2026-08-18 에 추가돼 그 이전
 // 열람이 없다(1건). 과거 열람은 behavior_events 에만 102건 남아 있으므로 둘을 합집합으로 센다.
@@ -68,6 +69,7 @@ export interface UserAnalyticsUsage {
   mission: MetricWithRate;
   freechat: MetricWithRate;
   play: MetricWithRate;
+  kPlay: MetricWithRate;
   missionCompletionRate: MetricWithRate;
   reportGenerated: MetricWithRate;
   parentViewed: MetricWithRate;
@@ -377,6 +379,7 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
   let missionChildCount = 0;
   let freechatChildCount = 0;
   let playChildCount = 0;
+  let kPlayChildCount = 0;
 
   for (const c of validChildren) {
     const events = childEventsMap.get(c.id) ?? [];
@@ -384,10 +387,12 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
     const hasMission = events.some((e) => e.event_name === "mission_start");
     const hasFreechat = events.some((e) => e.event_name === "freechat_start");
     const hasPlay = events.some((e) => PLAY_EVENTS.has(e.event_name)) || quizList.length > 0;
+    const hasKPlay = events.some((e) => K_PLAY_EVENTS.has(e.event_name));
 
     if (hasMission) missionChildCount += 1;
     if (hasFreechat) freechatChildCount += 1;
     if (hasPlay) playChildCount += 1;
+    if (hasKPlay) kPlayChildCount += 1;
   }
 
   // Mission completion rate
@@ -464,6 +469,11 @@ export function computeUserAnalytics(input: RawAnalyticsInput): UserAnalyticsRes
       count: playChildCount,
       total: totalChildren,
       rate: roundRate(playChildCount, totalChildren),
+    },
+    kPlay: {
+      count: kPlayChildCount,
+      total: totalChildren,
+      rate: roundRate(kPlayChildCount, totalChildren),
     },
     missionCompletionRate: {
       count: completedMissions,

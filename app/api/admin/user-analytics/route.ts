@@ -97,6 +97,8 @@ export async function GET(request: NextRequest) {
             "freechat_start",
             "play_start",
             "play_complete",
+            "k_play_start",
+            "k_play_complete",
             "parent_report_view",
             "parent_conversation_topic_view",
           ])

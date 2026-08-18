@@ -4,6 +4,7 @@ import type { UtteranceSignals } from "../utteranceSignals";
 import { PLAY_SKILL_REGISTRY, findSkillById } from "./skillRegistry";
 import { resolveActiveSkill } from "./activeSkillCoordinator";
 import { clearPendingPlayProposal } from "./pendingProposalStore";
+import { recordKPlayEvent } from "./kPlayAnalytics";
 
 export interface PlaySkillDto {
   id: string;
@@ -183,7 +184,16 @@ export async function executeSkillSelection(
     };
   }
 
-  // 9. 결과 반환 { ok, skillId, sessionId, openingLine }
+  // 9. 케이 놀이 시작 이벤트 계측 (실패 격리, fire-and-forget)
+  recordKPlayEvent("k_play_start", {
+    db,
+    childId,
+    chatSessionId,
+    skillId: targetSkill.id,
+    route: "/api/play/skill/select",
+  });
+
+  // 10. 결과 반환 { ok, skillId, sessionId, openingLine }
   //
   // ★ `startResult.instruction` 을 **절대 밖으로 내보내지 않는다.**
   // 그것은 Gemini 에게 주는 내부 지시문이다(PlaySkillTurnResult 주석 참고).
