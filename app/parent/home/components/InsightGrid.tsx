@@ -25,7 +25,7 @@ export function InsightGrid({ insights, view }: { insights?: InsightMap | null, 
   ];
 
   return (
-    <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} mb-8 gap-x-3 gap-y-2.5 sm:gap-4`}>
+    <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} mb-2.5 gap-x-3 gap-y-2.5 sm:gap-4`}>
       {cards.map(c => {
         const data = getInsightData(c.field);
         const hasData = typeof data.value === "string" && data.value.trim() !== "";

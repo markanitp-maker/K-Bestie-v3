@@ -197,7 +197,7 @@ export default function ParentHomePage() {
         <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--color-k-background)" }}>
           <ParentHomeHeader />
           <NotificationOnboarding role="parent" />
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-2.5 pb-8">
             <SkeletonBox className="w-28 h-5 mb-3" />
             <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3`}>
               {Array.from({ length: 8 }).map((_, i) => (
@@ -283,15 +283,15 @@ export default function ParentHomePage() {
         <ParentHomeHeader onStartChild={() => setShowChildStartGuide(true)} />
         <NotificationOnboarding role="parent" />
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-8">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-2.5 pb-8">
           {reportLoading ? (
             <>
-              <div className="bg-[#10315B] rounded-[20px] p-5 shadow-sm mt-4 mb-6">
+              <div className="bg-[#10315B] rounded-[20px] p-5 shadow-sm mb-2.5">
                 <SkeletonBox className="w-24 h-4 mb-3" />
                 <SkeletonBox className="w-full h-4 mb-1" />
                 <SkeletonBox className="w-2/3 h-4" />
               </div>
-              <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-8`}>
+              <div className={`grid ${view === "tablet" ? "grid-cols-4" : "grid-cols-2"} gap-3 mb-2.5`}>
                 {Array.from({ length: 8 }).map((_, i) => (
                   <SkeletonBox key={i} className="h-32 rounded-[18px]" />
                 ))}
