@@ -1,5 +1,5 @@
 /**
- * 케이 놀이 공통 인프라 — 세션 완료 CAS(compare-and-swap) 전이
+ * 게임 참여 공통 인프라 — 세션 완료 CAS(compare-and-swap) 전이
  *
  * k_play_sessions.status를 `in_progress` → `completed`로 전이하는 조건부 UPDATE를
  * 모든 놀이 타입이 재사용할 수 있도록 추출했다(MBTI 네이티브 통합, 2026-07-25).

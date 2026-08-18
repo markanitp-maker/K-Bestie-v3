@@ -684,7 +684,7 @@ function UserAnalyticsContent() {
                   description={freechatFormatted.sub}
                 />
                 <AdminKpiCard
-                  title="놀이 사용 아이"
+                  title="게임 참여 아이"
                   value={playFormatted.value}
                   description={playFormatted.sub}
                 />

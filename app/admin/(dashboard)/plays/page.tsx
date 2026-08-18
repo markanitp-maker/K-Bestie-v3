@@ -114,7 +114,7 @@ export default function AdminPlaysPage() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1440, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 24 }}>케이 놀이 관리자</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 24 }}>게임 참여 관리자</h1>
       
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         {(["sessions", "bugs", "support"] as TabKind[]).map(t => (

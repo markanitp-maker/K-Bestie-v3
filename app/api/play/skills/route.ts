@@ -9,7 +9,7 @@ import { PLAY_SKILL_REGISTRY } from "@/lib/k-conversation/play/skillRegistry";
 export const runtime = "nodejs";
 
 // GET /api/play/skills
-// K놀이 모달용 카탈로그 조회 API (§3-2, §3-17)
+// 케이 놀이 모달용 카탈로그 조회 API (§3-2, §3-17)
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const {

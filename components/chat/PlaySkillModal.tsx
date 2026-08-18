@@ -154,7 +154,7 @@ export function PlaySkillModal({
                 id="play-skill-modal-title"
                 className="text-[clamp(16px,calc(var(--frame-w,100vw)*0.045),19px)] font-bold text-gray-800 leading-snug"
               >
-                K놀이 선택
+                케이 놀이 선택
               </h2>
               <p className="text-[clamp(12px,calc(var(--frame-w,100vw)*0.032),13px)] text-gray-500">
                 하고 싶은 놀이를 골라봐!

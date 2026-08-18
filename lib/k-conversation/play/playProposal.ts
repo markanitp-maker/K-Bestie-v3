@@ -41,7 +41,7 @@ export interface DecidePlayProposalInput {
  * 6) 특정 게임 직접 요청 발화 (signals.hasChosungGameStart, signals.hasWordChainGameStart)
  * 7) 이미 활성 게임 세션 존재 (hasActivePlaySession)
  * 8) 이번 세션에서 이미 거절함 (sessionRejected)
- * 9) K 놀이 제안 쿨다운 중 (isTopicOnCooldownForK('PLAY_PROPOSAL'))
+ * 9) 케이 놀이 제안 쿨다운 중 (isTopicOnCooldownForK('PLAY_PROPOSAL'))
  *
  * [제안 발동 조건]
  * - 명시적 놀이 요청(게임 미지정) (signals.hasPlayRequestWithoutTarget)

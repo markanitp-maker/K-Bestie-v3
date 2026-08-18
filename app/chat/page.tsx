@@ -1105,7 +1105,7 @@ export default function ChatPage() {
                       🎲
                     </div>
                     <span className="text-[clamp(13px,calc(var(--frame-w,100vw)*0.038),15px)] leading-[1.2] font-bold text-gray-700 text-center break-keep">
-                      K놀이
+                      케이 놀이
                     </span>
                   </button>
                 </div>

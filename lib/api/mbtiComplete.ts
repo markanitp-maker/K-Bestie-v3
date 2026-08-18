@@ -1,5 +1,5 @@
 /**
- * 케이 놀이: MBTI — 세션 완료 처리(POST /api/mbti/complete) API 계약 (US-008B)
+ * 게임 참여: MBTI — 세션 완료 처리(POST /api/mbti/complete) API 계약 (US-008B)
  *
  * 참고: SPEC.md §2.1(6)("16문항 완료 → 점수 합산 → 유형 확정 → 결과 화면, completed_at 저장")/
  * §7("미완료를 완료 처리 금지"), `app/api/mbti/progress/route.ts`(동일 인증/세션 조회 패턴 재사용),

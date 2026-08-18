@@ -1,5 +1,5 @@
 /**
- * 케이 놀이: MBTI — 진행 상태 저장(POST /api/mbti/progress) API 계약
+ * 게임 참여: MBTI — 진행 상태 저장(POST /api/mbti/progress) API 계약
  * (2026-07-25 200문항뱅크/세션당 20문항 개편, schemaVersion 2)
  *
  * `k_play_sessions.progress_state`는 애플리케이션이 정의하는 JSONB 컬럼이다(DB 제약 없음).

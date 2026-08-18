@@ -3,8 +3,8 @@ import { offsetCalendarDate, toKstCalendarDate } from "@/lib/admin/analyticsKst"
 
 export const PARENT_ROLES = new Set(["owner_parent", "parent"]);
 
-// 2026-08-18 실측: `play_start` 는 프로덕션에 **한 건도 없다**. 놀이는 완료 시점에만
-// `play_complete` 를 남긴다(13건). 지시서 정의(play_start)를 그대로 쓰면 놀이 사용
+// 2026-08-18 실측: `play_start` 는 프로덕션에 **한 건도 없다**. 게임 참여(별도 화면 게임)는 완료 시점에만
+// `play_complete` 를 남긴다(13건). 지시서 정의(play_start)를 그대로 쓰면 게임 참여
 // 아이가 영원히 0명으로 나온다. 둘 다 인정한다 — 나중에 play_start 가 생겨도 그대로 동작한다.
 export const PLAY_EVENTS = new Set(["play_start", "play_complete"]);
 export const CHILD_CORE_EVENTS = new Set(["mission_start", "freechat_start", ...PLAY_EVENTS]);

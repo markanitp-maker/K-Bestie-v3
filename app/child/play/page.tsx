@@ -778,7 +778,7 @@ export default function ChildPlayPage() {
             </div>
             <p className="font-bold text-2xl text-gray-800 mb-3 tracking-tight">놀이 준비 완료!</p>
             <p className="text-gray-500 mb-10 leading-relaxed">
-              별도 케이 놀이 앱에서 이어집니다<br/>
+              별도 게임 참여 앱에서 이어집니다<br/>
               <span className="text-sm bg-gray-200 px-2 py-1 rounded-md mt-2 inline-block">(준비 중)</span>
             </p>
             <button

@@ -1,5 +1,5 @@
 /**
- * 케이 놀이: MBTI — 공용 타입 정의
+ * 게임 참여: MBTI — 공용 타입 정의
  *
  * 이 파일은 questionBank.ts / typeProfiles.ts가 공통으로 사용하는
  * 축(Axis)·극(Pole)·유형(MbtiType) 타입을 담는다.

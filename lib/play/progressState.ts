@@ -1,5 +1,5 @@
 /**
- * 케이 놀이 공통 인프라 — k_play_sessions.progress_state 네임스페이스 유틸
+ * 게임 참여 공통 인프라 — k_play_sessions.progress_state 네임스페이스 유틸
  *
  * `progress_state`는 4종 놀이(comic_book/quiz/mbti/hairstyle)가 공유하는 애플리케이션
  * 정의 JSONB 컬럼이다. 각 놀이의 상세 진행 상태(문항 인덱스, 선택지 등 게임마다 다른

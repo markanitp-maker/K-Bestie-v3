@@ -1,5 +1,5 @@
 /**
- * 케이 놀이: MBTI — 부모 리포트 파이프라인용 완료 이벤트 기록 (US-012)
+ * 게임 참여: MBTI — 부모 리포트 파이프라인용 완료 이벤트 기록 (US-012)
  *
  * `mbti_completion_events` 테이블은 별도 mbti 저장소의
  * `supabase/migrations/20260723150000_mbti_completion_events.sql`로 Dev Supabase에 이미
