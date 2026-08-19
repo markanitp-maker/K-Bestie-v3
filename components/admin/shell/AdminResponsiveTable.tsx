@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AdminDataTable, type AdminDataTableProps } from "./AdminDataTable";
+import { AdminDataTable, type AdminDataTableProps, resolveInitialSort, sortDataTableRows } from "./AdminDataTable";
 import { AdminMobileListCard } from "./AdminMobileListCard";
 import { AdminErrorState } from "./AdminErrorState";
 
@@ -17,6 +17,20 @@ export function AdminResponsiveTable<T>(props: AdminResponsiveTableProps<T>) {
   const safeData = Array.isArray(tableProps.data) ? tableProps.data : [];
   const safeColumns = Array.isArray(tableProps.columns) ? tableProps.columns : [];
   const safeTableProps = { ...tableProps, data: safeData, columns: safeColumns };
+
+  // 모바일 카드 뷰에서도 정렬 결과 순서를 동일하게 반영
+  const isControlled = typeof tableProps.onSortChange === "function";
+
+  const activeSort = tableProps.sortKey !== undefined
+    ? (tableProps.sortKey ? { key: tableProps.sortKey, direction: tableProps.sortDirection || "asc" } : null)
+    : tableProps.sort !== undefined
+    ? (tableProps.sort ?? null)
+    : resolveInitialSort(safeColumns, tableProps.defaultSortKey, tableProps.defaultSortDirection);
+
+  const displayData = React.useMemo(() => {
+    if (isControlled || !activeSort) return safeData;
+    return sortDataTableRows(safeData, safeColumns, activeSort);
+  }, [safeData, safeColumns, activeSort, isControlled]);
 
   return (
     <>
@@ -40,7 +54,7 @@ export function AdminResponsiveTable<T>(props: AdminResponsiveTableProps<T>) {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {safeData.map((row) => {
+              {displayData.map((row) => {
                 const actionsCol = safeColumns.find(c => c.key === "actions" || c.key === "action");
                 const otherCols = safeColumns.slice(1).filter(c => c !== actionsCol);
                 

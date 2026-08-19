@@ -4,7 +4,9 @@ import React from "react";
 import { AdminEmptyState } from "./AdminEmptyState";
 import { AdminErrorState } from "./AdminErrorState";
 
-export type AdminDataTableSortType = "text" | "number" | "date";
+export type AdminSortDirection = "asc" | "desc";
+export type AdminSortType = "text" | "number" | "date" | "status" | "boolean";
+export type AdminDataTableSortType = AdminSortType;
 
 export interface AdminDataTableColumn<T> {
   key: string;
@@ -14,9 +16,13 @@ export interface AdminDataTableColumn<T> {
   /** 이 컬럼으로 정렬할 수 있는지. 기본 false — 선택/체크박스/액션 컬럼은 켜지 않는다. */
   sortable?: boolean;
   /** 정렬에 쓸 원시값. sortable 이 true 면 반드시 준다. */
-  sortValue?: (row: T) => string | number | null | undefined;
+  sortValue?: (row: T) => string | number | boolean | Date | null | undefined;
   /** 첫 클릭 방향과 비교 방식을 정한다. 기본 "text". */
   sortType?: AdminDataTableSortType;
+  /** 컬럼별 첫 클릭 기본 방향 지정. 없으면 sortType 기본 방향을 따른다. */
+  defaultSortDirection?: "asc" | "desc";
+  /** status 정렬용 우선순위 매핑 테이블 (작은 번호 우선) */
+  statusOrder?: Record<string, number>;
 }
 
 export interface AdminDataTableProps<T> {
@@ -32,14 +38,31 @@ export interface AdminDataTableProps<T> {
   emptyDescription?: string;
   expandedRowRender?: (row: T) => React.ReactNode;
   expandedRowIds?: Set<string>;
-  /** 주면 controlled 모드. 컴포넌트는 스스로 정렬하지 않고 클릭만 알려준다. */
+
+  // uncontrolled 초기 정렬 prop
+  defaultSortKey?: string;
+  defaultSortDirection?: "asc" | "desc";
+
+  // controlled 정렬 prop (새 표준 형태 - 우선 적용)
+  sortKey?: string;
+  sortDirection?: "asc" | "desc";
+
+  /** @deprecated sortKey / sortDirection 사용 권장. 기존 객체 스타일 prop 하위 호환 유지 */
   sort?: { key: string; direction: "asc" | "desc" } | null;
-  onSortChange?: (next: { key: string; direction: "asc" | "desc" }) => void;
+
+  /**
+   * 정렬 변경 핸들러.
+   * 새 형태: (key: string, direction: "asc" | "desc") => void
+   * 기존 객체 형태: (next: { key: string; direction: "asc" | "desc" }) => void
+   */
+  onSortChange?:
+    | ((key: string, direction: "asc" | "desc") => void)
+    | ((next: { key: string; direction: "asc" | "desc" }) => void);
 }
 
-function isEmptySortValue(val: unknown, sortType: AdminDataTableSortType): boolean {
+export function isEmptySortValue(val: unknown, sortType?: AdminDataTableSortType): boolean {
   if (val === null || val === undefined) return true;
-  if (typeof val === "string" && val.trim() === "") return true;
+  if (typeof val === "string" && (val.trim() === "" || val.trim() === "-")) return true;
   if (sortType === "number") {
     if (typeof val === "number") return isNaN(val);
     const n = Number(val);
@@ -54,11 +77,22 @@ function isEmptySortValue(val: unknown, sortType: AdminDataTableSortType): boole
   return false;
 }
 
-function compareSortValues(
+function toBooleanValue(val: unknown): boolean {
+  if (typeof val === "boolean") return val;
+  if (typeof val === "number") return val !== 0;
+  if (typeof val === "string") {
+    const s = val.trim().toLowerCase();
+    return s === "true" || s === "1" || s === "y" || s === "yes";
+  }
+  return Boolean(val);
+}
+
+export function compareSortValues(
   a: unknown,
   b: unknown,
-  sortType: AdminDataTableSortType,
-  direction: "asc" | "desc"
+  sortType: AdminDataTableSortType = "text",
+  direction: "asc" | "desc" = "asc",
+  statusOrder?: Record<string, number>
 ): number {
   const emptyA = isEmptySortValue(a, sortType);
   const emptyB = isEmptySortValue(b, sortType);
@@ -76,6 +110,26 @@ function compareSortValues(
     const tsA = a instanceof Date ? a.getTime() : typeof a === "number" ? a : Date.parse(String(a));
     const tsB = b instanceof Date ? b.getTime() : typeof b === "number" ? b : Date.parse(String(b));
     diff = tsA - tsB;
+  } else if (sortType === "boolean") {
+    const boolA = toBooleanValue(a);
+    const boolB = toBooleanValue(b);
+    diff = (boolA ? 1 : 0) - (boolB ? 1 : 0);
+  } else if (sortType === "status") {
+    if (statusOrder) {
+      const orderA = typeof statusOrder[String(a)] === "number" ? statusOrder[String(a)] : Number.MAX_SAFE_INTEGER;
+      const orderB = typeof statusOrder[String(b)] === "number" ? statusOrder[String(b)] : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) {
+        diff = orderA - orderB;
+      } else {
+        const strA = String(a);
+        const strB = String(b);
+        diff = strA.localeCompare(strB, "ko", { sensitivity: "base" }) || strA.localeCompare(strB, "ko");
+      }
+    } else {
+      const strA = String(a);
+      const strB = String(b);
+      diff = strA.localeCompare(strB, "ko", { sensitivity: "base" }) || strA.localeCompare(strB, "ko");
+    }
   } else {
     const strA = String(a);
     const strB = String(b);
@@ -85,17 +139,61 @@ function compareSortValues(
   return direction === "asc" ? diff : -diff;
 }
 
+export function getDefaultSortDirection(
+  sortType?: AdminDataTableSortType,
+  columnDefaultDirection?: "asc" | "desc"
+): "asc" | "desc" {
+  if (columnDefaultDirection) return columnDefaultDirection;
+  return sortType === "number" || sortType === "date" || sortType === "boolean" ? "desc" : "asc";
+}
+
 export function getNextSortDirection(
   currentSort: { key: string; direction: "asc" | "desc" } | null | undefined,
   targetColumnKey: string,
-  targetSortType?: AdminDataTableSortType
+  targetSortType?: AdminDataTableSortType,
+  columnDefaultDirection?: "asc" | "desc"
 ): { key: string; direction: "asc" | "desc" } {
-  const defaultDir: "asc" | "desc" = targetSortType === "number" || targetSortType === "date" ? "desc" : "asc";
+  const defaultDir = getDefaultSortDirection(targetSortType, columnDefaultDirection);
   let nextDir: "asc" | "desc" = defaultDir;
   if (currentSort && currentSort.key === targetColumnKey) {
     nextDir = currentSort.direction === "asc" ? "desc" : "asc";
   }
   return { key: targetColumnKey, direction: nextDir };
+}
+
+export function resolveInitialSort<T>(
+  columns: AdminDataTableColumn<T>[],
+  defaultSortKey?: string,
+  defaultSortDirection?: "asc" | "desc"
+): { key: string; direction: "asc" | "desc" } | null {
+  if (!defaultSortKey) return null;
+  const col = columns.find((c) => c.key === defaultSortKey);
+  if (!col || !col.sortable) return null;
+  const direction = defaultSortDirection || getDefaultSortDirection(col.sortType, col.defaultSortDirection);
+  return { key: defaultSortKey, direction };
+}
+
+export function sortDataTableRows<T>(
+  data: T[],
+  columns: AdminDataTableColumn<T>[],
+  sort: { key: string; direction: "asc" | "desc" } | null | undefined
+): T[] {
+  if (!sort) return data;
+  const targetCol = columns.find((c) => c.key === sort.key);
+  if (!targetCol || !targetCol.sortable) return data;
+
+  const getVal = targetCol.sortValue
+    ? targetCol.sortValue
+    : (row: T) => (row as Record<string, unknown>)[targetCol.key] as string | number | boolean | Date | null | undefined;
+
+  const sortType = targetCol.sortType ?? "text";
+  const direction = sort.direction;
+
+  return [...data].sort((a, b) => {
+    const valA = getVal(a);
+    const valB = getVal(b);
+    return compareSortValues(valA, valB, sortType, direction, targetCol.statusOrder);
+  });
 }
 
 export function AdminDataTable<T>({
@@ -111,6 +209,10 @@ export function AdminDataTable<T>({
   emptyDescription,
   expandedRowRender,
   expandedRowIds = new Set(),
+  defaultSortKey,
+  defaultSortDirection,
+  sortKey,
+  sortDirection,
   sort,
   onSortChange,
 }: AdminDataTableProps<T>) {
@@ -120,38 +222,51 @@ export function AdminDataTable<T>({
   const columns = Array.isArray(rawColumns) ? rawColumns : [];
   const data = Array.isArray(rawData) ? rawData : [];
 
-  const [internalSort, setInternalSort] = React.useState<{ key: string; direction: "asc" | "desc" } | null>(sort ?? null);
-
+  // controlled / uncontrolled 모드 및 activeSort 판별 규칙:
+  // 1) onSortChange가 함수로 전달되면 controlled 모드로 동작 (내부 자동 정렬을 하지 않고 클릭 시 콜백만 호출)
+  //    - sortKey/sortDirection 우선: 정의되어 있으면 (key, direction) 형태로 onSortChange 호출
+  //    - sort(객체) 전달 시: 기존 호환을 위해 { key, direction } 객체 형태로 onSortChange 호출
+  // 2) onSortChange가 없으면 uncontrolled 모드로 동작 (컴포넌트가 직접 internalSort 관리 및 데이터 정렬 수행)
+  //    - 초기 정렬: sortKey -> sort -> resolveInitialSort(defaultSortKey, defaultSortDirection) 순으로 초기화
   const isControlled = typeof onSortChange === "function";
-  const activeSort = isControlled ? (sort ?? null) : internalSort;
+  const isLegacyControlled = isControlled && sortKey === undefined && sortDirection === undefined && sort !== undefined;
+
+  const [internalSort, setInternalSort] = React.useState<{ key: string; direction: "asc" | "desc" } | null>(() => {
+    if (sortKey !== undefined) {
+      return sortKey ? { key: sortKey, direction: sortDirection || "asc" } : null;
+    }
+    if (sort !== undefined) {
+      return sort;
+    }
+    return resolveInitialSort(columns, defaultSortKey, defaultSortDirection);
+  });
+
+  const activeSort: { key: string; direction: "asc" | "desc" } | null = isControlled
+    ? (sortKey !== undefined
+        ? (sortKey ? { key: sortKey, direction: sortDirection || "asc" } : null)
+        : (sort ?? null))
+    : internalSort;
 
   const handleHeaderClick = (col: AdminDataTableColumn<T>) => {
     if (!col.sortable) return;
-    const next = getNextSortDirection(activeSort, col.key, col.sortType);
-    if (isControlled && onSortChange) {
-      onSortChange(next);
-    } else {
+    const next = getNextSortDirection(activeSort, col.key, col.sortType, col.defaultSortDirection);
+    if (typeof onSortChange === "function") {
+      if (isLegacyControlled) {
+        // 기존 객체 스타일 controlled 모드에서는 { key, direction } 객체를 콜백으로 전달
+        (onSortChange as (next: { key: string; direction: "asc" | "desc" }) => void)(next);
+      } else {
+        // 새 표준 형태에서는 (key, direction) 형태로 콜백 전달
+        (onSortChange as (key: string, direction: "asc" | "desc") => void)(next.key, next.direction);
+      }
+    }
+    if (!isControlled) {
       setInternalSort(next);
     }
   };
 
   const sortedData = React.useMemo(() => {
     if (isControlled || !activeSort) return data;
-    const targetCol = columns.find((c) => c.key === activeSort.key);
-    if (!targetCol || !targetCol.sortable) return data;
-
-    const getVal = targetCol.sortValue
-      ? targetCol.sortValue
-      : (row: T) => (row as Record<string, unknown>)[targetCol.key] as string | number | null | undefined;
-
-    const sortType = targetCol.sortType ?? "text";
-    const direction = activeSort.direction;
-
-    return [...data].sort((a, b) => {
-      const valA = getVal(a);
-      const valB = getVal(b);
-      return compareSortValues(valA, valB, sortType, direction);
-    });
+    return sortDataTableRows(data, columns, activeSort);
   }, [data, columns, activeSort, isControlled]);
 
   if (error) {

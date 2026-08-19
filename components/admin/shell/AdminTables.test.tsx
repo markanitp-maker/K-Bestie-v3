@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AdminDataTable, getNextSortDirection } from "./AdminDataTable";
+import { AdminDataTable, getNextSortDirection, resolveInitialSort } from "./AdminDataTable";
 import { AdminResponsiveTable } from "./AdminResponsiveTable";
 
 const columns = [{ key: "name", header: "이름", render: (row: { name: string }) => row.name }];
@@ -294,4 +294,366 @@ test("11. 원본 data 배열이 정렬로 변형되지 않는다 (제자리 정�
   assert.equal(frozen[0].num, 3);
   assert.equal(frozen[1].num, 1);
   assert.equal(frozen[2].num, 2);
+});
+
+// --- 확장 정렬 기능 테스트 (sortType 확장, defaultSortDirection, defaultSortKey, controlled 확장, AdminResponsiveTable 연동) ---
+
+test("12. status 정렬: statusOrder 순서대로 정렬된다 (asc 기본)", () => {
+  const statusOrder = { pending: 1, in_progress: 2, completed: 3, rejected: 4 };
+  const cols = [
+    {
+      key: "status",
+      header: "상태",
+      render: (r: { id: number; status: string }) => r.status,
+      sortable: true,
+      sortType: "status" as const,
+      statusOrder,
+      sortValue: (r: { id: number; status: string }) => r.status,
+    },
+  ];
+  const data = [
+    { id: 1, status: "completed" },
+    { id: 2, status: "pending" },
+    { id: 3, status: "rejected" },
+    { id: 4, status: "in_progress" },
+  ];
+
+  // asc: pending(1) -> in_progress(2) -> completed(3) -> rejected(4)
+  const initialSort = getNextSortDirection(null, "status", "status");
+  assert.deepEqual(initialSort, { key: "status", direction: "asc" });
+
+  const htmlAsc = renderToStaticMarkup(
+    <AdminDataTable columns={cols} data={data} keyExtractor={(r) => String(r.id)} sort={initialSort} />,
+  );
+  assert.deepEqual(extractFirstColumnValues(htmlAsc), ["pending", "in_progress", "completed", "rejected"]);
+
+  // desc: rejected(4) -> completed(3) -> in_progress(2) -> pending(1)
+  const htmlDesc = renderToStaticMarkup(
+    <AdminDataTable columns={cols} data={data} keyExtractor={(r) => String(r.id)} sort={{ key: "status", direction: "desc" }} />,
+  );
+  assert.deepEqual(extractFirstColumnValues(htmlDesc), ["rejected", "completed", "in_progress", "pending"]);
+});
+
+test("13. status 정렬: statusOrder에 없는 값은 맨 끝 등급으로 취급(단, 빈 값보다는 앞)", () => {
+  const statusOrder = { active: 1, paused: 2 };
+  const cols = [
+    {
+      key: "status",
+      header: "상태",
+      render: (r: { id: number; status: string | null | undefined }) => (r.status ? r.status : "EMPTY"),
+      sortable: true,
+      sortType: "status" as const,
+      statusOrder,
+      sortValue: (r: { id: number; status: string | null | undefined }) => r.status,
+    },
+  ];
+  const data = [
+    { id: 1, status: null },            // 빈 값 (항상 맨 뒤)
+    { id: 2, status: "unknown_status" }, // statusOrder에 없는 값 (맨 끝 등급)
+    { id: 3, status: "paused" },         // rank 2
+    { id: 4, status: "active" },         // rank 1
+    { id: 5, status: "" },               // 빈 값 (항상 맨 뒤)
+  ];
+
+  // asc 정렬 시: active(1) -> paused(2) -> unknown_status(미등록) -> null/빈값들(맨 뒤)
+  const htmlAsc = renderToStaticMarkup(
+    <AdminDataTable columns={cols} data={data} keyExtractor={(r) => String(r.id)} sort={{ key: "status", direction: "asc" }} />,
+  );
+  const valuesAsc = extractFirstColumnValues(htmlAsc);
+  assert.equal(valuesAsc[0], "active");
+  assert.equal(valuesAsc[1], "paused");
+  assert.equal(valuesAsc[2], "unknown_status");
+  assert.equal(valuesAsc[3], "EMPTY");
+  assert.equal(valuesAsc[4], "EMPTY");
+
+  // desc 정렬 시: unknown_status(미등록) -> paused(2) -> active(1) -> null/빈값들(항상 맨 뒤)
+  const htmlDesc = renderToStaticMarkup(
+    <AdminDataTable columns={cols} data={data} keyExtractor={(r) => String(r.id)} sort={{ key: "status", direction: "desc" }} />,
+  );
+  const valuesDesc = extractFirstColumnValues(htmlDesc);
+  assert.equal(valuesDesc[0], "unknown_status");
+  assert.equal(valuesDesc[1], "paused");
+  assert.equal(valuesDesc[2], "active");
+  assert.equal(valuesDesc[3], "EMPTY");
+  assert.equal(valuesDesc[4], "EMPTY");
+});
+
+test("14. boolean 정렬: 첫 클릭에 true가 앞(기본 desc) 및 boolean/문자열 처리", () => {
+  const cols = [
+    {
+      key: "isActive",
+      header: "활성",
+      render: (r: { id: number; isActive: boolean | string }) => String(r.isActive),
+      sortable: true,
+      sortType: "boolean" as const,
+      sortValue: (r: { id: number; isActive: boolean | string }) => r.isActive,
+    },
+  ];
+  const data = [
+    { id: 1, isActive: false },
+    { id: 2, isActive: true },
+    { id: 3, isActive: "false" },
+    { id: 4, isActive: "true" },
+  ];
+
+  // boolean 첫 클릭 기본 방향은 "desc" (true가 앞)
+  const nextSort = getNextSortDirection(null, "isActive", "boolean");
+  assert.deepEqual(nextSort, { key: "isActive", direction: "desc" });
+
+  const htmlDesc = renderToStaticMarkup(
+    <AdminDataTable columns={cols} data={data} keyExtractor={(r) => String(r.id)} sort={nextSort} />,
+  );
+  const valuesDesc = extractFirstColumnValues(htmlDesc);
+  assert.deepEqual(valuesDesc, ["true", "true", "false", "false"]);
+
+  // asc로 토글 시 false가 앞
+  const htmlAsc = renderToStaticMarkup(
+    <AdminDataTable columns={cols} data={data} keyExtractor={(r) => String(r.id)} sort={{ key: "isActive", direction: "asc" }} />,
+  );
+  const valuesAsc = extractFirstColumnValues(htmlAsc);
+  assert.deepEqual(valuesAsc, ["false", "false", "true", "true"]);
+});
+
+test("15. defaultSortDirection을 준 컬럼은 첫 클릭이 지정된 방향", () => {
+  const cols = [
+    {
+      key: "name",
+      header: "이름",
+      render: (r: { name: string }) => r.name,
+      sortable: true,
+      sortType: "text" as const,
+      defaultSortDirection: "desc" as const,
+      sortValue: (r: { name: string }) => r.name,
+    },
+    {
+      key: "score",
+      header: "점수",
+      render: (r: { score: number }) => String(r.score),
+      sortable: true,
+      sortType: "number" as const,
+      defaultSortDirection: "asc" as const,
+      sortValue: (r: { score: number }) => r.score,
+    },
+  ];
+
+  const sortName = getNextSortDirection(null, "name", cols[0].sortType, cols[0].defaultSortDirection);
+  assert.deepEqual(sortName, { key: "name", direction: "desc" });
+
+  const sortScore = getNextSortDirection(null, "score", cols[1].sortType, cols[1].defaultSortDirection);
+  assert.deepEqual(sortScore, { key: "score", direction: "asc" });
+});
+
+test("16. defaultSortKey로 첫 렌더부터 정렬되어 렌더된다 (uncontrolled)", () => {
+  const cols = [
+    {
+      key: "score",
+      header: "점수",
+      render: (r: { id: number; score: number }) => String(r.score),
+      sortable: true,
+      sortType: "number" as const,
+      sortValue: (r: { id: number; score: number }) => r.score,
+    },
+  ];
+  const data = [{ id: 1, score: 30 }, { id: 2, score: 100 }, { id: 3, score: 70 }];
+
+  // defaultSortKey="score" -> number 컬럼이므로 기본 desc 정렬 (100, 70, 30)
+  const html = renderToStaticMarkup(
+    <AdminDataTable
+      columns={cols}
+      data={data}
+      keyExtractor={(r) => String(r.id)}
+      defaultSortKey="score"
+    />,
+  );
+  const values = extractFirstColumnValues(html);
+  assert.deepEqual(values, ["100", "70", "30"]);
+  assert.match(html, /aria-sort="descending"/);
+  assert.match(html, /▼/);
+});
+
+test("17. defaultSortKey가 존재하지 않는 key이거나 sortable이 아니면 무시하고 정렬 없이 렌더", () => {
+  const cols = [
+    {
+      key: "name",
+      header: "이름",
+      render: (r: { name: string }) => r.name,
+      sortable: false,
+    },
+  ];
+  const data = [{ name: "다" }, { name: "가" }, { name: "나" }];
+
+  // 1) 존재하지 않는 key
+  const htmlNonExistent = renderToStaticMarkup(
+    <AdminDataTable
+      columns={cols}
+      data={data}
+      keyExtractor={(r) => r.name}
+      defaultSortKey="non_existent_key"
+    />,
+  );
+  assert.deepEqual(extractFirstColumnValues(htmlNonExistent), ["다", "가", "나"]);
+  assert.doesNotMatch(htmlNonExistent, /aria-sort/);
+
+  // 2) sortable이 아닌 컬럼 key
+  const htmlNonSortable = renderToStaticMarkup(
+    <AdminDataTable
+      columns={cols}
+      data={data}
+      keyExtractor={(r) => r.name}
+      defaultSortKey="name"
+    />,
+  );
+  assert.deepEqual(extractFirstColumnValues(htmlNonSortable), ["다", "가", "나"]);
+  assert.doesNotMatch(htmlNonSortable, /aria-sort/);
+});
+
+test("18. 사용자 클릭 시 defaultSortKey 기반 초기 상태가 다음 정렬 방향으로 갱신된다", () => {
+  type Person = { name: string; age: number };
+  const cols = [
+    {
+      key: "name",
+      header: "이름",
+      render: (r: Person) => r.name,
+      sortable: true,
+      sortType: "text" as const,
+      sortValue: (r: Person) => r.name,
+    },
+    {
+      key: "age",
+      header: "나이",
+      render: (r: Person) => String(r.age),
+      sortable: true,
+      sortType: "number" as const,
+      sortValue: (r: Person) => r.age,
+    },
+  ];
+
+  const initial = resolveInitialSort(cols, "name");
+  assert.deepEqual(initial, { key: "name", direction: "asc" });
+
+  const toggled = getNextSortDirection(initial, "name", "text");
+  assert.deepEqual(toggled, { key: "name", direction: "desc" });
+
+  const switched = getNextSortDirection(initial, "age", "number");
+  assert.deepEqual(switched, { key: "age", direction: "desc" });
+});
+
+test("19. 새 controlled 형태(sortKey/sortDirection/onSortChange)에서 내부 정렬하지 않고 (key, direction) 콜백 호출", () => {
+  const cols = [
+    {
+      key: "name",
+      header: "이름",
+      render: (r: { name: string }) => r.name,
+      sortable: true,
+      sortType: "text" as const,
+      sortValue: (r: { name: string }) => r.name,
+    },
+  ];
+  const data = [{ name: "다람쥐" }, { name: "가나다" }];
+
+  let callbackArgs: [string, "asc" | "desc"] | null = null;
+  const onSortChange = (key: string, direction: "asc" | "desc") => {
+    callbackArgs = [key, direction];
+  };
+
+  const html = renderToStaticMarkup(
+    <AdminDataTable
+      columns={cols}
+      data={data}
+      keyExtractor={(r) => r.name}
+      sortKey="name"
+      sortDirection="asc"
+      onSortChange={onSortChange}
+    />,
+  );
+
+  assert.deepEqual(extractFirstColumnValues(html), ["다람쥐", "가나다"]);
+  assert.match(html, /aria-sort="ascending"/);
+  assert.match(html, /▲/);
+
+  const next = getNextSortDirection({ key: "name", direction: "asc" }, "name", "text");
+  onSortChange(next.key, next.direction);
+  assert.deepEqual(callbackArgs, ["name", "desc"]);
+});
+
+test("20. 기존 controlled 형태(sort/객체 콜백)도 하위 호환으로 정상 동작", () => {
+  const cols = [
+    {
+      key: "score",
+      header: "점수",
+      render: (r: { score: number }) => String(r.score),
+      sortable: true,
+      sortType: "number" as const,
+      sortValue: (r: { score: number }) => r.score,
+    },
+  ];
+  const data = [{ score: 10 }, { score: 100 }];
+
+  let legacyCallbackArg: { key: string; direction: "asc" | "desc" } | null = null;
+  const onSortChange = (next: { key: string; direction: "asc" | "desc" }) => {
+    legacyCallbackArg = next;
+  };
+
+  const html = renderToStaticMarkup(
+    <AdminDataTable
+      columns={cols}
+      data={data}
+      keyExtractor={(r) => String(r.score)}
+      sort={{ key: "score", direction: "desc" }}
+      onSortChange={onSortChange}
+    />,
+  );
+
+  assert.deepEqual(extractFirstColumnValues(html), ["10", "100"]);
+  assert.match(html, /aria-sort="descending"/);
+  assert.match(html, /▼/);
+
+  const next = getNextSortDirection({ key: "score", direction: "desc" }, "score", "number");
+  onSortChange(next);
+  assert.deepEqual(legacyCallbackArg, { key: "score", direction: "asc" });
+});
+
+test("21. AdminResponsiveTable에서도 defaultSortKey 및 정렬 props가 정상 반영된다 (데스크톱 및 모바일 카드)", () => {
+  const cols = [
+    {
+      key: "score",
+      header: "점수",
+      render: (r: { id: number; score: number }) => String(r.score),
+      sortable: true,
+      sortType: "number" as const,
+      sortValue: (r: { id: number; score: number }) => r.score,
+    },
+  ];
+  const data = [{ id: 1, score: 20 }, { id: 2, score: 90 }, { id: 3, score: 50 }];
+
+  // 1) scroll 모드 (기본 데스크톱 테이블 래퍼)
+  const htmlScroll = renderToStaticMarkup(
+    <AdminResponsiveTable
+      mobileStrategy="scroll"
+      columns={cols}
+      data={data}
+      keyExtractor={(r) => String(r.id)}
+      defaultSortKey="score"
+    />,
+  );
+  assert.deepEqual(extractFirstColumnValues(htmlScroll), ["90", "50", "20"]);
+
+  // 2) card 모드 (모바일 카드 뷰 순서 반영 확인)
+  const htmlCard = renderToStaticMarkup(
+    <AdminResponsiveTable
+      mobileStrategy="card"
+      columns={cols}
+      data={data}
+      keyExtractor={(r) => String(r.id)}
+      defaultSortKey="score"
+    />,
+  );
+  // 데스크톱 테이블 영역 정렬 확인
+  assert.deepEqual(extractFirstColumnValues(htmlCard), ["90", "50", "20"]);
+  // 모바일 카드 영역에 90, 50, 20 순서로 등장하는지 확인
+  const cardIndex90 = htmlCard.indexOf("90");
+  const cardIndex50 = htmlCard.indexOf("50");
+  const cardIndex20 = htmlCard.indexOf("20");
+  assert.ok(cardIndex90 !== -1 && cardIndex50 !== -1 && cardIndex20 !== -1);
+  assert.ok(cardIndex90 < cardIndex50 && cardIndex50 < cardIndex20, "모바일 카드에서도 90 -> 50 -> 20 순서로 렌더되어야 함");
 });
