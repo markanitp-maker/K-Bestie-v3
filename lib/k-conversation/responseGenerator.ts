@@ -71,6 +71,58 @@ const ACTION_DIRECTIVES: Record<ConversationAction, string> = {
     "아이에게 가볍고 신나게 같이 놀자고 놀이를 제안해봐. 게임 규칙을 길게 설명하지 말고 '이런 놀이 어때?' 정도로 자연스럽게 권유하고, 아이에게 선택권을 줘(강요하지 마).",
 };
 
+/**
+ * 018 §3-12 — 공감 문구 다양화.
+ *
+ * 대표님 1개월 Production 전수조사에서 "그랬구나 / 좋았겠다" 가 계속 반복돼 아이가
+ * 성의 없다고 느낀 것이 지적됐다. 리액션 템플릿을 고르는 레거시 경로
+ * (lib/freechat/reactionEngine.ts)에는 pickAvoiding 이 있었지만, 실제 실행경로인
+ * LLM 생성에는 아무 억제도 없었다 — 프롬프트가 최근에 뭘 말했는지 모르니 매번 같은
+ * 말로 시작한다.
+ *
+ * 최근 케이 발화에서 실제로 쓴 공감 문구만 골라 "이번엔 이걸 쓰지 마" 로 넘긴다.
+ * 없는 문구를 미리 금지하지 않는다 — 쓸 수 있는 표현을 괜히 줄이면 오히려 딱딱해진다.
+ */
+const EMPATHY_OPENERS: readonly string[] = [
+  "그랬구나",
+  "그랬어",
+  "그렇구나",
+  "좋았겠다",
+  "재밌었겠다",
+  "재미있었겠다",
+  "신났겠다",
+  "힘들었겠다",
+  "속상했겠다",
+  "아쉬웠겠다",
+  "무서웠겠다",
+  "대단하다",
+  "멋지다",
+];
+
+const REACTION_DIVERSITY_HISTORY_DEPTH = 3;
+
+export function buildReactionDiversityFragment(
+  recentHistory: readonly ResponseGeneratorHistoryTurn[]
+): string {
+  const recentKTexts = recentHistory
+    .filter((turn) => turn.role === "k")
+    .slice(-REACTION_DIVERSITY_HISTORY_DEPTH)
+    .map((turn) => turn.text);
+  if (recentKTexts.length === 0) return "";
+
+  const used = EMPATHY_OPENERS.filter((phrase) =>
+    recentKTexts.some((text) => text.includes(phrase))
+  );
+  if (used.length === 0) return "";
+
+  return [
+    "[공감 표현 반복 금지]",
+    `- 최근에 이미 쓴 말이야: ${used.join(", ")}. 이번엔 쓰지 마.`,
+    "- 뭉뚱그린 공감 대신 아이가 방금 말한 낱말이나 행동을 짧게 되짚어서 반응해.",
+    "- 억지로 공감 문구를 만들지 말고, 할 말이 없으면 바로 아이 말에 이어서 얘기해.",
+  ].join("\n");
+}
+
 export function buildSystemInstruction(input: ResponseGeneratorInput): string {
   // 015 — 놀이 중에는 자유대화 기본 지침을 그대로 쓰면 안 된다.
   //
@@ -182,12 +234,17 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       ? "아이가 사실/지식형 질문을 했어. 아는 내용이면 또래 친구처럼 편하게 알려주고, 확실하지 않으면 지어내지 말고 모른다고 솔직하게 말하거나 같이 궁금해해."
       : "",
     modeFragment,
+    // 018 §3-12 — 최근에 쓴 공감 문구를 이번 턴에서 피한다.
+    buildReactionDiversityFragment(input.recentHistory),
     // 요청서 013 §3-10 — 관계 안전은 두 모드 공통 규칙이다.
     RELATIONSHIP_SAFETY_INSTRUCTION,
     input.adapterInstruction ? `[추가 지시]\n${input.adapterInstruction}` : "",
     "[출력 규칙]",
-    // 2026-08-13 대표 지시: 말풍선 가독성을 위해 전체 학년 80자 이내 상한 복원.
-    "- 자연스러운 반말 문장으로만 답해. 전체 길이는 반드시 80자 이내로 답해.",
+    // 2026-08-13 대표 지시: 말풍선 가독성을 위해 80자를 기본으로 둔다.
+    // 018 §3-13 — 다만 "반드시 80자"라고 못 박으면 모델이 문장을 끝내지 못한 채 멈추고,
+    // 뒤에서 하드컷이 걸려 문장 중간이 잘렸다. 기본은 짧게, 넘칠 땐 문장을 끝까지
+    // 마치도록 바꿨다(절단은 RESPONSE_SOFT/HARD_LIMIT_CHARS 가 문장 경계에서만 한다).
+    "- 자연스러운 반말 문장으로만 답해. 보통 80자 이내로 짧게, 꼭 필요할 때만 120자까지 늘려도 돼. 대신 문장은 반드시 끝까지 마쳐.",
     "- 물음표를 써도 되고 안 써도 돼 — Grade Persona의 question_style을 따라 자연스럽게 판단해.",
     input.relationshipFragment
       ? "- Scenario는 목표이지 강제 대본이 아니야. 아이가 지금 말한 감정·상황에 먼저 반응해."
