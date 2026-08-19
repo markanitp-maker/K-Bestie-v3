@@ -1017,8 +1017,34 @@ export default function ChatPage() {
             }} />
           </div>
 
-          {/* 요청서 011 — 오늘의 황금열쇠 상태. 대화를 시작하기 전에도 헤더 아래에서 바로 보인다. */}
-          <div className="pointer-events-none absolute left-0 right-0 top-[calc(58px+env(safe-area-inset-top)+6px)] z-40 flex justify-center">
+          {/* 요청서 011 — 오늘의 황금열쇠 상태.
+              2026-08-19 대표 지시로 상단 대화 영역에서 오른쪽 하단(마이크 옆)으로 옮겼다.
+              문구·아이콘·색상·카드 스타일·표시 조건은 그대로다 — 위치만 바뀐다.
+
+              [왜 마이크와 같은 줄이 아닌가]
+              카드가 오늘 상태까지 다 적어서 12px 글자로도 폭이 240px 가까이 된다.
+              375px 화면에서 오른쪽에 붙이면 왼쪽 끝이 120px 지점이라 가운데 마이크
+              (139~236px)와 겹친다. 자동/수동 토글(가운데 145px)과도 겹친다.
+              카드 스타일을 줄이지 않고 겹치지 않게 두려면 하단 컨트롤 묶음 바로 위가
+              가장 낮은 자리다. 그래서 그리드 컨테이너 기준 절대배치로 올려 둔다.
+
+              [bottom 계산]
+              입력영역 padding + 마이크 줄 높이 + 간격 + 토글 높이 + 여유 6px.
+              전부 아래 실제 렌더 코드에 쓰인 clamp 값을 그대로 옮긴 것이다.
+              텍스트 모드/키보드 열림에서는 토글·간격·마이크 줄이 렌더되지 않으므로
+              입력영역 padding 기준으로만 띄운다. env(safe-area-inset-bottom) 은
+              bottomSafeAreaInset 에 이미 들어 있어 PWA 에서 잘리지 않는다. */}
+          <div
+            className="pointer-events-none absolute z-40 flex justify-end"
+            style={{
+              right: "max(clamp(16px, calc(var(--frame-w,100vw)*0.05), 24px), env(safe-area-inset-right))",
+              bottom: mode === "text" || isKeyboardOpen
+                ? `calc(clamp(18px, 2.5dvh, 24px) + ${bottomSafeAreaInset} + clamp(52px, 7dvh, 60px))`
+                : `calc(clamp(54px, 8dvh, 66px) + ${bottomSafeAreaInset}`
+                  + ` + clamp(88px, calc(var(--frame-w,100vw)*0.13), 100px)`
+                  + ` + clamp(16px, 2.5dvh, 24px) + clamp(38px, 5dvh, 42px) + 6px)`,
+            }}
+          >
             <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
           </div>
 
