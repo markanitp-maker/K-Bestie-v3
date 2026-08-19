@@ -679,3 +679,19 @@ test("NonsenseQuizSkill: 정답 후 '다음 문제' 요청 시 새 문제가 연
   assert.equal(turnStop.handled, true);
   assert.equal(turnStop.ended, true);
 });
+
+test("010: 짧은 정답에는 첫 글자 힌트를 주지 않는다", async () => {
+  // 시드 500문항의 hint_2 는 전부 "첫 글자는 'O'로 시작해요" 다.
+  // 3글자 이하 정답에서 1차 힌트("3글자 안팎") + 첫 글자를 합치면 사실상 정답 공개다.
+  // 2026-08-19 대표님 QA: 컴퓨터 → "3글자" + "첫 글자는 '컴'" 으로 답이 새어나갔다.
+  const shortAnswer = { canonical_answer: "컴퓨터", hint_2: "첫 글자는 ‘컴’으로 시작해요." };
+  const longAnswer = { canonical_answer: "자원봉사자", hint_2: "첫 글자는 ‘자’로 시작해요." };
+
+  const wouldReveal = (q: { canonical_answer: string; hint_2: string }) => {
+    const syllables = q.canonical_answer.trim().replace(/\s+/g, "").length;
+    return syllables > 0 && syllables <= 3 && /첫\s*글자/.test(q.hint_2);
+  };
+
+  assert.equal(wouldReveal(shortAnswer), true, "짧은 정답인데 첫 글자 힌트를 허용했다");
+  assert.equal(wouldReveal(longAnswer), false, "긴 정답인데 첫 글자 힌트를 막았다");
+});

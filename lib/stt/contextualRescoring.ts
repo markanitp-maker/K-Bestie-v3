@@ -355,6 +355,21 @@ export function rescoreTranscript(
     return { text: raw, changed: false };
   }
 
+  // 010 — 아이 말이 이미 후보와 정확히 같으면 손대지 않는다.
+  //
+  // 발음 유사도만 보면 짧은 후보가 이길 수 있다. 2026-08-19 Dev QA 실측:
+  // "이름표"(사전에 있는 정상 단어)가 "이름"(점수 0.714)으로 바뀌어 끝말잇기가
+  // '름' 으로 넘어갔고 이어갈 낱말이 없어 K 가 바로 포기했다.
+  // 정확히 일치하는 후보가 있으면 그게 정답이다 — 교정할 것이 없다.
+  const normalizedRaw = raw.trim().replace(/\s+/g, "");
+  if (
+    validCandidates.some(
+      (candidate) => candidate.text.trim().replace(/\s+/g, "") === normalizedRaw
+    )
+  ) {
+    return { text: raw, changed: false };
+  }
+
   // 2. 어절(Token) 단위 위치 추적
   const tokenRegex = /\S+/g;
   const tokens: { text: string; start: number; end: number }[] = [];

@@ -6,6 +6,7 @@ import {
   type ResolveChildUtteranceResult,
 } from "./serverRescoring";
 import { checkSafetyPreflight } from "@/lib/k-conversation";
+import { rescoreTranscript } from "@/lib/stt/contextualRescoring";
 
 interface MockDbConfig {
   activeNonsense?: { current_question_id: string } | null;
@@ -489,4 +490,19 @@ test("097-13: 'false'·'1'·'' 같은 값은 켜진 것으로 본다 ('true' 계
       process.env.STT_RESCORING_DISABLED = originalEnv;
     }
   }
+});
+
+test("010: 원문이 이미 후보와 같으면 재해석하지 않는다", () => {
+  // 2026-08-19 Dev QA 실측: 아이가 "이름표"(사전에 있는 정상 단어)라고 했는데
+  // 재해석이 더 짧은 후보 "이름"으로 바꿨다. 그 결과 '름'으로 넘어가 K가 바로 포기했다.
+  // 아이 말이 이미 맞으면 손대지 않아야 한다.
+  const result = rescoreTranscript("이름표", [
+    { text: "이름", source: "word_chain" },
+    { text: "이름표", source: "word_chain" },
+    { text: "이불", source: "word_chain" },
+  ]);
+  // rescoreTranscript 자체가 정확 일치를 이기지 못할 수도 있으므로,
+  // 정확 일치 후보가 있으면 바뀌지 않거나 같은 값이어야 한다.
+  const finalText = result.changed ? result.text : "이름표";
+  assert.equal(finalText, "이름표", `정상 단어가 훼손됐다: ${result.text}`);
 });

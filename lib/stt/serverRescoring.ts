@@ -259,6 +259,20 @@ export async function resolveChildUtterance(
       return { text: original, raw: original, changed: false };
     }
 
+    // 010 — 원문이 이미 후보와 정확히 같으면 재해석하지 않는다.
+    //
+    // 2026-08-19 Dev QA 실측: 아이가 "이름표" 라고 했는데 재해석이 "이름" 으로 바꿨다.
+    // "이름표" 는 사전에 있는 정상 단어였는데도 발음 유사도 점수에서 더 짧은 후보가
+    // 이겼다. 그 결과 끝말잇기가 '름' 으로 넘어가 이어갈 낱말이 없어 K 가 바로 포기했다.
+    // 아이 말이 이미 맞는데 고쳐 쓰는 것은 교정이 아니라 훼손이다.
+    const normalizedOriginal = original.trim().replace(/\s+/g, "");
+    const originalIsExactCandidate = candidates.some(
+      (candidate) => candidate.text.trim().replace(/\s+/g, "") === normalizedOriginal
+    );
+    if (originalIsExactCandidate) {
+      return { text: original, raw: original, changed: false };
+    }
+
     // 발음 유사도 기반 결정론적 재해석 수행
     const rescoreResult: RescoreResult = rescoreTranscript(original, candidates);
     if (!rescoreResult.changed) {

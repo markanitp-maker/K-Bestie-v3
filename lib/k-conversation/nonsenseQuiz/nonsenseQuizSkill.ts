@@ -112,7 +112,19 @@ async function progressHintOrRevealAnswer(
   }
 
   // 2차 힌트 제공 가능 여부 확인 (1차가 없어서 레벨 0인 경우에도 2차 힌트가 있으면 2차로 건너뜀)
-  if (currentHintLevel < 2 && question.hint_2) {
+  //
+  // 010 — 짧은 정답에는 2차 힌트를 쓰지 않는다.
+  //
+  // 시드 500문항의 hint_2 는 전부 "첫 글자는 'O'로 시작해요" 형태다. 3글자 이하 정답에서는
+  // 1차 힌트("정답은 2글자 안팎")와 합치면 사실상 답을 알려주는 것이 된다
+  // (2026-08-19 대표님 QA: 컴퓨터 → "3글자" + "첫 글자는 '컴'").
+  // 맞히는 재미를 남기려면 여기서는 넘기고, 그래도 못 맞히면 정답을 알려주는 쪽이 낫다 —
+  // 반쯤 알려주고 맞혔다고 하는 것보다 정직하다.
+  const answerSyllables = (question.canonical_answer ?? "").trim().replace(/\s+/g, "").length;
+  const secondHintWouldRevealAnswer =
+    answerSyllables > 0 && answerSyllables <= 3 && /첫\s*글자/.test(question.hint_2 ?? "");
+
+  if (currentHintLevel < 2 && question.hint_2 && !secondHintWouldRevealAnswer) {
     await advanceHintLevel(db, activeSession.id, question.id, childId, 2);
     return {
       handled: true,
