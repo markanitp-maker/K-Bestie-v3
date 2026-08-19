@@ -243,6 +243,7 @@ export const respondToMissionTurn = async (input: {
     {
       childId: input.childId,
       mode: "MISSION",
+      turnId: input.currentTurnId,
     },
   );
   if (safetyOutput) {

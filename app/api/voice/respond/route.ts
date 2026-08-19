@@ -164,11 +164,13 @@ export async function POST(req: NextRequest) {
     let safetyResult = await checkSafetyPreflight(service, sessionId, childText, {
       childId: session.child_id,
       mode: "FREE_CHAT",
+      turnId: currentTurnId,
     });
     if (!safetyResult && resolution.changed) {
       safetyResult = await checkSafetyPreflight(service, sessionId, resolvedChildText, {
         childId: session.child_id,
         mode: "FREE_CHAT",
+        turnId: currentTurnId,
       });
     }
     if (safetyResult) {

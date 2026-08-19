@@ -336,6 +336,7 @@ export async function POST(req: NextRequest) {
       persistEvent: !safetyLockEnabled,
       childId: session.child_id,
       mode: "MISSION",
+      turnId: clientTurnId,
     });
 
     let engineOutput: EngineOutput;

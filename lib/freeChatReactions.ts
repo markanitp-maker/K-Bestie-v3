@@ -32,6 +32,8 @@ export interface ReactionResult {
 const SELF_HARM_IDIOM_EXCLUSIONS = [
   "배고파 죽겠", "배고파서 죽겠", "웃겨 죽겠", "심심해 죽겠", "힘들어 죽겠",
   "피곤해 죽겠", "귀찮아 죽겠", "더워 죽겠", "추워 죽겠", "좋아 죽겠", "좋아서 죽겠",
+  // 스포츠 용어. "자살"이 부분일치해 자해로 잡히던 것을 막는다(2026-08-19 실측).
+  "자살골", "자책골",
 ];
 
 const SELF_HARM_KEYWORDS = [

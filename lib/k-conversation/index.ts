@@ -14,6 +14,8 @@ import { selectAction } from "./actionSelector";
 import { extractGrowthCandidates } from "@/lib/growth/utteranceExtraction";
 import { recordGrowthCandidates } from "@/lib/growth/candidates";
 import { resolveGrowthQuestionOpportunity } from "@/lib/growth/questionOpportunity";
+import { buildUnclearAudioRecovery } from "@/lib/freechat/unclearAudioRecovery";
+import { decideSafetyDeferral } from "./shortUtteranceSafetyGate";
 import { extractUtteranceSignals, estimateSemanticGroup } from "./utteranceSignals";
 import { recordTopicUsage } from "./semanticTopicHistory";
 import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn } from "./responseGenerator";
@@ -79,6 +81,8 @@ export interface SafetyPreflightOptions {
   persistEvent?: boolean;
   childId?: string;
   mode?: EngineInput["mode"];
+  /** 이 턴의 식별자. 014 유예 게이트가 한 턴을 두 번 세지 않도록 쓴다. */
+  turnId?: string | null;
 }
 
 /** Safety가 걸렸을 때 safety_events를 기록한다 — Mission/자유대화 모두 동일하게 필요한
@@ -119,6 +123,17 @@ export async function checkSafetyPreflight(
 ): Promise<EngineOutput | null> {
   const safety = pickReaction(currentUtterance);
   if (!safety.flaggedForParent && safety.category !== "safety") return null;
+  // 014 — 낱말 하나에 곧바로 안전 응답을 내지 않는다. 명백한 위험 표현은 여기서 유예되지 않는다.
+  if (
+    decideSafetyDeferral({
+      sessionId,
+      text: currentUtterance,
+      subcategory: safety.safetySubcategory,
+      turnId: options.turnId,
+    }).defer
+  ) {
+    return null;
+  }
   if (safety.flaggedForParent && options.persistEvent !== false) {
     await logSafetyEvent(db, {
       childId: options.childId ?? "",
@@ -184,8 +199,18 @@ export async function respond(
   deps: RespondDependencies,
 ): Promise<EngineOutput> {
   // 1) Safety — 항상 최우선. 걸리면 Persona/Memory/Action 전부 스킵.
+  //
+  // 014 — 단, 낱말 하나(초성게임 답 같은)에는 곧바로 발동하지 않는다.
+  // 한 턴에서 preflight 와 여기가 각각 판정하지만, 같은 발화는 횟수를 한 번만 쓴다
+  // (shortUtteranceSafetyGate 의 lastDeferredText).
   const safety = pickReaction(input.currentUtterance);
-  if (safety.flaggedForParent || safety.category === "safety") {
+  const safetyDeferral = decideSafetyDeferral({
+    sessionId: input.sessionId,
+    text: input.currentUtterance,
+    subcategory: safety.safetySubcategory,
+    turnId: input.currentTurnId,
+  });
+  if ((safety.flaggedForParent || safety.category === "safety") && !safetyDeferral.defer) {
     if (input.sessionId) {
       await clearPendingPlayProposal(input.sessionId, deps.db);
     }
@@ -224,9 +249,16 @@ export async function respond(
   }
   if (utteranceCategory === "unclear_audio") {
     const recentKTexts = input.recentKTexts ?? [];
+    // 014 — 들린 게 있으면 "못 들었어" 대신 들은 대로 되묻는다.
+    // 케이가 "다시 말해줄래?"만 반복해 아이가 항의한 사고(2026-08-18)의 대응이다.
+    // 아무것도 안 들렸을 때만 기존 템플릿으로 떨어진다.
+    const recovery = buildUnclearAudioRecovery({
+      childUtterance: input.currentUtterance,
+      recentKTexts,
+    });
     const reflective = generateReflectiveReaction(input.currentUtterance, recentKTexts, { isLowConfidenceAsr });
     return {
-      text: reflective.text,
+      text: recovery.text ?? reflective.text,
       action: "JUST_LISTEN",
       category: "deterministic",
       tokenIn: 0,
