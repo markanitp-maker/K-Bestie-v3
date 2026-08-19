@@ -14,6 +14,7 @@ import { DICTIONARY_PART4 } from "./dictionary.part4";
 import { DICTIONARY_PART5 } from "./dictionary.part5";
 import { DICTIONARY_PART6 } from "./dictionary.part6";
 import { DICTIONARY_PART7 } from "./dictionary.part7";
+import { allowedNextInitials } from "./dueum";
 
 describe("WordChain DictionaryIndex", () => {
   it("WORD_CHAIN_DICTIONARY는 part1~part7 합본이며 각 Part 개수가 유지된다", () => {
@@ -27,7 +28,7 @@ describe("WordChain DictionaryIndex", () => {
     assert.equal(DICTIONARY_PART6.length, 60);
     // Part7 은 010 §3-3 "dictionary 전체 기준으로 빠진 기본어 정리" 잔여분이다.
     // 초등 일상어 80개를 표본 대조해 실제로 없던 것만 넣었다(중복 21개는 제외).
-    assert.equal(DICTIONARY_PART7.length, 16);
+    assert.equal(DICTIONARY_PART7.length, 15);
     const expected =
       DICTIONARY_PART1.length +
       DICTIONARY_PART2.length +
@@ -37,7 +38,7 @@ describe("WordChain DictionaryIndex", () => {
       DICTIONARY_PART6.length +
       DICTIONARY_PART7.length;
     assert.equal(WORD_CHAIN_DICTIONARY.length, expected);
-    assert.equal(WORD_CHAIN_DICTIONARY.length, 1516);
+    assert.equal(WORD_CHAIN_DICTIONARY.length, 1515);
   });
 
   it("015: 실사용에서 거절당한 기본어가 사전에 있다", () => {
@@ -96,3 +97,21 @@ describe("WordChain DictionaryIndex", () => {
     assert.equal(lookupWord("   "), null);
   });
 });
+
+  it("010 §3-3: 사전에 이어갈 말이 없는 단어(dead-end)를 넣지 않는다", () => {
+    // 리뷰 지적(2026-08-19): part7 에 "휴대폰" 을 넣었는데 끝음절 '폰' 으로 시작하는
+    // 단어가 0개였다. 아이가 그 단어를 내는 순간 케이가 바로 기권한다 — 화면에는
+    // 아이가 이긴 것처럼 나오지만 실제로는 게임이 끊긴 것이다.
+    //
+    // 사전 전체를 검사하지는 않는다. 기존 1500개에는 이미 dead-end 가 섞여 있을 수 있고
+    // 그것까지 손대는 것은 이 요청서 범위가 아니다. 새로 넣는 part 만 고정한다.
+    const deadEnds: string[] = [];
+    for (const entry of DICTIONARY_PART7) {
+      const lastSyllable = entry.word.slice(-1);
+      const hasNext = allowedNextInitials(lastSyllable).some(
+        (initial) => (BY_FIRST_SYLLABLE.get(initial)?.length ?? 0) > 0
+      );
+      if (!hasNext) deadEnds.push(entry.word);
+    }
+    assert.deepEqual(deadEnds, [], `이어갈 말이 없는 단어: ${deadEnds.join(", ")}`);
+  });

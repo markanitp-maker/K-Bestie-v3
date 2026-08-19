@@ -410,3 +410,19 @@ test("010 §3-8: 게임과 무관한 '먼저' 표현은 막지 않는다", async
     assert.equal(blocked, false, `정상 발화가 막힌다: ${text}`);
   }
 });
+
+test("010 §3-8: '시작해도 돼?' 처럼 되묻는 말은 막지 않는다", async () => {
+  const { hasUnauthorizedGameMove } = await import("../play/fakeGameplayDetector");
+  // 리뷰 지적(2026-08-19 MINOR): 음절 경계가 없어 "시작해" 가 "시작해도" 의 접두어로
+  // 걸렸다. 케이가 아이에게 양해를 구하는 말까지 막히면 대화가 어색해진다.
+  for (const text of [
+    "내가 먼저 시작해도 돼?",
+    "내가 먼저 시작하려고 했어",
+    "내가 먼저 시작하면 어때?",
+  ]) {
+    assert.equal(hasUnauthorizedGameMove(text), false, `정상 발화가 막힌다: ${text}`);
+  }
+  // 반대로 선언형은 계속 막아야 한다.
+  assert.equal(hasUnauthorizedGameMove("내가 먼저 시작할게"), true);
+  assert.equal(hasUnauthorizedGameMove("나 먼저 시작해!"), true);
+});

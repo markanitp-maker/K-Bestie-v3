@@ -27,7 +27,9 @@ export const DICTIONARY_PART7: readonly WordChainEntry[] = [
 
   // 집안일·기기
   { word: "빨래", difficulty: 1, category: "생활" },
-  { word: "휴대폰", difficulty: 2, category: "물건" },
+  // "휴대폰" 은 넣지 않는다 — 끝음절 '폰' 으로 시작하는 단어가 사전에 0개라
+  // 아이가 내는 순간 케이가 바로 기권한다(리뷰 지적, 2026-08-19). 이어갈 말이 없는
+  // 단어를 사전에 넣으면 아이가 이겼다는 화면을 보게 되지만 실제로는 게임이 끊긴 것이다.
 
   // 음식·주방
   { word: "부침개", difficulty: 2, category: "음식" },
