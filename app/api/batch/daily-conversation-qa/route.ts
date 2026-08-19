@@ -9,17 +9,37 @@ import { runDailyConversationQa } from "@/lib/dailyQa/runService";
 
 export const runtime = "nodejs";
 
+/** app/api/batch/v3/memory/worker/route.ts:9-18 의 배치 인증 패턴을 그대로 쓴다. */
+function authorized(req: Request): boolean {
+  const configured = [process.env.BATCH_SECRET, process.env.CRON_SECRET].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+  const header = req.headers.get("authorization") ?? "";
+  return configured.length > 0 && configured.some((secret) => header === `Bearer ${secret}`);
+}
+
+/**
+ * **Vercel Cron 은 GET 으로 부른다.** 2026-08-20 02:01 실측: 크론이 실제로 돌았는데
+ * `GET /api/batch/daily-conversation-qa` 였고, 이 라우트는 POST 만 있어서 Run 이
+ * 하나도 만들어지지 않았다(daily_conversation_qa_runs 0행).
+ *
+ * 기존 크론 라우트들(reconcile / report-notifications / mission-start)이 전부 GET 을
+ * 노출하고 있었는데, 나는 배치 워커(수동 호출용 POST) 패턴만 보고 옮겨서 이걸 놓쳤다.
+ *
+ * 인증은 POST 와 동일하다 — Vercel Cron 은 Authorization: Bearer $CRON_SECRET 을 보낸다.
+ */
+export async function GET(req: Request) {
+  return runCronBatch(req);
+}
+
+/** 관리자·수동 호출용. 동작은 GET 과 같다. */
 export async function POST(req: Request) {
+  return runCronBatch(req);
+}
+
+async function runCronBatch(req: Request) {
   try {
-    // app/api/batch/v3/memory/worker/route.ts:9-18 의 배치 인증 패턴을 그대로 적용
-    const configuredSecrets = [process.env.BATCH_SECRET, process.env.CRON_SECRET].filter(
-      (s): s is string => typeof s === "string" && s.trim().length > 0
-    );
-    const authHeader = req.headers.get("authorization") ?? "";
-    if (
-      configuredSecrets.length === 0 ||
-      !configuredSecrets.some((secret) => authHeader === `Bearer ${secret}`)
-    ) {
+    if (!authorized(req)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
