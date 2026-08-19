@@ -14,10 +14,11 @@ import { DICTIONARY_PART4 } from "./dictionary.part4";
 import { DICTIONARY_PART5 } from "./dictionary.part5";
 import { DICTIONARY_PART6 } from "./dictionary.part6";
 import { DICTIONARY_PART7 } from "./dictionary.part7";
+import { DICTIONARY_PART8 } from "./dictionary.part8";
 import { allowedNextInitials } from "./dueum";
 
 describe("WordChain DictionaryIndex", () => {
-  it("WORD_CHAIN_DICTIONARY는 part1~part7 합본이며 각 Part 개수가 유지된다", () => {
+  it("WORD_CHAIN_DICTIONARY는 part1~part8 합본이며 각 Part 개수가 유지된다", () => {
     assert.equal(DICTIONARY_PART1.length, 284);
     assert.equal(DICTIONARY_PART2.length, 380);
     assert.equal(DICTIONARY_PART3.length, 380);
@@ -29,6 +30,8 @@ describe("WordChain DictionaryIndex", () => {
     // Part7 은 010 §3-3 "dictionary 전체 기준으로 빠진 기본어 정리" 잔여분이다.
     // 초등 일상어 80개를 표본 대조해 실제로 없던 것만 넣었다(중복 21개는 제외).
     assert.equal(DICTIONARY_PART7.length, 15);
+    // Part8 은 얇은 음절 보강 및 실사용 거절어("전기", "전구", "전철", "전학" 등) 보완분이다.
+    assert.equal(DICTIONARY_PART8.length, 295);
     const expected =
       DICTIONARY_PART1.length +
       DICTIONARY_PART2.length +
@@ -36,9 +39,10 @@ describe("WordChain DictionaryIndex", () => {
       DICTIONARY_PART4.length +
       DICTIONARY_PART5.length +
       DICTIONARY_PART6.length +
-      DICTIONARY_PART7.length;
+      DICTIONARY_PART7.length +
+      DICTIONARY_PART8.length;
     assert.equal(WORD_CHAIN_DICTIONARY.length, expected);
-    assert.equal(WORD_CHAIN_DICTIONARY.length, 1515);
+    assert.equal(WORD_CHAIN_DICTIONARY.length, 1810);
   });
 
   it("015: 실사용에서 거절당한 기본어가 사전에 있다", () => {
@@ -106,7 +110,7 @@ describe("WordChain DictionaryIndex", () => {
     // 사전 전체를 검사하지는 않는다. 기존 1500개에는 이미 dead-end 가 섞여 있을 수 있고
     // 그것까지 손대는 것은 이 요청서 범위가 아니다. 새로 넣는 part 만 고정한다.
     const deadEnds: string[] = [];
-    for (const entry of DICTIONARY_PART7) {
+    for (const entry of [...DICTIONARY_PART7, ...DICTIONARY_PART8]) {
       const lastSyllable = entry.word.slice(-1);
       const hasNext = allowedNextInitials(lastSyllable).some(
         (initial) => (BY_FIRST_SYLLABLE.get(initial)?.length ?? 0) > 0

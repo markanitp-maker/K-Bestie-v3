@@ -1207,10 +1207,14 @@ export default function ChatPage() {
               // "표시 조건" 자체가 바뀌어 버리므로(대표 지시: 조건은 그대로),
               // 입력줄 바로 위에 오른쪽 정렬 한 줄로 둔다. 절대배치를 쓰지 않는다.
               <div className="w-full min-w-0 flex flex-col gap-2 box-border">
+              {/* 011 — 카드가 w-full 이므로 여기서는 폭을 제한한다. 텍스트 모드는 가로가
+                  넉넉해서 그냥 두면 입력줄만큼 늘어난다. 한 줄에 들어갈 만큼만 준다. */}
               <div className="flex justify-end min-w-0"
                 style={{ paddingRight: "max(16px, env(safe-area-inset-right))" }}
               >
-                <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
+                <div className="min-w-0 max-w-[240px]">
+                  <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
+                </div>
               </div>
               <div
                 className="w-full min-w-0 flex gap-2 box-border"
@@ -1336,10 +1340,14 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                {/* 오른쪽 칸 — 오늘의 황금열쇠. 문구·아이콘·색상·카드 디자인·표시 조건은
-                    그대로다. 칸 폭이 마이크 왼쪽 여백과 같으므로 카드가 마이크·키보드와
-                    구조적으로 겹칠 수 없다. 좁은 화면에서는 카드 안에서 줄바꿈된다. */}
-                <div className="justify-self-end min-w-0">
+                {/* 오른쪽 칸 — 오늘의 황금열쇠.
+                    011 — 카드가 칸 폭을 **다 쓰게** 한다. 예전에는 justify-self-end 라
+                    카드가 글자 폭으로 쪼그라들어 문구가 세로로 잘게 쪼개졌다.
+                    stretch 로 바꿔 실제 available width 를 넘겨주고, 카드 안에서만
+                    라벨/상태가 2줄로 쌓이게 했다.
+                    칸이 마이크 왼쪽 여백과 같은 1fr 이므로 마이크는 정중앙에 그대로 남고
+                    카드가 마이크·키보드와 겹칠 수 없다. */}
+                <div className="justify-self-stretch min-w-0">
                   <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
                 </div>
               </div>

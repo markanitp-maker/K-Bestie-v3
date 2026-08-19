@@ -23,11 +23,11 @@ export function DailyGoldenKeyStatus({ status, loading }: Props) {
       <div
         data-ui="freechat-daily-key-status"
         data-state="loading"
-        className="flex items-center gap-2 rounded-full bg-white/70 px-3.5 py-1.5 shadow-sm backdrop-blur-md"
+        className="flex w-full min-w-0 items-center gap-2 rounded-2xl bg-white/70 px-3 py-1.5 shadow-sm backdrop-blur-md"
         aria-hidden="true"
       >
-        <span className="text-[15px]">🔑</span>
-        <span className="h-[13px] w-[104px] animate-pulse rounded-full bg-black/10" />
+        <span className="shrink-0 text-[15px]">🔑</span>
+        <span className="h-[13px] min-w-0 flex-1 animate-pulse rounded-full bg-black/10" />
       </div>
     );
   }
@@ -37,20 +37,34 @@ export function DailyGoldenKeyStatus({ status, loading }: Props) {
 
   const earned = status.earnedToday;
 
+  // 011 — 하단 오른쪽 칸에서 문구가 세로로 잘게 쪼개지던 문제.
+  //
+  // 예전에는 세 요소(🔑 / 라벨 / 상태)를 한 줄 flex 로 늘어놓았다. 칸이 좁아지면
+  // 세 요소가 각각 따로 줄바꿈돼 카드가 세로로 길쭉해졌다(대표님 QA: "여러 줄로 세로
+  // 쪼개져 잘못된 UI").
+  //
+  // 이제 아이콘 한 칸 + 글자 블록 한 칸으로 나누고, 글자 블록 안에서만 라벨/상태가
+  // 위아래로 쌓인다. 그래서 최악의 경우에도 2줄이다.
+  // 글자 크기는 줄이지 않았다(지시서 금지). `break-keep` 으로 한글 낱말이 중간에서
+  // 쪼개지지 않게 한다.
   return (
     <div
       data-ui="freechat-daily-key-status"
       data-state={earned ? "earned" : "not-earned"}
-      className="flex items-center gap-2 rounded-full bg-white/80 px-3.5 py-1.5 shadow-sm backdrop-blur-md"
+      className="flex w-full min-w-0 items-center gap-2 rounded-2xl bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur-md"
     >
-      <span className="text-[15px]" aria-hidden="true">
+      <span className="shrink-0 text-[15px]" aria-hidden="true">
         🔑
       </span>
-      <span className="text-[12px] font-bold text-[var(--color-k-navy)]">오늘의 황금열쇠</span>
-      <span
-        className={`text-[12px] font-bold ${earned ? "text-[#0E8A4F]" : "text-[#6B7280]"}`}
-      >
-        {earned ? "오늘 받았어! ✓" : "아직 안 받았어"}
+      <span className="flex min-w-0 flex-col leading-tight">
+        <span className="text-[12px] font-bold break-keep text-[var(--color-k-navy)]">
+          오늘의 황금열쇠
+        </span>
+        <span
+          className={`text-[12px] font-bold break-keep ${earned ? "text-[#0E8A4F]" : "text-[#6B7280]"}`}
+        >
+          {earned ? "오늘 받았어! ✓" : "아직 안 받았어"}
+        </span>
       </span>
     </div>
   );

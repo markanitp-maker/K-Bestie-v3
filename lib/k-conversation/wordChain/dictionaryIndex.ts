@@ -5,6 +5,7 @@ import { DICTIONARY_PART4 } from "./dictionary.part4";
 import { DICTIONARY_PART5 } from "./dictionary.part5";
 import { DICTIONARY_PART6 } from "./dictionary.part6";
 import { DICTIONARY_PART7 } from "./dictionary.part7";
+import { DICTIONARY_PART8 } from "./dictionary.part8";
 import {
   DerivedWordChainEntry,
   WordChainEntry,
@@ -26,6 +27,7 @@ const rawCombined: readonly WordChainEntry[] = [
   ...DICTIONARY_PART5,
   ...DICTIONARY_PART6,
   ...DICTIONARY_PART7,
+  ...DICTIONARY_PART8,
 ];
 
 // 파생 엔트리 목록 (정규화, 첫음절, 끝음절 포함)

@@ -810,7 +810,7 @@ export async function respond(
           blockedKinds,
           blockedPreview: finalText.slice(0, 60),
         });
-        finalText = pickFakeGameplayRecoveryText(input.recentKTexts ?? []);
+        finalText = pickFakeGameplayRecoveryText(input.recentKTexts ?? [], hasActivePlaySession);
       }
     }
 
@@ -831,7 +831,7 @@ export async function respond(
         handledPlaySkillId,
         blockedPreview: finalText.slice(0, 60),
       });
-      finalText = pickFakeGameplayRecoveryText(input.recentKTexts ?? []);
+      finalText = pickFakeGameplayRecoveryText(input.recentKTexts ?? [], hasActivePlaySession);
     }
   }
 

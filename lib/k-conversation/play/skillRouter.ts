@@ -114,6 +114,35 @@ export async function routePlaySkillTurn(
       return { handled: false };
     }
 
+    // 010 대표님 QA 실측(2026-08-20 00:11~00:12): 아이가 "다른놀이", "다른 놀이 하라고" 를
+    // 세 번 말했는데 케이가 계속 끝말잇기를 밀어붙였다. 두 이유가 겹쳐 있었다 —
+    //   1) "다른놀이" 가 어떤 신호에도 안 걸렸다(신호는 utteranceSignals 에서 고쳤다)
+    //   2) 신호가 잡혀도 활성 세션의 handleTurn 이 먼저 돌아 그 발화를 낱말로 처리했다
+    //      ("놀이" 라는 낱말 때문에 화제 전환으로도 안 잡힌다)
+    //
+    // 지금 하는 놀이를 바꾸자는 요청은 **하던 놀이를 끝내는 신호**다. 명시적 중단과 같은
+    // 자리에서 처리한다. 다만 그만두자는 것이 아니라 다른 놀이를 하자는 것이므로
+    // 세션만 닫고 제안 경로로 흘려보낸다(아래 5번에서 놀이 목록을 물어본다).
+    const wantsDifferentPlay = Boolean(signals?.hasPlayRequestWithoutTarget) && Boolean(activeSkill);
+    if (wantsDifferentPlay && activeSkill) {
+      try {
+        await activeSkill.end({
+          db,
+          childId,
+          chatSessionId,
+          reason: "SWITCH_REQUESTED",
+        });
+      } catch (endError) {
+        console.error(
+          `[skillRouter] Failed to end active skill ${activeSkill.id} on switch request:`,
+          endError
+        );
+      }
+      await clearPendingPlayProposal(chatSessionId, db);
+      // 어떤 놀이를 할지 아이가 고르게 한다. 케이가 임의로 하나를 시작하지 않는다.
+      return { handled: false };
+    }
+
     if (hasNegativeEmotion) {
       // 제안은 거둔다 — 기분이 안 좋은 아이에게 새 놀이를 밀어넣지 않는다.
       // 하던 놀이는 그대로 둔다.

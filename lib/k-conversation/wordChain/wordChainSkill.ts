@@ -69,21 +69,48 @@ export function selectInitialKWord(
   seed?: string,
   excludeWords: readonly string[] = []
 ): DerivedWordChainEntry {
-  const eligible = WORD_CHAIN_DICTIONARY.filter((entry) => {
-    if (entry.difficulty < minDifficulty || entry.difficulty > maxDifficulty) {
-      return false;
+  // 010 대표님 QA(2026-08-20 00:10) — 케이가 첫 단어로 "김치전" 을 냈고 아이가
+  // "전기" 를 냈는데 거절당했다. 아이는 "단어도 몰라? 개판이네" 라고 했다.
+  //
+  // 원인이 둘이었다:
+  //   1) 이어갈 단어를 셀 때 `BY_FIRST_SYLLABLE.get(lastSyllable)` 만 봤다 —
+  //      두음법칙 대체 초성(예: 락 → 낙)을 빼먹어 실제보다 적게 센다.
+  //   2) 임계값이 3이었다. '전' 으로 시작하는 사전 단어는 4개(전화·전화기·전선·전등)라
+  //      통과했지만, 아이가 자연스럽게 떠올리는 말(전기·전구·전철)은 그 4개에 없다.
+  //      후보가 몇 개뿐인 음절로 넘기면 아이 말이 계속 거절당한다.
+  //
+  // 그래서 두음법칙을 반영해 세고, **아이 학년에 맞는** 후속 단어 수로 문턱을 둔다.
+  // 문턱을 못 넘으면 단계적으로 낮춘다 — 시작 단어를 못 고르는 것이 더 나쁘다.
+  const countFollowUps = (entry: DerivedWordChainEntry, gradeOnly: boolean): number => {
+    let count = 0;
+    for (const initial of allowedNextInitials(entry.lastSyllable)) {
+      for (const followUp of BY_FIRST_SYLLABLE.get(initial) ?? []) {
+        if (followUp.normalizedWord === entry.normalizedWord) continue;
+        if (gradeOnly && (followUp.difficulty < minDifficulty || followUp.difficulty > maxDifficulty)) {
+          continue;
+        }
+        count += 1;
+      }
     }
-    if (entry.normalizedWord.length < 2) return false;
-    const followUps = BY_FIRST_SYLLABLE.get(entry.lastSyllable) ?? [];
-    return followUps.length >= 3;
-  });
+    return count;
+  };
 
+  const inGrade = WORD_CHAIN_DICTIONARY.filter(
+    (entry) =>
+      entry.difficulty >= minDifficulty &&
+      entry.difficulty <= maxDifficulty &&
+      entry.normalizedWord.length >= 2
+  );
+
+  // 넉넉한 순서로 시도한다: 학년 맞춤 6개 이상 → 학년 맞춤 3개 이상 → 사전 전체 3개 이상.
   const pool =
-    eligible.length > 0
-      ? eligible
-      : WORD_CHAIN_DICTIONARY.filter(
-          (e) => e.difficulty >= minDifficulty && e.difficulty <= maxDifficulty
-        );
+    inGrade.filter((entry) => countFollowUps(entry, true) >= 6).length > 0
+      ? inGrade.filter((entry) => countFollowUps(entry, true) >= 6)
+      : inGrade.filter((entry) => countFollowUps(entry, true) >= 3).length > 0
+        ? inGrade.filter((entry) => countFollowUps(entry, true) >= 3)
+        : inGrade.filter((entry) => countFollowUps(entry, false) >= 3).length > 0
+          ? inGrade.filter((entry) => countFollowUps(entry, false) >= 3)
+          : inGrade;
 
   // 이미 첫 단어로 써 본 낱말을 뺀다. 전부 빠져 후보가 0이 되면 제외를 포기한다 —
   // 단어가 겹치는 것이 게임을 못 하는 것보다 낫다.

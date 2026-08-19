@@ -64,8 +64,14 @@ test("recoverGameCommand: 박말똥 실제 발화 복구 케이스", () => {
   // 1) "강 호성께 전화해 볼까" -> "호성"이 "초성"과 유사하여 CHOSUNG 복구
   assert.equal(recoverGameCommand("강 호성께 전화해 볼까"), "CHOSUNG");
 
-  // 2) "키즈 해 보라고" -> "키즈"가 "퀴즈"와 유사하여 CHOSUNG 복구
-  assert.equal(recoverGameCommand("키즈 해 보라고"), "CHOSUNG");
+  // 2) "키즈 해 보라고" -> "키즈"가 "퀴즈"와 유사하여 복구된다.
+  //
+  // 도착지를 CHOSUNG 에서 NONSENSE_QUIZ 로 바꿨다(2026-08-20). 원래 단정은 "퀴즈 ≈ 초성퀴즈"
+  // 라는 가정이었는데, 대표님 QA 에서 그 가정이 틀렸다는 실측이 나왔다 —
+  // 아이가 "넌센스 퀴즈" 라고 했고 STT 가 "스퀴즈 봐" 로 흘렸는데 초성게임이 시작돼
+  // "넌센스 퀴즈라 그랬지 초성 게임 하라 그랬냐" 는 지적을 받았다(세션 7cde49ed 00:12).
+  // "퀴즈" 라고 불리는 놀이는 넌센스 퀴즈다. 초성게임은 "초성게임" 으로 부른다.
+  assert.equal(recoverGameCommand("키즈 해 보라고"), "NONSENSE_QUIZ");
 
   // 3) "초성 퀴즈 하잖아" -> CHOSUNG 복구
   assert.equal(recoverGameCommand("초성 퀴즈 하잖아"), "CHOSUNG");
@@ -126,6 +132,22 @@ test("오탐 방지: 실제 낱말이 게임 명령으로 복구되지 않는다
 
 test("놀이 맥락이 있으면 2음절 표현도 복구된다", () => {
   assert.equal(recoverGameCommand("강 호성께 전화해 볼까"), "CHOSUNG");
-  assert.equal(recoverGameCommand("키즈 해 보라고"), "CHOSUNG");
   assert.equal(recoverGameCommand("호성 게임 하자"), "CHOSUNG");
+  // "퀴즈" 계열은 넌센스로 간다(위 주석의 실측 근거 참고).
+  assert.equal(recoverGameCommand("키즈 해 보라고"), "NONSENSE_QUIZ");
+});
+
+test("010: 잘린 넌센스 발화가 초성게임으로 잘못 라우팅되지 않는다", () => {
+  // 대표님 QA 실측(2026-08-20 00:12): "넌센스 퀴즈" 가 "스퀴즈 봐" 로 들어와
+  // 초성게임이 시작됐다. 아이가 곧바로 지적했다.
+  for (const text of ["스퀴즈 봐", "스퀴즈", "센스 퀴즈", "넌센스퀴", "퀴즈 하자"]) {
+    assert.equal(recoverGameCommand(text), "NONSENSE_QUIZ", `잘못 라우팅된다: ${text}`);
+  }
+  // 초성은 그대로 초성으로 가야 한다.
+  for (const text of ["초성게임 하자", "초성 퀴즈 하자", "ㅊㅅ게임"]) {
+    assert.equal(recoverGameCommand(text), "CHOSUNG", `초성이 안 잡힌다: ${text}`);
+  }
+  // 놀이와 무관한 말은 복구하지 않는다.
+  assert.equal(recoverGameCommand("키즈카페 갔어"), null);
+  assert.equal(recoverGameCommand("조성진 피아노 들었어"), null);
 });

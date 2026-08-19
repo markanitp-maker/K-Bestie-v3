@@ -515,3 +515,35 @@ test("018 §3-11: 케이가 대상이 아닌 취향 얘기는 애착 표현이 �
     );
   }
 });
+
+test('010: "몰라"를 힌트 요청으로 잡는다', () => {
+  // 대표님 QA 실측(2026-08-20 00:08): 초성게임 중 "몰라" 가 어떤 신호에도 안 걸려
+  // 스킬이 턴을 처리하지 못했고, LLM 이 게임을 흉내내다 가드에 막혀 놀이 목록으로
+  // 리셋됐다. "모르겠" 은 있었는데 아이가 더 많이 쓰는 "몰라" 가 빠져 있었다.
+  for (const utterance of ["몰라", "몰라요", "잘 모르겠는데", "모르겠어"]) {
+    assert.equal(
+      extractUtteranceSignals(utterance).hasChosungHintRequest,
+      true,
+      `힌트 요청을 놓친다: ${utterance}`
+    );
+  }
+  // 힌트를 거부하는 말은 잡지 않는다.
+  for (const utterance of ["힌트 필요 없어", "안 어려워"]) {
+    assert.equal(extractUtteranceSignals(utterance).hasChosungHintRequest, false, utterance);
+  }
+});
+
+test("010: 놀이를 바꾸자는 요청을 신호로 잡는다", () => {
+  // 대표님 QA 실측(2026-08-20 00:11~00:12): "다른놀이", "다른 놀이 하라고" 를 세 번
+  // 말했는데 어떤 신호에도 안 걸려 케이가 계속 끝말잇기를 밀어붙였다.
+  for (const utterance of ["다른놀이", "다른 놀이", "다른 놀이 하라고", "다른 게임", "놀이 바꿔줘"]) {
+    assert.equal(
+      extractUtteranceSignals(utterance).hasPlayRequestWithoutTarget,
+      true,
+      `놀이 변경 요청을 놓친다: ${utterance}`
+    );
+  }
+  // 특정 게임을 지목한 말은 그 게임 신호로 가야 한다(미지정 요청이 아니다).
+  assert.equal(extractUtteranceSignals("끝말잇기 하자").hasPlayRequestWithoutTarget, false);
+  assert.equal(extractUtteranceSignals("다른 얘기 하자").hasPlayRequestWithoutTarget, false);
+});

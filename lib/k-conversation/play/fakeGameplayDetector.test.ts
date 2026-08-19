@@ -68,3 +68,23 @@ test("빈 값·비문자열을 안전하게 처리한다", () => {
   assert.equal(detectFakeGameplay(null as unknown as string).isFake, false);
   assert.equal(detectFakeGameplay(undefined as unknown as string).isFake, false);
 });
+
+test("010: 놀이 중에 가드가 걸리면 메뉴로 되돌리지 않는다", async () => {
+  const { pickFakeGameplayRecoveryText } = await import("./fakeGameplayDetector");
+  // 대표님 QA 실측(2026-08-20 00:08): 초성게임 중 아이가 "몰라" 했는데 케이가
+  // "무슨 놀이 할지 네가 골라줄래?" 라고 답해 게임이 통째로 날아갔다.
+  const inSession = pickFakeGameplayRecoveryText([], true);
+  assert.doesNotMatch(inSession, /무슨 놀이|어떤 놀이|하고 싶은 놀이|중에 뭐 할래/);
+  assert.match(inSession, /계속|이어서/);
+
+  // 세션이 없을 때는 무엇을 할지 되묻는 것이 맞다.
+  const noSession = pickFakeGameplayRecoveryText([], false);
+  assert.match(noSession, /놀이/);
+});
+
+test("010: 놀이 중 복구 문구도 직전에 쓴 것을 피한다", async () => {
+  const { pickFakeGameplayRecoveryText } = await import("./fakeGameplayDetector");
+  const first = pickFakeGameplayRecoveryText([], true);
+  const second = pickFakeGameplayRecoveryText([first], true);
+  assert.notEqual(second, first);
+});

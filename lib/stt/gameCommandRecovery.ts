@@ -33,7 +33,6 @@ const TARGET_COMMANDS: readonly CommandTarget[] = [
   // 2음절 단독 표현은 실제 낱말과 너무 가깝다("초성"↔"조성진", "퀴즈"↔"키즈카페").
   // 그래서 문장에 놀이 맥락이 함께 있을 때만 인정한다(needsContext).
   { target: "초성", command: "CHOSUNG", needsContext: true },
-  { target: "퀴즈", command: "CHOSUNG", needsContext: true },
 
   // WORD_CHAIN 대상 표현
   { target: "끝말잇기", command: "WORD_CHAIN" },
@@ -47,6 +46,16 @@ const TARGET_COMMANDS: readonly CommandTarget[] = [
   { target: "수수께끼놀이", command: "NONSENSE_QUIZ" },
   { target: "수수께끼", command: "NONSENSE_QUIZ", needsContext: true },
   { target: "넌센스", command: "NONSENSE_QUIZ", needsContext: true },
+  // 010 대표님 QA 실측(2026-08-20 00:12): 아이가 "넌센스 퀴즈" 라고 했는데 STT 가
+  // 앞을 흘려 "스퀴즈 봐" 로 들어왔다. 그런데 "퀴즈" 단독이 CHOSUNG 으로 매핑돼 있어서
+  // **초성게임이 시작됐다.** 아이가 "넌센스 퀴즈라 그랬지 초성 게임 하라 그랬냐" 고 지적했다.
+  //
+  // "퀴즈" 라고 불리는 놀이는 넌센스 퀴즈다. 초성게임은 "초성게임" 으로 부른다.
+  // 그래서 퀴즈 계열 단독·잘림 표현은 전부 넌센스로 돌린다.
+  { target: "넌센스퀴", command: "NONSENSE_QUIZ" },
+  { target: "센스퀴즈", command: "NONSENSE_QUIZ" },
+  { target: "스퀴즈", command: "NONSENSE_QUIZ" },
+  { target: "퀴즈", command: "NONSENSE_QUIZ", needsContext: true },
 ] as const;
 
 /**

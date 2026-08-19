@@ -223,21 +223,33 @@ export async function finishQuestionRound(
     console.error("[finishQuestionRound] history update error:", err);
   }
 
-  // 2. 세션 상태 종료 처리
-  if (endSession) {
-    try {
-      await db
-        .from("nonsense_game_sessions")
-        .update({
-          state: "ROUND_RESULT",
-          ended_at: nowStr,
-          updated_at: nowStr,
-        })
-        .eq("id", sessionId)
-        .eq("child_id", childId);
-    } catch (err) {
-      console.error("[finishQuestionRound] session update error:", err);
-    }
+  // 2. 세션 상태 전이
+  //
+  // 010 대표님 QA 실측(2026-08-20 00:13, 세션 7cde49ed): 아이가 "그림자" 로 정답을
+  // 맞혔고 케이도 칭찬했는데, 그 뒤 턴에서 **같은 문제를 다시 채점했다** —
+  // 00:13:21 힌트, 00:13:57 정답 공개(outcome 이 ANSWERED_CORRECT 에서
+  // ANSWERED_INCORRECT 로 덮여 쓰였다). 아이가 "그림자 맞췄는데 또 힌트가 앉아있냐" 고 했다.
+  //
+  // 원인: state 전이가 `endSession` 안에 묶여 있었다. 정답·정답공개 경로는 세션을
+  // 살려 두려고 endSession=false 로 부르는데, 그러면 state 가 그대로 남아 다음 턴이
+  // 또 답변 판정 경로로 들어간다(3-C 의 ROUND_RESULT 분기를 타지 못한다).
+  //
+  // 라운드가 끝난 것과 세션이 끝난 것은 다르다. state 는 **항상** 넘기고,
+  // ended_at 은 세션을 정말 닫을 때만 찍는다.
+  try {
+    const sessionUpdate: Record<string, unknown> = {
+      state: "ROUND_RESULT",
+      updated_at: nowStr,
+    };
+    if (endSession) sessionUpdate.ended_at = nowStr;
+
+    await db
+      .from("nonsense_game_sessions")
+      .update(sessionUpdate)
+      .eq("id", sessionId)
+      .eq("child_id", childId);
+  } catch (err) {
+    console.error("[finishQuestionRound] session update error:", err);
   }
 }
 

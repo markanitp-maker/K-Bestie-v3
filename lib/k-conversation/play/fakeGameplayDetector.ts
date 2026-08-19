@@ -207,10 +207,36 @@ const FAKE_GAMEPLAY_RECOVERY_LINES: readonly string[] = [
   "어라, 내가 잘못 짚었다. 하고 싶은 놀이 말해줘!",
 ];
 
-export function pickFakeGameplayRecoveryText(recentKTexts: readonly string[] = []): string {
+/**
+ * 010 대표님 QA 실측(2026-08-20 00:08) — **놀이 중에는 메뉴로 되돌리지 않는다.**
+ *
+ * 아이가 초성게임 중에 "몰라" 라고 했는데, 케이가
+ *   "앗, 내가 혼자 앞서갔네. 무슨 놀이 할지 네가 골라줄래?"
+ * 라고 답했다. 하던 게임이 있는데 놀이 목록으로 리셋한 것이다. 아이 입장에서는
+ * 게임이 통째로 날아간다 — 위 문장들은 전부 "무슨 놀이 할까" 를 되묻는 형태다.
+ *
+ * 가드가 지어낸 게임 진행을 막는 것은 맞다. 하지만 막은 자리에 채울 말은
+ * **세션이 살아 있는지**에 따라 달라야 한다. 살아 있으면 하던 놀이로 돌아오게 한다.
+ */
+const FAKE_GAMEPLAY_IN_SESSION_LINES: readonly string[] = [
+  "앗, 내가 잠깐 헷갈렸어. 우리 하던 놀이 계속하자!",
+  "미안, 내가 순서를 놓쳤네. 이어서 하자!",
+  "어라, 내가 잘못 짚었다. 다시 이어서 해보자!",
+];
+
+/**
+ * @param hasActivePlaySession 하던 놀이가 살아 있는지. true 면 메뉴로 되돌리지 않는다.
+ */
+export function pickFakeGameplayRecoveryText(
+  recentKTexts: readonly string[] = [],
+  hasActivePlaySession = false,
+): string {
+  const lines = hasActivePlaySession
+    ? FAKE_GAMEPLAY_IN_SESSION_LINES
+    : FAKE_GAMEPLAY_RECOVERY_LINES;
   const recent = new Set(recentKTexts.map((text) => text.trim()));
-  const unused = FAKE_GAMEPLAY_RECOVERY_LINES.filter((line) => !recent.has(line));
-  const pool = unused.length > 0 ? unused : FAKE_GAMEPLAY_RECOVERY_LINES;
+  const unused = lines.filter((line) => !recent.has(line));
+  const pool = unused.length > 0 ? unused : lines;
   // 최근에 안 쓴 것 중 첫 번째. 난수를 쓰지 않아 같은 턴을 재시도해도 같은 문장이 나온다.
   return pool[0];
 }
