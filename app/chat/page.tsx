@@ -900,6 +900,19 @@ export default function ChatPage() {
 
   const { isKeyboardOpen, conversationHeight, conversationContainerStyle, bottomSafeAreaInset } = useKeyboardConversationViewport();
 
+  // 013 후속(2026-08-20 대표님 실사용) — "케이놀이 중에 케이가 계속 안 보인다".
+  //
+  // 상태 패널은 mode === "text" 이면 마스코트 대신 상태 알약 + "채팅창 닫기" 를 그렸다.
+  // 놀이 중에는 키보드를 강제하므로 mode 가 항상 "text" 가 되고, 013 §3-6 이 그
+  // "채팅창 닫기" 까지 숨겼다. 그래서 놀이 내내 마스코트도 버튼도 없는 빈 칸이 됐다.
+  // 케이랑 놀는 중에 케이가 안 보이는 것은 말이 안 된다.
+  //
+  // 그래서 놀이 중에는 마스코트를 그린다. 단 소프트 키보드가 올라와 있으면 세로
+  // 공간이 68~84px 밖에 없어 165px 마스코트가 들어가지 못하므로, 그때는 기존처럼
+  // 압축된 상태 알약을 유지한다(기기 제약이다).
+  // "채팅창 닫기" 는 여전히 놀이 중에 숨긴다 — 013 §3-6 의 요구는 그대로다.
+  const showTextModeOverlay = mode === "text" && (isKeyboardOpen || !isPlayActive);
+
   // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
   // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
   // 화면이 튀는 현상(jitter)이 발생할 수 있습니다.
@@ -1167,9 +1180,9 @@ export default function ChatPage() {
           {(mode === "text" || !isKeyboardOpen) && (
           <div
             data-ui="conversation-status-panel"
-            className={`relative z-10 w-full shrink-0 transition-all duration-300 flex items-center justify-center ${mode === "text" && isKeyboardOpen ? "h-[clamp(68px,10dvh,84px)]" : "h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)]"}`}
+            className={`relative z-10 w-full shrink-0 transition-all duration-300 flex items-center justify-center ${showTextModeOverlay && isKeyboardOpen ? "h-[clamp(68px,10dvh,84px)]" : "h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)]"}`}
           >
-            {mode === "text" ? (
+            {showTextModeOverlay ? (
               /* Text overlay retains K's latest state above the close CTA. */
               <div className={`relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300 ${isKeyboardOpen ? "gap-0" : "gap-4"}`}>
                 <div
@@ -1196,7 +1209,8 @@ export default function ChatPage() {
                 )}
               </div>
             ) : (
-              /* mode !== "text": 케이 캐릭터 & Platform & 상태 카드 정상 노출 */
+              /* 케이 캐릭터 & Platform & 상태 카드 정상 노출.
+                 013 이후로는 "음성 모드" 뿐 아니라 "놀이 중(키보드 열림 전)" 도 여기 온다. */
               <>
                 {/* Mascot & Platform - Centered strictly */}
                 <div className="free-chat-mascot-group absolute inset-0 flex flex-col items-center justify-end pointer-events-none">
@@ -1316,7 +1330,9 @@ export default function ChatPage() {
               <div className="flex justify-end min-w-0"
                 style={{ paddingRight: "max(16px, env(safe-area-inset-right))" }}
               >
-                <div className="min-w-0 max-w-[240px]">
+                {/* 014 — 카드가 세로 배치가 되면서 내용 폭이 줄었다. 240px 로 두면
+                    텍스트 모드에서만 카드가 음성 모드보다 두 배 넓어 보인다. */}
+                <div className="min-w-0 max-w-[140px]">
                   <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
                 </div>
               </div>

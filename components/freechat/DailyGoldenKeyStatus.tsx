@@ -23,11 +23,16 @@ export function DailyGoldenKeyStatus({ status, loading }: Props) {
       <div
         data-ui="freechat-daily-key-status"
         data-state="loading"
-        className="flex w-full min-w-0 items-center gap-2 rounded-2xl bg-white/70 px-3 py-1.5 shadow-sm backdrop-blur-md"
+        className="flex w-full min-w-0 flex-col items-center gap-1 rounded-2xl bg-white/70 px-3 py-1.5 shadow-sm backdrop-blur-md"
         aria-hidden="true"
       >
         <span className="shrink-0 text-[15px]">🔑</span>
-        <span className="h-[13px] min-w-0 flex-1 animate-pulse rounded-full bg-black/10" />
+        {/* 014 리뷰 MINOR — 실제 카드의 글자 블록은 2줄이다. 스켈레톤이 1줄이면
+            조회가 끝나는 순간 카드 높이가 약 15px 튄다. 줄 수를 맞춘다. */}
+        <span className="flex w-full min-w-0 flex-col items-center gap-[2px] leading-tight">
+          <span className="h-[13px] w-full animate-pulse rounded-full bg-black/10" />
+          <span className="h-[13px] w-3/4 animate-pulse rounded-full bg-black/10" />
+        </span>
       </div>
     );
   }
@@ -43,20 +48,23 @@ export function DailyGoldenKeyStatus({ status, loading }: Props) {
   // 세 요소가 각각 따로 줄바꿈돼 카드가 세로로 길쭉해졌다(대표님 QA: "여러 줄로 세로
   // 쪼개져 잘못된 UI").
   //
-  // 이제 아이콘 한 칸 + 글자 블록 한 칸으로 나누고, 글자 블록 안에서만 라벨/상태가
-  // 위아래로 쌓인다. 그래서 최악의 경우에도 2줄이다.
-  // 글자 크기는 줄이지 않았다(지시서 금지). `break-keep` 으로 한글 낱말이 중간에서
-  // 쪼개지지 않게 한다.
+  // 그래서 글자를 하나의 블록으로 묶었다. 라벨과 상태는 그 안에서만 쌓이므로
+  // 최악의 경우에도 2줄이다. 글자 크기는 줄이지 않는다(지시서 금지).
+  // `break-keep` 으로 한글 낱말이 중간에서 쪼개지지 않게 한다.
+  //
+  // 014 — 아이콘 위치를 왼쪽에서 위로 올린다(requests/a02.png 오른쪽 시안).
+  // 아이콘 한 칸 + 글자 블록 한 칸이라는 구조는 그대로 두고 방향만 세로로 바꾼다.
+  // 글자 블록이 여전히 하나이므로 011 에서 고친 "잘게 쪼개짐" 은 다시 생기지 않는다.
   return (
     <div
       data-ui="freechat-daily-key-status"
       data-state={earned ? "earned" : "not-earned"}
-      className="flex w-full min-w-0 items-center gap-2 rounded-2xl bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur-md"
+      className="flex w-full min-w-0 flex-col items-center gap-1 rounded-2xl bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur-md"
     >
       <span className="shrink-0 text-[15px]" aria-hidden="true">
         🔑
       </span>
-      <span className="flex min-w-0 flex-col leading-tight">
+      <span className="flex min-w-0 flex-col text-center leading-tight">
         <span className="text-[12px] font-bold break-keep text-[var(--color-k-navy)]">
           오늘의 황금열쇠
         </span>

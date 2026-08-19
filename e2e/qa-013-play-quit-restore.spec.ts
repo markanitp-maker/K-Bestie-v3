@@ -70,6 +70,8 @@ type UiState = {
   inputVisible: boolean;
   /** 013 §3-6: 놀이 중에는 X(닫기) 버튼이 없어야 한다. */
   closeBtnCount: number;
+  /** 013 후속: 놀이 중에도 케이 마스코트가 보여야 한다. */
+  mascotVisible: boolean;
 };
 
 async function readUiState(page: Page): Promise<UiState> {
@@ -88,6 +90,8 @@ async function readUiState(page: Page): Promise<UiState> {
     const input = document.querySelector<HTMLInputElement>(
       'input[placeholder="케이에게 텍스트로 답하기..."]'
     );
+    const mascot = document.querySelector(".free-chat-mascot-group");
+    const mascotVisible = !!mascot && (mascot as HTMLElement).getBoundingClientRect().height > 40;
     const closeBtns = buttons.filter((b) => {
       const l = label(b);
       return l === "채팅창 닫기" || l === "텍스트 입력창 닫기";
@@ -98,6 +102,7 @@ async function readUiState(page: Page): Promise<UiState> {
       micAriaLabel: mic ? label(mic) : "not_rendered",
       inputVisible: !!input && window.getComputedStyle(input).display !== "none",
       closeBtnCount: closeBtns.length,
+      mascotVisible,
     };
   });
 }
@@ -169,6 +174,13 @@ test("013: 놀이 '그만' 이후 마이크·토글이 복귀한다", async ({ p
   expect(
     payloads[0]?.activePlaySkillId,
     `놀이를 시작한 턴의 activePlaySkillId 가 스킬 id 가 아니다: ${JSON.stringify(payloads[0])}`
+  ).toBeTruthy();
+  // 013 후속(2026-08-20 대표님 실사용) — "놀이 중에 케이가 계속 안 보인다".
+  // 상태 패널이 텍스트 모드에서 마스코트를 상태 알약으로 갈아치우는 바람에, 키보드가
+  // 강제되는 놀이 내내 케이가 사라져 있었다. 놀이 중에도 케이는 보여야 한다.
+  expect(
+    during.mascotVisible,
+    `놀이 중에 케이 마스코트가 보이지 않는다. 상태=${JSON.stringify(during)}`
   ).toBeTruthy();
 
   await send("그만");
