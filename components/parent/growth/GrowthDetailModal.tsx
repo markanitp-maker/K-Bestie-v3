@@ -20,6 +20,7 @@ import {
   type IndicatorEvaluation,
 } from "@/lib/growth";
 import type { GrowthStateResponse } from "@/lib/growth/types";
+import { BirthDateField } from "./BirthDateField";
 import { GrowthTrendChart } from "./GrowthTrendChart";
 
 interface Props {
@@ -88,6 +89,9 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  // 017 §3-12 — 생년월일 수정 UI 상태.
+  const [birthDateEditOpen, setBirthDateEditOpen] = useState(false);
+  const [birthDateDraft, setBirthDateDraft] = useState("");
 
   const summary = state.summary;
   const today = todayInKst();
@@ -157,6 +161,39 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
     }
   };
 
+  // 017 §3-12~§3-15 — 생년월일 수정. 기존 측정값·측정일은 건드리지 않는다.
+  const openBirthDateEdit = () => {
+    setBirthDateDraft(state.profile?.birthDate ?? "");
+    setBirthDateEditOpen(true);
+    setError(null);
+  };
+
+  const saveBirthDate = async () => {
+    if (busy || !birthDateDraft) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/parent/growth/${encodeURIComponent(childId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ birthDate: birthDateDraft }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        // 017 §3-15 — 실패해도 입력값을 남기고 수정 UI 를 닫지 않는다.
+        setError(typeof data?.error === "string" ? data.error : "생년월일을 저장하지 못했어요.");
+        return;
+      }
+      // 갱신된 상태 전체를 받아 월령·백분위·BMI·성장곡선이 함께 다시 그려진다(§3-13).
+      onStateChange(data as GrowthStateResponse);
+      setBirthDateEditOpen(false);
+    } catch {
+      setError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   // 013 §3-9, §3-11 — 아이가 말한 값에 대한 부모 결정. 반영/무시 모두 갱신된 상태 전체를
   // 돌려받아 카드·그래프·백분위가 함께 다시 그려진다.
   const reviewCandidate = async (candidateId: string, decision: "confirm" | "dismiss") => {
@@ -215,23 +252,72 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 sm:items-center">
       <div className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-t-3xl bg-white p-5 pb-[calc(env(safe-area-inset-bottom,0px)+20px)] sm:rounded-3xl sm:pb-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
+        <div className="mb-4 flex items-start justify-between gap-2">
+          <div className="min-w-0">
             <h2 className="text-[19px] font-bold text-[var(--color-k-navy)]">우리 아이 성장정보</h2>
-            <p className="mt-1 text-[13px] font-medium text-gray-500">
-              {state.childName ?? "아이"}
-              {latestHeight ? ` · 측정 당시 ${latestHeight.ageLabel}` : ""}
+            {/* 017 §3-11 — 아이 이름은 앱 우측 상단에 이미 있어 중복이다. 그 자리를
+                생년월일 수정 진입점으로 쓴다(§3-12). */}
+            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[13px] font-medium text-gray-500">
+              <button
+                type="button"
+                onClick={openBirthDateEdit}
+                className="font-bold text-[var(--color-k-navy)] underline underline-offset-2"
+              >
+                정보 변경
+              </button>
+              {latestHeight ? <span>· 측정 당시 {latestHeight.ageLabel}</span> : null}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="닫기"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/5 text-[var(--color-k-navy)]"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* 017 §3-1 — 스크롤 없이 바로 기록을 추가할 수 있어야 한다. */}
+            <button
+              type="button"
+              onClick={openCreate}
+              className="h-9 whitespace-nowrap rounded-full bg-[var(--color-k-orange)] px-3 text-[13px] font-bold text-white"
+            >
+              새 기록 추가
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="닫기"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/5 text-[var(--color-k-navy)]"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
+
+        {/* 017 §3-12~§3-15 — 생년월일 수정. 측정값은 건드리지 않고 생년월일만 바꾼다. */}
+        {birthDateEditOpen && (
+          <section className="mb-4 rounded-2xl border border-[#10315B]/15 p-4">
+            <h3 className="text-[15px] font-bold text-[#1F2937]">생년월일 변경</h3>
+            <p className="mt-1 text-[12.5px] font-medium text-gray-500">
+              생년월일을 변경하면 기존 측정기록은 그대로 두고, 성장도표와 백분위만 새 생년월일
+              기준으로 다시 계산돼요.
+            </p>
+            <div className="mt-3">
+              <BirthDateField value={birthDateDraft} onChange={setBirthDateDraft} />
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setBirthDateEditOpen(false)}
+                className="h-11 flex-1 rounded-2xl bg-black/5 text-[14px] font-bold text-[var(--color-k-navy)]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={saveBirthDate}
+                disabled={busy || !birthDateDraft || birthDateDraft === state.profile?.birthDate}
+                className="h-11 flex-[1.4] rounded-2xl bg-[var(--color-k-orange)] text-[14px] font-bold text-white disabled:opacity-40"
+              >
+                {busy ? "저장 중…" : "저장"}
+              </button>
+            </div>
+          </section>
+        )}
 
         {/* 013 §3-8 — 아이가 대화에서 말한 값. 부모가 [반영]을 눌러야 공식 기록이 된다. */}
         {state.pendingCandidates.length > 0 && (
@@ -369,23 +455,25 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
           </section>
         )}
 
-        {/* 기록 목록 */}
+        {/* 기록 목록 — 017 §3-10: `새 기록 추가` CTA 는 최상단 헤더로 단일화했다. */}
         <section className="mb-4">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[15px] font-bold text-[#1F2937]">측정 기록</h3>
-            <button
-              type="button"
-              onClick={openCreate}
-              className="h-10 rounded-full bg-[var(--color-k-orange)] px-4 text-[14px] font-bold text-white"
-            >
-              새 기록 추가
-            </button>
-          </div>
+          <h3 className="mb-2 text-[15px] font-bold text-[#1F2937]">측정 기록</h3>
 
           {historyCount === 0 ? (
-            <p className="text-[13.5px] font-semibold text-gray-500">
-              아직 기록이 없어요. 첫 측정값을 입력해 주세요.
-            </p>
+            // 017 §3-9 — 동의·생년월일은 있는데 측정기록이 0건인 경우(중간 이탈·이관 데이터).
+            // 안내만 하지 말고 바로 입력할 수 있게 한다.
+            <div className="rounded-2xl bg-[#F7F9FC] p-4 text-center">
+              <p className="text-[13.5px] font-semibold text-gray-600">
+                아직 기록이 없어요. 첫 측정값을 넣으면 성장도표를 볼 수 있어요.
+              </p>
+              <button
+                type="button"
+                onClick={openCreate}
+                className="mt-3 h-11 w-full rounded-2xl bg-[var(--color-k-orange)] text-[14px] font-bold text-white"
+              >
+                첫 성장기록 입력
+              </button>
+            </div>
           ) : (
             <ul className="space-y-2">
               {summary!.history.map((item) => (
