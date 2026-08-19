@@ -285,25 +285,35 @@ export default function ManualReportingTab() {
 
   const formatMessageCount = (count?: number) => `${count ?? 0}건`;
 
+  const PIPELINE_STATUS_ORDER: Record<string, number> = {
+    failed: 1,
+    retry_wait: 2,
+    processing: 3,
+    claimed: 3,
+    completed: 4,
+    pending: 5,
+    waiting: 5,
+  };
+
   const columns: AdminDataTableColumn<any>[] = [
     { key: "select", header: "선택", render: (c) => (
       <input type="radio" checked={selectedChildId === c.childId} readOnly style={{ cursor: "pointer" }} />
     )},
-    { key: "name", header: "이름", render: (c) => c.name },
-    { key: "mission1Progress", header: "레거시 미션1", render: (c) => formatMissionProgress(c.mission1) },
-    { key: "mission1Saved", header: "레거시1 저장", render: (c) => formatMessageCount(c.mission1?.savedMessageCount) },
-    { key: "mission2Progress", header: "하루 미션(마감 슬롯)", render: (c) => formatMissionProgress(c.mission2) },
-    { key: "mission2Saved", header: "마감 슬롯 저장", render: (c) => formatMessageCount(c.mission2?.savedMessageCount) },
-    { key: "mission2Collected", header: "하루 마감 수집", render: (c) => (
+    { key: "name", header: "이름", sortable: true, sortType: "text", sortValue: (c) => c.name, render: (c) => c.name },
+    { key: "mission1Progress", header: "레거시 미션1", sortable: true, sortType: "number", sortValue: (c) => c.mission1?.validTurns ?? (c.mission1?.started ? 0 : null), render: (c) => formatMissionProgress(c.mission1) },
+    { key: "mission1Saved", header: "레거시1 저장", sortable: true, sortType: "number", sortValue: (c) => c.mission1?.savedMessageCount ?? 0, render: (c) => formatMessageCount(c.mission1?.savedMessageCount) },
+    { key: "mission2Progress", header: "하루 미션(마감 슬롯)", sortable: true, sortType: "number", sortValue: (c) => c.mission2?.validTurns ?? (c.mission2?.started ? 0 : null), render: (c) => formatMissionProgress(c.mission2) },
+    { key: "mission2Saved", header: "마감 슬롯 저장", sortable: true, sortType: "number", sortValue: (c) => c.mission2?.savedMessageCount ?? 0, render: (c) => formatMessageCount(c.mission2?.savedMessageCount) },
+    { key: "mission2Collected", header: "하루 마감 수집", sortable: true, sortType: "number", sortValue: (c) => c.mission2?.collectedMessageCount ?? 0, render: (c) => (
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <span>{formatMessageCount(c.mission2?.collectedMessageCount)}</span>
         {getStatusUI(c.jobs?.collection_2, c.mission2?.collectedMessageCount ?? 0, false)}
       </div>
     ) },
-    { key: "freeChat", header: "자유대화", render: (c) => `${c.freeChatSessionCount}회` },
-    { key: "corr", header: "보정", render: (c) => getStatusUI(c.jobs?.context_correction, 0) },
-    { key: "mem", header: "Memory Batch", render: (c) => getStatusUI(c.jobs?.memory_batch, 0) },
-    { key: "report", header: "리포트", render: (c) => (
+    { key: "freeChat", header: "자유대화", sortable: true, sortType: "number", sortValue: (c) => c.freeChatSessionCount ?? 0, render: (c) => `${c.freeChatSessionCount}회` },
+    { key: "corr", header: "보정", sortable: true, sortType: "status", statusOrder: PIPELINE_STATUS_ORDER, sortValue: (c) => c.jobs?.context_correction?.status ?? "waiting", render: (c) => getStatusUI(c.jobs?.context_correction, 0) },
+    { key: "mem", header: "Memory Batch", sortable: true, sortType: "status", statusOrder: PIPELINE_STATUS_ORDER, sortValue: (c) => c.jobs?.memory_batch?.status ?? "waiting", render: (c) => getStatusUI(c.jobs?.memory_batch, 0) },
+    { key: "report", header: "리포트", sortable: true, sortType: "status", statusOrder: PIPELINE_STATUS_ORDER, sortValue: (c) => c.jobs?.daily_report?.status ?? "waiting", render: (c) => (
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {getStatusUI(c.jobs?.daily_report, 0)}
         {c.reportExists && (c.generationSource || c.generationVersion) && (
@@ -316,7 +326,7 @@ export default function ManualReportingTab() {
   ];
 
   const resultColumns: AdminDataTableColumn<any>[] = [
-    { key: "child", header: "아이", render: (s) => {
+    { key: "child", header: "아이", sortable: true, sortType: "text", sortValue: (s) => s.childName || s.loginId || s.maskedChildId, render: (s) => {
       if (s.isDeleted) return <span style={{ color: "var(--admin-text-secondary)", fontStyle: "italic" }}>삭제된 아이 ({s.maskedChildId})</span>;
       if (s.childName && s.loginId) return (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -328,25 +338,25 @@ export default function ManualReportingTab() {
       if (s.loginId) return <span style={{ wordBreak: "break-all" }}>{s.loginId}</span>;
       return <span style={{ color: "var(--admin-text-secondary)" }}>{s.maskedChildId}</span>;
     }},
-    { key: "collection", header: "수집", render: (s) => (
+    { key: "collection", header: "수집", sortable: true, sortType: "text", sortValue: (s) => s.collection2 || s.collection || s.collectionError || "-", render: (s) => (
       <>
         {s.collection2 || s.collection || "-"}
         {s.collectionError && <div style={{ color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)" }}>{s.collectionError}</div>}
       </>
     )},
-    { key: "correction", header: "수집보정", render: (s) => (
+    { key: "correction", header: "수집보정", sortable: true, sortType: "text", sortValue: (s) => s.correction || s.correctionError || "-", render: (s) => (
       <>
         {s.correction || "-"}
         {s.correctionError && <div style={{ color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)" }}>{s.correctionError}</div>}
       </>
     )},
-    { key: "memory", header: "메모리", render: (s) => (
+    { key: "memory", header: "메모리", sortable: true, sortType: "text", sortValue: (s) => s.memory || s.memoryError || "-", render: (s) => (
       <>
         {s.memory || "-"}
         {s.memoryError && <div style={{ color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)" }}>{s.memoryError}</div>}
       </>
     )},
-    { key: "report", header: "리포트", render: (s) => (
+    { key: "report", header: "리포트", sortable: true, sortType: "text", sortValue: (s) => s.report || s.reportError || "-", render: (s) => (
       <>
         {s.report || "-"}
         {s.reportError && <div style={{ color: "var(--admin-danger)", fontSize: "var(--admin-text-xs)" }}>{s.reportError}</div>}

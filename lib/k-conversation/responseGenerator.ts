@@ -85,7 +85,8 @@ const ACTION_DIRECTIVES: Record<ConversationAction, string> = {
  * 최근 케이 발화에서 실제로 쓴 공감 문구만 골라 "이번엔 이걸 쓰지 마" 로 넘긴다.
  * 없는 문구를 미리 금지하지 않는다 — 쓸 수 있는 표현을 괜히 줄이면 오히려 딱딱해진다.
  */
-const EMPATHY_OPENERS: readonly string[] = [
+// 019 규칙 탐지기(REACTION_REPETITION)가 같은 목록을 본다. 복사본을 만들지 않는다.
+export const EMPATHY_OPENERS: readonly string[] = [
   "그랬구나",
   "그랬어",
   "그렇구나",
@@ -387,7 +388,9 @@ export interface GeneratedResponse {
  * 미션은 아이 답변이 이미 완료된 턴이라 "더 얘기해줄래?" 가 같은 답을 다시 요구하게 된다.
  * 미션 경로는 fallbackUsed 플래그를 받아 Adapter 가 결정론 문장을 만든다(019 §3-2).
  */
-const FREE_CHAT_FALLBACK_TEXT = "응, 듣고 있어. 더 얘기해줄래?";
+// 019 규칙 탐지기가 "이 문구가 아이에게 나갔는가" 를 판정할 때 같은 값을 봐야 한다.
+// 복사해 두면 한쪽만 바뀌어도 탐지가 조용히 멎는다.
+export const FREE_CHAT_FALLBACK_TEXT = "응, 듣고 있어. 더 얘기해줄래?";
 
 // 019 §3-4 — 실시간 음성 대화용 retry budget.
 //

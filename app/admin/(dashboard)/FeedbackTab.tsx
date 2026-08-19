@@ -132,9 +132,9 @@ export default function FeedbackTab({ fixedCategory }: { fixedCategory: "voc" | 
         <SoftDeleteRowCheckbox checked={softDelete.isSelected(req.id)} onChange={() => softDelete.toggleSelected(req.id)} />
       ),
     },
-    { key: "request_number", header: "접수번호", render: (req: any) => req.request_number || "-" },
-    { key: "submitter", header: "접수자", render: (req: any) => formatSubmitter(req) },
-    { key: "summary", header: "제목/내용 요약", render: (req: any) => (
+    { key: "request_number", header: "접수번호", sortable: true, sortType: "text", sortValue: (req: any) => req.request_number, render: (req: any) => req.request_number || "-" },
+    { key: "submitter", header: "접수자", sortable: true, sortType: "text", sortValue: (req: any) => formatSubmitter(req), render: (req: any) => formatSubmitter(req) },
+    { key: "summary", header: "제목/내용 요약", sortable: true, sortType: "text", sortValue: (req: any) => req.category === "voc" ? req.body : req.subject, render: (req: any) => (
       <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
         {req.category === "voc" ? req.body : req.subject}
         {req.attachments && req.attachments.filter((a: any) => a.upload_status === "uploaded").length > 0 && (
@@ -144,8 +144,8 @@ export default function FeedbackTab({ fixedCategory }: { fixedCategory: "voc" | 
         )}
       </div>
     )},
-    { key: "created_at", header: "접수일", render: (req: any) => formatDateTime(req.created_at) },
-    { key: "status", header: "상태", render: (req: any) => (
+    { key: "created_at", header: "접수일", sortable: true, sortType: "date", sortValue: (req: any) => req.created_at, render: (req: any) => formatDateTime(req.created_at) },
+    { key: "status", header: "상태", sortable: true, sortType: "status", statusOrder: { open: 1, received: 1, in_progress: 2, reviewing: 2, resolved: 3, closed: 4 }, sortValue: (req: any) => req.status, render: (req: any) => (
       <AdminStatusBadge text={getStatusLabel(req.status)} variant={getStatusVariant(req.status)} />
     )},
     {

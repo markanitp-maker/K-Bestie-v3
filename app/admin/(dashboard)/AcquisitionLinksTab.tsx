@@ -132,31 +132,50 @@ export default function AcquisitionLinksTab({ channelFilter = "", onChannelFilte
     {
       key: "channel_name",
       header: "채널명",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.channel_name,
       render: (req) => <div style={{ fontWeight: 600 }}>{req.channel_name}</div>,
     },
     {
       key: "link_id",
       header: "link_id",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.link_id,
       render: (req) => <div style={{ fontSize: "11px", color: "var(--admin-text-secondary)" }}>{req.link_id}</div>,
     },
     {
       key: "utm",
       header: "Source / Medium / Campaign",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => `${req.utm_source ?? ""} ${req.utm_medium ?? ""} ${req.utm_campaign ?? ""}`.trim(),
       render: (req) => <div style={{ fontSize: "11px" }}>{req.utm_source} / {req.utm_medium} / {req.utm_campaign}</div>,
     },
     {
       key: "purpose",
       header: "용도",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.purpose,
       render: (req) => req.purpose,
     },
     {
       key: "status",
       header: "상태",
+      sortable: true,
+      sortType: "status",
+      statusOrder: { ACTIVE: 1, INACTIVE: 2 },
+      sortValue: (req) => req.status,
       render: (req) => <AdminStatusBadge variant={req.status === "ACTIVE" ? "success" : "neutral"} text={req.status === "ACTIVE" ? "활성" : "비활성"} />,
     },
     {
       key: "stats",
       header: "클릭 / 가입 / 전환율",
+      sortable: true,
+      sortType: "number",
+      sortValue: (req) => req.clicks ?? 0,
       render: (req) => (
         <div style={{ fontSize: "12px", fontWeight: 600 }}>
           {req.clicks || 0} / {req.signups || 0} / {req.conversion_rate ? req.conversion_rate.toFixed(1) : "0"}%

@@ -91,16 +91,16 @@ export default function AcquisitionDashboardTab({ sharedState, onSharedStateChan
   const channelOptions = Array.from(new Set<string>(channelTable.map((row: any) => String(row.channel))));
   
   const columns: AdminDataTableColumn<any>[] = [
-    { key: "channel", header: "채널", render: (r) => onChannelDrillDown ? <button type="button" onClick={() => onChannelDrillDown(r.channel)} style={{ padding: 0, border: 0, background: "transparent", fontWeight: 700, color: "var(--admin-primary)", cursor: "pointer" }}>{r.channel}</button> : <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ fontWeight: 600, color: "var(--admin-primary)", textDecoration: "none" }}>{r.channel}</a> },
-    { key: "uniqueVisitors", header: "고유 방문자", render: (r) => r.uniqueVisitors.toLocaleString() },
-    { key: "landingView", header: "랜딩 조회", render: (r) => r.landingView.toLocaleString() },
-    { key: "signupStarted", header: "가입 시작", render: (r) => r.signupStarted.toLocaleString() },
-    { key: "parentSignup", header: "부모 가입", render: (r) => <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ color: "var(--admin-primary)", textDecoration: "none" }}>{r.parentSignup.toLocaleString()}</a> },
-    { key: "childAdded", header: "아이 등록", render: (r) => r.childAdded.toLocaleString() },
-    { key: "conversionRate", header: "전환율", render: (r) => <div style={{ color: "var(--admin-success)", fontWeight: 600 }}>{r.conversionRate.toFixed(1)}%</div> },
-    { key: "firstTouchSignups", header: "First Touch 가입", render: (r) => r.firstTouchSignups.toLocaleString() },
-    { key: "signupTouchSignups", header: "Signup Touch 가입", render: (r) => r.signupTouchSignups.toLocaleString() },
-    { key: "lastSignupAt", header: "최근 가입일", render: (r) => r.lastSignupAt ? new Date(r.lastSignupAt).toLocaleString("ko-KR") : "-" },
+    { key: "channel", header: "채널", sortable: true, sortType: "text", sortValue: (r) => r.channel, render: (r) => onChannelDrillDown ? <button type="button" onClick={() => onChannelDrillDown(r.channel)} style={{ padding: 0, border: 0, background: "transparent", fontWeight: 700, color: "var(--admin-primary)", cursor: "pointer" }}>{r.channel}</button> : <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ fontWeight: 600, color: "var(--admin-primary)", textDecoration: "none" }}>{r.channel}</a> },
+    { key: "uniqueVisitors", header: "고유 방문자", sortable: true, sortType: "number", sortValue: (r) => r.uniqueVisitors, render: (r) => r.uniqueVisitors.toLocaleString() },
+    { key: "landingView", header: "랜딩 조회", sortable: true, sortType: "number", sortValue: (r) => r.landingView, render: (r) => r.landingView.toLocaleString() },
+    { key: "signupStarted", header: "가입 시작", sortable: true, sortType: "number", sortValue: (r) => r.signupStarted, render: (r) => r.signupStarted.toLocaleString() },
+    { key: "parentSignup", header: "부모 가입", sortable: true, sortType: "number", sortValue: (r) => r.parentSignup, render: (r) => <a href={`/admin/retention?scope=parent&signup_source=${encodeURIComponent(r.channel)}`} style={{ color: "var(--admin-primary)", textDecoration: "none" }}>{r.parentSignup.toLocaleString()}</a> },
+    { key: "childAdded", header: "아이 등록", sortable: true, sortType: "number", sortValue: (r) => r.childAdded, render: (r) => r.childAdded.toLocaleString() },
+    { key: "conversionRate", header: "전환율", sortable: true, sortType: "number", sortValue: (r) => r.conversionRate, render: (r) => <div style={{ color: "var(--admin-success)", fontWeight: 600 }}>{r.conversionRate.toFixed(1)}%</div> },
+    { key: "firstTouchSignups", header: "First Touch 가입", sortable: true, sortType: "number", sortValue: (r) => r.firstTouchSignups, render: (r) => r.firstTouchSignups.toLocaleString() },
+    { key: "signupTouchSignups", header: "Signup Touch 가입", sortable: true, sortType: "number", sortValue: (r) => r.signupTouchSignups, render: (r) => r.signupTouchSignups.toLocaleString() },
+    { key: "lastSignupAt", header: "최근 가입일", sortable: true, sortType: "date", sortValue: (r) => r.lastSignupAt, render: (r) => r.lastSignupAt ? new Date(r.lastSignupAt).toLocaleString("ko-KR") : "-" },
   ];
 
   return (
