@@ -52,6 +52,7 @@ import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationsh
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
 import { resolveActiveSkillAfterTurn } from "./play/activeSkillAfterTurn";
+import { stripMarkdownEmphasis } from "./stripMarkdownEmphasis";
 import { isKPlayEnabled, getPlayDisabledResponse } from "./play/playAvailability";
 import { setPendingPlayProposal, clearPendingPlayProposal } from "./play/pendingProposalStore";
 import type { PlaySkillId } from "./play/skillTypes";
@@ -1034,7 +1035,11 @@ export async function respond(
   }
 
   return {
-    text: finalText,
+    // 010 (2026-08-20 Dev 실측) — 케이가 `첫 번째 단어는 **허수아비**야.` 라고 말했다.
+    // 말풍선은 <p> 에 평문으로 그리므로 아이가 별표까지 보고, TTS 도 별표를 읽는다.
+    // 프롬프트로 막아도 모델이 종종 쓰므로 문장이 나가는 마지막 지점에서 걷어낸다.
+    // 어느 분기에서 온 finalText 든 여기 한 곳을 지나므로 빠지는 경로가 없다.
+    text: stripMarkdownEmphasis(finalText),
     action,
     category: "generated",
     boredom,
