@@ -103,7 +103,7 @@ export default function ChatPage() {
     childIdRef.current = childId;
   }, [childId]);
   // respondText는 훅 생성 이후에만 얻을 수 있어 ref로 우회(핸들러는 훅 생성 전에 정의 필요)
-  const respondTextRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const respondTextRef = useRef<((targetChildTurnId?: string) => Promise<void>) | undefined>(undefined);
   const getLastAsrConfidenceRef = useRef<(() => number | undefined) | undefined>(undefined);
 
   // 실시간 메시지 저장 + 아이 발화 시 케이 텍스트 응답 생성(음성 없음, 텍스트만)
@@ -146,7 +146,9 @@ export default function ChatPage() {
       pendingMessageWritesRef.current.add(pendingWrite);
     }
     if (turn.role === "child") {
-      void respondTextRef.current?.();
+      // turn.id 를 명시적으로 넘긴다. 예전에는 인자 없이 불러서 훅이 "마지막 아이 턴" 을
+      // 추정했고, 같은 발화에 응답이 두 번 나가는 원인이 됐다(2026-08-19 대표님 QA).
+      void respondTextRef.current?.(turn.id);
     }
   }, [nextDisplaySequence]);
 

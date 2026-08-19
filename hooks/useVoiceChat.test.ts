@@ -332,3 +332,56 @@ describe("useVoiceChat - 009 respondText Regression Fix & Idempotency", () => {
     }
   });
 });
+
+describe("useVoiceChat - 2026-08-19 대표님 Dev QA: 같은 발화에 응답 2개", () => {
+  let originalFetch: typeof globalThis.fetch;
+  before(() => { originalFetch = globalThis.fetch; });
+  after(() => { globalThis.fetch = originalFetch; });
+
+  // 실측(세션 c4f68596): 아이 발화 "가방" 1개에 케이 응답이 2개 저장되고 서로 반대로 말했다
+  // (17:22:44.130 "아깝다…" / 17:22:44.494 "가방 정답!"). 초성게임 라운드도 두 번 진행됐다.
+  it("같은 아이 턴 id 로 두 번 부르면 요청은 한 번만 나간다", async () => {
+    let callCount = 0;
+    let release: (() => void) | null = null;
+    globalThis.fetch = (async () => {
+      callCount += 1;
+      await new Promise<void>((resolve) => { release = resolve; });
+      return {
+        ok: true,
+        json: async () => ({ text: "그렇구나!" }),
+      } as unknown as Response;
+    }) as typeof globalThis.fetch;
+
+    const handle = renderVoiceChatHook();
+    try {
+      const first = handle.get().respondText("child-turn-1");
+      const second = handle.get().respondText("child-turn-1");
+      await second; // 같은 턴이므로 즉시 return 되어야 한다
+      assert.equal(callCount, 1, "같은 턴에 요청이 두 번 나갔다");
+      release?.();
+      await first;
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  // 무응답 사고(박서아·박서현) 재발 방지 — 가드가 새 발화를 삼키면 안 된다.
+  it("다른 아이 턴이면 앞 요청을 취소하고 새 요청을 반드시 보낸다", async () => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      calls.push(body.childTurnId);
+      return { ok: true, json: async () => ({ text: "응!" }) } as unknown as Response;
+    }) as typeof globalThis.fetch;
+
+    const handle = renderVoiceChatHook();
+    try {
+      await handle.get().respondText("child-turn-1");
+      await handle.get().respondText("child-turn-2");
+      await handle.get().respondText("child-turn-3");
+      assert.deepEqual(calls, ["child-turn-1", "child-turn-2", "child-turn-3"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+});

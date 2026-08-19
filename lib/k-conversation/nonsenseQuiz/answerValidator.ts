@@ -115,6 +115,10 @@ const EXPLICIT_STOP_PATTERNS = [
 ];
 
 /** 다음 문제 요청 패턴 */
+/** 그 자체로 아무 문제의 정답도 될 수 없는 맨 긍정·수락 표현. */
+const BARE_AFFIRMATIVE_PATTERN =
+  /^(?:ㅇㅇ|ㅇㅋ|응+|웅+|어+|네+|넹|예|그래|그럼|좋아|조아|좋지|좋아요|당연|당연하지|콜|오케이|ok|okay|해|하자|할래|가자|고|ㄱㄱ)[!?.~^ㅋㅎ\s]*$/i;
+
 const NEXT_QUESTION_PATTERNS = [
   /^(?:다음|또|하나\s*더|한\s*번\s*더|한번\s*더|계속|다음\s*문제|문제\s*더|더\s*해|더\s*할래|더\s*하자)$/,
   /(?:다음\s*문제|문제\s*또|문제\s*하나\s*더|새\s*문제|다른\s*문제|하나\s*더\s*내|또\s*내)/,
@@ -192,6 +196,18 @@ export function classifyChildNonsenseUtterance(
   // 6. 일반 지식 질문 / 기억 회상 질의 -> Topic Shift
   if (signals?.hasGeneralKnowledgeQuestion || signals?.hasMemoryRecallQuery) {
     return "TOPIC_SHIFT";
+  }
+
+  // 6-A. 맨 긍정 응답은 퀴즈 답이 아니다 (2026-08-19 대표님 Dev QA).
+  //
+  // 실측(세션 c4f68596): 케이가 "다음 문제 또 풀어볼래?" 라고 물었고 아이가 "ㅇㅇ" 라고
+  // 답했는데, 그게 **오답으로 채점됐다**(nonsense_question_history.outcome=ANSWERED_INCORRECT,
+  // answered_at 17:36:47). 아이는 하겠다고 한 것인데 틀렸다는 소리를 들었다.
+  //
+  // "응"·"ㅇㅇ"·"그래"·"좋아" 같은 말은 어떤 넌센스 문제의 정답도 될 수 없다. 오답으로
+  // 세지 말고 다음 문제로 넘긴다 — 케이가 방금 다음 문제를 권했을 가능성이 압도적이다.
+  if (BARE_AFFIRMATIVE_PATTERN.test(trimmed)) {
+    return "NEXT_QUESTION";
   }
 
   // 7. 긴 일상 서술문 (띄어쓰기 포함 7자 이상이면서 서술어 어미로 끝나는 경우)

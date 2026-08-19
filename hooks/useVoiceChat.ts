@@ -85,6 +85,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   // 자유대화 respondText() 진행 중(케이 반응 생성 중) 플래그 — 이 동안은 새 녹음을 시작하거나
   // 무음감지로 자동 finalize가 발생하지 않도록 막는다(speakingRef와 동일한 가드 패턴 재사용).
   const respondingRef = useRef(false);
+  /** 아직 응답을 기다리는 /api/voice/respond 요청. 새 요청이 시작되면 이것을 abort 한다. */
+  const inFlightRespondRef = useRef<AbortController | null>(null);
+  /** 그 요청이 어느 아이 턴에 대한 것인지. 같은 턴을 두 번 보내지 않기 위해 쓴다. */
+  const inFlightRespondTurnIdRef = useRef<string | null>(null);
   const [isResponding, setIsResponding] = useState(false);
   // speak() 세대 카운터 — 케이 발화(TTS) 호출마다 증가.
   // 새 speak() 호출은 이전 재생 중인 오디오를 즉시 중단시키고, 이전 호출의 응답/재생은
@@ -132,10 +136,14 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     setStatus(s);
   }
 
-  function appendTurn(turn: Turn) {
+  /** 부여된 id 를 포함한 실제 저장 값을 돌려준다 — 호출자가 그 턴을 정확히 지목할 수 있어야 한다.
+   *  (2026-08-19: id 를 안 돌려줘서 응답 생성이 "마지막 아이 턴" 추정에 의존했고,
+   *   그 추정 때문에 같은 발화에 응답이 두 번 나갔다.) */
+  function appendTurn(turn: Turn): Turn {
     const withId: Turn = turn.id ? turn : { ...turn, id: nextTurnId() };
     transcriptRef.current = [...transcriptRef.current, withId];
     setTranscript([...transcriptRef.current]);
+    return withId;
   }
 
   function notifySpeechEnd(turnId: string) {
@@ -174,8 +182,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         extra: { provider: meta.provider, fallbackTriggered: meta.fallbackTriggered },
       });
       logVoiceEvent({ ts: Date.now(), eventType: "appendTurn_voicechat", extra: { role: "child" } });
-      appendTurn({ role: "child", text });
-      onTurnCompleteRef.current?.({ role: "child", text });
+      const appended = appendTurn({ role: "child", text });
+      onTurnCompleteRef.current?.(appended);
     },
     onFailure: (reason) => {
       onSttResultRef.current?.(false, 0);
@@ -474,6 +482,36 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
     // 확실할 때만 동작하므로 아이 말을 삼키지 않는다.
     //
     // **아이가 말했는데 케이가 침묵하는 것은 중복 응답보다 훨씬 나쁘다.**
+    //
+    // 2026-08-19 대표님 Dev QA 에서 그 중복 응답이 실제로 터졌다.
+    // 아이 발화 1개("가방")에 케이 응답이 2개 저장되고 서로 반대로 말했다
+    // (17:22:44.130 "아깝다, 조금만 더 생각하면…" / 17:22:44.494 "가방 정답!").
+    // 초성게임 라운드도 두 번 진행됐다 — 앞선 요청이 정답 처리로 단어를 '김밥' 으로
+    // 넘긴 뒤, 뒤늦은 요청이 그 새 단어와 비교해 같은 "가방" 을 오답으로 처리했다.
+    // 위 주석이 기대한 서버 멱등성은 turnId 가 서로 다르면(t23/t24) 동작하지 않는다.
+    //
+    // 그래서 **가드가 아니라 취소**로 막는다. 새 요청은 절대 버리지 않고 항상 보낸다 —
+    // 대신 아직 떠 있는 **이전** 요청을 abort 한다. 무응답 사고는 "새 요청을 삼켜서"
+    // 났으므로 방향이 반대다. 최신 발화는 언제나 응답을 받는다.
+    // 같은 아이 턴에 대한 요청이 이미 떠 있으면 두 번 보내지 않는다.
+    //
+    // 이 가드는 **turnId 가 확실할 때만** 동작한다. 무응답 사고는 turnId 를 못 받아
+    // "마지막 아이 턴" 으로 추정한 상태에서 가드가 걸려 조용히 return 한 것이 원인이었다.
+    // 추정 턴에는 가드를 걸지 않는다 — 아이 말을 삼키는 쪽으로는 절대 실패하지 않게 둔다.
+    if (
+      targetChildTurnId
+      && inFlightRespondRef.current
+      && inFlightRespondTurnIdRef.current === targetChildTurnId
+    ) {
+      return;
+    }
+
+    // turnId 를 추정한 경우까지 포함해, 아직 떠 있는 **이전** 요청은 취소한다.
+    // 새 요청을 버리는 것이 아니라 낡은 요청을 버리는 것이라 침묵으로 이어지지 않는다.
+    inFlightRespondRef.current?.abort();
+    const abortController = new AbortController();
+    inFlightRespondRef.current = abortController;
+    inFlightRespondTurnIdRef.current = childTurnId ?? null;
 
     respondingRef.current = true;
     setIsResponding(true);
@@ -489,6 +527,7 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
           appMode: inputModeRef.current,
           childTurnId,
         }),
+        signal: abortController.signal,
       });
       if (!res.ok) {
         console.warn("[VoiceChat] /api/voice/respond returned non-ok status:", res.status);
@@ -504,8 +543,14 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
       appendTurn({ role: "k", text, id: kTurnId });
       onTurnCompleteRef.current?.({ role: "k", text, id: kTurnId });
     } catch (err) {
+      // 뒤 요청이 이 요청을 취소한 경우다. 아이는 이미 더 새로운 응답을 받는다.
+      if (err instanceof DOMException && err.name === "AbortError") return;
       console.warn("[VoiceChat] respondText error:", err);
     } finally {
+      if (inFlightRespondRef.current === abortController) {
+        inFlightRespondRef.current = null;
+        inFlightRespondTurnIdRef.current = null;
+      }
       respondingRef.current = false;
       setIsResponding(false);
       setCaptureBlocked(speakingRef.current);

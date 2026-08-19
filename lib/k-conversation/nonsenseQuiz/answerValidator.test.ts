@@ -225,3 +225,27 @@ test("010: 정답 발화를 다음 문제 요청으로 오인하지 않는다", 
     );
   }
 });
+
+// ── 2026-08-19 대표님 Dev QA 회귀 ────────────────────────────
+test("맨 긍정 응답은 오답으로 채점하지 않고 다음 문제로 넘긴다", () => {
+  // 실측(세션 c4f68596): 케이 "다음 문제 또 풀어볼래?" → 아이 "ㅇㅇ" 가
+  // ANSWERED_INCORRECT 로 기록됐다(17:36:47). 아이는 하겠다고 한 것이다.
+  for (const utterance of ["ㅇㅇ", "응", "웅", "그래", "좋아", "ㅇㅋ", "오케이", "ㄱㄱ", "응!", "웅웅"]) {
+    assert.equal(
+      classifyChildNonsenseUtterance(utterance),
+      "NEXT_QUESTION",
+      `긍정 응답이 답변 시도로 채점된다: ${utterance}`
+    );
+  }
+});
+
+test("긍정처럼 보여도 실제 낱말은 답변 시도로 남긴다", () => {
+  // 과잉 적용 방지 — 정답이 될 수 있는 낱말을 긍정으로 삼켜서는 안 된다.
+  for (const utterance of ["그림자", "해바라기", "응가", "어항", "네모", "좋아하는 사람"]) {
+    assert.notEqual(
+      classifyChildNonsenseUtterance(utterance),
+      "NEXT_QUESTION",
+      `실제 답변이 긍정으로 삼켜진다: ${utterance}`
+    );
+  }
+});
