@@ -426,3 +426,34 @@ test("010 §3-8: '시작해도 돼?' 처럼 되묻는 말은 막지 않는다", 
   assert.equal(hasUnauthorizedGameMove("내가 먼저 시작할게"), true);
   assert.equal(hasUnauthorizedGameMove("나 먼저 시작해!"), true);
 });
+
+// ── 010 §3-8 "놀이 방법부터 배우라" 요구는 게임을 멈춘다 ────────
+test("010 §3-8: 방법부터 배우라는 요구는 게임 안 대화가 아니다", async () => {
+  const { mentionsPlayLearnFirstComplaint } = await import("../wordChain/wordChainSkill");
+  // 2026-08-19 Dev QA 실측: 이 발화가 "놀이" 라는 낱말 때문에 게임 안 대화로 처리돼
+  // 케이가 "학습하고 는 모르는 단어야" 라고 답했다. §3-8 은 게임 중지를 요구한다.
+  for (const text of [
+    "어떻게 놀이를 하면 되는지부터 학습하고",
+    "놀이 방법부터 먼저 배우고 와",
+    "규칙부터 익혀",
+    "끝말잇기 방법부터 알아야지",
+  ]) {
+    assert.equal(mentionsPlayLearnFirstComplaint(text), true, `게임을 멈춰야 한다: ${text}`);
+  }
+});
+
+test("010 §3-8: 게임 안의 정정·지적은 여전히 게임을 유지한다", async () => {
+  const { mentionsPlayLearnFirstComplaint, mentionsPlayContext } = await import(
+    "../wordChain/wordChainSkill"
+  );
+  // 018 에서 고친 문제를 되돌리지 않는다 — 아이가 규칙을 고쳐 줄 때마다 게임이 죽었다.
+  // "방법", "기초" 같은 낱말만으로 잡으면 이 케이스가 다시 깨진다.
+  for (const text of [
+    "이빨 이잖아 빨 그럼 빨로 시작하는 글자를 해야지",
+    "팔꿈치냐 팔꿈치지 야 전혀 다른 글 잔데 넌 끝말잇기 하는 방법을 기초도 모르냐",
+    "주걱 이라고 했잖아 그럼 맞는지 안 맞는지를 알려줘야 될 거 아냐",
+  ]) {
+    assert.equal(mentionsPlayLearnFirstComplaint(text), false, `게임이 죽는다: ${text}`);
+    assert.equal(mentionsPlayContext(text), true, `놀이 문맥을 놓친다: ${text}`);
+  }
+});

@@ -195,6 +195,34 @@ const PLAY_CONTEXT_MARKERS: readonly RegExp[] = [
   /맞는지|맞았|맞췄|틀렸|틀린|맞아\?/,
 ];
 
+/**
+ * 010 §3-8 — 아이가 "놀이 방법부터 배우라" 고 요구하는 메타 불만.
+ *
+ * §3-8 실측 사례:
+ *   아이: "어떻게 놀이를 하면 되는지부터 학습하고..."
+ * 이 말에는 "놀이" 가 들어 있어서 mentionsPlayContext 가 true 가 되고, 그래서 화제 전환이
+ * 아니라고 판정돼 **낱말 시도로 처리됐다**(2026-08-19 Dev QA 실측: 케이가 "학습하고" 는
+ * 모르는 단어라고 답했다). §3-8 은 그 반대를 요구한다 — 게임 진행을 멈추고 짧게 인정한 뒤
+ * 아이가 다시 명시적으로 요청할 때까지 자동 재개하지 않는다.
+ *
+ * [게임 안의 정정과 구분한다]
+ * 아이가 규칙을 고쳐 주는 말은 게임을 살려 둬야 한다(018 에서 고친 그 문제다):
+ *   "이빨 이잖아 빨 그럼 빨로 시작하는 글자를 해야지"        → 게임 유지
+ *   "팔꿈치냐 팔꿈치지 ... 넌 끝말잇기 하는 방법을 기초도 모르냐" → 게임 유지(정정이 목적)
+ * 그래서 "방법", "기초" 같은 낱말만으로 잡지 않는다. **먼저 배우라고 요구하는 형태**만 잡는다.
+ */
+const PLAY_LEARN_FIRST_COMPLAINT_PATTERNS: readonly RegExp[] = [
+  /학습(?:하고|해|하라|부터)/,
+  /먼저\s*(?:배우|익히|공부)/,
+  /방법(?:부터|을\s*먼저)/,
+  /규칙(?:부터|을\s*먼저)/,
+];
+
+/** 놀이 진행을 멈추고 인정해야 하는 메타 불만인지(§3-8). */
+export function mentionsPlayLearnFirstComplaint(text: string): boolean {
+  return PLAY_LEARN_FIRST_COMPLAINT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 export function mentionsPlayContext(text: string): boolean {
   return PLAY_CONTEXT_MARKERS.some((pattern) => pattern.test(text));
 }
@@ -202,6 +230,11 @@ export function mentionsPlayContext(text: string): boolean {
 function isTopicShift(text: string, signals: UtteranceSignals): boolean {
   const trimmed = text.trim();
   if (!trimmed) return false;
+
+  // 010 §3-8 — "놀이 방법부터 배우라" 는 요구는 게임 안의 대화가 아니다.
+  // 놀이 문맥 검사보다 먼저 본다. 안 그러면 "놀이" 라는 낱말 때문에 게임 안 대화로
+  // 처리돼 낱말 시도로 채점된다(2026-08-19 Dev QA 실측).
+  if (mentionsPlayLearnFirstComplaint(trimmed)) return true;
 
   // 놀이에 대해 말하는 중이면 화제 전환이 아니다. 지적·불만도 놀이 안의 대화다.
   // 그만하자는 의사는 hasPlayStop / hasPlayRejection 이 따로 잡는다.
