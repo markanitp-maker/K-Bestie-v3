@@ -50,3 +50,16 @@ test("custom acquisition range rejects invalid or reversed dates", () => {
   assert.throws(() => resolveAcquisitionPeriodRange({ period: "custom", startDate: "2026-02-30", endDate: "2026-03-01" }));
   assert.throws(() => resolveAcquisitionPeriodRange({ period: "custom", startDate: "2026-08-10", endDate: "2026-08-09" }));
 });
+
+test("parses issues tab query parameter correctly", () => {
+  const state = parseOperationsLocation(new URLSearchParams("tab=issues"));
+  assert.equal(state.tab, "issues");
+  const href = buildOperationsHref(state);
+  assert.equal(href, "/admin/operations?tab=issues");
+});
+
+test("falls back to default push tab when unknown tab is provided", () => {
+  const state = parseOperationsLocation(new URLSearchParams("tab=nonexistent_tab"));
+  assert.equal(state.tab, "push");
+});
+

@@ -6,6 +6,7 @@ import PushTestTab from "../(dashboard)/PushTestTab";
 import AcquisitionDashboardTab from "../(dashboard)/AcquisitionDashboardTab";
 import AcquisitionLinksTab from "../(dashboard)/AcquisitionLinksTab";
 import TrashTab from "../(dashboard)/TrashTab";
+import IssuesTab from "../(dashboard)/IssuesTab";
 import { AdminShell, type AdminPageId } from "@/components/admin/shell/AdminShell";
 import { buildOperationsHref, parseOperationsLocation, type AcquisitionSharedState, type AcquisitionSubTab, type OperationsTab } from "@/lib/admin/operationsConsole";
 
@@ -13,6 +14,7 @@ const TABS: Array<{ id: OperationsTab; label: string }> = [
   { id: "push", label: "푸시 테스트" },
   { id: "acquisition", label: "회원가입 유입" },
   { id: "trash", label: "휴지통" },
+  { id: "issues", label: "이슈 사항" },
 ];
 
 const SUB_TABS: Array<{ id: AcquisitionSubTab; label: string }> = [
@@ -77,6 +79,7 @@ function OperationsConsole() {
           {location.tab === "acquisition" && location.sub === "dashboard" && <AcquisitionDashboardTab sharedState={location.acquisition} onSharedStateChange={changeAcquisitionState} onChannelDrillDown={drillDown} />}
           {location.tab === "acquisition" && location.sub === "links" && <AcquisitionLinksTab channelFilter={location.acquisition.channelFilter} onChannelFilterChange={(channelFilter) => changeAcquisitionState({ ...location.acquisition, channelFilter })} />}
           {location.tab === "trash" && <TrashTab />}
+          {location.tab === "issues" && <IssuesTab />}
         </TabBoundary>
       </div>
     </AdminShell>

@@ -1,6 +1,6 @@
 import { getOffsetDateStr, toKSTDateStr } from "@/lib/analytics/kstDate";
 
-export type OperationsTab = "push" | "acquisition" | "trash";
+export type OperationsTab = "push" | "acquisition" | "trash" | "issues";
 export type AcquisitionSubTab = "dashboard" | "links";
 export type AcquisitionPeriod = "today" | "7d" | "14d" | "30d" | "month" | "last_month" | "all" | "custom";
 
@@ -19,7 +19,7 @@ export interface OperationsLocationState {
   acquisition: AcquisitionSharedState;
 }
 
-const TABS = new Set<OperationsTab>(["push", "acquisition", "trash"]);
+const TABS = new Set<OperationsTab>(["push", "acquisition", "trash", "issues"]);
 const SUB_TABS = new Set<AcquisitionSubTab>(["dashboard", "links"]);
 const PERIODS = new Set<AcquisitionPeriod>(["today", "7d", "14d", "30d", "month", "last_month", "all", "custom"]);
 
