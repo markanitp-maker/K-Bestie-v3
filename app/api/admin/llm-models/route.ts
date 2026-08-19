@@ -14,6 +14,7 @@ const ROLE_DESCRIPTIONS: Record<LlmModelRole, string> = {
   freechatMemoryRecall: "자유대화 메모리 회상 응답",
   parentMemoryQuery: "부모의 LLM WIKI·아이 메모리 질의",
   missionGeneral: "일반 미션 응답·답변 분석",
+  missionGeneralFallback: "일반 미션 응답 (폴백)",
   childAnswerClassification: "아이 답변 유효성·안전성·유형 분류",
   parentKChat: "부모-K 대화",
   parentQuestionGeneration: "부모용 질문 생성·변환",

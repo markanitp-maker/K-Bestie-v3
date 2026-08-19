@@ -211,6 +211,8 @@ export const respondToMissionTurn = async (input: {
   db: SupabaseClient;
   ai: GenerateArgs["ai"];
   modelId: string;
+  /** 020 §3-2 — 응답 생성 primary 가 일시 장애로 실패했을 때 1회만 쓰는 대체 모델. */
+  fallbackModelId?: string;
   childId: string;
   sessionId: string;
   currentUtterance: string;
@@ -290,6 +292,7 @@ export const respondToMissionTurn = async (input: {
       db: input.db,
       ai: input.ai,
       modelId: input.modelId,
+      fallbackModelId: input.fallbackModelId,
       adapterInstruction: buildAdapterInstruction(promptGoal),
       recentActions: input.recentActions,
     },

@@ -338,6 +338,12 @@ export type GenerateContentFn = GoogleGenAI["models"]["generateContent"];
 export interface GenerateArgs {
   ai: { models: { generateContent: GenerateContentFn } };
   modelId: string;
+  /**
+   * 020 §3-2 — primary 가 일시 장애(429/timeout/5xx/network)로 실패했을 때
+   * **정확히 1회만** 부르는 대체 모델. 없으면 대체 호출을 하지 않고 바로
+   * 결정론 폴백으로 넘어간다(기존 동작과 같다).
+   */
+  fallbackModelId?: string;
   input: ResponseGeneratorInput;
 }
 
@@ -387,9 +393,20 @@ const FREE_CHAT_FALLBACK_TEXT = "응, 듣고 있어. 더 얘기해줄래?";
  * 모두 들어가 미션보다 길다). 아이는 "응, 듣고 있어. 더 얘기해줄래?"를 두 번 받았다.
  * 자유대화는 앞에 다른 LLM 호출이 없으므로 더 기다려도 총 대기시간이 미션보다 짧다.
  */
+/**
+ * 020 §3-6 — primary / fallback timeout 을 각각 명시하고, 둘을 합친 상한을 둔다.
+ *
+ * fallbackAttemptTimeoutMs 를 primary 보다 짧게 잡는 이유: 여기까지 왔다는 건 이미
+ * primary 에서 시간을 썼다는 뜻이다. 대체 모델(flash-lite)은 더 가벼워서 원래 더 빠르다.
+ * totalBudgetMs 는 primary 시도들 + 대체 1회를 **모두 합친** 상한이다 — 이 예산이
+ * 남지 않으면 대체 호출을 시작하지 않고 결정론 폴백으로 넘어간다.
+ *
+ * 여기 숫자는 Dev 실측으로 확정한다(020 §3-6: "0.6~1.2초를 고정 SLA로 쓰지 않는다").
+ * 측정 결과는 requests/_log.md 의 020 항목에 남긴다.
+ */
 const BUDGET_BY_MODE = {
-  MISSION: { attemptTimeoutMs: 4500, totalBudgetMs: 5000 },
-  FREE_CHAT: { attemptTimeoutMs: 8000, totalBudgetMs: 9000 },
+  MISSION: { attemptTimeoutMs: 4500, fallbackAttemptTimeoutMs: 2500, totalBudgetMs: 7000 },
+  FREE_CHAT: { attemptTimeoutMs: 8000, fallbackAttemptTimeoutMs: 3000, totalBudgetMs: 10000 },
 } as const;
 
 /** 미션 기준값. 기존 이름을 쓰는 곳(테스트 등)과의 호환을 위해 남긴다. */
@@ -400,17 +417,39 @@ export const TOTAL_RETRY_BUDGET_MS = BUDGET_BY_MODE.MISSION.totalBudgetMs;
 /** 모드별 예산. 알 수 없는 모드는 미션 기준(더 보수적인 쪽)을 쓴다. */
 export function resolveGenerationBudget(mode: ConversationMode): {
   attemptTimeoutMs: number;
+  fallbackAttemptTimeoutMs: number;
   totalBudgetMs: number;
 } {
   return mode === "FREE_CHAT" ? BUDGET_BY_MODE.FREE_CHAT : BUDGET_BY_MODE.MISSION;
 }
+
+/**
+ * 020 §3-2 — 대체 모델을 부를 수 있는 실패인가.
+ *
+ * 허용: 429/RESOURCE_EXHAUSTED, timeout, 5xx, network.
+ * 금지: 4xx·인증·권한·안전 차단(NON_RETRYABLE), 그리고 빈 응답·프롬프트 누설
+ *       (이건 호출 자체는 성공한 것이라 모델을 바꿀 문제가 아니고, primary 재시도가
+ *        이미 처리한다). UNKNOWN 은 원인을 모르므로 대체를 시도하지 않는다 —
+ *       모르는 오류에 호출을 한 번 더 얹는 것은 429 상황에서 정확히 하지 말아야 할 일이다.
+ */
+export function isFallbackEligibleFailure(failureType: ResponseFailureType): boolean {
+  return (
+    failureType === "RATE_LIMIT"
+    || failureType === "TIMEOUT"
+    || failureType === "HTTP_5XX"
+    || failureType === "NETWORK_ERROR"
+  );
+}
 /** 남은 예산이 이보다 적으면 다음 시도를 시작하지 않는다. */
-const MIN_ATTEMPT_BUDGET_MS = 1200;
+export const MIN_ATTEMPT_BUDGET_MS = 1200;
 
 export type ResponseFailureType =
   | "TIMEOUT"
   | "RATE_LIMIT"
   | "HTTP_5XX"
+  /** 400/401/403/404, 잘못된 요청·스키마, 인증/권한 실패, 안전 정책 차단.
+   *  같은 요청을 다른 모델로 다시 보내도 똑같이 실패한다 — 대체 호출을 하지 않는다(020 §3-2). */
+  | "NON_RETRYABLE"
   | "EMPTY_RESPONSE"
   | "PROMPT_LEAK_DETECTED"
   | "NETWORK_ERROR"
@@ -430,8 +469,14 @@ export function classifyGenerationFailure(error: unknown): ResponseFailureType {
   })();
   if (status === 429) return "RATE_LIMIT";
   if (typeof status === "number" && status >= 500 && status < 600) return "HTTP_5XX";
+  // 020 §3-2 fallback 금지 조건. 429 는 위에서 이미 걸러졌으므로 여기 남은 4xx 는
+  // 전부 우리 요청이 잘못된 경우다 — 모델을 바꿔도 결과가 같다.
+  if (typeof status === "number" && status >= 400 && status < 500) return "NON_RETRYABLE";
   const message = error instanceof Error ? error.message : String(error ?? "");
   if (/RESOURCE_EXHAUSTED|rate limit|quota/i.test(message)) return "RATE_LIMIT";
+  if (/SAFETY|BLOCKED|PROHIBITED_CONTENT|INVALID_ARGUMENT|PERMISSION_DENIED|UNAUTHENTICATED|NOT_FOUND/i.test(message)) {
+    return "NON_RETRYABLE";
+  }
   if (/ECONNRESET|ENOTFOUND|ETIMEDOUT|fetch failed|socket hang up|network/i.test(message)) {
     return "NETWORK_ERROR";
   }
@@ -464,8 +509,103 @@ function logAttemptFailure(entry: {
   model: string;
   mode: ConversationMode;
   correlationId?: string;
+  /** 020 §3-17 — primary 실패인지 대체 모델 실패인지 로그에서 바로 구분한다. */
+  modelRole?: "primary" | "fallback";
 }): void {
   console.error("[k-conversation/responseGenerator] attempt failed", JSON.stringify(entry));
+}
+
+/**
+ * 020 §3-17 — 429 관측성. 대체 모델을 실제로 불렀는지, 결과가 어땠는지 한 줄로 남긴다.
+ * 아이 발화는 절대 담지 않는다.
+ */
+function logFallbackAttempt(entry: {
+  primaryFailureType: ResponseFailureType;
+  fallbackModel: string;
+  outcome: "succeeded" | "failed" | "skipped_budget" | "skipped_not_eligible" | "skipped_no_model";
+  fallbackFailureType?: ResponseFailureType;
+  elapsedMs: number;
+  mode: ConversationMode;
+  correlationId?: string;
+}): void {
+  console.warn("[k-conversation/responseGenerator] model fallback", JSON.stringify(entry));
+}
+
+type SingleAttemptOutcome =
+  | { ok: true; result: AttemptResult }
+  | { ok: false; failureType: ResponseFailureType };
+
+/**
+ * 모델 한 번 호출. 실패는 던지지 않고 유형으로 돌려준다 — primary 재시도와 대체 모델
+ * 호출이 같은 코드를 공유하되, 다음에 무엇을 할지는 호출자가 정하게 하기 위해서다.
+ */
+async function runSingleAttempt(
+  args: GenerateArgs,
+  contents: GenerateContentParams["contents"],
+  systemInstruction: string,
+  opts: {
+    modelId: string;
+    modelRole: "primary" | "fallback";
+    timeoutMs: number;
+    /** 프롬프트 누설·빈 응답 뒤의 재생성인지. 재생성 지시문을 얹는다. */
+    isRegeneration: boolean;
+    attemptNumber: number;
+    totalAttempts: number;
+  },
+): Promise<SingleAttemptOutcome> {
+  const attemptStartedAt = Date.now();
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  const fail = (failureType: ResponseFailureType): SingleAttemptOutcome => {
+    logAttemptFailure({
+      attempt: opts.attemptNumber,
+      totalAttempts: opts.totalAttempts,
+      elapsedMs: Date.now() - attemptStartedAt,
+      failureType,
+      model: opts.modelId,
+      modelRole: opts.modelRole,
+      mode: args.input.mode,
+      correlationId: args.input.correlationId,
+    });
+    return { ok: false, failureType };
+  };
+
+  try {
+    const extraInstruction = opts.isRegeneration
+      ? "[재생성 지시] 방금 답변에 내부 지침이나 시스템 정보가 섞여 나왔거나 응답이 비어 있었어. 그런 내용 없이 아이에게 자연스러운 반말로만 다시 답해."
+      : undefined;
+    const call = args.ai.models.generateContent({
+      model: opts.modelId,
+      contents,
+      config: {
+        systemInstruction: extraInstruction ? `${systemInstruction}\n\n${extraInstruction}` : systemInstruction,
+        thinkingConfig: { thinkingBudget: 0 },
+        temperature: 0.7,
+        maxOutputTokens: 220,
+      },
+    });
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error("response-generator-timeout")), opts.timeoutMs);
+    });
+    const response = await Promise.race([call, timeout]);
+    const rawText = response.text?.trim() ?? "";
+    const text = truncateResponseText(rawText);
+    const tokenIn = response.usageMetadata?.promptTokenCount ?? 0;
+    const tokenOut = response.usageMetadata?.candidatesTokenCount ?? 0;
+
+    if (!text || detectPromptLeak(text)) {
+      return fail(text ? "PROMPT_LEAK_DETECTED" : "EMPTY_RESPONSE");
+    }
+
+    return {
+      ok: true,
+      result: { text, tokenIn, tokenOut, regenerated: opts.isRegeneration || opts.modelRole === "fallback" },
+    };
+  } catch (error) {
+    return fail(classifyGenerationFailure(error));
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
 }
 
 async function attemptWithRetry(
@@ -475,12 +615,16 @@ async function attemptWithRetry(
 ): Promise<AttemptResult> {
   let lastFailureType: ResponseFailureType = "UNKNOWN";
   const startedAt = Date.now();
-  const { attemptTimeoutMs: maxAttemptTimeoutMs, totalBudgetMs: budgetMs } =
-    resolveGenerationBudget(args.input.mode);
+  const {
+    attemptTimeoutMs: maxAttemptTimeoutMs,
+    fallbackAttemptTimeoutMs: maxFallbackTimeoutMs,
+    totalBudgetMs: budgetMs,
+  } = resolveGenerationBudget(args.input.mode);
 
+  // ── 1) primary 모델 시도 ────────────────────────────────────
   for (let i = 0; i < RETRY_DELAYS_MS.length; i++) {
     const delayMs = RETRY_DELAYS_MS[i];
-    // 남은 예산이 다음 시도를 감당하지 못하면 기다리게 하지 않고 즉시 폴백으로 넘긴다.
+    // 남은 예산이 다음 시도를 감당하지 못하면 기다리게 하지 않고 즉시 다음 단계로 넘긴다.
     if (i > 0) {
       const remaining = budgetMs - (Date.now() - startedAt) - delayMs;
       if (remaining < MIN_ATTEMPT_BUDGET_MS) {
@@ -490,6 +634,7 @@ async function attemptWithRetry(
           elapsedMs: Date.now() - startedAt,
           failureType: "BUDGET_EXHAUSTED",
           model: args.modelId,
+          modelRole: "primary",
           mode: args.input.mode,
           correlationId: args.input.correlationId,
         });
@@ -498,71 +643,81 @@ async function attemptWithRetry(
     }
     await sleep(delayMs);
 
-    const attemptStartedAt = Date.now();
-    const remainingBudget = budgetMs - (attemptStartedAt - startedAt);
-    const attemptTimeoutMs = Math.max(MIN_ATTEMPT_BUDGET_MS, Math.min(maxAttemptTimeoutMs, remainingBudget));
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const remainingBudget = budgetMs - (Date.now() - startedAt);
+    const outcome = await runSingleAttempt(args, contents, systemInstruction, {
+      modelId: args.modelId,
+      modelRole: "primary",
+      timeoutMs: Math.max(MIN_ATTEMPT_BUDGET_MS, Math.min(maxAttemptTimeoutMs, remainingBudget)),
+      isRegeneration: i > 0,
+      attemptNumber: i + 1,
+      totalAttempts: RETRY_DELAYS_MS.length,
+    });
+    if (outcome.ok) return outcome.result;
+    lastFailureType = outcome.failureType;
 
-    try {
-      const extraInstruction =
-        i === 0
-          ? undefined
-          : "[재생성 지시] 방금 답변에 내부 지침이나 시스템 정보가 섞여 나왔거나 응답이 비어 있었어. 그런 내용 없이 아이에게 자연스러운 반말로만 다시 답해.";
-      const call = args.ai.models.generateContent({
-        model: args.modelId,
-        contents,
-        config: {
-          systemInstruction: extraInstruction ? `${systemInstruction}\n\n${extraInstruction}` : systemInstruction,
-          thinkingConfig: { thinkingBudget: 0 },
-          temperature: 0.7,
-          maxOutputTokens: 220,
-        },
-      });
-      const timeout = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => reject(new Error("response-generator-timeout")), attemptTimeoutMs);
-      });
-      const response = await Promise.race([call, timeout]);
-      const rawText = response.text?.trim() ?? "";
-      const text = truncateResponseText(rawText);
-      const tokenIn = response.usageMetadata?.promptTokenCount ?? 0;
-      const tokenOut = response.usageMetadata?.candidatesTokenCount ?? 0;
+    // 429 는 용량 신호다. 수백 ms 뒤 다시 불러도 풀리지 않고, 재시도가 오히려 한도를
+    // 더 밀어붙인다(2026-08-19 Production: 3회 시도가 전부 429 로 끝났다).
+    // 020 §3-5 도 같은 모델 재시도로 Burst 를 재증폭하지 말라고 못 박았다.
+    // NON_RETRYABLE 은 우리 요청이 잘못된 것이라 다시 보내도 같다.
+    if (lastFailureType === "RATE_LIMIT" || lastFailureType === "NON_RETRYABLE") break;
+    // timeout/5xx/network 도 같은 모델로 더 밀지 않는다 — 대체 모델이 더 나은 카드다.
+    if (isFallbackEligibleFailure(lastFailureType)) break;
+  }
 
-      if (!text || detectPromptLeak(text)) {
-        lastFailureType = text ? "PROMPT_LEAK_DETECTED" : "EMPTY_RESPONSE";
-        logAttemptFailure({
-          attempt: i + 1,
-          totalAttempts: RETRY_DELAYS_MS.length,
-          elapsedMs: Date.now() - attemptStartedAt,
-          failureType: lastFailureType,
-          model: args.modelId,
-          mode: args.input.mode,
-          correlationId: args.input.correlationId,
-        });
-        continue;
-      }
+  // ── 2) 대체 모델 1회 (020 §3-2, §3-5) ───────────────────────
+  const fallbackModelId = args.fallbackModelId;
+  const elapsedBeforeFallback = Date.now() - startedAt;
+  const remainingForFallback = budgetMs - elapsedBeforeFallback;
 
-      return { text, tokenIn, tokenOut, regenerated: i > 0 };
-    } catch (error) {
-      lastFailureType = classifyGenerationFailure(error);
-      logAttemptFailure({
-        attempt: i + 1,
-        totalAttempts: RETRY_DELAYS_MS.length,
-        elapsedMs: Date.now() - attemptStartedAt,
-        failureType: lastFailureType,
-        model: args.modelId,
-        mode: args.input.mode,
-        correlationId: args.input.correlationId,
-      });
-      // 429 는 용량 신호다. 수백 ms 뒤 다시 불러도 풀리지 않고, 재시도가 오히려 한도를
-      // 더 밀어붙인다(2026-08-19 Production: 3회 시도가 전부 429 로 끝났다).
-      // 아이를 기다리게 하지 말고 즉시 결정론 경로로 넘긴다.
-      if (lastFailureType === "RATE_LIMIT") {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        break;
-      }
-    } finally {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-    }
+  if (!fallbackModelId) {
+    logFallbackAttempt({
+      primaryFailureType: lastFailureType,
+      fallbackModel: "(none)",
+      outcome: "skipped_no_model",
+      elapsedMs: elapsedBeforeFallback,
+      mode: args.input.mode,
+      correlationId: args.input.correlationId,
+    });
+  } else if (!isFallbackEligibleFailure(lastFailureType)) {
+    logFallbackAttempt({
+      primaryFailureType: lastFailureType,
+      fallbackModel: fallbackModelId,
+      outcome: "skipped_not_eligible",
+      elapsedMs: elapsedBeforeFallback,
+      mode: args.input.mode,
+      correlationId: args.input.correlationId,
+    });
+  } else if (remainingForFallback < MIN_ATTEMPT_BUDGET_MS) {
+    // 남은 시간이 없으면 부르지 않는다. 아이를 더 기다리게 하는 것이 더 나쁘다.
+    logFallbackAttempt({
+      primaryFailureType: lastFailureType,
+      fallbackModel: fallbackModelId,
+      outcome: "skipped_budget",
+      elapsedMs: elapsedBeforeFallback,
+      mode: args.input.mode,
+      correlationId: args.input.correlationId,
+    });
+  } else {
+    const outcome = await runSingleAttempt(args, contents, systemInstruction, {
+      modelId: fallbackModelId,
+      modelRole: "fallback",
+      timeoutMs: Math.max(MIN_ATTEMPT_BUDGET_MS, Math.min(maxFallbackTimeoutMs, remainingForFallback)),
+      // primary 가 서비스 오류로 죽은 것이라 프롬프트 문제가 아니다 — 재생성 지시를 얹지 않는다.
+      isRegeneration: false,
+      attemptNumber: RETRY_DELAYS_MS.length + 1,
+      totalAttempts: RETRY_DELAYS_MS.length + 1,
+    });
+    logFallbackAttempt({
+      primaryFailureType: lastFailureType,
+      fallbackModel: fallbackModelId,
+      outcome: outcome.ok ? "succeeded" : "failed",
+      fallbackFailureType: outcome.ok ? undefined : outcome.failureType,
+      elapsedMs: Date.now() - startedAt,
+      mode: args.input.mode,
+      correlationId: args.input.correlationId,
+    });
+    if (outcome.ok) return outcome.result;
+    lastFailureType = outcome.failureType;
   }
 
   throw new GenerationFailedError(lastFailureType);

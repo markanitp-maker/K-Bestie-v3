@@ -74,6 +74,8 @@ export interface RespondDependencies {
   db: SupabaseClient;
   ai: GenerateArgs["ai"];
   modelId: string;
+  /** 020 §3-2 — 응답 생성 primary 실패 시 1회만 쓰는 대체 모델. 없으면 대체 호출을 하지 않는다. */
+  fallbackModelId?: string;
   /** Mission Adapter가 넘기는 불투명 지시문. Engine은 해석하지 않고 프롬프트에 얹기만 한다. */
   adapterInstruction?: string;
   /** 최근 K가 선택했던 Action(Action 다양성 유지용, Adapter가 세션 상태에서 유지). */
@@ -715,6 +717,7 @@ export async function respond(
   const generated = await generateResponse({
     ai: deps.ai,
     modelId: deps.modelId,
+    fallbackModelId: deps.fallbackModelId,
     input: {
       mode: input.mode,
       action,

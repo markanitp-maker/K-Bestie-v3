@@ -461,6 +461,8 @@ export async function POST(req: NextRequest) {
           db: service,
           ai: lazyAi,
           modelId: getLlmModel("missionGeneral"),
+          // 020 §3-2 — primary 가 429/timeout/5xx/network 로 죽으면 이 모델을 정확히 1회 부른다.
+          fallbackModelId: getLlmModel("missionGeneralFallback"),
           childId: session.child_id,
           sessionId,
           currentUtterance: answerText,

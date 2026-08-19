@@ -272,3 +272,56 @@ test("018 §3-12: 3턴보다 오래된 케이 발화는 금지 목록에 넣지 
   // "그랬구나" 는 4턴 전이라 이제 다시 써도 반복으로 느껴지지 않는다.
   assert.equal(fragment, "");
 });
+
+// ── 020 §3-2 Flash → Lite 대체 호출 ─────────────────────────
+test("020 §3-2: 일시 장애만 대체 모델을 부른다", async () => {
+  const { isFallbackEligibleFailure } = await import("./responseGenerator");
+  // 허용 조건 — 429 / timeout / 5xx / network
+  for (const failure of ["RATE_LIMIT", "TIMEOUT", "HTTP_5XX", "NETWORK_ERROR"] as const) {
+    assert.equal(isFallbackEligibleFailure(failure), true, `대체를 불러야 한다: ${failure}`);
+  }
+  // 금지 조건 — 우리 요청이 잘못된 경우는 모델을 바꿔도 같다.
+  assert.equal(isFallbackEligibleFailure("NON_RETRYABLE"), false);
+  // 호출 자체는 성공한 경우다. 모델 문제가 아니라 primary 재생성이 처리한다.
+  assert.equal(isFallbackEligibleFailure("EMPTY_RESPONSE"), false);
+  assert.equal(isFallbackEligibleFailure("PROMPT_LEAK_DETECTED"), false);
+  // 원인을 모르면 429 상황에서 호출을 더 얹지 않는다.
+  assert.equal(isFallbackEligibleFailure("UNKNOWN"), false);
+  assert.equal(isFallbackEligibleFailure("BUDGET_EXHAUSTED"), false);
+});
+
+test("020 §3-2: 400/401/403/404 와 안전 차단은 NON_RETRYABLE 로 분류한다", async () => {
+  const { classifyGenerationFailure } = await import("./responseGenerator");
+  for (const status of [400, 401, 403, 404]) {
+    assert.equal(classifyGenerationFailure({ status }), "NON_RETRYABLE", `status=${status}`);
+  }
+  assert.equal(classifyGenerationFailure(new Error("SAFETY blocked")), "NON_RETRYABLE");
+  assert.equal(classifyGenerationFailure(new Error("INVALID_ARGUMENT")), "NON_RETRYABLE");
+  assert.equal(classifyGenerationFailure(new Error("PERMISSION_DENIED")), "NON_RETRYABLE");
+  // 429 는 4xx 지만 대체 대상이다 — 위 규칙보다 먼저 걸러져야 한다.
+  assert.equal(classifyGenerationFailure({ status: 429 }), "RATE_LIMIT");
+  // 5xx 는 그대로 유지.
+  assert.equal(classifyGenerationFailure({ status: 503 }), "HTTP_5XX");
+});
+
+test("020 §3-6: primary + 대체를 합친 대기 상한이 명시돼 있다", async () => {
+  const { resolveGenerationBudget, MIN_ATTEMPT_BUDGET_MS } = await import("./responseGenerator");
+  for (const mode of ["MISSION", "FREE_CHAT"] as const) {
+    const budget = resolveGenerationBudget(mode);
+    // 대체는 primary 보다 짧게 잡는다 — 이미 시간을 썼고 대체 모델이 더 가볍다.
+    assert.ok(
+      budget.fallbackAttemptTimeoutMs < budget.attemptTimeoutMs,
+      `${mode}: 대체 timeout 이 primary 보다 길다`
+    );
+    // totalBudgetMs 는 두 시도의 **합이 아니라 상한**이다. primary 가 timeout 을
+    // 꽉 쓰면 대체 호출은 남은 시간만큼으로 줄어든다(min(대체timeout, 남은예산)).
+    // 다만 primary 가 최대로 늘어져도 대체를 한 번은 시작할 수 있어야 한다 —
+    // 그래야 429 가 아닌 timeout 경로에서도 대체가 죽은 코드가 되지 않는다.
+    assert.ok(
+      budget.totalBudgetMs >= budget.attemptTimeoutMs + MIN_ATTEMPT_BUDGET_MS,
+      `${mode}: primary 가 timeout 을 다 쓰면 대체를 시작할 수 없다`
+    );
+    // 아이를 기다리게 하는 절대 상한.
+    assert.ok(budget.totalBudgetMs <= 10000, `${mode}: 총 대기 상한이 10초를 넘는다`);
+  }
+});

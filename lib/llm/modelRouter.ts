@@ -8,6 +8,10 @@ export const LLM_MODEL_ROLES = {
   freechatMemoryRecall: "gemini-3.5-flash-lite",
   parentMemoryQuery: "gemini-3.5-flash-lite",
   missionGeneral: "gemini-3.5-flash",
+  // 요청서 020 §3-2 — missionGeneral 이 429/timeout/5xx 로 실패했을 때 정확히 1회만
+  // 부르는 대체 모델. 같은 모델을 다시 부르면 한도를 더 밀어붙일 뿐이라 더 가벼운
+  // 모델로 갈아탄다. 이 저장소가 이미 쓰는 모델만 쓴다(신규 모델 추측 금지).
+  missionGeneralFallback: "gemini-3.5-flash-lite",
   childAnswerClassification: "gemini-3.5-flash",
   parentKChat: "gemini-3.5-flash-lite",
   parentQuestionGeneration: "gemini-3.5-flash",
@@ -35,6 +39,7 @@ export const LLM_ENV_KEYS: Record<LlmModelRole, string> = {
   freechatMemoryRecall: "LLM_MODEL_FREECHAT_MEMORY_RECALL",
   parentMemoryQuery: "LLM_MODEL_PARENT_MEMORY_QUERY",
   missionGeneral: "LLM_MODEL_MISSION_GENERAL",
+  missionGeneralFallback: "LLM_MODEL_MISSION_GENERAL_FALLBACK",
   childAnswerClassification: "LLM_MODEL_CHILD_CLASSIFICATION",
   parentKChat: "LLM_MODEL_PARENT_K_CHAT",
   parentQuestionGeneration: "LLM_MODEL_PARENT_QUESTION_GENERATION",
