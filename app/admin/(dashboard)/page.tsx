@@ -645,36 +645,36 @@ function LlmStatusTab() {
         <SectionTitle>기능별 모델 적용 현황</SectionTitle>
         <AdminResponsiveTable mobileStrategy="scroll"
           columns={[
-            { key: "name", header: "기능명", render: (r: any) => (
+            { key: "name", header: "기능명", sortable: true, sortType: "text", sortValue: (r: any) => r.name, render: (r: any) => (
               <>
                 <div style={{ fontWeight: 600 }}>{r.name}</div>
                 <div style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.category} · {r.runtime}</div>
               </>
             )},
-            { key: "model", header: "실제 적용 모델", render: (r: any) => (
+            { key: "model", header: "실제 적용 모델", sortable: true, sortType: "text", sortValue: (r: any) => r.effectiveModel, render: (r: any) => (
               <span style={{ fontWeight: 600, color: "var(--admin-focus)" }}>{r.effectiveModel}</span>
             )},
-            { key: "fallback", header: "Fallback", render: (r: any) => (
+            { key: "fallback", header: "Fallback", sortable: true, sortType: "text", sortValue: (r: any) => r.fallbackModel || null, render: (r: any) => (
               <span style={{ fontSize: "var(--admin-text-sm)" }}>{r.fallbackModel || "-"}</span>
             )},
-            { key: "env", header: "환경변수", render: (r: any) => (
+            { key: "env", header: "환경변수", sortable: true, sortType: "text", sortValue: (r: any) => safeArray<string>(r.envKeys).join(", ") || null, render: (r: any) => (
               <div style={{ fontSize: "var(--admin-text-xs)", whiteSpace: "nowrap" }}>{safeArray<string>(r.envKeys).length === 0 ? "- (코드 상수)" : safeArray<string>(r.envKeys).map((key) => <div key={key}>{key}</div>)}</div>
             )},
-            { key: "runtime", header: "Runtime / SDK", render: (r: any) => (
+            { key: "runtime", header: "Runtime / SDK", sortable: true, sortType: "text", sortValue: (r: any) => r.runtime, render: (r: any) => (
               <div style={{ fontSize: "var(--admin-text-xs)", minWidth: 150 }}>
                 <div>{r.runtime}</div>
                 <div style={{ color: "var(--admin-text-secondary)", marginTop: 2 }}>{r.sdk}</div>
               </div>
             )},
-            { key: "path", header: "호출부", render: (r: any) => (
+            { key: "path", header: "호출부", sortable: true, sortType: "text", sortValue: (r: any) => safeArray<string>(r.internalPaths).join(", ") || null, render: (r: any) => (
               <div style={{ fontSize: "var(--admin-text-xs)", minWidth: 220 }}>
                 {safeArray<string>(r.internalPaths).map((path) => <div key={path} title={path} style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{path}</div>)}
               </div>
             )},
-            { key: "endpointLocation", header: "Endpoint / Location", render: (r: any) => (
+            { key: "endpointLocation", header: "Endpoint / Location", sortable: true, sortType: "text", sortValue: (r: any) => r.endpointLocation, render: (r: any) => (
               <span style={{ fontSize: "var(--admin-text-sm)", whiteSpace: "nowrap" }}>{r.endpointLocation}</span>
             )},
-            { key: "status", header: "상태", render: (r: any) => (
+            { key: "status", header: "상태", sortable: true, sortType: "status", statusOrder: { "오류": 1, "경고": 2, "정상": 3 }, sortValue: (r: any) => r.status, render: (r: any) => (
               <>
                 <AdminStatusBadge
                   text={r.status}
@@ -804,11 +804,17 @@ function BetaApplicationsTab() {
     {
       key: "name",
       header: "이름",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.name || null,
       render: (req) => <div style={{ fontWeight: 600 }}>{req.name || "정보 미입력"}</div>,
     },
     {
       key: "created_at",
       header: "신청일",
+      sortable: true,
+      sortType: "date",
+      sortValue: (req) => req.created_at && !req.created_at.startsWith("1970-01-01") ? req.created_at : null,
       render: (req) => {
         if (!req.created_at || req.created_at.startsWith("1970-01-01")) return <span style={{ color: "var(--admin-text-secondary)" }}>신청일 미확인</span>;
         return formatDateTime(req.created_at);
@@ -817,16 +823,25 @@ function BetaApplicationsTab() {
     {
       key: "phone",
       header: "연락처",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.phone || null,
       render: (req) => req.phone || <span style={{ color: "var(--admin-text-secondary)" }}>정보 미입력</span>,
     },
     {
       key: "age_group",
       header: "연령대",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.age_group || null,
       render: (req) => req.age_group || <span style={{ color: "var(--admin-text-secondary)" }}>정보 미입력</span>,
     },
     {
       key: "referral_source",
       header: "유입 경로",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.referral_source || null,
       render: (req) => (
         <div>
           <div>{req.referral_source || <span style={{ color: "var(--admin-text-secondary)" }}>정보 미입력</span>}</div>
@@ -837,6 +852,10 @@ function BetaApplicationsTab() {
     {
       key: "status",
       header: "상태",
+      sortable: true,
+      sortType: "status",
+      statusOrder: { "대기 중": 1 },
+      sortValue: () => "대기 중",
       render: (req) => <AdminStatusBadge variant="warning" text="대기 중" />,
     },
     {
@@ -1171,31 +1190,49 @@ function ChildApprovalRequestsTab() {
     {
       key: "child",
       header: "아이",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => `${req.family_name ?? ""}${req.given_name ?? ""}`.trim() || null,
       render: (req) => <div style={{ fontWeight: 600 }}>{req.family_name}{req.given_name}</div>,
     },
     {
       key: "grade",
       header: "학년",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.grade || null,
       render: (req) => req.grade,
     },
     {
       key: "requested_at",
       header: "요청일",
+      sortable: true,
+      sortType: "date",
+      sortValue: (req) => req.requested_at,
       render: (req) => formatDateTime(req.requested_at),
     },
     {
       key: "requester",
       header: "요청자",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.requester_email || null,
       render: (req) => req.requester_email,
     },
     {
       key: "family_creator",
       header: "가족 생성자",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => req.family_creator_email || null,
       render: (req) => req.family_creator_email,
     },
     {
       key: "interests",
       header: "관심사",
+      sortable: true,
+      sortType: "text",
+      sortValue: (req) => Array.isArray(req.interests) && req.interests.length > 0 ? req.interests.join(", ") : null,
       render: (req) => {
         const list = req.interests || [];
         if (list.length === 0) return <span style={{ color: "var(--admin-text-secondary)" }}>없음</span>;
@@ -1206,6 +1243,10 @@ function ChildApprovalRequestsTab() {
     {
       key: "status",
       header: "상태",
+      sortable: true,
+      sortType: "status",
+      statusOrder: { creation_failed: 1, pending: 2, PENDING_PAYMENT: 3, approved: 4, rejected: 5 },
+      sortValue: (req) => req.status,
       render: (req) => {
         const isActionable = (req.status === "pending" || req.status === "creation_failed") && !req.alreadyResolved;
         const verification = verifications[req.id] ?? { beta: req.beta_verified === true, survey: req.survey_verified === true };
@@ -1469,13 +1510,13 @@ function AccountRestoreTab() {
   };
 
   const columns: AdminDataTableColumn<any>[] = [
-    { key: "name", header: "이름", render: (r) => <div style={{ fontWeight: 600 }}>{r.name}</div> },
-    { key: "email", header: "이메일", render: (r) => r.email },
-    { key: "withdrawn", header: "탈퇴일", render: (r) => formatDateTime(r.withdrawn_at) },
-    { key: "purge", header: "삭제예정일", render: (r) => formatDateTime(r.purge_scheduled_at) },
-    { key: "requested", header: "신청일", render: (r) => formatDateTime(r.restore_requested_at) },
-    { key: "family", header: "가족", render: (r) => safeArray<any>(r.memberships).map((m) => `${m.families?.name || "알 수 없는 가족"} (${m.role})`).join(", ") || "없음" },
-    { key: "reason", header: "사유", render: (r) => r.withdrawal_reason || "-" },
+    { key: "name", header: "이름", sortable: true, sortType: "text", sortValue: (r) => r.name || null, render: (r) => <div style={{ fontWeight: 600 }}>{r.name}</div> },
+    { key: "email", header: "이메일", sortable: true, sortType: "text", sortValue: (r) => r.email || null, render: (r) => r.email },
+    { key: "withdrawn", header: "탈퇴일", sortable: true, sortType: "date", sortValue: (r) => r.withdrawn_at, render: (r) => formatDateTime(r.withdrawn_at) },
+    { key: "purge", header: "삭제예정일", sortable: true, sortType: "date", sortValue: (r) => r.purge_scheduled_at, render: (r) => formatDateTime(r.purge_scheduled_at) },
+    { key: "requested", header: "신청일", sortable: true, sortType: "date", sortValue: (r) => r.restore_requested_at, render: (r) => formatDateTime(r.restore_requested_at) },
+    { key: "family", header: "가족", sortable: true, sortType: "text", sortValue: (r) => safeArray<any>(r.memberships).map((m) => `${m.families?.name || "알 수 없는 가족"} (${m.role})`).join(", ") || null, render: (r) => safeArray<any>(r.memberships).map((m) => `${m.families?.name || "알 수 없는 가족"} (${m.role})`).join(", ") || "없음" },
+    { key: "reason", header: "사유", sortable: true, sortType: "text", sortValue: (r) => r.withdrawal_reason || null, render: (r) => r.withdrawal_reason || "-" },
     { key: "actions", header: "액션", render: (r) => (
       <div style={{ display: "flex", gap: "8px" }}>
         <button onClick={() => handleAction(r.id, "reject")} disabled={actionLoading === r.id} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--admin-danger)", background: "white", color: "var(--admin-danger)", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}>거절</button>
@@ -1916,7 +1957,7 @@ function AdminDashboard() {
                 <SectionTitle>나갈 돈 — 비용 항목별 분해 ({PERIOD_LABEL[period]}, 비용 큰 순)</SectionTitle>
                 <AdminResponsiveTable mobileStrategy="scroll"
                   columns={[
-                    { key: "category", header: "항목", render: (item) => {
+                    { key: "category", header: "항목", sortable: true, sortType: "text", sortValue: (item) => item.label, render: (item) => {
                       const isTopUserService = item.category === "ai" && topUsersByServiceKeys.includes(item.key);
                       const isGeminiDetail = item.key === "vertex_ai_gemini";
                       const hasSkuDetail = data.actualCost.skuRows.some((row) => row.category === item.key);
@@ -1930,13 +1971,13 @@ function AdminDashboard() {
                         </div>
                       );
                     } },
-                    { key: "usage", header: "사용량", render: (item) => usageLabel(item.usage, item.usageUnit) },
-                    { key: "gross", header: "실제 사용 원가(gross)", render: (item) => won(item.grossKrw) },
-                    { key: "credit", header: "크레딧 및 할인(credit)", render: (item) => <span style={{ color: "var(--admin-danger)" }}>{won(item.creditKrw)}</span> },
-                    { key: "net", header: "실제 청구 예정액(net)", render: (item) => won(item.netKrw) },
-                    { key: "estimate", header: "내부 배분 추정(estimate)", render: (item) => item.estimateKrw === null ? (item.category === "infra" ? "해당없음" : "—") : won(item.estimateKrw) },
-                    { key: "variance", header: "추정 오차(variance)", render: (item) => <span style={{ color: item.varianceKrw == null ? undefined : item.varianceKrw > 0 ? "var(--admin-danger)" : "var(--admin-success)" }}>{item.varianceKrw === null ? "—" : won(item.varianceKrw)}</span> },
-                    { key: "share", header: "전체 비중", render: (item) => `${item.sharePct.toFixed(1)}%` }
+                    { key: "usage", header: "사용량", sortable: true, sortType: "number", sortValue: (item) => item.usage, render: (item) => usageLabel(item.usage, item.usageUnit) },
+                    { key: "gross", header: "실제 사용 원가(gross)", sortable: true, sortType: "number", sortValue: (item) => item.grossKrw, render: (item) => won(item.grossKrw) },
+                    { key: "credit", header: "크레딧 및 할인(credit)", sortable: true, sortType: "number", sortValue: (item) => item.creditKrw, render: (item) => <span style={{ color: "var(--admin-danger)" }}>{won(item.creditKrw)}</span> },
+                    { key: "net", header: "실제 청구 예정액(net)", sortable: true, sortType: "number", sortValue: (item) => item.netKrw, render: (item) => won(item.netKrw) },
+                    { key: "estimate", header: "내부 배분 추정(estimate)", sortable: true, sortType: "number", sortValue: (item) => item.estimateKrw, render: (item) => item.estimateKrw === null ? (item.category === "infra" ? "해당없음" : "—") : won(item.estimateKrw) },
+                    { key: "variance", header: "추정 오차(variance)", sortable: true, sortType: "number", sortValue: (item) => item.varianceKrw, render: (item) => <span style={{ color: item.varianceKrw == null ? undefined : item.varianceKrw > 0 ? "var(--admin-danger)" : "var(--admin-success)" }}>{item.varianceKrw === null ? "—" : won(item.varianceKrw)}</span> },
+                    { key: "share", header: "전체 비중", sortable: true, sortType: "number", sortValue: (item) => item.sharePct, render: (item) => `${item.sharePct.toFixed(1)}%` }
                   ]}
                   data={data.costBreakdown}
                   keyExtractor={(item) => item.key}
@@ -1958,11 +1999,11 @@ function AdminDashboard() {
                             <div style={{ fontSize: 13, fontWeight: 700, color: "var(--admin-primary)", marginBottom: 10 }}>Google Cloud Service/SKU 실제 비용</div>
                             <AdminResponsiveTable mobileStrategy="scroll"
                               columns={[
-                                { key: "service", header: "Service", render: (row) => row.service },
-                                { key: "sku", header: "SKU", render: (row) => row.sku },
-                                { key: "gross", header: "gross", render: (row) => won(row.cost.grossCostKrw) },
-                                { key: "credit", header: "credit", render: (row) => won(row.cost.creditKrw) },
-                                { key: "net", header: "net", render: (row) => won(row.cost.netCostKrw) },
+                                { key: "service", header: "Service", sortable: true, sortType: "text", sortValue: (row) => row.service, render: (row) => row.service },
+                                { key: "sku", header: "SKU", sortable: true, sortType: "text", sortValue: (row) => row.sku, render: (row) => row.sku },
+                                { key: "gross", header: "gross", sortable: true, sortType: "number", sortValue: (row) => row.cost.grossCostKrw, render: (row) => won(row.cost.grossCostKrw) },
+                                { key: "credit", header: "credit", sortable: true, sortType: "number", sortValue: (row) => row.cost.creditKrw, render: (row) => won(row.cost.creditKrw) },
+                                { key: "net", header: "net", sortable: true, sortType: "number", sortValue: (row) => row.cost.netCostKrw, render: (row) => won(row.cost.netCostKrw) },
                               ]}
                               data={skuRows}
                               keyExtractor={(row) => `${row.projectId}:${row.serviceId}:${row.skuId}`}
@@ -1975,10 +2016,10 @@ function AdminDashboard() {
                           <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--admin-primary)", marginBottom: 10 }}>Gemini 사용 형태별 상세</div>
                           <AdminResponsiveTable mobileStrategy="card"
                             columns={[
-                              { key: "dim", header: "항목", render: (d) => d.label },
-                              { key: "gross", header: "실제 사용 원가(gross)", render: (d) => won(d.data.grossKrw) },
-                              { key: "credit", header: "크레딧(credit)", render: (d) => <span style={{ color: "var(--admin-danger)" }}>{won(d.data.creditKrw)}</span> },
-                              { key: "net", header: "순 원가(net)", render: (d) => won(d.data.netKrw) }
+                              { key: "dim", header: "항목", sortable: true, sortType: "text", sortValue: (d) => d.label, render: (d) => d.label },
+                              { key: "gross", header: "실제 사용 원가(gross)", sortable: true, sortType: "number", sortValue: (d) => d.data.grossKrw, render: (d) => won(d.data.grossKrw) },
+                              { key: "credit", header: "크레딧(credit)", sortable: true, sortType: "number", sortValue: (d) => d.data.creditKrw, render: (d) => <span style={{ color: "var(--admin-danger)" }}>{won(d.data.creditKrw)}</span> },
+                              { key: "net", header: "순 원가(net)", sortable: true, sortType: "number", sortValue: (d) => d.data.netKrw, render: (d) => won(d.data.netKrw) }
                             ]}
                             data={[
                               { key: "input_audio", label: "입력 오디오", data: data.actualCost.geminiUsageDimensions.input_audio },
@@ -1997,10 +2038,10 @@ function AdminDashboard() {
                           <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--admin-primary)", marginBottom: 10 }}>{item.label} 사용량 TOP10</div>
                           <AdminResponsiveTable mobileStrategy="card"
                             columns={[
-                              { key: "rank", header: "순위", render: (u) => topUsers.indexOf(u) + 1 },
-                              { key: "child", header: "아이", render: (u) => u.name },
-                              { key: "usage", header: "사용량", render: (u) => usageLabel(u.usage, item.usageUnit) },
-                              { key: "cost", header: "비용", render: (u) => won(u.costKrw) }
+                              { key: "rank", header: "순위", sortable: true, sortType: "number", sortValue: (u) => topUsers.indexOf(u) + 1, render: (u) => topUsers.indexOf(u) + 1 },
+                              { key: "child", header: "아이", sortable: true, sortType: "text", sortValue: (u) => u.name, render: (u) => u.name },
+                              { key: "usage", header: "사용량", sortable: true, sortType: "number", sortValue: (u) => u.usage, render: (u) => usageLabel(u.usage, item.usageUnit) },
+                              { key: "cost", header: "비용", sortable: true, sortType: "number", sortValue: (u) => won(u.costKrw), render: (u) => won(u.costKrw) }
                             ]}
                             data={topUsers}
                             keyExtractor={(u) => u.childId}
@@ -2018,9 +2059,9 @@ function AdminDashboard() {
                 <SectionTitle>내부 실제 사용량 ({PERIOD_LABEL[period]})</SectionTitle>
                 <AdminResponsiveTable mobileStrategy="card"
                   columns={[
-                    { key: "service", header: "서비스", render: (row) => row.service },
-                    { key: "usage", header: "집계 사용량", render: (row) => row.usage },
-                    { key: "events", header: "이벤트", render: (row) => `${row.events.toLocaleString("ko-KR")}건` },
+                    { key: "service", header: "서비스", sortable: true, sortType: "text", sortValue: (row) => row.service, render: (row) => row.service },
+                    { key: "usage", header: "집계 사용량", sortable: true, sortType: "text", sortValue: (row) => row.usage, render: (row) => row.usage },
+                    { key: "events", header: "이벤트", sortable: true, sortType: "number", sortValue: (row) => row.events, render: (row) => `${row.events.toLocaleString("ko-KR")}건` },
                   ]}
                   data={[
                     { key: "stt", service: "STT", usage: `${data.internalUsage.stt.minutes.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}분`, events: data.internalUsage.stt.eventCount },

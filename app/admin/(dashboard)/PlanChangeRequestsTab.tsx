@@ -190,18 +190,18 @@ export default function PlanChangeRequestsTab() {
             { key: "select", header: "선택", render: (row) => (
               <SoftDeleteRowCheckbox checked={softDelete.isSelected(row.id)} onChange={() => softDelete.toggleSelected(row.id)} />
             ) },
-            { key: "requested_at", header: "요청 일시", render: (row) => formatDateTime(row.requested_at) },
-            { key: "parents", header: "부모", render: (row) => (
+            { key: "requested_at", header: "요청 일시", sortable: true, sortType: "date", sortValue: (row) => row.requested_at, render: (row) => formatDateTime(row.requested_at) },
+            { key: "parents", header: "부모", sortable: true, sortType: "text", sortValue: (row) => row.parents?.name || row.parents?.email || null, render: (row) => (
               <>
                 {row.parents?.name ?? "미상"}
                 <br />
                 <span style={{ fontSize: "var(--admin-text-xs)", color: "var(--admin-text-secondary)" }}>{row.parents?.email ?? ""}</span>
               </>
             ) },
-            { key: "child", header: "자녀", render: (row) => row.child_profiles?.name ?? "미상" },
-            { key: "current_plan", header: "현재 요금제", render: (row) => CARE_PLAN_LABELS[row.current_plan_snapshot] ?? row.current_plan_snapshot },
-            { key: "requested_plan", header: "요청 요금제", render: (row) => CARE_PLAN_LABELS[row.requested_tier] ?? row.requested_tier },
-            { key: "status", header: "상태", render: (row) => (
+            { key: "child", header: "자녀", sortable: true, sortType: "text", sortValue: (row) => row.child_profiles?.name || null, render: (row) => row.child_profiles?.name ?? "미상" },
+            { key: "current_plan", header: "현재 요금제", sortable: true, sortType: "number", sortValue: (row) => row.current_plan_snapshot, render: (row) => CARE_PLAN_LABELS[row.current_plan_snapshot] ?? row.current_plan_snapshot },
+            { key: "requested_plan", header: "요청 요금제", sortable: true, sortType: "number", sortValue: (row) => row.requested_tier, render: (row) => CARE_PLAN_LABELS[row.requested_tier] ?? row.requested_tier },
+            { key: "status", header: "상태", sortable: true, sortType: "status", statusOrder: { pending: 1, approved: 2, rejected: 3, cancelled: 4 }, sortValue: (row) => row.status, render: (row) => (
               <>
                 <AdminStatusBadge
                   text={STATUS_LABELS[row.status]}
@@ -217,7 +217,7 @@ export default function PlanChangeRequestsTab() {
                 )}
               </>
             ) },
-            { key: "reviewed_at", header: "처리 일시", render: (row) => formatDateTime(row.reviewed_at) },
+            { key: "reviewed_at", header: "처리 일시", sortable: true, sortType: "date", sortValue: (row) => row.reviewed_at, render: (row) => formatDateTime(row.reviewed_at) },
             { key: "action", header: "액션", render: (row) => row.status === "pending" ? (
               <div style={{ display: "flex", gap: 6 }}>
                 <button

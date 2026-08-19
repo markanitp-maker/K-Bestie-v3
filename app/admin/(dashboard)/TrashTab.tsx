@@ -176,20 +176,27 @@ export default function TrashTab() {
         />
       ),
     },
-    { key: "resourceLabel", header: "유형", render: (item) => item.resourceLabel },
-    { key: "title", header: "대상", render: (item) => item.title },
+    { key: "resourceLabel", header: "유형", sortable: true, sortType: "text", sortValue: (item) => item.resourceLabel, render: (item) => item.resourceLabel },
+    { key: "title", header: "대상", sortable: true, sortType: "text", sortValue: (item) => item.title, render: (item) => item.title },
     {
       key: "originalStatus",
       header: "원래 상태",
+      sortable: true,
+      sortType: "text",
+      sortValue: (item) => item.originalStatus || null,
       render: (item) => (item.originalStatus ? <AdminStatusBadge text={item.originalStatus} variant="neutral" /> : "-"),
     },
-    { key: "createdAt", header: "등록일", render: (item) => formatDate(item.createdAt) },
-    { key: "deletedAt", header: "삭제일", render: (item) => formatDateTime(item.deletedAt) },
-    { key: "deletedBy", header: "삭제자", render: (item) => item.deletedByEmail || item.deletedBy || "-" },
-    { key: "deleteReason", header: "삭제 사유", render: (item) => item.deleteReason || "-" },
+    { key: "createdAt", header: "등록일", sortable: true, sortType: "date", sortValue: (item) => item.createdAt, render: (item) => formatDate(item.createdAt) },
+    { key: "deletedAt", header: "삭제일", sortable: true, sortType: "date", sortValue: (item) => item.deletedAt, render: (item) => formatDateTime(item.deletedAt) },
+    { key: "deletedBy", header: "삭제자", sortable: true, sortType: "text", sortValue: (item) => item.deletedByEmail || item.deletedBy || null, render: (item) => item.deletedByEmail || item.deletedBy || "-" },
+    { key: "deleteReason", header: "삭제 사유", sortable: true, sortType: "text", sortValue: (item) => item.deleteReason || null, render: (item) => item.deleteReason || "-" },
     {
       key: "remaining",
       header: "복구 가능",
+      sortable: true,
+      sortType: "number",
+      defaultSortDirection: "asc",
+      sortValue: (item) => item.remainingDays,
       render: (item) => (
         <div style={{ fontSize: 12 }}>
           <div style={{ fontWeight: 700, color: item.remainingDays <= 3 ? "#dc2626" : undefined }}>
