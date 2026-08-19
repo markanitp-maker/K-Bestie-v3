@@ -380,7 +380,13 @@ test("Invariant 3: '그만할래'/'안 할래'/'그만하자' → 활성 게임 
     });
 
     assert.equal(endCalled, true, `"${text}" 발화 시 활성 게임이 end 되어야 함`);
-    assert.deepEqual(result, { handled: false }, `"${text}" 발화 시 handled: false 반환되어 일반 대화로 복귀해야 함`);
+    // 013 — `ended` 를 함께 올린다. 이 값이 없으면 엔진이 놀이가 살아 있다고 착각해
+    // "하던 놀이 계속하자" 라고 말하고, 클라이언트도 종료를 못 알아 입력모드가 잠긴다.
+    assert.deepEqual(
+      result,
+      { handled: false, ended: true },
+      `"${text}" 발화 시 handled: false + ended: true 로 일반 대화로 복귀해야 함`
+    );
   }
 });
 

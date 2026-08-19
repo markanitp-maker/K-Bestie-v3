@@ -111,7 +111,11 @@ export async function routePlaySkillTurn(
           );
         }
       }
-      return { handled: false };
+      // 같은 누락이 여기에도 있었다(리뷰 지적, 2026-08-20). 아이가 "그만" 이라고 해서
+      // 세션을 닫았는데 `ended` 를 안 올리면 엔진은 놀이가 살아 있다고 본다. 그러면
+      // 케이가 "하던 놀이 계속하자" 라고 말하고, 013 의 클라이언트도 종료 신호
+      // (activePlaySkillId=null)를 못 받아 입력모드가 텍스트로 잠긴 채 남는다.
+      return { handled: false, ended: Boolean(activeSkill) };
     }
 
     // 010 대표님 QA 실측(2026-08-20 00:11~00:12): 아이가 "다른놀이", "다른 놀이 하라고" 를
@@ -140,7 +144,12 @@ export async function routePlaySkillTurn(
       }
       await clearPendingPlayProposal(chatSessionId, db);
       // 어떤 놀이를 할지 아이가 고르게 한다. 케이가 임의로 하나를 시작하지 않는다.
-      return { handled: false };
+      //
+      // 리뷰 지적(2026-08-20 BLOCKER): `ended` 를 빼먹으면 엔진의 hasActivePlaySession 이
+      // true 로 남는다. 그러면 (a) 놀이 제안 경로가 "이미 놀이 중" 이라고 막혀 아이가
+      // 놀이 목록을 못 받고 일반 대화로 흘러가며, (b) 가짜게임 복구 문구가
+      // "하던 놀이 계속하자" 로 나가 방금 닫은 세션을 계속하자고 말한다.
+      return { handled: false, ended: true };
     }
 
     if (hasNegativeEmotion) {
@@ -236,7 +245,10 @@ export async function routePlaySkillTurn(
           skillId: turnResult.skillId ?? activeSkill.id,
         };
       }
-      return { handled: false };
+      // 스킬이 처리하지 못했더라도 **세션을 닫았을 수 있다**
+      // (예: 넌센스 TOPIC_SHIFT 는 세션을 끝내고 handled=false 를 돌려준다).
+      // 그 `ended` 를 버리면 엔진이 놀이가 살아 있다고 착각한다 — 같은 계열 누락이다.
+      return { handled: false, ended: turnResult.ended };
     }
 
     // 5. 활성 세션 없음 & Pending Proposal 존재할 때 아이의 포괄 수락 확인
