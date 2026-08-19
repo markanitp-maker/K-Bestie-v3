@@ -8,6 +8,7 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 // 020 §3-11 — 잡 사이에 짧은 간격을 둬 Vertex 요청이 같은 순간에 몰리지 않게 한다.
 import { throttleBetweenBatchLlmJobs } from "./llmThrottle";
+import { isRetryableTransportError } from "./retryPolicy";
 
 export type MemoryExecutionResult = {
   status: "completed" | "skipped" | "failed";
@@ -141,11 +142,10 @@ export async function runMemoryBatchWorkerV3(limit: number, workerId?: string, e
       const errMsg = err.message || "Unknown error";
       summary.errors.push({ job_id: job.id, child_id: job.child_id, error: errMsg });
 
-      const isRetryable =
-        errMsg.includes("429") ||
-        errMsg.includes("50") ||
-        errMsg.includes("fetch failed") ||
-        errMsg.includes("timeout");
+      // 020 §3-12 — 전송 계층 오류 판정을 공통 모듈로 옮겼다.
+      // 기존 `errMsg.includes("50")` 은 "50" 이 들어간 아무 메시지나 재시도 대상으로
+      // 만들어(예: "50 messages processed") 영구 실패를 무한히 재큐잉하는 통로였다.
+      const isRetryable = isRetryableTransportError(errMsg);
 
       const { error: failErr } = await db.rpc("fail_memory_batch_job_v3", {
         p_job_id: job.id,
