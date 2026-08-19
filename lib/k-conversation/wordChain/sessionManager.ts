@@ -230,8 +230,19 @@ export async function startWordChainSession(
 /**
  * 이 아이가 최근 끝말잇기에서 K 의 첫 단어로 썼던 낱말들(010 §3-4).
  *
- * 같은 첫 단어가 반복되는 것을 막기 위한 제외 목록이다. 라운드 기록에서 K 가 낸
- * 첫 낱말만 모은다. 실패하면 빈 배열을 돌려준다 — 제외를 못 해도 게임은 되어야 한다.
+ * 같은 첫 단어가 반복되는 것을 막기 위한 제외 목록이다. 실패하면 빈 배열을
+ * 돌려준다 — 제외를 못 해도 게임은 되어야 한다.
+ *
+ * 010 (2026-08-20 Dev QA 실측) — 전에는 `word_chain_game_rounds` 에서 "세션별 가장
+ * 이른 K 낱말" 을 첫 단어로 봤다. 그런데 `startWordChainSession` 은 K 의 첫 단어를
+ * 라운드로 남기지 않고 세션 행에만 적는다. 그래서 라운드에서 보이는 최초 K 낱말은
+ * 아이 낱말에 이어 붙인 두 번째 낱말이고(거북이 → 이름표 → **표범**), 첫 단어
+ * `거북이` 는 제외 목록에 한 번도 들어가지 않았다. 같은 대화에서 다시 시작하면
+ * 시드(chatSessionId)가 같으니 매번 `거북이` 가 다시 나왔다.
+ *
+ * 첫 단어의 실제 출처는 세션 행의 `used_words[0]` 다 — 생성 시 `[initialWord]` 로
+ * 시작해 순서대로 덧붙이므로 0번이 곧 첫 단어다. 아이가 먼저 시작한 세션
+ * (`initiated_by <> 'K'`)은 첫 단어가 K 것이 아니므로 세지 않는다.
  */
 export async function getRecentInitialKWords(
   db: SupabaseClient,
@@ -240,25 +251,24 @@ export async function getRecentInitialKWords(
 ): Promise<string[]> {
   try {
     const { data, error } = await db
-      .from("word_chain_game_rounds")
-      .select("session_id, word, by, created_at")
+      .from("word_chain_game_sessions")
+      .select("used_words, initiated_by, started_at")
       .eq("child_id", childId)
-      .eq("by", "K")
-      .order("created_at", { ascending: false })
-      .limit(limit * 6);
+      .eq("initiated_by", "K")
+      .order("started_at", { ascending: false })
+      .limit(limit);
     if (error || !data) return [];
 
-    // 세션별 가장 이른 K 낱말이 그 게임의 첫 단어다.
-    const firstBySession = new Map<string, { word: string; createdAt: string }>();
+    const words: string[] = [];
     for (const row of data) {
-      const sessionId = row.session_id as string;
-      const createdAt = row.created_at as string;
-      const existing = firstBySession.get(sessionId);
-      if (!existing || createdAt < existing.createdAt) {
-        firstBySession.set(sessionId, { word: row.word as string, createdAt });
+      const usedWords = row.used_words;
+      if (!Array.isArray(usedWords)) continue;
+      const first = usedWords[0];
+      if (typeof first === "string" && first.trim().length > 0) {
+        words.push(first.trim());
       }
     }
-    return [...new Set([...firstBySession.values()].map((entry) => entry.word))].slice(0, limit);
+    return [...new Set(words)].slice(0, limit);
   } catch (error) {
     console.error("[wordChain/sessionManager] 최근 첫 단어 조회 실패", error);
     return [];

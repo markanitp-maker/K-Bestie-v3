@@ -19,6 +19,11 @@ import { judgeChildWord, type WordChainRejection } from "./chainRules";
 import { selectKNextWord } from "./nextWordSelector";
 import { lookupWord, WORD_CHAIN_DICTIONARY, BY_FIRST_SYLLABLE } from "./dictionaryIndex";
 import { allowedNextInitials } from "./dueum";
+import {
+  instrumentalParticle,
+  objectParticle,
+  topicParticle,
+} from "@/lib/utils/koreanParticle";
 import { resolveGradePersona } from "../gradePersonas";
 import {
   DerivedWordChainEntry,
@@ -364,16 +369,16 @@ function buildRejectionInstruction(params: {
 
   switch (rejection) {
     case "NOT_IN_DICTIONARY":
-      return `[끝말잇기] "${targetWord}"(은)는 케이가 아직 잘 모르는 단어야! 사전에 없는 단어니까 다른 단어로 다시 한번 말해줄래? "${requiredSyllable}"(으)로 시작하는 단어여야 해.`;
+      return `[끝말잇기] "${targetWord}"${topicParticle(targetWord)} 케이가 아직 잘 모르는 단어야! 사전에 없는 단어니까 다른 단어로 다시 한번 말해줄래? "${requiredSyllable}"${instrumentalParticle(requiredSyllable)} 시작하는 단어여야 해.`;
     case "ALREADY_USED":
-      return `[끝말잇기] "${targetWord}"(은)는 아까 우리 게임에서 이미 나왔던 단어야! 이미 쓴 단어 말고 다른 단어로 다시 도전해볼래? "${requiredSyllable}"(으)로 시작해야 해.`;
+      return `[끝말잇기] "${targetWord}"${topicParticle(targetWord)} 아까 우리 게임에서 이미 나왔던 단어야! 이미 쓴 단어 말고 다른 단어로 다시 도전해볼래? "${requiredSyllable}"${instrumentalParticle(requiredSyllable)} 시작해야 해.`;
     case "CHAIN_MISMATCH":
-      return `[끝말잇기] "${targetWord}"(은)는 글자가 이어지지 않아! 지금은 "${previousWord}"의 마지막 글자인 "${requiredSyllable}"(으)로 시작하는 단어를 말해야 해. 다시 해보자!`;
+      return `[끝말잇기] "${targetWord}"${topicParticle(targetWord)} 글자가 이어지지 않아! 지금은 "${previousWord}"의 마지막 글자인 "${requiredSyllable}"${instrumentalParticle(requiredSyllable)} 시작하는 단어를 말해야 해. 다시 해보자!`;
     case "NOT_HANGUL":
-      return `[끝말잇기] 한글 단어로 말해줘! "${requiredSyllable}"(으)로 시작하는 단어를 다시 한번 말해볼래?`;
+      return `[끝말잇기] 한글 단어로 말해줘! "${requiredSyllable}"${instrumentalParticle(requiredSyllable)} 시작하는 단어를 다시 한번 말해볼래?`;
     case "EMPTY":
     default:
-      return `[끝말잇기] 어떤 단어인지 잘 못 들었어. "${requiredSyllable}"(으)로 시작하는 단어를 다시 말해줄래?`;
+      return `[끝말잇기] 어떤 단어인지 잘 못 들었어. "${requiredSyllable}"${instrumentalParticle(requiredSyllable)} 시작하는 단어를 다시 말해줄래?`;
   }
 }
 
@@ -435,10 +440,10 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         const reqSyllable =
           getRequiredStartSyllable(existingSession) ??
           existingSession.current_word.slice(-1);
-        const openingLine = `우리 아까 하던 거 이어서 하자! "${existingSession.current_word}" 다음으로 "${reqSyllable}"(으)로 시작해줘!`;
+        const openingLine = `우리 아까 하던 거 이어서 하자! "${existingSession.current_word}" 다음으로 "${reqSyllable}"${instrumentalParticle(reqSyllable)} 시작해줘!`;
         return {
           handled: true,
-          instruction: `[끝말잇기] 이미 진행 중인 끝말잇기 게임이 있어! 지금 단어는 "${existingSession.current_word}"야. "${reqSyllable}"(으)로 시작하는 단어를 말해줘.`,
+          instruction: `[끝말잇기] 이미 진행 중인 끝말잇기 게임이 있어! 지금 단어는 "${existingSession.current_word}"야. "${reqSyllable}"${instrumentalParticle(reqSyllable)} 시작하는 단어를 말해줘.`,
           ended: false,
           openingLine,
           requiredWordInOutput: existingSession.current_word,
@@ -476,7 +481,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         handled: true,
         // 015 — 3인칭("케이가")으로 두면 케이가 자기 이름을 그대로 읽어 "케이이가 먼저
         // 시작할게"처럼 나온다(Dev QA 실측). 케이는 자기를 "내가"라고 부른다.
-        instruction: `[끝말잇기] 내가 먼저 시작한다고 말하고 첫 번째 단어 "${initialWordEntry.word}"를 제시해. 아이에게 "${reqSyllable}"(으)로 시작하는 단어를 이어 말해달라고 해.`,
+        instruction: `[끝말잇기] 내가 먼저 시작한다고 말하고 첫 번째 단어 "${initialWordEntry.word}"${objectParticle(initialWordEntry.word)} 제시해. 아이에게 "${reqSyllable}"${instrumentalParticle(reqSyllable)} 시작하는 단어를 이어 말해달라고 해.`,
         ended: false,
         openingLine,
         requiredWordInOutput: initialWordEntry.word,
@@ -584,7 +589,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
                 }
               }
 
-              instruction += ` 아이가 연속으로 어려워하고 있으니 따뜻하게 격려해주고, "${requiredSyllable}"(으)로 시작하는 ${hintCategory}쉬운 단어를 생각해볼 수 있도록 작은 힌트를 줘. 정답 단어를 직접 말하지는 마.`;
+              instruction += ` 아이가 연속으로 어려워하고 있으니 따뜻하게 격려해주고, "${requiredSyllable}"${instrumentalParticle(requiredSyllable)} 시작하는 ${hintCategory}쉬운 단어를 생각해볼 수 있도록 작은 힌트를 줘. 정답 단어를 직접 말하지는 마.`;
             }
           }
         } catch {
@@ -698,7 +703,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       const nextReqSyllable = kNextEntry.lastSyllable;
       return {
         handled: true,
-        instruction: `[끝말잇기] 아이가 "${childEntry.word}"(으)로 멋지게 이어줬어! 케이는 "${kNextEntry.word}"(으)로 받을게. 이제 "${nextReqSyllable}"(으)로 시작하는 단어를 말해줘.`,
+        instruction: `[끝말잇기] 아이가 "${childEntry.word}"${instrumentalParticle(childEntry.word)} 멋지게 이어줬어! 케이는 "${kNextEntry.word}"${instrumentalParticle(kNextEntry.word)} 받을게. 이제 "${nextReqSyllable}"${instrumentalParticle(nextReqSyllable)} 시작하는 단어를 말해줘.`,
         ended: false,
         requiredWordInOutput: kNextEntry.word,
       };

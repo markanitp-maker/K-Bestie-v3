@@ -844,10 +844,31 @@ export default function ChatPage() {
         restorePrePlayInputMode();
       }
     } else {
+      // 013 §3-14 (2026-08-20 Dev 실측) — 놀이 진입 경로는 모달만이 아니다. 아이가
+      // "끝말잇기 하자" 라고 말해서 시작하면 handleBeforeSkillStart 가 돌지 않으므로
+      // 이전 입력 모드가 저장되지 않았고, 그만둘 때 restorePrePlayInputMode 가
+      // 저장값 없음 → switchToVoice() 로 떨어져 text 였던 아이를 voice+manual 로
+      // 바꿔 버렸다. 놀이가 켜지는 순간에도 저장한다 — 모달이 이미 저장했으면
+      // (null 아님) 덮어쓰지 않는다.
+      // 이 분기는 놀이가 살아 있는 **모든** 턴에 들어온다. 아래 두 가지는 진입
+      // 전환에서 한 번만 해야 한다 — 매 턴 switchToText() 를 부르면 그 안의
+      // manualFinalize()/releaseMicrophone() 이 게임 중에 계속 다시 돈다.
+      const enteringPlay = !isPlayActiveRef.current;
       setIsPlayActive(true);
       isPlayActiveRef.current = true;
+      if (enteringPlay) {
+        if (prePlayInputModeRef.current === null) {
+          prePlayInputModeRef.current = { mode, isAuto };
+        }
+        // 013 §3-2 — 키보드 강제도 모달에만 걸려 있었다. 음성 브랜치는 isPlayActive 로
+        // 숨지 않으므로(하단 3열은 mode === "text" 여부로만 갈린다), 아이가 말로
+        // 놀이를 시작하면 마이크·자동/수동 토글이 그대로 남고 텍스트 입력창은 아예
+        // 렌더되지 않는다. 놀이가 켜지는 순간 여기서도 텍스트로 넘긴다.
+        // 사용자 제스처 밖이라 자동 포커스는 실패할 수 있지만, 입력창 자체는 나온다.
+        switchToText();
+      }
     }
-  }, [restorePrePlayInputMode]);
+  }, [mode, isAuto, restorePrePlayInputMode, switchToText]);
   onPlaySkillStateChangeRef.current = handlePlaySkillStateChange;
 
   const handleSendText = useCallback(async () => {
