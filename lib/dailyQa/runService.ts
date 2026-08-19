@@ -21,6 +21,15 @@ import {
 } from "./judgeContext";
 import { offsetCalendarDate } from "../admin/analyticsKst";
 
+/**
+ * 이 시간을 넘긴 RUNNING Run 은 죽은 것으로 본다(리뷰 지적, 2026-08-19).
+ *
+ * 90분: 이 배치는 24시간 대화를 한 번 훑는 작업이라 정상적으로도 수 분이 걸릴 수 있다.
+ * 너무 짧게 잡으면 아직 도는 중인 실행을 빼앗아 같은 window 를 두 프로세스가 동시에
+ * 분석한다. 하루 한 번 도는 배치라 넉넉하게 잡아도 복구가 늦어지는 손해가 거의 없다.
+ */
+const STALE_RUNNING_MS = 90 * 60 * 1000;
+
 export interface DailyQaRunDeps {
   db: SupabaseClient; // service_role
   nowIso: string; // Date.now() 를 쓰지 마라. 항상 주입받는다.
@@ -80,7 +89,42 @@ export async function runDailyConversationQa(deps: DailyQaRunDeps): Promise<Dail
       .eq("execution_key", window.executionKey)
       .maybeSingle();
 
-    if (existingRun) {
+    // 리뷰 지적(2026-08-19 MAJOR): 앞 실행이 크래시하면 Run 이 RUNNING 으로 남고,
+    // 그 뒤로는 같은 window 가 영구히 재실행되지 않는다. 관리자가 "지금 다시 점검" 을
+    // 눌러도 그 RUNNING 을 그대로 돌려주기만 한다 — 탈출 경로가 없었다.
+    //
+    // 일정 시간을 넘긴 RUNNING 은 죽은 것으로 본다. FAILED 로 마감하고 이 실행이 이어받는다.
+    // 시간을 넉넉히 두는 이유: 정상 실행이 아직 도는 중인데 빼앗으면 같은 window 를
+    // 두 프로세스가 동시에 분석한다. 하루 한 번 도는 배치라 넉넉해도 손해가 없다.
+    if (existingRun && existingRun.status === "RUNNING") {
+      const startedAtMs = existingRun.started_at ? new Date(existingRun.started_at).getTime() : NaN;
+      const ageMs = Number.isNaN(startedAtMs) ? Infinity : new Date(deps.nowIso).getTime() - startedAtMs;
+      if (ageMs > STALE_RUNNING_MS) {
+        await deps.db
+          .from("daily_conversation_qa_runs")
+          .update({
+            status: "FAILED",
+            error_summary: "이전 실행이 응답 없이 중단됐다(stale RUNNING). 이 실행이 이어받는다.",
+            completed_at: deps.nowIso,
+          })
+          .eq("id", existingRun.id);
+        // 같은 execution_key 를 재사용한다 — 새 Run 을 만들면 UNIQUE 에 다시 걸린다.
+        // 이 Run 을 RUNNING 으로 되돌려 이어서 분석한다.
+        await deps.db
+          .from("daily_conversation_qa_runs")
+          .update({
+            status: "RUNNING",
+            trigger_source: deps.triggerSource,
+            started_at: deps.nowIso,
+            completed_at: null,
+            error_summary: null,
+          })
+          .eq("id", existingRun.id);
+        runId = existingRun.id;
+      }
+    }
+
+    if (existingRun && runId === null) {
       return {
         runId: existingRun.id,
         executionKey: existingRun.execution_key,
@@ -106,7 +150,7 @@ export async function runDailyConversationQa(deps: DailyQaRunDeps): Promise<Dail
     }
   }
 
-  runId = insertedRun?.id ?? null;
+  if (runId === null) runId = insertedRun?.id ?? null;
 
   try {
     if (!runId) {
@@ -282,7 +326,7 @@ export async function runDailyConversationQa(deps: DailyQaRunDeps): Promise<Dail
     }
 
     // 7. 이슈 집계 및 trend_status 계산 (§3-4, §3-11, §3-12)
-    const issueDrafts: DailyQaIssueDraft[] = aggregateDetections(confirmedDetections);
+    let issueDrafts: DailyQaIssueDraft[] = aggregateDetections(confirmedDetections);
 
     // 어제 Run 정보 조회
     const yesterdayBusinessDate = offsetCalendarDate(window.businessDate, -1);
@@ -356,10 +400,17 @@ export async function runDailyConversationQa(deps: DailyQaRunDeps): Promise<Dail
         prevAnalyzedSessions,
       });
 
+      // trendStatus 가 null 이면 보고할 문제가 아니다 — 과거에도 없었고 오늘도 0건.
+      // 이슈 행을 만들지 않는다(리뷰 지적, 2026-08-19).
+      if (trendStatus === null) continue;
+
       trendStatusMap.set(draft.taxonomyCode, trendStatus);
       prevEventCountMap.set(draft.taxonomyCode, prevEventCount);
       prevAffectedSessionsMap.set(draft.taxonomyCode, prevAffectedSessions);
     }
+
+    // trendStatus 가 없는 draft 는 저장 대상에서 뺀다.
+    issueDrafts = issueDrafts.filter((draft) => trendStatusMap.has(draft.taxonomyCode));
 
     // 8. daily_conversation_qa_issues 저장 (UPSERT)
     if (issueDrafts.length > 0) {

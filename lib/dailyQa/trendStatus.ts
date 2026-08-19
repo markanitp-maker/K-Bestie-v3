@@ -32,7 +32,11 @@ function issueRate(eventCount: number, analyzedSessions: number | null): number 
   return eventCount / analyzedSessions;
 }
 
-export function resolveTrendStatus(input: DailyQaTrendInput): DailyQaTrendStatus {
+/**
+ * @returns 이슈 행으로 남길 상태. **null 이면 그 항목은 이슈로 만들지 않는다** —
+ *          과거에도 없었고 오늘도 0건인 것은 보고할 문제가 아니다.
+ */
+export function resolveTrendStatus(input: DailyQaTrendInput): DailyQaTrendStatus | null {
   const { eventCount, prevEventCount, hadHistoryBeforeYesterday } = input;
 
   // 오늘 0건.
@@ -41,7 +45,13 @@ export function resolveTrendStatus(input: DailyQaTrendInput): DailyQaTrendStatus
     // 하루 0건으로 해결을 확정하지 않는다(§3-11). 연속 미발생 추적은 호출자가
     // 날짜별 Run 을 훑어서 판단한다.
     if (prevEventCount !== null && prevEventCount > 0) return "RESOLVED_CANDIDATE";
-    return "RESOLVED_CANDIDATE";
+    if (hadHistoryBeforeYesterday) return "RESOLVED_CANDIDATE";
+
+    // 리뷰 지적(2026-08-19 MAJOR): 과거에 한 번도 난 적 없고 어제도 안 난 것을
+    // "해결 후보" 로 부르면 화면에서 이상하다 — 있지도 않았던 문제를 해결했다고 읽힌다.
+    // 애초에 이런 항목은 이슈 행을 만들 이유가 없으므로 null 을 돌려주고
+    // 호출자가 그 행을 만들지 않게 한다.
+    return null;
   }
 
   // 과거 이력이 전혀 없으면 오늘 처음 난 것이다.

@@ -337,7 +337,8 @@ test("runRuleDetectors: 5종 detector가 모두 정상 동작하고 비순서 �
     makeMsg({ id: "s4-1", sessionId: "s4", role: "k", content: "좋았겠다! 오늘 최고네", createdAt: "2026-08-19T10:10:00.000Z" }),
     makeMsg({ id: "s4-2", sessionId: "s4", role: "k", content: "좋았겠다~ 내일도 가자", createdAt: "2026-08-19T10:11:00.000Z" }),
     // Session 5: Mission Abrupt End
-    makeMsg({ id: "s5-1", sessionId: "s5", mode: "mission", role: "child", content: "응 알겠어", createdAt: "2026-08-19T10:20:00.000Z" }),
+    // "응 알겠어" 는 정상 종료 인사라 이제 제외된다(리뷰 지적 반영). 실제 내용 발화로 둔다.
+    makeMsg({ id: "s5-1", sessionId: "s5", mode: "mission", role: "child", content: "민준이랑 축구했어", createdAt: "2026-08-19T10:20:00.000Z" }),
   ];
 
   const detections = runRuleDetectors(messages, windowEnd);
@@ -351,4 +352,41 @@ test("runRuleDetectors: 5종 detector가 모두 정상 동작하고 비순서 �
     "REACTION_REPETITION",
     "STT_TRANSCRIPT_ANOMALY",
   ]);
+});
+
+// ── 2026-08-19 리뷰 지적 반영: 오탐 회귀 고정 ──────────────────
+test("PARDON_REPEAT: 평범한 대화가 못 알아들음으로 잡히지 않는다", () => {
+  // 리뷰 지적(MAJOR): "들었는데"·"놓쳐" 조각 매칭이 정상 대화를 잡았다.
+  // 이 결과는 관리자 화면에 "오늘의 문제" 로 뜬다 — 오탐은 운영자 시간을 빼앗는다.
+  const messages: DailyQaMessage[] = [
+    makeMsg({ id: "k1", role: "k", content: "친구 이야기 잘 들었는데 그래서 어떻게 됐어?", createdAt: "2026-08-19T10:00:00.000Z" }),
+    makeMsg({ id: "k2", role: "k", content: "그 기회를 놓쳐서 아쉬웠겠다.", createdAt: "2026-08-19T10:00:10.000Z" }),
+  ];
+  assert.deepEqual(detectPardonRepeat(messages), []);
+});
+
+test("MISSION_ABRUPT_END: 아이가 인사만 남기고 끝난 세션은 갑작스러운 종료가 아니다", () => {
+  // 리뷰 지적(MINOR): 케이가 마무리하고 아이가 "응 바이" 한 것은 정상 종료다.
+  const base = { mode: "mission" as const, sessionId: "s1" };
+  for (const farewell of ["응 바이", "ㅇㅇ", "알겠어", "잘 자", "고마워"]) {
+    const messages: DailyQaMessage[] = [
+      makeMsg({ ...base, id: "k1", role: "k", content: "오늘 얘기 재밌었어. 잘 자!", createdAt: "2026-08-19T10:00:00.000Z" }),
+      makeMsg({ ...base, id: "c1", role: "child", content: farewell, createdAt: "2026-08-19T10:00:10.000Z" }),
+    ];
+    assert.deepEqual(
+      detectMissionAbruptEnd(messages, "2026-08-19T12:00:00.000Z"),
+      [],
+      `정상 종료가 갑작스러운 종료로 잡힌다: ${farewell}`
+    );
+  }
+});
+
+test("MISSION_ABRUPT_END: 아이가 실제 내용을 말한 뒤 케이 응답이 없으면 잡는다", () => {
+  const messages: DailyQaMessage[] = [
+    makeMsg({ mode: "mission", id: "k1", role: "k", content: "오늘 뭐 했어?", createdAt: "2026-08-19T10:00:00.000Z" }),
+    makeMsg({ mode: "mission", id: "c1", role: "child", content: "민준이랑 축구했어", createdAt: "2026-08-19T10:00:10.000Z" }),
+  ];
+  const detections = detectMissionAbruptEnd(messages, "2026-08-19T12:00:00.000Z");
+  assert.equal(detections.length, 1);
+  assert.equal(detections[0].taxonomyCode, "MISSION_ABRUPT_END");
 });

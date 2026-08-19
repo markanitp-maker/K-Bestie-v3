@@ -11,6 +11,18 @@ const base = {
   prevAnalyzedSessions: 20 as number | null,
 };
 
+test("019: 과거에도 없었고 오늘도 0건이면 이슈로 만들지 않는다 (null)", () => {
+  // 리뷰 지적: 있지도 않았던 문제를 "해결 후보" 로 부르면 화면에서 이상하다.
+  assert.equal(resolveTrendStatus({ ...base, eventCount: 0 }), null);
+});
+
+test("019 §3-11: 과거에 났던 이력이 있고 오늘 0건이면 RESOLVED_CANDIDATE", () => {
+  assert.equal(
+    resolveTrendStatus({ ...base, eventCount: 0, prevEventCount: null, hadHistoryBeforeYesterday: true }),
+    "RESOLVED_CANDIDATE"
+  );
+});
+
 test("019 §3-11: 이력 없이 오늘 처음 나면 NEW", () => {
   assert.equal(resolveTrendStatus({ ...base, eventCount: 3 }), "NEW");
 });

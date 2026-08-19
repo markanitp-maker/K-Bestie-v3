@@ -111,10 +111,37 @@ export function detectLlmFallback(messages: readonly DailyQaMessage[]): DailyQaD
  * - lib/freechat/reactionEngine.ts:15 UNCLEAR_AUDIO_TEMPLATES (21종)
  * - lib/freechat/unclearAudioRecovery.ts:37 UNCLEAR_K_TURN_PATTERN 및 countConsecutiveUnclearTurns
  */
+/**
+ * 리뷰 지적(2026-08-19 MAJOR): `countConsecutiveUnclearTurns` 의 패턴에는 "들었는데",
+ * "놓쳐", "이게 맞니" 같은 조각이 들어 있어서 평범한 말까지 걸린다.
+ *   "친구 이야기 잘 들었는데 그래서 어떻게 됐어?"  → 못 알아들은 것이 아니다
+ *   "그 기회를 놓쳐서 아쉬웠겠다"                  → 못 알아들은 것이 아니다
+ * 그 함수는 **실시간 복구 로직**용이라 넓게 잡는 것이 맞다(놓치면 아이가 답을 못 받는다).
+ * 반면 이 탐지기는 관리자 화면에 "오늘의 문제" 로 띄우는 용도라 반대다 —
+ * 오탐은 운영자가 없는 문제를 쫓게 만들어 진짜 문제를 볼 시간을 빼앗는다.
+ *
+ * 그래서 여기서는 **실제로 서비스가 내보내는 문구**만 본다. 넓은 패턴 매칭을 쓰지 않는다.
+ */
+const PARDON_PHRASE_MARKERS: readonly RegExp[] = [
+  /못\s*알아들었/,
+  /잘\s*못\s*들었/,
+  /다시\s*(?:한\s*번\s*)?말해\s*(?:줄래|줘)/,
+  /다시\s*얘기해\s*(?:줄래|줘)/,
+  /뭐라고\s*(?:했어|말했어)\?/,
+  /소리가\s*(?:잘\s*)?안\s*들/,
+  // 014 에코백 템플릿: 내가 "사과"라고 들었는데, 이게 맞니?
+  //
+  // "들었는데" 만 보면 "친구 이야기 잘 들었는데 그래서 어떻게 됐어?" 가 걸린다.
+  // 에코백은 **들은 말을 되묻는 형태**라서 확인 질문이 따라붙는다. 그것까지 요구한다.
+  /라고\s*들었는데[,\s]*(?:이게\s*)?맞/,
+  /(?:내가|혹시)\s*['"‘“][^'"’”]{1,20}['"’”]\s*라고\s*들었/,
+];
+
 function isPardonUtterance(text: string): boolean {
   const trimmed = text.trim();
+  // 실제 템플릿과 정확히 같으면 확실하다.
   if (UNCLEAR_AUDIO_TEMPLATES.includes(trimmed)) return true;
-  return countConsecutiveUnclearTurns([trimmed]) > 0;
+  return PARDON_PHRASE_MARKERS.some((pattern) => pattern.test(trimmed));
 }
 
 /**
@@ -293,6 +320,18 @@ const MISSION_IN_PROGRESS_GRACE_PERIOD_MS = 5 * 60 * 1000; // 5분
  * 판정: mode="mission" 세션의 마지막 메시지가 아이 발화이고 그 뒤 K 응답이 없다.
  * 단, 세션 마지막 메시지가 window 끝 5분 이내면 아직 진행 중일 수 있으므로 제외한다.
  */
+/**
+ * 마지막 발화가 이것뿐이면 미션이 갑자기 끊긴 게 아니라 아이가 인사하고 나간 것이다.
+ * 짧은 수긍("응", "ㅇㅇ")도 포함한다 — 케이의 마무리 말에 대한 대답일 가능성이 높다.
+ */
+// "응 바이" 처럼 두세 토큰이 이어지는 것도 인사다. 단일 토큰만 보면 놓친다.
+const FAREWELL_OR_ACK_TOKEN =
+  "(?:응+|어+|ㅇㅇ|웅+|그래|알았어|알겠어|바이|빠이|안녕|잘\\s*자|잘자|고마워|끝|넵|네)";
+const FAREWELL_OR_ACK_PATTERN = new RegExp(
+  `^(?:${FAREWELL_OR_ACK_TOKEN}[!?.~^\u314b\u314e]*\\s*){1,3}$`,
+  "i"
+);
+
 export function detectMissionAbruptEnd(
   messages: readonly DailyQaMessage[],
   windowEnd: string
@@ -309,6 +348,10 @@ export function detectMissionAbruptEnd(
     const lastMsg = sessionMessages[sessionMessages.length - 1];
     if (lastMsg.mode !== "mission") continue;
     if (lastMsg.role !== "child") continue;
+    // 리뷰 지적(MINOR): 미션이 정상적으로 끝난 뒤 아이가 인사만 남기고 나가는 경우가 있다.
+    //   케이: "오늘 얘기 재밌었어. 잘 자!"  →  아이: "응 바이"
+    // 이건 갑자기 끊긴 게 아니라 정상 종료다. 작별·수긍만 남긴 마지막 발화는 제외한다.
+    if (FAREWELL_OR_ACK_PATTERN.test(lastMsg.content.trim())) continue;
 
     const lastMsgTime = new Date(lastMsg.createdAt).getTime();
     if (Number.isNaN(lastMsgTime)) continue;

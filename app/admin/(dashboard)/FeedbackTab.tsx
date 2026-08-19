@@ -132,9 +132,17 @@ export default function FeedbackTab({ fixedCategory }: { fixedCategory: "voc" | 
         <SoftDeleteRowCheckbox checked={softDelete.isSelected(req.id)} onChange={() => softDelete.toggleSelected(req.id)} />
       ),
     },
-    { key: "request_number", header: "접수번호", sortable: true, sortType: "text", sortValue: (req: any) => req.request_number, render: (req: any) => req.request_number || "-" },
-    { key: "submitter", header: "접수자", sortable: true, sortType: "text", sortValue: (req: any) => formatSubmitter(req), render: (req: any) => formatSubmitter(req) },
-    { key: "summary", header: "제목/내용 요약", sortable: true, sortType: "text", sortValue: (req: any) => req.category === "voc" ? req.body : req.subject, render: (req: any) => (
+    // 097 정렬을 여기에는 붙이지 않는다(리뷰 지적, 2026-08-19 MAJOR).
+    //
+    // 이 화면의 API(app/api/admin/support-requests/route.ts:73-75)는 pageSize=25 로
+    // 서버에서 잘라 준다. 화면에 있는 25건만 정렬하면 사용자에게는 전체가 정렬된 것처럼
+    // 보이는데 실제로는 "최근 25건 안에서의 순서" 다 — 접수일 오름차순을 누르면
+    // 전체 최초 접수건이 아니라 최근 25건 중 가장 오래된 것이 맨 위에 온다.
+    // 틀린 정렬을 보여주는 것이 정렬이 없는 것보다 나쁘다(요청서 §3-2).
+    // 서버 정렬(API 에 sort 파라미터 추가)까지 함께 해야 붙일 수 있다.
+    { key: "request_number", header: "접수번호", render: (req: any) => req.request_number || "-" },
+    { key: "submitter", header: "접수자", render: (req: any) => formatSubmitter(req) },
+    { key: "summary", header: "제목/내용 요약", render: (req: any) => (
       <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
         {req.category === "voc" ? req.body : req.subject}
         {req.attachments && req.attachments.filter((a: any) => a.upload_status === "uploaded").length > 0 && (
@@ -144,8 +152,8 @@ export default function FeedbackTab({ fixedCategory }: { fixedCategory: "voc" | 
         )}
       </div>
     )},
-    { key: "created_at", header: "접수일", sortable: true, sortType: "date", sortValue: (req: any) => req.created_at, render: (req: any) => formatDateTime(req.created_at) },
-    { key: "status", header: "상태", sortable: true, sortType: "status", statusOrder: { open: 1, received: 1, in_progress: 2, reviewing: 2, resolved: 3, closed: 4 }, sortValue: (req: any) => req.status, render: (req: any) => (
+    { key: "created_at", header: "접수일", render: (req: any) => formatDateTime(req.created_at) },
+    { key: "status", header: "상태", render: (req: any) => (
       <AdminStatusBadge text={getStatusLabel(req.status)} variant={getStatusVariant(req.status)} />
     )},
     {
