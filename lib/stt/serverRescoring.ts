@@ -226,6 +226,7 @@ export async function resolveChildUtterance(
     }
 
     // 3. 끝말잇기 후보 수집 (이어야 할 시작 음절 사전 단어, 두음법칙 포함)
+    let wordChainRuleSatisfied = false;
     if (
       wordChainRes.status === "fulfilled" &&
       wordChainRes.value.data?.current_word
@@ -234,6 +235,17 @@ export async function resolveChildUtterance(
       if (currentWord) {
         const lastSyllable = currentWord.slice(-1);
         const initials = allowedNextInitials(lastSyllable);
+        // 010/018 — 아이 말이 **이미 끝말잇기 규칙을 만족하면 손대지 않는다.**
+        //
+        // 2026-08-19 대표님 Dev QA 실측: 아이가 키보드로 `점집` 을 쳤는데 저장된 것은
+        // `점심` 이었다(DB raw_transcript=점집, content=점심). `점집` 은 사전 1,500단어에
+        // 없어서 exact 후보 검사를 통과하지 못했고, 발음이 가까운 사전 단어 `점심` 이
+        // 이겼다. 아이 말이 규칙에 맞는데 다른 낱말로 갈아치우는 것은 교정이 아니라 훼손이다.
+        //
+        // 재해석은 **망가진 입력을 구제하는 장치**다. 시작 음절이 이미 맞는 발화는
+        // 망가진 게 아니라 아이가 의도해서 낸 단어다 — 사전에 없어도 그렇다.
+        const firstSyllable = original.trim().replace(/\s+/g, "").slice(0, 1);
+        wordChainRuleSatisfied = initials.includes(firstSyllable);
         for (const initChar of initials) {
           const wordsForInitial = BY_FIRST_SYLLABLE.get(initChar);
           if (wordsForInitial) {
@@ -248,6 +260,11 @@ export async function resolveChildUtterance(
           }
         }
       }
+    }
+
+    // 끝말잇기 규칙을 이미 만족하는 발화는 재해석 대상이 아니다(위 주석 참고).
+    if (wordChainRuleSatisfied) {
+      return { text: original, raw: original, changed: false };
     }
 
     // 후보가 없으면 원문 그대로 반환 (§3-4)
@@ -286,6 +303,16 @@ export async function resolveChildUtterance(
     const matchedSource = candidates.find(
       (c) => c.text === rescoreResult.matchedCandidate
     )?.source;
+
+    // 끝말잇기 후보 목록은 사전에서 해당 초성으로 시작하는 **모든 단어**라 매우 넓다.
+    // 여기에 "초성이 바뀌는 치환은 금지" 같은 가드를 걸어 봤지만(2026-08-19), 그러면
+    // `콰자 → 과자` 처럼 실제 오인식 복원까지 같이 막혔다 — 거센소리/예사소리 혼동은
+    // ASR 이 진짜로 내는 오류다. 그래서 그 가드는 두지 않는다.
+    //
+    // 대표님 QA 에서 나온 `점집 → 점심` 훼손은 위쪽 wordChainRuleSatisfied 검사가 막는다.
+    // 두 경우를 가르는 것은 자모 거리가 아니라 **아이 말이 이미 규칙에 맞는지** 다.
+    //   점집: 시작 음절 `점` 이 규칙에 맞다 → 아이가 의도한 낱말이다 → 손대지 않는다
+    //   콰자: 시작 음절 `콰` 가 규칙에 안 맞다 → 망가진 입력일 수 있다 → 복원을 시도한다
 
     // 계측 로깅 (§3-6)
     console.info("[STT_REINTERPRETATION]", {

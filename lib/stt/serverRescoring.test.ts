@@ -506,3 +506,33 @@ test("010: 원문이 이미 후보와 같으면 재해석하지 않는다", () =
   const finalText = result.changed ? result.text : "이름표";
   assert.equal(finalText, "이름표", `정상 단어가 훼손됐다: ${result.text}`);
 });
+
+// ── 2026-08-19 대표님 Dev QA 회귀 ────────────────────────────
+// 아이가 키보드로 "점집" 을 쳤는데 저장된 것은 "점심" 이었다.
+// (DB 실측: session c4f68596, 17:32:43, raw_transcript=점집 / content=점심)
+// "점집" 은 사전 1,500단어에 없어서 exact 후보 검사를 통과하지 못했고, 발음이 가까운
+// 사전 단어 "점심" 이 이겼다. 끝말잇기에서 이건 게임을 통째로 틀리게 만든다.
+test("끝말잇기 규칙을 이미 만족하는 발화는 사전에 없어도 손대지 않는다", async () => {
+  const db = createMockSupabase({ activeWordChain: { current_word: "편의점" } });
+  const result = await resolveChildUtterance(db, "child-1", "session-1", "점집", "free_chat");
+  assert.equal(result.text, "점집", "아이가 낸 낱말이 바뀌었다");
+  assert.equal(result.changed, false);
+});
+
+test("끝말잇기: 시작 음절이 규칙에 맞으면 사전 단어와 비슷해도 유지한다", async () => {
+  const db = createMockSupabase({ activeWordChain: { current_word: "편의점" } });
+  for (const utterance of ["점집", "점퍼", "점방"]) {
+    const result = await resolveChildUtterance(db, "child-1", "session-1", utterance, "free_chat");
+    assert.equal(result.text, utterance, `${utterance} 가 바뀌었다`);
+  }
+});
+
+test("끝말잇기: 규칙에 안 맞는 발화는 여전히 복원을 시도한다 (콰자 -> 과자)", async () => {
+  // 규칙 만족 가드가 정상 복원까지 막지 않는지 고정한다. 거센소리/예사소리 혼동은
+  // ASR 이 진짜로 내는 오류라서 이 방향은 계속 고쳐 줘야 한다.
+  const db = createMockSupabase({ activeWordChain: { current_word: "사과" } });
+  const result = await resolveChildUtterance(db, "child-1", "session-1", "콰자", "free_chat");
+  assert.equal(result.text, "과자");
+  assert.equal(result.raw, "콰자");
+  assert.equal(result.changed, true);
+});
