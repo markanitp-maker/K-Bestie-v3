@@ -11,7 +11,21 @@ import { logVoiceEvent, maskText } from "@/lib/voiceTimelineLog";
 // handoff is normally near-instant) — 3s gives real network jitter headroom
 // without stalling a turn noticeably longer than the pre-A1 GCP-only path.
 export const DEFAULT_BROWSER_STT_FINAL_TIMEOUT_MS = 3000;
-export const STT_SILENCE_MS_TO_FINALIZE = 900;
+/**
+ * 침묵이 이만큼 이어지면 발화가 끝난 것으로 보고 턴을 마감한다.
+ *
+ * 018 §3-16 — 900ms 는 아이 말투에 너무 짧았다. 대표님 전수조사에서 나온 잘림 사례가
+ * 전부 문장 중간 호흡 지점이었다:
+ *   "오늘 학교에서… (쉼) 떡볶이 먹었어"  → "오늘 학교에서" 까지만 전송
+ *   "음… 민준이랑 놀았어"                 → "음" 만 전송
+ * 8~10세는 말하면서 생각하기 때문에 어른보다 문장 중간 쉼이 길다.
+ *
+ * 요청서가 지정한 첫 단계값 1.2초로 올린다. 같은 앱의 Gemini Live 경로가 이미
+ * 1200ms 를 쓰고 있어(hooks/useGeminiLive.ts SILENCE_TIMEOUT_MS) 두 경로가 같아진다.
+ * 더 올릴지는 대표님 개발서버 QA 로 응답 체감 지연을 확인한 뒤 판단한다 —
+ * 이 값을 키우면 그만큼 케이가 대답을 시작하는 시점도 늦어진다.
+ */
+export const STT_SILENCE_MS_TO_FINALIZE = 1200;
 export const STT_RMS_SILENCE_THRESHOLD = 0.012;
 export const STT_MAX_UTTERANCE_MS = 10000;
 /** 브라우저가 돌려줄 N-best 개수. 너무 크면 잡음 후보가 섞인다. */

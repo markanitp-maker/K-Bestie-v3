@@ -49,3 +49,41 @@ test("엔진 조기 반환으로 boredom이 없으면 독립 계산으로 조기
   assert.equal(resolved.level, "high");
   assert.equal(resolved.suggestedAdjustment?.allowEarlyFinish, true);
 });
+
+test("귀찮아, 그만할래가 비협조 신호로 잡힌다", () => {
+  const assessment = assessBoredom(["귀찮아", "그만할래"]);
+  assert.equal(assessment.signalCount, 2);
+  assert.equal(assessment.level, "rising");
+});
+
+test("수학이 싫어는 비협조 신호로 잡히지 않는다 (정상 감정 발화)", () => {
+  const assessment = assessBoredom(["수학이 싫어"]);
+  assert.equal(assessment.signalCount, 0);
+  assert.equal(assessment.level, "none");
+  assert.equal(assessment.explicitRefusalThisTurn, false);
+});
+
+test("하기 싫어는 비협조 신호 및 명시적 거부로 잡힌다", () => {
+  const assessment = assessBoredom(["하기 싫어"]);
+  assert.equal(assessment.signalCount, 1);
+  assert.equal(assessment.explicitRefusalThisTurn, true);
+});
+
+test("explicitRefusalThisTurn 판정: 그만할래 → true, 몰라 → false, 응 → false", () => {
+  const refusal = assessBoredom(["그만할래"]);
+  assert.equal(refusal.explicitRefusalThisTurn, true);
+
+  const uncooperative = assessBoredom(["몰라"]);
+  assert.equal(uncooperative.explicitRefusalThisTurn, false);
+
+  const filler = assessBoredom(["응"]);
+  assert.equal(filler.explicitRefusalThisTurn, false);
+});
+
+test("단발 거부 하나로는 level이 여전히 none이다 (누적 판정 유지 확인)", () => {
+  const singleRefusal = assessBoredom(["그만할래"]);
+  assert.equal(singleRefusal.signalCount, 1);
+  assert.equal(singleRefusal.level, "none");
+  assert.equal(singleRefusal.explicitRefusalThisTurn, true);
+  assert.equal(singleRefusal.suggestedAdjustment, null);
+});

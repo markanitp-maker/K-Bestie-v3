@@ -899,15 +899,20 @@ test("chunkDurationMsFor: 16kHz 기기는 기존 동작과 완전히 같다", ()
   assert.equal(chunkDurationMsFor(STT_SAMPLE_RATE), STT_CHUNK_DURATION_MS);
 });
 
-test("침묵 임계 도달 시점: 48kHz에서 900ms가 실제 900ms 근처여야 한다", () => {
+test("침묵 임계 도달 시점: 48kHz에서 임계값이 실제 임계값 근처여야 한다", () => {
   const perChunk = chunkDurationMsFor(48000);
   const chunksToThreshold = Math.ceil(STT_SILENCE_MS_TO_FINALIZE / perChunk);
   const actualMs = chunksToThreshold * perChunk;
   assert.ok(actualMs >= STT_SILENCE_MS_TO_FINALIZE, "임계 미달");
   assert.ok(actualMs < STT_SILENCE_MS_TO_FINALIZE + perChunk, "임계 초과");
-  // 고정 128ms로 셌다면 7콜백(약 299ms) 만에 끊겼다.
+  // 고정 128ms로 셌다면 임계값의 1/3 지점에서 끊겼다(48kHz 기기는 콜백당 실제 오디오가
+  // 128ms 가 아니라 그 3배다). 018 §3-16 으로 임계값이 900 -> 1200 이 되어도 이 비율은
+  // 그대로이므로 절대값 대신 비율로 고정한다.
   const brokenChunks = Math.ceil(STT_SILENCE_MS_TO_FINALIZE / STT_CHUNK_DURATION_MS);
-  assert.ok(brokenChunks * perChunk < 400, "기존 버그 재현 전제가 틀림");
+  assert.ok(
+    brokenChunks * perChunk < STT_SILENCE_MS_TO_FINALIZE / 2,
+    "기존 버그 재현 전제가 틀림"
+  );
 });
 
 test("Browser 인식 결과가 한글 자모(ㅍ, ㅠㅠ 등)일 때 onFinalTranscript 대신 onFailure('unintelligible') 호출", () => {
