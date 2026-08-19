@@ -68,6 +68,8 @@ type UiState = {
   manualPressed: string;
   micAriaLabel: string;
   inputVisible: boolean;
+  /** 013 §3-6: 놀이 중에는 X(닫기) 버튼이 없어야 한다. */
+  closeBtnCount: number;
 };
 
 async function readUiState(page: Page): Promise<UiState> {
@@ -86,11 +88,16 @@ async function readUiState(page: Page): Promise<UiState> {
     const input = document.querySelector<HTMLInputElement>(
       'input[placeholder="케이에게 텍스트로 답하기..."]'
     );
+    const closeBtns = buttons.filter((b) => {
+      const l = label(b);
+      return l === "채팅창 닫기" || l === "텍스트 입력창 닫기";
+    });
     return {
       autoPressed: auto ? auto.getAttribute("aria-pressed") ?? "no-attr" : "not_rendered",
       manualPressed: manual ? manual.getAttribute("aria-pressed") ?? "no-attr" : "not_rendered",
       micAriaLabel: mic ? label(mic) : "not_rendered",
       inputVisible: !!input && window.getComputedStyle(input).display !== "none",
+      closeBtnCount: closeBtns.length,
     };
   });
 }
@@ -152,6 +159,17 @@ test("013: 놀이 '그만' 이후 마이크·토글이 복귀한다", async ({ p
   const during = await readUiState(page);
   console.log("[2] 놀이 중:", JSON.stringify(during));
   expect(during.inputVisible, "놀이 중에 텍스트 입력창이 없다(키보드 강제 실패)").toBeTruthy();
+  // 013 §3-6 — 놀이 중에는 아이가 음성으로 빠져나갈 문이 없어야 한다.
+  // 시작 턴의 activePlaySkillId 가 null 이면 isPlayActive 가 켜지지 않아 X 버튼이 남는다.
+  expect(
+    during.closeBtnCount,
+    `놀이 중인데 X(닫기) 버튼이 ${during.closeBtnCount}개 남아 있다 — 놀이 활성 상태가 클라이언트에 전달되지 않았다. payload=${JSON.stringify(payloads)}`
+  ).toBe(0);
+  // 시작 턴 payload 가 스킬 id 를 담고 있어야 한다.
+  expect(
+    payloads[0]?.activePlaySkillId,
+    `놀이를 시작한 턴의 activePlaySkillId 가 스킬 id 가 아니다: ${JSON.stringify(payloads[0])}`
+  ).toBeTruthy();
 
   await send("그만");
 
