@@ -561,8 +561,11 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   const sendTypedText = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    appendTurn({ role: "child", text: trimmed });
-    onTurnCompleteRef.current?.({ role: "child", text: trimmed });
+    // 음성 경로와 같이 부여된 id 를 그대로 넘긴다. 리뷰 지적(2026-08-19):
+    // 여기서 id 를 빼면 키보드 입력만 turnId 추정 경로로 떨어져 같은 발화에
+    // 응답이 두 번 나가는 문제가 남는다.
+    const appended = appendTurn({ role: "child", text: trimmed });
+    onTurnCompleteRef.current?.(appended);
   }, []);
 
   /** 케이가 정해진 문구를 텍스트로만 표시(TTS 없음) — 자유대화 하드리밋 안내 등에 사용 */

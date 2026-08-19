@@ -417,7 +417,16 @@ const BUDGET_BY_MODE = {
   // 020 의 대체 호출을 그 안에 넣기 위해 primary 시도를 4500 -> 4000 으로 줄였다.
   // 같은 모델을 4.5초 더 기다리는 것보다, 4초에 끊고 더 가벼운 모델로 갈아타는 쪽이
   // 429 상황에서 아이가 답을 받을 확률이 높다.
-  MISSION: { attemptTimeoutMs: 4000, fallbackAttemptTimeoutMs: 1800, totalBudgetMs: 5800 },
+  //
+  // fallbackAttemptTimeoutMs 를 1800 이 아니라 3000 으로 둔 이유(실제 계산):
+  //   429 경로 — primary 가 ~300ms 에 빠르게 죽는다. 남은 예산 5500 이므로
+  //              min(3000, 5500) = 3000ms 를 대체 호출이 온전히 쓴다. 총 ~3.3초.
+  //   timeout 경로 — primary 가 4000 을 다 쓰고 재시도까지 예산을 소진하면
+  //              남은 예산이 MIN_ATTEMPT_BUDGET_MS(1200) 밑으로 떨어져 대체를
+  //              시작하지 않는다. 상한(5800)이 이기므로 최악 대기는 그대로다.
+  // 1800 으로 묶어두면 429 상황에서 대체 모델이 1.8초 안에 답을 못 내면 그냥 버려진다 —
+  // 정작 대체가 필요한 경우에 예산을 남겨두고도 안 쓰는 셈이었다.
+  MISSION: { attemptTimeoutMs: 4000, fallbackAttemptTimeoutMs: 3000, totalBudgetMs: 5800 },
   FREE_CHAT: { attemptTimeoutMs: 8000, fallbackAttemptTimeoutMs: 3000, totalBudgetMs: 10000 },
 } as const;
 

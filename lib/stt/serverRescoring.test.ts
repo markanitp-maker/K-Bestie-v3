@@ -536,3 +536,14 @@ test("끝말잇기: 규칙에 안 맞는 발화는 여전히 복원을 시도한
   assert.equal(result.raw, "콰자");
   assert.equal(result.changed, true);
 });
+
+test("추임새나 따옴표로 시작해도 끝말잇기 규칙 만족 판정을 놓치지 않는다", async () => {
+  // 리뷰 지적(2026-08-19): 공백만 걷어내면 "음... 점집" 의 첫 문자가 '음' 이 아니라
+  // 실제로는 규칙 판정에 쓸 수 없는 값이 되어 가드를 놓친다.
+  const db = createMockSupabase({ activeWordChain: { current_word: "편의점" } });
+  for (const utterance of [" 점집", "점집!", "‘점집’"]) {
+    const result = await resolveChildUtterance(db, "child-1", "session-1", utterance, "free_chat");
+    assert.equal(result.text, utterance, `${utterance} 가 바뀌었다`);
+    assert.equal(result.changed, false);
+  }
+});

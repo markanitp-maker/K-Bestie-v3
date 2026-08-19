@@ -244,8 +244,11 @@ export async function resolveChildUtterance(
         //
         // 재해석은 **망가진 입력을 구제하는 장치**다. 시작 음절이 이미 맞는 발화는
         // 망가진 게 아니라 아이가 의도해서 낸 단어다 — 사전에 없어도 그렇다.
-        const firstSyllable = original.trim().replace(/\s+/g, "").slice(0, 1);
-        wordChainRuleSatisfied = initials.includes(firstSyllable);
+        // 첫 "한글 음절" 을 집는다. 리뷰 지적(2026-08-19): 공백만 걷어내면
+        // "음... 점집" 이나 "'점집'" 처럼 추임새·따옴표로 시작하는 발화에서
+        // 엉뚱한 문자를 첫 음절로 잡아 가드를 놓친다.
+        const firstSyllable = original.match(/[가-힣]/)?.[0] ?? "";
+        wordChainRuleSatisfied = firstSyllable !== "" && initials.includes(firstSyllable);
         for (const initChar of initials) {
           const wordsForInitial = BY_FIRST_SYLLABLE.get(initChar);
           if (wordsForInitial) {
