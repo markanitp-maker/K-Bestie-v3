@@ -8,6 +8,9 @@ export interface PlaySkillModalProps {
   onClose: () => void;
   chatSessionId: string | null;
   onSkillStarted?: (openingLine?: string) => void;
+  onBeforeSkillStart?: () => void;
+  onSkillStartFailed?: () => void;
+  onSkillEnded?: () => void;
 }
 
 export function PlaySkillModal({
@@ -15,6 +18,9 @@ export function PlaySkillModal({
   onClose,
   chatSessionId,
   onSkillStarted,
+  onBeforeSkillStart,
+  onSkillStartFailed,
+  onSkillEnded,
 }: PlaySkillModalProps) {
   const [skills, setSkills] = useState<PlaySkillDto[]>([]);
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
@@ -62,6 +68,9 @@ export function PlaySkillModal({
       return;
     }
 
+    // 013 §3-3, §3-7: 모바일 소프트키보드 User Activation을 위해 사용자 클릭 제스처 안에서 즉시 텍스트 전환 및 focus
+    onBeforeSkillStart?.();
+
     setSelectingSkillId(skill.id);
     setError(null);
 
@@ -82,10 +91,12 @@ export function PlaySkillModal({
         onSkillStarted?.(data.openingLine);
       } else {
         setError(data.error || "놀이를 시작하지 못했어요. 다시 시도해주세요.");
+        onSkillStartFailed?.();
       }
     } catch (err) {
       console.error("[PlaySkillModal] selectSkill error:", err);
       setError(err instanceof Error ? err.message : "놀이 시작 중 오류가 발생했어요.");
+      onSkillStartFailed?.();
     } finally {
       setSelectingSkillId(null);
     }
@@ -116,8 +127,9 @@ export function PlaySkillModal({
         .catch(() => ({ ok: false, error: "응답 처리 오류" }));
 
       if (res.ok && data.ok) {
-        // 성공 시 모달 닫고 자유대화 복귀 (§3-9)
+        // 성공 시 모달 닫고 자유대화 복귀 (§3-9, §3-11)
         onClose();
+        onSkillEnded?.();
       } else {
         // 실패 시 모달을 닫지 않고 오류 표시 (§3-9)
         setError(data.error || "놀이를 종료하지 못했어요. 다시 시도해주세요.");

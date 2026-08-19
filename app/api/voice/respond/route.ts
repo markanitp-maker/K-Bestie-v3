@@ -253,6 +253,10 @@ export async function POST(req: NextRequest) {
       category: engineOutput.category,
       flaggedForParent: engineOutput.safetyFlagged ?? false,
       model: engineOutput.category === "generated" ? FREE_CHAT_MODEL_ID : "rule_engine",
+      // 013 §3-12 — 턴이 끝난 뒤 살아 있는 놀이 스킬(없으면 null).
+      // 클라이언트는 이 값으로만 놀이 종료를 판단한다. K 응답 문구를 파싱해
+      // "그만" 여부를 추측하는 구현은 금지돼 있다 — 문구는 매번 달라진다.
+      activePlaySkillId: engineOutput.activePlaySkillId ?? null,
     };
   };
 

@@ -553,6 +553,13 @@ export async function respond(
             signals,
           });
 
+          // 013 §3-12 — 이 턴에 스킬이 세션을 닫았으면 활성 스킬은 없어진 것이다.
+          // 클라이언트가 입력모드를 되돌릴 시점을 알아야 하므로 턴 종료 후 상태로 갱신한다.
+          if (playTurnResult.ended) {
+            activePlaySkillId = undefined;
+            hasActivePlaySession = false;
+          }
+
           if (playTurnResult.handled) {
             playSkillHandled = true;
             handledPlaySkillId = playTurnResult.skillId;
@@ -1034,5 +1041,8 @@ export async function respond(
     // 여기서 문장을 바꾸지 않고 사실만 전달한다.
     generationFallback: generated.fallbackUsed,
     generationFailureType: generated.failureType,
+    // 013 §3-12 — 턴 종료 후 살아 있는 놀이 스킬. 클라이언트가 입력모드 복귀 시점을
+    // 문구 파싱이 아니라 이 값으로 판단한다.
+    activePlaySkillId: activePlaySkillId ?? null,
   };
 }

@@ -76,6 +76,16 @@ export interface EngineOutput {
    * 턴이라 "더 얘기해줄래?" 가 같은 답을 다시 요구하는 말이 된다.
    */
   generationFallback?: boolean;
+  /**
+   * 013 §3-12 — 이 턴이 끝난 뒤 살아 있는 놀이 스킬. 없으면 null.
+   *
+   * 클라이언트가 놀이 종료를 **추측하지 않게** 하기 위한 값이다. 지시서가 K 응답 문구를
+   * 파싱해서 "그만" 여부를 판정하는 구현을 금지했다 — 문구는 LLM 이 만들고 매번 다르다.
+   *
+   * 턴 시작 시점의 값이 아니라 **턴이 끝난 뒤**의 값이다. 스킬이 이 턴에 세션을 닫았으면
+   * null 이 된다. 그래야 클라이언트가 입력모드를 되돌릴 시점을 정확히 안다.
+   */
+  activePlaySkillId?: string | null;
   /** 생성 실패 유형(관측용). generationFallback 이 true 일 때만 채워진다. */
   generationFailureType?: string;
 }

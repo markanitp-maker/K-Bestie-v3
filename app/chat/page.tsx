@@ -64,7 +64,12 @@ export default function ChatPage() {
   const [dailyKeyStatusLoading, setDailyKeyStatusLoading] = useState(true);
   const [mode, setMode] = useState<"voice" | "text">("voice");
   const [textInput, setTextInput] = useState("");
+  const textInputRef = useRef<HTMLInputElement | null>(null);
   const [isPlayModalOpen, setIsPlayModalOpen] = useState(false);
+  const [isPlayActive, setIsPlayActive] = useState(false);
+  const isPlayActiveRef = useRef(false);
+  const prePlayInputModeRef = useRef<{ mode: "voice" | "text"; isAuto: boolean } | null>(null);
+  const onPlaySkillStateChangeRef = useRef<((activePlaySkillId: string | null) => void) | undefined>(undefined);
   const restoredTranscriptRef = useRef<Turn[]>([]);
   const displaySequenceCounterRef = useRef(0);
   const nextDisplaySequence = useCallback(() => {
@@ -173,7 +178,11 @@ export default function ChatPage() {
     isResponding,
     isSpeaking,
     seedTranscript,
-  } = useVoiceChat({ onTurnComplete: handleTurnComplete, getSessionId: () => sessionIdRef.current });
+  } = useVoiceChat({
+    onTurnComplete: handleTurnComplete,
+    getSessionId: () => sessionIdRef.current,
+    onPlaySkillStateChange: (activePlaySkillId) => onPlaySkillStateChangeRef.current?.(activePlaySkillId),
+  });
   respondTextRef.current = respondText;
   getLastAsrConfidenceRef.current = getLastAsrConfidence;
 
@@ -756,6 +765,11 @@ export default function ChatPage() {
   }, [setMicEnabled, releaseMicrophone, setInputMode, manualFinalize, childId]);
 
   const switchToVoice = useCallback(() => {
+    // 013 §3-10: K놀이 Active 동안 음성 복귀 차단.
+    // stale closure 회피: React state(isPlayActive)를 클로저로 캡처하지 않고 isPlayActiveRef.current로 최신 놀이 상태를 직접 확인
+    if (isPlayActiveRef.current) {
+      return;
+    }
     // 키보드 종료 후에는 항상 수동 음성 모드로 복귀한다 — 자동 VAD를 다시 켜지 않고,
     // 마이크도 자동으로 켜지 않는다(사용자가 마이크 버튼을 눌러야 녹음 시작).
     setInputMode("manual");
@@ -766,6 +780,75 @@ export default function ChatPage() {
     // 전환되어 화면에 노출된다).
     void reacquireMicrophone();
   }, [setInputMode, reacquireMicrophone]);
+
+  const restorePrePlayInputMode = useCallback(() => {
+    const saved = prePlayInputModeRef.current;
+    prePlayInputModeRef.current = null;
+
+    if (!saved) {
+      // 저장된 모드가 없으면 기본적으로 수동 음성 복귀 시도
+      switchToVoice();
+      return;
+    }
+
+    if (saved.mode === "text") {
+      // 013 §3-14: 놀이 시작 전 text 였으면 text 유지
+      setInputMode("manual");
+      setIsAuto(false);
+      setMicEnabled(false);
+      releaseMicrophone();
+      setMode("text");
+      if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, "manual");
+    } else if (saved.isAuto) {
+      // 013 §3-14: 놀이 시작 전 voice + auto 였으면 voice + auto 로 복귀
+      setInputMode("auto");
+      setIsAuto(true);
+      setMicEnabled(true);
+      setMode("voice");
+      if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, "auto");
+      void reacquireMicrophone();
+    } else {
+      // 013 §3-14: 놀이 시작 전 voice + manual 이었으면 voice + manual 로 복귀
+      setInputMode("manual");
+      setIsAuto(false);
+      setMicEnabled(false);
+      setMode("voice");
+      if (childId) localStorage.setItem(`k_voice_input_mode:${childId}`, "manual");
+      void reacquireMicrophone();
+    }
+  }, [childId, setInputMode, setMicEnabled, releaseMicrophone, reacquireMicrophone, switchToVoice]);
+
+  const handleBeforeSkillStart = useCallback(() => {
+    // 013 §3-2, §3-16: 최초 놀이 진입 시에만 입력모드 저장 (스킬 간 전환 시 덮어쓰기 방지)
+    if (prePlayInputModeRef.current === null) {
+      prePlayInputModeRef.current = { mode, isAuto };
+    }
+    // 모바일 사용자 제스처 동기 체인 안에서 즉시 텍스트 전환
+    switchToText();
+    // user gesture 안에서 focus 시도 (§3-3, §3-7)
+    textInputRef.current?.focus();
+  }, [mode, isAuto, switchToText]);
+
+  const handleSkillStartFailed = useCallback(() => {
+    // 013 §3-5: 놀이 시작 실패 시 저장된 이전 입력모드로 롤백
+    setIsPlayActive(false);
+    isPlayActiveRef.current = false;
+    restorePrePlayInputMode();
+  }, [restorePrePlayInputMode]);
+
+  const handlePlaySkillStateChange = useCallback((activePlaySkillId: string | null) => {
+    if (activePlaySkillId === null) {
+      if (isPlayActiveRef.current) {
+        setIsPlayActive(false);
+        isPlayActiveRef.current = false;
+        restorePrePlayInputMode();
+      }
+    } else {
+      setIsPlayActive(true);
+      isPlayActiveRef.current = true;
+    }
+  }, [restorePrePlayInputMode]);
+  onPlaySkillStateChangeRef.current = handlePlaySkillStateChange;
 
   const handleSendText = useCallback(async () => {
     const text = textInput.trim();
@@ -1079,7 +1162,7 @@ export default function ChatPage() {
                   </div>
                   <span className="text-[14px] font-bold leading-none">{stateText}</span>
                 </div>
-                {!isKeyboardOpen && (
+                {!isKeyboardOpen && !isPlayActive && (
                   <button
                     onClick={switchToVoice}
                     style={{ backgroundColor: "#EF5350" }}
@@ -1224,7 +1307,10 @@ export default function ChatPage() {
                 }}
               >
                 <input
-                  ref={(el) => { if (el) el.focus(); }}
+                  ref={(el) => {
+                    textInputRef.current = el;
+                    if (el) el.focus();
+                  }}
                   type="text"
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
@@ -1244,13 +1330,15 @@ export default function ChatPage() {
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
-                <button
-                  onClick={switchToVoice}
-                  className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40 transition-all"
-                  aria-label="텍스트 입력창 닫기"
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
+                {!isPlayActive && (
+                  <button
+                    onClick={switchToVoice}
+                    className="w-[52px] h-[52px] shrink-0 rounded-2xl flex items-center justify-center bg-white shadow-sm text-gray-600 cursor-pointer active:scale-95 border border-gray-200 disabled:opacity-40 transition-all"
+                    aria-label="텍스트 입력창 닫기"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                )}
               </div>
               </div>
             ) : (
@@ -1364,9 +1452,22 @@ export default function ChatPage() {
           isOpen={isPlayModalOpen}
           onClose={() => setIsPlayModalOpen(false)}
           chatSessionId={sessionId}
+          onBeforeSkillStart={handleBeforeSkillStart}
+          onSkillStartFailed={handleSkillStartFailed}
           onSkillStarted={(openingLine) => {
             setIsPlayModalOpen(false);
+            setIsPlayActive(true);
+            isPlayActiveRef.current = true;
+            // 013 §3-4: 시작 성공 후 보조 focus
+            setTimeout(() => {
+              textInputRef.current?.focus();
+            }, 50);
             if (openingLine) speakAsK(openingLine);
+          }}
+          onSkillEnded={() => {
+            setIsPlayActive(false);
+            isPlayActiveRef.current = false;
+            restorePrePlayInputMode();
           }}
         />
       </div>

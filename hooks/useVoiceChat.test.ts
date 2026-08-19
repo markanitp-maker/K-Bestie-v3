@@ -3,7 +3,7 @@ import { describe, it, before, after, beforeEach } from "node:test";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
-import { useVoiceChat, type Turn, type UseVoiceChatOptions } from "./useVoiceChat.js";
+import { useVoiceChat, type Turn, type UseVoiceChatOptions } from "./useVoiceChat";
 
 const dom = new JSDOM("<!doctype html><html lang=\"ko\"><body><div id=\"root\"></div></body></html>", {
   url: "https://local.test/chat",
@@ -354,12 +354,14 @@ describe("useVoiceChat - 2026-08-19 대표님 Dev QA: 같은 발화에 응답 2�
 
     const handle = renderVoiceChatHook();
     try {
-      const first = handle.get().respondText("child-turn-1");
-      const second = handle.get().respondText("child-turn-1");
-      await second; // 같은 턴이므로 즉시 return 되어야 한다
-      assert.equal(callCount, 1, "같은 턴에 요청이 두 번 나갔다");
-      release?.();
-      await first;
+      await act(async () => {
+        const first = handle.get().respondText("child-turn-1");
+        const second = handle.get().respondText("child-turn-1");
+        await second; // 같은 턴이므로 즉시 return 되어야 한다
+        assert.equal(callCount, 1, "같은 턴에 요청이 두 번 나갔다");
+        release?.();
+        await first;
+      });
     } finally {
       handle.unmount();
     }
@@ -376,12 +378,89 @@ describe("useVoiceChat - 2026-08-19 대표님 Dev QA: 같은 발화에 응답 2�
 
     const handle = renderVoiceChatHook();
     try {
-      await handle.get().respondText("child-turn-1");
-      await handle.get().respondText("child-turn-2");
-      await handle.get().respondText("child-turn-3");
+      await act(async () => {
+        await handle.get().respondText("child-turn-1");
+        await handle.get().respondText("child-turn-2");
+        await handle.get().respondText("child-turn-3");
+      });
       assert.deepEqual(calls, ["child-turn-1", "child-turn-2", "child-turn-3"]);
     } finally {
       handle.unmount();
     }
   });
 });
+
+describe("useVoiceChat - 013 K놀이 activePlaySkillId 메타데이터 전달", () => {
+  let originalFetch: typeof globalThis.fetch;
+  before(() => { originalFetch = globalThis.fetch; });
+  after(() => { globalThis.fetch = originalFetch; });
+
+  it("응답에 activePlaySkillId 가 있으면 onPlaySkillStateChange 콜백으로 전달된다", async () => {
+    let receivedSkillId: string | null | undefined = undefined;
+
+    globalThis.fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          text: "끝말잇기 시작하자! 내가 먼저 할게. 바나나!",
+          activePlaySkillId: "WORD_CHAIN",
+        }),
+      } as unknown as Response;
+    }) as typeof globalThis.fetch;
+
+    const handle = renderVoiceChatHook({
+      onPlaySkillStateChange: (skillId) => {
+        receivedSkillId = skillId;
+      },
+    });
+
+    try {
+      await act(async () => {
+        handle.get().sendTypedText("끝말잇기 하자");
+      });
+      await act(async () => {
+        await handle.get().respondText();
+      });
+
+      assert.equal(receivedSkillId, "WORD_CHAIN", "activePlaySkillId 가 콜백으로 정상 전달되어야 한다");
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  it("놀이 종료 시 activePlaySkillId: null 이 onPlaySkillStateChange 콜백으로 전달된다", async () => {
+    let receivedSkillId: string | null | undefined = undefined;
+
+    globalThis.fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          text: "그래, 끝말잇기 재미있었어! 다음에 또 놀자.",
+          activePlaySkillId: null,
+        }),
+      } as unknown as Response;
+    }) as typeof globalThis.fetch;
+
+    const handle = renderVoiceChatHook({
+      onPlaySkillStateChange: (skillId) => {
+        receivedSkillId = skillId;
+      },
+    });
+
+    try {
+      await act(async () => {
+        handle.get().sendTypedText("그만");
+      });
+      await act(async () => {
+        await handle.get().respondText();
+      });
+
+      assert.equal(receivedSkillId, null, "activePlaySkillId: null 이 콜백으로 정상 전달되어야 한다");
+    } finally {
+      handle.unmount();
+    }
+  });
+});
+

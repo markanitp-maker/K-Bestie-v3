@@ -36,6 +36,8 @@ export interface UseVoiceChatOptions {
   onTtsResult?: (success: boolean, latencyMs: number) => void;
   /** 오디오 재생 완료/실패 결과 - 재생 중단은 실패로 치지 않는다. */
   onPlayResult?: (success: boolean) => void;
+  /** 013: K놀이 활성 스킬 상태 변화 콜백 (/api/voice/respond 응답의 activePlaySkillId 전달) */
+  onPlaySkillStateChange?: (activePlaySkillId: string | null) => void;
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -70,6 +72,8 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
   onSpeechBeginRef.current = options?.onSpeechBegin;
   const onSpeechEndRef = useRef<(() => void) | undefined>(undefined);
   onSpeechEndRef.current = options?.onSpeechEnd;
+  const onPlaySkillStateChangeRef = useRef<((activePlaySkillId: string | null) => void) | undefined>(undefined);
+  onPlaySkillStateChangeRef.current = options?.onPlaySkillStateChange;
   const getSessionIdRef = useRef<(() => string | null) | undefined>(undefined);
   getSessionIdRef.current = options?.getSessionId;
 
@@ -534,6 +538,10 @@ export function useVoiceChat(options?: UseVoiceChatOptions) {
         return;
       }
       const data = await res.json();
+      // 013 §3-12: activePlaySkillId 전달 (턴 종료 후 살아있는 놀이 스킬 ID 또는 null)
+      if (data && "activePlaySkillId" in data) {
+        onPlaySkillStateChangeRef.current?.(data.activePlaySkillId ?? null);
+      }
       const text = typeof data.text === "string" ? data.text.trim() : "";
       if (!text) {
         console.warn("[VoiceChat] /api/voice/respond returned empty text response");
