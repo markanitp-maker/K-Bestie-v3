@@ -1017,36 +1017,6 @@ export default function ChatPage() {
             }} />
           </div>
 
-          {/* 요청서 011 — 오늘의 황금열쇠 상태.
-              2026-08-19 대표 지시로 상단 대화 영역에서 오른쪽 하단(마이크 옆)으로 옮겼다.
-              문구·아이콘·색상·카드 스타일·표시 조건은 그대로다 — 위치만 바뀐다.
-
-              [왜 마이크와 같은 줄이 아닌가]
-              카드가 오늘 상태까지 다 적어서 12px 글자로도 폭이 240px 가까이 된다.
-              375px 화면에서 오른쪽에 붙이면 왼쪽 끝이 120px 지점이라 가운데 마이크
-              (139~236px)와 겹친다. 자동/수동 토글(가운데 145px)과도 겹친다.
-              카드 스타일을 줄이지 않고 겹치지 않게 두려면 하단 컨트롤 묶음 바로 위가
-              가장 낮은 자리다. 그래서 그리드 컨테이너 기준 절대배치로 올려 둔다.
-
-              [bottom 계산]
-              입력영역 padding + 마이크 줄 높이 + 간격 + 토글 높이 + 여유 6px.
-              전부 아래 실제 렌더 코드에 쓰인 clamp 값을 그대로 옮긴 것이다.
-              텍스트 모드/키보드 열림에서는 토글·간격·마이크 줄이 렌더되지 않으므로
-              입력영역 padding 기준으로만 띄운다. env(safe-area-inset-bottom) 은
-              bottomSafeAreaInset 에 이미 들어 있어 PWA 에서 잘리지 않는다. */}
-          <div
-            className="pointer-events-none absolute z-40 flex justify-end"
-            style={{
-              right: "max(clamp(16px, calc(var(--frame-w,100vw)*0.05), 24px), env(safe-area-inset-right))",
-              bottom: mode === "text" || isKeyboardOpen
-                ? `calc(clamp(18px, 2.5dvh, 24px) + ${bottomSafeAreaInset} + clamp(52px, 7dvh, 60px))`
-                : `calc(clamp(54px, 8dvh, 66px) + ${bottomSafeAreaInset}`
-                  + ` + clamp(88px, calc(var(--frame-w,100vw)*0.13), 100px)`
-                  + ` + clamp(16px, 2.5dvh, 24px) + clamp(38px, 5dvh, 42px) + 6px)`,
-            }}
-          >
-            <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
-          </div>
 
           {/* The mascot-area height is derived from the shared dimensions below, preserving a 20px tail-to-head gap as viewport dimensions change. */}
           <div className={`relative z-10 flex flex-col items-center justify-end min-h-0 w-full h-full min-w-0 max-w-full px-[clamp(16px,calc(var(--frame-w,100vw)*0.04),24px)] pt-[calc(58px+env(safe-area-inset-top))] pb-[var(--chat-bubble-bottom-padding)] ${mode === "text" ? 'overflow-y-auto overflow-x-hidden' : ''}`}>
@@ -1231,6 +1201,15 @@ export default function ChatPage() {
             }}
           >
             {mode === "text" ? (
+              // 텍스트 모드에는 마이크 줄이 없다. 여기서 황금열쇠를 안 그리면
+              // "표시 조건" 자체가 바뀌어 버리므로(대표 지시: 조건은 그대로),
+              // 입력줄 바로 위에 오른쪽 정렬 한 줄로 둔다. 절대배치를 쓰지 않는다.
+              <div className="w-full min-w-0 flex flex-col gap-2 box-border">
+              <div className="flex justify-end min-w-0"
+                style={{ paddingRight: "max(16px, env(safe-area-inset-right))" }}
+              >
+                <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
+              </div>
               <div
                 className="w-full min-w-0 flex gap-2 box-border"
                 style={{
@@ -1267,13 +1246,27 @@ export default function ChatPage() {
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
+              </div>
             ) : (
-              <div className="w-full flex items-center justify-center h-[clamp(88px,calc(var(--frame-w,100vw)*0.13),100px)] relative">
+              // 하단 컨트롤 3열 (2026-08-19 대표 지시).
+              // 왼쪽=키보드, 가운데=마이크, 오른쪽=오늘의 황금열쇠.
+              // 양쪽 1fr 이 같아서 가운데 마이크는 기존과 똑같이 화면 정중앙에 남는다
+              // — 마이크 크기·위치를 건드리지 않고 오른쪽 칸만 새로 쓴다.
+              // 절대배치·음수 마진·transform 으로 억지 보정하지 않는다(대표 지시).
+              // 좌우 padding 은 원래 키보드 버튼이 쓰던 left 오프셋과 같은 값이고,
+              // safe-area 를 max() 로 함께 반영해 PWA 에서 잘리지 않는다.
+              <div
+                className="grid w-full grid-cols-[1fr_auto_1fr] items-center h-[clamp(88px,calc(var(--frame-w,100vw)*0.13),100px)]"
+                style={{
+                  paddingLeft: "max(clamp(16px, calc(var(--frame-w,100vw)*0.05), 24px), env(safe-area-inset-left))",
+                  paddingRight: "max(clamp(16px, calc(var(--frame-w,100vw)*0.05), 24px), env(safe-area-inset-right))",
+                }}
+              >
                 {/* Keyboard Button */}
                 <button
                   onClick={switchToText}
                   disabled={isConnecting}
-                  className="absolute left-[clamp(16px,calc(var(--frame-w,100vw)*0.05),24px)] w-[clamp(46px,calc(var(--frame-w,100vw)*0.12),50px)] h-[clamp(46px,calc(var(--frame-w,100vw)*0.12),50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="justify-self-start w-[clamp(46px,calc(var(--frame-w,100vw)*0.12),50px)] h-[clamp(46px,calc(var(--frame-w,100vw)*0.12),50px)] bg-white/85 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-[0_3px_10px_rgba(75,85,99,0.10)] border border-gray-200 cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="텍스트로 답하기"
                 >
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="10" y1="12" x2="10.01" y2="12"/><line x1="14" y1="12" x2="14.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>
@@ -1339,6 +1332,13 @@ export default function ChatPage() {
                       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v4m-4 0h8"/><line x1="2" y1="2" x2="22" y2="22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
                     </button>
                   )}
+                </div>
+
+                {/* 오른쪽 칸 — 오늘의 황금열쇠. 문구·아이콘·색상·카드 디자인·표시 조건은
+                    그대로다. 칸 폭이 마이크 왼쪽 여백과 같으므로 카드가 마이크·키보드와
+                    구조적으로 겹칠 수 없다. 좁은 화면에서는 카드 안에서 줄바꿈된다. */}
+                <div className="justify-self-end min-w-0">
+                  <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
                 </div>
               </div>
             )}
