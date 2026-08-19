@@ -67,6 +67,18 @@ function candidatesFromSignals(
   if (signals.hasNegativeEmotion) return { candidates: ["EMPATHY", "COMFORT", "FOLLOW_UP"], deterministic: true };
   if (signals.hasPhysicalNeed) return { candidates: ["EMPATHY", "COMFORT"], deterministic: true };
   if (signals.hasChosungGameStart) return { candidates: ["PLAYFUL_GAME_CHOSUNG"], deterministic: true };
+  // 018 §3-11 — 아이가 케이에게 애착을 표현했으면 그걸 먼저 받아준다.
+  //
+  // 그냥 지나치고 다음 질문으로 넘어가면 아이는 무시당했다고 느낀다. 성취·긍정감정보다
+  // 앞에 두는 이유는 "케이 좋아해" 가 일반 긍정 발화로 흘러가면 축하 반응이 나오는데,
+  // 축하는 이 말에 대한 답이 아니기 때문이다.
+  // 게임 시작 요청보다는 뒤다 — "케이 좋아해 초성게임하자" 는 게임을 시작해야 한다.
+  //
+  // 받아주는 방식의 한계(독점·의존 유도 금지)는 RELATIONSHIP_SAFETY_INSTRUCTION 과
+  // 출력단 관계 안전 가드가 이미 막는다. 여기서는 방향만 정한다.
+  if (signals.hasAffectionTowardK) {
+    return { candidates: ["EMPATHY", "FOLLOW_UP"], deterministic: true };
+  }
   if (signals.hasAchievement) return { candidates: ["CELEBRATION", "CURIOSITY", "PLAYFUL_TEASING"], deterministic: true };
   if (signals.hasPositiveEmotion) return { candidates: ["CELEBRATION", "CURIOSITY", "FOLLOW_UP"], deterministic: false };
   if (signals.hasPlayfulSilly) return { candidates: ["JOKE", "PLAYFUL_TEASING", "IMAGINATION"], deterministic: false };

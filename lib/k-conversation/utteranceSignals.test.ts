@@ -474,3 +474,44 @@ test("008-B: 넌센스 퀴즈 / 수수께끼 시작 감지 (긍정 vs 부정·�
   }
 });
 
+
+// ── 018 §3-11 아이의 애착 표현 ────────────────────────────────
+test("018 §3-11: 케이를 향한 애착 표현을 잡는다", () => {
+  for (const utterance of [
+    "케이 좋아해",
+    "나 너 좋아",
+    "케이가 제일 좋아",
+    "너랑 얘기하는 게 재밌어",
+    "너는 내 친한 친구야",
+    "케이는 내 베프야",
+    "케이 보고 싶었어",
+    "케이 고마워",
+  ]) {
+    assert.equal(
+      extractUtteranceSignals(utterance).hasAffectionTowardK,
+      true,
+      `애착 표현을 놓쳤다: ${utterance}`
+    );
+  }
+});
+
+test("018 §3-11: 케이가 대상이 아닌 취향 얘기는 애착 표현이 아니다", () => {
+  // "좋아" 한 글자로 잡으면 평범한 취향 얘기가 전부 걸린다.
+  for (const utterance of [
+    "떡볶이 좋아",
+    "축구 좋아해",
+    "나는 수학이 좋아",
+    "오늘 급식 재밌었어",
+    "민준이는 내 친구랑 싸웠어",
+    "학교 가는 거 좋아",
+    "민준이는 내 친구야",
+    "엄마 보고 싶어",
+    "내 친구가 아팠어",
+  ]) {
+    assert.equal(
+      extractUtteranceSignals(utterance).hasAffectionTowardK,
+      false,
+      `취향 얘기가 애착으로 잡힌다: ${utterance}`
+    );
+  }
+});

@@ -726,6 +726,8 @@ export async function respond(
       relationshipFragment,
       memoryFragment,
       currentUtterance: input.currentUtterance,
+      // 018 §3-11 — 애착 표현을 먼저 받아주게 한다.
+      childShowedAffection: signals.hasAffectionTowardK,
       recentHistory,
       adapterInstruction: combinedAdapterInstruction || undefined,
       isGeneralKnowledgeQuestion: signals.hasGeneralKnowledgeQuestion,

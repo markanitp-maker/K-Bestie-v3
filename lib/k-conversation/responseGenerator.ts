@@ -41,6 +41,8 @@ export interface ResponseGeneratorInput {
   playSkillHandled?: boolean;
   /** 실패 로그 상관관계용. 아이 대화 원문은 오류 로그에 남기지 않는다(019 §3-6). */
   correlationId?: string;
+  /** 018 §3-11 — 아이가 케이에게 친근감·애착을 표현한 턴인지. 먼저 받아준 뒤 이어간다. */
+  childShowedAffection?: boolean;
 }
 
 const PROMPT_LEAK_PATTERNS = [
@@ -241,6 +243,17 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       ? "아이가 사실/지식형 질문을 했어. 아는 내용이면 또래 친구처럼 편하게 알려주고, 확실하지 않으면 지어내지 말고 모른다고 솔직하게 말하거나 같이 궁금해해."
       : "",
     modeFragment,
+    // 018 §3-11 — 아이가 애착을 표현한 턴. 그냥 지나치면 무시당했다고 느낀다.
+    // 금지 표현("나도 네가 제일 좋아", "난 너밖에 없어")은 아래 관계 안전 지침이 막는다.
+    input.childShowedAffection
+      ? [
+          "[아이가 마음을 표현했어]",
+          "- 아이가 너를 좋아한다고, 또는 친구라고 말했어. 이 말을 먼저 받아줘.",
+          "- 짧고 담백하게 받아. 한 문장이면 충분해. 과장하거나 되돌려 고백하지 마.",
+          "- 받아준 다음에 원래 하던 이야기나 질문으로 자연스럽게 이어가.",
+          "- 아이의 다른 친구·가족보다 네가 더 좋다는 식으로 답하지 마.",
+        ].join("\n")
+      : "",
     // 018 §3-12 — 최근에 쓴 공감 문구를 이번 턴에서 피한다.
     buildReactionDiversityFragment(input.recentHistory),
     // 요청서 013 §3-10 — 관계 안전은 두 모드 공통 규칙이다.

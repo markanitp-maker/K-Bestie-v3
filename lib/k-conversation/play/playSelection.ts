@@ -46,6 +46,7 @@ export interface ExecuteSkillSelectionResult {
  */
 export function createEmptyUtteranceSignals(): UtteranceSignals {
   return {
+    hasAffectionTowardK: false,
     hasAchievement: false,
     hasConflict: false,
     hasPlayfulSilly: false,
