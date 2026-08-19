@@ -1446,7 +1446,17 @@ export default function ChatPage() {
         {/* 047 QA 실측: topOffsetPx가 너무 작아 문의 위젯이 상단 X(자유대화 종료) 버튼과
             정확히 같은 자리에 겹쳐 X가 완전히 가려졌다 - 미션 화면과 달리 진행률 바가
             없어 X 버튼 아래로 충분히 내려야 한다(X 버튼 높이 44px + 상단 패딩 고려). */}
-        {mode !== "text" && <KChatbotWidget appSurface="child" topOffsetPx={64} />}
+        {/* 011 — 문의 위젯이 하단 컨트롤 위로 내려오지 못하게 막는다.
+            Dev QA 실측(2026-08-20 01:42): 위젯 기본 bottomReservedPx=90 이면 390x844 에서
+            위젯이 y=706~754 에 앉아 황금열쇠 카드(y=715.8~757.8)의 오른쪽 40px 을 덮었다.
+            "오늘의 황금열쇠" 의 '열쇠' 와 "아직 안 받았어" 의 '어' 가 아이콘에 가려 읽히지 않았다.
+            위젯은 드래그로 옮길 수 있고 bottomReservedPx 는 **가장 아래로 갈 수 있는 한계**만
+            정한다 — 위젯 디자인이나 기본 위치를 바꾸는 것이 아니다.
+            170 = 마이크 줄 최대 높이(100) + 입력영역 하단 패딩 최대(66) 여유분.
+            이 값이면 두 뷰포트에서 위젯이 카드 위로 40px 이상 떨어진다. */}
+        {mode !== "text" && (
+          <KChatbotWidget appSurface="child" topOffsetPx={64} bottomReservedPx={170} />
+        )}
         {dailyRewardModal}
         <PlaySkillModal
           isOpen={isPlayModalOpen}
