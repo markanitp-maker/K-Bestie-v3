@@ -297,10 +297,26 @@ export async function getActiveWordChainSession(
  * - 단어 유효성/규칙 판정은 chainRules에 위임하며, 세션 매니저는 accepted된 단어를 used_words에 누적합니다.
  * - 실패 시 예외를 던지지 않고 안전한 세션 상태를 반환합니다.
  */
+/**
+ * 010 §3-14 — DB 쓰기 성공 여부를 호출자가 반드시 알아야 한다.
+ *
+ * 예전에는 세션 갱신이 실패해도 **저장되지 않은 상태를 만들어 그대로 돌려줬다.**
+ * 그러면 호출자는 성공한 줄 알고 다음 단어를 아이에게 말한다. 그런데 DB 에는 이전
+ * current_word 가 남아 있으니, 다음 턴에 계산되는 이어갈 글자가 케이가 방금 말한 단어와
+ * 어긋난다 — 대표님 QA 에서 나온 "케이가 자기가 낸 단어를 잊는" 증상의 뿌리다.
+ *
+ * 상태가 확정되지 않았으면 게임을 진행시키지 않는 것이 맞다(§3-14).
+ */
+export interface RecordWordChainTurnResult {
+  session: WordChainSessionRow;
+  /** false 면 이 턴의 상태가 DB 에 확정되지 않았다. 다음 단어를 만들지 마라. */
+  persisted: boolean;
+}
+
 export async function recordWordChainTurn(
   db: SupabaseClient,
   params: RecordWordChainTurnParams
-): Promise<WordChainSessionRow> {
+): Promise<RecordWordChainTurnResult> {
   const { sessionId, childId, word, by, result, difficulty, nextState, currentSession } =
     params;
   const nowStr = new Date().toISOString();
@@ -330,7 +346,10 @@ export async function recordWordChainTurn(
           "[recordWordChainTurn] active session not found:",
           sessionErr?.message
         );
+        // 세션을 못 찾았으면 상태를 확정할 수 없다(§3-14).
         return {
+          persisted: false,
+          session: {
           id: sessionId,
           child_id: childId ?? "",
           chat_session_id: "",
@@ -342,6 +361,7 @@ export async function recordWordChainTurn(
           started_at: nowStr,
           updated_at: nowStr,
           ended_at: null,
+          },
         };
       }
 
@@ -401,31 +421,41 @@ export async function recordWordChainTurn(
         "[recordWordChainTurn] failed to update session:",
         updateErr?.message
       );
+      // 상태가 확정되지 않았다. 계산된 값은 돌려주되 persisted=false 로 알린다 —
+      // 호출자는 이걸 보고 다음 단어를 만들지 않아야 한다(§3-14).
       return {
-        ...session,
-        current_word: updatedWord,
-        current_difficulty: turnDifficulty,
-        used_words: currentUsedWords,
-        state: resolvedState,
-        updated_at: nowStr,
+        session: {
+          ...session,
+          current_word: updatedWord,
+          current_difficulty: turnDifficulty,
+          used_words: currentUsedWords,
+          state: resolvedState,
+          updated_at: nowStr,
+        },
+        persisted: false,
       };
     }
 
-    return updatedSession as WordChainSessionRow;
+    // 라운드 기록이 실패했어도 세션 상태는 확정됐다. 라운드는 감사·분석용이라
+    // 게임 진행을 막을 이유가 없다 — 막으면 아이 대화가 끊긴다.
+    return { session: updatedSession as WordChainSessionRow, persisted: true };
   } catch (err) {
     console.error("[recordWordChainTurn] Unexpected error:", err);
     return {
-      id: sessionId,
-      child_id: childId ?? "",
-      chat_session_id: "",
-      initiated_by: "K",
-      state: "CHILD_TURN",
-      current_word: word,
-      current_difficulty: difficulty ?? 1,
-      used_words: word ? [word] : [],
-      started_at: nowStr,
-      updated_at: nowStr,
-      ended_at: null,
+      session: {
+        id: sessionId,
+        child_id: childId ?? "",
+        chat_session_id: "",
+        initiated_by: "K",
+        state: "CHILD_TURN",
+        current_word: word,
+        current_difficulty: difficulty ?? 1,
+        used_words: word ? [word] : [],
+        started_at: nowStr,
+        updated_at: nowStr,
+        ended_at: null,
+      },
+      persisted: false,
     };
   }
 }

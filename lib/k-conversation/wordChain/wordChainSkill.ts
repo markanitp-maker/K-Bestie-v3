@@ -540,7 +540,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
 
       // 5. 단어 통과 (ACCEPTED) -> 아이 턴 기록
       const childEntry = judgement.entry!;
-      const updatedSession = await recordWordChainTurn(db, {
+      const childTurnRecord = await recordWordChainTurn(db, {
         sessionId: activeSession.id,
         childId,
         word: childEntry.word,
@@ -550,6 +550,26 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         nextState: "K_TURN",
         currentSession: activeSession,
       });
+
+      // 010 §3-14 — 상태가 DB 에 확정되지 않았으면 다음 단어를 만들지 않는다.
+      //
+      // 예전에는 실패해도 만들어진 상태를 그대로 받아 K 단어를 아이에게 말했다.
+      // DB 에는 이전 current_word 가 남으니 다음 턴의 이어갈 글자가 어긋난다 —
+      // "케이가 자기가 낸 단어를 잊는" 증상이 여기서 나왔다.
+      // 상태 불일치를 퍼뜨리는 대신 이 턴만 짧게 사과하고 멈춘다.
+      if (!childTurnRecord.persisted) {
+        console.error("[wordChainSkill] 아이 턴 상태 확정 실패 — K 단어 생성을 중단한다", {
+          childId,
+          sessionId: activeSession.id,
+        });
+        return {
+          handled: true,
+          instruction:
+            "[끝말잇기] 지금 기록이 잠깐 안 됐어. 아이에게 \"앗, 잠깐 문제가 생겼어. 조금 뒤에 다시 이어서 하자!\" 라는 뜻으로 짧고 다정하게 말해줘. 다음 단어나 이어갈 글자를 절대 말하지 마.",
+          ended: false,
+        };
+      }
+      const updatedSession = childTurnRecord.session;
 
       // 6. K의 다음 단어 결정론적 선택 (§3-17, §3-18)
       const diffRange = getWordChainGradeDifficulty(gradeRaw);
@@ -588,7 +608,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       }
 
       // 7-B. K가 정상 연결 -> K 턴 기록 및 instruction 생성
-      await recordWordChainTurn(db, {
+      const kTurnRecord = await recordWordChainTurn(db, {
         sessionId: activeSession.id,
         childId,
         word: kNextEntry.word,
@@ -598,6 +618,22 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         nextState: "CHILD_TURN",
         currentSession: updatedSession,
       });
+
+      // 010 §3-14 — 여기가 가장 위험한 지점이다. K 단어가 저장되지 않았는데 아이에게
+      // 말하면, 다음 턴에 DB 가 계산하는 이어갈 글자는 아이 단어 기준이 된다.
+      // 그러면 케이가 방금 말한 단어를 스스로 부정하는 것처럼 보인다.
+      if (!kTurnRecord.persisted) {
+        console.error("[wordChainSkill] K 턴 상태 확정 실패 — 단어를 아이에게 말하지 않는다", {
+          childId,
+          sessionId: activeSession.id,
+        });
+        return {
+          handled: true,
+          instruction:
+            "[끝말잇기] 지금 기록이 잠깐 안 됐어. 아이에게 \"앗, 잠깐 문제가 생겼어. 조금 뒤에 다시 이어서 하자!\" 라는 뜻으로 짧고 다정하게 말해줘. 다음 단어나 이어갈 글자를 절대 말하지 마.",
+          ended: false,
+        };
+      }
 
       const nextReqSyllable = kNextEntry.lastSyllable;
       return {

@@ -323,9 +323,9 @@ describe("WordChain sessionManager", () => {
       difficulty: 1,
     });
 
-    assert.equal(afterChildTurn.current_word, "과자");
-    assert.deepEqual(afterChildTurn.used_words, ["사과", "과자"]);
-    assert.equal(afterChildTurn.state, "K_TURN");
+    assert.equal(afterChildTurn.session.current_word, "과자");
+    assert.deepEqual(afterChildTurn.session.used_words, ["사과", "과자"]);
+    assert.equal(afterChildTurn.session.state, "K_TURN");
 
     // K 턴: 자전거 (ACCEPTED)
     const afterKTurn = await recordWordChainTurn(mockDb, {
@@ -337,9 +337,9 @@ describe("WordChain sessionManager", () => {
       difficulty: 1,
     });
 
-    assert.equal(afterKTurn.current_word, "자전거");
-    assert.deepEqual(afterKTurn.used_words, ["사과", "과자", "자전거"]);
-    assert.equal(afterKTurn.state, "CHILD_TURN");
+    assert.equal(afterKTurn.session.current_word, "자전거");
+    assert.deepEqual(afterKTurn.session.used_words, ["사과", "과자", "자전거"]);
+    assert.equal(afterKTurn.session.state, "CHILD_TURN");
   });
 
   test("recordWordChainTurn에서 거절(CHAIN_MISMATCH 등)된 단어는 current_word와 used_words를 변경하지 않는다", async () => {
@@ -371,9 +371,9 @@ describe("WordChain sessionManager", () => {
       nextState: "CHILD_TURN",
     });
 
-    assert.equal(rejectedTurn.current_word, "사과");
-    assert.deepEqual(rejectedTurn.used_words, ["사과"]);
-    assert.equal(rejectedTurn.state, "CHILD_TURN");
+    assert.equal(rejectedTurn.session.current_word, "사과");
+    assert.deepEqual(rejectedTurn.session.used_words, ["사과"]);
+    assert.equal(rejectedTurn.session.state, "CHILD_TURN");
   });
 
   test("endWordChainSession 후에는 getActiveWordChainSession이 null을 반환한다", async () => {
@@ -433,7 +433,10 @@ describe("WordChain sessionManager", () => {
       result: "ACCEPTED",
     });
     assert.ok(turnResult);
-    assert.equal(turnResult.id, "session-fail");
+    assert.equal(turnResult.session.id, "session-fail");
+    // 010 §3-14 — DB 쓰기가 실패했으면 호출자가 알아야 한다. 예전에는 성공과 실패가
+    // 구분되지 않아 저장되지 않은 상태로 게임이 계속 진행됐다.
+    assert.equal(turnResult.persisted, false, "DB 실패인데 확정된 것으로 보고했다");
 
     // endWordChainSession 예외 없이 완료
     await assert.doesNotReject(async () => {
@@ -476,4 +479,47 @@ describe("WordChain sessionManager", () => {
     assert.equal(getDerivedRoundCount(emptyWordSession), 0);
     assert.equal(getRequiredStartSyllable(emptyWordSession), null);
   });
+});
+
+// ── 010 §3-14 DB 확정 전 게임 진행 금지 ─────────────────────────
+test("010 §3-14: 세션을 못 찾으면 확정 실패로 보고한다", async () => {
+  // 세션 조회가 실패하는 상황. 예전에는 만들어진 상태를 성공처럼 돌려줬다.
+  const db = createMockSupabase({ sessions: [] });
+  const result = await recordWordChainTurn(db, {
+    sessionId: "missing-session",
+    childId: "child-1",
+    word: "과자",
+    by: "K",
+    result: "ACCEPTED",
+  });
+  assert.equal(result.persisted, false);
+});
+
+test("010 §3-14: 정상 경로에서는 확정됨으로 보고한다", async () => {
+  // 확정 실패 판정이 정상 게임을 막지 않는지 고정한다 — 막으면 아이 대화가 끊긴다.
+  const db = createMockSupabase({
+    sessions: [{
+      id: "sess-ok",
+      child_id: "child-1",
+      chat_session_id: "chat-1",
+      initiated_by: "K",
+      state: "CHILD_TURN",
+      current_word: "사과",
+      current_difficulty: 1,
+      used_words: ["사과"],
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ended_at: null,
+    }],
+  });
+  const result = await recordWordChainTurn(db, {
+    sessionId: "sess-ok",
+    childId: "child-1",
+    word: "과자",
+    by: "CHILD",
+    result: "ACCEPTED",
+    nextState: "K_TURN",
+  });
+  assert.equal(result.persisted, true);
+  assert.equal(result.session.current_word, "과자");
 });
