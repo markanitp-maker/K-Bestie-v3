@@ -87,9 +87,12 @@ test("015-2: 자유대화 응답 예산이 미션보다 넉넉하다", () => {
     `자유대화 시도 timeout 이 실측 실패 지점(4501ms)보다 짧다: ${freeChat.attemptTimeoutMs}`
   );
   assert.ok(freeChat.attemptTimeoutMs <= freeChat.totalBudgetMs);
-  // 미션은 앞에 Goal 판정이 또 있으므로 짧게 유지한다.
+  // 미션은 앞에 Goal 판정이 또 있으므로 한 번의 시도를 짧게 유지한다.
   assert.ok(mission.attemptTimeoutMs < freeChat.attemptTimeoutMs);
-  assert.ok(mission.totalBudgetMs <= 5000);
+  assert.ok(mission.attemptTimeoutMs <= 4500, `미션 시도 timeout: ${mission.attemptTimeoutMs}`);
+  // 020 §3-6 으로 총예산의 의미가 바뀌었다 — 이제 primary 시도들 + 대체 모델(flash-lite)
+  // 1회를 **합친** 상한이다. 그래서 5000 이 아니라 그보다 크다. 대신 무한정은 아니어야 한다.
+  assert.ok(mission.totalBudgetMs <= 7000, `미션 총 대기 상한: ${mission.totalBudgetMs}`);
 });
 
 // ── 2차 QA (14:27) 에서 나온 것 ────────────────────────────────
@@ -320,4 +323,43 @@ test("018: 놀이 문맥 마커가 일반 어휘에 과잉 매칭되지 않는�
       `놀이 얘기인데 놓쳤다: ${utterance}`
     );
   }
+});
+
+// ── 010 2026-08-19 대표님 Dev QA: 케이가 게임 상태를 지어냈다 ──
+test("010: 엔진이 안 내준 게임 수는 차단 대상이다", async () => {
+  const { hasUnauthorizedGameMove } = await import("../play/fakeGameplayDetector");
+
+  // 실측(세션 c4f68596). 케이가 낸 단어는 "편의점" 인데 자기 단어와 이어갈 글자를
+  // 통째로 지어냈다. 아이가 두 번 지적했고 그 뒤로 게임이 죽었다.
+  assert.equal(
+    hasUnauthorizedGameMove("아, '점퍼'였구나! 내가 잘못 들었네. '저'로 시작하는 단어 차례지? 그럼 나는 '전화기' 할게!"),
+    true
+  );
+  // 세션이 이미 끝난 뒤(DB 17:33:27 종료) 케이가 낼 차례를 아이에게 요구했다.
+  assert.equal(hasUnauthorizedGameMove("장발! '발' 차례다, 다음 단어 뭐야?"), true);
+  assert.equal(hasUnauthorizedGameMove("에이, 내가 또 잘못 들었네. 미안해! '기'로 시작하는 다음 단어는 뭘로 할까?"), true);
+});
+
+test("010: 현재 상태를 되짚거나 놀이로 돌아오자는 말은 막지 않는다", async () => {
+  const { hasUnauthorizedGameMove } = await import("../play/fakeGameplayDetector");
+  for (const text of [
+    "앗, 잠깐 멈췄네. 미안! 우리 끝말잇기 계속하자.",
+    "초성 퀴즈 시작! 문제는 'ㅂㄴㄴ'야. 맞혀봐!",
+    "아 그렇구나. 그랬으면 속상했겠다.",
+    "미안, 내가 잘 못 들었어. 다시 말해줄래?",
+    "나는 딸기가 제일 좋아.",
+    "내가 좋아하는 색은 파랑이야.",
+  ]) {
+    assert.equal(hasUnauthorizedGameMove(text), false, `정상 발화가 막힌다: ${text}`);
+  }
+});
+
+test("010: 놀이를 시작한다고 선언만 하는 것도 엔진이 안 내줬으면 차단한다", async () => {
+  const { hasUnauthorizedGameMove } = await import("../play/fakeGameplayDetector");
+  // 실측: "넌센스 퀴즈부터 바로 갈게!" 라고 하고 문제를 내지 않았다.
+  assert.equal(hasUnauthorizedGameMove("오, 테스트라니 긴장되는데? 그럼 내가 제일 잘하는 넌센스 퀴즈부터 바로 갈게!"), true);
+  assert.equal(hasUnauthorizedGameMove("좋아, 초성게임 시작할게!"), true);
+  // 복귀 문구는 계속 허용한다.
+  assert.equal(hasUnauthorizedGameMove("우리 끝말잇기 계속하자."), false);
+  assert.equal(hasUnauthorizedGameMove("초성게임이랑 끝말잇기 중에 뭐 할래?"), false);
 });

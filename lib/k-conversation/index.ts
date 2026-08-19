@@ -39,7 +39,7 @@ import {
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
-import { detectFakeGameplay, pickFakeGameplayRecoveryText, type FakeGameplayKind } from "./play/fakeGameplayDetector";
+import { detectFakeGameplay, hasUnauthorizedGameMove, pickFakeGameplayRecoveryText, type FakeGameplayKind } from "./play/fakeGameplayDetector";
 import { detectChosungAnswerLeak, detectChosungPuzzleMismatch } from "./chosungGame/outputGuard";
 import { detectWordChainOutputViolation } from "./wordChain/outputGuard";
 import { lookupWord } from "./wordChain/dictionaryIndex";
@@ -810,6 +810,26 @@ export async function respond(
         });
         finalText = pickFakeGameplayRecoveryText(input.recentKTexts ?? []);
       }
+    }
+
+    // 010 — 엔진이 이번 턴에 게임 내용을 내주지 않았는데 케이가 새 수를 두면 차단한다.
+    //
+    // 위 kind 검사는 "활성 세션이 있으면 그 게임 발화는 정상" 으로 본다. 그래야 아이가
+    // "문제 뭐였지?" 물었을 때 현재 문제를 다시 말해 줄 수 있다. 그런데 그 관용 때문에
+    // 세션이 살아 있는 동안 케이가 자기 단어와 이어갈 글자를 지어내도 통과했다
+    // (2026-08-19 대표님 QA: 편의점을 낸 케이가 "'점퍼'였구나 ... 나는 '전화기' 할게").
+    //
+    // 그래서 "새 수" 만 따로 좁게 막는다. 판단 기준은 세션 유무가 아니라
+    // **이번 턴에 엔진이 실제로 내줬는가(handledPlaySkillId)** 다.
+    if (!handledPlaySkillId && hasUnauthorizedGameMove(finalText)) {
+      console.warn("[k-conversation/index] 엔진이 내주지 않은 게임 수를 차단했다", {
+        childId: input.childId,
+        sessionId: input.sessionId,
+        activePlaySkillId,
+        handledPlaySkillId,
+        blockedPreview: finalText.slice(0, 60),
+      });
+      finalText = pickFakeGameplayRecoveryText(input.recentKTexts ?? []);
     }
   }
 

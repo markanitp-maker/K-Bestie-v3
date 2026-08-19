@@ -177,6 +177,13 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       // 한 적이 없다. 먼저 접자고 묻는 것도 놀이를 끝내려는 것이다.
       "- \"그만할까?\", \"여기까지 할까?\" 처럼 네가 먼저 놀이를 접자고 묻지 마. 이어서 하자고 해.",
       "- 단, 네가 직접 문제·정답·힌트·제시 단어를 지어내지는 마. 문제는 시스템이 낸다.",
+      // 2026-08-19 대표님 QA: 케이가 자기가 낸 단어를 "점퍼" 로 바꿔치기하고 이어갈
+      // 글자까지 지어냈다("'저'로 시작하는 단어 차례지? 나는 '전화기' 할게"). 아이가
+      // 두 번 지적했다. 이번 턴에 시스템이 아무 내용도 주지 않았으면 게임 진행에
+      // 관한 구체적인 말을 할 근거가 없다.
+      "- 이어갈 글자·초성·네 차례 단어를 네가 정하지 마. 지금 무슨 글자 차례인지도 말하지 마.",
+      "- 아이에게 \"다음 단어 뭐야?\" 처럼 단어를 요구하지 마. 네가 낼 차례일 수도 있다.",
+      "- 네가 앞에 어떤 단어를 냈는지 기억이 확실하지 않으면 그 단어를 다시 말하지 마.",
     ].join("\n");
   } else if (input.hasActivePlaySession === false && input.playSkillHandled === false) {
     playGuardFragment = [
@@ -405,7 +412,12 @@ const FREE_CHAT_FALLBACK_TEXT = "응, 듣고 있어. 더 얘기해줄래?";
  * 측정 결과는 requests/_log.md 의 020 항목에 남긴다.
  */
 const BUDGET_BY_MODE = {
-  MISSION: { attemptTimeoutMs: 4500, fallbackAttemptTimeoutMs: 2500, totalBudgetMs: 7000 },
+  // 미션 총예산은 019 계약에 묶여 있다 — Goal 판정 예산(ASSESSOR_BUDGET_MS=4000)과
+  // 합쳐 10초를 넘으면 안 된다(같은 요청 안에서 순차로 돈다). 4000 + 5800 = 9800.
+  // 020 의 대체 호출을 그 안에 넣기 위해 primary 시도를 4500 -> 4000 으로 줄였다.
+  // 같은 모델을 4.5초 더 기다리는 것보다, 4초에 끊고 더 가벼운 모델로 갈아타는 쪽이
+  // 429 상황에서 아이가 답을 받을 확률이 높다.
+  MISSION: { attemptTimeoutMs: 4000, fallbackAttemptTimeoutMs: 1800, totalBudgetMs: 5800 },
   FREE_CHAT: { attemptTimeoutMs: 8000, fallbackAttemptTimeoutMs: 3000, totalBudgetMs: 10000 },
 } as const;
 
@@ -660,8 +672,11 @@ async function attemptWithRetry(
     // 020 §3-5 도 같은 모델 재시도로 Burst 를 재증폭하지 말라고 못 박았다.
     // NON_RETRYABLE 은 우리 요청이 잘못된 것이라 다시 보내도 같다.
     if (lastFailureType === "RATE_LIMIT" || lastFailureType === "NON_RETRYABLE") break;
-    // timeout/5xx/network 도 같은 모델로 더 밀지 않는다 — 대체 모델이 더 나은 카드다.
-    if (isFallbackEligibleFailure(lastFailureType)) break;
+    // timeout/5xx/network 는 019 계약대로 **예산 안에서 primary 재시도**를 유지한다
+    // (lib/k-conversation/missionFallback.test.ts "429 가 아닌 실패(5xx)는 예산 안에서
+    //  재시도한다"). 대체 모델은 이 루프가 소진된 뒤에 1회 더 붙는다 —
+    // 019 를 줄이지 않고 020 을 얹는다. Burst 재증폭 금지(020 §3-5)는 429 즉시 탈출로
+    // 이미 지켜진다. 총예산이 재시도 횟수를 어차피 묶는다.
   }
 
   // ── 2) 대체 모델 1회 (020 §3-2, §3-5) ───────────────────────
