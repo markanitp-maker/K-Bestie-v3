@@ -104,6 +104,53 @@ export const EMPATHY_OPENERS: readonly string[] = [
 
 const REACTION_DIVERSITY_HISTORY_DEPTH = 3;
 
+/**
+ * 018 §3-5, §3-6 — 최근에 한 질문을 다시 묻지 않는다.
+ *
+ * 질문지 쪽에는 이미 쿨다운이 있다(questionId 7일 제외, questionFamily 패널티,
+ * semanticGroup 격리). 그런데 그건 **질문지에서 뽑을 때** 걸리는 장치이고, 대화 중
+ * LLM 이 스스로 만들어 내는 질문에는 아무 제동이 없었다. 그래서 같은 것을 표현만 바꿔
+ * 다시 묻는 일이 남았다 — 아이 입장에서는 "아까 말했잖아" 다.
+ *
+ * 출력을 사후에 고쳐 쓰지 않고 프롬프트에 회피 목록으로 넘긴다. 이미 만들어진 문장을
+ * 잘라내면 대화가 어색해지는 쪽이 더 흔했다(§3-13 하드컷 사고와 같은 교훈).
+ */
+const RECENT_QUESTION_HISTORY_DEPTH = 4;
+const MAX_LISTED_QUESTIONS = 3;
+
+/** 물음표로 끝나는 문장만 질문으로 본다. 없으면 질문을 안 한 턴이다. */
+function extractQuestionSentences(text: string): string[] {
+  return text
+    .split(/(?<=[?？])\s*/)
+    .map((part) => part.trim())
+    .filter((part) => /[?？]$/.test(part));
+}
+
+export function buildRecentQuestionAvoidanceFragment(
+  recentHistory: readonly ResponseGeneratorHistoryTurn[]
+): string {
+  const questions: string[] = [];
+  const recentKTurns = recentHistory
+    .filter((turn) => turn.role === "k")
+    .slice(-RECENT_QUESTION_HISTORY_DEPTH);
+
+  for (const turn of recentKTurns) {
+    for (const sentence of extractQuestionSentences(turn.text)) {
+      if (!questions.includes(sentence)) questions.push(sentence);
+    }
+  }
+  if (questions.length === 0) return "";
+
+  const listed = questions.slice(-MAX_LISTED_QUESTIONS);
+  return [
+    "[이미 물어본 것 다시 묻지 않기]",
+    ...listed.map((question) => `- 방금 물어봤어: "${question}"`),
+    "- 이 질문들을 다시 하지 마. 말만 바꿔서 같은 걸 묻는 것도 안 돼.",
+    "- 아이가 이미 답한 내용을 되묻지 말고, 그 답에서 한 걸음 더 들어간 걸 물어봐.",
+    "- 새로 물을 게 없으면 질문 없이 아이 말에 반응만 해도 괜찮아.",
+  ].join("\n");
+}
+
 export function buildReactionDiversityFragment(
   recentHistory: readonly ResponseGeneratorHistoryTurn[]
 ): string {
@@ -257,6 +304,8 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       : "",
     // 018 §3-12 — 최근에 쓴 공감 문구를 이번 턴에서 피한다.
     buildReactionDiversityFragment(input.recentHistory),
+    // 018 §3-5·§3-6 — 최근에 한 질문을 표현만 바꿔 다시 묻지 않는다.
+    buildRecentQuestionAvoidanceFragment(input.recentHistory),
     // 요청서 013 §3-10 — 관계 안전은 두 모드 공통 규칙이다.
     RELATIONSHIP_SAFETY_INSTRUCTION,
     input.adapterInstruction ? `[추가 지시]\n${input.adapterInstruction}` : "",

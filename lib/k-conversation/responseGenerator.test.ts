@@ -325,3 +325,43 @@ test("020 §3-6: primary + 대체를 합친 대기 상한이 명시돼 있다", 
     assert.ok(budget.totalBudgetMs <= 10000, `${mode}: 총 대기 상한이 10초를 넘는다`);
   }
 });
+
+// ── 018 §3-5·§3-6 이미 물어본 질문 반복 금지 ─────────────────
+test("018 §3-5: 최근에 한 질문을 회피 목록으로 넘긴다", async () => {
+  const { buildRecentQuestionAvoidanceFragment } = await import("./responseGenerator");
+  const fragment = buildRecentQuestionAvoidanceFragment([
+    { role: "child", text: "오늘 민준이랑 축구했어" },
+    { role: "k", text: "재밌었겠다! 오늘 누구랑 놀았어?" },
+    { role: "child", text: "민준이랑" },
+    { role: "k", text: "그랬구나. 뭐 하고 놀았어?" },
+  ]);
+  assert.match(fragment, /이미 물어본 것 다시 묻지 않기/);
+  assert.match(fragment, /오늘 누구랑 놀았어\?/);
+  assert.match(fragment, /뭐 하고 놀았어\?/);
+  // 말만 바꿔 같은 걸 묻는 것도 막아야 한다.
+  assert.match(fragment, /말만 바꿔서 같은 걸 묻는 것도 안 돼/);
+});
+
+test("018 §3-5: 질문을 한 적이 없으면 아무 지시도 얹지 않는다", async () => {
+  const { buildRecentQuestionAvoidanceFragment } = await import("./responseGenerator");
+  assert.equal(
+    buildRecentQuestionAvoidanceFragment([
+      { role: "child", text: "오늘 급식 맛있었어" },
+      { role: "k", text: "우와 좋았겠다." },
+    ]),
+    ""
+  );
+  assert.equal(buildRecentQuestionAvoidanceFragment([]), "");
+});
+
+test("018 §3-5: 아이 발화의 물음표는 케이 질문으로 세지 않는다", async () => {
+  const { buildRecentQuestionAvoidanceFragment } = await import("./responseGenerator");
+  // 아이가 물어본 것을 케이가 다시 묻지 말라고 하면 대화가 막힌다.
+  assert.equal(
+    buildRecentQuestionAvoidanceFragment([
+      { role: "child", text: "케이는 몇 살이야?" },
+      { role: "k", text: "나도 너랑 같은 나이야." },
+    ]),
+    ""
+  );
+});
