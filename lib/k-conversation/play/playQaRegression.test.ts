@@ -288,3 +288,36 @@ test("018: '다음 문제는 OO' 는 다음 문제 요청이 아니다", () => {
   assert.equal(extractUtteranceSignals("다음 문제 줘").hasChosungNextQuestion, true);
   assert.equal(extractUtteranceSignals("다음 문제 내봐").hasChosungNextQuestion, true);
 });
+
+test("018: 놀이 문맥 마커가 일반 어휘에 과잉 매칭되지 않는다", async () => {
+  // 2026-08-19 리뷰 지적. "답" 한 글자를 마커로 두면 "답답해 죽겠어" 가 놀이 얘기가 되고,
+  // 좌절한 아이의 부정감정이 화제 전환에서 빠져 게임 턴을 계속 요구하게 된다.
+  const { mentionsPlayContext } = await import("../wordChain/wordChainSkill");
+  for (const utterance of [
+    "답답해 죽겠어",
+    "나 너무 답답해",
+    "대답하기 싫어",
+    "엄마한테 답장 보내야 해",
+    "이어폰 어디 있어",
+  ]) {
+    assert.equal(
+      mentionsPlayContext(utterance),
+      false,
+      `놀이 얘기가 아닌데 놀이 문맥으로 본다: ${utterance}`
+    );
+  }
+
+  // 반대로 놀이에서 답을 가리키는 말은 그대로 잡아야 한다.
+  for (const utterance of [
+    "정답이 뭐야",
+    "답 알려줘",
+    "그거 답이야",
+    "빨로 이어서 해야지",
+  ]) {
+    assert.equal(
+      mentionsPlayContext(utterance),
+      true,
+      `놀이 얘기인데 놓쳤다: ${utterance}`
+    );
+  }
+});
