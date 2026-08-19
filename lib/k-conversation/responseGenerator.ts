@@ -606,15 +606,33 @@ function logAttemptFailure(entry: {
  * 아이 발화는 절대 담지 않는다.
  */
 function logFallbackAttempt(entry: {
-  primaryFailureType: ResponseFailureType;
+  /** 020 §3-17 — 어느 기능의 호출인지. mode 만으로는 로그에서 기능을 특정하기 어렵다. */
+  feature: string;
+  /** primary 모델 id. */
+  model: string;
   fallbackModel: string;
-  outcome: "succeeded" | "failed" | "skipped_budget" | "skipped_not_eligible" | "skipped_no_model";
-  fallbackFailureType?: ResponseFailureType;
-  elapsedMs: number;
+  /** primary 가 어떻게 끝났는지. 실패 유형이 그대로 들어간다. */
+  primaryResult: ResponseFailureType;
+  /** 대체 호출이 어떻게 끝났는지. 부르지 않았으면 왜 안 불렀는지. */
+  fallbackResult: "succeeded" | "failed" | "skipped_budget" | "skipped_not_eligible" | "skipped_no_model";
+  /** 대체 호출이 실패했을 때의 유형. */
+  fallbackErrorCode?: ResponseFailureType;
+  /** primary 시작부터 여기까지 걸린 시간. */
+  latencyMs: number;
+  /** 아이에게 나간 응답이 대체 모델에서 나왔는지. */
+  fallbackUsed: boolean;
   mode: ConversationMode;
-  correlationId?: string;
+  /** 020 §3-17 turnId/jobId. 이 저장소는 correlationId 로 턴을 상관관계 짓는다. */
+  turnId?: string;
 }): void {
+  // 아이 발화·부모 질문 원문, 서비스 계정, 토큰, 키를 절대 담지 않는다(020 §3-17 금지 목록).
+  // 이 함수에 들어오는 필드가 전부 식별 불가한 메타데이터인 것이 그 보장이다.
   console.warn("[k-conversation/responseGenerator] model fallback", JSON.stringify(entry));
+}
+
+/** 020 §3-17 — 로그에서 기능을 특정할 수 있게 한다. */
+function resolveLogFeature(mode: ConversationMode): string {
+  return mode === "FREE_CHAT" ? "free_chat_response" : "mission_v3_response";
 }
 
 type SingleAttemptOutcome =
@@ -760,31 +778,40 @@ async function attemptWithRetry(
 
   if (!fallbackModelId) {
     logFallbackAttempt({
-      primaryFailureType: lastFailureType,
+      feature: resolveLogFeature(args.input.mode),
+      model: args.modelId,
       fallbackModel: "(none)",
-      outcome: "skipped_no_model",
-      elapsedMs: elapsedBeforeFallback,
+      primaryResult: lastFailureType,
+      fallbackResult: "skipped_no_model",
+      latencyMs: elapsedBeforeFallback,
+      fallbackUsed: false,
       mode: args.input.mode,
-      correlationId: args.input.correlationId,
+      turnId: args.input.correlationId,
     });
   } else if (!isFallbackEligibleFailure(lastFailureType)) {
     logFallbackAttempt({
-      primaryFailureType: lastFailureType,
+      feature: resolveLogFeature(args.input.mode),
+      model: args.modelId,
       fallbackModel: fallbackModelId,
-      outcome: "skipped_not_eligible",
-      elapsedMs: elapsedBeforeFallback,
+      primaryResult: lastFailureType,
+      fallbackResult: "skipped_not_eligible",
+      latencyMs: elapsedBeforeFallback,
+      fallbackUsed: false,
       mode: args.input.mode,
-      correlationId: args.input.correlationId,
+      turnId: args.input.correlationId,
     });
   } else if (remainingForFallback < MIN_ATTEMPT_BUDGET_MS) {
     // 남은 시간이 없으면 부르지 않는다. 아이를 더 기다리게 하는 것이 더 나쁘다.
     logFallbackAttempt({
-      primaryFailureType: lastFailureType,
+      feature: resolveLogFeature(args.input.mode),
+      model: args.modelId,
       fallbackModel: fallbackModelId,
-      outcome: "skipped_budget",
-      elapsedMs: elapsedBeforeFallback,
+      primaryResult: lastFailureType,
+      fallbackResult: "skipped_budget",
+      latencyMs: elapsedBeforeFallback,
+      fallbackUsed: false,
       mode: args.input.mode,
-      correlationId: args.input.correlationId,
+      turnId: args.input.correlationId,
     });
   } else {
     const outcome = await runSingleAttempt(args, contents, systemInstruction, {
@@ -797,13 +824,16 @@ async function attemptWithRetry(
       totalAttempts: RETRY_DELAYS_MS.length + 1,
     });
     logFallbackAttempt({
-      primaryFailureType: lastFailureType,
+      feature: resolveLogFeature(args.input.mode),
+      model: args.modelId,
       fallbackModel: fallbackModelId,
-      outcome: outcome.ok ? "succeeded" : "failed",
-      fallbackFailureType: outcome.ok ? undefined : outcome.failureType,
-      elapsedMs: Date.now() - startedAt,
+      primaryResult: lastFailureType,
+      fallbackResult: outcome.ok ? "succeeded" : "failed",
+      fallbackErrorCode: outcome.ok ? undefined : outcome.failureType,
+      latencyMs: Date.now() - startedAt,
+      fallbackUsed: outcome.ok,
       mode: args.input.mode,
-      correlationId: args.input.correlationId,
+      turnId: args.input.correlationId,
     });
     if (outcome.ok) return outcome.result;
     lastFailureType = outcome.failureType;
