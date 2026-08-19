@@ -192,3 +192,50 @@ test("015-2b: 초성게임 신호 게이트가 모든 처리 분기를 통과시
     assert.equal(dbTouched, true, `${key} 신호가 게이트를 통과하지 못했다`);
   }
 });
+
+// ── 15:12 QA (대표님 직접 진행) 에서 나온 것 ──────────────────
+
+test("010: 되묻기 문구는 놀이 중 판정을 가로채면 안 된다 — 문구 자체 확인", async () => {
+  // 실측: 케이 응답 47개 중 12개(26%)가 "내가 '○○'라고 들었는데, 이게 맞니?" 였다.
+  // 아이가 게임 답을 짧게 말할 때마다 ASR 신뢰도가 낮아 이 경로가 먼저 잡아챘다.
+  // respond() 가 놀이 세션이 있으면 이 경로로 빠지지 않도록 고쳤다(index.ts).
+  const { buildUnclearAudioRecovery } = await import("@/lib/freechat/unclearAudioRecovery");
+  const recovery = buildUnclearAudioRecovery({ childUtterance: "소" });
+  assert.ok(recovery.text, "되묻기 문구가 없다");
+  assert.ok(recovery.text!.includes("소"));
+});
+
+test("010: 가짜 게임 차단 문구가 매번 같지 않다", async () => {
+  // 실측: "좋아, 같이 하자! 잠깐만 준비할게." 가 두 번 연속 나왔고 아이가 알아챘다.
+  const { pickFakeGameplayRecoveryText } = await import("./fakeGameplayDetector");
+  const first = pickFakeGameplayRecoveryText([]);
+  const second = pickFakeGameplayRecoveryText([first]);
+  assert.notEqual(second, first, "직전과 같은 문구가 또 나왔다");
+  const third = pickFakeGameplayRecoveryText([first, second]);
+  assert.ok(![first, second].includes(third));
+});
+
+test("010: 가짜 게임 차단 문구는 아이에게 선택을 돌려준다", async () => {
+  const { pickFakeGameplayRecoveryText } = await import("./fakeGameplayDetector");
+  const text = pickFakeGameplayRecoveryText([]);
+  assert.ok(/놀이|할래|할까|골라/.test(text), `되묻는 문장이 아니다: ${text}`);
+  // 차단해 놓고 게임 콘텐츠를 다시 흘리면 안 된다.
+  assert.ok(!/[ㄱ-ㅎ]{2,}/.test(text), "초성이 들어 있다");
+});
+
+test("010: 놀이 중 생성 실패 문구가 아이에게 되묻지 않는다", async () => {
+  // 실측: 아이가 "이름표" 를 냈는데 "응, 듣고 있어. 더 얘기해줄래?" 가 나갔다.
+  // 아이 차례가 이미 끝난 자리에서 다시 말하라고 하면 안 된다(019 와 같은 원칙).
+  const { containsMissionForbiddenFallback } = await import("@/lib/mission-v3/missionAdapter");
+  // 엔진이 쓰는 놀이용 문구 형태를 그대로 검사한다.
+  for (const playName of ["끝말잇기", "초성게임", "넌센스 퀴즈"]) {
+    const text = `앗, 잠깐 멈췄네. 미안! 우리 ${playName} 계속하자.`;
+    assert.equal(
+      containsMissionForbiddenFallback(text),
+      false,
+      `되묻는 문구가 섞였다: ${text}`
+    );
+    assert.ok(text.includes(playName), "어떤 놀이인지 안 밝혔다");
+    assert.ok(/계속하자/.test(text), "이어가자는 뜻이 없다");
+  }
+});

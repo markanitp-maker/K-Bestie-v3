@@ -95,6 +95,32 @@ export interface EndSessionParams {
  * 1. 게임 세션 시작
  * 아이 학년에 따른 기본 난이도와 단어를 설정하여 `chosung_game_sessions` 행을 생성합니다.
  */
+/**
+ * 이 아이가 최근 초성게임에서 이미 낸 낱말들(010 §3-4).
+ *
+ * 세션 안에서는 `recent_words` 가 중복을 막지만 새 세션은 이력을 보지 않는다.
+ * 실패하면 빈 집합을 돌려준다 — 제외를 못 해도 게임은 되어야 한다.
+ */
+async function getRecentlyUsedChosungWords(
+  db: SupabaseClient,
+  childId: string,
+  sessionLimit = 5
+): Promise<Set<string>> {
+  try {
+    const { data, error } = await db
+      .from("chosung_game_sessions")
+      .select("recent_words")
+      .eq("child_id", childId)
+      .order("updated_at", { ascending: false })
+      .limit(sessionLimit);
+    if (error || !data) return new Set();
+    return new Set(data.flatMap((row) => (row.recent_words as string[] | null) ?? []));
+  } catch (error) {
+    console.error("[chosungGame/gameSessionManager] 최근 사용 낱말 조회 실패", error);
+    return new Set();
+  }
+}
+
 export async function startChosungGameSession(
   db: SupabaseClient,
   params: StartSessionParams
@@ -114,7 +140,14 @@ export async function startChosungGameSession(
     candidateWords = [...WORD_POOL];
   }
 
-  const selectedWord = candidateWords[Math.floor(Math.random() * candidateWords.length)];
+  // 010 §3-4 — 세션 안에서는 recent_words 로 중복을 막지만, 새 세션은 그 이력을 보지 않아
+  // 방금 끝낸 게임의 문제가 바로 다시 나올 수 있었다. 최근 세션들에서 낸 낱말을 뺀다.
+  // 전부 빠지면 제외를 포기한다 — 겹치는 것이 문제를 못 내는 것보다 낫다.
+  const recentlyUsed = await getRecentlyUsedChosungWords(db, childId);
+  const unusedCandidates = candidateWords.filter((entry) => !recentlyUsed.has(entry.word));
+  const pickPool = unusedCandidates.length > 0 ? unusedCandidates : candidateWords;
+
+  const selectedWord = pickPool[Math.floor(Math.random() * pickPool.length)];
   const chosung = selectedWord.chosung || extractChosung(selectedWord.word);
 
   const initialState: SessionState =

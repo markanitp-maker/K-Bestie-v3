@@ -186,3 +186,42 @@ test("015: '~이야'는 받침 유무로 조사인지 낱말인지 가른다", (
   assert.equal(normalizeNonsenseAnswer("나야"), "나");
   assert.equal(normalizeNonsenseAnswer("바다야"), "바다");
 });
+
+// ── 010: 다음 문제 요청 인식 ──────────────────────────────────
+
+test("010: '내 봐' 계열을 다음 문제 요청으로 인식한다", () => {
+  // 2026-08-19 대표님 QA 실측: "내 봐", "그래 문제 내봐" 가 힌트 요청으로 흘러가
+  // 케이가 내지도 않은 문제에 "정답은 4글자 안팎", "첫 글자는 '스'" 라고 답했다.
+  const signals = {} as never;
+  for (const utterance of [
+    "내 봐",
+    "문제 내봐",
+    "그래 문제 내봐",
+    "아무튼 또 내 봐",
+    "다음 문제 줘",
+    "문제 줘",
+  ]) {
+    assert.equal(
+      classifyChildNonsenseUtterance(utterance, signals),
+      "NEXT_QUESTION",
+      `다음 문제 요청을 놓쳤다: ${utterance}`
+    );
+  }
+});
+
+test("010: 힌트·정답 요청과 섞이지 않는다", () => {
+  const signals = {} as never;
+  assert.equal(classifyChildNonsenseUtterance("힌트 줘", signals), "REQUEST_HINT");
+  assert.equal(classifyChildNonsenseUtterance("정답 알려줘", signals), "REVEAL_ANSWER");
+});
+
+test("010: 정답 발화를 다음 문제 요청으로 오인하지 않는다", () => {
+  const signals = {} as never;
+  for (const utterance of ["마네킹", "청소기", "컴퓨터", "스마트폰"]) {
+    assert.equal(
+      classifyChildNonsenseUtterance(utterance, signals),
+      "ANSWER_ATTEMPT",
+      `정답을 다음 문제 요청으로 오인했다: ${utterance}`
+    );
+  }
+});

@@ -12,29 +12,33 @@ import { DICTIONARY_PART2 } from "./dictionary.part2";
 import { DICTIONARY_PART3 } from "./dictionary.part3";
 import { DICTIONARY_PART4 } from "./dictionary.part4";
 import { DICTIONARY_PART5 } from "./dictionary.part5";
+import { DICTIONARY_PART6 } from "./dictionary.part6";
 
 describe("WordChain DictionaryIndex", () => {
-  it("WORD_CHAIN_DICTIONARY는 part1~part5 합본이며 각 Part 개수가 유지된다", () => {
+  it("WORD_CHAIN_DICTIONARY는 part1~part6 합본이며 각 Part 개수가 유지된다", () => {
     assert.equal(DICTIONARY_PART1.length, 284);
     assert.equal(DICTIONARY_PART2.length, 380);
     assert.equal(DICTIONARY_PART3.length, 380);
     assert.equal(DICTIONARY_PART4.length, 360);
     // Part5 는 2026-08-19 실사용 로그에서 거절된 기본어 보강분이다(015).
     assert.equal(DICTIONARY_PART5.length, 36);
+    // Part6 은 010 §3-2 실사용 누락어 보강분("도둑", "밥도둑" 등)이다.
+    assert.equal(DICTIONARY_PART6.length, 60);
     const expected =
       DICTIONARY_PART1.length +
       DICTIONARY_PART2.length +
       DICTIONARY_PART3.length +
       DICTIONARY_PART4.length +
-      DICTIONARY_PART5.length;
+      DICTIONARY_PART5.length +
+      DICTIONARY_PART6.length;
     assert.equal(WORD_CHAIN_DICTIONARY.length, expected);
-    assert.equal(WORD_CHAIN_DICTIONARY.length, 1440);
+    assert.equal(WORD_CHAIN_DICTIONARY.length, 1500);
   });
 
   it("015: 실사용에서 거절당한 기본어가 사전에 있다", () => {
     // 2026-08-19 김서아 Dev 로그: 아이가 "유리"를 냈는데 케이가 모르는 단어라고 거절했다.
     const words = new Set(WORD_CHAIN_DICTIONARY.map((entry) => entry.normalizedWord));
-    for (const word of ["유리", "리본", "자동차", "고래", "소금", "과일"]) {
+    for (const word of ["유리", "리본", "자동차", "고래", "소금", "과일", "도둑", "밥도둑"]) {
       assert.ok(words.has(word), `기본어가 사전에 없다: ${word}`);
     }
   });

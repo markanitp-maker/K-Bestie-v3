@@ -39,7 +39,7 @@ import {
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
-import { detectFakeGameplay, FAKE_GAMEPLAY_FALLBACK_TEXT, type FakeGameplayKind } from "./play/fakeGameplayDetector";
+import { detectFakeGameplay, pickFakeGameplayRecoveryText, type FakeGameplayKind } from "./play/fakeGameplayDetector";
 import { detectChosungAnswerLeak, detectChosungPuzzleMismatch } from "./chosungGame/outputGuard";
 import { detectWordChainOutputViolation } from "./wordChain/outputGuard";
 import { lookupWord } from "./wordChain/dictionaryIndex";
@@ -83,6 +83,22 @@ export interface SafetyPreflightOptions {
   mode?: EngineInput["mode"];
   /** 이 턴의 식별자. 014 유예 게이트가 한 턴을 두 번 세지 않도록 쓴다. */
   turnId?: string | null;
+}
+
+/**
+ * 지금 진행 중인 놀이 세션이 하나라도 있는지(010).
+ * 되묻기가 게임 답변을 가로채지 않도록 판단하는 데만 쓴다. 실패하면 false —
+ * 판단이 안 되면 기존 동작(되묻기)을 유지하는 쪽이 안전하다.
+ */
+async function hasAnyActivePlaySession(db: SupabaseClient, childId: string): Promise<boolean> {
+  for (const skill of PLAY_SKILL_REGISTRY) {
+    try {
+      if (await skill.getActiveSession(db, childId)) return true;
+    } catch (error) {
+      console.error("[k-conversation/index] 활성 놀이 세션 확인 실패:", error);
+    }
+  }
+  return false;
 }
 
 /** Safety가 걸렸을 때 safety_events를 기록한다 — Mission/자유대화 모두 동일하게 필요한
@@ -248,6 +264,22 @@ export async function respond(
     };
   }
   if (utteranceCategory === "unclear_audio") {
+    // 010 — **놀이 중에는 되묻기가 가로채지 않는다.**
+    //
+    // 2026-08-19 15:12~15:22 김서아 Dev QA 실측: 케이 응답 47개 중 12개(26%)가
+    // "내가 '○○'라고 들었는데, 이게 맞니?" 였다. 아이가 게임 답을 짧게 말할 때마다
+    // ("소", "무료", "지민", "스마트폰") ASR 신뢰도가 낮아 이 경로가 먼저 잡아채
+    // 정답 판정까지 가지도 못했다. 아이는 "왜 자꾸 못 알아듣냐"고 했다.
+    //
+    // 놀이 중이면 그 답이 맞는지는 게임이 판정할 수 있다 — 게임은 정답을 알고 있다.
+    // 되묻기는 판정할 근거가 없는 일반 대화에서만 의미가 있다.
+    // (014 리뷰에서 이 위험을 MEDIUM 으로 지적받았는데 내가 별건으로 미뤘다. 그게 틀렸다.)
+    const playSessionActive =
+      input.mode === "FREE_CHAT" && input.childId
+        ? await hasAnyActivePlaySession(deps.db, input.childId)
+        : false;
+
+    if (!playSessionActive) {
     const recentKTexts = input.recentKTexts ?? [];
     // 014 — 들린 게 있으면 "못 들었어" 대신 들은 대로 되묻는다.
     // 케이가 "다시 말해줄래?"만 반복해 아이가 항의한 사고(2026-08-18)의 대응이다.
@@ -264,6 +296,8 @@ export async function respond(
       tokenIn: 0,
       tokenOut: 0,
     };
+    }
+    // 놀이 중이면 여기서 반환하지 않고 아래 놀이 처리로 내려간다.
   }
 
   // 3) 4-tier Memory + Core/Grade Persona 병렬 조회.
@@ -718,6 +752,30 @@ export async function respond(
   // 활성 세션이 있거나 이번 턴에 Router가 처리한 게임 외의 다른 게임을 케이가 진행하면 차단한다.
   // (2026-08-17 사고 재발 방지: 초성 세션 활성 중 끝말잇기 환각 차단)
   let finalText = generated.text;
+
+  // 8-1) 놀이 중 자연어 생성이 실패했을 때(010).
+  //
+  // 자유대화용 폴백 "응, 듣고 있어. 더 얘기해줄래?" 는 놀이 중에 나오면 아이가 방금 낸
+  // 답을 무시하고 다시 말하라는 뜻이 된다. 2026-08-19 Dev QA 실측: 아이가 "이름표" 를
+  // 냈는데 이 문구가 나갔다. 019 에서 미션에 적용한 원칙을 놀이에도 적용한다 —
+  // 아이 차례가 이미 끝난 자리에서는 되묻지 않는다.
+  //
+  // 케이가 문제·정답·단어를 지어내면 안 되므로(가짜 게임 차단) 여기서는 게임 내용을
+  // 만들지 않고, 잠깐 문제가 생겼다는 것만 알리고 이어가자고 한다.
+  if (generated.fallbackUsed && hasActivePlaySession && input.mode !== "MISSION") {
+    const playName =
+      (activePlaySkillId
+        ? PLAY_SKILL_REGISTRY.find((skill) => skill.id === activePlaySkillId)?.displayName
+        : undefined) ?? "놀이";
+    finalText = `앗, 잠깐 멈췄네. 미안! 우리 ${playName} 계속하자.`;
+    console.warn("[k-conversation/index] 놀이 중 생성 실패 — 자유대화 폴백 대신 놀이 문구로 대체", {
+      childId: input.childId,
+      sessionId: input.sessionId,
+      activePlaySkillId,
+      failureType: generated.failureType ?? null,
+    });
+  }
+
   if (input.mode !== "MISSION") {
     const verdict = detectFakeGameplay(finalText);
     if (verdict.isFake) {
@@ -744,7 +802,7 @@ export async function respond(
           blockedKinds,
           blockedPreview: finalText.slice(0, 60),
         });
-        finalText = FAKE_GAMEPLAY_FALLBACK_TEXT;
+        finalText = pickFakeGameplayRecoveryText(input.recentKTexts ?? []);
       }
     }
   }

@@ -922,7 +922,13 @@ test("Output Guard Test 1: 활성 세션 없이 게임 콘텐츠가 생성되면
 
   assert.equal(result.category, "generated");
   // 차단되어 대체 문구로 변경되어야 함
-  assert.equal(result.text, "좋아, 같이 하자! 잠깐만 준비할게.");
+  // 010 — 대체 문구는 하나로 고정하지 않는다. 같은 말이 반복되면 아이가 바로 알아챈다.
+  // 지어낸 게임 진행이 차단됐고, 아이에게 무엇을 할지 되묻는 문장이 나가면 된다.
+  assert.ok(
+    /놀이|골라|할까|할래/.test(result.text),
+    `차단 후 대체 문구가 아니다: ${result.text}`
+  );
+  assert.ok(!/ㄱ|ㄴ|ㄷ|ㅁ|ㅂ|ㅅ|ㅇ|ㅈ/.test(result.text), "차단했는데 초성이 남아 있다");
 });
 
 test("Output Guard Test 2: 활성 세션이 있으면 정상 게임 출력이 차단되지 않는다 (회귀 방지)", async () => {
@@ -1035,7 +1041,13 @@ test("Output Guard Test 5: 초성 세션 활성 상태에서 케이가 끝말잇
 
   assert.equal(result.category, "generated");
   // 활성 세션은 초성인데 끝말잇기(WORD_CHAIN)를 진행했으므로 차단되어 대체 문구로 변경되어야 함
-  assert.equal(result.text, "좋아, 같이 하자! 잠깐만 준비할게.");
+  // 010 — 대체 문구는 하나로 고정하지 않는다. 같은 말이 반복되면 아이가 바로 알아챈다.
+  // 지어낸 게임 진행이 차단됐고, 아이에게 무엇을 할지 되묻는 문장이 나가면 된다.
+  assert.ok(
+    /놀이|골라|할까|할래/.test(result.text),
+    `차단 후 대체 문구가 아니다: ${result.text}`
+  );
+  assert.ok(!/ㄱ|ㄴ|ㄷ|ㅁ|ㅂ|ㅅ|ㅇ|ㅈ/.test(result.text), "차단했는데 초성이 남아 있다");
 });
 
 test("Output Guard Test 6: MISSION 모드에서는 가짜 게임 가드를 검사하지 않는다", async () => {

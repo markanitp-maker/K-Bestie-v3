@@ -8,6 +8,7 @@ import type {
 } from "../play/skillTypes";
 import type { UtteranceSignals } from "../utteranceSignals";
 import {
+  getRecentInitialKWords,
   startWordChainSession,
   getActiveWordChainSession,
   recordWordChainTurn,
@@ -55,11 +56,18 @@ export function getWordChainGradeDifficulty(
  * K의 첫 단어를 사전에서 결정론적으로 선택합니다 (§3-19).
  * - 학년별 난이도 범위 내 단어 중 아이가 이어갈 수 있는 후속 단어(Tier 3/2)가 풍부한 단어를 선택합니다.
  * - 첫 단어는 이어받을 이전 단어가 없으므로 selectKNextWord 대신 사전에서 직접 선택합니다.
+ *
+ * 010 §3-4 — seed 는 chatSessionId 다. 그것만 쓰면 같은 대화 세션에서 끝말잇기를 다시
+ * 시작할 때마다 **항상 같은 첫 단어**가 나온다(2026-08-19 실측: "바나나우유"·"김치찌개" 반복).
+ * 그래서 이미 써 본 첫 단어를 후보에서 뺀다. 무작위로 바꾸지 않는 이유는 결정론이
+ * 재시도 안전성을 주기 때문이다 — 같은 턴을 두 번 처리해도 같은 단어가 나와야 한다.
+ * 제외 목록이 게임마다 커지므로 결정론을 유지하면서도 단어가 달라진다.
  */
 export function selectInitialKWord(
   minDifficulty: number,
   maxDifficulty: number,
-  seed?: string
+  seed?: string,
+  excludeWords: readonly string[] = []
 ): DerivedWordChainEntry {
   const eligible = WORD_CHAIN_DICTIONARY.filter((entry) => {
     if (entry.difficulty < minDifficulty || entry.difficulty > maxDifficulty) {
@@ -77,7 +85,13 @@ export function selectInitialKWord(
           (e) => e.difficulty >= minDifficulty && e.difficulty <= maxDifficulty
         );
 
-  const fallback = pool.length > 0 ? pool : WORD_CHAIN_DICTIONARY;
+  // 이미 첫 단어로 써 본 낱말을 뺀다. 전부 빠져 후보가 0이 되면 제외를 포기한다 —
+  // 단어가 겹치는 것이 게임을 못 하는 것보다 낫다.
+  const excluded = new Set(excludeWords);
+  const unused = pool.filter((entry) => !excluded.has(entry.normalizedWord));
+  const usablePool = unused.length > 0 ? unused : pool;
+
+  const fallback = usablePool.length > 0 ? usablePool : WORD_CHAIN_DICTIONARY;
   if (fallback.length === 0) {
     return deriveWordChainEntry({ word: "사과", difficulty: 1 });
   }
@@ -332,10 +346,14 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       const diffRange = getWordChainGradeDifficulty(gradeRaw);
       const persona = resolveGradePersona(gradeRaw);
       const initialDifficulty = persona?.chosungGame?.baseDifficulty ?? diffRange.min;
+      // 010 §3-4 — 이미 첫 단어로 써 본 낱말은 뺀다. chatSessionId 시드만 쓰면
+      // 같은 대화에서 다시 시작할 때마다 같은 단어가 나온다.
+      const recentInitialWords = await getRecentInitialKWords(db, childId);
       const initialWordEntry = selectInitialKWord(
         diffRange.min,
         diffRange.max,
-        chatSessionId
+        chatSessionId,
+        recentInitialWords
       );
 
       // 3. 신규 세션 생성 (DB)

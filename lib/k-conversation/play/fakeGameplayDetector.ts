@@ -187,3 +187,28 @@ export function detectFakeGameplay(text: string): FakeGameplayVerdict {
  * 게임을 시작하려던 맥락이므로, 거절이 아니라 "준비 중"으로 받아준다.
  */
 export const FAKE_GAMEPLAY_FALLBACK_TEXT = "좋아, 같이 하자! 잠깐만 준비할게.";
+
+/**
+ * 가짜 게임 출력을 막았을 때 아이에게 보낼 문장(010).
+ *
+ * 예전에는 위 한 문장만 돌려줬다. 2026-08-19 김서아 Dev QA 에서 이 문장이 두 번 연속 나왔고
+ * 아이가 바로 알아챘다: "이거 왜 계속 던지는 멘트야 (...) 불필요한 멘트 왜 들어가는지 모르겠다".
+ *
+ * 케이가 지어낸 게임 진행을 막는 것은 맞지만, 막은 자리에 아무 말이나 채워 넣으면
+ * 아이는 대화가 끊겼다고 느낀다. 직전에 한 말과 겹치지 않는 문장을 고르고,
+ * 무엇을 하고 싶은지 되물어 대화를 아이에게 돌려준다.
+ */
+const FAKE_GAMEPLAY_RECOVERY_LINES: readonly string[] = [
+  "앗, 내가 혼자 앞서갔네. 무슨 놀이 할지 네가 골라줄래?",
+  "잠깐, 내가 순서를 헷갈렸어. 어떤 놀이부터 할까?",
+  "미안, 내가 착각했어. 초성게임이랑 끝말잇기 중에 뭐 할래?",
+  "어라, 내가 잘못 짚었다. 하고 싶은 놀이 말해줘!",
+];
+
+export function pickFakeGameplayRecoveryText(recentKTexts: readonly string[] = []): string {
+  const recent = new Set(recentKTexts.map((text) => text.trim()));
+  const unused = FAKE_GAMEPLAY_RECOVERY_LINES.filter((line) => !recent.has(line));
+  const pool = unused.length > 0 ? unused : FAKE_GAMEPLAY_RECOVERY_LINES;
+  // 최근에 안 쓴 것 중 첫 번째. 난수를 쓰지 않아 같은 턴을 재시도해도 같은 문장이 나온다.
+  return pool[0];
+}

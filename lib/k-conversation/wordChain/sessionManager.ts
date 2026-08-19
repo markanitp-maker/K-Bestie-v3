@@ -227,6 +227,44 @@ export async function startWordChainSession(
  * - child_id 기준 ended_at IS NULL인 세션을 반환합니다.
  * - 실패 시 예외를 던지지 않고 null을 반환합니다.
  */
+/**
+ * 이 아이가 최근 끝말잇기에서 K 의 첫 단어로 썼던 낱말들(010 §3-4).
+ *
+ * 같은 첫 단어가 반복되는 것을 막기 위한 제외 목록이다. 라운드 기록에서 K 가 낸
+ * 첫 낱말만 모은다. 실패하면 빈 배열을 돌려준다 — 제외를 못 해도 게임은 되어야 한다.
+ */
+export async function getRecentInitialKWords(
+  db: SupabaseClient,
+  childId: string,
+  limit = 20
+): Promise<string[]> {
+  try {
+    const { data, error } = await db
+      .from("word_chain_game_rounds")
+      .select("session_id, word, by, created_at")
+      .eq("child_id", childId)
+      .eq("by", "K")
+      .order("created_at", { ascending: false })
+      .limit(limit * 6);
+    if (error || !data) return [];
+
+    // 세션별 가장 이른 K 낱말이 그 게임의 첫 단어다.
+    const firstBySession = new Map<string, { word: string; createdAt: string }>();
+    for (const row of data) {
+      const sessionId = row.session_id as string;
+      const createdAt = row.created_at as string;
+      const existing = firstBySession.get(sessionId);
+      if (!existing || createdAt < existing.createdAt) {
+        firstBySession.set(sessionId, { word: row.word as string, createdAt });
+      }
+    }
+    return [...new Set([...firstBySession.values()].map((entry) => entry.word))].slice(0, limit);
+  } catch (error) {
+    console.error("[wordChain/sessionManager] 최근 첫 단어 조회 실패", error);
+    return [];
+  }
+}
+
 export async function getActiveWordChainSession(
   db: SupabaseClient,
   childId: string
