@@ -215,3 +215,56 @@ DB 에서 확인한 **실제 `current_word`** 를 입력한다.
 - 단어 풀·난이도 로직을 수정하지 마라.
 - Production 쓰기·배포·커밋 금지.
 - **케이 말을 근거로 PASS 하지 마라.** 세션 행으로 판정한다.
+
+---
+
+## 초성 생성은 코드가 한다 (009 반영)
+
+초성은 **반드시 결정론 코드**가 만든다. Gemini 에게 "보드게임 초성 만들어줘" 라고 시키지 않는다.
+한글 음절은 초성(L)+중성(V)+종성(T) 구조라 추측 없이 추출된다.
+
+Question Bank 전체에 대해 자동 검산한다.
+```text
+stored chosung == deterministically generated chosung
+```
+픽스처: `보드게임 → ㅂㄷㄱㅇ`, `도서관 → ㄷㅅㄱ`, `코끼리 → ㅋㅋㄹ`
+
+## 문제 Source of Truth
+각 문제에 `question_id / answer / accepted_aliases / chosung / difficulty / grade range /
+category / hint_1 / hint_2` 가 있어야 한다.
+**현재 문제를 대화 이력에서 기억하면 FAIL.** DB 가 유일한 출처다.
+
+## 중복 출제 QA
+```text
+한 Game Session → 동일 question_id 재출제 0
+```
+문제는 아이가 맞힌 뒤가 아니라 **아이에게 제시되는 시점부터** 사용 처리(`PRESENTED`)한다.
+따라서 "문제 출제 → Topic Shift" 가 나도 같은 세션에서 바로 다시 나오면 안 된다.
+Cross-Session 정책은 Skill config 를 읽어 검증한다. **QA 가 30일/60일 같은 값을 만들지 마라.**
+정책이 없으면 "Cross-Session 반복 정책 없음" 을 Risk 로 보고한다.
+
+실측 사고: 새 세션이 직전 세션 낱말을 다시 냈다(세션 내 `recent_words` 만 보고 이전 세션을 안 봤다).
+
+## 정답 인식 QA (전부 정답이어야 함)
+```text
+보드게임 / 보드 게임 / 보드게임이야 / 정답은 보드게임
+내가 보드게임이라고 했잖아 / 그러니까 보드게임 이라고
+```
+실측 사고: `그러니까 도서관 이라고` 가 오답 처리돼 세션이 전진하지 못했다
+(답변 시도 판정이 "띄어쓰기 없는 한 낱말"만 통과시켰다).
+
+## Hint 순서 QA
+```text
+문제 → 아이 생각 → 틀림 또는 Hint 요청 → Hint 1 → Hint 2 → Answer
+```
+**문제 출제와 동시에 강한 힌트를 흘리면 품질 FAIL.**
+실측 사고: `ㅋㄲㄹ` 와 함께 "긴 코가 특징이야" 를 같이 말했다.
+
+## 난이도 리듬 QA
+학년 → difficulty baseline → adaptive 를 확인한다.
+너무 쉬운 문제만 / 너무 어려운 문제만 / 동일 category 연속 / 긴 단어만 연속 을 분석한다.
+아이가 3연속 못 맞히면(STRUGGLING) 조금 쉬워지는지, 계속 맞히면 올라가는지 **흐름**을 기록한다.
+
+## Soak (20문제)
+대표 학년 각 20문제. 중복 0 / 정답 오판 0 / 초성 생성 오류 0 / Question State 망각 0 /
+Hint 순서 오류 0 / Stop 무시 0.

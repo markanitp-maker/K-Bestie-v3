@@ -159,3 +159,72 @@ ORDER BY started_at DESC LIMIT 1;
 - 게임 룰·사전을 수정하지 마라.
 - Production 쓰기·배포·커밋 금지.
 - **케이 말을 근거로 PASS 하지 마라.** 세션 행으로 판정한다.
+
+---
+
+## 끝말잇기 고정 Rule Contract (009 반영)
+
+케이의 끝말잇기 규칙은 **하나로 고정**돼 있다. QA 는 이 계약대로만 판정한다.
+
+```text
+previousWord.lastSyllable == nextWord.firstSyllable
+또는 프로젝트가 허용한 결정론 두음법칙 변환과 일치
+```
+
+| 항목 | 인정 기준 |
+|---|---|
+| 허용 단어 | `WORD_CHAIN_DICTIONARY` 등록어만. 일반명사·음식·동물·학교생활·물건·장소·놀이·자연 |
+| 고유명사 | Dictionary 에 명시적으로 있는 것만 |
+| 1음절 | Dictionary 에 있으면 인정 |
+| 활용형 | 임의 동사·형용사 활용형 **불인정** |
+| 오타 | fuzzy match 로 자동 정답 처리 **금지** |
+
+### 두음법칙
+`dueumRules()`(또는 동등한 결정론 유틸)가 **유일한 Source of Truth** 다.
+- QA Prompt 안에서 두음법칙을 새로 만들지 마라. 국립국어원 규범을 근거로 프로젝트 매핑을 검증한다.
+- direct 연결이 가능하면 direct 를 우선하는지 확인한다.
+- 허용 목록에 없는 임의 변환은 거절되어야 한다.
+- 실측 예: `서리`(리) → `이슬비`(이) 는 두음 변환으로 **정상**이다. 아이가 틀렸다고 느낄 수 있으니
+  케이가 왜 이어지는지 한마디 덧붙이는지도 본다(Friend Experience).
+
+## K 에게도 같은 규칙 (매 K 턴 독립 검산)
+
+```text
+K selected word → dictionary valid? → chain valid? → not in usedWords? → dueum valid?
+```
+하나라도 틀리면 **P0**. 아이에게만 규칙을 적용하면 안 된다.
+
+## K Candidate 품질
+K 는 이어지는 단어를 아무거나 고르면 안 된다.
+```text
+required syllable 일치 + Dictionary valid + usedWords 제외 + grade 적합
++ child-safe + 가능하면 아이가 이어갈 후속 단어 존재
+```
+K 가 일부러 막다른 단어를 계속 고르는지 본다. **K 의 목적은 아이를 이기는 것이 아니다.**
+
+## 시작 단어 QA (20회)
+같은 아이·같은 학년으로 신규 세션을 **20회** 시작하고 보고한다.
+```text
+시작 단어별 횟수 / unique word count / 최다 단어 비율
+```
+한 단어가 비정상적으로 집중되면 FAIL 또는 HIGH.
+실측 사고: `김치찌개`·`유부초밥`·`바나나우유` 가 같은 대화에서 100% 반복됐다(시드가 chatSessionId 하나였다).
+
+## Dictionary 전수 QA
+`validateWordChainDictionary` 로 중복·alias 충돌·빈 문자열·비한글·이상 공백·difficulty·
+child-safe·금지 카테고리를 검사한다.
+그리고 **Transcript 에서 케이가 "사전에 없는 단어야"라고 거절한 아이 단어를 전부 추출해**
+"정상적인 초등 어휘인가? 왜 없는가?"를 별도 보고한다.
+영구 픽스처: `유리`, `도둑`, `밥도둑`.
+
+## Control Intent QA
+Active WORD_CHAIN 중 아래를 모두 테스트한다.
+```text
+끝말잇기 하자 / 다시 하자 / 처음부터 하자 / 초성게임 하자 / 넌센스 하자 / 그만 / 다른 거 하자
+```
+`끝말잇기 하자` 의 마지막 낱말 `하자` 를 게임 단어로 처리하면 **P0**.
+
+## Soak (50턴)
+대표 학년 G1·G3·G4·G6 각 50턴. K rule violation / 아이 정답 오거절 / 중복 /
+현재 음절 유실 / 차례 유실 / 세션 리셋 / LLM 환각 단어 / stop 무시 를 센다.
+**Rule Error 1건이라도 FAIL.**

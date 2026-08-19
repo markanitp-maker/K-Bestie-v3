@@ -161,8 +161,49 @@ const TOPIC_SHIFT_VERB_ENDINGS = [
   "어때", "있어", "없어", "귀찮아", "힘들어", "몰라", "알아", "뭐해", "언제 가", "어디 가", "싸웠어"
 ];
 
+/**
+ * 지금 하는 말이 "놀이에 대한 말"인지(010, 018).
+ *
+ * 2026-08-19 16:10~16:24 대표님 QA 에서 드러난 구조적 결함의 핵심이다.
+ * isTopicShift 는 "잖아/인데/알아/몰라" 가 들어간 6자 이상 문장을 화제 전환으로 보고
+ * **끝말잇기 세션을 종료**했다. 그런데 아이가 케이를 지적할 때 쓰는 말이 정확히 그 모양이다:
+ *   "게임이 안 끝났잖아 끝말잇기가"
+ *   "아니 이빨 이잖아 빨 그럼 빨로 시작하는 글자를 해야지"
+ * 그래서 아이가 규칙을 알려줄 때마다 게임이 죽고, 그 뒤 케이는 세션 없이 LLM 으로
+ * 게임을 흉내냈다("무스탕 할게", "육교 할 차례인가?", "끝말잇기를 그런 식으로 하는 거야?").
+ * 로그의 이상한 응답 대부분이 여기서 나왔다.
+ *
+ * 놀이 얘기를 하는 중이면 화제가 바뀐 게 아니다. 그만하자는 말은 별도 신호가 이미 잡는다.
+ */
+const PLAY_CONTEXT_MARKERS: readonly RegExp[] = [
+  /끝말\s*잇기|끝말잇기|말잇기/,
+  /초성/,
+  /넌센스|수수께끼|퀴즈/,
+  /게임|놀이/,
+  /단어|낱말|글자/,
+  /정답|오답|답/,
+  /차례|순서|규칙/,
+  /힌트/,
+  /이어|이어서|이어야/,
+  // 맞았는지 틀렸는지를 따지는 말도 놀이 안의 대화다.
+  // "주걱 이라고 했잖아 그럼 주걱에 대해서 맞는지 안 맞는지를 알려줘야 될 거 아냐"
+  /맞는지|맞았|맞췄|틀렸|틀린|맞아\?/,
+];
+
+export function mentionsPlayContext(text: string): boolean {
+  return PLAY_CONTEXT_MARKERS.some((pattern) => pattern.test(text));
+}
+
 function isTopicShift(text: string, signals: UtteranceSignals): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  // 놀이에 대해 말하는 중이면 화제 전환이 아니다. 지적·불만도 놀이 안의 대화다.
+  // 그만하자는 의사는 hasPlayStop / hasPlayRejection 이 따로 잡는다.
+  if (mentionsPlayContext(trimmed)) return false;
+
   // 1. 부정감정, 갈등, 신체적 불편 신호 감지 시 최우선 일반 대화 처리
+  //    (놀이 얘기가 아닌 경우에만 여기 도달한다)
   if (
     signals.hasNegativeEmotion ||
     signals.hasConflict ||
@@ -170,9 +211,6 @@ function isTopicShift(text: string, signals: UtteranceSignals): boolean {
   ) {
     return true;
   }
-
-  const trimmed = text.trim();
-  if (!trimmed) return false;
 
   // 2. 일반 지식/기억 회상 질문
   if (signals.hasGeneralKnowledgeQuestion || signals.hasMemoryRecallQuery) {

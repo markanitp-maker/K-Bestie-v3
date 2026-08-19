@@ -493,7 +493,10 @@ test("Guard Test 1: 활성 세션 없음 + Router 미처리 → 프롬프트에 
   assert.match(capturedInstruction, /지금은 게임\(초성게임, 끝말잇기 등\)이 진행 중이 아니야\./);
   assert.match(capturedInstruction, /초성 문제\(ㄱㅊ 같은 자음\)를 내거나 끝말잇기 단어를 제시하지 마\./);
   assert.match(capturedInstruction, /정답·힌트·글자 수를 말하지 마\./);
-  assert.match(capturedInstruction, /아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려\./);
+  assert.match(capturedInstruction, /아이가 게임을 하자고 하면 "좋아, 하자!" 정도로 짧게 답해\./);
+  // 010/018 — 이 지침이 아이에게 새어 나간 사고가 있었다("시스템에서 문제를 내줄 때까지").
+  assert.match(capturedInstruction, /내부 사정을 아이에게 설명하지 마/);
+  assert.doesNotMatch(capturedInstruction, /시스템이 낼 때까지/);
 });
 
 test("Guard Test 2: 세션 없이 아이가 '초성게임 하자'고 발화해도 문제 출제 금지 지침이 포함된다", async () => {
@@ -531,7 +534,10 @@ test("Guard Test 2: 세션 없이 아이가 '초성게임 하자'고 발화해�
   assert.ok(capturedInstruction);
   assert.match(capturedInstruction, /\[놀이 진행 금지 지침\]/);
   assert.match(capturedInstruction, /초성 문제\(ㄱㅊ 같은 자음\)를 내거나 끝말잇기 단어를 제시하지 마\./);
-  assert.match(capturedInstruction, /아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려\./);
+  assert.match(capturedInstruction, /아이가 게임을 하자고 하면 "좋아, 하자!" 정도로 짧게 답해\./);
+  // 010/018 — 이 지침이 아이에게 새어 나간 사고가 있었다("시스템에서 문제를 내줄 때까지").
+  assert.match(capturedInstruction, /내부 사정을 아이에게 설명하지 마/);
+  assert.doesNotMatch(capturedInstruction, /시스템이 낼 때까지/);
 });
 
 test("Guard Test 3: 활성 세션 있음 → 금지 지침이 들어가지 않는다", async () => {

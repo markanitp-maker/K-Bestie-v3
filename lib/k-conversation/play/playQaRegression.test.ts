@@ -239,3 +239,52 @@ test("010: 놀이 중 생성 실패 문구가 아이에게 되묻지 않는다",
     assert.ok(/계속하자/.test(text), "이어가자는 뜻이 없다");
   }
 });
+
+// ── 16:10 QA (대표님 직접) 에서 나온 구조적 결함 ────────────────
+
+test("018: 아이가 놀이를 지적하는 말은 화제 전환이 아니다", async () => {
+  // 이것이 그 QA 로그의 거의 모든 이상 응답의 뿌리였다.
+  // isTopicShift 가 "잖아/인데/알아/몰라" 를 포함한 문장을 화제 전환으로 보고 세션을
+  // 종료했고, 아이가 규칙을 알려줄 때마다 게임이 죽었다. 그 뒤 케이는 세션 없이 LLM 으로
+  // 게임을 흉내냈다("무스탕 할게", "끝말잇기를 그런 식으로 하는 거야? 신기하네").
+  const { mentionsPlayContext } = await import("../wordChain/wordChainSkill");
+  for (const utterance of [
+    "딴것도 하지 마 야 게임이 안 끝났잖아 끝말잇기가",
+    "아니 이빨 이잖아 빨 그럼 빨로 시작하는 글자를 해야지",
+    "팔꿈치냐 팔꿈치지 야 전혀 다른 글 잔데 넌 끝말잇기 하는 방법을 기초도 모르냐",
+    "한 식으로 끊지 말라고 야 울로 시작하는 거를 바로 단어를 얘기 하지",
+    "주걱 이라고 했잖아 그럼 주걱에 대해서 맞는지 안 맞는지를 알려줘야 될 거 아냐",
+  ]) {
+    assert.equal(
+      mentionsPlayContext(utterance),
+      true,
+      `놀이 얘기인데 화제 전환으로 볼 수 있다: ${utterance.slice(0, 30)}`
+    );
+  }
+});
+
+test("018: 놀이와 무관한 일상 발화는 여전히 화제 전환으로 본다", async () => {
+  const { mentionsPlayContext } = await import("../wordChain/wordChainSkill");
+  for (const utterance of [
+    "오늘 학교에서 친구랑 싸웠어",
+    "엄마가 밥 차려줬어",
+    "배고파 죽겠어",
+    "나 오늘 좀 피곤해",
+  ]) {
+    assert.equal(
+      mentionsPlayContext(utterance),
+      false,
+      `일상 발화를 놀이 얘기로 봤다: ${utterance}`
+    );
+  }
+});
+
+test("018: '다음 문제는 OO' 는 다음 문제 요청이 아니다", () => {
+  // 실측: 아이가 "다음 문제는 반은우" 라고 답했는데 정답을 공개하고 넘어갔다.
+  // 아이는 "너무 빨리 정답을 알려 주는 거 아냐" 라고 했다.
+  assert.equal(extractUtteranceSignals("다음 문제는 반은우").hasChosungNextQuestion, false);
+  assert.equal(extractUtteranceSignals("다음 문제는 뭐야").hasChosungNextQuestion, false);
+  // 진짜 요청은 그대로 동작한다.
+  assert.equal(extractUtteranceSignals("다음 문제 줘").hasChosungNextQuestion, true);
+  assert.equal(extractUtteranceSignals("다음 문제 내봐").hasChosungNextQuestion, true);
+});

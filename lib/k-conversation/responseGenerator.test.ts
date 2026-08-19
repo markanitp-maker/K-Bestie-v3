@@ -184,7 +184,13 @@ test("buildSystemInstruction — hasActivePlaySession=false, playSkillHandled=fa
   assert.match(prompt, /지금은 게임\(초성게임, 끝말잇기 등\)이 진행 중이 아니야\./);
   assert.match(prompt, /초성 문제\(ㄱㅊ 같은 자음\)를 내거나 끝말잇기 단어를 제시하지 마\./);
   assert.match(prompt, /정답·힌트·글자 수를 말하지 마\./);
-  assert.match(prompt, /아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려\./);
+  assert.match(prompt, /아이가 게임을 하자고 하면 "좋아, 하자!" 정도로 짧게 답해\./);
+  // 010/018 — 이 지침 자체가 아이에게 새어 나간 사고가 있었다.
+  // "시스템에서 문제를 내줄 때까지 기다려야 해", "네가 문제 내주면 내가 맞춰볼게"
+  assert.match(prompt, /내부 사정을 아이에게 설명하지 마/);
+  assert.match(prompt, /아이에게 문제를 내달라고 부탁하지 마/);
+  // 아이가 들으면 안 되는 내부 어휘가 지침 문장에 남아 있지 않아야 한다.
+  assert.doesNotMatch(prompt, /시스템이 낼 때까지/);
 });
 
 test("buildSystemInstruction — 세션 없이 아이가 '초성게임 하자'고 발화해도 문제 출제 금지 지침이 들어간다", () => {

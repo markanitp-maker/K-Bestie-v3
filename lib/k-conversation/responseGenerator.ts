@@ -133,7 +133,14 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       "- 절대로 초성 문제(ㄱㅊ 같은 자음)를 내거나 끝말잇기 단어를 제시하지 마.",
       "- 넌센스 퀴즈/수수께끼 문제를 내거나 임의로 만들지 마.",
       "- 정답·힌트·글자 수를 말하지 마.",
-      '- 아이가 게임을 하자고 하면 "좋아, 시작하자" 정도로만 답하고 실제 문제는 시스템이 낼 때까지 기다려.',
+      '- 아이가 게임을 하자고 하면 "좋아, 하자!" 정도로 짧게 답해.',
+      // 010/018 — 아래 두 줄이 없어서 이 지침 자체가 아이에게 새어 나갔다.
+      // 2026-08-19 대표님 QA 실측:
+      //   "넌센스 퀴즈는 시스템에서 문제를 내줄 때까지 잠깐 기다려야 해"
+      //   "내가 지금은 문제를 직접 내기가 어려워서, 네가 내주면 내가 맞춰볼게!"
+      // 아이에게 내부 사정을 설명하거나 문제를 떠넘기면 아이는 놀이가 고장났다고 느낀다.
+      '- "시스템", "준비 중", "기다려야 해", "내기가 어려워" 처럼 내부 사정을 아이에게 설명하지 마.',
+      "- 아이에게 문제를 내달라고 부탁하지 마. 문제를 내는 것은 네 역할이고 곧 나온다.",
       "- NO ACTIVE NONSENSE SKILL SESSION -> NO NONSENSE GAMEPLAY GENERATION",
     ].join("\n");
   }
@@ -196,44 +203,73 @@ function detectPromptLeak(text: string): boolean {
   return PROMPT_LEAK_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-/** 80자 초과 응답 후처리: 문장 경계(. ! ? ~) 기준으로 자르고, 없으면 공백 경계, 없으면 80자 slice.
- * 안전 응답(category === "safety")은 절대 자르지 않는다. */
+/**
+ * 응답 길이 후처리 (018 §3-13).
+ *
+ * 예전에는 80자에서 무조건 잘랐다. 그래서 아이가 이유를 묻거나 케이가 상상 이야기를 할 때
+ * 문장이 중간에서 끊겼다. 요청서 지시는 "기본은 짧게, 필요할 때 120~150자까지 허용,
+ * 문장 중간 절삭 금지" 다.
+ *
+ * 그래서 두 단계로 바꿨다.
+ *   - SOFT_LIMIT(80자)까지는 그대로 둔다. 대부분의 티키타카는 여기서 끝난다.
+ *   - SOFT_LIMIT 을 넘으면 **문장 경계에서만** 자른다. 경계를 못 찾으면 자르지 않고
+ *     HARD_LIMIT(150자)까지 그대로 보낸다 — 어중간하게 끊는 것보다 조금 긴 편이 낫다.
+ *   - HARD_LIMIT 을 넘으면 그때는 문장 경계에서 자르고, 그마저 없으면 공백 경계에서 자른다.
+ *     여기까지 오는 경우는 모델이 통제를 벗어난 것이므로 잘라야 한다.
+ *
+ * 길이를 늘리는 것이 목적이 아니다. "짧게 말하기"는 페르소나 프롬프트가 담당하고,
+ * 이 함수는 **문장을 훼손하지 않는 것**만 담당한다.
+ *
+ * 안전 응답(category === "safety")은 어떤 경우에도 자르지 않는다.
+ */
+export const RESPONSE_SOFT_LIMIT_CHARS = 80;
+export const RESPONSE_HARD_LIMIT_CHARS = 150;
+
+/** 문장이 끝나는 자리(마지막 종결부호) 인덱스. 없으면 -1. */
+function lastSentenceEnd(text: string): number {
+  for (let i = text.length - 1; i >= 0; i--) {
+    const char = text[i];
+    if (char === "." || char === "!" || char === "?" || char === "~") return i;
+  }
+  return -1;
+}
+
 export function truncateResponseText(text: string, category?: string): string {
   if (category === "safety") {
     return text;
   }
 
   const trimmed = text.trim();
-  if (trimmed.length <= 80) {
+  if (trimmed.length <= RESPONSE_SOFT_LIMIT_CHARS) {
     return trimmed;
   }
 
-  const sub = trimmed.slice(0, 80);
-  let lastPunctIdx = -1;
-  for (let i = sub.length - 1; i >= 0; i--) {
-    const char = sub[i];
-    if (char === "." || char === "!" || char === "?" || char === "~") {
-      lastPunctIdx = i;
-      break;
-    }
+  // 소프트 한도 초과: 문장 경계가 있으면 거기서 끊는다.
+  const softWindow = trimmed.slice(0, RESPONSE_SOFT_LIMIT_CHARS);
+  const softEnd = lastSentenceEnd(softWindow);
+  if (softEnd >= 0) {
+    const truncated = softWindow.slice(0, softEnd + 1).trim();
+    if (truncated.length > 0) return truncated;
   }
 
-  if (lastPunctIdx >= 0) {
-    const truncated = sub.slice(0, lastPunctIdx + 1).trim();
-    if (truncated.length > 0) {
-      return truncated;
-    }
+  // 문장 경계가 없으면 자르지 않는다. 하드 한도까지는 그대로 보낸다.
+  if (trimmed.length <= RESPONSE_HARD_LIMIT_CHARS) {
+    return trimmed;
   }
 
-  const lastSpaceIdx = sub.lastIndexOf(" ");
+  // 하드 한도 초과: 여기서는 잘라야 한다. 문장 경계 → 공백 경계 → 강제 slice.
+  const hardWindow = trimmed.slice(0, RESPONSE_HARD_LIMIT_CHARS);
+  const hardEnd = lastSentenceEnd(hardWindow);
+  if (hardEnd >= 0) {
+    const truncated = hardWindow.slice(0, hardEnd + 1).trim();
+    if (truncated.length > 0) return truncated;
+  }
+  const lastSpaceIdx = hardWindow.lastIndexOf(" ");
   if (lastSpaceIdx > 0) {
-    const truncated = sub.slice(0, lastSpaceIdx).trim();
-    if (truncated.length > 0) {
-      return truncated;
-    }
+    const truncated = hardWindow.slice(0, lastSpaceIdx).trim();
+    if (truncated.length > 0) return truncated;
   }
-
-  return sub;
+  return hardWindow;
 }
 
 // 실제 SDK 타입(GoogleGenAI["models"]["generateContent"])에서 직접 파생 — codex-rv 지적:
@@ -422,7 +458,7 @@ async function attemptWithRetry(
           systemInstruction: extraInstruction ? `${systemInstruction}\n\n${extraInstruction}` : systemInstruction,
           thinkingConfig: { thinkingBudget: 0 },
           temperature: 0.7,
-          maxOutputTokens: 120,
+          maxOutputTokens: 220,
         },
       });
       const timeout = new Promise<never>((_, reject) => {

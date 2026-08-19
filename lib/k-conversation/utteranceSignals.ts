@@ -196,7 +196,17 @@ const CHOSUNG_NEXT_QUESTION_KWS = [
   "새 문제", "새문제", "문제 바꿔", "다음 것", "패스", "넘어가",
 ];
 
+/**
+ * "다음 문제는 OO" 처럼 다음 문제를 **화제로 삼아 답을 말하는** 형태.
+ *
+ * 2026-08-19 대표님 QA 실측: 아이가 "다음 문제는 반은우" 라고 답했는데 이걸 다음 문제
+ * 요청으로 보고 정답을 공개하고 넘어갔다. 아이는 "너무 빨리 정답을 알려 주는 거 아냐"
+ * 라고 했다. 조사 "는/은" 이 붙으면 요청이 아니라 그 문제에 대해 말하는 것이다.
+ */
+const NEXT_QUESTION_AS_TOPIC = /(?:다음|다른|새)\s*(?:문제|거|것)\s*(?:는|은)\s*\S/;
+
 function detectChosungNextQuestion(text: string): boolean {
+  if (NEXT_QUESTION_AS_TOPIC.test(text)) return false;
   return includesAny(text, CHOSUNG_NEXT_QUESTION_KWS);
 }
 
