@@ -11,6 +11,8 @@ import {
   buildLanguageRetryInstruction,
   buildLanguageFailureMessage,
 } from "@/lib/reports/reportLanguageRetry";
+// 020 §3-11 — 잡 사이에 짧은 간격을 둬 Vertex 요청이 같은 순간에 몰리지 않게 한다.
+import { throttleBetweenBatchLlmJobs } from "./llmThrottle";
 
 const REPORT_PROMPT_TEMPLATE = `
 아이의 오늘 하루 대화 전문입니다. 이를 바탕으로 부모님을 위한 요약 리포트를 작성해주세요.
@@ -429,7 +431,13 @@ export async function processDailyReportJobsV3(
   const reportModel = await getModelForGroup("A");
   const ai = createGenAIClient(reportModel);
 
+  // 020 §3-11 — 첫 잡 앞에서는 기다리지 않는다. 잡을 하나 끝낸 뒤에만 간격을 둔다.
+  let isFirstJob = true;
   for (const job of claimedJobs) {
+    if (!isFirstJob) {
+      await throttleBetweenBatchLlmJobs();
+    }
+    isFirstJob = false;
     try {
       const outcome = await processSingleReportJob(db, job, workerId, reportModel, ai, executionSource);
       if (outcome === "completed") {

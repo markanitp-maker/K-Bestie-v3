@@ -6,6 +6,8 @@ import {
   type MemoryFactBatchResult,
 } from "@/lib/batch/generateMemory";
 import type { SupabaseClient } from "@supabase/supabase-js";
+// 020 §3-11 — 잡 사이에 짧은 간격을 둬 Vertex 요청이 같은 순간에 몰리지 않게 한다.
+import { throttleBetweenBatchLlmJobs } from "./llmThrottle";
 
 export type MemoryExecutionResult = {
   status: "completed" | "skipped" | "failed";
@@ -106,7 +108,13 @@ export async function runMemoryBatchWorkerV3(limit: number, workerId?: string, e
   }
   summary.claimed = jobs.length;
 
+  // 020 §3-11 — 첫 잡 앞에서는 기다리지 않는다. 잡을 하나 끝낸 뒤에만 간격을 둔다.
+  let isFirstJob = true;
   for (const job of jobs) {
+    if (!isFirstJob) {
+      await throttleBetweenBatchLlmJobs();
+    }
+    isFirstJob = false;
     try {
       const execRes = await executeMemoryBatchForChildDate(job.child_id, job.business_date);
 
