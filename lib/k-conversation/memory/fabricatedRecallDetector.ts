@@ -243,3 +243,49 @@ export function detectFabricatedRecall(
  */
 export const FABRICATED_RECALL_FALLBACK_TEXT =
   "음, 그건 내가 잘 기억이 안 나네. 다시 얘기해 줄래?";
+
+/**
+ * 018 §3-10 — 같은 기억 fallback 을 반복하지 않는다.
+ *
+ * 위 문구 하나만 쓰다 보니 아이가 다시 설명해도 케이가 또 "기억이 안 나네" 로 받았다.
+ * 대표님 전수조사에서 이 반복이 "대화가 안 된다" 는 느낌의 원인으로 지적됐다.
+ *
+ * 정책:
+ * - 처음 한 번은 솔직히 모른다고 하고 되묻는다(그게 절친의 태도다).
+ * - 직전 케이 발화가 이미 이 계열 fallback 이었다면 **두 번 되묻지 않는다.**
+ *   아이는 방금 다시 설명했다. 거기서 또 "기억이 안 나" 라고 하면 벽이다.
+ *   그럴 때는 기억을 주장하지도, 꾸며내지도 않고 지금 들은 말에 그대로 이어붙인다.
+ */
+const FABRICATED_RECALL_REASK_TEXTS: readonly string[] = [
+  FABRICATED_RECALL_FALLBACK_TEXT,
+  "어, 그건 내가 놓쳤나 봐. 한 번만 더 얘기해 줘.",
+  "미안, 그 얘기는 내가 잘 모르겠어. 어떤 얘기였어?",
+];
+
+/** 되묻기 없이 지금 발화에 바로 이어가는 문장 — 기억을 주장하지 않는다. */
+const FABRICATED_RECALL_MOVE_ON_TEXTS: readonly string[] = [
+  "아 그런 얘기였구나. 그래서 어떻게 됐어?",
+  "그렇구나, 이제 알겠어. 더 얘기해 줘.",
+  "오 그랬어? 그다음은 어떻게 됐어?",
+];
+
+function isReaskText(text: string): boolean {
+  const trimmed = text.trim();
+  return FABRICATED_RECALL_REASK_TEXTS.some((candidate) => trimmed === candidate.trim());
+}
+
+/**
+ * 기억 fallback 문장을 고른다.
+ * @param recentKTexts 최근 케이 발화(오래된 것 → 최신 순). 마지막 원소가 직전 발화다.
+ */
+export function pickFabricatedRecallFallbackText(
+  recentKTexts: readonly string[] = []
+): string {
+  const previousKText = recentKTexts.at(-1) ?? "";
+  const alreadyAsked = isReaskText(previousKText);
+  const pool = alreadyAsked ? FABRICATED_RECALL_MOVE_ON_TEXTS : FABRICATED_RECALL_REASK_TEXTS;
+
+  // 최근에 쓴 문구는 피한다. 전부 최근에 썼다면 첫 번째로 돌아간다.
+  const recent = new Set(recentKTexts.map((text) => text.trim()));
+  return pool.find((candidate) => !recent.has(candidate.trim())) ?? pool[0];
+}

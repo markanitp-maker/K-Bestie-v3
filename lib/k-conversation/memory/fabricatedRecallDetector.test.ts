@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { detectFabricatedRecall } from "./fabricatedRecallDetector";
+import {
+  detectFabricatedRecall,
+  FABRICATED_RECALL_FALLBACK_TEXT,
+  pickFabricatedRecallFallbackText,
+} from "./fabricatedRecallDetector";
 
 // 김서아가 실제로 가진 기억. 이 목록에 없는 것은 전부 날조 대상이다.
 const MEMORY = [
@@ -136,3 +140,28 @@ test("라이브 QA 진짜 기억 4종 통과 검증 (재밌었겠다/재밌겠�
   }
 });
 
+
+// ── 018 §3-10 기억 fallback 반복 금지 ────────────────────────
+test("018 §3-10: 처음에는 솔직히 모른다고 되묻는다", () => {
+  const text = pickFabricatedRecallFallbackText([]);
+  assert.equal(text, FABRICATED_RECALL_FALLBACK_TEXT);
+});
+
+test("018 §3-10: 이미 되물었으면 두 번 되묻지 않고 지금 말에 이어간다", () => {
+  // 아이는 방금 다시 설명했다. 또 "기억이 안 나" 라고 하면 벽이다.
+  const text = pickFabricatedRecallFallbackText([
+    "오늘 뭐 했어?",
+    FABRICATED_RECALL_FALLBACK_TEXT,
+  ]);
+  assert.notEqual(text, FABRICATED_RECALL_FALLBACK_TEXT);
+  assert.doesNotMatch(text, /기억이 안 나|잘 모르겠어|놓쳤나/);
+  // 기억을 주장하지도 않는다.
+  assert.doesNotMatch(text, /기억나|말했잖아|아까 말했/);
+});
+
+test("018 §3-10: 최근에 쓴 문구는 피해서 고른다", () => {
+  const first = pickFabricatedRecallFallbackText(["안녕"]);
+  // 첫 문구를 이미 썼지만 직전 발화는 아닌 경우 — 되묻기는 유지하되 다른 문구로.
+  const second = pickFabricatedRecallFallbackText([first, "그래서?"]);
+  assert.notEqual(second, first);
+});

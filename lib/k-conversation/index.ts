@@ -44,7 +44,10 @@ import { detectChosungAnswerLeak, detectChosungPuzzleMismatch } from "./chosungG
 import { detectWordChainOutputViolation } from "./wordChain/outputGuard";
 import { lookupWord } from "./wordChain/dictionaryIndex";
 import { deriveWordChainEntry } from "./wordChain/dictionaryTypes";
-import { detectFabricatedRecall, FABRICATED_RECALL_FALLBACK_TEXT } from "./memory/fabricatedRecallDetector";
+import {
+  detectFabricatedRecall,
+  pickFabricatedRecallFallbackText,
+} from "./memory/fabricatedRecallDetector";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
@@ -903,7 +906,9 @@ export async function respond(
         childUtterance: input.currentUtterance.slice(0, 60),
         blockedPreview: finalText.slice(0, 60),
       });
-      finalText = FABRICATED_RECALL_FALLBACK_TEXT;
+      // 018 §3-10 — 같은 문구를 두 번 쓰지 않는다. 이미 한 번 되물었다면
+      // 또 되묻지 않고 지금 들은 말에 이어붙인다.
+      finalText = pickFabricatedRecallFallbackText(input.recentKTexts ?? []);
     }
   }
 
