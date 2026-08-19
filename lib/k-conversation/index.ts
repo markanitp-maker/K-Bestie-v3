@@ -51,6 +51,7 @@ import {
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 import { decidePlayProposal, recordPlayRejection, recordPlayProposal } from "./play/playProposal";
 import { PLAY_SKILL_REGISTRY, findSkillById, buildPlayCatalogFragment } from "./play/skillRegistry";
+import { resolveActiveSkillAfterTurn } from "./play/activeSkillAfterTurn";
 import { isKPlayEnabled, getPlayDisabledResponse } from "./play/playAvailability";
 import { setPendingPlayProposal, clearPendingPlayProposal } from "./play/pendingProposalStore";
 import type { PlaySkillId } from "./play/skillTypes";
@@ -553,12 +554,15 @@ export async function respond(
             signals,
           });
 
-          // 013 §3-12 — 이 턴에 스킬이 세션을 닫았으면 활성 스킬은 없어진 것이다.
-          // 클라이언트가 입력모드를 되돌릴 시점을 알아야 하므로 턴 종료 후 상태로 갱신한다.
-          if (playTurnResult.ended) {
-            activePlaySkillId = undefined;
-            hasActivePlaySession = false;
-          }
+          // 013 §3-12 — 클라이언트가 보는 놀이 상태는 "이 턴이 끝난 뒤" 여야 한다.
+          // 시작(이 턴에 새로 켜짐)과 종료(이 턴에 닫힘) 둘 다 반영한다.
+          // 판단은 resolveActiveSkillAfterTurn 이 하고 여기서는 값만 받는다.
+          const afterTurn = resolveActiveSkillAfterTurn({
+            before: activePlaySkillId,
+            turnResult: playTurnResult,
+          });
+          activePlaySkillId = afterTurn.activePlaySkillId;
+          hasActivePlaySession = afterTurn.hasActivePlaySession;
 
           if (playTurnResult.handled) {
             playSkillHandled = true;
