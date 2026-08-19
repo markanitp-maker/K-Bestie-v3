@@ -27,6 +27,10 @@
     {
       "path": "/api/cron/mission-start?missionType=2",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/batch/daily-conversation-qa",
+      "schedule": "0 17 * * *"
     }
   ]
 }
