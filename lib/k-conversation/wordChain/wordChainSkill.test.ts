@@ -347,7 +347,10 @@ describe("WORD_CHAIN_SKILL Adapter", () => {
     assert.equal(result.ended, false);
     assert.ok(result.instruction);
     assert.ok(result.instruction.includes("[끝말잇기]"));
-    assert.ok(result.instruction.includes("첫 번째 단어는"));
+    // 015 — 케이는 자기를 "내가"라고 부른다. 3인칭이면 "케이이가 먼저 시작할게"가 나온다.
+    assert.ok(result.instruction.includes("첫 번째 단어"));
+    assert.ok(result.instruction.includes("내가 먼저"), "1인칭 표현이 아니다");
+    assert.ok(!result.instruction.includes("케이가 먼저"), "3인칭 표현이 남아 있다");
 
     // 활성 세션 생성 확인
     const active = await WORD_CHAIN_SKILL.getActiveSession(db, "child-1");

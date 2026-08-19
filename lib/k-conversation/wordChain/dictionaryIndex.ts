@@ -2,6 +2,7 @@ import { DICTIONARY_PART1 } from "./dictionary.part1";
 import { DICTIONARY_PART2 } from "./dictionary.part2";
 import { DICTIONARY_PART3 } from "./dictionary.part3";
 import { DICTIONARY_PART4 } from "./dictionary.part4";
+import { DICTIONARY_PART5 } from "./dictionary.part5";
 import {
   DerivedWordChainEntry,
   WordChainEntry,
@@ -10,7 +11,8 @@ import {
 
 /**
  * 끝말잇기(WORD_CHAIN) 정적 사전 통합 인덱스.
- * Part1 (284개) + Part2 (380개) + Part3 (380개) + Part4 (360개) 합본 = 1,404개.
+ * Part1 (284개) + Part2 (380개) + Part3 (380개) + Part4 (360개) + Part5 (36개) = 1,440개.
+ * Part5 는 2026-08-19 실사용 로그에서 케이가 거절한 기본어를 보강한 것이다.
  * 모듈 로드 시 1회 구축하여 메모리에 상주시키며 런타임 성능을 극대화합니다 (§3-12).
  */
 
@@ -19,6 +21,7 @@ const rawCombined: readonly WordChainEntry[] = [
   ...DICTIONARY_PART2,
   ...DICTIONARY_PART3,
   ...DICTIONARY_PART4,
+  ...DICTIONARY_PART5,
 ];
 
 // 파생 엔트리 목록 (정규화, 첫음절, 끝음절 포함)

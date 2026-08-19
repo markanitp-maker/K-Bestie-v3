@@ -139,3 +139,50 @@ test("AnswerValidator: 발화 의도 분류 (STOP, HINT, REVEAL, TOPIC_SHIFT, AT
   assert.equal(classifyChildNonsenseUtterance("풋사과"), "ANSWER_ATTEMPT");
   assert.equal(classifyChildNonsenseUtterance("사과인가?"), "ANSWER_ATTEMPT");
 });
+
+// ── 015: 아이 구어체 답변 정규화 ────────────────────────────────
+
+test("015: 아이가 답 앞에 붙이는 구어 접두사를 걷어낸다", () => {
+  // 2026-08-19 김서아 Dev 로그: 아이가 "너는 보드 게임"이라고 답했는데 정답 인정 실패.
+  assert.equal(normalizeNonsenseAnswer("너는 보드 게임"), "보드게임");
+  assert.equal(normalizeNonsenseAnswer("그건 달력이야"), "달력");
+  assert.equal(normalizeNonsenseAnswer("내 생각엔 나이"), "나이");
+  assert.equal(normalizeNonsenseAnswer("음 아마 거울"), "거울");
+  assert.equal(normalizeNonsenseAnswer("난 몰라"), "몰라");
+});
+
+test("015: 접두사와 같은 글자로 시작하는 정답을 훼손하지 않는다", () => {
+  // 접두사 뒤에 공백을 요구하지 않으면 "그림"의 "그"를 접두사로 먹는다.
+  for (const word of ["그림", "그네", "그림자", "아이스크림", "어린이", "나이", "이불"]) {
+    assert.equal(normalizeNonsenseAnswer(word), word, `정답이 깎였다: ${word}`);
+  }
+});
+
+test("015: 어미를 지운 뒤 한 글자만 남으면 더 짧은 어미를 쓴다", () => {
+  // "나이야"에서 "이야"를 지우면 "나"가 되지만 정답은 "나이"다.
+  assert.equal(normalizeNonsenseAnswer("나이야"), "나이");
+  // 반대로 "달력이야"는 "이야"를 지워야 맞다.
+  assert.equal(normalizeNonsenseAnswer("달력이야"), "달력");
+  // 진짜 한 글자 정답은 그대로 한 글자로 남는다.
+  assert.equal(normalizeNonsenseAnswer("나야"), "나");
+});
+
+test("015: 기존 어미 제거가 그대로 동작한다(회귀 없음)", () => {
+  assert.equal(normalizeNonsenseAnswer("거울이에요"), "거울");
+  assert.equal(normalizeNonsenseAnswer("시계입니다"), "시계");
+  assert.equal(normalizeNonsenseAnswer("나이인가"), "나이");
+  assert.equal(normalizeNonsenseAnswer("정답은 달력"), "달력");
+});
+
+test("015: '~이야'는 받침 유무로 조사인지 낱말인지 가른다", () => {
+  // 서술격조사 "이"는 받침 있는 말 뒤에만 붙는다.
+  // 달(받침 ㄹ) + 이야 → 조사 → "달"
+  assert.equal(normalizeNonsenseAnswer("달이야"), "달");
+  assert.equal(normalizeNonsenseAnswer("눈이야"), "눈");
+  assert.equal(normalizeNonsenseAnswer("물이야"), "물");
+  // 나(받침 없음) + 이야 는 성립하지 않는다 → "이"는 낱말의 일부 → "나이"
+  assert.equal(normalizeNonsenseAnswer("나이야"), "나이");
+  // 받침 없는 말은 "야"만 붙는다.
+  assert.equal(normalizeNonsenseAnswer("나야"), "나");
+  assert.equal(normalizeNonsenseAnswer("바다야"), "바다");
+});

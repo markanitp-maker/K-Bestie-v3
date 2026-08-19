@@ -30,7 +30,7 @@ export interface RoutePlaySkillTurnInput {
  * Pending Play Proposal 상태 해석 및 Active Session Hard Guard를 조율합니다.
  *
  * 라우팅 우선순위:
- * 1. 명시적 종료 / 거절 / 부정감정 / 안전 신호 확인 (Proposal 및 세션 정리)
+ * 1. 명시적 종료/거절이면 세션을 끝낸다. 부정 감정만으로는 끝내지 않는다(015).
  * 2. 직접 요청 확인 (findDirectlyRequestedSkill 또는 Pending Proposal 선택 매칭)
  *    - Pending Proposal 즉시 clear
  *    - 활성 세션과 다르면 원자적 전환(end -> start)
@@ -70,13 +70,31 @@ export async function routePlaySkillTurn(
     });
     const activeSkill = activeSkillResolution.skill;
 
-    // 2. 명시적 종료 / 거절 / 감정·안전 신호 확인 (Proposal 및 세션 정리)
+    // 2. 명시적 종료 / 거절 / 감정 신호 확인 (Proposal 및 세션 정리)
+    //
+    // 015 — 부정 감정만으로는 놀이를 끝내지 않는다.
+    //
+    // 원래는 hasNegativeEmotion/hasConflict/hasPhysicalNeed 중 하나만 있어도 활성 세션을
+    // 끝냈다. 그런데 아이가 짜증내는 대상은 대부분 놀이 자체다 — 케이가 못 알아들어서
+    // 답답한 것이다. 그 짜증이 놀이를 꺼버리니 아이는 더 답답해진다.
+    // 2026-08-19 김서아 Dev 로그 실측:
+    //   아이: "아 진짜 졸라 짜증나네" → 초성게임 종료
+    //   아이: "지금 방금 니 멋대로 KR 놀이가 꺼져버렸어 지금 우리 초성 게임 하고 있었는데
+    //          갑자기 이렇게 꺼져버리면 어떡하냐"
+    //   아이: "케이 놀이 선택 했으면 케이 놀이 끝날 때까지는 놀이에만 집중해"
+    //
+    // 그래서 놀이를 끝내는 것은 아이가 그만하자고 말했을 때뿐이다. 부정 감정이 있으면
+    // 제안(proposal)만 거두고 세션은 살려 둔다 — 케이는 그 감정에 먼저 반응하고,
+    // 다음 턴에 하던 놀이를 이어간다.
+    //
+    // 안전은 여기서 다루지 않는다. 실제 위험 신호는 respond() 1단계 Safety 가 이미
+    // 가로채므로 이 지점에 도달하지 않는다.
     const isExplicitStop = Boolean(signals?.hasPlayStop || signals?.hasPlayRejection);
-    const hasNegativeOrSafety = Boolean(
+    const hasNegativeEmotion = Boolean(
       signals?.hasNegativeEmotion || signals?.hasConflict || signals?.hasPhysicalNeed
     );
 
-    if (isExplicitStop || hasNegativeOrSafety) {
+    if (isExplicitStop) {
       await clearPendingPlayProposal(chatSessionId, db);
       if (activeSkill) {
         try {
@@ -84,7 +102,7 @@ export async function routePlaySkillTurn(
             db,
             childId,
             chatSessionId,
-            reason: isExplicitStop ? "EXPLICIT_STOP" : "SAFETY_OR_NEGATIVE_EMOTION",
+            reason: "EXPLICIT_STOP",
           });
         } catch (endError) {
           console.error(
@@ -93,6 +111,13 @@ export async function routePlaySkillTurn(
           );
         }
       }
+      return { handled: false };
+    }
+
+    if (hasNegativeEmotion) {
+      // 제안은 거둔다 — 기분이 안 좋은 아이에게 새 놀이를 밀어넣지 않는다.
+      // 하던 놀이는 그대로 둔다.
+      await clearPendingPlayProposal(chatSessionId, db);
       return { handled: false };
     }
 

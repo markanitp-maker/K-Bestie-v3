@@ -691,6 +691,9 @@ export async function respond(
       isGeneralKnowledgeQuestion: signals.hasGeneralKnowledgeQuestion,
       playCatalogFragment,
       hasActivePlaySession,
+      activePlaySkillName: activePlaySkillId
+        ? PLAY_SKILL_REGISTRY.find((skill) => skill.id === activePlaySkillId)?.displayName
+        : undefined,
       playSkillHandled,
       correlationId: input.currentTurnId ?? input.sessionId,
     },

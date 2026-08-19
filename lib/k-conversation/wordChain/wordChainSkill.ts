@@ -353,7 +353,9 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       const openingLine = `좋아, 끝말잇기 하자! 내가 먼저 할게. ${initialWordEntry.word}!`;
       return {
         handled: true,
-        instruction: `[끝말잇기] 케이가 먼저 시작할게! 첫 번째 단어는 "${initialWordEntry.word}"야. "${reqSyllable}"(으)로 시작하는 단어를 이어 말해줘.`,
+        // 015 — 3인칭("케이가")으로 두면 케이가 자기 이름을 그대로 읽어 "케이이가 먼저
+        // 시작할게"처럼 나온다(Dev QA 실측). 케이는 자기를 "내가"라고 부른다.
+        instruction: `[끝말잇기] 내가 먼저 시작한다고 말하고 첫 번째 단어 "${initialWordEntry.word}"를 제시해. 아이에게 "${reqSyllable}"(으)로 시작하는 단어를 이어 말해달라고 해.`,
         ended: false,
         openingLine,
         requiredWordInOutput: initialWordEntry.word,

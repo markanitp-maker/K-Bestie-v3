@@ -75,7 +75,7 @@ async function revealAndAdvance(input: {
 
   return {
     handled: true,
-    instruction: `[초성게임] ${lead}. 정답은 "${answer}"였어. 정답을 알려주고 아이가 민망하지 않게 격려한 뒤, 다음 문제 초성 "${nextChosung}"를 내줘. 새 문제의 정답은 말하지 마.`,
+    instruction: `[초성게임] ${lead}. 정답은 "${answer}"였어. 정답을 알려주고 아이가 민망하지 않게 격려한 뒤, 다음 문제 초성 "${nextChosung}"를 내줘. 새 문제의 정답은 말하지 마.\n- **문제만 내고 힌트는 주지 마.** 힌트는 아이가 물어보거나 틀렸을 때만 준다.`,
     requiredChosungInOutput: nextChosung || undefined,
   };
 }
@@ -125,7 +125,7 @@ export async function runChosungTurn(
 
         return {
           handled: true,
-          instruction: `[초성게임] 아이가 정답 "${correctWord}"를 맞혔어. 칭찬하고 다음 문제 초성 "${nextChosung}"를 내줘. 정답 단어는 절대 말하지 마.`,
+          instruction: `[초성게임] 아이가 정답 "${correctWord}"를 맞혔어. 칭찬하고 다음 문제 초성 "${nextChosung}"를 내줘. 정답 단어는 절대 말하지 마.\n- **문제만 내고 힌트는 주지 마.** 힌트는 아이가 물어보거나 틀렸을 때만 준다.`,
           requiredChosungInOutput: nextChosung || undefined,
         };
       } else {
@@ -232,7 +232,7 @@ export async function runChosungTurn(
         const currentChosung = newSession.current_chosung ?? "";
         return {
           handled: true,
-          instruction: `[초성게임] 지금 낸 문제의 초성은 "${currentChosung}"야. 이 초성을 그대로 아이에게 문제로 내줘. 정답 단어는 절대 말하지 마.`,
+          instruction: `[초성게임] 지금 낸 문제의 초성은 "${currentChosung}"야. 이 초성을 그대로 아이에게 문제로 내줘. 정답 단어는 절대 말하지 마.\n- **문제만 내고 힌트는 주지 마.** 힌트는 아이가 물어보거나 틀렸을 때만 준다.`,
           requiredChosungInOutput: currentChosung || undefined,
         };
       } else {
@@ -240,7 +240,7 @@ export async function runChosungTurn(
         const currentChosung = activeSession.current_chosung ?? "";
         return {
           handled: true,
-          instruction: `[초성게임] 지금 낸 문제의 초성은 "${currentChosung}"야. 이 초성을 그대로 아이에게 문제로 내줘. 정답 단어는 절대 말하지 마.`,
+          instruction: `[초성게임] 지금 낸 문제의 초성은 "${currentChosung}"야. 이 초성을 그대로 아이에게 문제로 내줘. 정답 단어는 절대 말하지 마.\n- **문제만 내고 힌트는 주지 마.** 힌트는 아이가 물어보거나 틀렸을 때만 준다.`,
           requiredChosungInOutput: currentChosung || undefined,
         };
       }

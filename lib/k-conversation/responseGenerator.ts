@@ -35,6 +35,8 @@ export interface ResponseGeneratorInput {
   playCatalogFragment?: string;
   /** 활성 놀이 세션 존재 여부. */
   hasActivePlaySession?: boolean;
+  /** 진행 중인 놀이 이름(예: "초성게임"). 015 — 놀이로 되돌아오는 지침에 쓴다. */
+  activePlaySkillName?: string;
   /** 이번 턴에 놀이 스킬이 처리되었는지 여부. */
   playSkillHandled?: boolean;
   /** 실패 로그 상관관계용. 아이 대화 원문은 오류 로그에 남기지 않는다(019 §3-6). */
@@ -70,10 +72,19 @@ const ACTION_DIRECTIVES: Record<ConversationAction, string> = {
 };
 
 export function buildSystemInstruction(input: ResponseGeneratorInput): string {
+  // 015 — 놀이 중에는 자유대화 기본 지침을 그대로 쓰면 안 된다.
+  //
+  // "아이가 하고 싶은 이야기를 하도록 그냥 함께해"는 놀이가 켜져 있을 때
+  // "놀이로 돌아와라"와 정면으로 부딪힌다. Dev QA 실측: 아이가 "오늘 급식 맛있었어"라고
+  // 하자 케이가 급식 이야기로 따라가고 초성게임으로 돌아오지 않았다.
+  // 아이가 요구한 것은 그 반대다 — "케이 놀이 끝날 때까지는 놀이에만 집중해".
+  const isPlayInProgress = input.mode === "FREE_CHAT" && input.hasActivePlaySession === true;
   const modeFragment =
-    input.mode === "FREE_CHAT"
-      ? "지금은 자유대화야 — 정보를 확보하거나 목표를 달성하려 하지 마. 아이가 하고 싶은 이야기를 하도록 그냥 함께해."
-      : "지금은 미션 대화야 — 하지만 질문지를 읽는 게 아니라 친구처럼 자연스럽게 대화하는 느낌을 유지해.";
+    input.mode !== "FREE_CHAT"
+      ? "지금은 미션 대화야 — 하지만 질문지를 읽는 게 아니라 친구처럼 자연스럽게 대화하는 느낌을 유지해."
+      : isPlayInProgress
+        ? "지금은 아이와 놀이를 하는 중이야 — 아이 말은 받아주되 대화가 놀이에서 벗어나지 않게 잡아줘."
+        : "지금은 자유대화야 — 정보를 확보하거나 목표를 달성하려 하지 마. 아이가 하고 싶은 이야기를 하도록 그냥 함께해.";
 
   let playGuardFragment = "";
   if (input.mode === "MISSION") {
@@ -89,6 +100,31 @@ export function buildSystemInstruction(input: ResponseGeneratorInput): string {
       "- 시스템이 제공한 놀이 지침(문제 초성, 제시 단어, 정답, 힌트 등)을 반드시 그대로 사용해.",
       "- 시스템이 지정한 초성이나 제시 단어를 다른 것으로 바꾸거나, 새 문제를 임의로 지어내지 마.",
       "- 글자 수나 힌트 내용을 임의로 바꾸지 말고, 시스템 지침에 명시된 내용에만 기반해서 답해.",
+    ].join("\n");
+  } else if (input.hasActivePlaySession === true && input.playSkillHandled === false) {
+    // 015 — 놀이가 켜져 있는데 이번 턴을 스킬이 처리하지 못한 경우.
+    //
+    // 여기가 비어 있어서 케이가 놀이를 두고 딴 얘기로 샜다. 2026-08-19 김서아 Dev 로그:
+    //   아이: "지금 야 너랑 초성 게임 진행 중이라고 표시 되고 있잖아 그럼 초성 게임에
+    //          집중 해야지 자꾸 또 헛소리 하면 어떡하니"
+    //   아이: "케이 놀이 선택 했으면 케이 놀이 끝날 때까지는 놀이에만 집중해"
+    //
+    // 아이 말은 먼저 받아준다. 그 다음 하던 놀이로 돌아온다. 새 문제를 지어내지는 않는다 —
+    // 문제는 시스템이 낸다.
+    const playName = input.activePlaySkillName ?? "하던 놀이";
+    playGuardFragment = [
+      "[놀이 이어가기 지침]",
+      `- 지금 아이와 ${playName}를 하는 중이고 아직 안 끝났어.`,
+      "- 응답은 반드시 두 부분으로 만들어:",
+      "  (1) 아이가 방금 한 말에 대한 짧은 반응 한 문장. 무시하지 마.",
+      `  (2) 그 다음 ${playName}로 돌아오는 말. **응답은 반드시 이 부분으로 끝나야 해.**`,
+      `- 예: "그랬구나, 속상했겠다. 그래도 우리 ${playName} 마저 해볼까?"`,
+      "- 아이 말에 딸린 새 질문을 던지고 끝내지 마. 새 화제로 대화를 넓히지 마.",
+      "- 아이가 그만하자고 하기 전에는 놀이를 끝내지 마. 다른 놀이로 바꾸자고 먼저 제안하지 마.",
+      // Dev QA 실측: 아이가 짜증내자 케이가 "그만할까?"라고 먼저 물었다. 아이는 그만하자고
+      // 한 적이 없다. 먼저 접자고 묻는 것도 놀이를 끝내려는 것이다.
+      "- \"그만할까?\", \"여기까지 할까?\" 처럼 네가 먼저 놀이를 접자고 묻지 마. 이어서 하자고 해.",
+      "- 단, 네가 직접 문제·정답·힌트·제시 단어를 지어내지는 마. 문제는 시스템이 낸다.",
     ].join("\n");
   } else if (input.hasActivePlaySession === false && input.playSkillHandled === false) {
     playGuardFragment = [
