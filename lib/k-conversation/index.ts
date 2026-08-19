@@ -612,6 +612,7 @@ export async function respond(
       playCatalogFragment,
       hasActivePlaySession,
       playSkillHandled,
+      correlationId: input.currentTurnId ?? input.sessionId,
     },
   });
 
@@ -858,5 +859,9 @@ export async function respond(
     memoryTiersUsed: memorySnapshot.tiersUsed,
     tokenIn: generated.tokenIn,
     tokenOut: generated.tokenOut,
+    // 019 §3-2 — 폴백 여부를 Adapter 로 그대로 올린다. Engine 은 미션 상태를 모르므로
+    // 여기서 문장을 바꾸지 않고 사실만 전달한다.
+    generationFallback: generated.fallbackUsed,
+    generationFailureType: generated.failureType,
   };
 }

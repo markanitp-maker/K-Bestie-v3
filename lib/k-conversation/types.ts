@@ -68,4 +68,14 @@ export interface EngineOutput {
   /** Adapter가 usage_events 등 과금 로그를 남길 수 있도록 노출(Gemini 미호출 경로는 0). */
   tokenIn: number;
   tokenOut: number;
+  /**
+   * 자연어 생성이 모두 실패해 text 가 최소 폴백 문장인지(019 §3-1, §3-2).
+   *
+   * 자유대화는 그대로 폴백 문장을 쓴다. 미션 Adapter 는 이 값이 true 면 text 를 버리고
+   * 자기 상태(다음 질문)로 결정론 문장을 만들어야 한다 — 미션은 아이 답변이 이미 끝난
+   * 턴이라 "더 얘기해줄래?" 가 같은 답을 다시 요구하는 말이 된다.
+   */
+  generationFallback?: boolean;
+  /** 생성 실패 유형(관측용). generationFallback 이 true 일 때만 채워진다. */
+  generationFailureType?: string;
 }

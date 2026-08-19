@@ -22,6 +22,12 @@ import {
 
 export interface MissionPromptGoal extends ConversationGoal {
   promptInstruction: string;
+  /**
+   * 이 Goal 을 그대로 물어볼 수 있는 완성된 질문 문장(019 §3-2, §6-1).
+   * 질문은행 원문 또는 부모 질문 문장이다. LLM 자연어 생성이 전부 실패했을 때
+   * 추가 호출 없이 다음 질문으로 진행하기 위해 쓴다.
+   */
+  fallbackQuestionText?: string | null;
 }
 
 export interface MissionAdapterResult {
@@ -137,6 +143,66 @@ const buildAdapterInstruction = (goal: MissionPromptGoal | null): string | undef
 };
 
 /**
+ * 019 §3-1, §3-9 — 미션에서 나오면 안 되는 폴백 계열 문구.
+ * 아이 답변이 이미 완료된 턴에서 같은 답을 다시 요구하는 말이다.
+ * 정확 일치뿐 아니라 같은 의미의 변형도 잡는다.
+ */
+export const MISSION_FORBIDDEN_FALLBACK_PATTERNS: readonly RegExp[] = [
+  /더\s*얘기해\s*줄래/,
+  /더\s*이야기해\s*줄래/,
+  /더\s*말해\s*줄래/,
+  /계속\s*말해\s*줘/,
+  /계속\s*얘기해\s*줘/,
+  /계속\s*이야기해\s*줘/,
+  /더\s*말해\s*줘/,
+  /더\s*얘기해\s*줘/,
+];
+
+export const containsMissionForbiddenFallback = (text: string): boolean =>
+  MISSION_FORBIDDEN_FALLBACK_PATTERNS.some((pattern) => pattern.test(text));
+
+/**
+ * 던질 다음 질문이 없을 때의 최후 문장. 아이 답변을 받아들이기만 하고 다시 요구하지 않는다.
+ * 자유대화 폴백("더 얘기해줄래?")이 미션으로 새어 나가는 것을 막는 마지막 장치다(019 §3-1).
+ */
+export const MISSION_FALLBACK_ACKNOWLEDGEMENT_ONLY = "그렇구나, 얘기해줘서 고마워.";
+
+/** 결정론 폴백에 쓰는 짧은 인정 문구. LLM 을 다시 부르지 않는다(019 §3-2). */
+const FALLBACK_ACKNOWLEDGEMENTS = [
+  "그렇구나, 얘기해줘서 고마워.",
+  "오, 그랬구나.",
+  "응, 잘 들었어.",
+] as const;
+
+/**
+ * 아이 답변이 이미 처리된 미션 턴에서 자연어 생성이 실패했을 때 쓸 문장을 만든다.
+ *
+ * 우선순위(019 §3-2, §6-1, §6-2):
+ *   1. 이번 턴에 고른 promptGoal 의 완성 질문 문장
+ *   2. 열린 Goal 중 아무거나의 완성 질문 문장
+ *   3. 둘 다 없으면 null — 호출부가 기존 폴백을 그대로 둔다(미션이 사실상 끝난 상태)
+ *
+ * ack 문구는 턴마다 같은 말이 반복되지 않도록 sourceTurnId 로 고른다. 난수를 쓰지 않아
+ * 같은 턴을 재시도해도 같은 문장이 나온다(중복 저장 시 화면이 흔들리지 않는다).
+ */
+export const buildMissionDeterministicFallback = (input: {
+  promptGoal: MissionPromptGoal | null;
+  goals: MissionPromptGoal[];
+  seed?: string;
+}): string | null => {
+  const question = input.promptGoal?.fallbackQuestionText?.trim()
+    || input.goals.filter(isOpenGoal).map((goal) => goal.fallbackQuestionText?.trim()).find(Boolean)
+    || null;
+  if (!question) return null;
+
+  const seed = input.seed ?? "";
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  const ack = FALLBACK_ACKNOWLEDGEMENTS[hash % FALLBACK_ACKNOWLEDGEMENTS.length];
+  return `${ack} ${question}`;
+};
+
+/**
  * Thin 073 adapter: Safety preflight and response generation remain owned by
  * the 071 engine. Goal state and parent-question provenance remain outside it;
  * only an opaque natural-language adapterInstruction crosses the boundary.
@@ -208,7 +274,7 @@ export const respondToMissionTurn = async (input: {
   } catch (error) {
     console.error("[mission-v3/adapter] Goal prompt selection failed", error);
   }
-  const engineOutput = await engine.respond(
+  let engineOutput = await engine.respond(
     {
       childId: input.childId,
       sessionId: input.sessionId,
@@ -227,6 +293,35 @@ export const respondToMissionTurn = async (input: {
       recentActions: input.recentActions,
     },
   );
+
+  // 019 §3-1~§3-3 — 자연어 생성이 전부 실패했을 때.
+  //
+  // Goal 판정과 별 게이지는 이 위에서 이미 확정됐다(evaluateGoalSatisfaction →
+  // persistGoalDecisions). 생성 실패는 아이 답변을 무효로 만들지 않는다. 자유대화용
+  // 폴백("응, 듣고 있어. 더 얘기해줄래?")은 아이가 방금 다 대답한 미션 턴에서
+  // 같은 답을 다시 요구하는 말이 되므로, 이미 정해진 다음 질문으로 대체한다.
+  // Safety 응답(category === "safety")은 절대 건드리지 않는다(019 §3-11).
+  if (engineOutput.generationFallback && engineOutput.category !== "safety") {
+    const deterministic = buildMissionDeterministicFallback({
+      promptGoal,
+      goals: currentGoals,
+      seed: input.currentTurnId ?? input.sourceTurnId,
+    });
+    // 던질 질문이 하나도 없으면(열린 Goal 소진 등) 인정 문구만 남긴다. 어떤 경우에도
+    // 자유대화 폴백이 미션 밖으로 나가서는 안 된다 — 아이가 방금 다 대답한 턴이다.
+    const replacement = deterministic ?? MISSION_FALLBACK_ACKNOWLEDGEMENT_ONLY;
+    console.error(
+      "[mission-v3/adapter] 자연어 생성 실패 — 결정론 미션 폴백으로 진행",
+      JSON.stringify({
+        failureType: engineOutput.generationFailureType ?? null,
+        sessionId: input.sessionId,
+        turnId: input.currentTurnId ?? null,
+        promptGoalId: promptGoal?.goalId ?? null,
+        hasNextQuestion: deterministic !== null,
+      }),
+    );
+    engineOutput = { ...engineOutput, text: replacement };
+  }
 
   // EngineOutput only reports the response category/action; it cannot prove
   // that the model actually followed adapterInstruction. Record a cooldown

@@ -1,5 +1,5 @@
 import { extractJSON } from "@/app/api/_lib/utils";
-import type { GenerateContentFn } from "@/lib/k-conversation/responseGenerator";
+import { classifyGenerationFailure, type GenerateContentFn } from "@/lib/k-conversation/responseGenerator";
 import type { MissionPromptGoal } from "@/lib/mission-v3/missionAdapter";
 import type { GoalAssessment } from "@/lib/mission-v3/goalEngine";
 
@@ -12,6 +12,17 @@ export interface AssessGoalsInput {
   /** 학년이 낮을수록 짧은 답변을 더 적극적으로 인정하기 위한 참고값(079).
    *  없으면 학년 문구 없이 기존과 동일하게 동작한다. */
   gradeRaw?: string | number | null;
+
+  /**
+   * 직전 턴에 K가 실제로 물어본 Goal(= mission_turns.previous_prompted_goal_id).
+   *
+   * 판정 지침에는 원래부터 "직전에 K가 물어본 Goal을 먼저 평가해라" 가 있었지만, 그게
+   * 어느 Goal인지는 넘겨주지 않아 모델이 대화 맥락에서 짐작해야 했다. 그 결과 아이가
+   * K의 질문에 제대로 답해도 다른 Goal이 평가되거나 아무것도 평가되지 않는 턴이 생겼다
+   * (2026-08-14~19 Production 실측: 판정 배열이 빈 턴 68/386, 그중 67턴이 이 값 없음).
+   * 여기서 goalId 를 명시해 "아이가 답한 대상"을 모델이 추측하지 않게 한다.
+   */
+  previousPromptedGoalId?: string | null;
 }
 
 const VALID_STATUSES: ReadonlySet<GoalAssessment["status"]> = new Set([
@@ -21,8 +32,19 @@ const VALID_STATUSES: ReadonlySet<GoalAssessment["status"]> = new Set([
   "SKIPPED",
 ]);
 
-// AGENTS.md §7: the first call is immediate, followed by 3s and 5s retries.
-const RETRY_DELAYS_MS = [0, 3000, 5000] as const;
+// 019 §3-4 — Goal 판정도 아이가 기다리는 실시간 턴 위에 있다.
+//
+// 이 판정과 responseGenerator 는 같은 요청 안에서 순차로 돌기 때문에, 둘 다 [0,3000,5000] 을
+// 쓰면 Vertex 가 연속 실패할 때 지연만 16초가 쌓인다. 2026-08-19 Production 429 사고에서
+// 실제로 그렇게 12.8~26.8초가 나왔다. 배치가 아니라 대화이므로 예산을 짧게 잡는다.
+// 판정이 실패해도 빈 배열이 반환되어 Goal 은 열린 채로 남고 다음 턴에 다시 평가된다 —
+// 오래 기다리는 쪽이 훨씬 나쁘다.
+const RETRY_DELAYS_MS = [0, 600, 1200] as const;
+/** 지연 + 호출을 합친 총 예산. 남은 예산이 부족하면 더 시도하지 않는다. */
+export const TOTAL_RETRY_BUDGET_MS = 4000;
+const MIN_ATTEMPT_BUDGET_MS = 1200;
+/** 한 번의 호출이 이 시간을 넘으면 실패로 본다. SDK 가 응답 없이 매달리는 경우 대비. */
+const ATTEMPT_TIMEOUT_MS = 3500;
 
 const sleep = (delayMs: number): Promise<void> =>
   delayMs > 0
@@ -45,6 +67,15 @@ const buildAssessmentInstruction = (input: AssessGoalsInput): string => {
   const gradeGuidance = input.gradeRaw == null || `${input.gradeRaw}`.trim() === ""
     ? ""
     : `[아이 학년] ${`${input.gradeRaw}`.trim()}`;
+
+  // 직전에 K가 물어본 Goal. 이번 턴 판정 대상에 남아 있을 때만 표시한다 —
+  // 이미 종료된 Goal 을 가리키면 모델이 없는 선택지를 고르려 한다.
+  const askedGoal = input.previousPromptedGoalId
+    ? input.goals.find((goal) => goal.goalId === input.previousPromptedGoalId)
+    : undefined;
+  const askedGuidance = askedGoal
+    ? `[직전에 K가 물어본 Goal]\ngoalId: ${askedGoal.goalId}\n아이의 이번 발화가 이 질문에 대한 답이면 이 Goal을 반드시 판정 결과에 포함해라.`
+    : "";
 
   return [
     "너는 아이의 현재 발화가 비공개 대화 Goal을 얼마나 충족했는지만 판정한다.",
@@ -86,6 +117,7 @@ const buildAssessmentInstruction = (input: AssessGoalsInput): string => {
     "반드시 지정된 JSON 배열만 반환하고, 설명 문장이나 코드펜스를 포함하지 마.",
     "",
     gradeGuidance,
+    askedGuidance,
     "[판정 대상 Goal]",
     goals,
     recentHistory ? `\n[최근 대화 맥락]\n${recentHistory}` : "",
@@ -133,12 +165,32 @@ export const assessGoalsFromUtterance = async (
   const goalsById = new Map(input.goals.map((goal) => [goal.goalId, goal]));
   const contents = buildAssessmentInstruction(input);
 
+  const startedAt = Date.now();
+  const budgetMs = TOTAL_RETRY_BUDGET_MS;
   for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
-    await sleep(RETRY_DELAYS_MS[attempt]);
+    const delayMs = RETRY_DELAYS_MS[attempt];
+    if (attempt > 0) {
+      const remaining = budgetMs - (Date.now() - startedAt) - delayMs;
+      if (remaining < MIN_ATTEMPT_BUDGET_MS) {
+        console.error(
+          "[mission-v3/goalAssessor] 재시도 예산 소진 — 판정 없이 진행",
+          JSON.stringify({ attempt: attempt + 1, elapsedMs: Date.now() - startedAt }),
+        );
+        break;
+      }
+    }
+    await sleep(delayMs);
 
     let response: Awaited<ReturnType<GenerateContentFn>>;
+    const attemptStartedAt = Date.now();
+    // SDK 자체 타임아웃을 믿지 않는다 — 호출이 매달리면 예산 검사에 도달하지 못한다.
+    const attemptTimeoutMs = Math.max(
+      MIN_ATTEMPT_BUDGET_MS,
+      Math.min(ATTEMPT_TIMEOUT_MS, budgetMs - (attemptStartedAt - startedAt)),
+    );
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
     try {
-      response = await input.ai.models.generateContent({
+      const call = input.ai.models.generateContent({
         model: input.modelId,
         contents,
         config: {
@@ -152,12 +204,24 @@ export const assessGoalsFromUtterance = async (
           thinkingConfig: { thinkingBudget: 0 },
         },
       });
+      const timeout = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error("goal-assessor-timeout")), attemptTimeoutMs);
+      });
+      response = await Promise.race([call, timeout]);
     } catch (error) {
+      const failureType = classifyGenerationFailure(error);
       console.error(
         `[mission-v3/goalAssessor] Goal 판정 생성 실패 (시도 ${attempt + 1}/${RETRY_DELAYS_MS.length})`,
-        error,
+        JSON.stringify({ failureType, elapsedMs: Date.now() - attemptStartedAt, model: input.modelId }),
       );
+      // 429 는 재시도로 풀리지 않는다 — 판정 없이 넘기고 다음 턴에 다시 평가한다.
+      if (failureType === "RATE_LIMIT") {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        break;
+      }
       continue;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
 
     try {

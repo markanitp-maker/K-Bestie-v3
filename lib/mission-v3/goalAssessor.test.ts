@@ -216,3 +216,30 @@ test("079: 복합 질문에 하나만 답하면 PARTIAL이라는 규칙이 있�
   assert.ok(prompt.includes("두 가지 이상을 함께 물었다면"), "복합 질문 규칙 누락");
   assert.ok(prompt.includes("하나만 답한 경우는 PARTIAL"), "복합 질문 판정 누락");
 });
+
+test("직전에 K가 물어본 Goal의 goalId가 프롬프트에 명시된다", async () => {
+  const prompt = await capturePrompt({ previousPromptedGoalId: "goal-1" });
+  // "goalId: goal-1" 만 보면 [판정 대상 Goal] 목록에도 같은 줄이 있어 통과해버린다.
+  // 구획 헤더와 붙어 있는지까지 확인한다.
+  assert.ok(
+    prompt.includes("[직전에 K가 물어본 Goal]\ngoalId: goal-1"),
+    "직전 질문 Goal 구획/goalId 누락",
+  );
+  assert.ok(
+    prompt.includes("이 Goal을 반드시 판정 결과에 포함해라"),
+    "직전 질문 Goal 판정 지침 누락",
+  );
+});
+
+test("previousPromptedGoalId가 없으면 직전 질문 구획이 없다(하위 호환)", async () => {
+  const prompt = await capturePrompt();
+  assert.ok(!prompt.includes("[직전에 K가 물어본 Goal]"), "직전 질문 구획이 잘못 포함됨");
+});
+
+test("previousPromptedGoalId가 이번 판정 대상에 없으면 구획을 넣지 않는다", async () => {
+  // 이미 SATISFIED/DECLINED 로 닫힌 Goal 은 promptGoals 에서 빠진다. 그 goalId 를
+  // 그대로 노출하면 모델이 선택지에 없는 Goal 을 반환하려 한다.
+  const prompt = await capturePrompt({ previousPromptedGoalId: "closed-goal" });
+  assert.ok(!prompt.includes("[직전에 K가 물어본 Goal]"), "닫힌 Goal 구획이 잘못 포함됨");
+  assert.ok(!prompt.includes("closed-goal"), "닫힌 goalId 가 프롬프트에 노출됨");
+});

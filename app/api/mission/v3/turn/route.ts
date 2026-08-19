@@ -424,6 +424,11 @@ export async function POST(req: NextRequest) {
           currentUtterance: answerText,
           recentHistory,
           goals: promptGoals,
+          // 079 의 학년 완화 지침과 "직전에 K가 물어본 Goal" 지침은 둘 다 이 두 값이
+          // 있어야 실제로 동작한다. 넘기지 않던 동안에는 프롬프트에 문구만 있고
+          // 근거 데이터가 없어, 아이가 K 질문에 제대로 답해도 별이 오르지 않는 턴이 있었다.
+          gradeRaw: childProfile?.grade ?? null,
+          previousPromptedGoalId: started.previous_prompted_goal_id,
         });
 
         const { data: markData, error: markError } = await service.rpc("mark_mission_turn_v3_assessed", {

@@ -37,6 +37,8 @@ export interface ResponseGeneratorInput {
   hasActivePlaySession?: boolean;
   /** 이번 턴에 놀이 스킬이 처리되었는지 여부. */
   playSkillHandled?: boolean;
+  /** 실패 로그 상관관계용. 아이 대화 원문은 오류 로그에 남기지 않는다(019 §3-6). */
+  correlationId?: string;
 }
 
 const PROMPT_LEAK_PATTERNS = [
@@ -215,13 +217,71 @@ export interface GeneratedResponse {
   tokenIn: number;
   tokenOut: number;
   regenerated: boolean;
+  /**
+   * 모든 시도가 실패해 자연어 문장을 만들지 못했는지(019 §3-2).
+   * true 면 text 는 자유대화용 최소 폴백이다 — 미션 Adapter 는 이 문장을 쓰지 말고
+   * 자기 상태(다음 질문)로 결정론 문장을 만들어야 한다.
+   */
+  fallbackUsed: boolean;
+  /** 마지막 실패 유형. 관측용. */
+  failureType?: ResponseFailureType;
 }
 
-const FALLBACK_TEXT = "응, 듣고 있어. 더 얘기해줄래?";
+/**
+ * 자유대화 전용 최종 폴백. 미션에서는 쓰지 않는다(019 §3-1).
+ * 미션은 아이 답변이 이미 완료된 턴이라 "더 얘기해줄래?" 가 같은 답을 다시 요구하게 된다.
+ * 미션 경로는 fallbackUsed 플래그를 받아 Adapter 가 결정론 문장을 만든다(019 §3-2).
+ */
+const FREE_CHAT_FALLBACK_TEXT = "응, 듣고 있어. 더 얘기해줄래?";
 
-// AGENTS.md §7 Gemini 호출 공통 규칙: RETRY_DELAYS=[0,3000,5000](최대 3회), timeout/5xx/
-// rate-limit/무응답/품질미달 시 재시도, 매 시도 console.error 로깅, 3회 실패 시 throw.
-const RETRY_DELAYS_MS = [0, 3000, 5000];
+// 019 §3-4 — 실시간 음성 대화용 retry budget.
+//
+// 기존 [0, 3000, 5000] 은 AGENTS.md §7 의 배치성 호출 규칙을 그대로 가져온 값이라,
+// 3회 실패 시 지연만 8초였다. 2026-08-19 Production 실측에서 아이가 정상 답변을 한 뒤
+// 12.8~26.8초를 기다린 사고 6건이 여기서 나왔다(원인은 Vertex 429 RESOURCE_EXHAUSTED).
+//
+// 세 값을 함께 관리한다:
+//   - ATTEMPT_TIMEOUT_MS: 한 번의 호출이 이 시간을 넘으면 실패로 본다.
+//   - RETRY_DELAYS_MS: 시도 사이 지연. 429/5xx 처럼 빨리 실패하는 오류에서만 의미가 있다.
+//   - TOTAL_RETRY_BUDGET_MS: 지연+호출을 합친 총 예산. 남은 예산이 다음 시도를 감당하지
+//     못하면 더 시도하지 않고 폴백으로 즉시 넘어간다. 그래서 "느리게 실패"할수록
+//     재시도가 줄고, "빠르게 실패"할 때만 재시도가 실제로 일어난다.
+export const ATTEMPT_TIMEOUT_MS = 4500;
+export const RETRY_DELAYS_MS = [0, 600, 1200];
+export const TOTAL_RETRY_BUDGET_MS = 5000;
+/** 남은 예산이 이보다 적으면 다음 시도를 시작하지 않는다. */
+const MIN_ATTEMPT_BUDGET_MS = 1200;
+
+export type ResponseFailureType =
+  | "TIMEOUT"
+  | "RATE_LIMIT"
+  | "HTTP_5XX"
+  | "EMPTY_RESPONSE"
+  | "PROMPT_LEAK_DETECTED"
+  | "NETWORK_ERROR"
+  | "BUDGET_EXHAUSTED"
+  | "UNKNOWN";
+
+/** 오류 객체에서 실패 유형만 뽑는다. 아이 발화는 절대 담기지 않는다(019 §3-6). */
+export function classifyGenerationFailure(error: unknown): ResponseFailureType {
+  if (error instanceof Error && error.message === "response-generator-timeout") return "TIMEOUT";
+  const status = (() => {
+    const candidate = error as { status?: unknown; code?: unknown } | null;
+    if (candidate && typeof candidate.status === "number") return candidate.status;
+    if (candidate && typeof candidate.code === "number") return candidate.code;
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    const match = message.match(/"code"\s*:\s*(\d{3})/);
+    return match ? Number(match[1]) : null;
+  })();
+  if (status === 429) return "RATE_LIMIT";
+  if (typeof status === "number" && status >= 500 && status < 600) return "HTTP_5XX";
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (/RESOURCE_EXHAUSTED|rate limit|quota/i.test(message)) return "RATE_LIMIT";
+  if (/ECONNRESET|ENOTFOUND|ETIMEDOUT|fetch failed|socket hang up|network/i.test(message)) {
+    return "NETWORK_ERROR";
+  }
+  return "UNKNOWN";
+}
 
 function sleep(ms: number): Promise<void> {
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
@@ -240,21 +300,59 @@ interface AttemptResult {
  * 30자/물음표/의문사 같은 자연스러움 관련 검증은 의도적으로 하지 않는다. */
 type GenerateContentParams = Parameters<GenerateContentFn>[0];
 
+/** attempt 별 실패를 구조화해 남긴다. 아이 발화 원문은 담지 않는다(019 §3-6). */
+function logAttemptFailure(entry: {
+  attempt: number;
+  totalAttempts: number;
+  elapsedMs: number;
+  failureType: ResponseFailureType;
+  model: string;
+  mode: ConversationMode;
+  correlationId?: string;
+}): void {
+  console.error("[k-conversation/responseGenerator] attempt failed", JSON.stringify(entry));
+}
+
 async function attemptWithRetry(
   args: GenerateArgs,
   contents: GenerateContentParams["contents"],
   systemInstruction: string,
 ): Promise<AttemptResult> {
-  let lastError: unknown = null;
+  let lastFailureType: ResponseFailureType = "UNKNOWN";
+  const startedAt = Date.now();
+  const budgetMs = TOTAL_RETRY_BUDGET_MS;
 
   for (let i = 0; i < RETRY_DELAYS_MS.length; i++) {
-    await sleep(RETRY_DELAYS_MS[i]);
+    const delayMs = RETRY_DELAYS_MS[i];
+    // 남은 예산이 다음 시도를 감당하지 못하면 기다리게 하지 않고 즉시 폴백으로 넘긴다.
+    if (i > 0) {
+      const remaining = budgetMs - (Date.now() - startedAt) - delayMs;
+      if (remaining < MIN_ATTEMPT_BUDGET_MS) {
+        logAttemptFailure({
+          attempt: i + 1,
+          totalAttempts: RETRY_DELAYS_MS.length,
+          elapsedMs: Date.now() - startedAt,
+          failureType: "BUDGET_EXHAUSTED",
+          model: args.modelId,
+          mode: args.input.mode,
+          correlationId: args.input.correlationId,
+        });
+        break;
+      }
+    }
+    await sleep(delayMs);
+
+    const attemptStartedAt = Date.now();
+    const remainingBudget = budgetMs - (attemptStartedAt - startedAt);
+    const attemptTimeoutMs = Math.max(MIN_ATTEMPT_BUDGET_MS, Math.min(ATTEMPT_TIMEOUT_MS, remainingBudget));
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
     try {
       const extraInstruction =
         i === 0
           ? undefined
           : "[재생성 지시] 방금 답변에 내부 지침이나 시스템 정보가 섞여 나왔거나 응답이 비어 있었어. 그런 내용 없이 아이에게 자연스러운 반말로만 다시 답해.";
-      const response = await args.ai.models.generateContent({
+      const call = args.ai.models.generateContent({
         model: args.modelId,
         contents,
         config: {
@@ -264,31 +362,64 @@ async function attemptWithRetry(
           maxOutputTokens: 120,
         },
       });
+      const timeout = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error("response-generator-timeout")), attemptTimeoutMs);
+      });
+      const response = await Promise.race([call, timeout]);
       const rawText = response.text?.trim() ?? "";
       const text = truncateResponseText(rawText);
       const tokenIn = response.usageMetadata?.promptTokenCount ?? 0;
       const tokenOut = response.usageMetadata?.candidatesTokenCount ?? 0;
 
       if (!text || detectPromptLeak(text)) {
-        console.error(
-          `[k-conversation/responseGenerator] attempt ${i + 1}/${RETRY_DELAYS_MS.length} quality failure`,
-          { empty: !text, promptLeak: Boolean(text) && detectPromptLeak(text) },
-        );
-        lastError = new Error("quality failure: empty or prompt-leak response");
+        lastFailureType = text ? "PROMPT_LEAK_DETECTED" : "EMPTY_RESPONSE";
+        logAttemptFailure({
+          attempt: i + 1,
+          totalAttempts: RETRY_DELAYS_MS.length,
+          elapsedMs: Date.now() - attemptStartedAt,
+          failureType: lastFailureType,
+          model: args.modelId,
+          mode: args.input.mode,
+          correlationId: args.input.correlationId,
+        });
         continue;
       }
 
       return { text, tokenIn, tokenOut, regenerated: i > 0 };
     } catch (error) {
-      console.error(
-        `[k-conversation/responseGenerator] attempt ${i + 1}/${RETRY_DELAYS_MS.length} failed`,
-        (error as Error).message,
-      );
-      lastError = error;
+      lastFailureType = classifyGenerationFailure(error);
+      logAttemptFailure({
+        attempt: i + 1,
+        totalAttempts: RETRY_DELAYS_MS.length,
+        elapsedMs: Date.now() - attemptStartedAt,
+        failureType: lastFailureType,
+        model: args.modelId,
+        mode: args.input.mode,
+        correlationId: args.input.correlationId,
+      });
+      // 429 는 용량 신호다. 수백 ms 뒤 다시 불러도 풀리지 않고, 재시도가 오히려 한도를
+      // 더 밀어붙인다(2026-08-19 Production: 3회 시도가 전부 429 로 끝났다).
+      // 아이를 기다리게 하지 말고 즉시 결정론 경로로 넘긴다.
+      if (lastFailureType === "RATE_LIMIT") {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        break;
+      }
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("generateContent failed after retries");
+  throw new GenerationFailedError(lastFailureType);
+}
+
+/** 모든 시도가 실패했음을 실패 유형과 함께 전달한다. 오류 메시지에 대화 원문을 넣지 않는다. */
+export class GenerationFailedError extends Error {
+  readonly failureType: ResponseFailureType;
+  constructor(failureType: ResponseFailureType) {
+    super(`generateContent failed after retries: ${failureType}`);
+    this.name = "GenerationFailedError";
+    this.failureType = failureType;
+  }
 }
 
 export async function generateResponse(args: GenerateArgs): Promise<GeneratedResponse> {
@@ -304,9 +435,29 @@ export async function generateResponse(args: GenerateArgs): Promise<GeneratedRes
   ];
 
   try {
-    return await attemptWithRetry(args, contents, systemInstruction);
+    const result = await attemptWithRetry(args, contents, systemInstruction);
+    return { ...result, fallbackUsed: false };
   } catch (error) {
-    console.error("[k-conversation/responseGenerator] all retries exhausted, using fallback", (error as Error).message);
-    return { text: FALLBACK_TEXT, tokenIn: 0, tokenOut: 0, regenerated: true };
+    const failureType = error instanceof GenerationFailedError
+      ? error.failureType
+      : classifyGenerationFailure(error);
+    console.error(
+      "[k-conversation/responseGenerator] all retries exhausted, using fallback",
+      JSON.stringify({
+        failureType,
+        model: args.modelId,
+        mode: args.input.mode,
+        correlationId: args.input.correlationId,
+      }),
+    );
+    // 미션 경로는 이 문장을 쓰지 않는다 — fallbackUsed 를 보고 Adapter 가 교체한다(019 §3-1).
+    return {
+      text: FREE_CHAT_FALLBACK_TEXT,
+      tokenIn: 0,
+      tokenOut: 0,
+      regenerated: true,
+      fallbackUsed: true,
+      failureType,
+    };
   }
 }

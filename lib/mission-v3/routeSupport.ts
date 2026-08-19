@@ -224,10 +224,14 @@ export const loadMissionPromptGoals = async (input: {
     applyCooldown: false,
   });
   const instructionBySemanticGroup = new Map<string, string>();
+  // 019 §3-2 — 질문은행 원문도 같이 들고 있는다. 자연어 생성이 전부 실패했을 때
+  // 추가 LLM 호출 없이 그대로 물어볼 완성 문장이 필요하다.
+  const questionTextBySemanticGroup = new Map<string, string>();
   for (const candidate of bankCandidates) {
     const semanticGroup = normalizeSemanticGroup(candidate.semanticGroup);
     if (!instructionBySemanticGroup.has(semanticGroup)) {
       instructionBySemanticGroup.set(semanticGroup, candidate.promptInstruction);
+      questionTextBySemanticGroup.set(semanticGroup, candidate.questionText.trim());
     }
   }
 
@@ -256,7 +260,11 @@ export const loadMissionPromptGoals = async (input: {
     if (!promptInstruction) {
       throw new Error(`Conversation Goal 대화 지시를 복원할 수 없습니다: ${goal.goalId}`);
     }
-    return { ...goal, promptInstruction };
+    // 부모 질문은 instruction 자체가 이미 완성된 질문 문장이라 그대로 쓴다.
+    const fallbackQuestionText = goal.parentQuestionId
+      ? promptInstruction
+      : questionTextBySemanticGroup.get(normalizeSemanticGroup(goal.semanticGroup)) ?? null;
+    return { ...goal, promptInstruction, fallbackQuestionText };
   });
 };
 
