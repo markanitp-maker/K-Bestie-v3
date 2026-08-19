@@ -20,6 +20,7 @@ export interface UtteranceSignals {
   hasChosungAnswerAttempt: boolean; // 초성 게임 답변 시도로 보이는 발화 ("사과", "정답 사과", "바나나인가?")
   hasChosungHintRequest: boolean; // 초성 게임 힌트 요청 ("힌트 줘", "모르겠어", "어려워" 등)
   hasChosungAnswerRequest: boolean; // 초성 게임 정답 직접 공개 요청 ("답이 뭐야", "정답 알려줘", "그냥 알려줘" 등)
+  hasChosungNextQuestion: boolean; // 다음 문제 요청 ("다음 문제 줘", "다른 문제", "패스")
   hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
   hasNonsenseGameStart?: boolean; // 넌센스 퀴즈 / 수수께끼 시작 요청 ("넌센스 퀴즈 하자", "수수께끼 하자" 등)
   hasNonsenseAnswerAttempt?: boolean;
@@ -183,6 +184,22 @@ function detectChosungGameStart(text: string): boolean {
   return CHOSUNG_START_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/**
+ * 다음 문제를 달라는 요청(015 2차).
+ *
+ * 2026-08-19 Dev QA 실측: 아이가 "다음 문제 줘" 라고 했는데 어떤 신호에도 안 걸려
+ * 케이가 이미 낸 초성을 다시 제시하고 "다음 문제 계속 해보자"라고만 했다.
+ * 아이 입장에서는 요청이 무시된 것이다.
+ */
+const CHOSUNG_NEXT_QUESTION_KWS = [
+  "다음 문제", "다음문제", "다른 문제", "다른문제", "다음 거", "다음거",
+  "새 문제", "새문제", "문제 바꿔", "다음 것", "패스", "넘어가",
+];
+
+function detectChosungNextQuestion(text: string): boolean {
+  return includesAny(text, CHOSUNG_NEXT_QUESTION_KWS);
+}
+
 function detectChosungAnswerRequest(text: string): boolean {
   if (includesAny(text, CHOSUNG_HINT_NEGATION_KWS)) return false;
   // "힌트 좀 알려줘" 는 답을 달라는 말이 아니다. "알려줘" 만 보고 정답을 공개하면
@@ -230,18 +247,55 @@ function detectChosungAnswerAttempt(
 
   // 4. 띄어쓰기 없는 1~6자 순수 한글 명사/단어 단독 발화 (문장부호 제외)
   const cleanWord = trimmed.replace(/^[!?.~^]+|[!?.~^]+$/g, "").trim();
-  if (!cleanWord || cleanWord.includes(" ")) return false;
+  if (!cleanWord) return false;
 
-  // 서술어/동사형 어미로 끝나면 제외 ("게임하자", "심심해", "놀았어")
-  if (VERB_ENDING_PATTERN.test(cleanWord)) return false;
+  // 한 낱말 발화일 때만 이 규칙을 적용한다. 여러 낱말이면 아래 규칙 5 로 넘긴다.
+  if (!cleanWord.includes(" ")) {
+    // 서술어/동사형 어미로 끝나면 제외 ("게임하자", "심심해", "놀았어")
+    if (VERB_ENDING_PATTERN.test(cleanWord)) return false;
 
-  if (/^[가-힣]{1,6}$/.test(cleanWord)) {
-    if (!COMMON_NON_ANSWER_WORDS.has(cleanWord)) {
-      return true;
+    if (/^[가-힣]{1,6}$/.test(cleanWord)) {
+      if (!COMMON_NON_ANSWER_WORDS.has(cleanWord)) {
+        return true;
+      }
     }
+    return false;
   }
 
-  return false;
+  // 5. 답을 말로 감싸서 말한 경우.
+  //
+  // 규칙 4 는 발화 전체가 한 낱말일 때만 통과시킨다. 그런데 아이는 답만 딱 말하지 않는다.
+  // 2026-08-19 김서아 Dev QA 실측: 정답이 "공놀이"인 문제에 아이가 "그러니까 공놀이 이라고"
+  // 라고 답했는데 답변 시도로 인식되지 않아 정답 대조까지 가지도 못했다. 케이는 오답이라고
+  // 했고 세션은 그대로 멈췄다.
+  //
+  // 인용 표지("~라고")나 군말("그러니까", "어") 이 있을 때만 이 규칙을 태운다. 그것마저
+  // 없으면 평범한 대화일 가능성이 높으므로 건드리지 않는다.
+  // 여기서 넓혀도 안전한 이유는 규칙 3 주석과 같다 — 이 판정은 게임 진행 중에만 쓰이고,
+  // 실제 정답 여부는 세션의 정답과 대조해 결정된다.
+  const FILLER_PREFIXES = /^(?:그러니까|그니까|그러면|그럼|어|음|아|저기|그|내\s*답은|답은)\s+/;
+  const QUOTATIVE = /(?:이?라고(?:요)?|이?라니까)\s*$/;
+  const hasFiller = FILLER_PREFIXES.test(trimmed);
+  const hasQuotative = QUOTATIVE.test(trimmed);
+  if (!hasFiller && !hasQuotative) return false;
+
+  const stripped = trimmed
+    .replace(FILLER_PREFIXES, "")
+    .replace(QUOTATIVE, "")
+    .trim();
+  const tokens = [
+    ...new Set(
+      stripped
+        .split(/\s+/)
+        .map((token) => token.replace(/^[!?.~^,]+|[!?.~^,]+$/g, ""))
+        .filter(Boolean)
+    ),
+  ];
+  if (tokens.length === 0 || tokens.length > 2) return false;
+  const looksLikeWord = (token: string) =>
+    /^[가-힣]{1,6}$/.test(token) && !VERB_ENDING_PATTERN.test(token);
+  if (!tokens.every(looksLikeWord)) return false;
+  return tokens.some((token) => !COMMON_NON_ANSWER_WORDS.has(token));
 }
 
 // 끝말잇기 게임 시작 신호
@@ -404,6 +458,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
   // 정확 매칭이 먼저다. 실패했을 때만 STT 오인식 복구를 시도한다(2026-08-17).
   let hasChosungGameStart = detectChosungGameStart(trimmed);
   const hasChosungAnswerRequest = detectChosungAnswerRequest(trimmed);
+  const hasChosungNextQuestion = detectChosungNextQuestion(trimmed);
   const hasChosungHintRequest = !hasChosungAnswerRequest && detectChosungHintRequest(trimmed);
   const hasChosungAnswerAttempt = detectChosungAnswerAttempt(
     trimmed,
@@ -462,6 +517,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
   );
 
   return {
+    hasChosungNextQuestion,
     hasAchievement,
     hasConflict,
     hasPlayfulSilly: includesAny(trimmed, PLAYFUL_SILLY_KWS),

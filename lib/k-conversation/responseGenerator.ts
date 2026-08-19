@@ -282,9 +282,35 @@ const FREE_CHAT_FALLBACK_TEXT = "응, 듣고 있어. 더 얘기해줄래?";
 //   - TOTAL_RETRY_BUDGET_MS: 지연+호출을 합친 총 예산. 남은 예산이 다음 시도를 감당하지
 //     못하면 더 시도하지 않고 폴백으로 즉시 넘어간다. 그래서 "느리게 실패"할수록
 //     재시도가 줄고, "빠르게 실패"할 때만 재시도가 실제로 일어난다.
-export const ATTEMPT_TIMEOUT_MS = 4500;
+/**
+ * 예산은 모드마다 다르다.
+ *
+ * 미션은 한 요청 안에서 Goal 판정(최대 4초)이 먼저 돌고 그 다음에 응답 생성이 온다.
+ * 그래서 생성 쪽을 짧게 잡아야 합이 10초를 안 넘는다(019).
+ *
+ * 자유대화는 LLM 호출이 이거 하나뿐인데, 019 에서 미션 기준 4.5초를 그대로 적용한 것이
+ * 회귀였다. 2026-08-19 13:41~13:45 Dev 실측: 자유대화 응답이 매번 4501ms 에서 TIMEOUT 으로
+ * 끊기고 폴백이 나갔다(모델 gemini-3.5-flash-lite, 프롬프트에 페르소나·기억·놀이 카탈로그가
+ * 모두 들어가 미션보다 길다). 아이는 "응, 듣고 있어. 더 얘기해줄래?"를 두 번 받았다.
+ * 자유대화는 앞에 다른 LLM 호출이 없으므로 더 기다려도 총 대기시간이 미션보다 짧다.
+ */
+const BUDGET_BY_MODE = {
+  MISSION: { attemptTimeoutMs: 4500, totalBudgetMs: 5000 },
+  FREE_CHAT: { attemptTimeoutMs: 8000, totalBudgetMs: 9000 },
+} as const;
+
+/** 미션 기준값. 기존 이름을 쓰는 곳(테스트 등)과의 호환을 위해 남긴다. */
+export const ATTEMPT_TIMEOUT_MS = BUDGET_BY_MODE.MISSION.attemptTimeoutMs;
 export const RETRY_DELAYS_MS = [0, 600, 1200];
-export const TOTAL_RETRY_BUDGET_MS = 5000;
+export const TOTAL_RETRY_BUDGET_MS = BUDGET_BY_MODE.MISSION.totalBudgetMs;
+
+/** 모드별 예산. 알 수 없는 모드는 미션 기준(더 보수적인 쪽)을 쓴다. */
+export function resolveGenerationBudget(mode: ConversationMode): {
+  attemptTimeoutMs: number;
+  totalBudgetMs: number;
+} {
+  return mode === "FREE_CHAT" ? BUDGET_BY_MODE.FREE_CHAT : BUDGET_BY_MODE.MISSION;
+}
 /** 남은 예산이 이보다 적으면 다음 시도를 시작하지 않는다. */
 const MIN_ATTEMPT_BUDGET_MS = 1200;
 
@@ -356,7 +382,8 @@ async function attemptWithRetry(
 ): Promise<AttemptResult> {
   let lastFailureType: ResponseFailureType = "UNKNOWN";
   const startedAt = Date.now();
-  const budgetMs = TOTAL_RETRY_BUDGET_MS;
+  const { attemptTimeoutMs: maxAttemptTimeoutMs, totalBudgetMs: budgetMs } =
+    resolveGenerationBudget(args.input.mode);
 
   for (let i = 0; i < RETRY_DELAYS_MS.length; i++) {
     const delayMs = RETRY_DELAYS_MS[i];
@@ -380,7 +407,7 @@ async function attemptWithRetry(
 
     const attemptStartedAt = Date.now();
     const remainingBudget = budgetMs - (attemptStartedAt - startedAt);
-    const attemptTimeoutMs = Math.max(MIN_ATTEMPT_BUDGET_MS, Math.min(ATTEMPT_TIMEOUT_MS, remainingBudget));
+    const attemptTimeoutMs = Math.max(MIN_ATTEMPT_BUDGET_MS, Math.min(maxAttemptTimeoutMs, remainingBudget));
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
     try {

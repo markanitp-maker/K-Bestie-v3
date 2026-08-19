@@ -19,6 +19,7 @@ export interface ChosungTurnInput {
     hasChosungAnswerAttempt: boolean;
     hasChosungHintRequest: boolean;
     hasChosungAnswerRequest?: boolean;
+    hasChosungNextQuestion?: boolean;
   };
 }
 
@@ -85,12 +86,15 @@ export async function runChosungTurn(
 ): Promise<ChosungTurnResult> {
   const { db, childId, chatSessionId, gradeRaw, utterance, signals } = input;
 
-  // 초성게임 관련 신호가 전혀 없거나 필수 식별자가 없으면 즉시 일반 대화 진행
+  // 초성게임 관련 신호가 전혀 없거나 필수 식별자가 없으면 즉시 일반 대화 진행.
+  // 새 신호를 추가할 때 이 목록에도 넣어야 한다 — 아래 분기만 만들면 여기서 먼저 빠져나간다
+  // (2026-08-19 실측: hasChosungNextQuestion 분기를 만들었는데 이 목록에 없어 동작하지 않았다).
   if (
     !signals.hasChosungGameStart &&
     !signals.hasChosungAnswerAttempt &&
     !signals.hasChosungHintRequest &&
-    !signals.hasChosungAnswerRequest
+    !signals.hasChosungAnswerRequest &&
+    !signals.hasChosungNextQuestion
   ) {
     return { handled: false };
   }
@@ -101,6 +105,21 @@ export async function runChosungTurn(
 
   try {
     const activeSession = await getActiveChosungGameSession(db, childId);
+
+    // 0. 진행 중 세션이 있고 아이가 다음 문제를 달라고 한 경우(015 2차).
+    //
+    // 실측: "다음 문제 줘" 가 어떤 신호에도 안 걸려 케이가 같은 초성을 다시 제시하고
+    // "다음 문제 계속 해보자"라고만 했다. 아이 입장에서는 요청이 무시된 것이다.
+    // 정답을 알려주고 다음 라운드로 넘긴다 — 못 맞힌 문제를 그냥 덮으면 아이는 배우지 못한다.
+    if (activeSession && signals.hasChosungNextQuestion) {
+      return revealAndAdvance({
+        db,
+        childId,
+        gradeRaw,
+        session: activeSession,
+        lead: "다음 문제로 넘어가자",
+      });
+    }
 
     // 1. 진행 중 세션이 있고 정답 시도인 경우
     if (activeSession && signals.hasChosungAnswerAttempt) {

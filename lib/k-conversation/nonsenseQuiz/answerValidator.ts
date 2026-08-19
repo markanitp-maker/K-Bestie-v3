@@ -1,5 +1,6 @@
 import type { UtteranceSignals } from "../utteranceSignals";
 import type { NonsenseQuestionRow } from "./nonsenseQuizTypes";
+import { collectPlayAnswerCandidates } from "../play/answerCandidates";
 
 export type ChildNonsenseIntent =
   | "STOP"
@@ -220,17 +221,20 @@ export function validateNonsenseAnswer(
   }
 
   const rawChild = childUtterance.trim().replace(/[\s!?.~^,;:…]+/g, "");
+  const candidates = collectPlayAnswerCandidates(childUtterance, normalizeNonsenseAnswer);
+  candidates.add(rawChild);
 
-  // 1. canonical_answer 대조 (정규화 및 원문 공백제거 비교)
-  const canonicalNorm = normalizeNonsenseAnswer(question.canonical_answer);
-  const canonicalRaw = question.canonical_answer.trim().replace(/[\s!?.~^,;:…]+/g, "");
+  const matches = (answer: string): boolean => {
+    const answerNorm = normalizeNonsenseAnswer(answer);
+    const answerRaw = answer.trim().replace(/[\s!?.~^,;:…]+/g, "");
+    return (
+      (answerNorm !== "" && candidates.has(answerNorm)) ||
+      (answerRaw !== "" && candidates.has(answerRaw))
+    );
+  };
 
-  if (
-    normalizedChild === canonicalNorm ||
-    rawChild === canonicalRaw ||
-    normalizedChild === canonicalRaw ||
-    rawChild === canonicalNorm
-  ) {
+  // 1. canonical_answer 대조
+  if (matches(question.canonical_answer)) {
     return {
       isCorrect: true,
       normalizedChildAnswer: normalizedChild,
@@ -244,15 +248,7 @@ export function validateNonsenseAnswer(
     : [];
 
   for (const accepted of acceptedList) {
-    const acceptedNorm = normalizeNonsenseAnswer(accepted);
-    const acceptedRaw = accepted.trim().replace(/[\s!?.~^,;:…]+/g, "");
-
-    if (
-      normalizedChild === acceptedNorm ||
-      rawChild === acceptedRaw ||
-      normalizedChild === acceptedRaw ||
-      rawChild === acceptedNorm
-    ) {
+    if (matches(accepted)) {
       return {
         isCorrect: true,
         normalizedChildAnswer: normalizedChild,

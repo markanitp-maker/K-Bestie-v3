@@ -171,3 +171,34 @@ export function hasPlayRequestMarker(utterance: string): boolean {
   const normalized = utterance.replace(/\s+/g, " ");
   return REQUEST_MARKERS.some((marker) => normalized.includes(marker));
 }
+
+/**
+ * 놀이를 "요청"하는 게 아니라 "이야기하는" 문장인지(015 2차).
+ *
+ * 2026-08-19 김서아 Dev 실측: 아이가 넌센스 퀴즈 총평을 하면서
+ *   "이 세계 게임 있지 초성 게임 그 다음에 끝말잇기 게임 넌센스 퀴즈 이거 어떤 식으로
+ *    아이들과 서로 대화를 하는지..."
+ * 라고 말했는데 케이가 끝말잇기를 시작해버렸다. 게임 이름이 여러 개 나왔고 요청 동사처럼
+ * 보이는 말이 섞여 있었기 때문이다.
+ *
+ * 아이가 놀이 자체를 평가하거나 개발을 이야기할 때는 판을 새로 벌이지 않는다.
+ * 판단이 애매하면 시작하지 않는 쪽이 맞다 — 안 시작한 건 아이가 다시 말하면 되지만,
+ * 엉뚱하게 시작한 판은 하던 이야기를 통째로 끊는다.
+ */
+const META_COMMENTARY_MARKERS: readonly RegExp[] = [
+  /개발/,
+  /개선/,
+  /분석/,
+  /리서치/,
+  /학습/,
+  /코드/,
+  /업데이트/,
+  /어떤\s*식으로/,
+  /방법도\s*모르/,
+  /똑바로/,
+  /스트레스/,
+];
+
+export function looksLikePlayMetaCommentary(utterance: string): boolean {
+  return META_COMMENTARY_MARKERS.some((pattern) => pattern.test(utterance));
+}

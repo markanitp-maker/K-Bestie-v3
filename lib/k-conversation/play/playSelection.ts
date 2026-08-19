@@ -60,6 +60,7 @@ export function createEmptyUtteranceSignals(): UtteranceSignals {
     hasChosungAnswerAttempt: false,
     hasChosungHintRequest: false,
     hasChosungAnswerRequest: false,
+  hasChosungNextQuestion: false,
     hasWordChainGameStart: false,
     hasNonsenseGameStart: false,
     hasNonsenseAnswerAttempt: false,

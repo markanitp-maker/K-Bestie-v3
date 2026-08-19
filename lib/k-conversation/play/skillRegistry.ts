@@ -6,6 +6,7 @@ import type { UtteranceSignals } from "../utteranceSignals";
 import {
   filterMentionedCandidates,
   hasPlayRequestMarker,
+  looksLikePlayMetaCommentary,
   resolveRequestedSkill,
 } from "./skillRequestResolution";
 
@@ -55,6 +56,13 @@ export function findDirectlyRequestedSkill(
   utterance: string,
   registry: readonly PlaySkillModule[] = PLAY_SKILL_REGISTRY
 ): PlaySkillModule | null {
+  // 015 2차 — 놀이를 평가·설명만 하는 문장에서는 판을 시작하지 않는다.
+  // 아이가 게임 이름을 나열하며 개발 피드백을 하던 중 끝말잇기가 시작된 사고가 있었다.
+  //
+  // 단, 불평과 요청이 한 문장에 같이 오는 경우가 흔하다
+  // ("초성 게임은 다시 개발 해 개판이야 끝말잇기나 하자"). 요청 동사가 있으면 요청으로 본다.
+  if (looksLikePlayMetaCommentary(utterance) && !hasPlayRequestMarker(utterance)) return null;
+
   const withAliases = registry.map((skill) => ({
     skill,
     aliases: SKILL_ALIASES[skill.id] ?? [skill.displayName],

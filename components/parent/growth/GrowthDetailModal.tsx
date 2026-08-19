@@ -319,6 +319,82 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
           </section>
         )}
 
+        {/* 입력 폼 — 헤더의 `새 기록 추가` 바로 아래에 열린다.
+            대표님 실기기 확인(2026-08-19): 헤더 버튼을 눌렀는데 입력창이 모달 맨 아래에
+            열려서 다시 스크롤해야 했다. 버튼과 입력창이 붙어 있어야 한다. */}
+        {formMode.kind !== "closed" && (
+          <section className="mb-4 rounded-2xl border border-[var(--color-k-orange)]/40 bg-[#FFF9F2] p-4">
+            <h3 className="mb-3 text-[15px] font-bold text-[var(--color-k-navy)]">
+              {formMode.kind === "edit" ? "기록 수정" : "새 기록 추가"}
+            </h3>
+            <label className="block text-[13px] font-bold text-[#1F2937]" htmlFor="growth-measured-at">
+              측정일
+            </label>
+            <input
+              id="growth-measured-at"
+              type="date"
+              value={measuredAt}
+              max={today}
+              min={state.profile?.birthDate}
+              onChange={(event) => setMeasuredAt(event.target.value)}
+              className="mt-1.5 w-full rounded-xl border border-[#10315B]/20 bg-white px-3 py-2.5 text-[15px] font-semibold text-[#1F2937] outline-none"
+            />
+            <div className="mt-3 flex gap-2">
+              <div className="flex-1">
+                <label className="block text-[13px] font-bold text-[#1F2937]" htmlFor="growth-height">
+                  키 (cm)
+                </label>
+                <input
+                  id="growth-height"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  value={heightInput}
+                  placeholder="예: 140.5"
+                  onChange={(event) => setHeightInput(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-[#10315B]/20 bg-white px-3 py-2.5 text-[15px] font-semibold text-[#1F2937] outline-none"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-[13px] font-bold text-[#1F2937]" htmlFor="growth-weight">
+                  몸무게 (kg)
+                </label>
+                <input
+                  id="growth-weight"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  value={weightInput}
+                  placeholder="예: 34.2"
+                  onChange={(event) => setWeightInput(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-[#10315B]/20 bg-white px-3 py-2.5 text-[15px] font-semibold text-[#1F2937] outline-none"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-[12px] font-medium text-gray-500">
+              키와 몸무게 중 하나만 입력해도 저장돼요. 같은 날짜에 다시 입력하면 그 날짜의 기록이 갱신됩니다.
+            </p>
+            {error && <p className="mt-2 text-[13px] font-bold text-red-600">{error}</p>}
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFormMode({ kind: "closed" })}
+                className="h-[48px] flex-1 rounded-xl bg-black/5 text-[14px] font-bold text-[var(--color-k-navy)]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={submitForm}
+                disabled={busy}
+                className="h-[48px] flex-[1.4] rounded-xl bg-[var(--color-k-orange)] text-[14px] font-bold text-white disabled:opacity-40"
+              >
+                {busy ? "저장 중…" : "저장"}
+              </button>
+            </div>
+          </section>
+        )}
+
         {/* 013 §3-8 — 아이가 대화에서 말한 값. 부모가 [반영]을 눌러야 공식 기록이 된다. */}
         {state.pendingCandidates.length > 0 && (
           <section className="mb-4 rounded-2xl border border-[var(--color-k-orange)]/30 bg-[#FFF7ED] p-4">
@@ -535,79 +611,6 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
           )}
         </section>
 
-        {/* 입력 폼 */}
-        {formMode.kind !== "closed" && (
-          <section className="mb-4 rounded-2xl border border-[var(--color-k-orange)]/40 bg-[#FFF9F2] p-4">
-            <h3 className="mb-3 text-[15px] font-bold text-[var(--color-k-navy)]">
-              {formMode.kind === "edit" ? "기록 수정" : "새 기록 추가"}
-            </h3>
-            <label className="block text-[13px] font-bold text-[#1F2937]" htmlFor="growth-measured-at">
-              측정일
-            </label>
-            <input
-              id="growth-measured-at"
-              type="date"
-              value={measuredAt}
-              max={today}
-              min={state.profile?.birthDate}
-              onChange={(event) => setMeasuredAt(event.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-[#10315B]/20 bg-white px-3 py-2.5 text-[15px] font-semibold text-[#1F2937] outline-none"
-            />
-            <div className="mt-3 flex gap-2">
-              <div className="flex-1">
-                <label className="block text-[13px] font-bold text-[#1F2937]" htmlFor="growth-height">
-                  키 (cm)
-                </label>
-                <input
-                  id="growth-height"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  value={heightInput}
-                  placeholder="예: 140.5"
-                  onChange={(event) => setHeightInput(event.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-[#10315B]/20 bg-white px-3 py-2.5 text-[15px] font-semibold text-[#1F2937] outline-none"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block text-[13px] font-bold text-[#1F2937]" htmlFor="growth-weight">
-                  몸무게 (kg)
-                </label>
-                <input
-                  id="growth-weight"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  value={weightInput}
-                  placeholder="예: 34.2"
-                  onChange={(event) => setWeightInput(event.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-[#10315B]/20 bg-white px-3 py-2.5 text-[15px] font-semibold text-[#1F2937] outline-none"
-                />
-              </div>
-            </div>
-            <p className="mt-2 text-[12px] font-medium text-gray-500">
-              키와 몸무게 중 하나만 입력해도 저장돼요. 같은 날짜에 다시 입력하면 그 날짜의 기록이 갱신됩니다.
-            </p>
-            {error && <p className="mt-2 text-[13px] font-bold text-red-600">{error}</p>}
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setFormMode({ kind: "closed" })}
-                className="h-[48px] flex-1 rounded-xl bg-black/5 text-[14px] font-bold text-[var(--color-k-navy)]"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={submitForm}
-                disabled={busy}
-                className="h-[48px] flex-[1.4] rounded-xl bg-[var(--color-k-orange)] text-[14px] font-bold text-white disabled:opacity-40"
-              >
-                {busy ? "저장 중…" : "저장"}
-              </button>
-            </div>
-          </section>
-        )}
 
         {error && formMode.kind === "closed" && (
           <p className="mb-3 text-[13px] font-bold text-red-600">{error}</p>
