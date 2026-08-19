@@ -18,6 +18,9 @@ export const LLM_MODEL_ROLES = {
   adminTextHealth: "gemini-3.5-flash",
   adminLiveHealth: "gemini-live-2.5-flash-native-audio",
   vacationEventDetection: "gemini-3.5-flash",
+  // 요청서 012 — 관계 안전 의미 판정(Shadow). 분류만 하므로 이 저장소에서 이미 쓰는
+  // 가장 가벼운 모델을 쓴다(신규 모델을 추측해 넣지 않는다).
+  relationshipSafetyJudge: "gemini-3.5-flash-lite",
 } as const;
 
 export type LlmModelRole = keyof typeof LLM_MODEL_ROLES;
@@ -42,6 +45,7 @@ export const LLM_ENV_KEYS: Record<LlmModelRole, string> = {
   adminTextHealth: "LLM_MODEL_ADMIN_TEXT_HEALTH",
   adminLiveHealth: "LLM_MODEL_ADMIN_LIVE_HEALTH",
   vacationEventDetection: "LLM_MODEL_VACATION_EVENT_DETECTION",
+  relationshipSafetyJudge: "LLM_MODEL_RELATIONSHIP_SAFETY_JUDGE",
 };
 
 /**

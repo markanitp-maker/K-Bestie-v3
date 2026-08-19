@@ -15,6 +15,22 @@ import { extractUtteranceSignals, estimateSemanticGroup } from "./utteranceSigna
 import { recordTopicUsage } from "./semanticTopicHistory";
 import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn } from "./responseGenerator";
 import { applyRelationshipSafety } from "./relationshipSafety";
+import { categoryForRule } from "./relationshipTaxonomy";
+import { assessRelationshipRisk } from "./relationshipRiskGate";
+import {
+  accumulatedRiskCategories,
+  getRelationshipHealth,
+  recordRelationshipSignals,
+} from "./relationshipHealthState";
+import {
+  isRelationshipJudgeShadowEnabled,
+  judgeRelationshipRisk,
+} from "./relationshipSemanticJudge";
+import {
+  logShadowTurn,
+  recordCandidate,
+  recordJudge,
+} from "./relationshipShadowTelemetry";
 import { normalizeSameSessionText, type SessionTurn } from "./memory/sameSession";
 import { classifyAndExtract, generateReflectiveReaction } from "@/lib/freechat/reactionEngine";
 import { routePlaySkillTurn } from "./play/skillRouter";
@@ -754,6 +770,7 @@ export async function respond(
   // 미션·자유대화 모두 적용한다 — 페르소나는 두 모드에서 동일해야 한다(§3-9).
   // 프롬프트 지침(RELATIONSHIP_SAFETY_INSTRUCTION)과 이 출력 검사를 함께 둔다.
   {
+    const candidateBeforeGuard = finalText;
     const relationshipVerdict = applyRelationshipSafety(finalText, input.recentKTexts ?? [], {
       mode: input.mode,
     });
@@ -765,6 +782,71 @@ export async function respond(
         blockedPreview: finalText.slice(0, 60),
       });
       finalText = relationshipVerdict.text;
+    }
+
+    // 11-1) 관계 안전 하이브리드 — Risk Gate + Shadow Judge (요청서 012).
+    //
+    // 정규식이 잡은 건 이미 위에서 막았다. 여기서 보는 것은 "정규식은 통과했지만 의미상
+    // 위험할 수 있는 응답"이다. 대부분의 턴은 게이트에서 SAFE 로 끝나 추가 호출이 없다(§3-5).
+    // Shadow 이므로 판정 결과로 아이 응답을 바꾸지 않는다(§3-6, §3-23) — Production 은 지금과 동일하다.
+    try {
+      const deterministicCategory = categoryForRule(relationshipVerdict.violationId);
+      const healthBefore = getRelationshipHealth(input.sessionId);
+      const gate = assessRelationshipRisk({
+        text: candidateBeforeGuard,
+        health: healthBefore,
+        deterministicViolation: relationshipVerdict.blocked,
+      });
+
+      recordCandidate(gate.level, relationshipVerdict.blocked);
+      recordRelationshipSignals(
+        input.sessionId,
+        relationshipVerdict.blocked && deterministicCategory
+          ? [deterministicCategory]
+          : gate.categories
+      );
+
+      let judgeLog: Parameters<typeof logShadowTurn>[0]["judge"];
+      if (
+        gate.level === "SUSPICIOUS" &&
+        !relationshipVerdict.blocked &&
+        isRelationshipJudgeShadowEnabled()
+      ) {
+        const judged = await judgeRelationshipRisk({
+          ai: deps.ai,
+          candidate: candidateBeforeGuard,
+          childUtterance: input.currentUtterance,
+          accumulatedCategories: accumulatedRiskCategories(healthBefore),
+          gateMarkers: gate.signals.map((signal) => signal.marker),
+        });
+        recordJudge({
+          safeToSend: judged.verdict?.safeToSend ?? null,
+          category: judged.verdict?.riskCategory ?? null,
+          latencyMs: judged.latencyMs,
+          error: judged.error,
+        });
+        judgeLog = {
+          safeToSend: judged.verdict?.safeToSend ?? null,
+          category: judged.verdict?.riskCategory ?? null,
+          severity: judged.verdict?.severity ?? null,
+          confidence: judged.verdict?.confidence ?? null,
+          latencyMs: judged.latencyMs,
+          error: judged.error,
+        };
+      }
+
+      logShadowTurn({
+        sessionId: input.sessionId,
+        mode: input.mode,
+        level: gate.level,
+        regexViolation: relationshipVerdict.blocked,
+        markers: gate.signals.map((signal) => signal.marker),
+        judge: judgeLog,
+        candidateLength: candidateBeforeGuard.length,
+      });
+    } catch (error) {
+      // 계측이 대화를 막지 않는다.
+      console.error("[k-conversation/index] 관계 안전 Shadow 계측 실패:", error);
     }
   }
 

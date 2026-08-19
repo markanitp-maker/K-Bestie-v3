@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { RELATIONSHIP_SAFETY_INSTRUCTION } from "./relationshipSafety";
 import { buildSystemInstruction, type ResponseGeneratorInput } from "./responseGenerator";
 import { resolveScenarioCard, buildScenarioCardFragment } from "@/lib/relationship/scenarioCard";
 
@@ -37,6 +38,8 @@ test("buildSystemInstruction — relationshipFragment가 없을 때 기존 출�
     "[지금 이 턴의 방향 - Action]",
     "아이의 감정을 있는 그대로 알아주는 공감 반응을 해.",
     "지금은 자유대화야 — 정보를 확보하거나 목표를 달성하려 하지 마. 아이가 하고 싶은 이야기를 하도록 그냥 함께해.",
+    // 요청서 013 §3-10 — 관계 안전 지침은 미션·자유대화 두 모드 공통으로 항상 들어간다.
+    RELATIONSHIP_SAFETY_INSTRUCTION,
     "[출력 규칙]",
     "- 자연스러운 반말 문장으로만 답해. 전체 길이는 반드시 80자 이내로 답해.",
     "- 물음표를 써도 되고 안 써도 돼 — Grade Persona의 question_style을 따라 자연스럽게 판단해.",
