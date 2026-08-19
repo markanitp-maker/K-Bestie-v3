@@ -35,6 +35,14 @@ function formatValue(value: number, unit: string): string {
   return `${value.toFixed(1)}${unit}`;
 }
 
+/** 후보가 언제 나온 말인지. 부모가 "언제 한 말인지" 만 알면 되므로 날짜까지만 보여준다. */
+function formatSpokenAt(spokenAt: string): string {
+  const date = new Date(spokenAt);
+  if (Number.isNaN(date.getTime())) return "최근";
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return `${kst.getUTCFullYear()}. ${kst.getUTCMonth() + 1}. ${kst.getUTCDate()}.`;
+}
+
 function PercentileLine({
   evaluation,
   unit,
@@ -149,6 +157,32 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
     }
   };
 
+  // 013 §3-9, §3-11 — 아이가 말한 값에 대한 부모 결정. 반영/무시 모두 갱신된 상태 전체를
+  // 돌려받아 카드·그래프·백분위가 함께 다시 그려진다.
+  const reviewCandidate = async (candidateId: string, decision: "confirm" | "dismiss") => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/parent/growth/${encodeURIComponent(childId)}/candidates/${encodeURIComponent(candidateId)}`,
+        decision === "confirm"
+          ? { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+          : { method: "DELETE" }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setError(typeof data?.error === "string" ? data.error : "처리하지 못했어요.");
+        return;
+      }
+      onStateChange(data as GrowthStateResponse);
+    } catch {
+      setError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const deleteMeasurement = async (measurementId: string) => {
     if (busy) return;
     setBusy(true);
@@ -172,6 +206,7 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
     }
   };
 
+  const childLabel = state.childName ?? "아이";
   const latestHeight = summary?.latestHeight ?? null;
   const latestWeight = summary?.latestWeight ?? null;
   const latestBmi = summary?.latestBmi ?? null;
@@ -197,6 +232,49 @@ export function GrowthDetailModal({ childId, state, onClose, onStateChange }: Pr
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {/* 013 §3-8 — 아이가 대화에서 말한 값. 부모가 [반영]을 눌러야 공식 기록이 된다. */}
+        {state.pendingCandidates.length > 0 && (
+          <section className="mb-4 rounded-2xl border border-[var(--color-k-orange)]/30 bg-[#FFF7ED] p-4">
+            <h3 className="text-[15px] font-bold text-[#9A3412]">새로운 성장정보가 있어요</h3>
+            <ul className="mt-3 space-y-3">
+              {state.pendingCandidates.map((candidate) => (
+                <li key={candidate.id} className="rounded-xl bg-white/80 p-3">
+                  <p className="text-[14px] font-semibold text-[#1F2937]">
+                    {childLabel}가 {candidate.measurementType === "height" ? "키" : "몸무게"}{" "}
+                    {candidate.value}
+                    {candidate.unit}
+                    라고 말했어요.
+                  </p>
+                  <p className="mt-1 text-[12px] font-medium text-gray-500">
+                    {formatSpokenAt(candidate.spokenAt)} 대화에서 확인했어요.
+                    {candidate.confidence === "low"
+                      ? " 아이가 확실하지 않게 말한 값이라 실제 값을 확인해 주세요."
+                      : ""}
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => reviewCandidate(candidate.id, "confirm")}
+                      className="flex-1 rounded-xl bg-[var(--color-k-orange)] py-2 text-[14px] font-bold text-white disabled:opacity-50"
+                    >
+                      반영
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => reviewCandidate(candidate.id, "dismiss")}
+                      className="flex-1 rounded-xl bg-black/5 py-2 text-[14px] font-bold text-[var(--color-k-navy)] disabled:opacity-50"
+                    >
+                      무시
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {!state.gender && (
           <p className="mb-4 rounded-2xl bg-[#FFF7ED] p-3 text-[13px] font-semibold text-[#C2410C]">

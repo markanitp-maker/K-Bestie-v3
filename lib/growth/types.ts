@@ -2,6 +2,7 @@
 // (lib/growth/service.ts 는 서버 전용 supabase 클라이언트를 import 하므로 화면에서 직접 쓰지 않는다.)
 
 import type { GrowthSex, GrowthSummary } from "./index";
+import type { PendingGrowthCandidate } from "./candidates";
 
 export interface GrowthProfileView {
   birthDate: string;
@@ -17,4 +18,9 @@ export interface GrowthStateResponse {
   gender: GrowthSex | null;
   childName: string | null;
   summary: GrowthSummary | null;
+  /**
+   * 아이가 대화에서 말한 값 중 부모가 아직 처리하지 않은 후보(요청서 013 §3-8).
+   * 공식 기록이 아니다 — 성장도표·BMI·백분위 계산에 들어가지 않는다(§5-2).
+   */
+  pendingCandidates: PendingGrowthCandidate[];
 }

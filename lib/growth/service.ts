@@ -46,6 +46,8 @@ export async function requireParentGrowthAccess(
   return { ok: true, child: { id: data.id, name: data.name ?? null, gender } };
 }
 
+import { listPendingGrowthCandidates } from "./candidates";
+
 export type { GrowthProfileView, GrowthStateResponse } from "./types";
 
 /** 성장 프로필과 측정 기록을 읽어 부모 화면이 쓰는 형태로 만든다. */
@@ -66,14 +68,20 @@ export async function loadGrowthState(
       gender: child.gender,
       childName: child.name,
       summary: null,
+      // 성장정보를 설정하지 않은 가정에는 후보를 만들지 않으므로 항상 비어 있다.
+      pendingCandidates: [],
     };
   }
 
-  const { data: measurements } = await supabase
-    .from("growth_measurements")
-    .select("id, measured_at, height_cm, weight_kg")
-    .eq("child_id", child.id)
-    .order("measured_at", { ascending: false });
+  // 측정 기록과 대기 후보를 함께 읽는다. 후보는 요약 계산에 넣지 않는다(§5-2).
+  const [{ data: measurements }, pendingCandidates] = await Promise.all([
+    supabase
+      .from("growth_measurements")
+      .select("id, measured_at, height_cm, weight_kg")
+      .eq("child_id", child.id)
+      .order("measured_at", { ascending: false }),
+    listPendingGrowthCandidates(supabase, child.id),
+  ]);
 
   // 성별이 없으면 공식 기준 비교가 불가능하다. 이 경우 측정값만 보여주고 비교는 하지 않는다.
   const summary = child.gender
@@ -99,5 +107,6 @@ export async function loadGrowthState(
     gender: child.gender,
     childName: child.name,
     summary,
+    pendingCandidates,
   };
 }

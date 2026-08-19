@@ -11,6 +11,9 @@ import { resolveGradePersona, buildGradePersonaFragment } from "./gradePersonas"
 import { loadRelationshipMemory, formatRelationshipMemory, type RelationshipMemorySnapshot } from "./memory";
 import { assessBoredom, buildBoredomUtterances } from "./boredomDetection";
 import { selectAction } from "./actionSelector";
+import { extractGrowthCandidates } from "@/lib/growth/utteranceExtraction";
+import { recordGrowthCandidates } from "@/lib/growth/candidates";
+import { resolveGrowthQuestionOpportunity } from "@/lib/growth/questionOpportunity";
 import { extractUtteranceSignals, estimateSemanticGroup } from "./utteranceSignals";
 import { recordTopicUsage } from "./semanticTopicHistory";
 import { generateResponse, type GenerateArgs, type ResponseGeneratorHistoryTurn } from "./responseGenerator";
@@ -285,6 +288,36 @@ export async function respond(
     input.currentUtterance,
     input.currentUtteranceAlreadyInSession === true,
   ));
+
+  // 4-1) 성장정보 후보 수집 (요청서 013 §3-3, §3-6).
+  //
+  // 아이가 키·몸무게를 말했으면 후보로만 쌓는다. 공식 성장기록은 부모가 [반영]을 눌렀을
+  // 때만 만들어진다(§5-1). Engine 은 아이에게 그 숫자를 평가해 주지 않고, 이 결과로
+  // 응답을 바꾸지도 않는다(§3-13, §3-18) — 저장만 하고 지나간다.
+  //
+  // 실패해도 대화를 막지 않는다. 성장정보는 부모 기능이고 아이 대화보다 뒤다.
+  try {
+    const growthCandidates = extractGrowthCandidates({
+      utterance: input.currentUtterance,
+      previousKUtterance: input.recentKTexts?.[input.recentKTexts.length - 1]
+        ?? memorySnapshot.sameSession.filter((turn) => turn.role === "k").at(-1)?.content
+        ?? null,
+    });
+    if (growthCandidates.length > 0) {
+      await recordGrowthCandidates({
+        db: deps.db,
+        childId: input.childId,
+        candidates: growthCandidates,
+        sourceType: input.mode === "MISSION"
+          ? "child_utterance_mission"
+          : "child_utterance_free_chat",
+        sourceSessionId: input.sessionId,
+        sourceMessageId: input.currentTurnId ?? null,
+      });
+    }
+  } catch (error) {
+    console.error("[k-conversation/index] 성장정보 후보 수집 실패:", error);
+  }
 
   // 5) 발화 의미 신호 추출(071 대표 시나리오 구분용 — reactionEngine의 성긴 10-카테고리 대신
   // 사용) + semantic_group 추정.
@@ -570,9 +603,24 @@ export async function respond(
     action = "FOLLOW_UP";
   }
 
+  // 013 §3-1, §3-2 — 아이가 먼저 키·몸무게 화제를 꺼냈고 최근 값이 없을 때만 문이 열린다.
+  // 신호가 없으면 DB 조회조차 하지 않으므로 대부분의 턴은 여기서 바로 빠져나간다.
+  let growthQuestionInstruction: string | undefined;
+  try {
+    const opportunity = await resolveGrowthQuestionOpportunity({
+      db: deps.db,
+      childId: input.childId,
+      utterance: input.currentUtterance,
+    });
+    growthQuestionInstruction = opportunity.instruction;
+  } catch (error) {
+    console.error("[k-conversation/index] 성장 질문 판정 실패:", error);
+  }
+
   const combinedAdapterInstruction = [
     playSkillInstruction,
     playProposalInstruction,
+    growthQuestionInstruction,
     deps.adapterInstruction,
   ]
     .filter(Boolean)
