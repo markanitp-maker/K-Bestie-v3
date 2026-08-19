@@ -13,9 +13,10 @@ import { DICTIONARY_PART3 } from "./dictionary.part3";
 import { DICTIONARY_PART4 } from "./dictionary.part4";
 import { DICTIONARY_PART5 } from "./dictionary.part5";
 import { DICTIONARY_PART6 } from "./dictionary.part6";
+import { DICTIONARY_PART7 } from "./dictionary.part7";
 
 describe("WordChain DictionaryIndex", () => {
-  it("WORD_CHAIN_DICTIONARY는 part1~part6 합본이며 각 Part 개수가 유지된다", () => {
+  it("WORD_CHAIN_DICTIONARY는 part1~part7 합본이며 각 Part 개수가 유지된다", () => {
     assert.equal(DICTIONARY_PART1.length, 284);
     assert.equal(DICTIONARY_PART2.length, 380);
     assert.equal(DICTIONARY_PART3.length, 380);
@@ -24,15 +25,19 @@ describe("WordChain DictionaryIndex", () => {
     assert.equal(DICTIONARY_PART5.length, 36);
     // Part6 은 010 §3-2 실사용 누락어 보강분("도둑", "밥도둑" 등)이다.
     assert.equal(DICTIONARY_PART6.length, 60);
+    // Part7 은 010 §3-3 "dictionary 전체 기준으로 빠진 기본어 정리" 잔여분이다.
+    // 초등 일상어 80개를 표본 대조해 실제로 없던 것만 넣었다(중복 21개는 제외).
+    assert.equal(DICTIONARY_PART7.length, 16);
     const expected =
       DICTIONARY_PART1.length +
       DICTIONARY_PART2.length +
       DICTIONARY_PART3.length +
       DICTIONARY_PART4.length +
       DICTIONARY_PART5.length +
-      DICTIONARY_PART6.length;
+      DICTIONARY_PART6.length +
+      DICTIONARY_PART7.length;
     assert.equal(WORD_CHAIN_DICTIONARY.length, expected);
-    assert.equal(WORD_CHAIN_DICTIONARY.length, 1500);
+    assert.equal(WORD_CHAIN_DICTIONARY.length, 1516);
   });
 
   it("015: 실사용에서 거절당한 기본어가 사전에 있다", () => {

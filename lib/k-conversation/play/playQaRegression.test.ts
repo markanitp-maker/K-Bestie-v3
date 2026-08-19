@@ -373,3 +373,40 @@ test("010: 놀이를 시작한다고 선언만 하는 것도 엔진이 안 내�
   assert.equal(hasUnauthorizedGameMove("우리 끝말잇기 계속하자."), false);
   assert.equal(hasUnauthorizedGameMove("초성게임이랑 끝말잇기 중에 뭐 할래?"), false);
 });
+
+// ── 010 §3-8 불만 후 게임 강제 재시작 금지 ────────────────────
+test("010 §3-8: 지시서에 적힌 실측 사례가 차단된다", async () => {
+  const { detectFakeGameplay, hasUnauthorizedGameMove } = await import(
+    "../play/fakeGameplayDetector"
+  );
+  // 지시서 §3-8 실측 사례:
+  //   아이: "어떻게 놀이를 하면 되는지부터 학습하고..."
+  //   케이: "미안해. 내가 먼저 시작할게. 유부초밥!"
+  // 게임 이름도 없고 단어에 따옴표도 없어서 두 탐지기를 모두 빠져나가고 있었다.
+  // 원인은 구분자 문자셋에 마침표가 없던 것이었다(2026-08-19 확인).
+  for (const text of [
+    "미안해. 내가 먼저 시작할게. 유부초밥!",
+    "내가 먼저 시작할게, 사과!",
+    "케이가 먼저 시작할게",
+  ]) {
+    const blocked = detectFakeGameplay(text).isFake || hasUnauthorizedGameMove(text);
+    assert.equal(blocked, true, `무단 재시작이 통과한다: ${text}`);
+  }
+});
+
+test("010 §3-8: 게임과 무관한 '먼저' 표현은 막지 않는다", async () => {
+  const { detectFakeGameplay, hasUnauthorizedGameMove } = await import(
+    "../play/fakeGameplayDetector"
+  );
+  // "할게"·"갈게" 까지 잡으면 평범한 말이 막혀 케이가 엉뚱한 복구 멘트를 낸다.
+  for (const text of [
+    "내가 먼저 말할게",
+    "내가 먼저 갈게. 준비됐어?",
+    "내가 먼저 할게",
+    "내가 도와줄게",
+    "우리 끝말잇기 계속하자.",
+  ]) {
+    const blocked = detectFakeGameplay(text).isFake || hasUnauthorizedGameMove(text);
+    assert.equal(blocked, false, `정상 발화가 막힌다: ${text}`);
+  }
+});
