@@ -33,10 +33,16 @@ export function stopPlayIframe(iframe: HTMLIFrameElement | null) {
 }
 
 /** iframe 안 놀이 앱이 스스로 종료를 요청할 때 쓰는 메시지 계약(SPEC.md §5). */
-export function isPlayCloseMessage(event: MessageEvent, origin: string, messageSource: string): boolean {
+export function isPlayCloseMessage(event: MessageEvent, origin: string, messageSource: string | string[]): boolean {
   if (event.origin !== origin) return false;
   const data = event.data as { type?: unknown; source?: unknown } | null;
-  if (!data || typeof data !== "object" || data.source !== messageSource) return false;
+  const messageSources = Array.isArray(messageSource) ? messageSource : [messageSource];
+  if (
+    !data
+    || typeof data !== "object"
+    || typeof data.source !== "string"
+    || !messageSources.includes(data.source)
+  ) return false;
   return data.type === "PLAY_AUTO_CLOSE" || data.type === "PLAY_CLOSE_REQUEST";
 }
 
@@ -59,7 +65,7 @@ export function PlayFrame({
   src: string;
   sandbox: string;
   /** postMessage로 자체 종료를 요청하는 놀이만 지정한다. 없으면 리스너를 걸지 않는다. */
-  messageSource?: string;
+  messageSource?: string | string[];
   hideInnerHeaderCss?: boolean;
 }) {
   const router = useRouter();

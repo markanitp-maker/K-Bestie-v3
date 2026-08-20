@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isKPlayEnabled } from "./playAvailability";
+import { isKPlayEnabled, isComicBookEnabled } from "./playAvailability";
 import { executeSkillSelection, buildPlaySkillsCatalogDto } from "./playSelection";
 import { routePlaySkillTurn } from "./skillRouter";
 import { decidePlayProposal } from "./playProposal";
@@ -113,6 +113,44 @@ test("1. isKPlayEnabled: 환경 및 탈출구 플래그 검증", async () => {
   });
   await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_K_PLAY_ENABLED: "false" }, () => {
     assert.equal(isKPlayEnabled(), false, "false는 비활성화 유지");
+  });
+});
+
+test("1-1. isComicBookEnabled: 환경 및 탈출구 플래그 검증", async () => {
+  // prod + 미설정 -> false
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_COMIC_BOOK_ENABLED: undefined }, () => {
+    assert.equal(isComicBookEnabled(), false, "prod 환경에서는 기본적으로 비활성화");
+  });
+
+  // dev + 미설정 -> true
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "dev", NEXT_PUBLIC_COMIC_BOOK_ENABLED: undefined }, () => {
+    assert.equal(isComicBookEnabled(), true, "dev 환경에서는 기본적으로 활성화");
+  });
+
+  // target 미설정 + 미설정 -> true
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: undefined, NEXT_PUBLIC_COMIC_BOOK_ENABLED: undefined }, () => {
+    assert.equal(isComicBookEnabled(), true, "미설정 시 dev로 폴백되어 활성화");
+  });
+
+  // prod + "true" -> true
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_COMIC_BOOK_ENABLED: "true" }, () => {
+    assert.equal(isComicBookEnabled(), true, "prod에서도 탈출구 env가 true면 활성화");
+  });
+
+  // dev + "false" -> false
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "dev", NEXT_PUBLIC_COMIC_BOOK_ENABLED: "false" }, () => {
+    assert.equal(isComicBookEnabled(), false, "dev에서도 false면 비활성화 (긴급 차단)");
+  });
+
+  // prod + TRUE / ' true ' 등 대소문자/공백 허용
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_COMIC_BOOK_ENABLED: "TRUE" }, () => {
+    assert.equal(isComicBookEnabled(), true, "대문자 TRUE 허용");
+  });
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_COMIC_BOOK_ENABLED: "  true  " }, () => {
+    assert.equal(isComicBookEnabled(), true, "공백 포함 true 허용");
+  });
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "dev", NEXT_PUBLIC_COMIC_BOOK_ENABLED: "  FALSE  " }, () => {
+    assert.equal(isComicBookEnabled(), false, "공백 포함 FALSE 비활성화");
   });
 });
 
