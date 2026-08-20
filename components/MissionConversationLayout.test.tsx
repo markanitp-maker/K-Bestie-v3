@@ -114,7 +114,12 @@ test("녹음 상태가 남아 있어도 텍스트 모드에서는 K 상태 뱃�
   assert.equal(badge.getAttribute("data-keyboard-open"), "true");
   assert.match(badge.textContent ?? "", /대기 중/);
   assert.doesNotMatch(badge.textContent ?? "", /듣고 있어/);
-  assert.match(icon?.getAttribute("class") ?? "", /h-\[clamp\(40px,10\.5vw,46px\)\]/);
+  // 073(3a5c4d4)에서 기준이 뷰포트(10.5vw)에서 프레임 폭(--frame-w)으로 바뀌었다.
+  // Preview 와 실기기가 같은 기준으로 반응하게 하려는 의도적 변경이라 단언을 따라 올린다.
+  assert.match(
+    icon?.getAttribute("class") ?? "",
+    /h-\[clamp\(40px,calc\(var\(--frame-w,100vw\)\*0\.105\),46px\)\]/,
+  );
   assert.equal(container.querySelector('button[aria-label="채팅창 닫기"]'), null);
   assert.match(statusPanel?.getAttribute("class") ?? "", /h-\[clamp\(68px,10dvh,84px\)\]/);
 

@@ -4,6 +4,7 @@ import { after, afterEach, before, mock, test } from "node:test";
 import { createRequire } from "node:module";
 import React, { act, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { BUILD_STAMP } from "@/lib/pwa/buildStamp";
 
 const projectRequire = createRequire(import.meta.url);
 const sandboxRequire = createRequire("/tmp/p0-real-repro-jsdom-runtime/package.json");
@@ -184,7 +185,12 @@ const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) =
     return createResponse({ messages: [] });
   }
   if (url === "/api/client-version" && (init?.method ?? "GET") === "GET") {
-    return createResponse({ buildId: "local" });
+    // 서버가 클라이언트와 **같은** 빌드를 돌려준다는 뜻이다. 리터럴을 박으면 안 된다 —
+    // 예전엔 `"local"` 이었는데 f144dd0 이 clientVersionGate 의 "local 이면 통과" 예외를
+    // 없애면서(CLI 배포에서 갱신 검사가 무력화되던 경로) 이 mock 만 남아 어긋났다.
+    // 그 뒤로 이 파일의 테스트 4건은 미션 화면이 아니라 "미션 상태를 확인하지 못했어요"
+    // 오류 화면만 보고 있었다 — 통과할 리 없고, 통과했어도 아무것도 검증하지 않는다.
+    return createResponse({ buildId: BUILD_STAMP });
   }
   if (url === "/api/client-version") return createResponse({ ok: true });
   return createResponse({ ok: true });
