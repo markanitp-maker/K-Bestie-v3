@@ -480,8 +480,9 @@ export default function ParentGuidePage() {
     startListening();
   };
 
-  const handleVoiceModeToggle = () => {
-    if (voiceModeRef.current === "hands-free") {
+  const handleVoiceModeSelect = (mode: KVoiceMode) => {
+    if (voiceModeRef.current === mode) return;
+    if (mode === "typing") {
       stopHandsFree();
       return;
     }
@@ -1024,16 +1025,40 @@ export default function ParentGuidePage() {
           )}
           {isSttSupported && (
             <div className="flex justify-center mb-2">
-              <button
-                type="button"
-                onClick={handleVoiceModeToggle}
-                disabled={!childId || (isLoading && voiceMode !== "hands-free")}
-                aria-pressed={voiceMode === "hands-free"}
-                aria-label={voiceMode === "hands-free" ? "핸즈프리 모드 끄기" : "핸즈프리 모드 켜기"}
-                className="min-h-9 px-4 rounded-full bg-gray-100 text-xs font-medium text-gray-700 disabled:opacity-50"
+              <div
+                role="group"
+                aria-label="입력 모드 선택"
+                className="inline-flex rounded-full bg-gray-100 p-1 gap-1"
               >
-                {voiceMode === "hands-free" ? "🎤 핸즈프리" : "⌨️ 타이핑"}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleVoiceModeSelect("typing")}
+                  disabled={!childId || (isLoading && voiceMode !== "hands-free")}
+                  aria-pressed={voiceMode === "typing"}
+                  aria-label="타이핑 모드"
+                  className={`min-h-9 px-4 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
+                    voiceMode === "typing"
+                      ? "bg-[var(--color-k-navy)] text-white shadow-sm"
+                      : "bg-transparent text-gray-600"
+                  }`}
+                >
+                  ⌨️ 타이핑
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleVoiceModeSelect("hands-free")}
+                  disabled={!childId || (isLoading && voiceMode !== "hands-free")}
+                  aria-pressed={voiceMode === "hands-free"}
+                  aria-label="핸즈프리 모드"
+                  className={`min-h-9 px-4 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
+                    voiceMode === "hands-free"
+                      ? "bg-[var(--color-k-navy)] text-white shadow-sm"
+                      : "bg-transparent text-gray-600"
+                  }`}
+                >
+                  🎤 핸즈프리
+                </button>
+              </div>
             </div>
           )}
           {handsFreeNotice && (
