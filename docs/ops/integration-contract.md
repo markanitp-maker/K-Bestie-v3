@@ -12,7 +12,7 @@ created: 2026-08-20
 
 ## 0. 작성 근거
 
-전 항목이 **2026-08-20 READ-ONLY 실행 경로 조사**와 확정된 `K-Toon/docs/PRD.md`·`K-Toon/docs/test-spec.md` 에 기반한다.
+전 항목이 **2026-08-20 READ-ONLY 실행 경로 조사**와 확정된 `K-Toon/.omc/plans/prd-k-toon.md`·`K-Toon/.omc/plans/test-spec-k-toon.md` 에 기반한다.
 
 ⛔ **다음 모듈은 저장소 전체에서 호출자 0건인 죽은 코드다. 계약 근거로 사용하지 않는다.**
 - `lib/play/progressState.ts` (`buildProgressState`, `saveProgressWithVersionCas`)
