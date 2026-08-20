@@ -24,6 +24,7 @@ import {
   finishQuestionRound,
   endNonsenseSession,
 } from "./sessionManager";
+import { topicParticle } from "../../utils/koreanParticle";
 import {
   classifyChildNonsenseUtterance,
   validateNonsenseAnswer,
@@ -79,7 +80,7 @@ function buildHintText(
   if (!hintText) return null;
 
   const lead = wrongAnswer
-    ? `아쉽다, "${wrongAnswer.trim()}"는 아니야!`
+    ? `아쉽다, "${wrongAnswer.trim()}"${topicParticle(wrongAnswer)} 아니야!`
     : level === 1
       ? "좋아, 힌트 줄게!"
       : "하나 더 알려줄게!";

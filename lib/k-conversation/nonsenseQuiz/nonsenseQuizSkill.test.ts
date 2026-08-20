@@ -543,7 +543,7 @@ test("NonsenseQuizSkill: handleTurn 힌트 요청 시 힌트 제공 및 정답 �
   assert.equal(turnResult.instruction?.includes(mockQuestion.canonical_answer), false);
 });
 
-test("NonsenseQuizSkill: handleTurn 정답 공개 요청 시 정답 공개 및 다음 문제 준비", async () => {
+test("NonsenseQuizSkill: 실측 '정답이 뭐야?'는 세션을 끝내지 않고 정답 공개 후 다음 문제 진행", async () => {
   const { db } = createMockDb([mockQuestion, mockNextQuestion]);
 
   await NONSENSE_QUIZ_SKILL.start({
@@ -560,14 +560,19 @@ test("NonsenseQuizSkill: handleTurn 정답 공개 요청 시 정답 공개 및 �
     childId: "child-1",
     chatSessionId: "chat-1",
     gradeRaw: 2,
-    utterance: "정답 알려줘",
-    signals: defaultSignals,
+    utterance: "정답이 뭐야?",
+    signals: {
+      ...defaultSignals,
+      hasGeneralKnowledgeQuestion: true,
+      hasChosungAnswerRequest: true,
+    },
   });
 
   assert.equal(turnResult.handled, true);
   assert.equal(turnResult.ended, false);
   assert.ok(turnResult.instruction?.includes("정답 공개"));
   assert.ok(turnResult.instruction?.includes(mockQuestion.canonical_answer));
+  assert.ok(turnResult.instruction?.includes(mockNextQuestion.question));
 });
 
 test("NonsenseQuizSkill: Topic Shift 발생 시 오답 처리 없이 세션 종료 및 handled: false", async () => {

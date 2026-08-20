@@ -171,6 +171,7 @@ export async function runChosungTurn(
         return {
           handled: true,
           instruction: `[초성게임] 아이가 정답 "${correctWord}"를 맞혔어. 칭찬하고 다음 문제 초성 "${nextChosung}"를 내줘. 정답 단어는 절대 말하지 마.\n- **문제만 내고 힌트는 주지 마.** 힌트는 아이가 물어보거나 틀렸을 때만 준다.`,
+          deterministicText: `맞았어! 정답은 "${correctWord}"야. 다음 문제 초성은 "${nextChosung}"이야. 뭘까?`,
           requiredChosungInOutput: nextChosung || undefined,
         };
       } else {

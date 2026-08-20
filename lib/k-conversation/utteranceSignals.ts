@@ -480,8 +480,26 @@ const PLAY_STOP_PATTERNS = [
   ),
 ];
 
+// 여러 낱말로 된 구절은 사전 낱말이 될 수 없으므로 문장 어디에 있어도 진행 지시로 본다.
+//
+// 2026-08-20 실측: 아이가 `맨날 똑같은 질문이니? 다른거 없어?` 라고 했는데
+// 발화 전체 일치만 보다 놓쳤고, 케이가 "그만하고 다른 거 할까?" 로 오해했다.
+// 아이: "헐… 누가 그만하래? 새로운 문제를 내라는거지"
+//
+// `없어`/`있어`/`줘` 를 요구하므로 `계속기`·`가자미` 같은 단일 낱말과는 겹치지 않는다.
+//
+// **문장 끝에 올 때만** 잡는다. 문장 어디서나 잡으면 아이가 화제를 바꾸는 말까지
+// 삼킨다(리뷰 지적, 실측): `다른 거 없어? 배고파`, `새로운 질문 있어? 숙제가 뭐야?`
+// 여기서 아이는 놀이를 이어가자는 게 아니라 다른 얘기를 꺼낸 것이다.
+const PLAY_CONTINUE_PHRASE_PATTERNS: readonly RegExp[] = [
+  // 아이는 재촉할 때 같은 말을 덧붙인다: `다른거 없어? 다른거!`
+  // 그래서 뒤에 같은 요청의 반복·재촉만 더 붙는 것은 허용한다.
+  /(?:다른|새로운|딴)\s*(?:거|것|문제|질문)\s*(?:없어|없나|없니|있어|줘|주라|내줘|내봐)(?:[!?.~^ㅋㅎ\s]*(?:다른|새로운|딴)\s*(?:거|것|문제|질문)?|[!?.~^ㅋㅎ\s]*(?:빨리|어서|좀|얼른))*[!?.~^ㅋㅎ\s]*$/,
+  /(?:다른|새로운|딴)\s*(?:문제|질문)(?:을|를)?\s*(?:내|줘|주라|해줘)(?:[!?.~^ㅋㅎ\s]*(?:빨리|어서|좀|얼른))*[!?.~^ㅋㅎ\s]*$/,
+];
+
 // 017 §3-2 — 낱말 일부를 삼키지 않도록 발화 전체가 진행 지시일 때만 true.
-const PLAY_CONTINUE_PATTERN = /^(?:ㄱㄱ(?:ㅆ)?|고고|가자|계속|계속\s*해|계속\s*하자|진행|진행\s*해|진행\s*해줘|이어서|이어서\s*해|이어서\s*하자|이어\s*해|다음|다음\s*문제|그\s*다음|또|또\s*해|또\s*하자|하나\s*더)[!?.~^ㅋㅎ\s]*$/;
+const PLAY_CONTINUE_PATTERN = /^(?:ㄱㄱ(?:ㅆ)?|고고|가자|계속|계속\s*해|계속\s*하자|진행|진행\s*해|진행\s*해줘|이어서|이어서\s*해|이어서\s*하자|이어\s*해|다음|다음\s*문제|그\s*다음|또|또\s*해|또\s*하자|하나\s*더|(?:다른|새로운)\s*(?:거|문제)\s*없어)[!?.~^ㅋㅎ\s]*$/;
 
 const CHOSUNG_REPEAT_QUESTION_PATTERNS: readonly RegExp[] = [
   /^(?:아까\s*)?초성(?:이)?\s*(?:뭐였지|뭐야|뭐였더라|다시)(?:\s*알려줘)?[!?.~^\s]*$/,
@@ -549,7 +567,9 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
   const hasChosungAnswerRequest = detectChosungAnswerRequest(trimmed);
   const hasChosungNextQuestion = detectChosungNextQuestion(trimmed);
   const hasChosungRepeatQuestion = CHOSUNG_REPEAT_QUESTION_PATTERNS.some((pattern) => pattern.test(trimmed));
-  const hasPlayContinue = PLAY_CONTINUE_PATTERN.test(trimmed);
+  const hasPlayContinue =
+    PLAY_CONTINUE_PATTERN.test(trimmed) ||
+    PLAY_CONTINUE_PHRASE_PATTERNS.some((pattern) => pattern.test(trimmed));
   const hasChosungHintRequest = !hasChosungAnswerRequest && detectChosungHintRequest(trimmed);
   const hasChosungAnswerAttempt = detectChosungAnswerAttempt(
     trimmed,

@@ -38,6 +38,17 @@ export function topicParticle(word: string): string {
   return info?.hasJongseong ? "은" : "는";
 }
 
+/**
+ * 이라고/라고 — 받침이 있으면 "이라고".
+ *
+ * 2026-08-20 Dev QA 실측: 케이가 `내가 "땀"라고 들었는데` 라고 말했다.
+ * 받침 있는 낱말에 `라고` 를 붙여서 아이가 읽기에 어색하다.
+ */
+export function quotativeParticle(word: string): string {
+  const info = getJongseong(word);
+  return info?.hasJongseong ? "이라고" : "라고";
+}
+
 /** 이/가 — 받침이 있으면 "이". */
 export function subjectParticle(word: string): string {
   const info = getJongseong(word);

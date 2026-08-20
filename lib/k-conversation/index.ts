@@ -705,7 +705,7 @@ export async function respond(
   }
 
   // Topic Shift 시 Pending Proposal 정리
-  if (action === "TOPIC_SHIFT" && input.sessionId) {
+  if (action === "TOPIC_SHIFT" && input.sessionId && !signals.hasPlayStop && !signals.hasPlayRejection) {
     await clearPendingPlayProposal(input.sessionId, deps.db);
   }
 
@@ -714,6 +714,8 @@ export async function respond(
   if (
     input.mode !== "MISSION" &&
     !playSkillHandled &&
+    !signals.hasPlayStop &&
+    !signals.hasPlayRejection &&
     (action === "PLAY_PROPOSAL" || signals.hasPlayRequestWithoutTarget)
   ) {
     try {
