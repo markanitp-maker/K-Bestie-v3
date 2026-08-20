@@ -326,6 +326,35 @@ real violation would be invisible inside the noise. Both readings are wrong.
   list`-independent snapshot before dispatch, or review each worker's diff by file ownership you
   assigned in the brief.
 
+### 4b-7. The worker silently reverted the orchestrator's own uncommitted edit
+
+**Measured 2026-08-21.** While reviewing a merge, the orchestrator edited `package.json`
+in the working tree to register a new test file that the implementer had forgotten to wire
+into `npm test`. A worker was dispatched into that **same directory** a few minutes later
+for an unrelated two-line change. When it returned, `package.json` no longer contained the
+edit and `git status` reported the file **unmodified** — the change was gone, not conflicted.
+
+The worker's own report listed `touched files: 3`, and `package.json` was not among them.
+So the report was not lying about what it *meant* to change; the loss simply never appeared
+in its accounting. That is the same blind spot as 4b-6, seen from the other side: there, the
+worker's list was too long; here, it was too short.
+
+The mechanism was not captured. A worker that runs `git checkout .`, `git restore <path>`,
+or `git stash` to get a clean state before working will do this, and there is no way to tell
+after the fact. Treat the mechanism as unknown and the outcome as expected.
+
+- **Never leave an uncommitted orchestrator edit in a directory you are about to dispatch
+  into.** Commit it first, or make the edit after the worker returns. Uncommitted work in a
+  shared tree has no owner the worker can recognize.
+- **When you must dispatch anyway, say so in the brief**, naming the files:
+  `"이 워크트리에는 다른 작업의 미커밋 변경(...)이 이미 있다. 되돌리거나 git checkout /
+  git stash 하지 마라. 네 변경만 얹어라."` This is cheap and costs one line.
+- **Re-verify your own edits after every run**, not just the worker's. `git status --short`
+  plus one `grep` for the thing you added. The orchestrator's edits are exactly the ones
+  nobody else is checking.
+- The cost here was near-invisible: the test-registration fix silently reverted to the
+  original defect (4b-2), and the gate would have gone green because the test still never ran.
+
 ### 4c. A wrong report can still contain a real finding
 
 The stale run above reported the fabrication guard failing. The run was invalid, but the finding
