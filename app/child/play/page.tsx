@@ -574,50 +574,86 @@ export default function ChildPlayPage() {
                   </button>
                 );
               })()}
+
+              {/* 만화책 읽기 */}
+              {(() => {
+                const game = GAMES.find(g => g.id === "comic_book")!;
+                if (game.comingSoon) return null;
+                const locked = goldKeyBalance !== null && goldKeyBalance < game.keys;
+                return (
+                  <button
+                    key={game.id}
+                    onClick={() => handleGameClick(game)}
+                    className="flex flex-col rounded-[17px] p-2.5 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5 min-h-[112px] max-h-[138px]"
+                    style={{ background: "var(--color-k-orange-tint)" }}
+                    aria-label={`만화책 읽기, 황금열쇠 ${game.keys}개 필요`}
+                  >
+                    <div className="flex justify-between items-start w-full">
+                      <div className="w-[44px] h-[44px] rounded-[12px] flex items-center justify-center text-[26px] bg-white shadow-sm shrink-0">
+                        {game.icon}
+                      </div>
+                      <div className="bg-white px-2 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 shadow-sm shrink-0" style={{ color: "var(--color-k-navy)" }}>
+                        {goldKeyBalance === null ? (
+                          <div className="w-[40px] h-[12px] bg-gray-200 rounded animate-pulse" />
+                        ) : (
+                          <>{locked ? "🔒" : "🔑"} {game.keys}개 필요</>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-1.5">
+                      <h3 className="font-bold text-[15px] leading-[1.25] truncate" style={{ color: "var(--color-k-navy)" }}>{game.title}</h3>
+                      <p className="text-[11px] leading-[1.3] mt-0.5 line-clamp-2" style={{ color: "var(--color-k-text-secondary)" }}>케이가 읽어주는 만화책,<br />같이 보러 갈까?</p>
+                    </div>
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
           {/* 곧 만나요 (046: 카드 소형화) */}
-          <div className="mt-4">
-            <h2 className="text-[18px] font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>곧 만나요</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {/* 만화책 읽기 */}
-              {(() => {
-                const game = GAMES.find(g => g.id === "comic_book")!;
-                return (
-                  <div
-                    key={game.id}
-                    className="flex flex-col justify-center items-center rounded-[16px] p-2 shadow-sm border border-black/5 opacity-70 min-h-[82px] max-h-[96px]"
-                    style={{ background: "var(--color-warm-neutral-100)" }}
-                  >
-                    <div className="text-xl mb-1 grayscale">{game.icon}</div>
-                    <h3 className="font-bold text-[12px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
-                    <div className="bg-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
-                      준비 중
+          {GAMES.some(g => g.comingSoon) && (
+            <div className="mt-4">
+              <h2 className="text-[18px] font-bold mb-2" style={{ color: "var(--color-k-navy)" }}>곧 만나요</h2>
+              <div className="grid grid-cols-2 gap-2">
+                {/* 만화책 읽기 */}
+                {(() => {
+                  const game = GAMES.find(g => g.id === "comic_book")!;
+                  if (!game.comingSoon) return null;
+                  return (
+                    <div
+                      key={game.id}
+                      className="flex flex-col justify-center items-center rounded-[16px] p-2 shadow-sm border border-black/5 opacity-70 min-h-[82px] max-h-[96px]"
+                      style={{ background: "var(--color-warm-neutral-100)" }}
+                    >
+                      <div className="text-xl mb-1 grayscale">{game.icon}</div>
+                      <h3 className="font-bold text-[12px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
+                      <div className="bg-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
+                        준비 중
+                      </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
-              {/* 헤어스타일 */}
-              {(() => {
-                const game = GAMES.find(g => g.id === "hairstyle")!;
-                return (
-                  <div
-                    key={game.id}
-                    className="flex flex-col justify-center items-center rounded-[16px] p-2 shadow-sm border border-black/5 opacity-70 min-h-[82px] max-h-[96px]"
-                    style={{ background: "var(--color-warm-neutral-100)" }}
-                  >
-                    <div className="text-xl mb-1 grayscale">{game.icon}</div>
-                    <h3 className="font-bold text-[12px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
-                    <div className="bg-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
-                      준비 중
+                {/* 헤어스타일 */}
+                {(() => {
+                  const game = GAMES.find(g => g.id === "hairstyle")!;
+                  return (
+                    <div
+                      key={game.id}
+                      className="flex flex-col justify-center items-center rounded-[16px] p-2 shadow-sm border border-black/5 opacity-70 min-h-[82px] max-h-[96px]"
+                      style={{ background: "var(--color-warm-neutral-100)" }}
+                    >
+                      <div className="text-xl mb-1 grayscale">{game.icon}</div>
+                      <h3 className="font-bold text-[12px] mb-1" style={{ color: "var(--color-k-text-secondary)" }}>{game.title}</h3>
+                      <div className="bg-white px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm" style={{ color: "var(--color-k-text-secondary)" }}>
+                        준비 중
+                      </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 하단 케이 마스코트 + 미션 CTA (046: absolute/fixed 제거 - 자연스러운 문서 흐름으로 이동해
               "곧 만나요"와 CTA 사이의 큰 고정 공백을 제거. 마스코트가 잘리지 않도록 실제 크기로 표시 */}
