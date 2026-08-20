@@ -216,8 +216,12 @@ export async function finishQuestionRound(
   const nowStr = new Date().toISOString();
 
   // 1. 이력 outcome 및 answered_at 갱신
+  //
+  // error 를 안 보면 이력 마감이 실패해도 다음 문제로 넘어간다. 그러면 직전 문제가
+  // PRESENTED 로 남아 180일 중복 필터가 그 문제를 "아직 안 낸 것" 으로 보고 또 낸다
+  // (리뷰 지적, 2026-08-20). 마감이 안 됐으면 전환을 멈춘다.
   try {
-    await db
+    const { error } = await db
       .from("nonsense_question_history")
       .update({
         outcome,
@@ -228,8 +232,12 @@ export async function finishQuestionRound(
       .eq("game_session_id", sessionId)
       .eq("question_id", questionId)
       .eq("child_id", childId);
+    if (error) {
+      throw new Error(`넌센스 라운드 이력 마감 실패: ${error.message}`);
+    }
   } catch (err) {
     console.error("[finishQuestionRound] history update error:", err);
+    throw err;
   }
 
   // 2. 세션 상태 전이

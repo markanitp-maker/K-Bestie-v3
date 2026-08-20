@@ -177,9 +177,25 @@ export function detectWordChainStart(text: string): boolean {
  * 명시적 게임 중단 발화 패턴.
  */
 const EXPLICIT_STOP_PATTERNS = [
-  /(?:끝말잇기|게임|놀이)?\s*(?:그만|안\s*할래|안해|그만하자|그만할래|끝낼래|안\s*놀래|하기\s*싫어|포기|항복|너\s*이겼어)/,
-  /^(?:그만|그만해|끝|안해|안\s*해|싫어|포기|항복)$/,
+  /^(?:(?:끝말\s*잇기|게임|놀이)(?:은|는|을|를)?\s*)?(?:이제\s*)?(?:그만|그만\s*해|그만\s*하자|그만\s*할래|안\s*할래|안\s*해|끝|끝낼래|안\s*놀래|하기\s*싫어|포기|항복|너\s*이겼어)[!?.~^ㅋㅎ\s]*$/,
 ];
+
+/**
+ * 세션 상태에서 만든 결정론적 난수원.
+ *
+ * 케이가 매번 같은 1순위를 내면 아이가 "아까 그 단어잖아" 하게 된다. 그렇다고
+ * `Math.random` 을 쓰면 같은 상태에서 결과가 달라져 테스트가 흔들린다.
+ * 판이 진행될 때마다(쓴 낱말 수가 늘 때마다) 값이 바뀌면 그걸로 충분하다.
+ */
+function makeSessionRandom(sessionId: string, usedCount: number): () => number {
+  let h = 2166136261 ^ usedCount;
+  for (let i = 0; i < sessionId.length; i += 1) {
+    h ^= sessionId.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const value = ((h >>> 0) % 100000) / 100000;
+  return () => value;
+}
 
 function isExplicitStop(text: string): boolean {
   const trimmed = text.trim();
@@ -672,7 +688,10 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       }
 
       // 2. 안전/감정/명시적 중단/주제 전환 프리플라이트 (§3-22, §5)
-      if (isExplicitStop(utterance)) {
+      // 공통 종료 신호를 우선 본다. 로컬 정규식만 쓰면 `"그만 하고 싶어"`,
+      // `"안 할래 이제"` 처럼 공통 신호가 잡는 표현을 끝말잇기만 놓쳐서
+      // 아이 종료 요청이 낱말 판정으로 흘러간다(리뷰 지적, 2026-08-20).
+      if (signals?.hasPlayStop || isExplicitStop(utterance)) {
         // 종료가 실패했는데 ended:true 를 주면 끝난 척이 된다 — 세션이 남아
         // 다음 턴에 놀이가 되살아난다. 그래도 케이는 침묵하지 않는다.
         try {
@@ -724,7 +743,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       // `"단어자나"는 내가 아직 잘 모르는 단어네!` 라고 답했다.
       // 세션은 유지하고, 아이 말에 사람처럼 반응한 뒤 다시 낱말을 청한다.
       // 빈 발화는 여기서 걸지 않는다 — 그건 "잘 못 들었어" 로 안내해야 한다.
-      if (utterance.trim() && (isWordChainDispute(utterance) || isWordChainContinueRequest(utterance))) {
+      if (utterance.trim() && (isWordChainDispute(utterance) || signals.hasPlayContinue || isWordChainContinueRequest(utterance))) {
         const reqSyllable = prevEntry ? prevEntry.lastSyllable : "";
         return {
           handled: true,
@@ -900,7 +919,8 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       }
       const updatedSession = childTurnRecord.session;
 
-      // 6. K의 다음 단어 결정론적 선택 (§3-17, §3-18)
+      // 6. K의 다음 단어 선택 (§3-17, §3-18)
+      // 상위 후보군(최대 5개) 내에서 random을 주입하여 동일 단어 반복 선택 방지
       const diffRange = getWordChainGradeDifficulty(gradeRaw);
       const currentUsedWords = new Set<string>(
         updatedSession.used_words ?? []
@@ -913,6 +933,11 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         usedWords: currentUsedWords,
         minDifficulty: diffRange.min,
         maxDifficulty: diffRange.max,
+        // `Math.random` 을 쓰면 같은 상태에서 결과가 매번 달라져 테스트가 흔들린다
+        // (실측: index.test.ts 가 5회 중 1회 실패). 다양성은 **판이 진행되면서**
+        // 필요한 것이지 같은 상태를 두 번 부를 때 필요한 게 아니다.
+        // 그래서 세션 id 와 지금까지 쓴 낱말 수로 결정론적 난수를 만든다.
+        random: makeSessionRandom(activeSession.id, currentUsedWords.size),
       });
 
       // 7-A. K가 이어갈 단어가 없음 -> 아이 승리 마무리 (§3-17, §3-20)
@@ -945,21 +970,45 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         );
 
         // 새 판을 세션에 반영한다. 세션은 닫지 않는다 — 놀이는 계속된다.
-        // 쓴 낱말 목록은 새 첫 낱말만 남겨 새 판으로 초기화한다.
+        // [중요] 새 판을 시작해도 직전 판 낱말을 기억하도록 기존 목록에 새 첫 낱말을 덧붙인다.
+        // 초기화하면 직전 판 낱말이 되돌아와 아이가 "아까 그 단어잖아" 하게 된다 (2026-08-20 QA 실측 대응).
+        // 사전이 1810개라 세션 전체에서 낱말을 기억해도 후보 풀은 충분하다.
+        const currentSessionUsed = Array.isArray(updatedSession.used_words)
+          ? updatedSession.used_words
+          : [];
+        const accumulatedUsedWords = currentSessionUsed.includes(freshEntry.word)
+          ? currentSessionUsed
+          : [...currentSessionUsed, freshEntry.word];
+
+        // 저장이 실패했는데 새 낱말을 그대로 제시하면, 아이는 그 낱말로 이어가는데
+        // 케이는 다음 턴에 그걸 모른다 — 아이 눈에는 케이가 방금 한 말을 잊은 것이다
+        // (리뷰 지적, 2026-08-20). 저장에 실패하면 새 판을 제시하지 않는다.
         try {
-          await db
+          const { error } = await db
             .from("word_chain_game_sessions")
             .update({
               state: "CHILD_TURN",
               current_word: freshEntry.word,
               current_difficulty: freshEntry.difficulty,
-              used_words: [freshEntry.word],
+              used_words: accumulatedUsedWords,
               updated_at: new Date().toISOString(),
             })
             .eq("id", activeSession.id)
             .is("ended_at", null);
+          if (error) {
+            throw new Error(`새 판 저장 실패: ${error.message}`);
+          }
         } catch (err) {
           console.error("[wordChain] 새 판 시작 실패", err);
+          // 케이는 침묵하지 않는다. 다만 새 낱말을 냈다고 하지는 않는다.
+          return {
+            handled: true,
+            skillId: "WORD_CHAIN",
+            ended: false,
+            sessionLookupFailed: true,
+            deterministicText:
+              "내가 졌어! 네가 이겼다!\n그런데 새 판을 준비하다 뭔가 꼬였어.\n잠깐 있다가 다시 말해줄래?",
+          };
         }
 
         const freshReq = freshEntry.lastSyllable;

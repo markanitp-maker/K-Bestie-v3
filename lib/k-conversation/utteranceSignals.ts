@@ -21,6 +21,7 @@ export interface UtteranceSignals {
   hasChosungHintRequest: boolean; // 초성 게임 힌트 요청 ("힌트 줘", "모르겠어", "어려워" 등)
   hasChosungAnswerRequest: boolean; // 초성 게임 정답 직접 공개 요청 ("답이 뭐야", "정답 알려줘", "그냥 알려줘" 등)
   hasChosungNextQuestion: boolean; // 다음 문제 요청 ("다음 문제 줘", "다른 문제", "패스")
+  hasChosungRepeatQuestion?: boolean; // 현재 초성을 다시 묻는 요청 ("초성 뭐였지?", "다시 알려줘")
   hasWordChainGameStart?: boolean; // 끝말잇기 게임 시작 요청 ("끝말잇기 하자", "말잇기" 등)
   hasNonsenseGameStart?: boolean; // 넌센스 퀴즈 / 수수께끼 시작 요청 ("넌센스 퀴즈 하자", "수수께끼 하자" 등)
   hasNonsenseAnswerAttempt?: boolean;
@@ -29,6 +30,7 @@ export interface UtteranceSignals {
   hasGenericPlayAcceptance?: boolean; // 좋아/응/하자/게임부터 하자 등 놀이 포괄 수락
   hasPlayRejection: boolean; // 싫어/안 할래/하기 싫어/됐어 등 제안 거절 (단독 부정)
   hasPlayStop?: boolean; // 그만할래/안 할래/그만하자/그만 등 게임 명시적 종료 요청
+  hasPlayContinue?: boolean; // 문장 전체가 놀이 진행 지시 ("ㄱㄱ", "계속해", "다음 문제")
   /** 018 §3-11 — 아이가 케이에게 친근감·애착을 표현했는지("케이 좋아해", "너는 내 친한 친구야").
    *  이 말을 그냥 지나치고 다음 질문으로 넘어가면 아이는 무시당했다고 느낀다.
    *  먼저 받아준 뒤 이어가야 한다. 대신 독점·의존을 유도하는 답은 관계 안전이 따로 막는다. */
@@ -460,9 +462,49 @@ function detectPlayRejection(
 }
 
 // 게임 명시적 종료 신호 ("그만할래", "안 할래", "그만하자", "그만", "안해" 등)
+//
+// 앵커를 문장 끝에 딱 붙이면 아이 말투를 놓친다. 실측(2026-08-20):
+//   "그만 하고 싶어", "안 할래 이제" 가 종료로 안 잡혔다.
+// 그래서 종료어 뒤에 **의도를 바꾸지 않는 꼬리말**만 허용한다.
+// 반대로 인용·부정·조건은 `PLAY_STOP_EXCLUSION_PATTERNS` 가 앞에서 막는다.
+const STOP_TRAILER =
+  "(?:\\s*(?:하고\\s*싶어|하고\\s*싶다|싶어|싶다|이제|좀|제발|우리|나|난|야|요|용|당))*";
+
 const PLAY_STOP_PATTERNS = [
-  /(?:끝말잇기|초성|넌센스|수수께끼|게임|놀이|퀴즈)?\s*(?:그만|그만하자|그만할래|그만해|그만둘래|안\s*할래|안해|안\s*해|하기\s*싫어|끝낼래|안\s*놀래|포기|항복|너\s*이겼어)/,
-  /^(?:그만|그만해|그만하자|그만할래|끝|안해|안\s*해|싫어|포기|항복|이제\s*그만|다음에\s*할래)$/,
+  new RegExp(
+    "^(?:(?:끝말\\s*잇기|초성(?:\\s*게임)?|넌센스|수수께끼|게임|놀이|퀴즈)(?:은|는|을|를)?\\s*)?" +
+      "(?:이제\\s*)?" +
+      "(?:그만|그만\\s*해|그만\\s*하자|그만\\s*할래|그만\\s*둘래|안\\s*할래|안\\s*해|하기\\s*싫어|끝|끝낼래|안\\s*놀래|포기|항복|너\\s*이겼어)" +
+      STOP_TRAILER +
+      "[!?.~^ㅋㅎ\\s]*$"
+  ),
+];
+
+// 여러 낱말로 된 구절은 사전 낱말이 될 수 없으므로 문장 어디에 있어도 진행 지시로 본다.
+//
+// 2026-08-20 실측: 아이가 `맨날 똑같은 질문이니? 다른거 없어?` 라고 했는데
+// 발화 전체 일치만 보다 놓쳤고, 케이가 "그만하고 다른 거 할까?" 로 오해했다.
+// 아이: "헐… 누가 그만하래? 새로운 문제를 내라는거지"
+//
+// `없어`/`있어`/`줘` 를 요구하므로 `계속기`·`가자미` 같은 단일 낱말과는 겹치지 않는다.
+//
+// **문장 끝에 올 때만** 잡는다. 문장 어디서나 잡으면 아이가 화제를 바꾸는 말까지
+// 삼킨다(리뷰 지적, 실측): `다른 거 없어? 배고파`, `새로운 질문 있어? 숙제가 뭐야?`
+// 여기서 아이는 놀이를 이어가자는 게 아니라 다른 얘기를 꺼낸 것이다.
+const PLAY_CONTINUE_PHRASE_PATTERNS: readonly RegExp[] = [
+  // 아이는 재촉할 때 같은 말을 덧붙인다: `다른거 없어? 다른거!`
+  // 그래서 뒤에 같은 요청의 반복·재촉만 더 붙는 것은 허용한다.
+  /(?:다른|새로운|딴)\s*(?:거|것|문제|질문)\s*(?:없어|없나|없니|있어|줘|주라|내줘|내봐)(?:[!?.~^ㅋㅎ\s]*(?:다른|새로운|딴)\s*(?:거|것|문제|질문)?|[!?.~^ㅋㅎ\s]*(?:빨리|어서|좀|얼른))*[!?.~^ㅋㅎ\s]*$/,
+  /(?:다른|새로운|딴)\s*(?:문제|질문)(?:을|를)?\s*(?:내|줘|주라|해줘)(?:[!?.~^ㅋㅎ\s]*(?:빨리|어서|좀|얼른))*[!?.~^ㅋㅎ\s]*$/,
+];
+
+// 017 §3-2 — 낱말 일부를 삼키지 않도록 발화 전체가 진행 지시일 때만 true.
+const PLAY_CONTINUE_PATTERN = /^(?:ㄱㄱ(?:ㅆ)?|고고|가자|계속|계속\s*해|계속\s*하자|진행|진행\s*해|진행\s*해줘|이어서|이어서\s*해|이어서\s*하자|이어\s*해|다음|다음\s*문제|그\s*다음|또|또\s*해|또\s*하자|하나\s*더|(?:다른|새로운)\s*(?:거|문제)\s*없어)[!?.~^ㅋㅎ\s]*$/;
+
+const CHOSUNG_REPEAT_QUESTION_PATTERNS: readonly RegExp[] = [
+  /^(?:아까\s*)?초성(?:이)?\s*(?:뭐였지|뭐야|뭐였더라|다시)(?:\s*알려줘)?[!?.~^\s]*$/,
+  /^(?:아까\s*)?문제(?:가)?\s*(?:뭐였지|뭐야|뭐였더라)[!?.~^\s]*$/,
+  /^(?:뭐였더라|다시\s*알려줘)[!?.~^\s]*$/,
 ];
 
 function detectPlayStop(
@@ -524,6 +566,10 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
   let hasChosungGameStart = detectChosungGameStart(trimmed);
   const hasChosungAnswerRequest = detectChosungAnswerRequest(trimmed);
   const hasChosungNextQuestion = detectChosungNextQuestion(trimmed);
+  const hasChosungRepeatQuestion = CHOSUNG_REPEAT_QUESTION_PATTERNS.some((pattern) => pattern.test(trimmed));
+  const hasPlayContinue =
+    PLAY_CONTINUE_PATTERN.test(trimmed) ||
+    PLAY_CONTINUE_PHRASE_PATTERNS.some((pattern) => pattern.test(trimmed));
   const hasChosungHintRequest = !hasChosungAnswerRequest && detectChosungHintRequest(trimmed);
   const hasChosungAnswerAttempt = detectChosungAnswerAttempt(
     trimmed,
@@ -583,6 +629,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
 
   return {
     hasChosungNextQuestion,
+    hasChosungRepeatQuestion,
     hasAffectionTowardK: AFFECTION_TOWARD_K_PATTERNS.some((pattern) => pattern.test(trimmed)),
     hasAchievement,
     hasConflict,
@@ -604,6 +651,7 @@ export function extractUtteranceSignals(text: string): UtteranceSignals {
     hasGenericPlayAcceptance,
     hasPlayRejection,
     hasPlayStop,
+    hasPlayContinue,
   };
 }
 

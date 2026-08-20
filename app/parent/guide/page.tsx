@@ -14,6 +14,13 @@ import { MultiQuestionSelectModal, type MultiQuestionCandidate } from "@/compone
 import { RegisteredQuestionsList, type Question } from "@/components/RegisteredQuestionsList";
 import { SAFE_ALTERNATIVE_ALLOWED_AREA_MAP } from "@/lib/plan/parentQuerySafeAlternatives";
 import { PARENT_QUERY_AREA_LABELS } from "@/lib/plan/parentQueryRouterEngine";
+import {
+  normalizeVoiceTranscript,
+  shouldAutoPlayKAnswer,
+  shouldSendFinalVoiceTranscript,
+  resolveAutoPlaySource,
+  type KChatInputOrigin,
+} from "@/lib/speech/kVoiceChatPolicy";
 
 type Message = {
   id: string;
@@ -256,7 +263,7 @@ export default function ParentGuidePage() {
     if (nearBottom) scrollToBottom();
   }, [messages, isLoading, interimTranscript]);
 
-  const sendMessage = useCallback(async (rawText: string) => {
+  const sendMessage = useCallback(async (rawText: string, inputOrigin: KChatInputOrigin = "text") => {
     const textToSend = rawText.trim();
     if (!textToSend || !childId || sendInFlightRef.current) return;
     const requestChildId = childId;
@@ -293,12 +300,13 @@ export default function ParentGuidePage() {
         setPendingAskChildProposal(nextProposal, requestChildId);
       }
 
+      const answerText = data.answer || "응답을 가져올 수 없어요.";
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: "k",
-          text: data.answer || "응답을 가져올 수 없어요.",
+          text: answerText,
           askChildProposal: nextProposal,
           originalQuestion: textToSend, // 원래 질문을 항상 보존하여 topics가 유실되지 않도록 한다.
           requestedTopic: data.requestedTopic,
@@ -306,6 +314,11 @@ export default function ParentGuidePage() {
           parentIntent: data.intent,
         }
       ]);
+      // 자동재생 판정은 **API 원본**(data.answer)으로 한다. `answerText` 는 이미
+      // fallback 문구로 바뀐 뒤라, 그걸 넘기면 빈 답변 가드가 무력화된다
+      // (리뷰 지적, 2026-08-20). 답이 없는데 "응답을 가져올 수 없어요" 를 읽어 주는 것은
+      // 부모에게 도움이 안 되고, 음성만 켜졌다 꺼져 상태 표시도 어긋난다.
+      if (shouldAutoPlayKAnswer(inputOrigin, resolveAutoPlaySource(data.answer))) speakText(answerText);
     } catch (err) {
       console.error("Chat error:", err);
       if (childIdRef.current !== requestChildId) return;
@@ -317,7 +330,7 @@ export default function ParentGuidePage() {
       sendInFlightRef.current = false;
       if (childIdRef.current === requestChildId) setIsLoading(false);
     }
-  }, [childId, stopListening, messages, pendingAskChildProposal]);
+  }, [childId, stopListening, messages, pendingAskChildProposal, speakText]);
 
   // requests/request-parent-k-stt-input-focus-fix-dev-prod.md — 최종 음성 인식 결과는
   // document.activeElement/입력창 focus 여부와 무관하게 채팅 입력 state(inputText)에
@@ -325,29 +338,50 @@ export default function ParentGuidePage() {
   // — "마이크 중지 시 sendMessage()를 자동 호출하지 않는다"), 사용자가 결과를 확인·수정할
   // 기회 없이 바로 전송돼버렸고 전송 버튼을 눌러야만 전송되는 정책과도 맞지 않았다.
   // 이제는 입력창에 채워 넣기만 하고, 전송은 사용자가 전송 버튼을 눌렀을 때만 일어난다.
+  // 다만 이 정책은 대표 결정(2026-08-20, request 034 §8)으로 반전됐다. 이제 final 결과는
+  // 확인 버튼 없이 자동 전송하며, 빈 결과·STT 오류·동일 final 중복 이벤트는 전송하지 않는다.
   // 동일한 final 이벤트가 브라우저에서 반복 전달되어도 한 번만 반영한다.
   useEffect(() => {
-    const finalText = transcript.replace(/\s+/g, " ").trim();
+    const finalText = normalizeVoiceTranscript(transcript);
     if (!finalText) {
       lastVoiceTranscriptRef.current = "";
       return;
     }
     // 모바일 브라우저는 한 번의 발화를 여러 final 조각으로 나눠 전달할 수 있다.
     // 인식이 완전히 끝난 뒤 누적된 문장 전체를 한 번만 입력창에 반영한다.
-    if (isListening) return;
-    if (finalText === lastVoiceTranscriptRef.current) return;
+    if (!shouldSendFinalVoiceTranscript({
+      transcript: finalText,
+      sttError,
+      isListening,
+      lastSentTranscript: lastVoiceTranscriptRef.current,
+    })) return;
 
     lastVoiceTranscriptRef.current = finalText;
-    setInputText((previous) => {
-      const current = previous.trimEnd();
-      return current ? `${current} ${finalText}` : finalText;
-    });
-  }, [transcript, isListening]);
+    void sendMessage(finalText, "voice");
+  }, [transcript, sttError, isListening, sendMessage]);
 
   const handleSendMessage = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     void sendMessage(inputText);
   };
+
+  const handleVoiceButton = () => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    // speechSynthesis.cancel()은 브라우저 전역이라 K TTS와 리포트 TTS를 함께 중단한다.
+    stopSpeaking();
+    startListening();
+  };
+
+  const voiceStatus = isSpeaking
+    ? "케이가 말하는 중"
+    : isLoading
+      ? "생각 중"
+      : isListening
+        ? "듣는 중"
+        : "";
 
   // requests/request-parent-question-draft-modal-fix.md §3/§6.1 — "아이에게 물어보기"
   // 클릭은 곧바로 등록하지 않고, 1단계(초안 생성, 등록/차감 없음)만 수행한 뒤 모달을 연다.
@@ -848,7 +882,12 @@ export default function ParentGuidePage() {
             </p>
           )}
           {isSttSupported && sttError && (
-            <p className="text-[10px] text-red-500 mb-2 text-center">{sttError}</p>
+            <p className="text-[10px] text-red-500 mb-2 text-center whitespace-pre-line">{sttError}</p>
+          )}
+          {voiceStatus && (
+            <p className="text-xs font-medium text-[var(--color-k-navy)] mb-2 text-center" aria-live="polite">
+              {voiceStatus}
+            </p>
           )}
           <form onSubmit={handleSendMessage} className="flex gap-2 items-end">
             <div className="flex-1 bg-gray-100 rounded-2xl border border-transparent focus-within:border-[var(--color-k-navy)] transition-colors relative flex items-center px-3 py-1">
@@ -877,7 +916,7 @@ export default function ParentGuidePage() {
               {isSttSupported && (
                 <button
                   type="button"
-                  onClick={isListening ? stopListening : startListening}
+                  onClick={handleVoiceButton}
                   disabled={isLoading || !childId}
                   aria-label={isListening ? "음성 입력 중지" : "음성으로 질문하기"}
                   className={`w-11 h-11 rounded-full flex items-center justify-center text-white shadow-sm transition-colors disabled:opacity-50

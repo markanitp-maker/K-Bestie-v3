@@ -53,7 +53,7 @@
 |---|---|
 | Codex | `codex:codex-rescue` 서브에이전트 → 백그라운드 작업. 상태는 `codex-companion.mjs status <task-id>` |
 | agy | agy-delegate relay → `result.json` |
-| 대표 보고 | §9 김비서 채널 |
+| 개발 보고 | §9 Discord #개발 · 개팀장 멘션 |
 
 - **tmux send-keys 위임 금지.** 완료 판정은 collaboration/thread 결과 또는 `result.json`만 사용한다. pane 텍스트 추정 금지.
 - 워커는 커밋하지 않는다. 통합과 커밋은 오케스트레이터 담당이다.
@@ -135,13 +135,19 @@
 해당하면 임의 판단 없이 멈추고 §9로 보고한다. 대기 중에 추측 기반 결정·기존 코드 삭제·새 DB 구조 생성 금지.
 그 외(코드 작성, 빌드·타입 오류 수정, 영향 분석, Dev 검증·E2E)는 자동 진행한다.
 
-## 9. 김비서 보고 (완료 조건)
+## 9. 개발 보고 (완료 조건)
 
-오케스트레이터가 작업 완료·위임·게이트 결과·차단·대표 판단 필요·큐 소진을 대표에게 보고한다.
+**개발 보고는 Discord `#개발` 채널의 개팀장에게 직접 보낸다(2026-08-20 대표 지시).**
+**김비서·`#집무실`로는 개발 보고를 보내지 않는다.** 진행·완료·차단·대표 판단 필요 모두 이 채널이다.
+
+**작업 착수·차단·완료·대표 판단 필요 시 이 채널로 먼저 보고한다.**
+위임 결과·게이트 결과·큐 소진도 같은 채널이다.
 
 ```bash
-'/mnt/c/Users/Home/AppData/Local/Programs/Python/Python313/Scripts/hermes.exe' -p secretary send --to discord:1517194137604980866 $'대표님, [K-Bestie-v3] 상태: <완료/진행 중/중단/확인 필요>\n\n✅ 완료\n- <결과>\n\n🟡 남은 일·이슈\n- <없음 또는 이슈>\n\n👤 대표님 확인\n- <없음 또는 필요한 결정>'
+'/mnt/c/Users/Home/AppData/Local/Programs/Python/Python313/Scripts/hermes.exe' -p dev send --to discord:1539924157649784932 $'[K-Bestie-v3] 상태: <완료/진행 중/중단/확인 필요>\n\n✅ 완료\n- <결과>\n\n🟡 남은 일·이슈\n- <없음 또는 이슈>\n\n👤 확인 필요\n- <없음 또는 필요한 결정>'
 ```
+
+프로필은 `-p dev` 다. `-p secretary`(김비서)를 쓰지 않는다.
 
 ## 10. 인박스
 

@@ -145,21 +145,32 @@ export function selectKNextWord(
     return a.entry.normalizedWord.localeCompare(b.entry.normalizedWord, "ko");
   });
 
-  // 최고 점수군(동일 Tier 및 동일 후속 단어 수) 추출
+  // 무작위 후보군을 고른다.
+  //
+  // 무작위성이 없으면 케이가 매번 같은 1순위를 내서 아이가 "아까 그 단어잖아" 하게 된다
+  // (2026-08-20 실측: `임시`·`장수풍뎅이` 각 2회). 그렇다고 최고 Tier 전체를 균등
+  // 추첨하면 §3-18 dead-end 회피가 무너진다 — 이어갈 낱말이 훨씬 적은 후보가 같은
+  // 확률로 뽑혀 케이가 더 자주 막힌다(리뷰 지적).
+  //
+  // 그래서 **최고 점수 대비 안전 임계치 안**에서만 흔든다.
   const best = scoredCandidates[0];
-  const topTies = scoredCandidates.filter(
-    (c) =>
-      c.tier === best.tier &&
-      c.gradeFollowUps === best.gradeFollowUps &&
-      c.totalFollowUps === best.totalFollowUps
-  );
+  const MIN_FOLLOWUP_RATIO = 0.7; // 1순위의 이어갈 낱말 수 대비 이만큼은 돼야 후보
+  const MAX_RANDOM_POOL = 5;
 
-  // random 제공 시 동점군 내에서 무작위 선택, 미제공 시 최상위 1순위 반환 (결정론)
+  const safeCandidates = scoredCandidates.filter((c) => {
+    if (c.tier !== best.tier) return false;
+    // 1순위에 이어갈 낱말이 없으면 비율 판단이 무의미하다 — Tier만 본다.
+    if (best.gradeFollowUps <= 0) return true;
+    return c.gradeFollowUps >= best.gradeFollowUps * MIN_FOLLOWUP_RATIO;
+  });
+  const topCandidates = safeCandidates.slice(0, MAX_RANDOM_POOL);
+
+  // random 제공 시 안전 후보군 내에서 무작위, 미제공 시 1순위 (결정론 보장)
   if (random && typeof random === "function") {
-    const r = random();
-    const idx = Math.floor(Math.abs(r) * topTies.length) % topTies.length;
-    return topTies[idx].entry;
+    const r = Math.abs(random());
+    const idx = Math.floor(r * topCandidates.length) % topCandidates.length;
+    return topCandidates[idx].entry;
   }
 
-  return topTies[0].entry;
+  return topCandidates[0].entry;
 }

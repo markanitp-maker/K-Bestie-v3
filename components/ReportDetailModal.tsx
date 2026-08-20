@@ -3,6 +3,11 @@
 import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useBrowserTTS } from "@/hooks/useBrowserTTS";
+import {
+  buildDailyReportTtsContent,
+  buildWeeklyReportTtsContent,
+} from "@/lib/speech/reportTtsContent";
 import { ReportDetailSkeleton } from "@/app/parent/report/[id]/ReportDetailSkeleton";
 import {
   buildMeaningfulReportSections,
@@ -169,6 +174,11 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   const scrollRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
+  const { isSupported: isTtsSupported, isSpeaking, speak, stop } = useBrowserTTS();
+
+  useEffect(() => {
+    stop();
+  }, [activeTab, childId, isOpen, reportId, reportType, stop]);
 
   // requests/023 §16.1 — 탭을 전환하면 그 탭 콘텐츠의 최상단을 보여준다(직전 탭의
   // 스크롤 위치가 그대로 남아있으면 안 됨). 콘텐츠 영역만 스크롤되므로 이 ref만 리셋.
@@ -337,6 +347,7 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   }, [isOpen, returnFocusRef]);
 
   const requestClose = () => {
+    stop();
     if (window.history.state?.modal === "report-detail") {
       window.history.back();
     } else {
@@ -348,6 +359,11 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
   if (!isOpen) return null;
 
   const restricted = reportType === "daily" ? dailyData?.restricted : weeklyData?.restricted;
+  const ttsContent = reportType === "daily" && dailyData
+    ? buildDailyReportTtsContent(dailyData.report as unknown as Record<string, unknown>, activeTab, Boolean(restricted))
+    : reportType === "weekly" && weeklyData
+      ? buildWeeklyReportTtsContent(weeklyData.report as unknown as Record<string, unknown>, activeTab, Boolean(restricted))
+      : [];
 
   const LockedTabNotice = () => (
     <div className="bg-white rounded-2xl px-5 py-10 shadow-sm flex flex-col items-center text-center">
@@ -675,6 +691,16 @@ export function ReportDetailModal({ isOpen, onClose, reportId, reportType, child
 
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
           <div className="px-4 py-4">
+            {isTtsSupported && !loading && !error && ttsContent.length > 0 && (
+              <button
+                type="button"
+                onClick={() => isSpeaking ? stop() : speak(ttsContent)}
+                className="mb-4 min-h-11 w-full rounded-xl px-4 py-3 text-sm font-bold text-white shadow-sm"
+                style={{ background: "var(--color-k-navy)" }}
+              >
+                {isSpeaking ? "⏹ 정지" : "🔊 음성으로 듣기"}
+              </button>
+            )}
             {renderContent()}
           </div>
         </div>

@@ -1175,7 +1175,7 @@ test("WordChain Output Guard 2: 응답에 requiredWord가 없으면 대체 문�
   const lines2 = result.text.split("\n");
   assert.equal(lines2.length, 3, `3줄이 아니다: ${JSON.stringify(lines2)}`);
   assert.ok(lines2[1].startsWith("나는 ") && lines2[1].endsWith("!"), lines2[1]);
-  assert.ok(/^이제 "..?"로 시작하는 단어는\?$/.test(lines2[2]), lines2[2]);
+  assert.ok(/^이제 "..?"(?:으로|로) 시작하는 단어는\?$/.test(lines2[2]), lines2[2]);
 });
 
 test("WordChain Output Guard 3: 사고 재현 — 케이가 '그거로 시작하는 다음 단어는 뭘로 할래?' 라고만 하면 차단된다", async () => {

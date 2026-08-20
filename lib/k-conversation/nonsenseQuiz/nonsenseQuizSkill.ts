@@ -24,6 +24,7 @@ import {
   finishQuestionRound,
   endNonsenseSession,
 } from "./sessionManager";
+import { topicParticle } from "../../utils/koreanParticle";
 import {
   classifyChildNonsenseUtterance,
   validateNonsenseAnswer,
@@ -79,7 +80,7 @@ function buildHintText(
   if (!hintText) return null;
 
   const lead = wrongAnswer
-    ? `아쉽다, "${wrongAnswer.trim()}"는 아니야!`
+    ? `아쉽다, "${wrongAnswer.trim()}"${topicParticle(wrongAnswer)} 아니야!`
     : level === 1
       ? "좋아, 힌트 줄게!"
       : "하나 더 알려줄게!";
@@ -123,6 +124,81 @@ function buildHintInstruction(
   ].join("\n");
 }
 
+interface NextQuestionTransition {
+  nextQuestion: NonsenseQuestionRow | null;
+  exhaustEnded: boolean;
+}
+
+/** 완료된 라운드 다음 문제를 선택하고 세션·PRESENTED 이력을 같은 흐름에서 갱신합니다. */
+async function advanceToNextNonsenseQuestion(input: {
+  db: SupabaseClient;
+  activeSession: NonsenseGameSessionRow;
+  childId: string;
+  gradeRaw?: string | number | null;
+}): Promise<NextQuestionTransition> {
+  const { db, activeSession, childId, gradeRaw } = input;
+  const persona = resolveGradePersona(gradeRaw);
+  const childGrade = persona?.grade ?? 3;
+  const diffRange = NONSENSE_GRADE_DIFFICULTY[childGrade] ?? { min: 2, max: 4 };
+  const nextQuestion = await fetchAndSelectNonsenseQuestion(db, childId, childGrade, {
+    currentDifficulty: activeSession.current_difficulty || diffRange.min,
+    seed: activeSession.chat_session_id,
+  });
+
+  if (!nextQuestion) {
+    try {
+      await endNonsenseSession(db, activeSession.id, childId, "NO_MORE_QUESTIONS");
+      return { nextQuestion: null, exhaustEnded: true };
+    } catch (err) {
+      console.error("[nonsenseQuizSkill] 문제 소진 처리 중 종료 실패:", err);
+      return { nextQuestion: null, exhaustEnded: false };
+    }
+  }
+
+  const nowStr = new Date().toISOString();
+  const recentIds = Array.isArray(activeSession.recent_question_ids)
+    ? activeSession.recent_question_ids
+    : [];
+  // 순서가 중요하다. 세션을 먼저 옮기고 이력 삽입이 실패하면, 세션은 새 문제로
+  // 가 있는데 PRESENTED 기록이 없다 — 180일 중복 필터가 이 문제를 못 걸러서
+  // 나중에 같은 문제가 또 나온다(리뷰 지적, 2026-08-20).
+  //
+  // 이력을 먼저 넣으면 실패해도 세션이 움직이지 않는다. 반대로 이력만 남고 세션
+  // 갱신이 실패하는 쪽은 "그 문제가 덜 나온다" 로 끝나 훨씬 안전하다.
+  const { error: historyInsertError } = await db.from("nonsense_question_history").insert({
+    child_id: childId,
+    question_id: nextQuestion.id,
+    chat_session_id: activeSession.chat_session_id,
+    game_session_id: activeSession.id,
+    outcome: "PRESENTED",
+    presented_at: nowStr,
+    hint_count: 0,
+    created_at: nowStr,
+    updated_at: nowStr,
+  });
+  if (historyInsertError) {
+    throw new Error(`Next question history insert failed: ${historyInsertError.message}`);
+  }
+
+  const { error: sessionUpdateError } = await db
+    .from("nonsense_game_sessions")
+    .update({
+      current_question_id: nextQuestion.id,
+      current_difficulty: nextQuestion.difficulty,
+      hint_level: 0,
+      state: "WAITING_FOR_ANSWER",
+      recent_question_ids: [...recentIds, nextQuestion.id],
+      updated_at: nowStr,
+    })
+    .eq("id", activeSession.id)
+    .eq("child_id", childId);
+  if (sessionUpdateError) {
+    throw new Error(`Next question update failed: ${sessionUpdateError.message}`);
+  }
+
+  return { nextQuestion, exhaustEnded: false };
+}
+
 /**
  * 힌트 요청 또는 오답 시 결정론적으로 힌트 단계를 진행하거나 정답을 공개합니다.
  * 힌트가 없는 경우 건너뛰고 정답 공개로 이어지도록 무한 루프를 방지합니다 (§3-10).
@@ -132,6 +208,7 @@ async function progressHintOrRevealAnswer(
   activeSession: NonsenseGameSessionRow,
   question: NonsenseQuestionRow,
   childId: string,
+  gradeRaw?: string | number | null,
   wrongAnswer?: string
 ): Promise<PlaySkillTurnResult> {
   const currentHintLevel = activeSession.hint_level;
@@ -192,6 +269,20 @@ async function progressHintOrRevealAnswer(
     ? `아이가 "${wrongAnswer.trim()}"라고 답했지만 아쉽게도 틀렸어. 힌트를 다 썼으니 친구답게 유쾌하게 정답을 알려줘.`
     : "힌트를 다 썼는데도 어려워하고 있어! 친구답게 웃으며 정답과 설명을 유쾌하게 알려줘.";
 
+  const transition = await advanceToNextNonsenseQuestion({
+    db,
+    activeSession,
+    childId,
+    gradeRaw,
+  });
+  const nextRule = transition.nextQuestion
+    ? [
+        `[다음 문제]: ${transition.nextQuestion.question}`,
+        "- 정답과 설명을 알려준 바로 다음 줄에 [다음 문제] 원문을 그대로 내줘.",
+        "- 계속할지 되묻지 말고, 다음 문제의 정답이나 힌트도 말하지 마.",
+      ]
+    : ["- 준비된 새 문제가 모두 끝났다고 알려줘. 문제를 임의로 만들지 마."];
+
   return {
     handled: true,
     instruction: [
@@ -200,11 +291,14 @@ async function progressHintOrRevealAnswer(
       `[문제]: ${question.question}`,
       `[정답]: ${question.canonical_answer}`,
       question.explanation ? `[설명]: ${question.explanation}` : "",
+      ...nextRule.slice(0, 1),
       "[진행 규칙]:",
-      "- 위 [정답]과 [설명]을 친구 말투로 짧고 재미있게 알려주고, '어려웠지? 다음 문제 또 풀어볼래?'라고 격려해줘.",
+      "- 위 [정답]과 [설명]을 친구 말투로 짧고 재미있게 알려줘.",
       "- 아이를 평가하거나 놀리지 마.",
+      ...nextRule.slice(1),
     ].filter(Boolean).join("\n"),
-    ended: false,
+    ended: transition.nextQuestion ? false : transition.exhaustEnded,
+    ...(!transition.nextQuestion && !transition.exhaustEnded ? { sessionLookupFailed: true } : {}),
   };
 }
 
@@ -423,36 +517,47 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
 
       // 3-C. 직전 라운드가 완료(ROUND_RESULT)된 상태이거나, 아이가 다음 문제를 요청한 경우 새 문제 이어서 출제
       if (activeSession.state === "ROUND_RESULT" || intent === "NEXT_QUESTION") {
-        const persona = resolveGradePersona(input.gradeRaw);
-        const childGrade = persona?.grade ?? 3;
-        const diffRange = NONSENSE_GRADE_DIFFICULTY[childGrade] ?? { min: 2, max: 4 };
-        const recentIds = Array.isArray(activeSession.recent_question_ids)
-          ? activeSession.recent_question_ids
-          : [];
-
-        const nextQuestion = await fetchAndSelectNonsenseQuestion(
-          db,
-          childId,
-          childGrade,
-          {
-            currentDifficulty: activeSession.current_difficulty || diffRange.min,
-            // 방금 낸 문제는 제시 시점에 PRESENTED 로 기록되므로 180일 이력 필터가
-            // 이미 걸러낸다. 별도 제외 목록을 넘길 필요가 없다.
-            seed: activeSession.chat_session_id,
+        // 아직 풀던 문제가 있는데 아이가 건너뛰자고 한 경우, **그 문제 이력을 먼저
+        // 마감**해야 한다. 안 그러면 직전 문제가 PRESENTED 로 남아 180일 중복 필터가
+        // "아직 안 낸 문제" 로 보고 나중에 또 낸다(리뷰 지적, 2026-08-20).
+        // ROUND_RESULT 는 이미 마감된 상태이므로 건너뛴다.
+        if (activeSession.state !== "ROUND_RESULT" && question) {
+          try {
+            await finishQuestionRound(db, {
+              sessionId: activeSession.id,
+              childId,
+              questionId: question.id,
+              outcome: "SKIPPED",
+              hintCount: activeSession.hint_level ?? 0,
+              endSession: false,
+            });
+          } catch (err) {
+            // 마감을 못 했으면 다음 문제로 넘어가지 않는다. 아이는 하던 문제를 잇는다.
+            console.error("[nonsenseQuizSkill] 건너뛴 문제 이력 마감 실패:", err);
+            return { handled: false, sessionLookupFailed: true };
           }
-        );
+        }
+
+        // 이 경로도 예전에는 세션을 먼저 옮기고 이력을 나중에 넣었으며, 두 DB 오류를
+        // 아예 검사하지 않았다. 정답 경로만 고쳐 놓으면 같은 결함이 여기 남는다
+        // (리뷰 지적, 2026-08-20). 그래서 같은 헬퍼로 통합한다.
+        let transition: NextQuestionTransition;
+        try {
+          transition = await advanceToNextNonsenseQuestion({
+            db,
+            activeSession,
+            childId,
+            gradeRaw: input.gradeRaw,
+          });
+        } catch (err) {
+          // 다음 문제로 못 옮겼다. 세션은 그대로이므로 아이는 하던 문제를 이어간다.
+          console.error("[nonsenseQuizSkill] 다음 문제 전환 실패:", err);
+          return { handled: false, sessionLookupFailed: true };
+        }
+
+        const nextQuestion = transition.nextQuestion;
 
         if (!nextQuestion) {
-          // 낼 문제가 없어 닫는 경로다. 여기서 침묵하면 아이가 답을 기다리다 만다.
-          // 그래서 말은 하되, 닫기가 실패했으면 끝났다고 하지 않는다
-          // (리뷰 지적, 2026-08-20).
-          let exhaustEnded = true;
-          try {
-            await endNonsenseSession(db, activeSession.id, childId, "NO_MORE_QUESTIONS");
-          } catch (err) {
-            console.error("[nonsenseQuizSkill] 문제 소진 처리 중 종료 실패:", err);
-            exhaustEnded = false;
-          }
           return {
             handled: true,
             instruction: [
@@ -460,38 +565,10 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
               "준비된 수수께끼를 다 풀어서 더 이상 낼 새로운 문제가 없어! 아이에게 문제를 정말 많이 맞혔다고 칭찬해주고 다른 이야기를 하자고 다정하게 안내해줘.",
               "절대로 문제를 임의로 만들어내지 마.",
             ].join("\n"),
-            ended: exhaustEnded,
-            ...(exhaustEnded ? {} : { sessionLookupFailed: true }),
+            ended: transition.exhaustEnded,
+            ...(transition.exhaustEnded ? {} : { sessionLookupFailed: true }),
           };
         }
-
-        const nowStr = new Date().toISOString();
-        const updatedRecentIds = [...recentIds, nextQuestion.id];
-
-        await db
-          .from("nonsense_game_sessions")
-          .update({
-            current_question_id: nextQuestion.id,
-            current_difficulty: nextQuestion.difficulty,
-            hint_level: 0,
-            state: "WAITING_FOR_ANSWER",
-            recent_question_ids: updatedRecentIds,
-            updated_at: nowStr,
-          })
-          .eq("id", activeSession.id)
-          .eq("child_id", childId);
-
-        await db.from("nonsense_question_history").insert({
-          child_id: childId,
-          question_id: nextQuestion.id,
-          chat_session_id: activeSession.chat_session_id,
-          game_session_id: activeSession.id,
-          outcome: "PRESENTED",
-          presented_at: nowStr,
-          hint_count: 0,
-          created_at: nowStr,
-          updated_at: nowStr,
-        });
 
         return {
           handled: true,
@@ -522,6 +599,20 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
           endSession: false,
         });
 
+        const transition = await advanceToNextNonsenseQuestion({
+          db,
+          activeSession,
+          childId,
+          gradeRaw: input.gradeRaw,
+        });
+        const nextRule = transition.nextQuestion
+          ? [
+              `[다음 문제]: ${transition.nextQuestion.question}`,
+              "- 정답과 설명을 알려준 바로 다음 줄에 [다음 문제] 원문을 그대로 내줘.",
+              "- 계속할지 되묻지 말고, 다음 문제의 정답이나 힌트도 말하지 마.",
+            ]
+          : ["- 준비된 새 문제가 모두 끝났다고 알려줘. 문제를 임의로 만들지 마."];
+
         // 공개 단계에서만 정답과 설명 포함!
         return {
           handled: true,
@@ -531,11 +622,14 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
             `[문제]: ${question.question}`,
             `[정답]: ${question.canonical_answer}`,
             question.explanation ? `[설명]: ${question.explanation}` : "",
+            ...nextRule.slice(0, 1),
             "[진행 규칙]:",
             "- 위 [정답]과 [설명]의 내용을 벗어나지 않고 친구 말투로 짧고 재미있게 알려줘.",
-            "- 아이를 놀리거나 평가하지 말고, '재밌지? 다음 문제 또 풀어볼래?'처럼 신나게 이어가.",
+            "- 아이를 놀리거나 평가하지 마.",
+            ...nextRule.slice(1),
           ].filter(Boolean).join("\n"),
-          ended: false,
+          ended: transition.nextQuestion ? false : transition.exhaustEnded,
+          ...(!transition.nextQuestion && !transition.exhaustEnded ? { sessionLookupFailed: true } : {}),
         };
       }
 
@@ -545,7 +639,8 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
           db,
           activeSession,
           question,
-          childId
+          childId,
+          input.gradeRaw
         );
       }
 
@@ -553,7 +648,7 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
       const validation = validateNonsenseAnswer(utterance, question);
 
       if (validation.isCorrect) {
-        // 정답 맞힘 -> outcome: ANSWERED_CORRECT, 세션은 유지하여 다음 문제 진행 가능
+        // 정답 맞힘 -> 같은 턴에 다음 문제를 선택·저장·출제한다.
         await finishQuestionRound(db, {
           sessionId: activeSession.id,
           childId,
@@ -563,17 +658,38 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
           endSession: false,
         });
 
+        const transition = await advanceToNextNonsenseQuestion({
+          db,
+          activeSession,
+          childId,
+          gradeRaw: input.gradeRaw,
+        });
+        const nextQuestion = transition.nextQuestion;
+
+        if (!nextQuestion) {
+          return {
+            handled: true,
+            instruction: [
+              "[넌센스 퀴즈 정답 맞힘]",
+              `아이가 정답(\"${question.canonical_answer}\")을 맞혔어. 짧게 한 줄로 칭찬해.`,
+              "준비된 새 문제가 모두 끝났다고 알려줘. 문제를 임의로 만들지 마.",
+            ].join("\n"),
+            ended: transition.exhaustEnded,
+            ...(transition.exhaustEnded ? {} : { sessionLookupFailed: true }),
+          };
+        }
+
         return {
           handled: true,
           instruction: [
             "[넌센스 퀴즈 정답 맞힘]",
-            `와! 아이가 정답("${question.canonical_answer}")을 멋지게 맞혔어!`,
-            question.explanation ? `[설명]: ${question.explanation}` : "",
+            `아이가 정답("${question.canonical_answer}")을 맞혔어. 칭찬은 짧게 한 줄만 해.`,
+            `[다음 문제]: ${nextQuestion.question}`,
             "[진행 규칙]:",
-            "- 친구로서 신나고 유쾌하게 칭찬해줘. 교사처럼 '정답입니다'라고 딱딱하게 말하지 마.",
-            "- [설명]이 있으면 가볍게 덧붙여줘.",
-            "- '대단해! 다음 문제 또 풀어볼래, 아니면 다른 이야기 할래?'라고 자연스럽게 이어가.",
-          ].filter(Boolean).join("\n"),
+            "- 짧게 칭찬한 바로 다음 줄에 [다음 문제] 원문을 그대로 내줘.",
+            "- 계속할지 되묻거나 다른 이야기를 권하지 마.",
+            "- 다음 문제의 정답이나 힌트를 말하지 마.",
+          ].join("\n"),
           ended: false,
         };
       } else {
@@ -583,6 +699,7 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
           activeSession,
           question,
           childId,
+          input.gradeRaw,
           utterance
         );
       }

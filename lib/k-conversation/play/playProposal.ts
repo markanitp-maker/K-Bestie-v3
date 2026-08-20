@@ -72,6 +72,10 @@ export async function decidePlayProposal(
 
   // --- 1. 차단 조건 평가 (Blocking Conditions) ---
 
+  if (signals.hasPlayStop || signals.hasPlayRejection) {
+    return { shouldPropose: false, blockedReason: "explicit_play_stop" };
+  }
+
   // 1) 부정 감정 / 화남 / 짜증 / 슬픔
   if (signals.hasNegativeEmotion) {
     return { shouldPropose: false, blockedReason: "negative_emotion" };

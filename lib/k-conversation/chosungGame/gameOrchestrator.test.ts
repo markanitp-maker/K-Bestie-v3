@@ -222,19 +222,19 @@ test("1. 진행 중 세션 없음 + 시작 신호: handled: true 및 지시문�
   assert.match(result.instruction!, /정답 단어는 절대 말하지 마/);
 });
 
-test("2. 진행 중 세션 있음 + 정답 제출: handled: true 및 지시문에 '정답'과 다음 초성 포함", async () => {
+test("2. 실측 '농구' 정답 제출: 맞혔다는 instruction과 결정론 응답 뒤 다음 초성 포함", async () => {
   const initialSession: ChosungGameSessionRow = {
     id: "sess-active-1",
     child_id: "child-2",
     chat_session_id: "chat-2",
     state: "PLAYING_CHILD_ASKS",
     initiated_by: "CHILD",
-    current_word: "사과",
-    current_chosung: "ㅅㄱ",
-    current_category: "음식",
+    current_word: "농구",
+    current_chosung: "ㄴㄱ",
+    current_category: "운동",
     current_difficulty: 1,
     hint_level: 0,
-    recent_words: ["사과"],
+    recent_words: ["농구"],
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ended_at: null,
@@ -246,7 +246,7 @@ test("2. 진행 중 세션 있음 + 정답 제출: handled: true 및 지시문�
     childId: "child-2",
     chatSessionId: "chat-2",
     gradeRaw: 1,
-    utterance: "사과",
+    utterance: "농구",
     signals: {
       hasChosungGameStart: false,
       hasChosungAnswerAttempt: true,
@@ -257,9 +257,12 @@ test("2. 진행 중 세션 있음 + 정답 제출: handled: true 및 지시문�
   const result = await runChosungTurn(input);
   assert.equal(result.handled, true);
   assert.ok(result.instruction);
-  assert.match(result.instruction!, /아이가 정답 "사과"를 맞혔어/);
+  assert.match(result.instruction!, /아이가 정답 "농구"를 맞혔어/);
   assert.match(result.instruction!, /다음 문제 초성 ".*"를 내줘/);
   assert.match(result.instruction!, /정답 단어는 절대 말하지 마/);
+  assert.match(result.deterministicText!, /맞았어!/);
+  assert.match(result.deterministicText!, /농구/);
+  assert.match(result.deterministicText!, /다음 문제 초성/);
 });
 
 test("3. 진행 중 세션 있음 + 오답 제출: 지시문에 정답 단어가 노출되지 않음", async () => {

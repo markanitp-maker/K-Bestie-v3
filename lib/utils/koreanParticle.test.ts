@@ -7,6 +7,7 @@ import {
   subjectParticle,
   objectParticle,
   instrumentalParticle,
+  quotativeParticle,
 } from "./koreanParticle";
 
 describe("koreanParticle utility", () => {
@@ -72,5 +73,32 @@ describe("조사 확정 (010)", () => {
     assert.strictEqual(topicParticle("apple"), "는");
     assert.strictEqual(instrumentalParticle("apple"), "로");
     assert.strictEqual(topicParticle(""), "는");
+  });
+});
+
+describe("2026-08-20 QA 실측 — 조사 보정", () => {
+  it("2026-08-20 QA 실측 — 케이가 조사를 틀렸다", () => {
+    // 실측 문구:
+    //   케이: 아쉽다, "헐"는 아니야!            → "헐"은
+    //   케이: 내가 "땀"라고 들었는데, 이게 맞니?  → "땀"이라고
+    assert.equal(`"헐"${topicParticle("헐")}`, '"헐"은');
+    assert.equal(`"땀"${quotativeParticle("땀")}`, '"땀"이라고');
+
+    // 받침 없는 낱말은 그대로다.
+    assert.equal(`"사과"${topicParticle("사과")}`, '"사과"는');
+    assert.equal(`"코끼리"${quotativeParticle("코끼리")}`, '"코끼리"라고');
+  });
+
+  it("따옴표가 붙어 있어도 마지막 글자로 판단한다", () => {
+    // 호출부가 따옴표째 넘기는 경우가 있다.
+    assert.equal(quotativeParticle('"땀"'), "이라고");
+    assert.equal(topicParticle('"헐"'), "은");
+  });
+
+  it("한글이 아니면 받침 없는 쪽을 쓴다", () => {
+    for (const w of ["OK", "123", ""]) {
+      assert.equal(quotativeParticle(w), "라고", w);
+      assert.equal(topicParticle(w), "는", w);
+    }
   });
 });

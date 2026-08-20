@@ -1,3 +1,4 @@
+import { quotativeParticle } from "../utils/koreanParticle";
 // 요청서 014 — 케이가 못 알아들었을 때 "못 들었어"를 반복하지 않는다.
 //
 // 실제 사고: 케이가 "다시 말해줄래?"를 계속 반복해 아이가 항의했다
@@ -82,11 +83,11 @@ export function buildUnclearAudioRecovery(input: {
   // 그래도 무시하지는 않는다 — 들은 말은 그대로 돌려주고 화제를 넘긴다.
   const attempts = countConsecutiveUnclearTurns(input.recentKTexts ?? []);
   if (attempts >= MAX_ECHO_BACK_ATTEMPTS) {
-    return { text: `내가 "${heard}"라고 들었는데 자꾸 헷갈리네ㅠ 미안해. 우리 다른 얘기 먼저 할까?` };
+    return { text: `내가 "${heard}"${quotativeParticle(heard)} 들었는데 자꾸 헷갈리네ㅠ 미안해. 우리 다른 얘기 먼저 할까?` };
   }
   return {
     text: attempts > 0
-      ? `아, 미안! 내가 "${heard}"라고 들었는데, 이게 맞아?`
-      : `내가 "${heard}"라고 들었는데, 이게 맞니?`,
+      ? `아, 미안! 내가 "${heard}"${quotativeParticle(heard)} 들었는데, 이게 맞아?`
+      : `내가 "${heard}"${quotativeParticle(heard)} 들었는데, 이게 맞니?`,
   };
 }
