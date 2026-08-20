@@ -374,6 +374,23 @@ function extractChildCandidateWord(utterance: string, requiredSyllable?: string)
  * 그래서 **내용**으로 가른다 — 판정이 틀렸다는 주장, 실력 비난, 규칙 질문.
  * 지루하다·귀찮다 같은 기분 표현은 여기에 넣지 않는다(그건 낱말을 함께 말할 수 있다).
  */
+/**
+ * 놀이를 이어가자는 **진행 지시**. 낱말이 아니다.
+ *
+ * 016 후속 대표님 실사용(2026-08-20 10:49) — 아이가 "계속" 이라고 했는데
+ * `"계속"은 내가 아직 잘 모르는 단어야!` 라고 낱말로 채점했다.
+ * 아이는 놀이를 이어가자고 한 것이다.
+ *
+ * 낱말과 겹치지 않도록 **문장 전체가 이 말뿐일 때만** 진행 지시로 본다.
+ */
+const WORD_CHAIN_CONTINUE_PATTERNS: readonly RegExp[] = [
+  /^(?:계속|계속해|계속\s*하자|진행|진행해|진행해줘|이어서|이어\s*해|이어서\s*하자|고고|가자|다시|다시\s*하자|또\s*하자)[!?.~^\s]*$/,
+];
+
+export function isWordChainContinueRequest(text: string): boolean {
+  return WORD_CHAIN_CONTINUE_PATTERNS.some((pattern) => pattern.test(text.trim()));
+}
+
 const WORD_CHAIN_DISPUTE_PATTERNS: readonly RegExp[] = [
   // 판정 이의: "~자나", "~잖아", "맞는데", "왜 안 돼"
   /(?:자나|잖아)\s*[?！!]*$/,
@@ -389,6 +406,14 @@ const WORD_CHAIN_DISPUTE_PATTERNS: readonly RegExp[] = [
   // 규칙·방법 질문
   /(?:규칙|방법)(?:이|을|은|도)?\s*(?:뭐|어떻게|모르)/,
   /어떻게\s*하(?:는|냐|지)/,
+  // 016 후속 실측(2026-08-20 10:48) — 아래 문장이 안 걸려 낱말로 채점됐다.
+  //   "또 이러네… 이모 시작하는 이빨을 말했는데, 왜 이로 시작하는 단어여야 한다고,
+  //    아이를 화나게 만드니?"
+  // 판정을 따지는 말은 "왜 ~냐" 와 "~했는데" 가 함께 오는 형태가 많다.
+  /왜[^.?!]{0,24}(?:단어|안\s*(?:되|돼)|이래|이러|그래야|해야)/,
+  /(?:말했는데|했는데|냈는데)[^.?!]{0,24}왜/,
+  /(?:화나게|화가\s*나|짜증|열받)/,
+  /또\s*이러/,
 ];
 
 export function isWordChainDispute(text: string): boolean {
@@ -595,7 +620,7 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       // `"단어자나"는 내가 아직 잘 모르는 단어네!` 라고 답했다.
       // 세션은 유지하고, 아이 말에 사람처럼 반응한 뒤 다시 낱말을 청한다.
       // 빈 발화는 여기서 걸지 않는다 — 그건 "잘 못 들었어" 로 안내해야 한다.
-      if (utterance.trim() && isWordChainDispute(utterance)) {
+      if (utterance.trim() && (isWordChainDispute(utterance) || isWordChainContinueRequest(utterance))) {
         const reqSyllable = prevEntry ? prevEntry.lastSyllable : "";
         return {
           handled: true,
@@ -788,7 +813,13 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
 
       // 7-A. K가 이어갈 단어가 없음 -> 아이 승리 마무리 (§3-17, §3-20)
       if (!kNextEntry) {
-        await endWordChainSession(db, activeSession.id, childId);
+        // 016 후속 대표님 실사용(2026-08-20 10:49) — 케이가 이어갈 말을 못 찾자
+        // 세션을 닫고 놀이를 끝냈다. 아이는 "아이가 이기면, 다음 끝말 잇기 해야지.
+        // 왜 멋데로 종료하니?" 라고 했다.
+        //
+        // 아이가 이긴 것은 놀이를 그만할 이유가 아니라 계속할 이유다.
+        // 대표님 원칙: 아이가 그만하자고 할 때까지 놀이를 이어간다.
+        // 그래서 이 판을 닫고 **바로 새 판을 시작한다** — 세션은 살려 둔다.
         await recordWordChainTurn(db, {
           sessionId: activeSession.id,
           childId,
@@ -796,14 +827,49 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
           by: "K",
           result: "GIVE_UP",
           difficulty: diffRange.min,
-          nextState: "ENDED",
+          nextState: "CHILD_TURN",
           currentSession: updatedSession,
         });
 
+        // 새 판의 첫 낱말. 지금까지 쓴 낱말과 최근 첫 낱말을 함께 피한다.
+        const recentInitials = await getRecentInitialKWords(db, childId);
+        const freshEntry = selectInitialKWord(
+          diffRange.min,
+          diffRange.max,
+          `${activeSession.id}:${(updatedSession.used_words ?? []).length}`,
+          [...recentInitials, ...(updatedSession.used_words ?? [])]
+        );
+
+        // 새 판을 세션에 반영한다. 세션은 닫지 않는다 — 놀이는 계속된다.
+        // 쓴 낱말 목록은 새 첫 낱말만 남겨 새 판으로 초기화한다.
+        try {
+          await db
+            .from("word_chain_game_sessions")
+            .update({
+              state: "CHILD_TURN",
+              current_word: freshEntry.word,
+              current_difficulty: freshEntry.difficulty,
+              used_words: [freshEntry.word],
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", activeSession.id)
+            .is("ended_at", null);
+        } catch (err) {
+          console.error("[wordChain] 새 판 시작 실패", err);
+        }
+
+        const freshReq = freshEntry.lastSyllable;
         return {
           handled: true,
-          instruction: `[끝말잇기] 와, "${childEntry.word}" 다음으로 이어갈 말을 케이가 못 찾겠어! 이번 판은 아이가 이겼어! 대단하다고 신나고 기분 좋게 칭찬해주고, 멋진 승리를 축하해줘.`,
-          ended: true,
+          instruction: [
+            `[끝말잇기] 와, "${childEntry.word}" 다음으로 이어갈 말을 케이가 못 찾겠어! 이번 판은 아이가 이겼어.`,
+            "대단하다고 신나게 칭찬하고 승리를 축하해줘.",
+            `그리고 **곧바로 새 판을 시작해라** — 케이의 새 첫 낱말은 "${freshEntry.word}" 야.`,
+            `아이에게 "${freshReq}"${instrumentalParticle(freshReq)} 시작하는 낱말을 말해달라고 해.`,
+            "놀이를 끝내자는 말은 하지 마. 아이가 그만하자고 할 때까지 이어간다.",
+          ].join("\n"),
+          requiredWordInOutput: freshEntry.word,
+          ended: false,
         };
       }
 

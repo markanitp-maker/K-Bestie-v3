@@ -278,9 +278,35 @@ function isReaskText(text: string): boolean {
  * 기억 fallback 문장을 고른다.
  * @param recentKTexts 최근 케이 발화(오래된 것 → 최신 순). 마지막 원소가 직전 발화다.
  */
+/**
+ * 놀이 중에 쓸 대체 문구.
+ *
+ * 016 후속 대표님 실사용(2026-08-20 10:46~10:47) — 아이가 놀이에 대해 지적했는데
+ * 케이가 두 턴 연속 "그건 잘 기억이 안 나는데" 로 받았다. 아이는 방금 눈앞의 놀이
+ * 이야기를 한 것인데 기억 이야기로 받으니 벽이 된다.
+ *
+ * 기억 위조를 막는 목적은 그대로 지킨다 — 없는 기억에 맞장구치지 않는다.
+ * 다만 놀이 중에는 **놀이를 이어가는 말**로 받는다. 놀이가 통째로 끊기는 것이
+ * 훨씬 나쁘다.
+ */
+const FABRICATED_RECALL_IN_PLAY_TEXTS: readonly string[] = [
+  "아 그렇구나, 알려줘서 고마워. 우리 놀이 계속하자!",
+  "응, 무슨 말인지 알겠어. 이어서 해보자!",
+  "그렇네, 내가 놓쳤나 봐. 계속 가자!",
+];
+
 export function pickFabricatedRecallFallbackText(
-  recentKTexts: readonly string[] = []
+  recentKTexts: readonly string[] = [],
+  options?: { hasActivePlaySession?: boolean }
 ): string {
+  if (options?.hasActivePlaySession) {
+    const recentInPlay = new Set(recentKTexts.map((text) => text.trim()));
+    return (
+      FABRICATED_RECALL_IN_PLAY_TEXTS.find((candidate) => !recentInPlay.has(candidate.trim())) ??
+      FABRICATED_RECALL_IN_PLAY_TEXTS[0]
+    );
+  }
+
   const previousKText = recentKTexts.at(-1) ?? "";
   const alreadyAsked = isReaskText(previousKText);
   const pool = alreadyAsked ? FABRICATED_RECALL_MOVE_ON_TEXTS : FABRICATED_RECALL_REASK_TEXTS;

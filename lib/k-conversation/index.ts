@@ -947,7 +947,10 @@ export async function respond(
       });
       // 018 §3-10 — 같은 문구를 두 번 쓰지 않는다. 이미 한 번 되물었다면
       // 또 되묻지 않고 지금 들은 말에 이어붙인다.
-      finalText = pickFabricatedRecallFallbackText(input.recentKTexts ?? []);
+      // 놀이 중에는 "기억이 안 나" 로 받지 않는다 — 놀이가 통째로 끊긴다.
+      finalText = pickFabricatedRecallFallbackText(input.recentKTexts ?? [], {
+        hasActivePlaySession,
+      });
     }
   }
 
