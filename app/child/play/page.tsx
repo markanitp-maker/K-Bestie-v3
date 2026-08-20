@@ -11,6 +11,18 @@ import { AppTopHeader } from "@/components/AppTopHeader";
 
 
 
+/**
+ * 티켓 기반 놀이 — /api/play/execution-ticket 으로 1회용 티켓을 받아
+ * 독립 Vercel 프로젝트(프록시 경로 /play/<id>)로 넘어가는 놀이들.
+ * 레거시 경로(/api/play/reserve → /api/play/start)를 타면 안 된다.
+ *
+ * 놀이 카드의 comingSoon 만 풀고 여기에 추가하지 않으면 레거시 분기로 떨어져
+ * 인앱 화면이 뜬다 — 티켓도 세션도 만들어지지 않는다.
+ */
+const TICKET_BASED_PLAY_IDS = new Set(["mbti", "comic_book"]);
+function isTicketBasedPlay(playId: string): boolean {
+  return TICKET_BASED_PLAY_IDS.has(playId);
+}
 const GAMES = [
   // comingSoon: 실제 게임 화면이 아직 없는 placeholder 카드 — 클릭해도 황금열쇠 차감/
   // 시작 확인 모달로 이어지면 안 된다(2026-07-27 실사용 손실 발견, 즉시 차단).
@@ -219,17 +231,17 @@ export default function ChildPlayPage() {
       setShowActionModal(false);
     }
     try {
-      if (selectedGame.id === "mbti") {
+      if (isTicketBasedPlay(selectedGame.id)) {
         // 딥 인터뷰 확정(.omc/specs/deep-interview-mbti-platform-connection.md ①②③):
         // MBTI는 독립 Vercel 프로젝트로 프록시되는 별도 전체화면 경로다. router.push
         // (소프트 내비게이션)가 아니라 하드 내비게이션을 쓴다 — Multi-Zones 경계를
         // 넘어가는 이동이라 Next.js 클라이언트 라우터가 이어서 처리할 수 없다.
-        const result = await startTicketBasedPlay(childId, "mbti");
+        const result = await startTicketBasedPlay(childId, selectedGame.id);
 
         if (result.ok) {
           setShowActionModal(false);
           navigatingAway = true;
-          router.push("/child/play/mbti");
+          router.push(`/child/play/${selectedGame.id}`);
           return;
         } else if (result.reason === "insufficient_balance") {
           setIsStarting(false);
@@ -320,17 +332,17 @@ export default function ChildPlayPage() {
       setShowActionModal(false);
     }
 
-    if (selectedGame.id === "mbti") {
+    if (isTicketBasedPlay(selectedGame.id)) {
       try {
         const res = await fetch("/api/play/execution-ticket", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ childId, playId: "mbti", mode: "resume" })
+          body: JSON.stringify({ childId, playId: selectedGame.id, mode: "resume" })
         });
         if (res.ok) {
           setShowActionModal(false);
           navigatingAway = true;
-          router.push("/child/play/mbti");
+          router.push(`/child/play/${selectedGame.id}`);
           return;
         } else {
           alert("이어하기 처리에 실패했습니다.");
@@ -381,17 +393,17 @@ export default function ChildPlayPage() {
     setIsRestarting(true);
     let navigatingAway = false;
     try {
-      if (selectedGame.id === "mbti") {
+      if (isTicketBasedPlay(selectedGame.id)) {
         const res = await fetch("/api/play/execution-ticket", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ childId, playId: "mbti", mode: "restart" })
+          body: JSON.stringify({ childId, playId: selectedGame.id, mode: "restart" })
         });
         if (res.ok) {
           setShowFinalConfirm(false);
           setShowActionModal(false);
           navigatingAway = true;
-          router.push("/child/play/mbti");
+          router.push(`/child/play/${selectedGame.id}`);
           return;
         } else if (res.status === 402) {
           setIsRestarting(false);
