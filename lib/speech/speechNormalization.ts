@@ -24,11 +24,36 @@ export function cleanTtsText(raw: string): string {
     .trim();
 }
 
+/**
+ * 소리 내어 읽을 때 **부호 이름이 들리지 않게** 다듬는다.
+ *
+ * 2026-08-20 대표님 QA — "마침표, 물음표, 이런거 안 읽게 해줘".
+ * 한국어 음성 엔진 일부가 문장부호를 이름 그대로 읽는다.
+ *
+ * 분할은 부호로 하고 **제거는 분할 뒤에** 한다. 순서를 바꾸면 문장 경계가 사라져
+ * 긴 리포트가 한 덩어리로 읽힌다.
+ *
+ * 쉼표는 남긴다 — 끊어 읽는 호흡을 만들고, 이름으로 읽히는 경우가 거의 없다.
+ */
+function stripSpokenPunctuation(sentence: string): string {
+  return sentence
+    // 문장 끝 부호. 물음표를 떼면 올림 억양이 약해지지만, 부호 이름이 들리는 쪽이 더 나쁘다.
+    .replace(/[.!?。！？…]+\s*$/gu, "")
+    // 문장 속에서 이름으로 읽히기 쉬운 부호들.
+    // 따옴표는 공백으로 바꾼다. 붙여 지우면 `"좋아"라고` 가 `좋아라고` 로 뭉쳐
+    // 케이가 한 낱말처럼 읽는다(실측).
+    .replace(/["'“”‘’「」『』]/gu, " ")
+    .replace(/[()[\]{}<>《》〈〉]/gu, " ")
+    .replace(/[:;/\\|]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 export function splitTtsSentences(raw: string): string[] {
   const text = cleanTtsText(raw);
   if (!text) return [];
   return text
     .split(/(?<=[.!?。！？])\s*/gu)
-    .map((sentence) => sentence.trim())
+    .map((sentence) => stripSpokenPunctuation(sentence))
     .filter(Boolean);
 }
