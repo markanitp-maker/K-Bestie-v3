@@ -338,9 +338,21 @@ test("원자적 전환: end가 실패하면 start하지 않고 기존 게임이 
     });
 
     assert.equal(wordChainStartCalled, false, "end 실패 시 새 게임 start는 호출되지 않아야 함");
-    assert.equal(chosungTurnCalled, true, "end 실패 시 기존 게임의 handleTurn으로 유지되어야 함");
-    assert.equal(result.handled, true);
-    assert.equal(result.instruction, "chosung-maintained");
+    // 2026-08-20 — 예전에는 기존 게임의 handleTurn 으로 되돌아갔다. 세션 유지는
+    // 맞았지만, 그러면 아이의 "끝말잇기하자" 가 초성게임 **답으로 채점**된다.
+    // 010 실측에서 아이가 세 번 겪은 모양이다("다른 놀이 하라고" → 낱말 처리).
+    // 그래서 세션은 그대로 두고, 못 바꿨다고 아이에게 말한다.
+    assert.equal(chosungTurnCalled, false, "전환 요청을 기존 게임 답으로 채점하면 안 된다");
+    assert.equal(result.handled, true, "아이에게 답을 줘야 한다");
+    assert.notEqual(result.ended, true, "종료 실패인데 끝났다고 하면 안 된다");
+    assert.ok(
+      result.deterministicText && result.deterministicText.length > 0,
+      "못 바꿨다고 아이에게 말해야 한다"
+    );
+    assert.ok(
+      !/error|fail|session/i.test(result.deterministicText ?? ""),
+      `아이용 문구에 내부 용어가 있다: ${result.deterministicText}`
+    );
     assert.ok(
       errorsLogged.some((log) => log.includes("Failed to end active skill")),
       "end 실패 에러 로그가 기록되어야 함"

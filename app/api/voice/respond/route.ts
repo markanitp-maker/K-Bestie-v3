@@ -256,7 +256,12 @@ export async function POST(req: NextRequest) {
       // 013 §3-12 — 턴이 끝난 뒤 살아 있는 놀이 스킬(없으면 null).
       // 클라이언트는 이 값으로만 놀이 종료를 판단한다. K 응답 문구를 파싱해
       // "그만" 여부를 추측하는 구현은 금지돼 있다 — 문구는 매번 달라진다.
-      activePlaySkillId: engineOutput.activePlaySkillId ?? null,
+      // 조회가 실패했으면 이 값은 **모름** 이다. null 로 내려보내면 클라이언트가
+      // 놀이 UI 를 닫는다(app/chat/page.tsx handlePlaySkillStateChange). 그래서
+      // 필드를 생략해 클라이언트가 제 상태를 유지하게 둔다.
+      ...(engineOutput.playSessionLookupFailed
+        ? {}
+        : { activePlaySkillId: engineOutput.activePlaySkillId ?? null }),
     };
   };
 

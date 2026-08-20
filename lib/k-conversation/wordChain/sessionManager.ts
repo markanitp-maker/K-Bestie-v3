@@ -1,4 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  PlaySessionLookupError,
+  type ActiveSessionLookupOptions,
+} from "../play/skillTypes";
 
 /**
  * 끝말잇기(WORD_CHAIN) 세션 상태 머신 (§3-9, §3-24).
@@ -277,7 +281,8 @@ export async function getRecentInitialKWords(
 
 export async function getActiveWordChainSession(
   db: SupabaseClient,
-  childId: string
+  childId: string,
+  options?: ActiveSessionLookupOptions
 ): Promise<WordChainSessionRow | null> {
   if (!childId) return null;
 
@@ -290,13 +295,18 @@ export async function getActiveWordChainSession(
       .maybeSingle();
 
     if (error) {
-      console.error("[getActiveWordChainSession] DB select error:", error.message);
-      return null;
+      // 삼킬지 던질지는 호출부가 정한다(PlaySessionLookupError 주석 참고).
+      throw new PlaySessionLookupError("wordChain", error.message);
     }
 
     return data as WordChainSessionRow | null;
   } catch (err) {
-    console.error("[getActiveWordChainSession] Unexpected error:", err);
+    if (options?.throwOnError) {
+      throw err instanceof PlaySessionLookupError
+        ? err
+        : new PlaySessionLookupError("wordChain", err);
+    }
+    console.error("[getActiveWordChainSession] 조회 실패, null 로 처리:", err);
     return null;
   }
 }
@@ -499,12 +509,13 @@ export async function endWordChainSession(
 
     const { error } = await query;
     if (error) {
-      console.error(
-        "[endWordChainSession] DB update error:",
-        error.message
-      );
+      // 종료 실패를 삼키면 호출부가 "끝났다" 고 믿는다. 아이가 그만하자고 했는데
+      // 세션이 남아 다음 턴에 놀이가 되살아난다(리뷰 지적, 2026-08-20).
+      console.error("[endWordChainSession] DB update error:", error.message);
+      throw new Error(`끝말잇기 세션 종료 실패: ${error.message}`);
     }
   } catch (err) {
     console.error("[endWordChainSession] Unexpected error:", err);
+    throw err;
   }
 }

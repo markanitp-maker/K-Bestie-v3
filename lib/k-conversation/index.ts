@@ -55,7 +55,7 @@ import { resolveActiveSkillAfterTurn } from "./play/activeSkillAfterTurn";
 import { stripMarkdownEmphasis } from "./stripMarkdownEmphasis";
 import { isKPlayEnabled, getPlayDisabledResponse } from "./play/playAvailability";
 import { setPendingPlayProposal, clearPendingPlayProposal } from "./play/pendingProposalStore";
-import type { PlaySkillId } from "./play/skillTypes";
+import type { PlaySkillId, PlaySkillModule } from "./play/skillTypes";
 
 /**
  * PlaySkillId ↔ FakeGameplayKind 매핑 (§3)
@@ -453,6 +453,9 @@ export async function respond(
   let playSkillInstruction: string | undefined;
   // 018 — 스킬이 완성 문장을 준 경우. 이 값이 있으면 LLM 생성을 건너뛴다.
   let playSkillDeterministicText: string | undefined;
+  // 활성 놀이 세션 조회가 실패했는가. "세션 없음" 과 구별해야 한다 —
+  // 실패를 없음으로 취급하면 일시적 읽기 오류 한 번에 놀이가 죽는다.
+  let playSessionLookupFailed = false;
   let playSkillHandled = false;
   let handledPlaySkillId: PlaySkillId | undefined;
   let playSkillAnswerMustNotAppear: string | undefined;
@@ -523,18 +526,68 @@ export async function respond(
       hasActivePlaySession = false;
     } else {
       // 자유대화 모드: 활성 놀이 세션 존재 여부 확인 (Registry 순회)
+      //
+      // 2026-08-20 대표님 QA(13:13:31) — 놀이가 살아 있는데 케이가
+      // "그건 아직 잘 기억이 안 나는데" 로 받아 대화가 막혔다. Codex 추적으로
+      // 재현 조건이 특정됐다: **이 조회가 실패하면** hasActivePlaySession 이 false 가
+      // 되고, 놀이 스킬이 턴을 처리하지 못하며, 기억 위조 대체 문구가 자유대화용으로
+      // 나간다. activePlaySkillId 도 null 이 되어 클라이언트는 놀이가 끝난 줄 안다.
+      //
+      // 문제의 뿌리는 조회 함수들이 DB 오류를 삼키고 null 을 돌려주는 것이다
+      // (wordChain/sessionManager.ts, nonsenseQuiz/sessionManager.ts 의
+      // `if (error) { console.error(...); return null; }`). 그래서 "세션이 없다" 와
+      // "못 읽었다" 가 구별되지 않는다. 일시적 읽기 실패 한 번에 놀이가 죽는다.
+      //
+      // 조회 실패를 따로 표시해 두고, 실패했으면 놀이가 없다고 단정하지 않는다.
       if (input.childId) {
-        for (const skill of PLAY_SKILL_REGISTRY) {
-          try {
-            const session = await skill.getActiveSession(deps.db, input.childId);
-            if (session) {
-              hasActivePlaySession = true;
-              activePlaySkillId = skill.id;
-              break;
+        const childId = input.childId;
+        // 스킬을 병렬로 조회한다. 직렬로 돌리면 스킬 수만큼 왕복이 쌓여
+        // 자유대화 응답 목표(2~3초)를 갉아먹는다.
+        const probe = async (skills: readonly PlaySkillModule[]) => {
+          const settled = await Promise.allSettled(
+            skills.map(async (skill) => ({
+              skill,
+              // 실패를 삼키면 "놀이 없음" 과 구별할 수 없다.
+              session: await skill.getActiveSession(deps.db, childId, {
+                throwOnError: true,
+              }),
+            }))
+          );
+
+          const found: PlaySkillId[] = [];
+          const failedSkills: PlaySkillModule[] = [];
+          for (let i = 0; i < settled.length; i += 1) {
+            const result = settled[i];
+            if (result.status === "fulfilled") {
+              if (result.value.session) found.push(result.value.skill.id);
+            } else {
+              failedSkills.push(skills[i]);
+              console.error(
+                `[k-conversation/index] getActiveSession(${skills[i].id}) failed:`,
+                result.reason
+              );
             }
-          } catch (err) {
-            console.error("[k-conversation/index] getActiveSession failed:", err);
           }
+          return { found, failedSkills };
+        };
+
+        let probed = await probe(PLAY_SKILL_REGISTRY);
+        // 실패한 스킬만 한 번 더 본다. 놀이를 죽이는 비용이 조회 한 번보다 크다.
+        // 전체를 다시 돌리지는 않는다 — 성공한 조회를 또 하는 것은 낭비다.
+        if (probed.found.length === 0 && probed.failedSkills.length > 0) {
+          const retried = await probe(probed.failedSkills);
+          probed = {
+            found: retried.found,
+            failedSkills: retried.failedSkills,
+          };
+        }
+
+        if (probed.found.length > 0) {
+          hasActivePlaySession = true;
+          activePlaySkillId = probed.found[0];
+        } else if (probed.failedSkills.length > 0) {
+          // 못 읽었을 뿐이다. "놀이 없음" 으로 단정하지 않는다.
+          playSessionLookupFailed = true;
         }
       }
 
@@ -569,6 +622,28 @@ export async function respond(
           activePlaySkillId = afterTurn.activePlaySkillId;
           hasActivePlaySession = afterTurn.hasActivePlaySession;
 
+          // 프로브가 실패했어도 라우터가 상태를 확정했으면 실패 표시를 푼다.
+          // 안 풀면 이 턴에 놀이가 정말 끝났는데도 종료 신호(activePlaySkillId: null)를
+          // 응답에서 생략해 클라이언트가 놀이 UI 를 계속 열어 둔다.
+          //
+          // 순서가 중요하다. 처음에는 handled 를 먼저 봤는데, 그러면 라우터가
+          // "종료 실패했다" 며 아이용 문구와 함께 sessionLookupFailed:true 를
+          // 돌려준 경우까지 handled 라는 이유로 실패를 해소해 버린다. 그러면
+          // route 가 activePlaySkillId 를 내려보내고, 그게 null 이면 클라이언트가
+          // 놀이 UI 를 닫는다 — 세션은 살아 있는데(리뷰 지적, 2026-08-20).
+          // 그래서 미확정 신호를 **먼저** 본다.
+          // `ended: true` 를 예외로 두는 안도 고려했지만 버렸다. 그러면 미확정을
+          // 삼키게 된다. 대신 **애매한 조합을 아예 만들지 않기로** 했다 —
+          // 라우터가 종료를 확정할 수 없으면 그 자리에서 남은 세션을 정리하고
+          // (settleRemainingSessions), 그래도 안 되면 `ended` 를 올리지 않는다.
+          // 그래서 여기서는 미확정 신호만 보면 된다.
+          if (playTurnResult.sessionLookupFailed) {
+            playSessionLookupFailed = true;
+          } else {
+            // 라우터가 상태를 확정했다 — 처리했든, 끝냈든, 놀이가 없든.
+            playSessionLookupFailed = false;
+          }
+
           if (playTurnResult.handled) {
             playSkillHandled = true;
             handledPlaySkillId = playTurnResult.skillId;
@@ -590,6 +665,8 @@ export async function respond(
           }
         } catch (error) {
           console.error("[k-conversation/index] play turn failed:", error);
+          // 턴 처리가 죽었으면 놀이 상태를 확정할 수 없다. 없다고 단정하지 않는다.
+          playSessionLookupFailed = true;
         }
       }
     }
@@ -751,6 +828,7 @@ export async function respond(
       generationFallback: false,
       generationFailureType: undefined,
       activePlaySkillId: activePlaySkillId ?? null,
+      playSessionLookupFailed,
     };
   }
 
@@ -987,7 +1065,9 @@ export async function respond(
       // 또 되묻지 않고 지금 들은 말에 이어붙인다.
       // 놀이 중에는 "기억이 안 나" 로 받지 않는다 — 놀이가 통째로 끊긴다.
       finalText = pickFabricatedRecallFallbackText(input.recentKTexts ?? [], {
-        hasActivePlaySession,
+        // 조회 실패는 "놀이 없음" 이 아니다. 놀이 중일 수 있으니 보수적으로
+        // 놀이용 문구를 쓴다 — 자유대화용 "기억이 안 나" 는 놀이를 막는 벽이 된다.
+        hasActivePlaySession: hasActivePlaySession || playSessionLookupFailed,
       });
     }
   }
@@ -1096,5 +1176,6 @@ export async function respond(
     // 013 §3-12 — 턴 종료 후 살아 있는 놀이 스킬. 클라이언트가 입력모드 복귀 시점을
     // 문구 파싱이 아니라 이 값으로 판단한다.
     activePlaySkillId: activePlaySkillId ?? null,
+    playSessionLookupFailed,
   };
 }

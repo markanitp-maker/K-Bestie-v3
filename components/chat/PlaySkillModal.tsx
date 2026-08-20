@@ -37,15 +37,18 @@ export function PlaySkillModal({
       const query = chatSessionId ? `?chatSessionId=${encodeURIComponent(chatSessionId)}` : "";
       const res = await fetch(`/api/play/skills${query}`);
       if (!res.ok) {
+        // 서버의 error 는 내부 진단 문자열이다("Failed to look up the active play
+        // session" 같은 영문). 아이 화면에 그대로 띄우지 않는다.
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `카탈로그 조회 실패 (${res.status})`);
+        console.error("[PlaySkillModal] fetchCatalog failed:", res.status, errData.error);
+        throw new Error("CATALOG_FETCH_FAILED");
       }
       const data: PlaySkillsCatalogResponse = await res.json();
       setSkills(data.skills || []);
       setActiveSkillId(data.activeSkillId || null);
     } catch (err) {
       console.error("[PlaySkillModal] fetchCatalog error:", err);
-      setError(err instanceof Error ? err.message : "놀이 목록을 불러오지 못했어요.");
+      setError("놀이 목록을 불러오지 못했어요. 다시 시도해주세요.");
     } finally {
       setIsLoading(false);
     }
@@ -90,12 +93,15 @@ export function PlaySkillModal({
         onClose();
         onSkillStarted?.(data.openingLine);
       } else {
-        setError(data.error || "놀이를 시작하지 못했어요. 다시 시도해주세요.");
+        // data.error 는 내부 진단 문자열이다("Failed to look up the active play
+        // session" 같은 영문). 아이가 읽을 수 없는 말이 화면에 뜨면 안 된다.
+        console.error("[PlaySkillModal] selectSkill failed:", data.error);
+        setError("놀이를 시작하지 못했어요. 다시 시도해주세요.");
         onSkillStartFailed?.();
       }
     } catch (err) {
       console.error("[PlaySkillModal] selectSkill error:", err);
-      setError(err instanceof Error ? err.message : "놀이 시작 중 오류가 발생했어요.");
+      setError("놀이 시작 중 문제가 생겼어요. 다시 시도해주세요.");
       onSkillStartFailed?.();
     } finally {
       setSelectingSkillId(null);
@@ -132,11 +138,16 @@ export function PlaySkillModal({
         onSkillEnded?.();
       } else {
         // 실패 시 모달을 닫지 않고 오류 표시 (§3-9)
-        setError(data.error || "놀이를 종료하지 못했어요. 다시 시도해주세요.");
+        //
+        // data.error 는 내부 진단 문자열이다("Could not confirm all play sessions
+        // ended" 같은 영문). 그걸 그대로 띄우면 아이가 읽을 수 없는 말이 화면에
+        // 뜬다(리뷰 지적, 2026-08-20). 진단은 콘솔로 보내고 아이에게는 아이 말로 쓴다.
+        console.error("[PlaySkillModal] endSkill failed:", data.error);
+        setError("놀이를 종료하지 못했어요. 다시 시도해주세요.");
       }
     } catch (err) {
       console.error("[PlaySkillModal] endSkill error:", err);
-      setError(err instanceof Error ? err.message : "놀이 종료 중 오류가 발생했어요.");
+      setError("놀이 종료 중 문제가 생겼어요. 다시 시도해주세요.");
     } finally {
       setIsEnding(false);
     }

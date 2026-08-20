@@ -39,19 +39,50 @@ export async function POST(req: NextRequest) {
     p_new_reservation_id: reservation_id,
   });
 
+  // 롤백이 실패했는데 "복구됐다" 고 답하면 아이 황금열쇠가 조용히 사라진다
+  // (리뷰 지적, 2026-08-20). 재화는 되돌릴 수 없으니 복구 결과를 확인하고,
+  // 실패했으면 그렇다고 말한다 — 그래야 사람이 찾아 고칠 수 있다.
+  const restoreReservation = async (): Promise<boolean> => {
+    const { error } = await service.rpc("restore_gold_key_reservation", {
+      p_reservation_id: reservation_id,
+    });
+    if (error) {
+      console.error(
+        `[play/start] 황금열쇠 예약 복구 실패 (reservation ${reservation_id}, child ${child_id}):`,
+        error.message
+      );
+      return false;
+    }
+    return true;
+  };
+
   if (startErr || !startData || startData.length === 0) {
     console.error("[play/start] Start RPC error:", startErr);
     // 실패시 롤백
-    await service.rpc("restore_gold_key_reservation", { p_reservation_id: reservation_id });
-    return NextResponse.json({ error: "Start session failed, reservation restored" }, { status: 500 });
+    const restored = await restoreReservation();
+    return NextResponse.json(
+      {
+        error: restored
+          ? "Start session failed, reservation restored"
+          : "Start session failed and reservation restore failed",
+        reservationRestored: restored,
+      },
+      { status: 500 }
+    );
   }
 
   const startResult = startData[0] as { session_id: string | null; reason: string };
 
   if (!startResult.session_id) {
     // 실패시 롤백
-    await service.rpc("restore_gold_key_reservation", { p_reservation_id: reservation_id });
-    return NextResponse.json({ error: startResult.reason || "start_failed" }, { status: 400 });
+    const restored = await restoreReservation();
+    return NextResponse.json(
+      {
+        error: startResult.reason || "start_failed",
+        reservationRestored: restored,
+      },
+      { status: restored ? 400 : 500 }
+    );
   }
 
   const { data: childData } = await service.from("child_profiles").select("family_id").eq("id", child_id).single();

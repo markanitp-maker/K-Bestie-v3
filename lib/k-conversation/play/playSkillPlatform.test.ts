@@ -222,7 +222,9 @@ test("SkillRouter: 활성 세션도 없고 직접 요청도 없으면 handled=fa
     registry: [mockSkill],
   });
 
-  assert.deepEqual(result, { handled: false });
+  // 조회가 정상이었으므로 "놀이 없음" 은 확정이다. sessionLookupFailed 가 true 로
+  // 새면 엔진이 놀이 상태를 모른다고 판단해 종료 신호를 응답에서 생략한다.
+  assert.deepEqual(result, { handled: false, sessionLookupFailed: false });
 });
 
 test("SkillRouter: Skill 실행 중 예외가 발생해도 Router가 fail-open({ handled: false })으로 격리한다", async () => {
@@ -248,7 +250,10 @@ test("SkillRouter: Skill 실행 중 예외가 발생해도 Router가 fail-open({
     signals: defaultSignals,
     registry: [throwingActiveSkill],
   });
-  assert.deepEqual(res1, { handled: false });
+  // 2026-08-20 — 예전에는 여기서 그냥 { handled: false } 였다. 그러면 엔진이 이걸
+  // "놀이 없음" 으로 단정해, 살아 있는 놀이가 조회 실패 한 번에 죽었다.
+  // fail-open 자체는 그대로 두고(케이는 계속 말한다), 상태가 미확정임을 실어 보낸다.
+  assert.deepEqual(res1, { handled: false, sessionLookupFailed: true });
 
   // 2. handleTurn 예외 던질 때
   const throwingTurnSkill: PlaySkillModule = {
@@ -272,7 +277,8 @@ test("SkillRouter: Skill 실행 중 예외가 발생해도 Router가 fail-open({
     signals: defaultSignals,
     registry: [throwingTurnSkill],
   });
-  assert.deepEqual(res2, { handled: false });
+  // handleTurn 이 죽었어도 세션은 살아 있다. 없다고 단정하면 놀이가 끊긴다.
+  assert.deepEqual(res2, { handled: false, sessionLookupFailed: true });
 
   // 3. start 예외 던질 때
   const throwingStartSkill: PlaySkillModule = {
@@ -296,7 +302,8 @@ test("SkillRouter: Skill 실행 중 예외가 발생해도 Router가 fail-open({
     signals: defaultSignals,
     registry: [throwingStartSkill],
   });
-  assert.deepEqual(res3, { handled: false });
+  // start 가 죽었을 때는 세션이 만들어졌는지 알 수 없다. 보수적으로 미확정이다.
+  assert.deepEqual(res3, { handled: false, sessionLookupFailed: true });
 });
 
 test("SkillRouter Cross-game Guard: 활성 Skill이 2개 이상이면 에러 로그를 남기고 먼저 발견된 하나만 진행한다", async () => {

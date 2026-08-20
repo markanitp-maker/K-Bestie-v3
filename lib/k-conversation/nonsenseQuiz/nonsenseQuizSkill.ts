@@ -1,3 +1,4 @@
+import type { ActiveSessionLookupOptions } from "../play/skillTypes";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   PlaySkillModule,
@@ -231,11 +232,12 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
 
   async getActiveSession(
     db: SupabaseClient,
-    childId: string
+    childId: string,
+    options?: ActiveSessionLookupOptions
   ): Promise<{ id: string; updatedAt?: string | null; startedAt?: string | null } | null> {
     if (!db || !childId) return null;
     try {
-      const session = await getActiveNonsenseSession(db, childId);
+      const session = await getActiveNonsenseSession(db, childId, options);
       return session
         ? {
             id: session.id,
@@ -244,6 +246,8 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
           }
         : null;
     } catch (err) {
+      // 조회 실패를 삼키면 "놀이 없음" 과 구별되지 않는다. 호출부가 원하면 던진다.
+      if (options?.throwOnError) throw err;
       console.error("[nonsenseQuizSkill] getActiveSession error:", err);
       return null;
     }
@@ -371,7 +375,13 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
       // 2. 현재 문제 로드
       const question = await fetchQuestionById(db, activeSession.current_question_id);
       if (!question) {
-        await endNonsenseSession(db, activeSession.id, childId, "QUESTION_NOT_FOUND");
+        // 닫기가 실패하면 세션은 살아 있다. "놀이 없음" 으로 단정하지 않는다.
+        try {
+          await endNonsenseSession(db, activeSession.id, childId, "QUESTION_NOT_FOUND");
+        } catch (err) {
+          console.error("[nonsenseQuizSkill] 문제 부재 처리 중 종료 실패:", err);
+          return { handled: false, sessionLookupFailed: true };
+        }
         return { handled: false };
       }
 
@@ -402,7 +412,12 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
       // 3-B. Topic Shift / 감정 / 안전 이슈 ("오늘 친구랑 싸웠어", "속상해") (§3-15)
       if (intent === "TOPIC_SHIFT") {
         // 오답 처리하지 않고 세션을 종료하여 일반 대화로 안전하게 인계
-        await endNonsenseSession(db, activeSession.id, childId, "TOPIC_SHIFT");
+        try {
+          await endNonsenseSession(db, activeSession.id, childId, "TOPIC_SHIFT");
+        } catch (err) {
+          console.error("[nonsenseQuizSkill] 주제 전환 중 종료 실패:", err);
+          return { handled: false, sessionLookupFailed: true };
+        }
         return { handled: false };
       }
 
@@ -428,7 +443,16 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
         );
 
         if (!nextQuestion) {
-          await endNonsenseSession(db, activeSession.id, childId, "NO_MORE_QUESTIONS");
+          // 낼 문제가 없어 닫는 경로다. 여기서 침묵하면 아이가 답을 기다리다 만다.
+          // 그래서 말은 하되, 닫기가 실패했으면 끝났다고 하지 않는다
+          // (리뷰 지적, 2026-08-20).
+          let exhaustEnded = true;
+          try {
+            await endNonsenseSession(db, activeSession.id, childId, "NO_MORE_QUESTIONS");
+          } catch (err) {
+            console.error("[nonsenseQuizSkill] 문제 소진 처리 중 종료 실패:", err);
+            exhaustEnded = false;
+          }
           return {
             handled: true,
             instruction: [
@@ -436,7 +460,8 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
               "준비된 수수께끼를 다 풀어서 더 이상 낼 새로운 문제가 없어! 아이에게 문제를 정말 많이 맞혔다고 칭찬해주고 다른 이야기를 하자고 다정하게 안내해줘.",
               "절대로 문제를 임의로 만들어내지 마.",
             ].join("\n"),
-            ended: true,
+            ended: exhaustEnded,
+            ...(exhaustEnded ? {} : { sessionLookupFailed: true }),
           };
         }
 
@@ -567,15 +592,21 @@ export const NONSENSE_QUIZ_SKILL: PlaySkillModule = {
     }
   },
 
+  // 종료 실패를 삼키면 호출부가 "끝났다" 고 믿는다(리뷰 지적, 2026-08-20).
+  // 그러면 클라이언트는 놀이 UI 를 닫는데 세션은 남아, 다음 턴에 놀이가 되살아난다.
+  // 아이는 그만하자고 했는데 케이가 계속 놀이를 한다. 그래서 실패는 던진다.
   async end(input: PlaySkillEndInput): Promise<void> {
+    if (!input.db || !input.childId) return;
     try {
-      if (!input.db || !input.childId) return;
-      const active = await getActiveNonsenseSession(input.db, input.childId);
+      const active = await getActiveNonsenseSession(input.db, input.childId, {
+        throwOnError: true,
+      });
       if (active) {
         await endNonsenseSession(input.db, active.id, input.childId, input.reason);
       }
     } catch (err) {
       console.error("[nonsenseQuizSkill] end error:", err);
+      throw err;
     }
   },
 };

@@ -64,9 +64,32 @@ export async function GET(req: NextRequest) {
   const chatSessionId = req.nextUrl.searchParams.get("chatSessionId") ?? undefined;
 
   // 3. resolveActiveSkill로 현재 활성 스킬 ID 확인 (stale 정리 동반)
-  const activeResolution = await resolveActiveSkill(service, child.id, {
+  //
+  // 일시적 읽기 실패 한 번에 모달이 안 열리면 아이는 놀이를 고를 수 없다.
+  // 그래서 실패했을 때만 한 번 더 본다(리뷰 지적, 2026-08-20).
+  let activeResolution = await resolveActiveSkill(service, child.id, {
     chatSessionId,
   });
+  if (activeResolution.lookupFailed) {
+    activeResolution = await resolveActiveSkill(service, child.id, {
+      chatSessionId,
+    });
+  }
+  // 조회가 실패했으면 activeSkillId: null 은 "활성 놀이 없음" 이 아니라 모름이다.
+  // 그대로 내려보내면 모달이 "지금 하는 놀이 없음" 으로 그려져, 아이가 새 놀이를
+  // 고르고 세션이 둘 남는다(리뷰 지적, 2026-08-20).
+  // 활성 스킬을 하나 찾았더라도 못 읽은 스킬이 있으면 카탈로그가 확정이 아니다.
+  // 모달이 그걸 보고 새 놀이를 고르면 세션이 둘 남는다.
+  if (activeResolution.lookupFailed) {
+    console.error(
+      `[play/skills] 활성 놀이 조회 실패 (child ${child.id}) — 카탈로그를 확정할 수 없다`
+    );
+    return NextResponse.json(
+      { error: "Failed to look up the active play session" },
+      { status: 503 }
+    );
+  }
+
   const activeSkillId = activeResolution.skill ? activeResolution.skill.id : null;
 
   // 4. 레지스트리 기반 DTO 반환 (거대한 if/else 없이 map)

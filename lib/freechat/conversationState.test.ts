@@ -123,30 +123,45 @@ test("음성 모드의 ended 세션은 모든 플래그가 꺼지면 idle로 표
 });
 
 test("텍스트 모드 JSX는 키보드가 열려도 상태 뱃지를 렌더링한다", () => {
+  // 이 단정은 원래 옛 JSX 모양(`{(mode === "text" || !isKeyboardOpen) && (`)을 찾았다.
+  // 015(requests/a04.png)에서 대표님이 "상태 표시와 황금열쇠를 1줄에 같이 표시.
+  // 2열로 나오니까 위에 말풍선이 다 짤리자나" 라고 해서 구조가 바뀌었다 —
+  // 알약을 `voiceStatePill` 로 뽑아, 키보드가 닫히면 상태 패널에, 열리면 황금열쇠 줄에
+  // 렌더한다. **뱃지가 양쪽 상태에서 모두 나온다는 요구는 그대로다.**
+  // 그래서 단정을 지우지 않고 새 구조에 맞춰 다시 쓴다.
   const pageSource = readFileSync(resolve(process.cwd(), "app/chat/page.tsx"), "utf8");
-  const textBranchStart = pageSource.indexOf('{mode === "text" ? (');
-  const voiceBranchStart = pageSource.indexOf('/* mode !== "text"', textBranchStart);
 
-  assert.notEqual(textBranchStart, -1, "텍스트 모드 JSX 분기가 있어야 한다");
-  assert.notEqual(voiceBranchStart, -1, "음성 모드 JSX 분기가 있어야 한다");
+  const pillStart = pageSource.indexOf("const voiceStatePill = (");
+  assert.notEqual(pillStart, -1, "상태 알약 JSX 를 변수로 뽑아 둬야 한다");
+
+  // 알약 자체가 아이콘과 문구를 담아야 한다.
   assert.match(
-    pageSource,
-    /\{\(mode === "text" \|\| !isKeyboardOpen\) && \(/,
-    "키보드가 열려도 텍스트 모드 상태 영역을 유지해야 한다",
-  );
-  assert.match(
-    pageSource.slice(textBranchStart, voiceBranchStart),
+    pageSource.slice(pillStart, pillStart + 2000),
     /data-ui="text-mode-voice-state"[\s\S]*?\{StateIcon\}[\s\S]*?\{stateText\}/,
-    "텍스트 모드 분기 안에서 상태 아이콘과 문구를 렌더링해야 한다",
+    "상태 알약이 아이콘과 문구를 렌더링해야 한다",
   );
-  assert.match(
-    pageSource.slice(textBranchStart, voiceBranchStart),
-    /\{!isKeyboardOpen && \([\s\S]*?aria-label="채팅창 닫기"/,
-    "키보드가 열리면 닫기 CTA를 렌더링하지 않아야 한다",
-  );
+
+  // 키보드가 열린 동안에도 알약이 렌더링돼야 한다(황금열쇠와 같은 줄).
   assert.match(
     pageSource,
-    /mode === "text" && isKeyboardOpen \? "h-\[clamp\(68px,10dvh,84px\)\]"/,
-    "키보드가 열린 텍스트 모드의 상태 영역은 축소되어야 한다",
+    /\{isKeyboardOpen && voiceStatePill\}/,
+    "키보드가 열리면 알약을 황금열쇠 줄에 렌더링해야 한다",
+  );
+
+  // 키보드가 닫힌 동안에는 상태 패널 안에서 렌더링돼야 한다.
+  const panelStart = pageSource.indexOf("{!isKeyboardOpen && (");
+  assert.notEqual(panelStart, -1, "키보드가 닫힐 때의 상태 패널 분기가 있어야 한다");
+  const panelPill = pageSource.indexOf("{voiceStatePill}", panelStart);
+  assert.notEqual(panelPill, -1, "상태 패널 안에서도 알약을 렌더링해야 한다");
+
+  // 알약을 두 곳에서 쓰므로, 어느 한쪽이 사라지면 뱃지가 통째로 없어진다.
+  const usages = pageSource.split("voiceStatePill").length - 1;
+  assert.ok(usages >= 3, `알약 정의 1회 + 사용 2회가 있어야 한다(현재 ${usages})`);
+
+  // 놀이 중 "채팅창 닫기" 는 계속 숨긴다(013 §3-6). 대신 015 가 종료 버튼을 넣었다.
+  assert.match(
+    pageSource,
+    /const showTextModeOverlay = mode === "text" && !isPlayActive;/,
+    "놀이 중에는 텍스트 모드 오버레이(채팅창 닫기)를 숨겨야 한다",
   );
 });

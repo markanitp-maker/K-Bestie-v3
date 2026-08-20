@@ -1,4 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  PlaySessionLookupError,
+  type ActiveSessionLookupOptions,
+} from "../play/skillTypes";
 import type {
   NonsenseGameSessionRow,
   NonsenseQuestionHistoryRow,
@@ -30,7 +34,8 @@ export interface FinishRoundParams {
  */
 export async function getActiveNonsenseSession(
   db: SupabaseClient,
-  childId: string
+  childId: string,
+  options?: ActiveSessionLookupOptions
 ): Promise<NonsenseGameSessionRow | null> {
   if (!db || !childId) return null;
 
@@ -45,13 +50,17 @@ export async function getActiveNonsenseSession(
       .maybeSingle();
 
     if (error) {
-      console.error("[getActiveNonsenseSession] DB error:", error);
-      return null;
+      throw new PlaySessionLookupError("nonsenseQuiz", error.message);
     }
 
     return (data as NonsenseGameSessionRow) ?? null;
   } catch (err) {
-    console.error("[getActiveNonsenseSession] unexpected error:", err);
+    if (options?.throwOnError) {
+      throw err instanceof PlaySessionLookupError
+        ? err
+        : new PlaySessionLookupError("nonsenseQuiz", err);
+    }
+    console.error("[getActiveNonsenseSession] 조회 실패, null 로 처리:", err);
     return null;
   }
 }
@@ -243,13 +252,19 @@ export async function finishQuestionRound(
     };
     if (endSession) sessionUpdate.ended_at = nowStr;
 
-    await db
+    // error 를 안 보면 STOP 의 종료 갱신 실패가 조용히 성공으로 지나간다
+    // (리뷰 지적, 2026-08-20). endSession 인 경우 특히 "끝난 척" 이 된다.
+    const { error } = await db
       .from("nonsense_game_sessions")
       .update(sessionUpdate)
       .eq("id", sessionId)
       .eq("child_id", childId);
+    if (error) {
+      throw new Error(`넌센스 라운드 마감 실패: ${error.message}`);
+    }
   } catch (err) {
     console.error("[finishQuestionRound] session update error:", err);
+    throw err;
   }
 }
 
@@ -265,7 +280,9 @@ export async function endNonsenseSession(
   const nowStr = new Date().toISOString();
 
   try {
-    await db
+    // 예전에는 error 를 아예 보지 않았다. 종료가 실패해도 조용히 성공으로 지나가
+    // 아이가 "그만" 했는데 다음 턴에 넌센스가 되살아났다(리뷰 지적, 2026-08-20).
+    const { error } = await db
       .from("nonsense_game_sessions")
       .update({
         state: "ENDED",
@@ -274,8 +291,12 @@ export async function endNonsenseSession(
       })
       .eq("id", sessionId)
       .eq("child_id", childId);
+    if (error) {
+      throw new Error(`넌센스 세션 종료 실패: ${error.message}`);
+    }
   } catch (err) {
     console.error("[endNonsenseSession] session update error:", err);
+    throw err;
   }
 
   // 아직 PRESENTED 상태로 남아있는 history는 reason에 따라 SKIPPED 또는 TOPIC_SHIFT로 정리

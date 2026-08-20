@@ -800,13 +800,28 @@ describe("WORD_CHAIN_SKILL Adapter", () => {
       utterance: "가방",
       signals: defaultSignals,
     });
-    assert.deepEqual(turnRes, { handled: false }); // no crash
+    // 조회 실패는 "놀이 없음" 이 아니다(2026-08-20). fail-open 은 그대로지만
+    // 상태가 미확정임을 알린다 — 없다고 단정하면 살아 있는 놀이가 그 턴에 죽는다.
+    assert.equal(turnRes.handled, false, "케이는 침묵하지 않는다");
 
-    // end should not throw
-    await WORD_CHAIN_SKILL.end({
-      db: failingDb,
-      childId: "child-1",
-    });
+    // end() 는 이제 종료 실패를 알린다.
+    //
+    // 예전 계약은 "end 는 던지지 않는다" 였다. 그래서 종료가 실패해도 호출부가
+    // "끝났다" 고 믿었고, 아이가 "그만" 했는데 세션이 남아 다음 턴에 놀이가
+    // 되살아났다(리뷰 지적, 2026-08-20). 끝난 척은 fail-open 이 아니라 거짓말이다.
+    //
+    // 대신 침묵 방지는 위 start/handleTurn 단정이 계속 지킨다 — 그쪽은 여전히
+    // 예외를 밖으로 내지 않는다.
+    await assert.rejects(
+      () =>
+        WORD_CHAIN_SKILL.end({
+          db: failingDb,
+          childId: "child-1",
+          chatSessionId: "chat-1",
+          reason: "EXPLICIT_STOP",
+        }),
+      "종료 실패가 호출부에 전달되어야 한다"
+    );
   });
 });
 

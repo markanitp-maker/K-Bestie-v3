@@ -1,3 +1,4 @@
+import type { ActiveSessionLookupOptions } from "../play/skillTypes";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   PlaySkillModule,
@@ -571,11 +572,12 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
 
   async getActiveSession(
     db: SupabaseClient,
-    childId: string
+    childId: string,
+    options?: ActiveSessionLookupOptions
   ): Promise<{ id: string; updatedAt?: string | null; startedAt?: string | null } | null> {
     if (!db || !childId) return null;
     try {
-      const session = await getActiveWordChainSession(db, childId);
+      const session = await getActiveWordChainSession(db, childId, options);
       return session
         ? {
             id: session.id,
@@ -584,6 +586,8 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
           }
         : null;
     } catch (err) {
+      // 조회 실패를 삼키면 "놀이 없음" 과 구별되지 않는다. 호출부가 원하면 던진다.
+      if (options?.throwOnError) throw err;
       console.error("[wordChainSkill] getActiveSession error:", err);
       return null;
     }
@@ -669,7 +673,21 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
 
       // 2. 안전/감정/명시적 중단/주제 전환 프리플라이트 (§3-22, §5)
       if (isExplicitStop(utterance)) {
-        await endWordChainSession(db, activeSession.id, childId);
+        // 종료가 실패했는데 ended:true 를 주면 끝난 척이 된다 — 세션이 남아
+        // 다음 턴에 놀이가 되살아난다. 그래도 케이는 침묵하지 않는다.
+        try {
+          await endWordChainSession(db, activeSession.id, childId);
+        } catch (err) {
+          console.error("[wordChainSkill] 그만 처리 중 종료 실패:", err);
+          return {
+            handled: true,
+            skillId: "WORD_CHAIN",
+            ended: false,
+            sessionLookupFailed: true,
+            deterministicText:
+              "어? 놀이를 정리하는 데 문제가 생겼어.\n잠깐만 기다렸다가 다시 그만이라고 말해줄래?",
+          };
+        }
         return {
           handled: true,
           instruction: `[끝말잇기] 아이가 끝말잇기를 그만하자고 했어. 아쉬워하지 말고 즐겁게 잘 놀았다고 다정하게 칭찬하며 일반 대화로 돌아가.`,
@@ -679,7 +697,14 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
 
       if (isTopicShift(utterance, signals)) {
         // 주제 전환은 오답으로 처리하지 않고 세션을 종료하여 일반 대화로 안전하게 인계합니다.
-        await endWordChainSession(db, activeSession.id, childId);
+        try {
+          await endWordChainSession(db, activeSession.id, childId);
+        } catch (err) {
+          // 못 닫았으면 놀이가 아직 살아 있다. 자유대화로 넘기되 "놀이 없음" 으로
+          // 단정하지 않는다 — 단정하면 다음 턴에 케이가 놀이를 잊는다.
+          console.error("[wordChainSkill] 주제 전환 중 종료 실패:", err);
+          return { handled: false, sessionLookupFailed: true };
+        }
         return { handled: false };
       }
 
@@ -1006,15 +1031,21 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
     }
   },
 
+  // 종료 실패를 삼키면 호출부가 "끝났다" 고 믿는다(리뷰 지적, 2026-08-20).
+  // 그러면 클라이언트는 놀이 UI 를 닫는데 세션은 남아, 다음 턴에 놀이가 되살아난다.
+  // 아이는 그만하자고 했는데 케이가 계속 놀이를 한다. 그래서 실패는 던진다.
   async end(input: PlaySkillEndInput): Promise<void> {
+    if (!input.db || !input.childId) return;
     try {
-      if (!input.db || !input.childId) return;
-      const active = await getActiveWordChainSession(input.db, input.childId);
+      const active = await getActiveWordChainSession(input.db, input.childId, {
+        throwOnError: true,
+      });
       if (active) {
         await endWordChainSession(input.db, active.id, input.childId);
       }
     } catch (err) {
       console.error("[wordChainSkill] end error:", err);
+      throw err;
     }
   },
 };

@@ -142,6 +142,23 @@ export async function executeSkillSelection(
     chatSessionId,
   });
 
+  // 3-1. 조회가 실패했으면 "활성 놀이 없음" 이 아니라 모른다.
+  //      모르는 채로 새 놀이를 시작하면 못 읽은 세션과 새 세션이 동시에 살아난다
+  //      (리뷰 지적, 2026-08-20). 그러면 다음 턴에 어느 놀이인지 아무도 모른다.
+  //
+  // 세션을 하나 찾았더라도 못 읽은 스킬이 있으면 마찬가지다. 재개든 신규든
+  // 못 읽은 세션과 중복될 수 있다(리뷰 지적, 2026-08-20).
+  if (activeResolution.lookupFailed) {
+    console.error(
+      `[executeSkillSelection] 활성 놀이 조회 실패로 새 놀이를 시작하지 않는다 (child ${childId})`
+    );
+    return {
+      ok: false,
+      skillId: targetSkill.id,
+      error: "Failed to look up the active play session",
+    };
+  }
+
   // 4. 같은 스킬이 이미 활성이면 새로 만들지 않고 기존 세션 재개 (§3-5)
   if (
     activeResolution.skill &&
@@ -166,10 +183,18 @@ export async function executeSkillSelection(
         reason: `SWITCH_TO_${targetSkill.id}`,
       });
     } catch (err) {
+      // 이전 놀이를 못 닫았는데 새 놀이를 시작하면 활성 세션이 둘 남는다
+      // (리뷰 지적, 2026-08-20). 그러면 다음 턴에 어느 놀이인지 케이도 아이도 모른다.
+      // 새로 시작하지 않고 실패로 돌려보낸다.
       console.error(
         `[executeSkillSelection] Failed to end previous active skill ${activeResolution.skill.id}:`,
         err
       );
+      return {
+        ok: false,
+        skillId: targetSkill.id,
+        error: "Failed to end the previous play session",
+      };
     }
   }
 

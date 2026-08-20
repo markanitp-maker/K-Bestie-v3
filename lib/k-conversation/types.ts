@@ -86,6 +86,14 @@ export interface EngineOutput {
    * null 이 된다. 그래야 클라이언트가 입력모드를 되돌릴 시점을 정확히 안다.
    */
   activePlaySkillId?: string | null;
+  /**
+   * 활성 놀이 세션 조회가 실패했는가(2026-08-20).
+   *
+   * true 면 `activePlaySkillId` 는 **모름** 이지 "놀이 없음" 이 아니다. 응답에서 이 값을
+   * null 로 내려보내면 클라이언트가 놀이 UI 를 닫아 버린다(app/chat/page.tsx). 그러니
+   * 라우트는 필드를 아예 생략해 클라이언트 상태를 그대로 유지해야 한다.
+   */
+  playSessionLookupFailed?: boolean;
   /** 생성 실패 유형(관측용). generationFallback 이 true 일 때만 채워진다. */
   generationFailureType?: string;
 }

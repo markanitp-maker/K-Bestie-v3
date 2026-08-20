@@ -12,6 +12,17 @@ export interface ActiveSkillResolution {
   skill: PlaySkillModule | null;
   sessionId: string | null;
   cleaned: CleanedSkillRecord[];
+  /**
+   * 활성 세션 조회가 하나라도 실패했는가.
+   *
+   * `skill: null` 과 함께 true 면 "놀이 없음" 이 아니라 **모름** 이다. 실패를 부재로
+   * 취급하면 살아 있는 놀이의 턴이 조용히 처리되지 않는다(2026-08-20 결함).
+   *
+   * `skill` 을 찾았는데도 true 일 수 있다 — 다른 스킬을 못 읽었다는 뜻이다.
+   * 그 스킬에 중복 활성 세션이 남아 있을 수 있으므로, **종료 경로는 이 값을 보고
+   * "전부 종료했다" 고 단정하지 않아야 한다**(리뷰 지적, 2026-08-20).
+   */
+  lookupFailed: boolean;
 }
 
 export interface ResolveActiveSkillOptions {
@@ -45,7 +56,7 @@ export async function resolveActiveSkill(
   const cleaned: CleanedSkillRecord[] = [];
 
   if (!db || !childId) {
-    return { skill: null, sessionId: null, cleaned };
+    return { skill: null, sessionId: null, cleaned, lookupFailed: false };
   }
 
   const nowMs = opts?.nowMs ?? Date.now();
@@ -57,10 +68,16 @@ export async function resolveActiveSkill(
 
   const sessionResults = await Promise.allSettled(
     registry.map(async (skill) => {
-      const session = await skill.getActiveSession(db, childId);
+      // 실패를 삼키면 "세션 없음" 과 구별되지 않아 활성 놀이 턴이 조용히 처리되지 않는다.
+      // 던지게 해서 allSettled 의 rejected 로 드러낸다.
+      const session = await skill.getActiveSession(db, childId, {
+        throwOnError: true,
+      });
       return { skill, session };
     })
   );
+
+  let lookupFailed = false;
 
   for (const result of sessionResults) {
     if (result.status === "fulfilled") {
@@ -74,6 +91,8 @@ export async function resolveActiveSkill(
         });
       }
     } else {
+      // 조회 실패다. "놀이 없음" 이 아니므로 호출부에 알린다.
+      lookupFailed = true;
       console.error(
         "[activeSkillCoordinator] Failed checking active session for skill:",
         result.reason
@@ -94,21 +113,26 @@ export async function resolveActiveSkill(
           chatSessionId,
           reason: "STALE_SESSION_CLEANUP",
         });
+        cleaned.push({ skillId: item.skill.id, reason: "stale" });
       } catch (err) {
+        // 못 닫았으면 정리된 것이 아니다. cleaned 로 세고 활성 목록에서 빼면
+        // 살아 있는 세션을 없는 것으로 취급하게 된다(리뷰 지적, 2026-08-20).
+        // 상태를 확정하지 못했다고 알린다.
         console.error(
           `[activeSkillCoordinator] Failed to end stale skill ${item.skill.id}:`,
           err
         );
+        lookupFailed = true;
       }
-      cleaned.push({ skillId: item.skill.id, reason: "stale" });
     } else {
       freshActive.push(item);
     }
   }
 
   // 3. 남은 Active가 0개인 경우
+  //    조회가 실패했다면 "0개" 는 사실이 아니라 모르는 것이다.
   if (freshActive.length === 0) {
-    return { skill: null, sessionId: null, cleaned };
+    return { skill: null, sessionId: null, cleaned, lookupFailed };
   }
 
   // 4. 남은 Active가 1개인 경우
@@ -117,6 +141,8 @@ export async function resolveActiveSkill(
       skill: freshActive[0].skill,
       sessionId: freshActive[0].sessionId,
       cleaned,
+      // 세션을 찾았어도 못 읽은 스킬이 있으면 "전부 확인" 은 아니다.
+      lookupFailed,
     };
   }
 
@@ -152,18 +178,22 @@ export async function resolveActiveSkill(
         chatSessionId,
         reason: "DUPLICATE_ACTIVE_CLEANUP",
       });
+      cleaned.push({ skillId: dup.skill.id, reason: "duplicate" });
     } catch (err) {
+      // 중복을 못 닫았으면 활성이 하나라고 확정할 수 없다. 그런데도 단일 활성으로
+      // 답하면, 남은 세션이 다음 턴에 되살아나 놀이가 뒤섞인다(리뷰 지적, 2026-08-20).
       console.error(
         `[activeSkillCoordinator] Failed to end duplicate skill ${dup.skill.id}:`,
         err
       );
+      lookupFailed = true;
     }
-    cleaned.push({ skillId: dup.skill.id, reason: "duplicate" });
   }
 
   return {
     skill: chosen.skill,
     sessionId: chosen.sessionId,
     cleaned,
+    lookupFailed,
   };
 }
