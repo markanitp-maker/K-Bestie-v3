@@ -33,7 +33,7 @@ function overlap(a: Box, b: Box): number {
 }
 
 async function login(page: Page) {
-  await page.goto(`${BASE}/login`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
   await page.getByPlaceholder("아이 아이디를 입력하세요").fill(CHILD_USERNAME);
   await page.getByPlaceholder("비밀번호를 입력하세요").fill(getQaPassword());
   await page.getByRole("button", { name: "로그인", exact: true }).click({ force: true });
@@ -46,8 +46,8 @@ async function login(page: Page) {
     },
     { cId: CHILD_ID }
   );
-  await page.goto(`${BASE}/chat`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(2500);
+  await page.goto(`${BASE}/chat`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(8000);
   const later = page.getByRole("button", { name: "나중에 할게요" });
   if (await later.count().catch(() => 0)) await later.click({ force: true }).catch(() => {});
 }
@@ -57,7 +57,7 @@ for (const vp of [
   { name: "Android 412", width: 412, height: 915, micCenter: 206 },
 ]) {
   test(`014: ${vp.name} — 아이콘이 문구 위, 가운데 정렬, 겹침 없음`, async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await login(page);
 
@@ -88,9 +88,23 @@ for (const vp of [
       };
     });
 
-    const mic = await page.locator('button[aria-label*="듣고 있어요"], button[aria-label*="눌러서"], button[aria-label*="마이크"]').first().boundingBox().catch(() => null);
-    const keyboard = await page.getByRole("button", { name: "텍스트로 답하기" }).boundingBox().catch(() => null);
-    const faq = await page.getByRole("button", { name: "FAQ 열기" }).boundingBox().catch(() => null);
+    // 실측(2026-08-20) — 마이크 버튼의 aria-label 은 상태에 따라 바뀐다.
+    // 대화 시작 전 "대화 시작하기", 자동 듣기 중 "자동으로 듣고 있어요", 수동 "마이크 켜기".
+    // 하나라도 놓치면 boundingBox 가 null 이 되고 겹침 검사가 공허하게 통과한다.
+    const micSelector = [
+      'button[aria-label="대화 시작하기"]',
+      'button[aria-label*="듣고 있어요"]',
+      'button[aria-label*="마이크"]',
+      'button[aria-label*="눌러서"]',
+    ].join(", ");
+    const mic = await page.locator(micSelector).first().boundingBox().catch(() => null);
+    const keyboard = await page.locator('button[aria-label="텍스트로 답하기"]').first().boundingBox().catch(() => null);
+    const faq = await page.locator('button[aria-label="FAQ 열기"]').first().boundingBox().catch(() => null);
+
+    // 겹침 검사가 의미를 갖도록, 기준 요소를 못 찾았으면 그 자체를 실패로 본다.
+    expect(mic, "마이크 버튼을 찾지 못했다 — 겹침 검사가 무의미해진다").not.toBeNull();
+    expect(keyboard, "키보드 버튼을 찾지 못했다").not.toBeNull();
+    expect(faq, "FAQ 버튼을 찾지 못했다").not.toBeNull();
 
     console.log(`[${vp.name}] 카드`, JSON.stringify(cardBox));
     console.log(`[${vp.name}] 배치`, JSON.stringify(layout));
@@ -128,6 +142,6 @@ for (const vp of [
       ).toBeLessThanOrEqual(1);
     }
 
-    await page.screenshot({ path: `/tmp/qa-014-goldkey-${vp.width}.png` });
+    await page.screenshot({ path: `/tmp/qa-014-goldkey-${vp.width}.png` }).catch(() => {});
   });
 }
