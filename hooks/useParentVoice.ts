@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { cleanTtsText, splitTtsSentences } from "@/lib/speech/speechNormalization";
 
 interface UseParentVoiceReturn {
   isSttSupported: boolean;
@@ -70,7 +71,7 @@ export function useParentVoice(): UseParentVoiceReturn {
         recognition.onerror = (event: any) => {
           console.error("Speech recognition error", event.error);
           const messages: Record<string, string> = {
-            "not-allowed": "마이크 권한이 꺼져 있어요. 브라우저 설정에서 마이크를 허용해주세요.",
+            "not-allowed": "마이크 권한을 허용해주세요.\n텍스트로도 대화할 수 있어요.",
             "no-speech": "음성이 감지되지 않았어요. 다시 말씀해주세요.",
             "audio-capture": "마이크를 찾을 수 없어요. 기기의 마이크 연결을 확인해주세요.",
             "network": "네트워크 연결을 확인해주세요.",
@@ -151,12 +152,12 @@ export function useParentVoice(): UseParentVoiceReturn {
     speechGenerationRef.current += 1;
     const generation = speechGenerationRef.current;
 
-    if (!text) return;
+    const cleanText = cleanTtsText(text);
+    if (!cleanText) return;
 
     // 긴 답변은 문장 단위로 나눠 순차 재생한다(§12.3) — 브라우저 TTS 엔진이
     // 한 번에 너무 긴 텍스트를 받으면 중간에 끊기거나 무음이 되는 경우가 있어서.
-    const sentences = text.split(/(?<=[.!?。！？])\s+/).map(s => s.trim()).filter(Boolean);
-    const queue = sentences.length > 0 ? sentences : [text];
+    const queue = splitTtsSentences(cleanText);
 
     const voices = synthesisRef.current.getVoices();
     const koVoice = voices.find(v => v.lang === "ko-KR") || voices.find(v => v.lang.startsWith("ko"));
@@ -172,12 +173,20 @@ export function useParentVoice(): UseParentVoiceReturn {
       utterance.lang = "ko-KR";
       if (koVoice) utterance.voice = koVoice;
 
-      utterance.onstart = () => setIsSpeaking(true);
+      // 정지 직후 다시 재생하면 이전 utterance 의 지연된 콜백이 늦게 도착한다.
+      // generation 검사를 안 하면 그 콜백이 새 재생의 isSpeaking 을 덮어써
+      // 버튼 표시와 실제 음성이 어긋난다(리뷰 지적, 2026-08-20).
+      utterance.onstart = () => {
+        if (generation !== speechGenerationRef.current) return;
+        setIsSpeaking(true);
+      };
       utterance.onerror = (e) => {
         console.error("Speech synthesis error", e);
+        if (generation !== speechGenerationRef.current) return;
         setIsSpeaking(false);
       };
       utterance.onend = () => {
+        if (generation !== speechGenerationRef.current) return;
         index += 1;
         speakNext();
       };
