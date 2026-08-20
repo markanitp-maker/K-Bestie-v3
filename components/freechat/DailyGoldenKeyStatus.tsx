@@ -23,15 +23,15 @@ export function DailyGoldenKeyStatus({ status, loading }: Props) {
       <div
         data-ui="freechat-daily-key-status"
         data-state="loading"
-        className="flex w-full min-w-0 flex-col items-center gap-1 rounded-2xl bg-white/70 px-3 py-1.5 shadow-sm backdrop-blur-md"
+        className="flex min-w-0 max-w-full flex-col items-center gap-1 rounded-2xl bg-white/70 px-2.5 py-1.5 shadow-sm backdrop-blur-md"
         aria-hidden="true"
       >
         <span className="shrink-0 text-[15px]">🔑</span>
         {/* 014 리뷰 MINOR — 실제 카드의 글자 블록은 2줄이다. 스켈레톤이 1줄이면
             조회가 끝나는 순간 카드 높이가 약 15px 튄다. 줄 수를 맞춘다. */}
-        <span className="flex w-full min-w-0 flex-col items-center gap-[2px] leading-tight">
-          <span className="h-[13px] w-full animate-pulse rounded-full bg-black/10" />
-          <span className="h-[13px] w-3/4 animate-pulse rounded-full bg-black/10" />
+        <span className="flex min-w-0 flex-col items-center gap-[2px] leading-tight">
+          <span className="h-[13px] w-[84px] animate-pulse rounded-full bg-black/10" />
+          <span className="h-[13px] w-[64px] animate-pulse rounded-full bg-black/10" />
         </span>
       </div>
     );
@@ -55,11 +55,19 @@ export function DailyGoldenKeyStatus({ status, loading }: Props) {
   // 014 — 아이콘 위치를 왼쪽에서 위로 올린다(requests/a02.png 오른쪽 시안).
   // 아이콘 한 칸 + 글자 블록 한 칸이라는 구조는 그대로 두고 방향만 세로로 바꾼다.
   // 글자 블록이 여전히 하나이므로 011 에서 고친 "잘게 쪼개짐" 은 다시 생기지 않는다.
+  //
+  // 015 (requests/a03.png) — 흰 배경이 글자에 붙어야 한다.
+  // 011 은 카드를 `w-full` 로 두고 칸을 `justify-self-stretch` 로 늘렸다. 그때는
+  // 가로 배치(아이콘 왼쪽 + 글자 오른쪽)였고 폭이 좁으면 문구가 잘게 쪼개졌기 때문이다.
+  // 014 로 세로 배치가 되면서 그 이유가 없어졌다 — 글자 블록이 자기 줄을 쓰므로
+  // 내용 폭으로 줄여도 2줄을 유지한다. `w-full` 을 떼어 흰 배경이 글자를 감싸게 하고,
+  // 화면이 아주 좁을 때만 `max-w-full` 로 넘치지 않게 막는다.
+  // 좌우 여백도 px-3 → px-2.5 로 줄인다(대표 지시: "불필요한 양 옆 공백 제거").
   return (
     <div
       data-ui="freechat-daily-key-status"
       data-state={earned ? "earned" : "not-earned"}
-      className="flex w-full min-w-0 flex-col items-center gap-1 rounded-2xl bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur-md"
+      className="flex min-w-0 max-w-full flex-col items-center gap-1 rounded-2xl bg-white/80 px-2.5 py-1.5 shadow-sm backdrop-blur-md"
     >
       <span className="shrink-0 text-[15px]" aria-hidden="true">
         🔑

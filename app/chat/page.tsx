@@ -871,6 +871,22 @@ export default function ChatPage() {
   }, [mode, isAuto, restorePrePlayInputMode, switchToText]);
   onPlaySkillStateChangeRef.current = handlePlaySkillStateChange;
 
+  // 015 (requests/a05.png) — 놀이를 끝낼 버튼이 어디에도 없었다.
+  //
+  // 013 §3-6 이 놀이 중 "채팅창 닫기" 를 숨긴 뒤로, 아이가 놀이를 끝내려면 "그만" 이라고
+  // 타이핑하는 방법밖에 없었다. 대표님 지적대로 버튼이 필요하다.
+  //
+  // 013 §3-6 이 막으려던 것은 "게임이 살아 있는데 음성으로 몰래 빠져나가는 것" 이다.
+  // 이 버튼은 반대로 게임을 **정상 종료**시키므로 그 요구와 충돌하지 않는다.
+  // 종료는 서버가 해야 한다 — 클라이언트에서 입력모드만 되돌리면 세션이 살아 있어
+  // 다음 턴에 게임이 되살아난다. 그래서 아이가 "그만" 이라고 말한 것과 같은 경로로
+  // 보낸다. 케이가 제 말투로 마무리 인사를 하고, 응답의 activePlaySkillId 가 null 로
+  // 내려오면서 입력모드 복귀까지 기존 흐름을 그대로 탄다.
+  const handleStopPlay = useCallback(() => {
+    if (!isPlayActiveRef.current) return;
+    sendTypedText("그만");
+  }, [sendTypedText]);
+
   const handleSendText = useCallback(async () => {
     const text = textInput.trim();
     if (!text) return;
@@ -905,13 +921,12 @@ export default function ChatPage() {
   // 상태 패널은 mode === "text" 이면 마스코트 대신 상태 알약 + "채팅창 닫기" 를 그렸다.
   // 놀이 중에는 키보드를 강제하므로 mode 가 항상 "text" 가 되고, 013 §3-6 이 그
   // "채팅창 닫기" 까지 숨겼다. 그래서 놀이 내내 마스코트도 버튼도 없는 빈 칸이 됐다.
-  // 케이랑 놀는 중에 케이가 안 보이는 것은 말이 안 된다.
+  // 케이랑 놀는 중에 케이가 안 보이는 것은 말이 안 된다. 그래서 놀이 중에는
+  // 마스코트를 그린다.
   //
-  // 그래서 놀이 중에는 마스코트를 그린다. 단 소프트 키보드가 올라와 있으면 세로
-  // 공간이 68~84px 밖에 없어 165px 마스코트가 들어가지 못하므로, 그때는 기존처럼
-  // 압축된 상태 알약을 유지한다(기기 제약이다).
-  // "채팅창 닫기" 는 여전히 놀이 중에 숨긴다 — 013 §3-6 의 요구는 그대로다.
-  const showTextModeOverlay = mode === "text" && (isKeyboardOpen || !isPlayActive);
+  // 015 이후 이 패널은 **키보드가 닫힌 때만** 렌더된다(키보드가 올라오면 상태 알약이
+  // 황금열쇠와 같은 줄로 내려간다). 그래서 여기서 isKeyboardOpen 을 다시 볼 필요가 없다.
+  const showTextModeOverlay = mode === "text" && !isPlayActive;
 
   // 100dvh는 최신 모바일 브라우저(iOS Safari 15+ 등)에서 키보드 등장 시 동적으로
   // 잘 대응되므로, 억지로 viewportHeight px를 강제 주입하면 오히려 resize 시
@@ -958,6 +973,32 @@ export default function ChatPage() {
     default:
       stateText = "대기 중";
   }
+
+  // 015 (requests/a04.png) — 텍스트 모드에서 "상태 표시" 와 "황금열쇠" 를 한 줄에 둔다.
+  //
+  // 예전에는 상태 알약이 conversation-status-panel(위)에, 황금열쇠 카드가 입력줄 위에
+  // 따로 있었다. 소프트 키보드가 올라오면 두 블록이 각각 한 줄씩 먹어서 그만큼
+  // 말풍선 영역이 줄고 위 말풍선이 잘렸다(대표님 지적).
+  //
+  // 그리드 첫 행이 minmax(0,1fr) 이므로 아래 auto 행이 줄면 말풍선 영역이 그만큼 커진다.
+  // 그래서 키보드가 올라온 동안에는 상태 패널을 아예 렌더하지 않고, 알약을 황금열쇠와
+  // 같은 줄로 내린다. 같은 JSX 를 두 곳에서 쓰므로 변수로 뽑아 둔다.
+  const voiceStatePill = (
+    <div
+      data-ui="text-mode-voice-state"
+      data-keyboard-open={isKeyboardOpen}
+      className="flex shrink-0 items-center gap-2 rounded-full border border-white/80 bg-white/85 px-4 py-2 text-[#5F7181] shadow-[0_3px_10px_rgba(75,85,99,0.10)] backdrop-blur-md"
+      aria-live="polite"
+    >
+      <div
+        data-ui="text-mode-state-icon"
+        className="flex h-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] w-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] items-center justify-center"
+      >
+        {StateIcon}
+      </div>
+      <span className="text-[14px] font-bold leading-none">{stateText}</span>
+    </div>
+  );
 
   // 048 hotfix: 1·2·3 영역은 화자별 채팅이 아니라 "케이가 실제로 말한 발화"만의
   // 최근 3단계 타임라인이다(아이 발화는 어디에도 노출하지 않는다). 미션·자유대화가
@@ -1177,26 +1218,22 @@ export default function ChatPage() {
 
           {/* Mascot Area & Side Cards OR Text-Mode CTA.
               Text mode keeps K's state visible even while the software keyboard is open. */}
-          {(mode === "text" || !isKeyboardOpen) && (
+          {/* 015 — 키보드가 올라오면 이 행 자체를 없앤다. 예전에는 텍스트 모드에서
+              압축 알약 한 줄(68~84px)을 계속 차지했다. 알약은 아래 황금열쇠와 같은 줄로
+              내려가므로 여기서 빠져도 정보가 사라지지 않는다.
+              그리드 첫 행이 minmax(0,1fr) 이라 이 auto 행이 사라진 만큼 말풍선이 커진다. */}
+          {!isKeyboardOpen && (
           <div
             data-ui="conversation-status-panel"
-            className={`relative z-10 w-full shrink-0 transition-all duration-300 flex items-center justify-center ${showTextModeOverlay && isKeyboardOpen ? "h-[clamp(68px,10dvh,84px)]" : "h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)]"}`}
+            className="relative z-10 w-full shrink-0 transition-all duration-300 flex items-center justify-center h-[clamp(194.5px,calc(var(--chat-mascot-bottom-padding)+var(--chat-mascot-height)-var(--chat-bubble-bottom-padding)+32.5px),223.5px)]"
           >
             {showTextModeOverlay ? (
               /* Text overlay retains K's latest state above the close CTA. */
               <div className={`relative z-30 flex flex-col items-center justify-center my-auto pointer-events-auto animate-in fade-in duration-300 ${isKeyboardOpen ? "gap-0" : "gap-4"}`}>
-                <div
-                  data-ui="text-mode-voice-state"
-                  data-keyboard-open={isKeyboardOpen}
-                  className="flex items-center gap-2 rounded-full border border-white/80 bg-white/85 px-4 py-2 text-[#5F7181] shadow-[0_3px_10px_rgba(75,85,99,0.10)] backdrop-blur-md"
-                  aria-live="polite"
-                >
-                  <div data-ui="text-mode-state-icon" className="flex h-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] w-[clamp(40px,calc(var(--frame-w,100vw)*0.105),46px)] items-center justify-center">
-                    {StateIcon}
-                  </div>
-                  <span className="text-[14px] font-bold leading-none">{stateText}</span>
-                </div>
-                {!isKeyboardOpen && !isPlayActive && (
+                {voiceStatePill}
+                {/* 013 §3-6 — 놀이 중에는 음성으로 빠져나갈 문을 두지 않는다.
+                    (이 패널은 015 이후 키보드가 닫힌 때만 렌더되므로 키보드 조건은 뺐다) */}
+                {!isPlayActive && (
                   <button
                     onClick={switchToVoice}
                     style={{ backgroundColor: "#EF5350" }}
@@ -1325,16 +1362,35 @@ export default function ChatPage() {
               // "표시 조건" 자체가 바뀌어 버리므로(대표 지시: 조건은 그대로),
               // 입력줄 바로 위에 오른쪽 정렬 한 줄로 둔다. 절대배치를 쓰지 않는다.
               <div className="w-full min-w-0 flex flex-col gap-2 box-border">
-              {/* 011 — 카드가 w-full 이므로 여기서는 폭을 제한한다. 텍스트 모드는 가로가
-                  넉넉해서 그냥 두면 입력줄만큼 늘어난다. 한 줄에 들어갈 만큼만 준다. */}
-              <div className="flex justify-end min-w-0"
-                style={{ paddingRight: "max(16px, env(safe-area-inset-right))" }}
+              {/* 015 — 카드가 스스로 내용 폭이므로 여기서 폭을 제한할 필요가 없다.
+                  011 은 카드가 w-full 이라 입력줄만큼 늘어나는 것을 max-w 로 막았고,
+                  014 는 그 값을 줄였다. 이제 둘 다 필요 없다.
+                  키보드가 올라온 동안에는 상태 알약을 이 줄로 받아 한 줄에 나란히 둔다
+                  (requests/a04.png). 그래야 위 말풍선이 잘리지 않는다. */}
+              <div
+                className={`flex min-w-0 items-center gap-2 ${
+                  isPlayActive || isKeyboardOpen ? "justify-between" : "justify-end"
+                }`}
+                style={{
+                  paddingLeft: "max(16px, env(safe-area-inset-left))",
+                  paddingRight: "max(16px, env(safe-area-inset-right))",
+                }}
               >
-                {/* 014 — 카드가 세로 배치가 되면서 내용 폭이 줄었다. 240px 로 두면
-                    텍스트 모드에서만 카드가 음성 모드보다 두 배 넓어 보인다. */}
-                <div className="min-w-0 max-w-[140px]">
-                  <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
-                </div>
+                {/* 015 — 놀이 종료 버튼. 입력줄 바로 위 왼쪽(requests/a05.png).
+                    키보드가 올라와 있든 없든 같은 자리에 둔다. */}
+                {isPlayActive && (
+                  <button
+                    onClick={handleStopPlay}
+                    disabled={isResponding}
+                    className="shrink-0 rounded-[14px] px-5 py-2.5 text-[17px] font-bold text-white shadow-[0_3px_10px_rgba(16,49,91,0.28)] transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    style={{ backgroundColor: "var(--color-k-navy)" }}
+                    aria-label="케이 놀이 종료"
+                  >
+                    종료
+                  </button>
+                )}
+                {isKeyboardOpen && voiceStatePill}
+                <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
               </div>
               <div
                 className="w-full min-w-0 flex gap-2 box-border"
@@ -1466,13 +1522,13 @@ export default function ChatPage() {
                 </div>
 
                 {/* 오른쪽 칸 — 오늘의 황금열쇠.
-                    011 — 카드가 칸 폭을 **다 쓰게** 한다. 예전에는 justify-self-end 라
-                    카드가 글자 폭으로 쪼그라들어 문구가 세로로 잘게 쪼개졌다.
-                    stretch 로 바꿔 실제 available width 를 넘겨주고, 카드 안에서만
-                    라벨/상태가 2줄로 쌓이게 했다.
-                    칸이 마이크 왼쪽 여백과 같은 1fr 이므로 마이크는 정중앙에 그대로 남고
-                    카드가 마이크·키보드와 겹칠 수 없다. */}
-                <div className="justify-self-stretch min-w-0">
+                    011 은 카드를 stretch 로 늘렸다. 가로 배치에서 폭이 좁으면 문구가
+                    세로로 잘게 쪼개졌기 때문이다.
+                    015 — 014 로 세로 배치가 되면서 그 이유가 없어졌다. 흰 배경이 글자에
+                    붙어야 하므로 카드를 내용 폭으로 두고 칸 안에서 가운데 놓는다.
+                    칸이 마이크 왼쪽 여백과 같은 1fr 이므로 마이크는 정중앙에 그대로 남고,
+                    카드가 좁아지는 방향이라 마이크·키보드와 겹칠 수 없다. */}
+                <div className="justify-self-center min-w-0">
                   <DailyGoldenKeyStatus status={dailyKeyStatus} loading={dailyKeyStatusLoading} />
                 </div>
               </div>
