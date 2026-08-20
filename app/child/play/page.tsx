@@ -8,6 +8,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { AppTopHeader } from "@/components/AppTopHeader";
+import { isComicBookEnabled } from "@/lib/k-conversation/play/playAvailability";
 
 
 
@@ -26,7 +27,7 @@ function isTicketBasedPlay(playId: string): boolean {
 const GAMES = [
   // comingSoon: 실제 게임 화면이 아직 없는 placeholder 카드 — 클릭해도 황금열쇠 차감/
   // 시작 확인 모달로 이어지면 안 된다(2026-07-27 실사용 손실 발견, 즉시 차단).
-  { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", bgLight: "var(--color-k-orange-tint)", keys: 2, comingSoon: false },
+  { id: "comic_book", icon: "📚", title: "만화책 읽기", bg: "var(--color-k-orange)", bgLight: "var(--color-k-orange-tint)", keys: 2, comingSoon: !isComicBookEnabled() },
   // keys는 화면 표시·부족 판정용 값이다. 실제 차감은 서버가 하므로
   // lib/quiz/handoffToken.ts의 QUIZ_GOLD_KEY_COST와 반드시 같아야 한다(2026-07-27: 1 → 2).
   { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "var(--color-k-sky-blue)", bgLight: "var(--color-k-info-bg)", keys: 2, comingSoon: false },

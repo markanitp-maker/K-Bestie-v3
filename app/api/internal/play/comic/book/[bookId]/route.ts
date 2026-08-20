@@ -21,6 +21,9 @@ type Params = { params: Promise<{ bookId: string }> };
 export async function GET(request: NextRequest, { params }: Params): Promise<NextResponse> {
   const auth = verifyInternalPlayRequest(request);
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: auth.status });
+  if (auth.playId !== "comic_book") {
+    return NextResponse.json({ error: "unknown_play_id" }, { status: 401 });
+  }
 
   const { bookId } = await params;
   const requested = request.nextUrl.searchParams.get("version");

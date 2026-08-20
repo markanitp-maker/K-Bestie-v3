@@ -17,6 +17,25 @@ export function isKPlayEnabled(): boolean {
 }
 
 /**
+ * 만화책 읽기(comic_book) 놀이 노출 여부 판정.
+ *
+ * Production DB 에는 play_registry 에 comic_book 행이 아예 없다.
+ * 따라서 Production 에서 카드만 켜지면 아이가 눌렀을 때 티켓 발급이 실패해 깨진 버튼이 보인다.
+ * Dev 에서는 기본 켜짐, Production 에서는 NEXT_PUBLIC_COMIC_BOOK_ENABLED=true 명시 시에만 켜진다.
+ * Dev 에서도 긴급 차단이 가능하도록 명시적 "false" 값은 비활성화 처리한다.
+ */
+export function isComicBookEnabled(): boolean {
+  const override = process.env.NEXT_PUBLIC_COMIC_BOOK_ENABLED?.trim().toLowerCase();
+  if (override === "true") {
+    return true;
+  }
+  if (override === "false") {
+    return false;
+  }
+  return getSupabaseTarget() !== "prod";
+}
+
+/**
  * 놀이가 꺼져 있을 때 아이에게 그대로 들려줄 안내.
  *
  * 프롬프트 지침으로는 안 된다 — 케이가 "좋아, 신나게 해보자!" 라고 호응해

@@ -56,6 +56,54 @@ test("동일 Origin의 지정된 놀이 종료 메시지만 수락한다", () =>
   assert.equal(isPlayCloseMessage(messageEvent(origin, "PLAY_AUTO_CLOSE"), origin, "k-play-mbti"), false);
 });
 
+test("놀이 종료 메시지는 source 배열의 첫 번째 값을 수락한다", () => {
+  const origin = "https://app.k-bestie.com";
+  const sources = ["k-play-comic_book", "k-play-comic-book"];
+  assert.equal(
+    isPlayCloseMessage(messageEvent(origin, { source: sources[0], type: "PLAY_CLOSE_REQUEST" }), origin, sources),
+    true,
+  );
+});
+
+test("놀이 종료 메시지는 source 배열의 두 번째 값을 수락한다", () => {
+  const origin = "https://app.k-bestie.com";
+  const sources = ["k-play-comic_book", "k-play-comic-book"];
+  assert.equal(
+    isPlayCloseMessage(messageEvent(origin, { source: sources[1], type: "PLAY_CLOSE_REQUEST" }), origin, sources),
+    true,
+  );
+});
+
+test("놀이 종료 메시지는 source 배열에 없는 값을 무시한다", () => {
+  const origin = "https://app.k-bestie.com";
+  assert.equal(
+    isPlayCloseMessage(
+      messageEvent(origin, { source: "k-play-mbti", type: "PLAY_CLOSE_REQUEST" }),
+      origin,
+      ["k-play-comic_book", "k-play-comic-book"],
+    ),
+    false,
+  );
+});
+
+test("놀이 종료 메시지의 기존 단일 source 문자열 사용을 유지한다", () => {
+  const origin = "https://app.k-bestie.com";
+  assert.equal(
+    isPlayCloseMessage(messageEvent(origin, { source: "k-play-mbti", type: "PLAY_CLOSE_REQUEST" }), origin, "k-play-mbti"),
+    true,
+  );
+});
+
+test("comic catalog API는 comic_book playId만 허용한다", () => {
+  const source = readSource("app/api/internal/play/comic/catalog/route.ts");
+  assert.match(source, /auth\.playId !== ["']comic_book["']/);
+});
+
+test("comic book API는 comic_book playId만 허용한다", () => {
+  const source = readSource("app/api/internal/play/comic/book/[bookId]/route.ts");
+  assert.match(source, /auth\.playId !== ["']comic_book["']/);
+});
+
 test("닫기는 history 이동 계열을 쓰지 않고 replace로 /child/play 상태만 복원한다", () => {
   const source = readSource("components/play/PlayFrame.tsx");
   assert.equal(PLAY_RETURN_PATH, "/child/play");

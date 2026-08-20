@@ -15,6 +15,9 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const auth = verifyInternalPlayRequest(request);
   if (!auth.ok) return NextResponse.json({ error: auth.reason }, { status: auth.status });
+  if (auth.playId !== "comic_book") {
+    return NextResponse.json({ error: "unknown_play_id" }, { status: 401 });
+  }
 
   const service = createServiceClient();
   const { data: books, error } = await service

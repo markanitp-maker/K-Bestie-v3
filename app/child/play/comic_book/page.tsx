@@ -17,7 +17,7 @@ export default function ComicBookWrapperPage() {
     <PlayFrame
       title="만화책 읽기"
       src="/play/comic_book"
-      messageSource="k-play-comic_book"
+      messageSource={["k-play-comic_book", "k-play-comic-book"]}
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
     />
   );
