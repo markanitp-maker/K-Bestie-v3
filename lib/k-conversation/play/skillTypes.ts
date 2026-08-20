@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UtteranceSignals } from "../utteranceSignals";
+import type { GenerateContentFn } from "../responseGenerator";
 
 export type PlaySkillId = "CHOSUNG" | "WORD_CHAIN" | "NONSENSE_QUIZ";
 
@@ -50,6 +51,12 @@ export interface PlaySkillTurnInput {
   gradeRaw?: string | number | null;
   utterance: string;
   signals: UtteranceSignals;
+  /**
+   * LLM 클라이언트. 끝말잇기가 사전에 없는 낱말을 판정할 때만 쓴다
+   * (2026-08-20 대표님 지시: "LLM 연동해서 끝말잇기 진행하라니까").
+   * 없으면 사전 판정만 쓴다 — 놀이가 멈추지는 않는다.
+   */
+  ai?: { models: { generateContent: GenerateContentFn } };
 }
 
 export interface PlaySkillEndInput {

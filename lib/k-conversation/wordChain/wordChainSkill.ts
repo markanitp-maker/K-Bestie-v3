@@ -18,7 +18,8 @@ import {
 import { judgeChildWord, type WordChainRejection } from "./chainRules";
 import { selectKNextWord } from "./nextWordSelector";
 import { lookupWord, WORD_CHAIN_DICTIONARY, BY_FIRST_SYLLABLE } from "./dictionaryIndex";
-import { allowedNextInitials } from "./dueum";
+import { allowedNextInitials, isChainConnected } from "./dueum";
+import { judgeWordChainWord, shouldAcceptJudgedWord } from "./wordJudge";
 import {
   instrumentalParticle,
   objectParticle,
@@ -302,18 +303,25 @@ function isTopicShift(text: string, signals: UtteranceSignals): boolean {
 }
 
 /**
- * 아이의 발화에서 단어 후보를 추출합니다.
- */
-/**
- * 아이 발화에서 끝말잇기 낱말 후보를 뽑는다.
+ * 아이 발화에서 끝말잇기 낱말 후보를 뽑는다. 낱말 시도가 아니면 빈 문자열을 준다.
  *
- * 2026-08-18 23:56 Dev 실측(김서아): 아이가
- *   "아 진짜 한참 째 끝말잇기 하긴 하는 구나 귀찮냐 차표"
- * 라고 말했는데, 문장 전체를 낱말로 넘겨서 "차표" 가 통째로 유실됐다. 아이는 곧바로
- *   "내가 차표 라고 했잖아 왜 갑자기 메모지가 튀어 나오니"
- * 라고 지적했다. 아이는 말끝에 낱말을 붙여 말한다 — 문장이면 마지막 한글 낱말을 낱말로 본다.
+ * 2026-08-20 대표님 실사용 실측 — 예전에는 문장이 오면 **마지막 한글 토큰**을 낱말로
+ * 봤다. 그래서 이런 일이 있었다:
+ *
+ *   아이: 이빨 이 "이"로 시작하는 단어자나?
+ *   케이: "단어자나"는 내가 아직 잘 모르는 단어네!
+ *
+ * 아이가 판정에 항의한 문장을 낱말로 채점한 것이다. 아이 입장에서는 케이가 말을
+ * 아예 못 알아듣는 것으로 보인다.
+ *
+ * 가장 강한 신호는 **끝글자 규칙**이다. 문장 안에서 아무 토큰이나 집지 않고,
+ * (1) 규칙에 맞는 토큰, (2) 사전이 아는 토큰으로 좁힌다. 하나로 좁혀지지 않으면
+ * 낱말 시도가 아니라고 보고 빈 문자열을 준다 — 호출부가 채점하지 않고 아이 말에
+ * 사람처럼 반응한다.
+ *
+ * 한 낱말 단답과 "정답은 기차" 형태는 예전처럼 그대로 받는다.
  */
-function extractChildCandidateWord(utterance: string): string {
+function extractChildCandidateWord(utterance: string, requiredSyllable?: string): string {
   const trimmed = utterance.trim();
   const prefixMatch = trimmed.match(
     /^(?:정답은|정답이|정답|답은|답이|답|단어는|단어)\s*[:=!]?\s*([가-힣a-zA-Z0-9]+)/
@@ -327,16 +335,66 @@ function extractChildCandidateWord(utterance: string): string {
   // 2026-08-19 독립 리뷰 HIGH 지적)
   if (!/\s/.test(stripped)) return stripTrailingParticle(stripped);
 
-  // 문장이면 마지막 한글 토큰을 낱말로 본다. 조사·감탄사만 남은 토큰은 건너뛴다.
   const tokens = stripped
     .split(/\s+/)
     .map((token) => token.replace(/[^가-힣a-zA-Z0-9]/g, ""))
-    .filter((token) => token.length > 0);
-  for (let index = tokens.length - 1; index >= 0; index -= 1) {
-    const token = tokens[index];
-    if (token.length >= 2 && /^[가-힣]+$/.test(token)) return stripTrailingParticle(token);
-  }
-  return tokens[tokens.length - 1] ?? stripped;
+    .filter((token) => token.length >= 2 && /^[가-힣]+$/.test(token))
+    .map((token) => stripTrailingParticle(token));
+
+  if (tokens.length === 0) return "";
+  if (tokens.length === 1) return tokens[0];
+
+  // 여러 토큰이면 규칙과 사전으로 좁힌다.
+  const ruleFit = requiredSyllable
+    ? tokens.filter((token) => allowedNextInitials(requiredSyllable).includes(token[0]))
+    : tokens;
+  const pool = ruleFit.length > 0 ? ruleFit : tokens;
+  const known = pool.filter((token) => Boolean(lookupWord(token)));
+
+  if (known.length >= 1) return known[known.length - 1];
+  // 사전이 모르는 낱말이어도 규칙에 맞는 것이 있으면 그것을 쓴다 — 사전 부족을
+  // "말을 못 알아듣는 것" 으로 보이게 하지 않기 위해서다.
+  if (ruleFit.length >= 1) return ruleFit[ruleFit.length - 1];
+  // 그래도 못 좁히면 예전처럼 마지막 한글 토큰을 쓴다.
+  return tokens[tokens.length - 1];
+}
+
+/**
+ * 놀이 **자체에 대한 말**(판정 이의·불만·규칙 질문). 낱말 시도가 아니다.
+ *
+ * 2026-08-20 대표님 실사용 실측:
+ *   아이: 이빨 이 "이"로 시작하는 단어자나?
+ *   케이: "단어자나"는 내가 아직 잘 모르는 단어네!
+ *
+ * 아이가 판정에 항의한 문장을 낱말로 채점했다. 아이 입장에서는 케이가 말을 아예
+ * 못 알아듣는 것으로 보인다.
+ *
+ * 구조(문장 길이·토큰 수)로는 가를 수 없다. "아 진짜 한참 째 끝말잇기 하긴 하는 구나
+ * 귀찮냐 차표" 처럼 군말을 늘어놓고 마지막에 낱말을 말하는 경우도 있기 때문이다.
+ * 그래서 **내용**으로 가른다 — 판정이 틀렸다는 주장, 실력 비난, 규칙 질문.
+ * 지루하다·귀찮다 같은 기분 표현은 여기에 넣지 않는다(그건 낱말을 함께 말할 수 있다).
+ */
+const WORD_CHAIN_DISPUTE_PATTERNS: readonly RegExp[] = [
+  // 판정 이의: "~자나", "~잖아", "맞는데", "왜 안 돼"
+  /(?:자나|잖아)\s*[?！!]*$/,
+  /맞는\s*데/,
+  /왜\s*안\s*(?:돼|되)/,
+  /(?:있는|아는)\s*단어/,
+  /사전에\s*(?:있|없)/,
+  // 실력 비난·개선 요구
+  /(?:멍청|바보|개판|답답|한심)/,
+  /(?:개선|고도화|고쳐|수정해)/,
+  /단어도\s*모/,
+  /(?:왜\s*모르|모르냐|몰라\?)/,
+  // 규칙·방법 질문
+  /(?:규칙|방법)(?:이|을|은|도)?\s*(?:뭐|어떻게|모르)/,
+  /어떻게\s*하(?:는|냐|지)/,
+];
+
+export function isWordChainDispute(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return WORD_CHAIN_DISPUTE_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
 /**
@@ -522,12 +580,39 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       }
 
       // 3. 아이 발화에서 단어 추출 및 결정론적 판정 (§3-17)
-      const targetWord = extractChildCandidateWord(utterance);
       const currentWordStr = activeSession.current_word ?? "";
       const prevEntry = currentWordStr
         ? lookupWord(currentWordStr) ??
           deriveWordChainEntry({ word: currentWordStr, difficulty: 1 })
         : null;
+      const targetWord = extractChildCandidateWord(
+        utterance,
+        prevEntry ? prevEntry.lastSyllable : undefined
+      );
+
+      // 판정 이의·불만·규칙 질문은 채점하지 않는다(2026-08-20 대표님 실사용).
+      // 예전에는 항의 문장의 마지막 토큰을 낱말로 채점해 케이가
+      // `"단어자나"는 내가 아직 잘 모르는 단어네!` 라고 답했다.
+      // 세션은 유지하고, 아이 말에 사람처럼 반응한 뒤 다시 낱말을 청한다.
+      // 빈 발화는 여기서 걸지 않는다 — 그건 "잘 못 들었어" 로 안내해야 한다.
+      if (utterance.trim() && isWordChainDispute(utterance)) {
+        const reqSyllable = prevEntry ? prevEntry.lastSyllable : "";
+        return {
+          handled: true,
+          instruction: [
+            "[끝말잇기] 아이가 낱말이 아니라 다른 이야기를 했어.",
+            `아이 말: "${utterance.trim()}"`,
+            "[진행 규칙]:",
+            "- 아이 말에 먼저 친구처럼 짧게 반응해. 낱말로 채점하지 마.",
+            "- 아이가 판정에 이의를 제기했으면 인정해. 우기지 마.",
+            reqSyllable
+              ? `- 그리고 "${reqSyllable}"${instrumentalParticle(reqSyllable)} 시작하는 낱말을 다시 청해.`
+              : "- 그리고 이어서 낱말을 말해 달라고 청해.",
+            "- 네가 낱말을 대신 내지는 마. 지금은 아이 차례야.",
+          ].join("\n"),
+          ended: false,
+        };
+      }
       const usedWordsSet = new Set<string>(activeSession.used_words ?? []);
 
       const judgement = judgeChildWord({
@@ -538,8 +623,49 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
 
       const requiredSyllable = prevEntry ? prevEntry.lastSyllable : "";
 
+      // 3-A. 사전이 모르는 낱말은 LLM 에게 물어본다.
+      //
+      // 2026-08-20 대표님 실사용 지시: "아는 단어도 부족하고, LLM 연동해서
+      // 끝말잇기 진행하라니까". 사전은 1810 낱말이라 아이가 흔히 쓰는 말도 자주 없다
+      // (실측 거절: 이빨, 이사). 아이 입장에서는 케이가 말을 모르는 것으로 보인다.
+      //
+      // 역할 분담은 유지한다(010 §0) — 끝글자 규칙·차례·다음 낱말은 여전히 엔진이
+      // 정한다. LLM 은 "이게 한국어 낱말인가" 만 답한다. 그래서 케이가 게임을 지어내는
+      // 일은 생기지 않는다.
+      //
+      // 판정이 실패하거나 늦으면 사전 결과를 그대로 쓴다 — 놀이가 멈추면 안 된다.
+      let acceptedByJudge = false;
+      if (
+        !judgement.accepted &&
+        (judgement.rejection ?? "NOT_IN_DICTIONARY") === "NOT_IN_DICTIONARY" &&
+        input.ai &&
+        // 사전 검사가 끝글자 규칙보다 먼저라(chainRules 3단계 vs 5단계), NOT_IN_DICTIONARY
+        // 거절은 규칙을 아직 안 본 상태다. LLM 으로 받기 전에 규칙을 직접 확인한다 —
+        // 규칙을 어긴 낱말을 낱말이라는 이유로 받아 주면 게임이 무너진다.
+        (!prevEntry || isChainConnected(prevEntry.lastSyllable, targetWord[0])) &&
+        !usedWordsSet.has(targetWord)
+      ) {
+        const judged = await judgeWordChainWord({
+          ai: input.ai,
+          word: targetWord,
+          requiredSyllable: prevEntry ? prevEntry.lastSyllable : undefined,
+        });
+        if (shouldAcceptJudgedWord(judged.verdict)) {
+          acceptedByJudge = true;
+          console.log(
+            "[wordChain] LLM 낱말 판정 수용",
+            JSON.stringify({ word: targetWord, latencyMs: judged.latencyMs })
+          );
+        } else if (judged.error) {
+          console.warn(
+            "[wordChain] LLM 낱말 판정 실패 — 사전 결과를 쓴다",
+            JSON.stringify({ word: targetWord, error: judged.error, latencyMs: judged.latencyMs })
+          );
+        }
+      }
+
       // 4. 거절 처리 (ACCEPTED 아님)
-      if (!judgement.accepted) {
+      if (!judgement.accepted && !acceptedByJudge) {
         const rejection = judgement.rejection ?? "NOT_IN_DICTIONARY";
 
         // 거절 라운드 기록
@@ -604,7 +730,16 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       }
 
       // 5. 단어 통과 (ACCEPTED) -> 아이 턴 기록
-      const childEntry = judgement.entry!;
+      //
+      // LLM 판정으로 받은 낱말은 사전에 없으므로 judgement.entry 가 없다.
+      // 그때는 낱말에서 엔트리를 만들어 쓴다 — 끝 글자·난이도만 필요하고, 그건
+      // 낱말 자체에서 결정론으로 나온다.
+      const childEntry =
+        judgement.entry ??
+        deriveWordChainEntry({
+          word: targetWord,
+          difficulty: activeSession.current_difficulty || 1,
+        });
       const childTurnRecord = await recordWordChainTurn(db, {
         sessionId: activeSession.id,
         childId,

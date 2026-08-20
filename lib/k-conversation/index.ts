@@ -553,6 +553,8 @@ export async function respond(
             gradeRaw,
             utterance: input.currentUtterance,
             signals,
+            // 끝말잇기가 사전에 없는 낱말을 판정할 때만 쓴다(2026-08-20 대표님 지시).
+            ai: deps.ai,
           });
 
           // 013 §3-12 — 클라이언트가 보는 놀이 상태는 "이 턴이 끝난 뒤" 여야 한다.

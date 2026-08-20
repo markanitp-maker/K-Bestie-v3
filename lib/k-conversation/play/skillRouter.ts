@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlaySkillModule, PlaySkillTurnResult } from "./skillTypes";
+import type { PlaySkillTurnInput } from "./skillTypes";
 import type { UtteranceSignals } from "../utteranceSignals";
 import { PLAY_SKILL_REGISTRY, findDirectlyRequestedSkill, findSkillById } from "./skillRegistry";
 import { isKPlayEnabled } from "./playAvailability";
@@ -20,6 +21,8 @@ export interface RoutePlaySkillTurnInput {
   signals: UtteranceSignals;
   registry?: readonly PlaySkillModule[];
   recordEvent?: typeof recordKPlayEvent;
+  /** 끝말잇기 낱말 판정용 LLM 클라이언트. 스킬에 그대로 전달된다. */
+  ai?: PlaySkillTurnInput["ai"];
 }
 
 /**

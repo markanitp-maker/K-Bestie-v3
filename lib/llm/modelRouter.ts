@@ -25,6 +25,8 @@ export const LLM_MODEL_ROLES = {
   // 요청서 012 — 관계 안전 의미 판정(Shadow). 분류만 하므로 이 저장소에서 이미 쓰는
   // 가장 가벼운 모델을 쓴다(신규 모델을 추측해 넣지 않는다).
   relationshipSafetyJudge: "gemini-3.5-flash-lite",
+  // 끝말잇기 낱말 판정 — "이게 한국어 낱말인가" 한 가지만 본다. 짧고 잦으므로 lite.
+  wordChainWordJudge: "gemini-3.5-flash-lite",
 } as const;
 
 export type LlmModelRole = keyof typeof LLM_MODEL_ROLES;
@@ -51,6 +53,7 @@ export const LLM_ENV_KEYS: Record<LlmModelRole, string> = {
   adminLiveHealth: "LLM_MODEL_ADMIN_LIVE_HEALTH",
   vacationEventDetection: "LLM_MODEL_VACATION_EVENT_DETECTION",
   relationshipSafetyJudge: "LLM_MODEL_RELATIONSHIP_SAFETY_JUDGE",
+  wordChainWordJudge: "LLM_MODEL_WORD_CHAIN_WORD_JUDGE",
 };
 
 /**

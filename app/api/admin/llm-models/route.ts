@@ -26,6 +26,7 @@ const ROLE_DESCRIPTIONS: Record<LlmModelRole, string> = {
   adminLiveHealth: "관리자 실시간 음성 헬스체크",
   vacationEventDetection: "방학/개학 이벤트 감지",
   relationshipSafetyJudge: "관계 안전 의미 판정(Shadow)",
+  wordChainWordJudge: "끝말잇기 낱말 판정(사전에 없는 낱말)",
 };
 
 export async function GET() {
