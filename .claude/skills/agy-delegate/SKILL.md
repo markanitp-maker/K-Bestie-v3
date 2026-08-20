@@ -281,6 +281,30 @@ The worker did what the brief said. The brief was wrong.
 - **Verify with the real entry point, not the convenient one.** The Dev E2E only proved the modal
   path until it was told to also type the utterance.
 
+### 4b-5. Invented facts inside an otherwise correct audit
+
+**Measured 2026-08-20.** A read-only brief asked for a dictionary audit: count the words, find
+the dead-end syllables, and **suggest five real words** starting with each dead end. The counting
+half was excellent and verifiable — 1,810 words, 58 dead ends, exact code lines for a reuse bug.
+The suggestion half was fabricated. For the syllable 름 it returned `름료`, `늠름이`, `늠호` —
+strings that look Korean and are not words.
+
+The failure is specific: **the worker will not tell you a set is empty.** Asked for five items,
+it returns five. The measurable part of the same report was correct, which is exactly what makes
+the invented part dangerous — the surrounding accuracy vouches for it.
+
+- **Split enumeration from generation in the brief.** Counting what is in the repo is checkable;
+  proposing what is *not* in the repo is generation, and generation needs a source. If you want
+  real words, name the authority (`국립국어원 표준국어대사전`) and require the worker to mark any
+  item it could not confirm.
+- **Always allow the empty answer, explicitly.** `"해당하는 낱말이 없으면 '없음' 이라고 써라.
+  억지로 채우지 마라."` Without that line, a request for N items is a request for N inventions.
+- **Verify generated items before using them.** For word data, the cheap check is whether the item
+  already appears in the repo's own corpus, or a quick dictionary lookup. Never paste a suggested
+  list straight into a migration or a dictionary file.
+- The same shape applies beyond words: suggested config keys, API fields, error codes, CLI flags.
+  Enumerated-from-source is trustworthy; proposed-from-memory is a draft.
+
 ### 4c. A wrong report can still contain a real finding
 
 The stale run above reported the fabrication guard failing. The run was invalid, but the finding
