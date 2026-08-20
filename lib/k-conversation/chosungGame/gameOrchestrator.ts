@@ -20,6 +20,8 @@ export interface ChosungTurnInput {
     hasChosungHintRequest: boolean;
     hasChosungAnswerRequest?: boolean;
     hasChosungNextQuestion?: boolean;
+    hasChosungRepeatQuestion?: boolean;
+    hasPlayContinue?: boolean;
   };
 }
 
@@ -36,6 +38,8 @@ export interface ChosungTurnResult {
    * 지어내는 사고(2026-08-18)를 막기 위해 출력을 직접 검증한다.
    */
   requiredChosungInOutput?: string;
+  /** LLM을 거치지 않고 아이에게 그대로 보낼 결정론적 문장. */
+  deterministicText?: string;
 }
 
 /**
@@ -47,6 +51,20 @@ export const CHOSUNG_REVEAL_HINT_LEVEL = 4;
 
 /** 한 문제에서 이만큼 틀리면 정답을 알려주고 넘어간다. 계속 붙잡으면 아이가 지친다. */
 export const CHOSUNG_MAX_WRONG_BEFORE_REVEAL = 3;
+
+export function buildChosungRepeatResult(
+  session: Pick<ChosungGameSessionRow, "current_chosung" | "current_word">
+): ChosungTurnResult {
+  const currentChosung = session.current_chosung ?? "";
+  const currentWord = session.current_word ?? "";
+  return {
+    handled: true,
+    deterministicText: `아까 초성은 \"${currentChosung}\" 이야!`,
+    instruction: `[초성게임] 현재 초성 \"${currentChosung}\"만 다시 알려줘. 정답이나 새 힌트는 말하지 마.`,
+    answerMustNotAppear: currentWord || undefined,
+    requiredChosungInOutput: currentChosung || undefined,
+  };
+}
 
 /**
  * 정답을 알려주고 다음 문제로 넘어간다.
@@ -94,7 +112,9 @@ export async function runChosungTurn(
     !signals.hasChosungAnswerAttempt &&
     !signals.hasChosungHintRequest &&
     !signals.hasChosungAnswerRequest &&
-    !signals.hasChosungNextQuestion
+    !signals.hasChosungNextQuestion &&
+    !signals.hasChosungRepeatQuestion &&
+    !signals.hasPlayContinue
   ) {
     return { handled: false };
   }
@@ -106,12 +126,18 @@ export async function runChosungTurn(
   try {
     const activeSession = await getActiveChosungGameSession(db, childId);
 
+    // 현재 문제를 다시 묻는 턴은 힌트 생성에 맡기지 않는다. 초성만 결정론적으로
+    // 반복하고 정답 유출 가드를 유지한다(2026-08-20 Dev QA: 공책 유출).
+    if (activeSession && signals.hasChosungRepeatQuestion) {
+      return buildChosungRepeatResult(activeSession);
+    }
+
     // 0. 진행 중 세션이 있고 아이가 다음 문제를 달라고 한 경우(015 2차).
     //
     // 실측: "다음 문제 줘" 가 어떤 신호에도 안 걸려 케이가 같은 초성을 다시 제시하고
     // "다음 문제 계속 해보자"라고만 했다. 아이 입장에서는 요청이 무시된 것이다.
     // 정답을 알려주고 다음 라운드로 넘긴다 — 못 맞힌 문제를 그냥 덮으면 아이는 배우지 못한다.
-    if (activeSession && signals.hasChosungNextQuestion) {
+    if (activeSession && (signals.hasChosungNextQuestion || signals.hasPlayContinue)) {
       return revealAndAdvance({
         db,
         childId,

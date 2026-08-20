@@ -110,8 +110,7 @@ export function normalizeNonsenseAnswer(text: string): string {
 
 /** 명시적 게임 중단 발화 패턴 */
 const EXPLICIT_STOP_PATTERNS = [
-  /(?:넌센스|수수께끼|퀴즈|게임|놀이)?\s*(?:그만|안\s*할래|안해|그만하자|그만할래|그만해|끝낼래|안\s*놀래|하기\s*싫어)/,
-  /^(?:그만|그만해|끝|안해|안\s*해|싫어|안\s*놀래)$/,
+  /^(?:(?:넌센스|수수께끼|퀴즈|게임|놀이)(?:은|는|을|를)?\s*)?(?:이제\s*)?(?:그만|그만\s*해|그만\s*하자|그만\s*할래|안\s*할래|안\s*해|끝|끝낼래|안\s*놀래|하기\s*싫어)[!?.~^ㅋㅎ\s]*$/,
 ];
 
 /** 다음 문제 요청 패턴 */
@@ -220,7 +219,7 @@ export function classifyChildNonsenseUtterance(
   }
 
   // 3. 다음 문제 요청
-  if (NEXT_QUESTION_PATTERNS.some((p) => p.test(trimmed))) {
+  if (signals?.hasPlayContinue || NEXT_QUESTION_PATTERNS.some((p) => p.test(trimmed))) {
     return "NEXT_QUESTION";
   }
 

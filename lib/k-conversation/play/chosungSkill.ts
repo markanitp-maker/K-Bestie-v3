@@ -78,6 +78,10 @@ export const CHOSUNG_SKILL: PlaySkillModule = {
       openingLine,
       answerMustNotAppear: result.answerMustNotAppear,
       requiredChosungInOutput: result.requiredChosungInOutput,
+      // 초성 재질문 응답은 오케스트레이터가 결정론 문장으로 만든다.
+      // 여기서 버리면 그 문장이 사라지고 LLM 이 다시 답을 지어낸다 —
+      // 2026-08-20 QA 에서 정답 "공책" 이 그렇게 새어 나갔다.
+      deterministicText: result.deterministicText,
     };
   },
   async handleTurn(input: PlaySkillTurnInput): Promise<PlaySkillTurnResult> {
@@ -95,6 +99,10 @@ export const CHOSUNG_SKILL: PlaySkillModule = {
       ended: false,
       answerMustNotAppear: result.answerMustNotAppear,
       requiredChosungInOutput: result.requiredChosungInOutput,
+      // 초성 재질문("초성 뭐였지?") 응답은 오케스트레이터가 결정론 문장으로 만든다.
+      // 여기서 버리면 그 문장이 사라지고 LLM 이 다시 답을 지어낸다 —
+      // 2026-08-20 QA 에서 정답 "공책" 이 그렇게 새어 나갔다.
+      deterministicText: result.deterministicText,
     };
   },
   async end(input: PlaySkillEndInput): Promise<void> {
