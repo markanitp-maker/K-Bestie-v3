@@ -123,6 +123,16 @@ async function proxyToComicBookUpstream(request: NextRequest): Promise<Response>
     outboundHeaders.set("cookie", forwardedCookies);
   }
 
+  // 진단(027 Dev): K-Toon 이 "티켓 없음" 안내를 띄우는데 exchange-ticket 호출이 서버
+  // 로그에 하나도 없다. 브라우저→K-Bestie 구간에서 티켓 쿠키가 사라지는지, 아니면
+  // K-Bestie→K-Toon 이후 문제인지 갈라야 한다. 문서 요청에서만 한 줄 남긴다.
+  if (upstreamUrl.pathname === COMIC_BOOK_PATH_PREFIX) {
+    console.warn("[comic_book-proxy] 문서 요청 티켓 쿠키", {
+      hasTicketCookie: request.cookies.has("play_ticket_comic_book"),
+      forwardedCookieNames: request.cookies.getAll().map((c) => c.name),
+    });
+  }
+
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const declaredLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BODY_BYTES) {
