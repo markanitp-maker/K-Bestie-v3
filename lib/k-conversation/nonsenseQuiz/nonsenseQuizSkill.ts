@@ -57,6 +57,36 @@ async function fetchQuestionById(
  * 힌트 단계에 맞는 프롬프트 지침을 생성합니다.
  * 정답(canonical_answer)은 절대로 포함하지 않으며, Gemini의 정답 추측/스스로 발설 방지 지침을 포함합니다 (§3-2, 결함 2 완화).
  */
+/**
+ * 힌트 턴에 아이에게 그대로 들려줄 문장. LLM 을 거치지 않는다.
+ *
+ * 2026-08-20 대표님 Dev QA — 두 가지가 함께 걸렸다.
+ *   (1) 케이가 힌트라며 정답을 말했다("커피 마실 때 넣는 네모난 각설탕이야").
+ *       DB 힌트는 깨끗했는데 LLM 이 지어냈다.
+ *   (2) 응답이 10~12초씩 걸렸다. 대표님: "너 엄청 느리다. '생각중'이 엄청 오래 뜨고 있어."
+ *
+ * 힌트는 이미 DB 원문이고 016 §4 재작성으로 반말 내용 힌트가 됐다. LLM 이 말투를
+ * 옮길 이유가 없어졌다. 그래서 문장을 여기서 만든다 — 정답 유출이 원천적으로
+ * 불가능해지고 LLM 호출 한 번이 사라진다.
+ */
+function buildHintText(
+  question: NonsenseQuestionRow,
+  level: 1 | 2,
+  wrongAnswer?: string
+): string | null {
+  const hintText = (level === 1 ? question.hint_1 : question.hint_2)?.trim();
+  if (!hintText) return null;
+
+  const lead = wrongAnswer
+    ? `아쉽다, "${wrongAnswer.trim()}"는 아니야!`
+    : level === 1
+      ? "좋아, 힌트 줄게!"
+      : "하나 더 알려줄게!";
+  const tail = level === 1 ? "한번 더 생각해봐!" : "이번엔 맞힐 수 있을 거야!";
+
+  return [lead, hintText, tail].join("\n");
+}
+
 function buildHintInstruction(
   question: NonsenseQuestionRow,
   level: 1 | 2,
@@ -111,6 +141,7 @@ async function progressHintOrRevealAnswer(
     return {
       handled: true,
       instruction: buildHintInstruction(question, 1, wrongAnswer),
+      deterministicText: buildHintText(question, 1, wrongAnswer) ?? undefined,
       // 016 후속 대표님 실사용(2026-08-20 11:46) — 케이가 힌트라며 정답을 그대로 말했다.
       //   문제 "물이 많아질수록 작아지는 것은?"(각설탕)
       //   케이: "커피 마실 때 넣는 네모난 각설탕이야"
@@ -140,6 +171,7 @@ async function progressHintOrRevealAnswer(
     return {
       handled: true,
       instruction: buildHintInstruction(question, 2, wrongAnswer),
+      deterministicText: buildHintText(question, 2, wrongAnswer) ?? undefined,
       answerMustNotAppear: question.canonical_answer || undefined,
       ended: false,
     };

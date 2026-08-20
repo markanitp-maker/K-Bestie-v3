@@ -120,10 +120,32 @@ const WORD_SEEDS: readonly WordSeed[] = [
   { word: "반딧불이", category: "자연", difficulty: 6 },
 ];
 
+/**
+ * 초성이 욕설·비속어로 읽히는 조합.
+ *
+ * 2026-08-20 대표님 Dev QA 실측 — 케이가 "숨바꼭질"(ㅅㅂㄲㅈ)을 냈고 아이가
+ * "시발꼬주?" 라고 답했다. 케이는 "아니야, 그런 욕 아니거든!" 이라고 받았다.
+ * 아이에게 욕을 떠올리게 하고 타이핑하게 만드는 문제이므로 출제 자체를 막는다.
+ *
+ * 낱말 자체는 아무 문제가 없다 — 초성만 떼면 그렇게 읽히는 것이다. 그래서 낱말을
+ * 지우는 대신 **초성 게임 출제 풀에서만** 뺀다.
+ */
+const PROFANE_CHOSUNG_PATTERNS: readonly string[] = [
+  "ㅅㅂ", "ㅆㅂ", "ㅄ", "ㅂㅅ",
+  "ㅈㄹ", "ㅈㄴ", "ㅆㄴ",
+  "ㅁㅊ", "ㄲㅈ", "ㄱㅅㄲ", "ㄷㅊ",
+];
+
+export function readsAsProfanity(chosung: string): boolean {
+  if (!chosung) return false;
+  const compact = chosung.replace(/\s+/g, "");
+  return PROFANE_CHOSUNG_PATTERNS.some((pattern) => compact.includes(pattern));
+}
+
 export const WORD_POOL: readonly ChosungWord[] = WORD_SEEDS.map((entry) => ({
   ...entry,
   chosung: extractChosung(entry.word),
-}));
+})).filter((entry) => !readsAsProfanity(entry.chosung));
 
 export const getWordsByDifficulty = (
   min: number,
