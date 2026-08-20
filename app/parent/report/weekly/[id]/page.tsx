@@ -11,6 +11,8 @@ import {
   buildMeaningfulReportSections,
   meaningfulReportSectionContent,
 } from "@/lib/reports/reportSectionAvailability";
+import { useBrowserTTS } from "@/hooks/useBrowserTTS";
+import { buildStandaloneWeeklyReportTtsContent } from "@/lib/speech/reportTtsContent";
 
 interface WeeklySummary {
   id: string;
@@ -37,6 +39,11 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
   const [restricted, setRestricted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { isSupported: isTtsSupported, isSpeaking, speak, stop } = useBrowserTTS();
+
+  useEffect(() => {
+    stop();
+  }, [id, stop]);
 
   useEffect(() => {
     fetch(`/api/parent/reports/weekly/${id}`)
@@ -83,6 +90,10 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
   const cards = weekly.detail_dashboard_cards ?? {};
   const detailSections = buildMeaningfulReportSections(cards);
   const detailText = meaningfulReportSectionContent(weekly.detail_text);
+  const ttsContent = buildStandaloneWeeklyReportTtsContent(
+    weekly as unknown as Record<string, unknown>,
+    restricted,
+  );
 
   return (
     <DemoFrame>
@@ -91,6 +102,17 @@ export default function WeeklyReportDetailPage({ params }: { params: Promise<{ i
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
           <p className="text-xs font-bold text-gray-500">{formatWeekRange(weekly.week_start, weekly.week_end)}</p>
+
+          {isTtsSupported && ttsContent.length > 0 && (
+            <button
+              type="button"
+              onClick={() => isSpeaking ? stop() : speak(ttsContent)}
+              className="min-h-11 w-full rounded-xl px-4 py-3 text-sm font-bold text-white shadow-sm"
+              style={{ background: "var(--color-k-navy)" }}
+            >
+              {isSpeaking ? "⏹ 정지" : "🔊 음성으로 듣기"}
+            </button>
+          )}
 
           <div className="rounded-2xl px-5 py-5" style={{ background: "#fdf1ec" }}>
             <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>

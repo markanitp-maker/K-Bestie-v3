@@ -8,7 +8,13 @@ import { ParentHeader } from "@/components/ParentHeader";
 import { useDemoView } from "@/app/demo/components/DemoViewContext";
 import { ReportDetailSkeleton } from "./ReportDetailSkeleton";
 import KChatbotWidget from "@/components/KChatbotWidget";
+import {
+  DailyReportRecommendationGuide,
+  type DailyReport,
+} from "@/components/ReportDetailModal";
 import { buildMeaningfulReportSections } from "@/lib/reports/reportSectionAvailability";
+import { useBrowserTTS } from "@/hooks/useBrowserTTS";
+import { buildDailyReportTtsContent } from "@/lib/speech/reportTtsContent";
 
 type EmotionLevel = "safe" | "warning" | "danger";
 
@@ -18,6 +24,8 @@ interface Report {
   mood_score: number;
   emotion_tags: string[];
   parent_guide: string;
+  parent_conversation_clue?: string | null;
+  recommended_questions?: string[] | null;
   emotion_level: EmotionLevel | null;
   created_at: string;
   school_academy_life?: string | null;
@@ -58,6 +66,11 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   // "빠른 요약" 탭은 그대로 보되, "상세 보기"/"추천 가이드" 탭만 잠금 안내로 대체한다.
   const [restricted, setRestricted] = useState(false);
   const [activeTab, setActiveTab] = useState(1);
+  const { isSupported: isTtsSupported, isSpeaking, speak, stop } = useBrowserTTS();
+
+  useEffect(() => {
+    stop();
+  }, [activeTab, id, stop]);
 
   useEffect(() => {
     const skeletonTimer = setTimeout(() => setShowSkeleton(true), 150);
@@ -106,6 +119,12 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
       </DemoFrame>
     );
   }
+
+  const ttsContent = buildDailyReportTtsContent(
+    report as unknown as Record<string, unknown>,
+    activeTab,
+    restricted,
+  );
 
   // 빠른 요약 탭
   const Tab1 = () => (
@@ -164,55 +183,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
 
   // 추천 가이드 탭
   const Tab3 = () => {
-    // parent_guide에서 질문 후보들을 파싱
-    const candidateSentences = report.parent_guide
-      ? report.parent_guide
-          .split(/[.\n]/)
-          .map((s) => s.trim())
-          .filter((s) => s.length > 5 && (s.includes("?") || s.endsWith("요") || s.endsWith("까")))
-      : [];
-
-    const comment = `오늘 아이는 ${report.interests_preferences || "케이와의 소소한 일상"} 이야기에 가장 밝게 마음을 열고 대답했습니다.`;
-
-    return (
-      <div className="flex flex-col gap-4">
-        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
-            💬 부모 대화 실마리
-          </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
-            {report.parent_guide || "대화 실마리가 준비 중입니다."}
-          </p>
-        </div>
-
-        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-3" style={{ color: "var(--color-k-text-primary)" }}>
-            ❓ 부모용 추천 질문
-          </h3>
-          {candidateSentences.length > 0 ? (
-            <ul className="flex flex-col gap-2.5">
-              {candidateSentences.slice(0, 5).map((q, i) => (
-                <li key={i} className="flex gap-2 text-sm" style={{ color: "var(--color-k-text-primary)" }}>
-                  <span style={{ color: "#22c55e" }}>✓</span>
-                  <span>{q}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-gray-400">생성된 질문 가이드가 아직 없습니다.</p>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
-          <h3 className="font-bold text-base mb-2" style={{ color: "var(--color-k-text-primary)" }}>
-            ✨ 오늘의 케이 코멘트
-          </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--color-k-text-primary)" }}>
-            {comment}
-          </p>
-        </div>
-      </div>
-    );
+    return <DailyReportRecommendationGuide report={report as unknown as DailyReport} />;
   };
 
   const LockedTabNotice = () => (
@@ -274,7 +245,19 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             ))}
           </div>
 
-          <div className="flex-1 px-4 py-4">{renderTab()}</div>
+          <div className="flex-1 px-4 py-4">
+            {isTtsSupported && ttsContent.length > 0 && (
+              <button
+                type="button"
+                onClick={() => isSpeaking ? stop() : speak(ttsContent)}
+                className="mb-4 min-h-11 w-full rounded-xl px-4 py-3 text-sm font-bold text-white shadow-sm"
+                style={{ background: "var(--color-k-navy)" }}
+              >
+                {isSpeaking ? "⏹ 정지" : "🔊 음성으로 듣기"}
+              </button>
+            )}
+            {renderTab()}
+          </div>
         </div>
 
         <RealParentNav />
