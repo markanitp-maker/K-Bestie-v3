@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanTtsText, splitTtsSentences } from "./speechNormalization";
+import { cleanTtsText, splitTtsSentences,
+  buildTtsChunks,
+  SENTENCE_PAUSE_MS,
+  ITEM_PAUSE_MS,
+} from "./speechNormalization";
 
 test("cleanTtsText: 이모지·bullet·markdown·HTML·중복 공백을 제거하고 의미를 보존한다", () => {
   const raw = "## 오늘 😊\n- **친구와** <strong>즐겁게</strong> 놀았어요.\n• [공원](https://example.com)에 갔어요.";
@@ -86,4 +90,43 @@ test("splitTtsSentences: 부호를 지워도 문장 경계는 지킨다", () => 
   for (const part of parts) {
     assert.ok(!/[.!?]/.test(part), `부호가 남았다: ${part}`);
   }
+});
+
+test("buildTtsChunks: 항목 사이를 문장 사이보다 길게 쉰다", () => {
+  // 2026-08-20 대표님 QA — "여러 항목을 쭉 이어서 읽어서 답답하고 내용도 이해가 안 간다".
+  // 호출부가 항목을 join 으로 붙인 뒤 다시 쪼개서 경계가 사라져 있었다.
+  const chunks = buildTtsChunks([
+    "오늘의 한 줄",
+    "축구를 했어요. 즐거웠대요",
+    "1분 요약 리포트",
+  ]);
+
+  assert.deepEqual(chunks.map((c) => c.text), [
+    "오늘의 한 줄",
+    "축구를 했어요",
+    "즐거웠대요",
+    "1분 요약 리포트",
+  ]);
+
+  // 제목 뒤 = 항목 경계
+  assert.equal(chunks[0].pauseAfterMs, ITEM_PAUSE_MS);
+  // 같은 항목 안 문장 사이 = 짧은 쉼
+  assert.equal(chunks[1].pauseAfterMs, SENTENCE_PAUSE_MS);
+  // 항목의 마지막 문장 뒤 = 항목 경계
+  assert.equal(chunks[2].pauseAfterMs, ITEM_PAUSE_MS);
+  // 맨 끝은 쉴 필요가 없다
+  assert.equal(chunks[3].pauseAfterMs, 0);
+
+  assert.ok(ITEM_PAUSE_MS > SENTENCE_PAUSE_MS, "항목 쉼이 문장 쉼보다 길어야 한다");
+});
+
+test("buildTtsChunks: 빈 항목은 큐에 넣지 않는다", () => {
+  const chunks = buildTtsChunks(["오늘의 한 줄", "", "   ", "축구를 했어요"]);
+  assert.deepEqual(chunks.map((c) => c.text), ["오늘의 한 줄", "축구를 했어요"]);
+  assert.equal(chunks[chunks.length - 1].pauseAfterMs, 0);
+});
+
+test("buildTtsChunks: 항목이 없으면 빈 큐다", () => {
+  assert.deepEqual(buildTtsChunks([]), []);
+  assert.deepEqual(buildTtsChunks(["", "  "]), []);
 });

@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { splitTtsSentences } from "@/lib/speech/speechNormalization";
+import { buildTtsChunks, type TtsChunk } from "@/lib/speech/speechNormalization";
 
 export function useBrowserTTS() {
   const pathname = usePathname();
   const synthesisRef = useRef<SpeechSynthesis | null>(null);
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
   const generationRef = useRef(0);
+  const pauseTimerRef = useRef<number | null>(null);
   const [isSupported, setIsSupported] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const stop = useCallback(() => {
     generationRef.current += 1;
+    // 쉼 타이머도 함께 끊는다. 안 그러면 정지 후에도 다음 문장이 튀어나온다.
+    if (pauseTimerRef.current !== null) {
+      window.clearTimeout(pauseTimerRef.current);
+      pauseTimerRef.current = null;
+    }
     synthesisRef.current?.cancel();
     setIsSpeaking(false);
   }, []);
@@ -42,7 +48,9 @@ export function useBrowserTTS() {
   const speak = useCallback((content: readonly string[]) => {
     const synthesis = synthesisRef.current;
     if (!synthesis) return;
-    const queue = splitTtsSentences(content.join(". "));
+    // 항목을 join 으로 붙이면 항목 경계가 사라진다. 경계를 살린 채 쪼개고
+    // 문장 사이보다 항목 사이를 더 길게 쉰다(2026-08-20 대표님 QA).
+    const queue: TtsChunk[] = buildTtsChunks(content);
     stop();
     if (queue.length === 0) return;
     const generation = generationRef.current;
@@ -54,7 +62,8 @@ export function useBrowserTTS() {
     const speakNext = () => {
       if (generation !== generationRef.current) return;
       if (index >= queue.length) { setIsSpeaking(false); return; }
-      const utterance = new SpeechSynthesisUtterance(queue[index]);
+      const chunk = queue[index];
+      const utterance = new SpeechSynthesisUtterance(chunk.text);
       utterance.lang = "ko-KR";
       if (voice) utterance.voice = voice;
       // 정지 직후 다시 재생하면 이전 utterance 의 지연된 콜백이 늦게 도착한다.
@@ -67,6 +76,15 @@ export function useBrowserTTS() {
       utterance.onend = () => {
         if (generation !== generationRef.current) return;
         index += 1;
+        // 쉼 없이 바로 다음 문장을 시작하면 쭉 이어 들린다. 부호를 지워
+        // 끝 억양이 약해진 만큼 쉼이 더 중요해졌다.
+        if (chunk.pauseAfterMs > 0) {
+          pauseTimerRef.current = window.setTimeout(() => {
+            if (generation !== generationRef.current) return;
+            speakNext();
+          }, chunk.pauseAfterMs);
+          return;
+        }
         speakNext();
       };
       utterance.onerror = (event) => {

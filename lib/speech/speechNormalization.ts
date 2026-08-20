@@ -57,3 +57,45 @@ export function splitTtsSentences(raw: string): string[] {
     .map((sentence) => stripSpokenPunctuation(sentence))
     .filter(Boolean);
 }
+
+/** 낭독 큐의 한 조각. `pauseAfterMs` 만큼 쉬고 다음 조각으로 넘어간다. */
+export interface TtsChunk {
+  text: string;
+  pauseAfterMs: number;
+}
+
+/** 문장 사이 쉼. 너무 길면 답답하고 너무 짧으면 이어 들린다. */
+export const SENTENCE_PAUSE_MS = 350;
+/** 항목(제목·본문 덩어리) 사이 쉼. 화제가 바뀌므로 더 길게 둔다. */
+export const ITEM_PAUSE_MS = 800;
+
+/**
+ * 낭독 대상 **항목 목록**을 쉼이 있는 큐로 만든다.
+ *
+ * 2026-08-20 대표님 QA — "여러 항목을 쭉 이어서 읽어서 답답하고 내용도 이해가 안 간다".
+ *
+ * 원인이 둘이었다.
+ * 1) 호출부가 `content.join(". ")` 으로 항목을 한 덩어리로 붙인 뒤 다시 쪼갰다.
+ *    그래서 "제목"과 "본문", 서로 다른 항목의 경계가 모두 같은 무게가 됐다.
+ * 2) 재생이 `onend` 즉시 다음 문장을 시작해 **쉼이 0** 이었다. 게다가 문장부호를
+ *    지우면서 끝 억양까지 약해져 더 이어 들린다.
+ *
+ * 그래서 항목 경계를 **살린 채로** 각 항목을 문장 단위로 쪼개고, 문장 사이보다
+ * 항목 사이를 더 길게 쉰다.
+ */
+export function buildTtsChunks(items: readonly string[]): TtsChunk[] {
+  const chunks: TtsChunk[] = [];
+  for (const item of items) {
+    const sentences = splitTtsSentences(item);
+    sentences.forEach((text, index) => {
+      const isLastOfItem = index === sentences.length - 1;
+      chunks.push({
+        text,
+        pauseAfterMs: isLastOfItem ? ITEM_PAUSE_MS : SENTENCE_PAUSE_MS,
+      });
+    });
+  }
+  // 마지막 조각 뒤에는 쉴 필요가 없다.
+  if (chunks.length > 0) chunks[chunks.length - 1].pauseAfterMs = 0;
+  return chunks;
+}

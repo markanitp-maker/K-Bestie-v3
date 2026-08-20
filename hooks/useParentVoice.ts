@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { cleanTtsText, splitTtsSentences } from "@/lib/speech/speechNormalization";
+import { cleanTtsText, splitTtsSentences, SENTENCE_PAUSE_MS } from "@/lib/speech/speechNormalization";
 
 interface UseParentVoiceReturn {
   isSttSupported: boolean;
@@ -50,6 +50,7 @@ export function useParentVoice(): UseParentVoiceReturn {
   const recognitionRef = useRef<any>(null);
   const synthesisRef = useRef<SpeechSynthesis | null>(null);
   const speechGenerationRef = useRef(0);
+  const speechPauseTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Check TTS
@@ -218,7 +219,12 @@ export function useParentVoice(): UseParentVoiceReturn {
       utterance.onend = () => {
         if (generation !== speechGenerationRef.current) return;
         index += 1;
-        speakNext();
+        // 쉼 없이 바로 다음 문장을 시작하면 쭉 이어 들린다(2026-08-20 대표님 QA).
+        // 부호를 지워 끝 억양이 약해진 만큼 쉼이 더 중요해졌다.
+        speechPauseTimerRef.current = window.setTimeout(() => {
+          if (generation !== speechGenerationRef.current) return;
+          speakNext();
+        }, SENTENCE_PAUSE_MS);
       };
 
       synthesisRef.current!.speak(utterance);
@@ -228,6 +234,11 @@ export function useParentVoice(): UseParentVoiceReturn {
   }, []);
 
   const stopSpeaking = useCallback(() => {
+    if (speechPauseTimerRef.current !== null) {
+      // 쉼 타이머도 끊는다. 안 그러면 정지 후에도 다음 문장이 튀어나온다.
+      window.clearTimeout(speechPauseTimerRef.current);
+      speechPauseTimerRef.current = null;
+    }
     if (synthesisRef.current) {
       speechGenerationRef.current += 1;
       synthesisRef.current.cancel();
