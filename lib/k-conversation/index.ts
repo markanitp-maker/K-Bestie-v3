@@ -976,6 +976,12 @@ export async function respond(
         reason: recallVerdict.reason,
         childUtterance: input.currentUtterance.slice(0, 60),
         blockedPreview: finalText.slice(0, 60),
+        // 2026-08-20 대표님 QA — 놀이 중인데 "기억이 안 나" 가 나갔다. 017 수정이
+        // 왜 안 걸렸는지 정적 분석으로 좁히지 못했다. 다음 QA 에서 가리려면
+        // 이 순간의 놀이 상태가 로그에 있어야 한다.
+        hasActivePlaySession,
+        activePlaySkillId,
+        playSkillHandled,
       });
       // 018 §3-10 — 같은 문구를 두 번 쓰지 않는다. 이미 한 번 되물었다면
       // 또 되묻지 않고 지금 들은 말에 이어붙인다.

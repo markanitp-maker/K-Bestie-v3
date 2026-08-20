@@ -303,6 +303,34 @@ function isTopicShift(text: string, signals: UtteranceSignals): boolean {
 }
 
 /**
+ * 케이가 이어갈 말을 못 찾아 새 판을 시작하는 턴의 문장. 3줄이다.
+ *
+ *   내가 졌어! 네가 이겼다!
+ *   새 게임 시작할게. 나는 위치!
+ *   이제 "치"로 시작하는 단어는?
+ *
+ * 2026-08-20 대표님 지적 — 예전에는 졌다는 말도, 새 판이라는 말도 없이 낱말만
+ * 던졌다("좋아! 나는 '위치' 할게."). 대표님: "'내가 졌어, 다음 게임 또 할까?' 라고
+ * 멘트 치고 가라고 했자나. 바로 다음 문제 이어지면, 아이들이 끝난건지 새로 하는건지
+ * 모르자나".
+ *
+ * 그래서 (1) 졌다는 것, (2) 새 판이라는 것을 문장에 명시한다.
+ * 놀이를 끝내자는 말은 하지 않는다 — 아이가 그만하자고 할 때까지 이어간다.
+ */
+export function buildWordChainNewRoundText(input: {
+  kWord: string;
+  nextSyllable: string;
+}): string {
+  const kWord = input.kWord.trim();
+  const nextSyllable = input.nextSyllable.trim();
+  return [
+    "내가 졌어! 네가 이겼다!",
+    `새 게임 시작할게. 나는 ${kWord}!`,
+    `이제 "${nextSyllable}"${instrumentalParticle(nextSyllable)} 시작하는 단어는?`,
+  ].join("\n");
+}
+
+/**
  * 끝말잇기 진행 턴에 아이에게 그대로 들려줄 문장. 정확히 3줄이다(018, a06.png).
  *
  *   레스토랑...
@@ -323,7 +351,10 @@ export function buildWordChainTurnText(input: {
   return [
     `${childWord}...`,
     `나는 ${kWord}!`,
-    `이제 "${nextSyllable}"로 시작하는 단어는?`,
+    // 조사는 음절에 맞춘다. 시안의 "지" 는 그대로 `로`("지"로), 받침 있는 음절은
+    // `으로`("둑"으로)가 된다 — 형식은 같고 말만 맞아진다.
+    // 실측(2026-08-20 12:5x): 보정 전에는 `"둑"로`, `"장"로` 가 나갔다.
+    `이제 "${nextSyllable}"${instrumentalParticle(nextSyllable)} 시작하는 단어는?`,
   ].join("\n");
 }
 
@@ -909,13 +940,12 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
         const freshReq = freshEntry.lastSyllable;
         return {
           handled: true,
-          instruction: [
-            `[끝말잇기] 와, "${childEntry.word}" 다음으로 이어갈 말을 케이가 못 찾겠어! 이번 판은 아이가 이겼어.`,
-            "대단하다고 신나게 칭찬하고 승리를 축하해줘.",
-            `그리고 **곧바로 새 판을 시작해라** — 케이의 새 첫 낱말은 "${freshEntry.word}" 야.`,
-            `아이에게 "${freshReq}"${instrumentalParticle(freshReq)} 시작하는 낱말을 말해달라고 해.`,
-            "놀이를 끝내자는 말은 하지 마. 아이가 그만하자고 할 때까지 이어간다.",
-          ].join("\n"),
+          // 018 형식과 같은 결정론 3줄. 졌다는 것과 새 판이라는 것을 명시한다.
+          deterministicText: buildWordChainNewRoundText({
+            kWord: freshEntry.word,
+            nextSyllable: freshReq,
+          }),
+          instruction: `[끝말잇기] 케이가 막혀 새 판을 시작한다. 새 첫 낱말 "${freshEntry.word}", 다음 음절 "${freshReq}".`,
           requiredWordInOutput: freshEntry.word,
           ended: false,
         };
