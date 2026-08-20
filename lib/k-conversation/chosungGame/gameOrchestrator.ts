@@ -172,7 +172,7 @@ export async function runChosungTurn(
         const currentChosung = activeSession.current_chosung ?? "";
         return {
           handled: true,
-          instruction: `[초성게임] 아이 답은 틀렸어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아직 정답은 말하지 말고 격려하면서 힌트를 줘.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야.`,
+          instruction: `[초성게임] 아이 답은 틀렸어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아직 정답은 말하지 말고 격려하면서 힌트를 줘.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- **글자 수를 알려주지 마.** "3글자" 같은 말은 힌트가 아니다.\n- 초성은 "${currentChosung}"야. 이 초성에 맞는 낱말의 힌트만 줘.`,
           // 오답·힌트 턴은 **문제를 내는 턴이 아니다.** 여기서 초성 반복을 강제하면
           // 케이의 진짜 힌트("미술 시간에 쓰는 거야")가 "자, 다시 낼게! 초성은 …"
           // 대체 문구로 통째로 날아간다(2026-08-18 Dev QA 실측: 아이가 힌트를
@@ -227,7 +227,7 @@ export async function runChosungTurn(
         updatedSession.current_word ?? activeSession.current_word ?? "";
       return {
         handled: true,
-        instruction: `[초성게임] 아이가 힌트를 요청했어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아이가 스스로 맞혀야 해.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야. ${categoryHint}글자 수나 뜻으로 힌트를 줘.`,
+        instruction: `[초성게임] 아이가 힌트를 요청했어.\n[정답]: ${currentWord}\n- **[정답] 낱말을 절대 입 밖에 내지 마.** 아이가 스스로 맞혀야 해.\n- [정답]에 실제로 들어맞는 힌트만 줘. 다른 낱말을 지어내지 마.\n- 초성은 "${currentChosung}"야. ${categoryHint}뜻이나 쓰임새로 힌트를 줘.\n- **글자 수를 알려주지 마.** "3글자" 같은 말은 힌트가 아니라 답을 좁혀 주는 것이다.\n- 초성에 실제로 맞는 낱말의 힌트만 줘. 초성과 안 맞는 다른 낱말을 설명하면 안 된다.`,
         // 오답·힌트 턴은 **문제를 내는 턴이 아니다.** 여기서 초성 반복을 강제하면
         // 케이의 진짜 힌트("미술 시간에 쓰는 거야")가 "자, 다시 낼게! 초성은 …"
         // 대체 문구로 통째로 날아간다(2026-08-18 Dev QA 실측: 아이가 힌트를

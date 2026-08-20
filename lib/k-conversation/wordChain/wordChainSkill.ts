@@ -303,6 +303,31 @@ function isTopicShift(text: string, signals: UtteranceSignals): boolean {
 }
 
 /**
+ * 끝말잇기 진행 턴에 아이에게 그대로 들려줄 문장. 정확히 3줄이다(018, a06.png).
+ *
+ *   레스토랑...
+ *   나는 낭떠러지!
+ *   이제 "지"로 시작하는 단어는?
+ *
+ * 1줄 — 직전 아이 낱말만. 2줄 — 케이가 고른 낱말만. 3줄 — 다음 시작 음절.
+ * 칭찬·규칙 설명·힌트·리액션은 넣지 않는다. 세 값 모두 세션 상태에서 온다.
+ */
+export function buildWordChainTurnText(input: {
+  childWord: string;
+  kWord: string;
+  nextSyllable: string;
+}): string {
+  const childWord = input.childWord.trim();
+  const kWord = input.kWord.trim();
+  const nextSyllable = input.nextSyllable.trim();
+  return [
+    `${childWord}...`,
+    `나는 ${kWord}!`,
+    `이제 "${nextSyllable}"로 시작하는 단어는?`,
+  ].join("\n");
+}
+
+/**
  * 아이 발화에서 끝말잇기 낱말 후보를 뽑는다. 낱말 시도가 아니면 빈 문자열을 준다.
  *
  * 2026-08-20 대표님 실사용 실측 — 예전에는 문장이 오면 **마지막 한글 토큰**을 낱말로
@@ -335,7 +360,7 @@ function extractChildCandidateWord(utterance: string, requiredSyllable?: string)
   // 2026-08-19 독립 리뷰 HIGH 지적)
   if (!/\s/.test(stripped)) return stripTrailingParticle(stripped);
 
-  const tokens = stripped
+  let tokens = stripped
     .split(/\s+/)
     .map((token) => token.replace(/[^가-힣a-zA-Z0-9]/g, ""))
     .filter((token) => token.length >= 2 && /^[가-힣]+$/.test(token))
@@ -343,6 +368,18 @@ function extractChildCandidateWord(utterance: string, requiredSyllable?: string)
 
   if (tokens.length === 0) return "";
   if (tokens.length === 1) return tokens[0];
+
+  // 017 후속 대표님 실사용(2026-08-20 11:44) — 아이가 이렇게 말했다:
+  //   "뭐냐? 졌으면, 졌다고 말하고 새로운 끝말잇기 이어 갈까? 라고 묻고,
+  //    기차 동의하면 다음 문제로 가야지"
+  // 케이는 문장 **중간**의 "기차" 를 낱말로 뽑아 채점했다. 아이는 낱말을 낸 것이
+  // 아니라 진행 방식을 지적한 것이다. 아이: "기차라고 말도 안했는데, 멋데로 넘어가네?"
+  //
+  // 아이가 낱말을 말할 때는 문장 **끝**에 놓는다("아 진짜 … 귀찮냐 차표").
+  // 그래서 후보를 마지막 두 토큰으로 제한한다. 이 규칙 하나로
+  // "군말 + 낱말" 은 살리고 "낱말이 중간에 박힌 지적 문장" 은 걸러진다.
+  const TAIL_WINDOW = 2;
+  tokens = tokens.slice(-TAIL_WINDOW);
 
   // 여러 토큰이면 규칙과 사전으로 좁힌다.
   const ruleFit = requiredSyllable
@@ -414,6 +451,17 @@ const WORD_CHAIN_DISPUTE_PATTERNS: readonly RegExp[] = [
   /(?:말했는데|했는데|냈는데)[^.?!]{0,24}왜/,
   /(?:화나게|화가\s*나|짜증|열받)/,
   /또\s*이러/,
+  // 017 후속 실측(2026-08-20 11:44) — 아래 두 문장이 안 걸려 문장 끝 서술어가
+  // 낱말로 채점됐다("가야지", "넘어가네").
+  //   "뭐냐? 졌으면, 졌다고 말하고 … 기차 동의하면 다음 문제로 가야지"
+  //   "헐… 아이가 기차라고 말도 안했는데, 멋데로 넘어가네?"
+  // 진행 방식을 지시·지적하는 말은 "~야지", "~해야지", "멋대로", "말도 안" 같은
+  // 형태로 온다.
+  /(?:멋대로|멋데로|맘대로|마음대로)/,
+  /말도\s*안\s*(?:했|하|되|돼)/,
+  /(?:가야지|해야지|하야지|되야지|돼야지)/,
+  /(?:졌으면|이겼으면|졌다고|이겼다고)/,
+  /(?:뭐냐|뭐야)\?/,
 ];
 
 export function isWordChainDispute(text: string): boolean {
@@ -904,7 +952,21 @@ export const WORD_CHAIN_SKILL: PlaySkillModule = {
       const nextReqSyllable = kNextEntry.lastSyllable;
       return {
         handled: true,
-        instruction: `[끝말잇기] 아이가 "${childEntry.word}"${instrumentalParticle(childEntry.word)} 멋지게 이어줬어! 케이는 "${kNextEntry.word}"${instrumentalParticle(kNextEntry.word)} 받을게. 이제 "${nextReqSyllable}"${instrumentalParticle(nextReqSyllable)} 시작하는 단어를 말해줘.`,
+        // 018(requests/a06.png) — 형식을 정확히 3줄로 고정한다.
+        //
+        // 예전에는 지시문만 주고 문장은 LLM 이 만들었다. 그래서 한 덩어리로 뭉쳐
+        // 나왔다(실측: "아이가 "레스토랑"으로 멋지게 이어줬어! 케이는 "낭떠러지"로
+        // 받을게. 이제 "지"로 시작하는 단어를 말해줘.").
+        //
+        // 세 값은 이미 세션 상태에서 결정론으로 정해져 있다 — 아이 낱말, 케이 낱말,
+        // 다음 음절. 문장까지 여기서 만들면 LLM 이 끼어들 여지가 없다.
+        // 칭찬·규칙 설명·힌트·리액션은 넣지 않는다(대표 지시).
+        deterministicText: buildWordChainTurnText({
+          childWord: childEntry.word,
+          kWord: kNextEntry.word,
+          nextSyllable: nextReqSyllable,
+        }),
+        instruction: `[끝말잇기] 아이 낱말 "${childEntry.word}", 케이 낱말 "${kNextEntry.word}", 다음 음절 "${nextReqSyllable}".`,
         ended: false,
         requiredWordInOutput: kNextEntry.word,
       };

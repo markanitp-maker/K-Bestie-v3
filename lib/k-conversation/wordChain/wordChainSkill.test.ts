@@ -420,8 +420,18 @@ describe("WORD_CHAIN_SKILL Adapter", () => {
     assert.equal(result.ended, false);
     assert.ok(result.instruction);
     assert.ok(result.instruction.includes("방학"));
-    // K가 '학'으로 시작하는 단어로 응답했는지 확인
-    assert.ok(result.instruction.includes("케이는"));
+    // 018(a06.png) — 이 턴은 아이에게 들려줄 문장을 스킬이 직접 만든다.
+    // 지시문은 값만 남기고, 형식은 deterministicText 가 고정한다.
+    assert.ok(result.deterministicText, "결정론 문장이 없다");
+    const dtLines = result.deterministicText.split("\n");
+    assert.equal(dtLines.length, 3, `3줄이 아니다: ${JSON.stringify(dtLines)}`);
+    assert.equal(dtLines[0], "방학...");
+    assert.ok(dtLines[1].startsWith("나는 "), dtLines[1]);
+    assert.ok(dtLines[2].startsWith("이제 "), dtLines[2]);
+    // 금지 문구가 아이에게 나가지 않는다.
+    for (const banned of ["멋지게", "이어줬어", "받을게"]) {
+      assert.ok(!result.deterministicText.includes(banned), `금지 문구: ${banned}`);
+    }
 
     // [중요 검증] 아이 단어('방학')와 케이 단어 둘 다 used_words 및 current_word에 반영되어야 함
     const afterSession = await getActiveWordChainSession(db, "child-1");

@@ -1125,8 +1125,16 @@ test("WordChain Output Guard 1: 응답에 requiredWord가 있으면 정상 통�
     }
   );
 
+  // 018(a06.png) — 이 턴은 더 이상 LLM 을 부르지 않는다. 스킬이 만든 3줄을 그대로 쓴다.
+  // 그래서 "모델이 케이 낱말을 빼먹는" 위험 자체가 없어졌다.
   assert.equal(result.category, "generated");
-  assert.ok(result.text.includes("좋아! 나는 '"));
+  const lines = result.text.split("\n");
+  assert.equal(lines.length, 3, `3줄이 아니다: ${JSON.stringify(lines)}`);
+  assert.equal(lines[0], "과자...", lines[0]);
+  assert.ok(lines[1].startsWith("나는 "), lines[1]);
+  assert.ok(lines[2].startsWith("이제 "), lines[2]);
+  // LLM 은 호출되지 않았으므로 지시문도 캡처되지 않는다.
+  assert.equal(capturedInstruction, undefined, "LLM 을 불렀다");
 });
 
 test("WordChain Output Guard 2: 응답에 requiredWord가 없으면 대체 문구로 바뀌고 requiredWord가 들어 있다", async () => {
@@ -1161,11 +1169,13 @@ test("WordChain Output Guard 2: 응답에 requiredWord가 없으면 대체 문�
     }
   );
 
+  // 018(a06.png) — 이 턴은 LLM 을 부르지 않으므로 "모델이 낱말을 빼먹는" 경우가
+  // 아예 없다. 지켜야 할 불변식은 그대로다: 케이 낱말과 다음 음절이 반드시 들어 있다.
   assert.equal(result.category, "generated");
-  // requiredWord가 포함된 대체 문구로 치환됨
-  assert.ok(result.text.startsWith("좋아! 나는 '"));
-  assert.ok(result.text.includes("할게. 이제 '"));
-  assert.ok(result.text.includes("'로 시작하는 말 해줘!"));
+  const lines2 = result.text.split("\n");
+  assert.equal(lines2.length, 3, `3줄이 아니다: ${JSON.stringify(lines2)}`);
+  assert.ok(lines2[1].startsWith("나는 ") && lines2[1].endsWith("!"), lines2[1]);
+  assert.ok(/^이제 "..?"로 시작하는 단어는\?$/.test(lines2[2]), lines2[2]);
 });
 
 test("WordChain Output Guard 3: 사고 재현 — 케이가 '그거로 시작하는 다음 단어는 뭘로 할래?' 라고만 하면 차단된다", async () => {
@@ -1200,11 +1210,12 @@ test("WordChain Output Guard 3: 사고 재현 — 케이가 '그거로 시작하
     }
   );
 
+  // 018(a06.png) — 모델이 되던지는 사고 자체가 불가능해졌다. 모델 출력을 쓰지 않는다.
   assert.equal(result.category, "generated");
-  // 케이가 자기가 단어를 안 내고 되던진 발화가 차단되고 대체 문구로 치환됨
-  assert.ok(result.text.startsWith("좋아! 나는 '"));
-  assert.ok(result.text.includes("할게. 이제 '"));
   assert.equal(result.text.includes("그거로 시작하는 다음 단어는 뭘로 할래?"), false);
+  const lines3 = result.text.split("\n");
+  assert.equal(lines3.length, 3, `3줄이 아니다: ${JSON.stringify(lines3)}`);
+  assert.ok(lines3[1].startsWith("나는 "), lines3[1]);
 });
 
 test("WordChain Output Guard 4: 그만하기 턴은 requiredWordInOutput이 없어 검사 대상이 아니다", async () => {

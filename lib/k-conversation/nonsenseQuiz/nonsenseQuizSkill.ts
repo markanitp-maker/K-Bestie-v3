@@ -111,6 +111,13 @@ async function progressHintOrRevealAnswer(
     return {
       handled: true,
       instruction: buildHintInstruction(question, 1, wrongAnswer),
+      // 016 후속 대표님 실사용(2026-08-20 11:46) — 케이가 힌트라며 정답을 그대로 말했다.
+      //   문제 "물이 많아질수록 작아지는 것은?"(각설탕)
+      //   케이: "커피 마실 때 넣는 네모난 각설탕이야"
+      // DB 힌트는 깨끗했다(hint_2 = "따뜻한 차에 퐁당 넣으면 사르르 녹아 없어지지!") —
+      // 케이가 지어낸 말이다. 초성게임에는 정답 유출 가드가 있는데 넌센스에는
+      // answerMustNotAppear 를 넘기지 않아 **가드가 아예 돌지 않았다.**
+      answerMustNotAppear: question.canonical_answer || undefined,
       ended: false,
     };
   }
@@ -133,6 +140,7 @@ async function progressHintOrRevealAnswer(
     return {
       handled: true,
       instruction: buildHintInstruction(question, 2, wrongAnswer),
+      answerMustNotAppear: question.canonical_answer || undefined,
       ended: false,
     };
   }

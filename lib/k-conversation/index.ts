@@ -451,6 +451,8 @@ export async function respond(
   let hasActivePlaySession = false;
   let activePlaySkillId: PlaySkillId | undefined;
   let playSkillInstruction: string | undefined;
+  // 018 — 스킬이 완성 문장을 준 경우. 이 값이 있으면 LLM 생성을 건너뛴다.
+  let playSkillDeterministicText: string | undefined;
   let playSkillHandled = false;
   let handledPlaySkillId: PlaySkillId | undefined;
   let playSkillAnswerMustNotAppear: string | undefined;
@@ -572,6 +574,9 @@ export async function respond(
             handledPlaySkillId = playTurnResult.skillId;
             if (playTurnResult.instruction) {
               playSkillInstruction = playTurnResult.instruction;
+            }
+            if (playTurnResult.deterministicText) {
+              playSkillDeterministicText = playTurnResult.deterministicText;
             }
             if (playTurnResult.answerMustNotAppear) {
               playSkillAnswerMustNotAppear = playTurnResult.answerMustNotAppear;
@@ -728,6 +733,27 @@ export async function respond(
 - 다른 놀이를 대신 제안하지 마.
 - 초성 문제·끝말잇기·넌센스 퀴즈를 네가 직접 만들어 내지 마.`
       : undefined;
+  // 018(requests/a06.png) — 스킬이 완성 문장을 준 턴은 LLM 을 부르지 않는다.
+  //
+  // 끝말잇기 진행 턴의 세 값(아이 낱말·케이 낱말·다음 음절)은 이미 세션 상태에서
+  // 결정론으로 정해져 있다. 지시문만 주고 문장을 LLM 에 맡겼더니 형식이 지켜지지
+  // 않았다 — 3줄이 한 덩어리로 뭉쳐 나왔다. 문장까지 스킬이 만들었으므로 생성을
+  // 건너뛴다. 호출이 없으니 지연도 줄고 폴백에 걸릴 일도 없다.
+  if (playSkillDeterministicText) {
+    return {
+      text: stripMarkdownEmphasis(playSkillDeterministicText),
+      action,
+      category: "generated",
+      boredom,
+      memoryTiersUsed: memorySnapshot.tiersUsed,
+      tokenIn: 0,
+      tokenOut: 0,
+      generationFallback: false,
+      generationFailureType: undefined,
+      activePlaySkillId: activePlaySkillId ?? null,
+    };
+  }
+
   const generated = await generateResponse({
     ai: deps.ai,
     modelId: deps.modelId,
@@ -864,7 +890,13 @@ export async function respond(
       answer: playSkillAnswerMustNotAppear,
       blockedPreview: finalText.slice(0, 60),
     });
-    finalText = "음, 힌트 하나 더 줄게! 초성을 잘 생각해서 맞춰봐.";
+    // 016 후속 — 이 가드는 이제 넌센스 퀴즈에도 적용된다(정답 유출 실측).
+    // 대체 문구가 초성게임 전용이면 넌센스에서 "초성을 잘 생각해서" 라는 엉뚱한 말이
+    // 나간다. 활성 놀이에 맞춰 갈라 준다.
+    finalText =
+      activePlaySkillId === "NONSENSE_QUIZ"
+        ? "음, 힌트 하나 더 줄게! 잘 생각해서 맞춰봐."
+        : "음, 힌트 하나 더 줄게! 초성을 잘 생각해서 맞춰봐.";
   }
 
   // 9-1b) 초성게임 필수 초성 누락/불일치 차단.
