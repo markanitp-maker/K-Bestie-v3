@@ -305,6 +305,27 @@ the invented part dangerous — the surrounding accuracy vouches for it.
 - The same shape applies beyond words: suggested config keys, API fields, error codes, CLI flags.
   Enumerated-from-source is trustworthy; proposed-from-memory is a draft.
 
+### 4b-6. `touchedFiles` lies when two workers share one directory
+
+**Measured 2026-08-20.** An agy run was scoped to `wordChain/` by an explicit brief ("do not touch
+`play/`, `index.ts`, `nonsenseQuiz/`, `chosungGame/`"). Its report was honest and its edits were
+in scope. But `touchedFiles` listed ten files, including all four forbidden ones — because a Codex
+run had been dispatched into the **same working directory** minutes earlier and was still editing.
+
+The relay computes `touchedFiles` from the working tree, not from what the worker did. With two
+workers in one checkout it reports the union, so a clean run looks like a scope violation and a
+real violation would be invisible inside the noise. Both readings are wrong.
+
+- **One worker per working directory, or give each its own git worktree.** This is an
+  orchestration rule, not a worker limitation — the worker cannot see the other's edits either.
+- Overlapping file sets stay **sequential** even with worktrees, because the merge is the hard part.
+- **`package.json` is the usual collision.** Both workers append their new test file to the `test`
+  script; last write wins and one registration silently disappears. Re-check that every new test
+  file is still listed after all workers finish, not just after each one.
+- If you did run them concurrently, do not use `touchedFiles` to judge scope. Take a `git stash
+  list`-independent snapshot before dispatch, or review each worker's diff by file ownership you
+  assigned in the brief.
+
 ### 4c. A wrong report can still contain a real finding
 
 The stale run above reported the fabrication guard failing. The run was invalid, but the finding
