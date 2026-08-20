@@ -15,11 +15,14 @@ import { RegisteredQuestionsList, type Question } from "@/components/RegisteredQ
 import { SAFE_ALTERNATIVE_ALLOWED_AREA_MAP } from "@/lib/plan/parentQuerySafeAlternatives";
 import { PARENT_QUERY_AREA_LABELS } from "@/lib/plan/parentQueryRouterEngine";
 import {
+  MAX_HANDS_FREE_STT_ERRORS,
   normalizeVoiceTranscript,
   shouldAutoPlayKAnswer,
+  shouldResumeHandsFree,
   shouldSendFinalVoiceTranscript,
   resolveAutoPlaySource,
   type KChatInputOrigin,
+  type KVoiceMode,
 } from "@/lib/speech/kVoiceChatPolicy";
 
 type Message = {
@@ -118,6 +121,7 @@ export default function ParentGuidePage() {
   const [multiSelect, setMultiSelect] = useState<MultiSelectState | null>(null);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<KVoiceMode>("typing");
   // requests/request-parent-k-conversation-context-and-draft-edit-fix.md §6/§9 — 아직
   // 확정·취소되지 않은 "아이에게 물어보기" 제안 원문. child_id별 sessionStorage에도
   // 저장해 새로고침으로 완전히 유실되지 않게 한다(§6). 자녀 전환 시 반드시 분리한다(§9).
@@ -137,6 +141,12 @@ export default function ParentGuidePage() {
   const sendInFlightRef = useRef(false);
   const askChildInFlightRef = useRef(new Set<string>());
   const lastVoiceTranscriptRef = useRef("");
+  const voiceModeRef = useRef<KVoiceMode>("typing");
+  const [handsFreeNotice, setHandsFreeNotice] = useState<string | null>(null);
+  const handsFreeGenerationRef = useRef(0);
+  const handsFreeSttErrorCountRef = useRef(0);
+  const isMountedRef = useRef(true);
+  const isLoadingRef = useRef(false);
 
   const {
     isSttSupported,
@@ -149,6 +159,11 @@ export default function ParentGuidePage() {
     speakText,
     stopSpeaking,
     sttError,
+    // 렌더 중에 `ref.current = state` 를 대입하면 concurrent 렌더가 중단됐을 때
+    // 커밋되지 않은 값이 노출된다(리뷰 지적, 2026-08-20). 상태를 바꾸는 지점이
+    // 훅 안에 다 있으므로 훅이 갱신한 ref 를 그대로 받아 쓴다.
+    isListeningRef,
+    isSpeakingRef,
   } = useParentVoice();
 
   const childId = activeChildId ?? (typeof window !== "undefined" ? localStorage.getItem("k_child_id") : null);
@@ -158,8 +173,64 @@ export default function ParentGuidePage() {
   const childIdRef = useRef<string | null>(childId);
   childIdRef.current = childId;
 
+  /**
+   * 핸즈프리를 끈다. `reason` 을 주면 왜 꺼졌는지 부모에게 보여 준다.
+   *
+   * 조용히 멎으면 부모는 왜 안 되는지 모른다 — 마이크를 계속 기다리게 된다
+   * (리뷰 지적, 2026-08-20).
+   */
+  const stopHandsFree = useCallback((reason?: string) => {
+    handsFreeGenerationRef.current += 1;
+    voiceModeRef.current = "typing";
+    setVoiceMode("typing");
+    stopListening();
+    stopSpeaking();
+    isSpeakingRef.current = false;
+    setHandsFreeNotice(reason ?? null);
+  }, [stopListening, stopSpeaking]);
+
+  const resumeHandsFree = useCallback((generation: number) => {
+    if (generation !== handsFreeGenerationRef.current) return;
+    if (!shouldResumeHandsFree({
+      mode: voiceModeRef.current,
+      isMounted: isMountedRef.current,
+      isLoading: isLoadingRef.current,
+      // state 를 클로저로 잡으면 낡은 값을 본다. TTS 완료 콜백은 마이크가 이미 멎은
+      // 뒤에 오는데, 그 시점 클로저가 직전 `true` 를 들고 있으면 재개가 거부된다
+      // (리뷰 지적, 2026-08-20). ref 로 항상 최신값을 본다.
+      isListening: isListeningRef.current,
+      isSpeaking: isSpeakingRef.current,
+      sttErrorCount: handsFreeSttErrorCountRef.current,
+    })) return;
+    startListening();
+  }, [startListening]);
+
+  useEffect(() => {
+    // setup 에서 반드시 true 로 되돌린다. React Strict Mode 는 개발에서
+    // setup → cleanup → setup 을 한 번 더 돈다. cleanup 에서 false 로만 바꾸면
+    // 두 번째 setup 이후 영구히 false 로 남아 **핸즈프리 마이크 재개가 통째로 막힌다**
+    // (리뷰 지적, 2026-08-20).
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      handsFreeGenerationRef.current += 1;
+      stopListening();
+      stopSpeaking();
+    };
+  }, [stopListening, stopSpeaking]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handleVisibilityChange = () => {
+      if (document.hidden) stopHandsFree();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [stopHandsFree]);
+
   // 자녀 전환 시: 진행 중인 요청 취소 + 대화 완전 분리 + 새 자녀 정보 로드
   useEffect(() => {
+    stopHandsFree();
     abortRef.current?.abort();
     setMessages([]);
     setChildName("");
@@ -168,6 +239,7 @@ export default function ParentGuidePage() {
     // isLoading을 건드리지 않고 return하므로, 전환 시점에 여기서 직접 풀어줘야 한다
     // (안 그러면 이전 자녀의 응답이 도착할 때까지 "생각 중" 상태와 입력 비활성이 남는다).
     setIsLoading(false);
+    isLoadingRef.current = false;
     // claude-review 재지적(draft-modal-fix): 모달이 열린 채 자녀를 전환하면 확정 시
     // 옛 자녀 문맥의 질문이 새 자녀 child_id/quota로 등록될 위험이 있다. 아직 DB에
     // 반영되지 않은 초안이므로 그냥 버리는 것이 안전하다(§6.3과 동일한 "취소" 취급).
@@ -206,7 +278,7 @@ export default function ParentGuidePage() {
       });
 
     return () => controller.abort();
-  }, [childId]);
+  }, [childId, stopHandsFree]);
 
   useEffect(() => {
     if (activeTab !== "questions") return;
@@ -271,10 +343,13 @@ export default function ParentGuidePage() {
     sendInFlightRef.current = true;
     stopListening();
     setInputText("");
+    const handsFreeGeneration = handsFreeGenerationRef.current;
+    let startedAutoPlayback = false;
 
     const userMsgId = Date.now().toString();
     setMessages((prev) => [...prev, { id: userMsgId, role: "user", text: textToSend }]);
     setIsLoading(true);
+    isLoadingRef.current = true;
 
     try {
       const res = await fetch("/api/parent/k-chat", {
@@ -318,7 +393,14 @@ export default function ParentGuidePage() {
       // fallback 문구로 바뀐 뒤라, 그걸 넘기면 빈 답변 가드가 무력화된다
       // (리뷰 지적, 2026-08-20). 답이 없는데 "응답을 가져올 수 없어요" 를 읽어 주는 것은
       // 부모에게 도움이 안 되고, 음성만 켜졌다 꺼져 상태 표시도 어긋난다.
-      if (shouldAutoPlayKAnswer(inputOrigin, resolveAutoPlaySource(data.answer))) speakText(answerText);
+      if (shouldAutoPlayKAnswer(inputOrigin, resolveAutoPlaySource(data.answer))
+        && handsFreeGeneration === handsFreeGenerationRef.current) {
+        startedAutoPlayback = true;
+        speakText(answerText, () => {
+          isSpeakingRef.current = false;
+          queueMicrotask(() => resumeHandsFree(handsFreeGeneration));
+        });
+      }
     } catch (err) {
       console.error("Chat error:", err);
       if (childIdRef.current !== requestChildId) return;
@@ -328,9 +410,31 @@ export default function ParentGuidePage() {
       ]);
     } finally {
       sendInFlightRef.current = false;
-      if (childIdRef.current === requestChildId) setIsLoading(false);
+      if (childIdRef.current === requestChildId) {
+        isLoadingRef.current = false;
+        setIsLoading(false);
+        if (!startedAutoPlayback) resumeHandsFree(handsFreeGeneration);
+      }
     }
-  }, [childId, stopListening, messages, pendingAskChildProposal, speakText]);
+  }, [childId, stopListening, messages, pendingAskChildProposal, speakText, resumeHandsFree]);
+
+  useEffect(() => {
+    if (!sttError || voiceModeRef.current !== "hands-free") return;
+    handsFreeSttErrorCountRef.current += 1;
+    const permissionDenied = sttError.includes("권한");
+    if (permissionDenied) {
+      stopHandsFree("마이크 권한을 허용해주세요.\n텍스트로도 대화할 수 있어요.");
+      return;
+    }
+    if (handsFreeSttErrorCountRef.current >= MAX_HANDS_FREE_STT_ERRORS) {
+      stopHandsFree("음성 인식이 잘 안 돼서 핸즈프리를 껐어요.\n텍스트로 물어보시거나 다시 켜 주세요.");
+      return;
+    }
+
+    const generation = handsFreeGenerationRef.current;
+    const retryTimer = window.setTimeout(() => resumeHandsFree(generation), 500);
+    return () => window.clearTimeout(retryTimer);
+  }, [sttError, resumeHandsFree, stopHandsFree]);
 
   // requests/request-parent-k-stt-input-focus-fix-dev-prod.md — 최종 음성 인식 결과는
   // document.activeElement/입력창 focus 여부와 무관하게 채팅 입력 state(inputText)에
@@ -357,6 +461,7 @@ export default function ParentGuidePage() {
     })) return;
 
     lastVoiceTranscriptRef.current = finalText;
+    handsFreeSttErrorCountRef.current = 0;
     void sendMessage(finalText, "voice");
   }, [transcript, sttError, isListening, sendMessage]);
 
@@ -373,6 +478,39 @@ export default function ParentGuidePage() {
     // speechSynthesis.cancel()은 브라우저 전역이라 K TTS와 리포트 TTS를 함께 중단한다.
     stopSpeaking();
     startListening();
+  };
+
+  const handleVoiceModeToggle = () => {
+    if (voiceModeRef.current === "hands-free") {
+      stopHandsFree();
+      return;
+    }
+    if (!isSttSupported || !childId || isLoading) return;
+    handsFreeGenerationRef.current += 1;
+    handsFreeSttErrorCountRef.current = 0;
+    // 다시 켰으니 지난 종료 사유는 지운다. 남겨 두면 방금 켠 상태에서
+    // "핸즈프리를 껐어요" 가 그대로 보인다.
+    setHandsFreeNotice(null);
+    voiceModeRef.current = "hands-free";
+    setVoiceMode("hands-free");
+    stopSpeaking();
+    startListening();
+  };
+
+  const handleSpeakMessage = (text: string) => {
+    if (isSpeaking) {
+      stopSpeaking();
+      isSpeakingRef.current = false;
+      const generation = handsFreeGenerationRef.current;
+      queueMicrotask(() => resumeHandsFree(generation));
+      return;
+    }
+    stopListening();
+    const generation = handsFreeGenerationRef.current;
+    speakText(text, () => {
+      isSpeakingRef.current = false;
+      queueMicrotask(() => resumeHandsFree(generation));
+    });
   };
 
   const voiceStatus = isSpeaking
@@ -793,7 +931,7 @@ export default function ParentGuidePage() {
                   {/* TTS 버튼 (케이 메시지일 경우만) */}
                   {msg.role === "k" && (
                     <button
-                      onClick={() => isSpeaking ? stopSpeaking() : speakText(msg.text)}
+                      onClick={() => handleSpeakMessage(msg.text)}
                       className="absolute -right-8 bottom-1 p-1.5 rounded-full bg-white shadow-sm border border-gray-100 text-gray-500 hover:text-gray-700"
                     >
                       {isSpeaking ? <Square size={14} className="fill-current" /> : <Volume2 size={14} />}
@@ -883,6 +1021,25 @@ export default function ParentGuidePage() {
           )}
           {isSttSupported && sttError && (
             <p className="text-[10px] text-red-500 mb-2 text-center whitespace-pre-line">{sttError}</p>
+          )}
+          {isSttSupported && (
+            <div className="flex justify-center mb-2">
+              <button
+                type="button"
+                onClick={handleVoiceModeToggle}
+                disabled={!childId || (isLoading && voiceMode !== "hands-free")}
+                aria-pressed={voiceMode === "hands-free"}
+                aria-label={voiceMode === "hands-free" ? "핸즈프리 모드 끄기" : "핸즈프리 모드 켜기"}
+                className="min-h-9 px-4 rounded-full bg-gray-100 text-xs font-medium text-gray-700 disabled:opacity-50"
+              >
+                {voiceMode === "hands-free" ? "🎤 핸즈프리" : "⌨️ 타이핑"}
+              </button>
+            </div>
+          )}
+          {handsFreeNotice && (
+            <p className="text-[11px] text-gray-500 mb-2 text-center whitespace-pre-line" aria-live="polite">
+              {handsFreeNotice}
+            </p>
           )}
           {voiceStatus && (
             <p className="text-xs font-medium text-[var(--color-k-navy)] mb-2 text-center" aria-live="polite">

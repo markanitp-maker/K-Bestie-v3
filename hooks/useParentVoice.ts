@@ -10,21 +10,43 @@ interface UseParentVoiceReturn {
   stopListening: () => void;
   
   isSpeaking: boolean;
-  speakText: (text: string) => void;
+  speakText: (text: string, onComplete?: () => void) => void;
   stopSpeaking: () => void;
   
   sttError: string | null;
+
+  /**
+   * 렌더 밖(콜백·타이머)에서 최신 상태를 읽기 위한 ref.
+   *
+   * 화면 쪽에서 `ref.current = state` 를 **렌더 중에** 대입하던 코드가 있었는데,
+   * concurrent 렌더가 중단되면 커밋되지 않은 값이 노출된다(리뷰 지적, 2026-08-20).
+   * 상태를 바꾸는 지점이 이 훅 안에 다 있으므로 여기서 함께 갱신해 내보낸다.
+   */
+  isListeningRef: React.MutableRefObject<boolean>;
+  isSpeakingRef: React.MutableRefObject<boolean>;
 }
 
 export function useParentVoice(): UseParentVoiceReturn {
   const [isSttSupported, setIsSttSupported] = useState(true);
-  const [isListening, setIsListening] = useState(false);
+  const [isListening, setIsListeningState] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [sttError, setSttError] = useState<string | null>(null);
   
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSpeaking, setIsSpeakingState] = useState(false);
   
+  // 상태와 ref 를 한 지점에서 함께 바꾼다. 따로 두면 어느 한쪽을 빠뜨린다.
+  const isListeningRef = useRef(false);
+  const isSpeakingRef = useRef(false);
+  const setIsListening = useCallback((value: boolean) => {
+    isListeningRef.current = value;
+    setIsListeningState(value);
+  }, []);
+  const setIsSpeaking = useCallback((value: boolean) => {
+    isSpeakingRef.current = value;
+    setIsSpeakingState(value);
+  }, []);
+
   const recognitionRef = useRef<any>(null);
   const synthesisRef = useRef<SpeechSynthesis | null>(null);
   const speechGenerationRef = useRef(0);
@@ -145,15 +167,21 @@ export function useParentVoice(): UseParentVoiceReturn {
     }
   }, []);
 
-  const speakText = useCallback((text: string) => {
-    if (!synthesisRef.current) return;
+  const speakText = useCallback((text: string, onComplete?: () => void) => {
+    if (!synthesisRef.current) {
+      onComplete?.();
+      return;
+    }
 
     synthesisRef.current.cancel(); // Stop any ongoing speech
     speechGenerationRef.current += 1;
     const generation = speechGenerationRef.current;
 
     const cleanText = cleanTtsText(text);
-    if (!cleanText) return;
+    if (!cleanText) {
+      onComplete?.();
+      return;
+    }
 
     // 긴 답변은 문장 단위로 나눠 순차 재생한다(§12.3) — 브라우저 TTS 엔진이
     // 한 번에 너무 긴 텍스트를 받으면 중간에 끊기거나 무음이 되는 경우가 있어서.
@@ -167,6 +195,7 @@ export function useParentVoice(): UseParentVoiceReturn {
       if (generation !== speechGenerationRef.current) return; // 취소됨 - 이어가지 않음
       if (index >= queue.length) {
         setIsSpeaking(false);
+        onComplete?.();
         return;
       }
       const utterance = new SpeechSynthesisUtterance(queue[index]);
@@ -184,6 +213,7 @@ export function useParentVoice(): UseParentVoiceReturn {
         console.error("Speech synthesis error", e);
         if (generation !== speechGenerationRef.current) return;
         setIsSpeaking(false);
+        onComplete?.();
       };
       utterance.onend = () => {
         if (generation !== speechGenerationRef.current) return;
@@ -229,6 +259,8 @@ export function useParentVoice(): UseParentVoiceReturn {
     isSpeaking,
     speakText,
     stopSpeaking,
-    sttError
+    sttError,
+    isListeningRef,
+    isSpeakingRef,
   };
 }
