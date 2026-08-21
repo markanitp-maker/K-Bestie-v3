@@ -14,6 +14,7 @@ interface HandsFreeResumeDecision {
 }
 
 interface VoiceTranscriptSendDecision {
+  mode: KVoiceMode;
   transcript: string;
   sttError: string | null;
   isListening: boolean;
@@ -23,12 +24,23 @@ interface VoiceTranscriptSendDecision {
 export const normalizeVoiceTranscript = (transcript: string): string =>
   transcript.replace(/\s+/gu, " ").trim();
 
+/**
+ * final transcript 를 K 에게 보낼지 판정한다.
+ *
+ * **`mode` 검사가 먼저다(034-R1 리뷰 반려, 2026-08-21).** 채팅 모드는 "키보드 입력만" 이라
+ * STT 결과가 흘러 들어가면 안 된다. 그런데 이 판정은 `isListening` 이 false 로 **떨어질 때**
+ * 깨어나고, 음성대화 → 채팅 전환이 부르는 `stopHandsFree()` 가 바로 그 false 를 만든다.
+ * 즉 마이크 버튼을 숨기는 것만으로는 막지 못한다 — 전환 직전에 확정된 발화가 전환 **후에**
+ * 전송되는 경합이 남는다. 그래서 모드를 여기서 본다.
+ */
 export const shouldSendFinalVoiceTranscript = ({
+  mode,
   transcript,
   sttError,
   isListening,
   lastSentTranscript,
 }: VoiceTranscriptSendDecision): boolean => {
+  if (mode !== "hands-free") return false;
   const finalTranscript = normalizeVoiceTranscript(transcript);
   return !isListening
     && !sttError

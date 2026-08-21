@@ -10,14 +10,33 @@ test("음성 질문의 K 답변만 자동 재생한다", () => {
 });
 
 test("빈 final transcript 또는 STT 오류가 있으면 전송하지 않는다", () => {
-  assert.equal(shouldSendFinalVoiceTranscript({ transcript: "   ", sttError: null, isListening: false, lastSentTranscript: "" }), false);
-  assert.equal(shouldSendFinalVoiceTranscript({ transcript: "오늘 어땠어?", sttError: "마이크 오류", isListening: false, lastSentTranscript: "" }), false);
+  assert.equal(shouldSendFinalVoiceTranscript({ mode: "hands-free", transcript: "   ", sttError: null, isListening: false, lastSentTranscript: "" }), false);
+  assert.equal(shouldSendFinalVoiceTranscript({ mode: "hands-free", transcript: "오늘 어땠어?", sttError: "마이크 오류", isListening: false, lastSentTranscript: "" }), false);
 });
 
 test("동일한 final transcript가 두 번 전달돼도 한 번만 전송한다", () => {
   const transcript = "오늘 어땠어?";
-  assert.equal(shouldSendFinalVoiceTranscript({ transcript, sttError: null, isListening: false, lastSentTranscript: "" }), true);
-  assert.equal(shouldSendFinalVoiceTranscript({ transcript, sttError: null, isListening: false, lastSentTranscript: transcript }), false);
+  assert.equal(shouldSendFinalVoiceTranscript({ mode: "hands-free", transcript, sttError: null, isListening: false, lastSentTranscript: "" }), true);
+  assert.equal(shouldSendFinalVoiceTranscript({ mode: "hands-free", transcript, sttError: null, isListening: false, lastSentTranscript: transcript }), false);
+});
+
+test("채팅 모드에서는 final transcript 가 있어도 전송하지 않는다", () => {
+  // 034-R1 리뷰 반려(2026-08-21) 재현. 음성대화 중 final 이 확정된 직후 채팅으로 바꾸면
+  // stopHandsFree() 가 isListening 을 false 로 만들어 전송 판정이 한 번 더 깨어난다.
+  // 마이크 버튼을 숨기는 것만으로는 이 경합을 막지 못한다.
+  const transcript = "오늘 어땠어?";
+  assert.equal(
+    shouldSendFinalVoiceTranscript({ mode: "typing", transcript, sttError: null, isListening: false, lastSentTranscript: "" }),
+    false,
+    "채팅 모드에서는 남은 음성이 전송되면 안 된다",
+  );
+  // 같은 입력이 음성대화 모드에서는 정상 전송돼야 한다 — 모드 조건이 다른 가드를
+  // 덮어버린 것이 아님을 함께 확인한다.
+  assert.equal(
+    shouldSendFinalVoiceTranscript({ mode: "hands-free", transcript, sttError: null, isListening: false, lastSentTranscript: "" }),
+    true,
+    "음성대화 모드에서는 그대로 전송돼야 한다",
+  );
 });
 
 test("자동 재생: 답변이 비어 있으면 음성 질문이어도 재생하지 않는다", () => {

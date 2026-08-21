@@ -457,6 +457,9 @@ export default function ParentGuidePage() {
     // 모바일 브라우저는 한 번의 발화를 여러 final 조각으로 나눠 전달할 수 있다.
     // 인식이 완전히 끝난 뒤 누적된 문장 전체를 한 번만 입력창에 반영한다.
     if (!shouldSendFinalVoiceTranscript({
+      // 채팅 모드로 막 전환한 직후에도 이 effect 가 한 번 더 깨어난다
+      // (stopHandsFree 가 isListening 을 false 로 만들기 때문). 모드를 넘겨 거기서 막는다.
+      mode: voiceModeRef.current,
       transcript: finalText,
       sttError,
       isListening,
