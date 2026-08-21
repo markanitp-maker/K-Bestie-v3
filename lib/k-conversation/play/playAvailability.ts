@@ -36,6 +36,24 @@ export function isComicBookEnabled(): boolean {
 }
 
 /**
+ * 헤어스타일(hairstyle) 개별 게이트. `isComicBookEnabled` 와 같은 이유·같은 모양이다.
+ *
+ * Production `play_registry` 에는 hairstyle 행이 없다. 행이 없으면 티켓 발급이 FK 위반으로
+ * 실패하므로, 카드만 켜지면 아이에게 눌러도 안 되는 버튼이 보인다. 그래서 기본값은
+ * "Dev 만 켜짐" 이고 Production 은 명시 플래그를 요구한다.
+ */
+export function isHairstyleEnabled(): boolean {
+  const override = process.env.NEXT_PUBLIC_HAIRSTYLE_ENABLED?.trim().toLowerCase();
+  if (override === "true") {
+    return true;
+  }
+  if (override === "false") {
+    return false;
+  }
+  return getSupabaseTarget() !== "prod";
+}
+
+/**
  * 놀이가 꺼져 있을 때 아이에게 그대로 들려줄 안내.
  *
  * 프롬프트 지침으로는 안 된다 — 케이가 "좋아, 신나게 해보자!" 라고 호응해

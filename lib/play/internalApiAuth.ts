@@ -11,6 +11,7 @@
 const INTERNAL_API_KEYS_BY_PLAY_ID: Record<string, string | undefined> = {
   mbti: process.env.MBTI_INTERNAL_API_KEY,
   comic_book: process.env.COMIC_BOOK_INTERNAL_API_KEY,
+  hairstyle: process.env.HAIRSTYLE_INTERNAL_API_KEY,
 };
 
 /** 타임스탬프 허용 오차(ms) — 이 범위를 벗어난 요청은 재생 공격으로 간주해 거부한다. */

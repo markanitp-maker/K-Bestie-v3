@@ -8,7 +8,7 @@ import { DemoFrame } from "@/app/demo/components/DemoFrame";
 import { writeQuizSessionHandoff } from "@/lib/play/quizSessionHandoff";
 import KChatbotWidget from "@/components/KChatbotWidget";
 import { AppTopHeader } from "@/components/AppTopHeader";
-import { isComicBookEnabled } from "@/lib/k-conversation/play/playAvailability";
+import { isComicBookEnabled, isHairstyleEnabled } from "@/lib/k-conversation/play/playAvailability";
 
 
 
@@ -20,7 +20,7 @@ import { isComicBookEnabled } from "@/lib/k-conversation/play/playAvailability";
  * 놀이 카드의 comingSoon 만 풀고 여기에 추가하지 않으면 레거시 분기로 떨어져
  * 인앱 화면이 뜬다 — 티켓도 세션도 만들어지지 않는다.
  */
-const TICKET_BASED_PLAY_IDS = new Set(["mbti", "comic_book"]);
+const TICKET_BASED_PLAY_IDS = new Set(["mbti", "comic_book", "hairstyle"]);
 function isTicketBasedPlay(playId: string): boolean {
   return TICKET_BASED_PLAY_IDS.has(playId);
 }
@@ -32,7 +32,7 @@ const GAMES = [
   // lib/quiz/handoffToken.ts의 QUIZ_GOLD_KEY_COST와 반드시 같아야 한다(2026-07-27: 1 → 2).
   { id: "quizmaster", icon: "🧠", title: "퀴즈마스터", bg: "var(--color-k-sky-blue)", bgLight: "var(--color-k-info-bg)", keys: 2, comingSoon: false },
   { id: "mbti", icon: "🔮", title: "MBTI 성격 유형", bg: "var(--color-k-navy)", bgLight: "var(--color-k-navy-tint)", keys: 3, comingSoon: false },
-  { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-mascot-orange)", bgLight: "var(--color-warm-neutral-100)", keys: 3, comingSoon: true },
+  { id: "hairstyle", icon: "💇", title: "헤어스타일", bg: "var(--color-k-mascot-orange)", bgLight: "var(--color-warm-neutral-100)", keys: 3, comingSoon: !isHairstyleEnabled() },
 ];
 
 /**
@@ -607,6 +607,39 @@ export default function ChildPlayPage() {
                   </button>
                 );
               })()}
+
+              {/* 헤어스타일 */}
+              {(() => {
+                const game = GAMES.find(g => g.id === "hairstyle")!;
+                if (game.comingSoon) return null;
+                const locked = goldKeyBalance !== null && goldKeyBalance < game.keys;
+                return (
+                  <button
+                    key={game.id}
+                    onClick={() => handleGameClick(game)}
+                    className="flex flex-col rounded-[17px] p-2.5 shadow-sm active:scale-[0.98] transition-transform text-left border border-black/5 min-h-[112px] max-h-[138px]"
+                    style={{ background: "var(--color-warm-neutral-100)" }}
+                    aria-label={`헤어스타일, 황금열쇠 ${game.keys}개 필요`}
+                  >
+                    <div className="flex justify-between items-start w-full">
+                      <div className="w-[44px] h-[44px] rounded-[12px] flex items-center justify-center text-[26px] bg-white shadow-sm shrink-0">
+                        {game.icon}
+                      </div>
+                      <div className="bg-white px-2 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 shadow-sm shrink-0" style={{ color: "var(--color-k-navy)" }}>
+                        {goldKeyBalance === null ? (
+                          <div className="w-[40px] h-[12px] bg-gray-200 rounded animate-pulse" />
+                        ) : (
+                          <>{locked ? "🔒" : "🔑"} {game.keys}개 필요</>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-1.5">
+                      <h3 className="font-bold text-[15px] leading-[1.25] truncate" style={{ color: "var(--color-k-navy)" }}>{game.title}</h3>
+                      <p className="text-[11px] leading-[1.3] mt-0.5 line-clamp-2" style={{ color: "var(--color-k-text-secondary)" }}>새로운 머리 모양,<br />오늘은 어떻게 해볼까?</p>
+                    </div>
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
@@ -637,6 +670,7 @@ export default function ChildPlayPage() {
                 {/* 헤어스타일 */}
                 {(() => {
                   const game = GAMES.find(g => g.id === "hairstyle")!;
+                  if (!game.comingSoon) return null;
                   return (
                     <div
                       key={game.id}

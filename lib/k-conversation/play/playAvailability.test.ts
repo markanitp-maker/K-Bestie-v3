@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isKPlayEnabled, isComicBookEnabled } from "./playAvailability";
+import { isKPlayEnabled, isComicBookEnabled, isHairstyleEnabled } from "./playAvailability";
 import { executeSkillSelection, buildPlaySkillsCatalogDto } from "./playSelection";
 import { routePlaySkillTurn } from "./skillRouter";
 import { decidePlayProposal } from "./playProposal";
@@ -113,6 +113,39 @@ test("1. isKPlayEnabled: 환경 및 탈출구 플래그 검증", async () => {
   });
   await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_K_PLAY_ENABLED: "false" }, () => {
     assert.equal(isKPlayEnabled(), false, "false는 비활성화 유지");
+  });
+});
+
+test("1-2. isHairstyleEnabled: 환경 및 탈출구 플래그 검증", async () => {
+  // Production play_registry 에 hairstyle 행이 없다. 카드만 켜지면 티켓 발급이 FK 위반으로
+  // 실패해 아이에게 눌러도 안 되는 버튼이 보인다 — 그래서 prod 기본값은 반드시 false 다.
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_HAIRSTYLE_ENABLED: undefined }, () => {
+    assert.equal(isHairstyleEnabled(), false, "prod 환경에서는 기본적으로 비활성화");
+  });
+
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "dev", NEXT_PUBLIC_HAIRSTYLE_ENABLED: undefined }, () => {
+    assert.equal(isHairstyleEnabled(), true, "dev 환경에서는 기본적으로 활성화");
+  });
+
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: undefined, NEXT_PUBLIC_HAIRSTYLE_ENABLED: undefined }, () => {
+    assert.equal(isHairstyleEnabled(), true, "미설정 시 dev로 폴백되어 활성화");
+  });
+
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "prod", NEXT_PUBLIC_HAIRSTYLE_ENABLED: "true" }, () => {
+    assert.equal(isHairstyleEnabled(), true, "prod에서도 탈출구 env가 true면 활성화");
+  });
+
+  await withEnv({ NEXT_PUBLIC_SUPABASE_TARGET: "dev", NEXT_PUBLIC_HAIRSTYLE_ENABLED: "false" }, () => {
+    assert.equal(isHairstyleEnabled(), false, "dev에서도 false면 비활성화 (긴급 차단)");
+  });
+
+  // hairstyle 게이트가 comic_book 게이트와 독립인지 — 한쪽 플래그가 다른 쪽을 켜면 안 된다.
+  await withEnv({
+    NEXT_PUBLIC_SUPABASE_TARGET: "prod",
+    NEXT_PUBLIC_COMIC_BOOK_ENABLED: "true",
+    NEXT_PUBLIC_HAIRSTYLE_ENABLED: undefined,
+  }, () => {
+    assert.equal(isHairstyleEnabled(), false, "comic_book 플래그가 hairstyle 을 켜면 안 된다");
   });
 });
 
