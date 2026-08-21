@@ -108,10 +108,10 @@ test.describe("QA-074: Parent Guide Voice Mode Segmented Control Verification", 
     expect(isGroupContainerVisible).toBe(true);
     results.step6_group_and_aria_label = isGroupContainerVisible;
 
-    // Step 2: Are both buttons visible at the same time: ⌨️ 타이핑 and 🎤 핸즈프리?
+    // Step 2: Are both buttons visible at the same time: ⌨️ 채팅 and 🎤 음성대화?
     console.log(`[QA-074] 2. Checking both buttons visibility...`);
-    const typingBtn = groupContainer.locator('button', { hasText: "타이핑" });
-    const handsfreeBtn = groupContainer.locator('button', { hasText: "핸즈프리" });
+    const typingBtn = groupContainer.locator('button', { hasText: "채팅" });
+    const handsfreeBtn = groupContainer.locator('button', { hasText: "음성대화" });
 
     const isTypingVisible = await typingBtn.isVisible();
     const isHandsfreeVisible = await handsfreeBtn.isVisible();
@@ -132,18 +132,18 @@ test.describe("QA-074: Parent Guide Voice Mode Segmented Control Verification", 
 
     let initialSelectedName = "None";
     if (typingAriaPressedInit === "true") {
-      initialSelectedName = "타이핑 (⌨️ 타이핑)";
+      initialSelectedName = "채팅 (⌨️ 채팅)";
       results.step3_is_typing = true;
     } else if (handsfreeAriaPressedInit === "true") {
-      initialSelectedName = "핸즈프리 (🎤 핸즈프리)";
+      initialSelectedName = "음성대화 (🎤 음성대화)";
       results.step3_is_typing = false;
     }
     results.step3_initial_selected = initialSelectedName;
     expect(typingAriaPressedInit).toBe("true");
     expect(handsfreeAriaPressedInit).toBe("false");
 
-    // Step 4: Click 🎤 핸즈프리
-    console.log(`[QA-074] 4. Clicking 🎤 핸즈프리 button...`);
+    // Step 4: Click 🎤 음성대화
+    console.log(`[QA-074] 4. Clicking 🎤 음성대화 button...`);
     await handsfreeBtn.click({ force: true });
     await page.waitForTimeout(1000);
 
@@ -162,8 +162,8 @@ test.describe("QA-074: Parent Guide Voice Mode Segmented Control Verification", 
     expect(step4HandsfreeTrue).toBe(true);
     expect(step4TypingFalse).toBe(true);
 
-    // Step 5: Click already selected 🎤 핸즈프리 button again
-    console.log(`[QA-074] 5. Clicking 🎤 핸즈프리 button again when already selected...`);
+    // Step 5: Click already selected 🎤 음성대화 button again
+    console.log(`[QA-074] 5. Clicking 🎤 음성대화 button again when already selected...`);
     await handsfreeBtn.click({ force: true });
     await page.waitForTimeout(1000);
 

@@ -174,7 +174,7 @@ export default function ParentGuidePage() {
   childIdRef.current = childId;
 
   /**
-   * 핸즈프리를 끈다. `reason` 을 주면 왜 꺼졌는지 부모에게 보여 준다.
+   * 음성대화를 끈다. `reason` 을 주면 왜 꺼졌는지 부모에게 보여 준다.
    *
    * 조용히 멎으면 부모는 왜 안 되는지 모른다 — 마이크를 계속 기다리게 된다
    * (리뷰 지적, 2026-08-20).
@@ -208,7 +208,7 @@ export default function ParentGuidePage() {
   useEffect(() => {
     // setup 에서 반드시 true 로 되돌린다. React Strict Mode 는 개발에서
     // setup → cleanup → setup 을 한 번 더 돈다. cleanup 에서 false 로만 바꾸면
-    // 두 번째 setup 이후 영구히 false 로 남아 **핸즈프리 마이크 재개가 통째로 막힌다**
+    // 두 번째 setup 이후 영구히 false 로 남아 **음성대화 마이크 재개가 통째로 막힌다**
     // (리뷰 지적, 2026-08-20).
     isMountedRef.current = true;
     return () => {
@@ -423,11 +423,11 @@ export default function ParentGuidePage() {
     handsFreeSttErrorCountRef.current += 1;
     const permissionDenied = sttError.includes("권한");
     if (permissionDenied) {
-      stopHandsFree("마이크 권한을 허용해주세요.\n텍스트로도 대화할 수 있어요.");
+      stopHandsFree("마이크 권한을 허용해주세요.\n채팅으로도 대화할 수 있어요.");
       return;
     }
     if (handsFreeSttErrorCountRef.current >= MAX_HANDS_FREE_STT_ERRORS) {
-      stopHandsFree("음성 인식이 잘 안 돼서 핸즈프리를 껐어요.\n텍스트로 물어보시거나 다시 켜 주세요.");
+      stopHandsFree("음성 인식이 잘 안 돼서 음성대화를 껐어요.\n채팅으로 물어보시거나 다시 켜 주세요.");
       return;
     }
 
@@ -490,7 +490,7 @@ export default function ParentGuidePage() {
     handsFreeGenerationRef.current += 1;
     handsFreeSttErrorCountRef.current = 0;
     // 다시 켰으니 지난 종료 사유는 지운다. 남겨 두면 방금 켠 상태에서
-    // "핸즈프리를 껐어요" 가 그대로 보인다.
+    // "음성대화를 껐어요" 가 그대로 보인다.
     setHandsFreeNotice(null);
     voiceModeRef.current = "hands-free";
     setVoiceMode("hands-free");
@@ -1035,28 +1035,28 @@ export default function ParentGuidePage() {
                   onClick={() => handleVoiceModeSelect("typing")}
                   disabled={!childId || (isLoading && voiceMode !== "hands-free")}
                   aria-pressed={voiceMode === "typing"}
-                  aria-label="타이핑 모드"
+                  aria-label="채팅 모드"
                   className={`min-h-9 px-4 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
                     voiceMode === "typing"
                       ? "bg-[var(--color-k-navy)] text-white shadow-sm"
                       : "bg-transparent text-gray-600"
                   }`}
                 >
-                  ⌨️ 타이핑
+                  ⌨️ 채팅
                 </button>
                 <button
                   type="button"
                   onClick={() => handleVoiceModeSelect("hands-free")}
                   disabled={!childId || (isLoading && voiceMode !== "hands-free")}
                   aria-pressed={voiceMode === "hands-free"}
-                  aria-label="핸즈프리 모드"
+                  aria-label="음성대화 모드"
                   className={`min-h-9 px-4 rounded-full text-xs font-medium transition-colors disabled:opacity-50 ${
                     voiceMode === "hands-free"
                       ? "bg-[var(--color-k-navy)] text-white shadow-sm"
                       : "bg-transparent text-gray-600"
                   }`}
                 >
-                  🎤 핸즈프리
+                  🎤 음성대화
                 </button>
               </div>
             </div>
