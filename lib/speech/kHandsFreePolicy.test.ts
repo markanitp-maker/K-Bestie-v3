@@ -38,22 +38,22 @@ test("채팅 모드에서는 마이크가 자동으로 다시 열리지 않는�
   assert.equal(shouldResumeHandsFree({ ...readyToResume, mode: "typing" }), false);
 
   // 자동 **재생**은 다르다 — 기준이 모드가 아니라 질문 경로다.
-  // 처음 이 테스트는 `shouldAutoPlayKAnswer("voice", "답변", "typing") === false` 를
+  // 처음 이 테스트는 `shouldAutoPlayKAnswer("hands-free", "답변", "typing") === false` 를
   // 단정했는데, 그러면 채팅 모드에서 마이크로 물었을 때 답을 안 읽어 준다.
   // 부모는 말로 물었으니 답도 듣기를 기대한다(지시서 §9).
-  assert.equal(shouldAutoPlayKAnswer("voice", "답변"), true);
-  assert.equal(shouldAutoPlayKAnswer("text", "답변"), false);
+  assert.equal(shouldAutoPlayKAnswer("hands-free", "답변"), true);
+  assert.equal(shouldAutoPlayKAnswer("typing", "답변"), false);
 });
 
 test("자동 재생 기준은 모드가 아니라 질문 경로다", () => {
   // 한때 `mode === "hands-free"` 를 조건에 넣었더니, 채팅 모드에서 마이크 버튼으로
   // 물었을 때 답을 안 읽어 줬다. 부모는 말로 물었으니 답도 듣기를 기대한다.
   // 지시서 §9 는 "음성 질문으로 시작한 경우에만" 이지 "음성대화일 때만" 이 아니다.
-  assert.equal(shouldAutoPlayKAnswer("voice", "오늘 서아는 즐거웠대요"), true);
+  assert.equal(shouldAutoPlayKAnswer("hands-free", "오늘 서아는 즐거웠대요"), true);
 
   // 텍스트로 물으면 어느 모드에서도 읽지 않는다.
-  assert.equal(shouldAutoPlayKAnswer("text", "오늘 서아는 즐거웠대요"), false);
+  assert.equal(shouldAutoPlayKAnswer("typing", "오늘 서아는 즐거웠대요"), false);
 
   // 빈 답변은 여전히 막는다.
-  assert.equal(shouldAutoPlayKAnswer("voice", "   "), false);
+  assert.equal(shouldAutoPlayKAnswer("hands-free", "   "), false);
 });

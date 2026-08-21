@@ -37,22 +37,22 @@ export const shouldSendFinalVoiceTranscript = ({
 };
 
 /**
- * 음성 질문에만 K 답변을 자동 재생한다(지시서 §9).
+ * K 답변 자동 재생 여부. **기준은 모드다. 질문 경로가 아니다.**
+ *
+ * 034-R1 대표 확정(2026-08-21): `채팅` 과 `음성대화` 를 모드 기준으로 완전히 분리한다.
+ * 채팅 모드에는 마이크·STT·자동 TTS 가 아예 없고, 음성대화 모드에서만 동작한다.
+ *
+ * 그 전에는 질문 경로(origin)로 갈랐다 — 채팅 모드에서 마이크로 물으면 답을 읽어 줬다.
+ * 그 동작은 지시서 §21 "채팅 모드 K 답변 자동 TTS 금지" 와 어긋나서 폐기됐다.
+ * origin 인자를 다시 넣지 마라.
  *
  * 답변 텍스트도 함께 본다. 빈 답변을 읽히려 하면 utterance 가 즉시 끝나거나 아예
  * 시작되지 않아 `isSpeaking` 이 켜진 채 남는다 — 버튼이 "정지" 로 굳는다.
  */
-/**
- * 기준은 **질문 경로**지 모드가 아니다(지시서 §9: "음성 질문으로 시작한 경우에만").
- *
- * 한때 `mode === "hands-free"` 를 조건에 넣었더니, 타이핑 모드에서 마이크 버튼으로
- * 물었을 때 답을 안 읽어 줬다. 타이핑 모드의 마이크는 한 번 받아쓰기용으로 남겨 둔
- * 경로이고, 부모는 말로 물었으니 답도 듣기를 기대한다.
- */
 export const shouldAutoPlayKAnswer = (
-  origin: KChatInputOrigin,
+  mode: KVoiceMode,
   answerText: string
-): boolean => origin === "voice" && answerText.trim().length > 0;
+): boolean => mode === "hands-free" && answerText.trim().length > 0;
 
 export const shouldResumeHandsFree = ({
   mode,

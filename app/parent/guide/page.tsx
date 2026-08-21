@@ -335,7 +335,10 @@ export default function ParentGuidePage() {
     if (nearBottom) scrollToBottom();
   }, [messages, isLoading, interimTranscript]);
 
-  const sendMessage = useCallback(async (rawText: string, inputOrigin: KChatInputOrigin = "text") => {
+  // 034-R1 대표 확정 이후 자동 재생은 **모드**로만 갈린다. 질문 경로(inputOrigin)는
+  // 더 이상 판정에 쓰지 않으므로 인자에서 뺐다. 다시 넣지 마라 — 채팅 모드에서
+  // 마이크로 물으면 답을 읽어 주던 옛 동작이 되살아난다(§21 위반).
+  const sendMessage = useCallback(async (rawText: string) => {
     const textToSend = rawText.trim();
     if (!textToSend || !childId || sendInFlightRef.current) return;
     const requestChildId = childId;
@@ -393,7 +396,7 @@ export default function ParentGuidePage() {
       // fallback 문구로 바뀐 뒤라, 그걸 넘기면 빈 답변 가드가 무력화된다
       // (리뷰 지적, 2026-08-20). 답이 없는데 "응답을 가져올 수 없어요" 를 읽어 주는 것은
       // 부모에게 도움이 안 되고, 음성만 켜졌다 꺼져 상태 표시도 어긋난다.
-      if (shouldAutoPlayKAnswer(inputOrigin, resolveAutoPlaySource(data.answer))
+      if (shouldAutoPlayKAnswer(voiceModeRef.current, resolveAutoPlaySource(data.answer))
         && handsFreeGeneration === handsFreeGenerationRef.current) {
         startedAutoPlayback = true;
         speakText(answerText, () => {
@@ -462,7 +465,7 @@ export default function ParentGuidePage() {
 
     lastVoiceTranscriptRef.current = finalText;
     handsFreeSttErrorCountRef.current = 0;
-    void sendMessage(finalText, "voice");
+    void sendMessage(finalText);
   }, [transcript, sttError, isListening, sendMessage]);
 
   const handleSendMessage = (e?: React.FormEvent) => {
@@ -471,6 +474,11 @@ export default function ParentGuidePage() {
   };
 
   const handleVoiceButton = () => {
+    // 채팅 모드에서는 마이크 버튼 자체가 렌더되지 않지만, 모드가 바뀌는 도중이나
+    // 다른 경로로 호출돼도 STT 가 열리지 않도록 여기서도 막는다(034-R1 §21).
+    if (voiceModeRef.current !== "hands-free") {
+      return;
+    }
     if (isListening) {
       stopListening();
       return;
@@ -1095,7 +1103,10 @@ export default function ParentGuidePage() {
                 음성 지원 기기에서는 항상 마이크 버튼을 보여주고, 입력값이 있을 때만
                 전송 버튼을 옆에 추가로 보여준다. */}
             <div className="flex gap-2 shrink-0">
-              {isSttSupported && (
+              {/* 034-R1 대표 확정(2026-08-21): 채팅 모드에는 마이크가 **없다.**
+                  채팅은 키보드 입력 → K 텍스트 답변만이고, 마이크·STT·자동 TTS 는
+                  음성대화 모드 전용이다. 모드 기준으로 완전히 분리한다. */}
+              {isSttSupported && voiceMode === "hands-free" && (
                 <button
                   type="button"
                   onClick={handleVoiceButton}
