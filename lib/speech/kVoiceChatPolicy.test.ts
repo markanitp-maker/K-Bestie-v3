@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { resolveAutoPlaySource, shouldAutoPlayKAnswer, shouldSendFinalVoiceTranscript } from "./kVoiceChatPolicy";
+
+const REPO_ROOT = path.join(__dirname, "..", "..");
+const readSource = (relativePath: string) =>
+  readFileSync(path.join(REPO_ROOT, relativePath), "utf8");
 
 test("음성 질문의 K 답변만 자동 재생한다", () => {
   // 답변 텍스트도 함께 본다 — 빈 답변 가드는 아래 테스트가 따로 고정한다.
@@ -18,6 +24,45 @@ test("동일한 final transcript가 두 번 전달돼도 한 번만 전송한다
   const transcript = "오늘 어땠어?";
   assert.equal(shouldSendFinalVoiceTranscript({ mode: "hands-free", transcript, sttError: null, isListening: false, lastSentTranscript: "" }), true);
   assert.equal(shouldSendFinalVoiceTranscript({ mode: "hands-free", transcript, sttError: null, isListening: false, lastSentTranscript: transcript }), false);
+});
+
+// ── 배선 검증 ───────────────────────────────────────────────────────────────
+// 정책 함수에 "typing" 을 직접 넘기는 테스트만으로는 부족하다(리뷰 지적, 2026-08-21).
+// 호출부가 렌더 시점 state(`voiceMode`)를 넘기도록 바뀌면 정책 테스트는 그대로 통과하지만
+// 경합은 되살아난다 — 전환 순간 state 는 아직 옛 값이기 때문이다. 그래서 배선을 직접 본다.
+
+test("배선: stopHandsFree 는 STT 를 멈추기 **전에** 모드 ref 를 먼저 바꾼다", () => {
+  const source = readSource("app/parent/guide/page.tsx");
+  const start = source.indexOf("const stopHandsFree = useCallback(");
+  assert.ok(start >= 0, "stopHandsFree 를 찾지 못했다 — 이름이 바뀌었으면 이 테스트를 갱신해라");
+  const body = source.slice(start, start + 600);
+
+  const refAssign = body.indexOf('voiceModeRef.current = "typing"');
+  const stopListen = body.indexOf("stopListening()");
+  assert.ok(refAssign >= 0, "stopHandsFree 가 모드 ref 를 갱신하지 않는다");
+  assert.ok(stopListen >= 0, "stopHandsFree 가 stopListening 을 부르지 않는다");
+
+  // 순서가 뒤집히면 isListening=false 로 깨어난 전송 판정이 아직 "hands-free" 인 ref 를
+  // 보고 남은 발화를 채팅 모드에서 전송한다.
+  assert.ok(
+    refAssign < stopListen,
+    "모드 ref 갱신이 stopListening 보다 뒤에 있다 — 채팅 전환 직후 음성이 전송된다",
+  );
+});
+
+test("배선: 전송 판정과 자동재생 판정은 state 가 아니라 ref 를 넘긴다", () => {
+  const source = readSource("app/parent/guide/page.tsx");
+
+  assert.match(
+    source,
+    /shouldSendFinalVoiceTranscript\(\{[\s\S]{0,400}?mode:\s*voiceModeRef\.current/,
+    "전송 판정에 voiceModeRef.current 가 아닌 값이 넘어간다",
+  );
+  assert.match(
+    source,
+    /shouldAutoPlayKAnswer\(\s*voiceModeRef\.current/,
+    "자동재생 판정에 voiceModeRef.current 가 아닌 값이 넘어간다",
+  );
 });
 
 test("채팅 모드에서는 final transcript 가 있어도 전송하지 않는다", () => {
