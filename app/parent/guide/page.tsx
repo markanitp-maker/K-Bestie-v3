@@ -157,6 +157,8 @@ export default function ParentGuidePage() {
     stopListening,
     isSpeaking,
     speakText,
+    primeSpeech,
+    ttsBlocked,
     stopSpeaking,
     sttError,
     // 렌더 중에 `ref.current = state` 를 대입하면 concurrent 렌더가 중단됐을 때
@@ -505,6 +507,9 @@ export default function ParentGuidePage() {
     setHandsFreeNotice(null);
     voiceModeRef.current = "hands-free";
     setVoiceMode("hands-free");
+    // ★ 이 클릭이 사용자 제스처다. 여기서 TTS 엔진을 깨워 두지 않으면 나중에 도착하는
+    // 케이 답변의 자동 재생이 브라우저 자동재생 정책에 막힌다(대표님 실사용, 2026-08-21).
+    primeSpeech();
     stopSpeaking();
     startListening();
   };
@@ -1071,6 +1076,11 @@ export default function ParentGuidePage() {
                 </button>
               </div>
             </div>
+          )}
+          {ttsBlocked && voiceMode === "hands-free" && (
+            <p className="text-[11px] text-red-500 mb-2 text-center whitespace-pre-line" aria-live="polite">
+              브라우저가 자동 재생을 막았어요.{"\n"}말풍선의 스피커를 한 번 눌러 주시면 그다음부터 자동으로 들려드려요.
+            </p>
           )}
           {handsFreeNotice && (
             <p className="text-[11px] text-gray-500 mb-2 text-center whitespace-pre-line" aria-live="polite">

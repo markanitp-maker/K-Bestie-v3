@@ -11,6 +11,13 @@ interface UseParentVoiceReturn {
   
   isSpeaking: boolean;
   speakText: (text: string, onComplete?: () => void) => void;
+  /**
+   * 브라우저 TTS 잠금 해제. **사용자 제스처 안에서 호출해야 한다.**
+   * 이걸 안 부르면 나중에 프로그램적으로 시작하는 재생이 자동재생 정책에 막힌다.
+   */
+  primeSpeech: () => void;
+  /** 브라우저가 자동 재생을 막아 한 문장도 시작하지 못했을 때 true. */
+  ttsBlocked: boolean;
   stopSpeaking: () => void;
   
   sttError: string | null;
@@ -29,6 +36,8 @@ interface UseParentVoiceReturn {
 export function useParentVoice(): UseParentVoiceReturn {
   const [isSttSupported, setIsSttSupported] = useState(true);
   const [isListening, setIsListeningState] = useState(false);
+  const speechPrimedRef = useRef(false);
+  const [ttsBlocked, setTtsBlocked] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [sttError, setSttError] = useState<string | null>(null);
@@ -168,6 +177,30 @@ export function useParentVoice(): UseParentVoiceReturn {
     }
   }, []);
 
+  /**
+   * 브라우저 TTS 잠금 해제. **사용자 제스처 안에서 한 번 불러야 한다.**
+   *
+   * 034-R1 대표님 실사용(2026-08-21): 음성대화 모드인데도 케이 답변이 스피커 버튼을
+   * 눌러야만 소리가 났다. 자동 재생 배선은 정상이었고(호출은 됐다) 재생만 실패했다.
+   * 브라우저는 사용자 제스처 없이 시작된 speechSynthesis 를 막는다 — 리포트 TTS 는
+   * 버튼을 눌러 시작하니 들리고, 케이 답변은 네트워크 응답에서 시작하니 막힌 것이다.
+   *
+   * 빈 utterance 를 제스처 안에서 한 번 재생해 엔진을 깨워 두면 이후 프로그램적 재생이
+   * 허용된다. 소리는 나지 않는다(공백 한 칸). 이미 깨워 뒀으면 다시 하지 않는다.
+   */
+  const primeSpeech = useCallback(() => {
+    if (!synthesisRef.current || speechPrimedRef.current) return;
+    try {
+      const primer = new SpeechSynthesisUtterance(" ");
+      primer.volume = 0;
+      primer.lang = "ko-KR";
+      synthesisRef.current.speak(primer);
+      speechPrimedRef.current = true;
+    } catch (e) {
+      console.error("Speech priming failed", e);
+    }
+  }, []);
+
   const speakText = useCallback((text: string, onComplete?: () => void) => {
     if (!synthesisRef.current) {
       onComplete?.();
@@ -208,12 +241,16 @@ export function useParentVoice(): UseParentVoiceReturn {
       // 버튼 표시와 실제 음성이 어긋난다(리뷰 지적, 2026-08-20).
       utterance.onstart = () => {
         if (generation !== speechGenerationRef.current) return;
+        setTtsBlocked(false);
         setIsSpeaking(true);
       };
       utterance.onerror = (e) => {
         console.error("Speech synthesis error", e);
         if (generation !== speechGenerationRef.current) return;
         setIsSpeaking(false);
+        // 첫 문장부터 실패했다면 브라우저가 재생을 막은 것이다(자동재생 정책).
+        // 조용히 넘어가면 부모는 "왜 소리가 안 나지" 만 겪는다 — 사유를 남긴다.
+        if (index === 0) setTtsBlocked(true);
         onComplete?.();
       };
       utterance.onend = () => {
@@ -269,6 +306,8 @@ export function useParentVoice(): UseParentVoiceReturn {
     stopListening,
     isSpeaking,
     speakText,
+    primeSpeech,
+    ttsBlocked,
     stopSpeaking,
     sttError,
     isListeningRef,
