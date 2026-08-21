@@ -183,13 +183,13 @@ async function proxyToHairstyleUpstream(request: NextRequest): Promise<Response>
     responseHeaders.set("location", `${target.pathname}${target.search}${target.hash}`);
   }
 
-  // 만화 페이지 이미지는 immutable version 경로로 서빙되므로 길게 캐시해도 안전하다
-  // (계약 §9 — 이미지 변경은 새 version 경로를 만든다. 같은 경로를 덮어쓰지 않는다).
-  const isStaticImageAsset = pathname.startsWith(`${HAIRSTYLE_PATH_PREFIX}/images/`);
+  // 이미지에 긴 캐시를 걸지 않는다. comic_book 프록시의 1년 immutable 정책은 K-Toon 이
+  // "이미지가 바뀌면 새 version 경로를 만든다"(계약 §9)를 보장하기 때문에 성립한다.
+  // **HairStyle 이 같은 보장을 하는지 확인하지 않았다.** 생성형 이미지라 같은 URL 에 다른
+  // 그림이 올 수 있다면 1년짜리 immutable 은 잘못된 이미지를 그만큼 고착시킨다.
+  // 확인되기 전까지는 보수적으로 no-store 로 둔다. 확인되면 그때 푼다.
   const isImmutableAsset = pathname.startsWith(`${HAIRSTYLE_PATH_PREFIX}/_next/static/`);
-  if (isStaticImageAsset) {
-    responseHeaders.set("cache-control", "public, max-age=31536000, immutable");
-  } else if (!isImmutableAsset) {
+  if (!isImmutableAsset) {
     responseHeaders.set("cache-control", "private, no-store");
   }
 
