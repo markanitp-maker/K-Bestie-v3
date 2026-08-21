@@ -25,6 +25,7 @@ let runtime: ScenarioRuntime;
 let dom: InstanceType<typeof JSDOM>;
 let root: ReturnType<typeof createRoot> | null = null;
 let ChildMissionsPage: React.ComponentType;
+let serverBuildIdOverride: string | null = null;
 
 const createResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -190,7 +191,7 @@ const fetchMock = mock.fn(async (input: RequestInfo | URL, init?: RequestInit) =
     // 없애면서(CLI 배포에서 갱신 검사가 무력화되던 경로) 이 mock 만 남아 어긋났다.
     // 그 뒤로 이 파일의 테스트 4건은 미션 화면이 아니라 "미션 상태를 확인하지 못했어요"
     // 오류 화면만 보고 있었다 — 통과할 리 없고, 통과했어도 아무것도 검증하지 않는다.
-    return createResponse({ buildId: BUILD_STAMP });
+    return createResponse({ buildId: serverBuildIdOverride ?? BUILD_STAMP });
   }
   if (url === "/api/client-version") return createResponse({ ok: true });
   return createResponse({ ok: true });
@@ -383,6 +384,7 @@ before(async () => {
 });
 
 afterEach(async () => {
+  serverBuildIdOverride = null;
   if (root) await act(async () => root?.unmount());
   root = null;
   document.body.innerHTML = "<div id=\"root\"></div>";
@@ -457,3 +459,28 @@ test("오늘 완료한 미션에 재진입하면 재시작 없이 잠금 화면�
   const chatNavigation = runtime.timeline.find((item) => item.event === "router.replace" && Array.isArray(item.args) && item.args[0] === "/chat");
   assert.deepEqual(chatNavigation?.args, ["/chat"]);
 });
+
+test("서버 빌드 ID가 클라이언트와 다르면 미션 화면 대신 버전 갱신 안내 오류 화면을 렌더한다", async () => {
+  serverBuildIdOverride = `${BUILD_STAMP}-mismatch`;
+  runtime = createScenarioRuntime("new", "stt_tts");
+  localStorage.clear();
+  sessionStorage.clear();
+  localStorage.setItem("k_child_id", "child-1");
+  localStorage.setItem("k_voice_input_mode:child-1", "manual");
+  window.__K_BESTIE_MISSION_RUNTIME_TRACE__ = (event: string, snapshot: Record<string, unknown>) => {
+    runtime.push(`page.${event}`, snapshot);
+  };
+  root = createRoot(document.getElementById("root")!);
+
+  await act(async () => root?.render(React.createElement(ChildMissionsPage)));
+  await flushReact();
+
+  assert.equal(document.querySelector('[data-testid="entry-status"]'), null, "미션 entry-status가 렌더되면 안 된다");
+  assert.equal(document.querySelector('[data-testid="mission-layout"]'), null, "미션 레이아웃이 렌더되면 안 된다");
+
+  const bodyText = document.body.textContent ?? "";
+  assert.match(bodyText, /미션 상태를 확인하지 못했어요/, "오류 타이틀 문구가 표시되어야 한다");
+  assert.match(bodyText, /앱을 최신 상태로 바꾼 뒤 다시 열어 주세요\./, "버전 갱신 안내 문구가 표시되어야 한다");
+  assert.match(bodyText, /잠시 후 다시 시도해 주세요\./, "재시도 안내 문구가 표시되어야 한다");
+});
+
